@@ -77,6 +77,45 @@ describe('buildResearchGroupFilterString', () => {
     );
   });
 
+  describe('entityType filter', () => {
+    it('ORs multiple entityType enum values within the field', () => {
+      const filter = buildResearchGroupFilterString({
+        entityType: ['PROGRAM', 'RA_PROGRAM', 'FELLOWSHIP_PROGRAM'],
+      });
+      expect(filter).toBe(
+        'archived = false AND (entityType = "PROGRAM" OR entityType = "RA_PROGRAM" OR entityType = "FELLOWSHIP_PROGRAM")',
+      );
+    });
+
+    it('places the entityType clause right after kind and ANDs with other fields', () => {
+      const filter = buildResearchGroupFilterString({
+        kind: ['lab'],
+        entityType: ['LAB', 'GROUP'],
+        departments: ['Genetics'],
+      });
+      expect(filter).toBe(
+        [
+          'archived = false',
+          '(kind = "lab")',
+          '(entityType = "LAB" OR entityType = "GROUP")',
+          '(departments = "Genetics")',
+        ].join(' AND '),
+      );
+    });
+
+    it('omits the clause when the entityType array is empty after trimming', () => {
+      expect(buildResearchGroupFilterString({ entityType: ['', '  '] })).toBe('archived = false');
+    });
+
+    it('is droppable via excludeField for disjunctive faceting (#1080)', () => {
+      const filter = buildResearchGroupFilterString(
+        { entityType: ['LAB'], departments: ['Genetics'] },
+        { excludeField: 'entityType' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+  });
+
   describe('acceptanceLevel filter', () => {
     it('"all" or unset → no extra clause', () => {
       expect(buildResearchGroupFilterString({ acceptanceLevel: 'all' })).toBe('archived = false');

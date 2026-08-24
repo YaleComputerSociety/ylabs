@@ -11,6 +11,7 @@ export type CurrentAvailabilityFilterInput = 'OPEN' | 'ROLLING';
 
 export interface ResearchGroupFilterInput {
   kind?: string[];
+  entityType?: string[];
   school?: string[];
   departments?: string[];
   researchAreas?: string[];
@@ -66,6 +67,11 @@ export function buildResearchGroupFilterString(
 
   const kindClause = effectiveFilters.kind ? orEqualsClause('kind', effectiveFilters.kind) : null;
   if (kindClause) parts.push(kindClause);
+
+  const entityTypeClause = effectiveFilters.entityType
+    ? orEqualsClause('entityType', effectiveFilters.entityType)
+    : null;
+  if (entityTypeClause) parts.push(entityTypeClause);
 
   // Filter on the multi-valued `schools` field so a cross-school lab matches
   // under every school it belongs to. The request field stays `school`.

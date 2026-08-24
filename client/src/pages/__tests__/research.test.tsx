@@ -697,6 +697,119 @@ describe('Research page', () => {
     expect(screen.queryByLabelText('Undergraduate participation documented')).toBeNull();
   });
 
+  it('surfaces the research-home type filter, applies raw entityTypes, and round-trips via URL', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          entityType: { LAB: 12, GROUP: 3, FELLOWSHIP_PROGRAM: 4 },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.getByRole('dialog', { name: 'Research filters' })).toBeTruthy();
+    expect(screen.getByText('Research groups & labs (15)')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Filter by type: Programs & fellowships'));
+    await waitFor(() => {
+      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({
+          filters: {
+            entityType: ['PROGRAM', 'RA_PROGRAM', 'FELLOWSHIP_PROGRAM', 'COURSE_SEQUENCE'],
+          },
+          page: 1,
+        }),
+      );
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/research?q=machine+learning&type=programs',
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Programs & fellowships' }));
+    await waitFor(() => {
+      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({ filters: {}, page: 1 }),
+      );
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning');
+    });
+  });
+
+  it('round-trips the research-home type filter from the URL and sends raw entityTypes', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          entityType: { LAB: 12, FELLOWSHIP_PROGRAM: 4 },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&type=collections,programs']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    const researchSearchCall = mockedAxios.post.mock.calls.find(
+      ([url]) => url === '/research/search',
+    );
+    expect(researchSearchCall?.[1]).toEqual(
+      expect.objectContaining({
+        filters: {
+          entityType: [
+            'PROGRAM',
+            'RA_PROGRAM',
+            'FELLOWSHIP_PROGRAM',
+            'COURSE_SEQUENCE',
+            'ARCHIVE_OR_MUSEUM_PROJECT',
+            'COLLECTIONS_INITIATIVE',
+            'DIGITAL_HUMANITIES_PROJECT',
+          ],
+        },
+      }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Remove Type: Programs & fellowships' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Remove Type: Collections, museum & digital humanities',
+      }),
+    ).toBeTruthy();
+  });
+
   it('exposes browse filters on the default view without a submitted search', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

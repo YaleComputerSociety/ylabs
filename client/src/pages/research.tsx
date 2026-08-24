@@ -29,6 +29,12 @@ import {
   relaxResearchQuery,
   suggestCorpusResearchAreas,
 } from '../utils/researchZeroResultRecovery';
+import {
+  aggregateResearchTypeBucketCounts,
+  entityTypesForResearchTypeBuckets,
+  readResearchTypeBucketKeys,
+  researchTypeBucketKeysForEntityTypes,
+} from '../utils/researchTypeBuckets';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
@@ -58,6 +64,7 @@ type CurrentAvailabilityFilterValue = 'OPEN' | 'ROLLING';
 
 type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
+  entityType?: string[];
   school?: string[];
   hostsUndergrads?: boolean;
   currentAvailability?: CurrentAvailabilityFilterValue[];
@@ -144,6 +151,7 @@ interface ResearchFilterAnalyticsChange {
     | 'department'
     | 'documented_way_in'
     | 'research_area'
+    | 'research_type'
     | 'hosts_undergrads'
     | 'current_availability';
 }
@@ -160,6 +168,7 @@ interface ResearchPageSnapshot {
   selectedSchool: string;
   selectedDepartment: string;
   selectedResearchAreas: string[];
+  selectedTypeBuckets: string[];
   hostsUndergrads: boolean;
   selectedCurrentAvailability: CurrentAvailabilityFilterValue[];
   sortBy: ResearchSortField;
@@ -410,6 +419,11 @@ const Research = () => {
       restoredSnapshotRef.current?.selectedResearchAreas ??
       readSearchParamCsv(searchParams, 'researchAreas'),
   );
+  const [selectedTypeBuckets, setSelectedTypeBuckets] = useState<string[]>(
+    () =>
+      restoredSnapshotRef.current?.selectedTypeBuckets ??
+      readResearchTypeBucketKeys(readSearchParamCsv(searchParams, 'type')),
+  );
   const [hostsUndergrads, setHostsUndergrads] = useState(
     () => restoredSnapshotRef.current?.hostsUndergrads ?? searchParams.get('undergrad') === '1',
   );
@@ -523,6 +537,14 @@ const Research = () => {
     () => buildResearchAreaOptions(browseFacetDistribution.researchAreas),
     [buildResearchAreaOptions, browseFacetDistribution.researchAreas],
   );
+  const typeBucketOptions = useMemo(
+    () => aggregateResearchTypeBucketCounts(facetDistribution.entityType),
+    [facetDistribution.entityType],
+  );
+  const browseTypeBucketOptions = useMemo(
+    () => aggregateResearchTypeBucketCounts(browseFacetDistribution.entityType),
+    [browseFacetDistribution.entityType],
+  );
   const buildCurrentAvailabilityOptions = useCallback(
     (counts: Record<string, number> | undefined) =>
       CURRENT_AVAILABILITY_FILTER_VALUES.map((value) => ({
@@ -562,6 +584,7 @@ const Research = () => {
       school?: string;
       department?: string;
       researchAreas?: string[];
+      types?: string[];
       hostsUndergrads?: boolean;
       currentAvailability?: CurrentAvailabilityFilterValue[];
     },
@@ -577,6 +600,7 @@ const Research = () => {
     if (nextState.researchAreas?.length) {
       params.set('researchAreas', nextState.researchAreas.join(','));
     }
+    if (nextState.types?.length) params.set('type', nextState.types.join(','));
     if (nextState.hostsUndergrads) params.set('undergrad', '1');
     if (nextState.currentAvailability?.length) {
       params.set('availability', nextState.currentAvailability.join(','));
@@ -784,6 +808,7 @@ const Research = () => {
           school: filters.school?.[0],
           department: filters.departments?.[0],
           researchAreas: filters.researchAreas,
+          types: researchTypeBucketKeysForEntityTypes(filters.entityType),
           hostsUndergrads: filters.hostsUndergrads === true,
           currentAvailability: filters.currentAvailability,
           showWeakest: showWeakestProfilesFirst,
@@ -962,11 +987,15 @@ const Research = () => {
     department = selectedDepartment,
     areas = selectedResearchAreas,
     undergrads = hostsUndergrads,
+    typeBuckets = selectedTypeBuckets,
     availability = selectedCurrentAvailability,
   ): ResearchSearchFilters => ({
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
     ...(areas.length ? { researchAreas: areas } : {}),
+    ...(typeBuckets.length
+      ? { entityType: entityTypesForResearchTypeBuckets(typeBuckets) }
+      : {}),
     ...(undergrads ? { hostsUndergrads: true } : {}),
     ...(availability.length ? { currentAvailability: availability } : {}),
   });
@@ -989,6 +1018,7 @@ const Research = () => {
     setSelectedSchool('');
     setSelectedDepartment('');
     setSelectedResearchAreas([]);
+    setSelectedTypeBuckets([]);
     setHostsUndergrads(false);
     setSelectedCurrentAvailability([]);
     setFacetDistribution({});
@@ -1054,6 +1084,7 @@ const Research = () => {
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
     const urlResearchAreas = readSearchParamCsv(searchParams, 'researchAreas');
+    const urlTypeBuckets = readResearchTypeBucketKeys(readSearchParamCsv(searchParams, 'type'));
     const urlHostsUndergrads = searchParams.get('undergrad') === '1';
     const urlCurrentAvailability = readSearchParamList(
       searchParams,
@@ -1106,6 +1137,10 @@ const Research = () => {
       setSelectedResearchAreas(urlResearchAreas);
       return;
     }
+    if (selectedTypeBuckets.join(',') !== urlTypeBuckets.join(',')) {
+      setSelectedTypeBuckets(urlTypeBuckets);
+      return;
+    }
     if (hostsUndergrads !== urlHostsUndergrads) {
       setHostsUndergrads(urlHostsUndergrads);
       return;
@@ -1118,6 +1153,9 @@ const Research = () => {
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
       ...(urlResearchAreas.length ? { researchAreas: urlResearchAreas } : {}),
+      ...(urlTypeBuckets.length
+        ? { entityType: entityTypesForResearchTypeBuckets(urlTypeBuckets) }
+        : {}),
       ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
       ...(urlCurrentAvailability.length ? { currentAvailability: urlCurrentAvailability } : {}),
     };
@@ -1214,6 +1252,7 @@ const Research = () => {
     selectedSchool,
     selectedDepartment,
     selectedResearchAreas,
+    selectedTypeBuckets,
     hostsUndergrads,
     selectedCurrentAvailability,
     departmentSearchTargetByLabel,
@@ -1236,6 +1275,7 @@ const Research = () => {
       selectedSchool,
       selectedDepartment,
       selectedResearchAreas,
+      selectedTypeBuckets,
       hostsUndergrads,
       selectedCurrentAvailability,
       sortBy,
@@ -1268,6 +1308,7 @@ const Research = () => {
     selectedSchool,
     selectedDepartment,
     selectedResearchAreas,
+    selectedTypeBuckets,
     hostsUndergrads,
     selectedCurrentAvailability,
     sortBy,
@@ -1393,6 +1434,7 @@ const Research = () => {
     selectedSchool ||
       selectedDepartment ||
       selectedResearchAreas.length ||
+      selectedTypeBuckets.length ||
       hostsUndergrads ||
       selectedCurrentAvailability.length,
   );
@@ -1413,12 +1455,14 @@ const Research = () => {
     school?: string;
     department?: string;
     researchAreas?: string[];
+    typeBuckets?: string[];
     hostsUndergrads?: boolean;
     currentAvailability?: CurrentAvailabilityFilterValue[];
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
     const areas = next.researchAreas ?? selectedResearchAreas;
+    const typeBuckets = next.typeBuckets ?? selectedTypeBuckets;
     const undergrads = next.hostsUndergrads ?? hostsUndergrads;
     const availability = next.currentAvailability ?? selectedCurrentAvailability;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
@@ -1432,6 +1476,12 @@ const Research = () => {
       filterChanges.push({
         operation: areas.length > selectedResearchAreas.length ? 'apply' : 'remove',
         filter: 'research_area',
+      });
+    }
+    if (typeBuckets.join(',') !== selectedTypeBuckets.join(',')) {
+      filterChanges.push({
+        operation: typeBuckets.length > selectedTypeBuckets.length ? 'apply' : 'remove',
+        filter: 'research_type',
       });
     }
     if (undergrads !== hostsUndergrads) {
@@ -1449,9 +1499,17 @@ const Research = () => {
     setSelectedSchool(school);
     setSelectedDepartment(department);
     setSelectedResearchAreas(areas);
+    setSelectedTypeBuckets(typeBuckets);
     setHostsUndergrads(undergrads);
     setSelectedCurrentAvailability(availability);
-    const filters = studentSearchFilters(school, department, areas, undergrads, availability);
+    const filters = studentSearchFilters(
+      school,
+      department,
+      areas,
+      undergrads,
+      typeBuckets,
+      availability,
+    );
     if (!query.trim() && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
         void trackResearchEvent({
@@ -1594,6 +1652,8 @@ const Research = () => {
     selectedDepartment,
     selectedResearchAreas,
     researchAreaOptions,
+    typeBucketOptions,
+    selectedTypeBuckets,
     hostsUndergrads,
     currentAvailabilityOptions,
     selectedCurrentAvailability,
@@ -1604,6 +1664,7 @@ const Research = () => {
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
     onResearchAreasChange: (areas: string[]) => applyStudentFilters({ researchAreas: areas }),
+    onTypeBucketsChange: (buckets: string[]) => applyStudentFilters({ typeBuckets: buckets }),
     onHostsUndergradsChange: (value: boolean) => applyStudentFilters({ hostsUndergrads: value }),
     onCurrentAvailabilityChange: (values: string[]) =>
       applyStudentFilters({ currentAvailability: values as CurrentAvailabilityFilterValue[] }),
@@ -1612,6 +1673,7 @@ const Research = () => {
         school: '',
         department: '',
         researchAreas: [],
+        typeBuckets: [],
         hostsUndergrads: false,
         currentAvailability: [],
       }),
@@ -1621,6 +1683,7 @@ const Research = () => {
     ...researchFilterProps,
     facetDistribution: browseFacetDistribution,
     researchAreaOptions: browseResearchAreaOptions,
+    typeBucketOptions: browseTypeBucketOptions,
     currentAvailabilityOptions: browseCurrentAvailabilityOptions,
     isApplying: false,
     hasFacetError: false,

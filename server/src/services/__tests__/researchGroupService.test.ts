@@ -896,7 +896,13 @@ describe('searchResearchGroupsViaMeili', () => {
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'researchAreas', 'undergraduateCurrentAvailability'],
+        facets: [
+          'schools',
+          'departments',
+          'researchAreas',
+          'entityType',
+          'undergraduateCurrentAvailability',
+        ],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -1507,7 +1513,13 @@ describe('searchResearchGroupsViaMeili', () => {
       rankingScoreThreshold: 0.15,
       page: 1,
       hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-      facets: ['schools', 'departments', 'researchAreas', 'undergraduateCurrentAvailability'],
+      facets: [
+        'schools',
+        'departments',
+        'researchAreas',
+        'entityType',
+        'undergraduateCurrentAvailability',
+      ],
     });
     expect(result.estimatedTotalHits).toBe(313);
     expect(result.facetDistribution).toEqual({
