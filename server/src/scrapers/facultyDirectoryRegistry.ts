@@ -734,8 +734,9 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     url: 'https://music.yale.edu/meet-our-faculty',
     school: 'Yale School of Music',
     department: 'Faculty',
-    rendering: 'static',
-    status: 'gap',
+    rendering: 'js-rendered',
+    status: 'covered',
+    coveredBy: ['dept-faculty-roster'],
     studentImpactTier: 6,
     approxFacultyCount: 50,
     notes:

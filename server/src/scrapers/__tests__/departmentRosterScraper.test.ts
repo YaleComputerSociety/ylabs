@@ -25,6 +25,7 @@ import {
   viewsRowPersonExtractor,
   viewsTableRowExtractor,
   directoryListingCardExtractor,
+  nodePersonCardExtractor,
   profileGridItemExtractor,
   nodeTeaserFacultyExtractor,
   jacksonProfileComponentExtractor,
@@ -864,6 +865,46 @@ describe('viewsRowPersonExtractor', () => {
         profileUrl: 'https://erm.yale.edu/people/jordan-winter-fixture',
         title:
           "Professor of Women's, Gender, and Sexuality Studies and of Ethnicity, Race, and Migration",
+      },
+    ]);
+  });
+});
+
+describe('nodePersonCardExtractor', () => {
+  it('extracts rendered School of Music person cards from about attr and image alt', () => {
+    const html = `
+      <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
+        <div class="top"><div class="field field--name-field-profile-image field__item">
+          <img srcset="/img/robin-fixture.jpg 1x" src="/img/robin-fixture.jpg" alt="Robin Fixture"></div></div>
+        <div class="paragraph--type--title-affiliation">Professor in the Practice of Cello</div>
+      </article>`;
+    expect(
+      nodePersonCardExtractor(html, { pageUrl: 'https://music.yale.edu/meet-our-faculty' }),
+    ).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://music.yale.edu/people/robin-fixture',
+        title: 'Professor in the Practice of Cello',
+        imageUrl: 'https://music.yale.edu/img/robin-fixture.jpg',
+      },
+    ]);
+  });
+
+  it('falls back to the /people/<slug> name when the image alt is absent', () => {
+    const html = `
+      <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
+        <div class="top"><div class="field field--name-field-profile-image field__item">
+          <img srcset="/img/robin-fixture.jpg 1x" src="/img/robin-fixture.jpg"></div></div>
+        <div class="paragraph--type--title-affiliation">Professor in the Practice of Cello</div>
+      </article>`;
+    expect(
+      nodePersonCardExtractor(html, { pageUrl: 'https://music.yale.edu/meet-our-faculty' }),
+    ).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://music.yale.edu/people/robin-fixture',
+        title: 'Professor in the Practice of Cello',
+        imageUrl: 'https://music.yale.edu/img/robin-fixture.jpg',
       },
     ]);
   });
