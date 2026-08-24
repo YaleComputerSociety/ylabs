@@ -166,6 +166,64 @@ describe('computeResearchEntityStudentVisibility', () => {
     );
   });
 
+  it.each([
+    'https://anthropology.yale.edu/undergraduate-program/undergraduate-research-in-anthropology',
+    'https://cogsci.yale.edu/research/undergraduate-research-opportunities',
+    'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/undergraduate-study',
+    'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+    'https://mbb.yale.edu/introduction-undergraduate-program',
+    'https://college.yale.edu/life-at-yale/student-faculty-awards/nsf-research-experience-for-undergraduates-reu-computational',
+  ])(
+    'recognizes a student-research engagement page as an alternate access path: %s',
+    (sourceUrl) => {
+      const result = computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'undergrad-research-engagement',
+          name: 'Department Undergraduate Research',
+          slug: 'department-undergrad-research-example',
+          kind: 'program',
+          entityType: 'PROGRAM',
+          shortDescription:
+            'Supports undergraduate research through department guidance on finding faculty research opportunities.',
+          fullDescription:
+            'Supports undergraduate research. Students interested in research should contact the faculty member directly via email to explore opportunities.',
+          sourceUrls: [sourceUrl],
+        },
+        leadMembers: [],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+        relatedEntityAccessPathCount: 0,
+      });
+
+      expect(result.reasons).not.toContain('missing_alternate_access_path');
+      expect(result.tier).toBe('student_ready');
+    },
+  );
+
+  it('still holds a center landing page that carries no student-research engagement token', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-research-landing',
+        name: 'Yale Center for Geospatial Solutions',
+        slug: 'yse-geospatial-solutions',
+        entityType: 'CENTER',
+        shortDescription:
+          'Advances geospatial research, mapping, and spatial analysis across Yale.',
+        fullDescription:
+          'The Yale Center for Geospatial Solutions advances geospatial research, mapping, and spatial analysis through interdisciplinary collaboration.',
+        websiteUrl: 'https://environment.yale.edu/research/centers/geospatial-solutions',
+        sourceUrls: ['https://environment.yale.edu/research/centers/geospatial-solutions'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+  });
+
   it('does not require a named director for a source-backed organizational research home with a linked related entity', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {

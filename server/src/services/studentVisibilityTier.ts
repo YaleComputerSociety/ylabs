@@ -173,6 +173,11 @@ const organizationalEngagementUrlPathPatterns = [
   /\/(?:people|staff|team|members?|membership|our-people|who-we-are|leadership)(?:\/|$)/i,
   /\/(?:get-involved|getinvolved|join(?:-us)?|participate|volunteer|opportunities|apply|how-to-apply|admissions)(?:\/|$)/i,
   /\/(?:programs?|education|academics|training|courses?|fellowships?|internships?|research-opportunities|for-students|students)(?:\/|$)/i,
+  // Student-research engagement tokens carried mid-segment (e.g.
+  // /undergraduate-program/undergraduate-research-in-x, /research-internship-program,
+  // /research/undergraduate-research-opportunities). The segment-anchored patterns above
+  // miss these even though the page itself is the student's way in.
+  /(?:^|[/-])(?:undergraduate-research|undergraduate-study|undergraduate-program|research-internship|research-opportunit(?:y|ies)|research-experience|for-undergraduates?)(?:[/-]|$)/i,
 ];
 
 function isOrganizationalEngagementUrl(value: string): boolean {
