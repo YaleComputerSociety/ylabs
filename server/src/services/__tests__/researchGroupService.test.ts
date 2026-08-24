@@ -352,6 +352,25 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('marks literal phrases as not alias-expanded and OR-expanded queries as alias-expanded (#1255)', () => {
+    expect(normalizeResearchSearchQuery('black hole')).toMatchObject({
+      tokens: ['black', 'hole'],
+      isAliasExpanded: false,
+    });
+    expect(normalizeResearchSearchQuery('immunology')).toMatchObject({
+      tokens: ['immunology'],
+      isAliasExpanded: false,
+    });
+    expect(normalizeResearchSearchQuery('comp sci')).toMatchObject({
+      isTopicAliasQuery: true,
+      isAliasExpanded: true,
+    });
+    expect(normalizeResearchSearchQuery('AI')).toMatchObject({
+      isTopicAliasQuery: true,
+      isAliasExpanded: true,
+    });
+  });
+
   it('promoteExactAliasFieldMatches tiers exact department, then exact area, above the rest (#983)', () => {
     const hits = [
       { slug: 'fuzzy-only', departments: ['Computer Science'], researchAreas: ['behavioral research'] },
@@ -492,6 +511,77 @@ describe('searchResearchGroupsViaMeili', () => {
       }),
     );
     expect(result.degraded).toBe(false);
+  });
+
+  it('requires all query terms for a literal multi-word query so one common token cannot admit off-topic matches (#1255)', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({});
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: entityId,
+          slug: 'coppi-lab',
+          name: 'Coppi Lab',
+          kind: 'lab',
+          departments: ['Astronomy'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'coppi-lab',
+          name: 'Coppi Lab',
+          kind: 'lab',
+          departments: ['Astronomy'],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    await searchResearchGroupsViaMeili('black hole', {}, 1, 12);
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      'black hole',
+      expect.objectContaining({ matchingStrategy: 'all' }),
+    );
+  });
+
+  it('leaves single-token and alias-expanded queries permissive (no all-terms matching) (#1255)', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({});
+    const entity = {
+      _id: entityId,
+      slug: 'reilly-lab',
+      name: 'Reilly Lab',
+      kind: 'lab',
+      departments: ['Chemistry'],
+      researchAreas: [],
+      sourceUrls: [],
+    };
+    mocks.search.mockResolvedValue({ hits: [{ id: entityId, ...entity }], estimatedTotalHits: 1 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([{ ...entity, ...validPublicDescriptions }]),
+    );
+
+    await searchResearchGroupsViaMeili('reilly', {}, 1, 12);
+    expect(mocks.search).toHaveBeenLastCalledWith(
+      'reilly',
+      expect.not.objectContaining({ matchingStrategy: expect.anything() }),
+    );
+
+    mocks.search.mockClear();
+    await searchResearchGroupsViaMeili('comp sci', {}, 1, 12);
+    expect(mocks.search).toHaveBeenLastCalledWith(
+      expect.any(String),
+      expect.not.objectContaining({ matchingStrategy: expect.anything() }),
+    );
   });
 
   it('floors a weak semantic-only hit beneath a near-perfect keyword hit for a name query (#929)', async () => {
