@@ -96,7 +96,7 @@ describe('accessSummaryService', () => {
     ]);
     expect(JSON.stringify(summary)).not.toContain('[email redacted]');
     expect(JSON.stringify(summary)).not.toContain('[phone redacted]');
-    expect(summary?.bestNextStep).toBe('Save for later');
+    expect(summary?.bestNextStep).toBe('Reach out to ask about opportunities');
     expect(JSON.stringify(summary)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(summary)).not.toContain('203-432-1234');
     expect(JSON.stringify(summary)).not.toContain('mailto:');
@@ -241,7 +241,7 @@ describe('accessSummaryService', () => {
     });
     expect(summary?.evidence[0].excerpt).toHaveLength(2000);
     expect(summary?.signalTypes).toEqual(['CURRENT_UNDERGRADS']);
-    expect(summary?.bestNextStep).toBe('Save for later');
+    expect(summary?.bestNextStep).toBe('Reach out to ask about opportunities');
   });
 
   it('does not query Mongo when entity ids are only object-shaped values', async () => {
@@ -351,4 +351,34 @@ describe('accessSummaryService', () => {
     expect(summary?.status).toBe('not-currently-available');
     expect(summary?.bestNextStep).toBe('Reach out to confirm current availability');
   });
+
+  it.each([
+    ['REACH_OUT_PLAUSIBLE', 'the identified-lead fallback shared by faculty and lab kinds alike'],
+    ['CURRENT_UNDERGRADS', 'a lab microsite listing current undergrads'],
+    ['PAST_UNDERGRADS', 'a lab microsite listing past undergrad advisees'],
+  ])(
+    'never tells a student to "Save for later" for reach-out-plausible via %s (#1353, regression from #377)',
+    async (signalType) => {
+      const entityId = new Types.ObjectId();
+      mocks.accessSignalFind.mockReturnValue(
+        queryMany([
+          {
+            researchEntityId: entityId,
+            type: signalType,
+            confidence: 'MEDIUM',
+            confidenceScore: 0.6,
+            source: { excerpt: 'Evidence excerpt.' },
+          },
+        ]),
+      );
+
+      const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+        entityId.toString(),
+      );
+
+      expect(summary?.status).toBe('reach-out-plausible');
+      expect(summary?.bestNextStep).not.toBe('Save for later');
+      expect(summary?.bestNextStep).toBe('Reach out to ask about opportunities');
+    },
+  );
 });

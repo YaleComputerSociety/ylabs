@@ -150,7 +150,7 @@ function bestNextStepFor(status: AccessSummaryStatus, signalTypes: Set<string>):
   if (signalTypes.has('FELLOWSHIP_COMPATIBLE')) {
     return 'Ask about funding after finding a mentor';
   }
-  return 'Save for later';
+  return 'Reach out to ask about opportunities';
 }
 
 export async function listAccessSummariesForResearchEntities(
