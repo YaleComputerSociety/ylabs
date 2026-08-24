@@ -7,6 +7,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export type AccessSummaryStatus =
+  | 'posted-opening'
   | 'evidence-backed'
   | 'reach-out-plausible'
   | 'not-currently-available'
@@ -82,6 +83,31 @@ function confidenceScore(signal: any): number {
   return 0;
 }
 
+function postedOpeningExpiry(signal: any): number | undefined {
+  const raw = signal?.expiresAt;
+  if (!raw) return undefined;
+  const time = raw instanceof Date ? raw.getTime() : new Date(raw).getTime();
+  return Number.isFinite(time) ? time : undefined;
+}
+
+/**
+ * A POSTED_OPENING signal counts as an active "Apply now" state only while its
+ * application window is open: it must carry a deadline (`expiresAt`) that has
+ * not yet passed. A dateless POSTED_OPENING is never treated as active, so a
+ * legacy/manual row can never resurrect the top-tier status (#1303/#1568).
+ */
+function isActivePostedOpening(signal: any, now: number): boolean {
+  if (signal?.type !== 'POSTED_OPENING') return false;
+  const expiry = postedOpeningExpiry(signal);
+  return expiry !== undefined && expiry > now;
+}
+
+function isExpiredPostedOpening(signal: any, now: number): boolean {
+  if (signal?.type !== 'POSTED_OPENING') return false;
+  const expiry = postedOpeningExpiry(signal);
+  return expiry === undefined || expiry <= now;
+}
+
 const HIGH_CONFIDENCE_SCORE = 0.75;
 
 const POSITIVE_ACCESS_SIGNAL_TYPES = new Set([
@@ -101,16 +127,25 @@ const POSITIVE_ACCESS_SIGNAL_TYPES = new Set([
 ]);
 
 export const STATUS_DETERMINING_SIGNAL_TYPES = [
+  'POSTED_OPENING',
   'NOT_CURRENTLY_AVAILABLE',
   'REACH_OUT_PLAUSIBLE',
   'CURRENT_UNDERGRADS',
   'PAST_UNDERGRADS',
 ] as const;
 
+/**
+ * A source-backed `POSTED_OPENING` signal is the strongest access state, but
+ * only while its application window is open. Callers pass `activePostedOpening`
+ * so an expired posting degrades gracefully to a lower non-"Apply" tier rather
+ * than lingering as strong evidence once its deadline has passed (#1303/#1568).
+ */
 export function computeStatus(
   signalTypes: Set<string>,
   maxScoreByType: Map<string, number>,
+  options: { activePostedOpening?: boolean } = {},
 ): AccessSummaryStatus {
+  if (options.activePostedOpening) return 'posted-opening';
   if (signalTypes.has('NOT_CURRENTLY_AVAILABLE')) {
     const negativeScore = maxScoreByType.get('NOT_CURRENTLY_AVAILABLE') ?? 0;
     const positiveScores = Array.from(maxScoreByType.entries())
@@ -140,6 +175,7 @@ export function computeStatus(
 }
 
 function bestNextStepFor(status: AccessSummaryStatus, signalTypes: Set<string>): string {
+  if (status === 'posted-opening') return 'Apply';
   if (status === 'not-currently-available') return 'Reach out to confirm current availability';
   if (signalTypes.has('APPLICATION_ONLY')) {
     return 'Apply to this program';
@@ -182,9 +218,15 @@ export async function listAccessSummariesForResearchEntities(
     signalsByEntity.set(key, [...(signalsByEntity.get(key) || []), signal]);
   }
 
+  const now = Date.now();
   const out = new Map<string, AccessSummary>();
   for (const id of validIds) {
-    const entitySignals = signalsByEntity.get(id) || [];
+    // An expired posting is no longer served as active evidence: it is dropped
+    // from the type set, status computation, and the evidence chips so a dead
+    // apply route never lingers as a "Posted opening" (#1303/#1568).
+    const entitySignals = (signalsByEntity.get(id) || []).filter(
+      (signal) => !isExpiredPostedOpening(signal, now),
+    );
     const maxScoreByType = new Map<string, number>();
     for (const signal of entitySignals) {
       const signalType = boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
@@ -195,14 +237,21 @@ export async function listAccessSummariesForResearchEntities(
       );
     }
     const signalTypes = new Set(maxScoreByType.keys());
-    const status = computeStatus(signalTypes, maxScoreByType);
+    const activePostedOpening = entitySignals.some((signal) => isActivePostedOpening(signal, now));
+    const status = computeStatus(signalTypes, maxScoreByType, { activePostedOpening });
     const confidence =
       entitySignals.length > 0 ? Math.max(...entitySignals.map(confidenceScore)) : 0;
+    const orderedEvidence = activePostedOpening
+      ? [
+          ...entitySignals.filter((signal) => isActivePostedOpening(signal, now)),
+          ...entitySignals.filter((signal) => !isActivePostedOpening(signal, now)),
+        ]
+      : entitySignals;
 
     out.set(id, {
       status,
       confidence,
-      evidence: entitySignals.slice(0, 5).map((signal) => ({
+      evidence: orderedEvidence.slice(0, 5).map((signal) => ({
         signalType: boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
         confidence: boundedString(signal.confidence, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
         excerpt: withoutRedactionMarkerSentences(publicText(signal.source?.excerpt)),

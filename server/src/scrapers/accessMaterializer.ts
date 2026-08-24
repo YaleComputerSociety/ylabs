@@ -44,6 +44,7 @@ export const MATERIALIZED_ACCESS_SIGNAL_TYPES: readonly AccessSignalType[] = [
   'CONTACT_INSTRUCTIONS_EXIST',
   'PAST_UNDERGRADS',
   'FELLOWSHIP_COMPATIBLE',
+  'POSTED_OPENING',
 ];
 
 const ENTITY_DISCOVERY_ONLY_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
@@ -152,6 +153,57 @@ function undergradAccessEvidenceQuote(value: unknown): string {
   return firstString((value as { evidenceQuote?: unknown }).evidenceQuote);
 }
 
+export interface ParsedPostedOpening {
+  title: string;
+  applyUrl: string;
+  deadline: Date;
+  evidenceQuote?: string;
+}
+
+function toHttpUrl(value: unknown): string {
+  return firstUrlValue(value);
+}
+
+function toFutureAwareDeadline(value: unknown): Date | undefined {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value : undefined;
+  }
+  const text = firstString(value);
+  if (!text) return undefined;
+  const parsed = new Date(text);
+  return Number.isFinite(parsed.getTime()) ? parsed : undefined;
+}
+
+/**
+ * Parse a producer-emitted `postedOpening` observation value into a validated
+ * posting, or return null. A posting is only honored when it carries all four
+ * evidence-first requirements (#1568): a title, an apply route (http(s) URL), a
+ * resolvable hiring home (the observation is keyed to a research entity, so
+ * that requirement is satisfied by the caller), and an application deadline.
+ * Undated or apply-routeless postings fail closed so a scraped page can never
+ * manufacture a top-tier "Apply" signal (the #1332 failure mode).
+ */
+export function parsePostedOpening(value: unknown): ParsedPostedOpening | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const title = firstString(record.title);
+  const applyUrl = toHttpUrl(record.applyUrl);
+  const deadline = toFutureAwareDeadline(record.deadline);
+  if (!title || !applyUrl || !deadline) return null;
+  const evidenceQuote = firstString(record.evidenceQuote) || undefined;
+  return { title, applyUrl, deadline, evidenceQuote };
+}
+
+function postedOpeningDerivationKey(applyUrl: string): string {
+  return `signal:POSTED_OPENING:${applyUrl}`;
+}
+
+function postedOpeningExcerpt(posting: ParsedPostedOpening): string {
+  const deadlineLabel = posting.deadline.toISOString().slice(0, 10);
+  const base = `${posting.title}. Apply by ${deadlineLabel}.`;
+  return posting.evidenceQuote ? `${base} ${posting.evidenceQuote}` : base;
+}
+
 function isPositiveBoolean(obs: AccessObservation): boolean {
   return obs.value === true;
 }
@@ -209,6 +261,8 @@ function makeSignal(input: {
   score: number;
   observations: AccessObservation[];
   excerpt?: string;
+  sourceUrl?: string;
+  expiresAt?: Date;
 }): DerivedAccessSignal {
   const obs = bestObservation(input.observations);
   const sourceEvidenceId = obs ? observationId(obs) : undefined;
@@ -220,9 +274,10 @@ function makeSignal(input: {
     confidenceScore: input.score,
     sourceEvidenceId: sourceEvidenceId || '',
     observedAt: latestObservedAt(input.observations),
+    expiresAt: input.expiresAt,
     excerpt: input.excerpt,
     sourceName: obs?.sourceName,
-    sourceUrl: obs?.sourceUrl,
+    sourceUrl: input.sourceUrl || obs?.sourceUrl,
     originalConfidence: obs?.confidence,
   };
 }
@@ -453,6 +508,31 @@ export function deriveAccessArtifactsFromObservations(
         type: 'FELLOWSHIP_COMPATIBLE',
         score,
         observations: pastAdviseeObservations,
+      }),
+    );
+  }
+
+  const postedOpeningObservations = (byField.get('postedOpening') || []).filter(
+    (obs) => parsePostedOpening(obs.value) !== null,
+  );
+  const seenPostingKeys = new Set<string>();
+  for (const postingObs of postedOpeningObservations) {
+    const posting = parsePostedOpening(postingObs.value);
+    if (!posting) continue;
+    const derivationKey = postedOpeningDerivationKey(posting.applyUrl);
+    if (seenPostingKeys.has(derivationKey)) continue;
+    seenPostingKeys.add(derivationKey);
+    const score = Math.max(Number(postingObs.confidence) || 0, 0.75);
+    accessSignals.push(
+      makeSignal({
+        researchEntityId,
+        derivationKey,
+        type: 'POSTED_OPENING',
+        score,
+        observations: [postingObs],
+        excerpt: postedOpeningExcerpt(posting),
+        sourceUrl: posting.applyUrl,
+        expiresAt: posting.deadline,
       }),
     );
   }

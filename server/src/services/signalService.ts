@@ -15,6 +15,7 @@ export interface UpsertSignalInput {
   confidence: SignalConfidence;
   sourceEvidenceId?: string;
   observedAt: Date;
+  expiresAt?: Date;
   excerpt?: string;
   sourceName?: string;
   sourceUrl?: string;
@@ -93,6 +94,7 @@ export async function upsertSignal(
         confidence: input.confidence,
         confidenceScore: input.confidenceScore ?? input.originalConfidence,
         observedAt: input.observedAt,
+        expiresAt: input.expiresAt,
         originalConfidence: input.originalConfidence,
         archived: input.archived,
         lastMaterializedAt: new Date(),

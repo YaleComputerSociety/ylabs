@@ -62,6 +62,37 @@ describe('computeAcceptanceVerdict — access summary drives the verdict', () =>
     expect(result.evidence[0].label).toBe('Posted opening');
   });
 
+  it('upgrades an active posted-opening status to verified-accepting with the listing leading (#1568)', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        accessSummary: {
+          status: 'posted-opening',
+          confidence: 0.9,
+          evidence: [
+            {
+              signalType: 'REACH_OUT_PLAUSIBLE',
+              confidence: 'MEDIUM',
+              excerpt: 'A public profile is available.',
+            },
+            {
+              signalType: 'POSTED_OPENING',
+              confidence: 'HIGH',
+              excerpt: 'Summer RA - Smith Lab. Apply by 2026-12-01.',
+              sourceUrl: 'https://apply.example.test/smith-lab-ra',
+            },
+          ],
+          signalTypes: ['POSTED_OPENING', 'REACH_OUT_PLAUSIBLE'],
+          bestNextStep: 'Apply',
+        },
+      }),
+    );
+
+    expect(result.verdict).toBe('verified-accepting');
+    expect(result.confidence).toBe(0.9);
+    expect(result.evidence[0].kind).toBe('active-listing');
+    expect(result.evidence[0].label).toBe('Posted opening');
+  });
+
   it('collapses duplicate access-summary signals into one evidence chip', () => {
     const result = computeAcceptanceVerdict(
       baseGroup({

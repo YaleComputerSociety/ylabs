@@ -176,6 +176,29 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
   const positiveChips = chips.filter((chip) => chip.kind !== 'closed-evidence');
   const caveatChips = chips.filter((chip) => chip.kind === 'closed-evidence');
 
+  // A source-backed, non-expired posted opening is the strongest access state:
+  // there is a specific position open now with an apply route and a deadline.
+  // The server only emits `posted-opening` while the application window is open
+  // (#1568), so the active-listing chip leads and the verdict is strong.
+  if (summary.status === 'posted-opening') {
+    const listingChips = positiveChips.filter((chip) => chip.kind === 'active-listing');
+    const otherChips = positiveChips.filter((chip) => chip.kind !== 'active-listing');
+    const evidence = [...listingChips, ...otherChips, ...caveatChips].slice(0, 4);
+    if (evidence.length === 0) {
+      evidence.push({
+        kind: 'active-listing',
+        label: ACCESS_SIGNAL_LABELS.POSTED_OPENING,
+        detail: summary.bestNextStep || undefined,
+        strength: 'strong',
+      });
+    }
+    return {
+      verdict: 'verified-accepting',
+      confidence: summary.confidence,
+      evidence,
+    };
+  }
+
   if (summary.status === 'not-currently-available') {
     const caveat: EvidenceItem = caveatChips[0] || {
       kind: 'closed-evidence',
