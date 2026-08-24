@@ -48,7 +48,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
                 type="button"
-                className="rounded-md bg-blue-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-blue-700"
+                className="rounded-md bg-brand px-5 py-3 font-semibold text-white transition-colors hover:bg-brand-navy"
                 onClick={this.handleReload}
               >
                 Refresh page

@@ -19,6 +19,7 @@ Claude Code can auto-discover them if `.claude/skills` is symlinked to `skills/`
 | `skills/auth-security/SKILL.md` | Touching auth, sessions, CAS login, middleware, rate limits, CORS, CSRF, SSRF, env vars, or sensitive files. |
 | `skills/scrapers/SKILL.md` | Working in `server/src/scrapers/`, source scrapers, observations, materializers, confidence resolution, scrape CLI, or scraper write guards. |
 | `skills/contributing/SKILL.md` | Adding an API endpoint, a client page or route, or modifying a Mongoose schema. |
+| `skills/frontend-polish/SKILL.md` | Building or changing client UI: applying the polish, accessibility, and design-token bar. Pairs with `client/DESIGN.md`. |
 | `skills/finishing-work/SKILL.md` | Wrapping up: verification, diff review, docs maintenance, and roadmap cleanup. |
 
 ## Default Task Loop

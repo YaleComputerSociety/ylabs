@@ -29,14 +29,14 @@ const SignOutButton = () => {
       color="inherit"
       sx={{
         textTransform: 'none',
-        color: '#000000',
+        color: 'var(--yr-ink)',
         fontFamily: 'Inter',
         fontWeight: 450,
         fontSize: '14px',
         minHeight: '44px',
         '&:hover': {
           backgroundColor: 'transparent',
-          color: '#1876D1',
+          color: 'var(--yr-blue)',
         },
         ...navFocusRingSx,
       }}

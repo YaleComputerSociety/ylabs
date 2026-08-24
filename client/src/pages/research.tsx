@@ -78,15 +78,6 @@ const CURRENT_AVAILABILITY_FILTER_LABELS: Record<CurrentAvailabilityFilterValue,
 
 const FILTERED_RESULT_QUERY_LABEL = 'filtered research';
 const DEFAULT_RESEARCH_HOME_LIMIT = 24;
-const QUICK_START_PROMPTS = [
-  { label: 'Machine learning', query: 'machine learning' },
-  { label: 'Neuroscience', query: 'neuroscience' },
-  { label: 'Climate change', query: 'climate change' },
-  { label: 'Ancient DNA', query: 'ancient DNA' },
-  { label: 'Digital archives', query: 'digital archives' },
-  { label: 'Quantum materials', query: 'quantum materials' },
-];
-
 const hasStructuredFilters = (filters: ResearchSearchFilters): boolean =>
   Object.values(filters).some((value) => {
     if (Array.isArray(value)) return value.length > 0;
@@ -1684,16 +1675,14 @@ const Research = () => {
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
-          <header className="yr-panel rounded-md p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
+          <header className="yr-panel rounded-md p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
             <p className="yr-kicker mb-3">Yale Research</p>
             <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-4xl">
               Find a Yale lab that fits you.
             </h1>
             <p
               id="research-search-context"
-              className={`mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base ${
-                hasSubmittedSearch ? 'xl:hidden' : ''
-              }`}
+              className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base xl:hidden"
             >
               Search by interest, professor, course topic, or question. We&apos;ll help you
               find relevant research profiles and verified ways in when the source evidence is
@@ -1735,29 +1724,6 @@ const Research = () => {
               <p id="research-search-help" className="mt-2 text-sm text-slate-600">
                 {searchHelpText}
               </p>
-              {!hasSubmittedSearch && (
-                <div
-                  className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
-                  aria-label="Suggested research searches"
-                >
-                  <span className="yr-kicker text-[0.7rem]">Try a starting point</span>
-                  <div className="flex flex-wrap gap-2">
-                    {QUICK_START_PROMPTS.map((prompt) => (
-                      <button
-                        key={prompt.query}
-                        type="button"
-                        onClick={() => {
-                          setQuery(prompt.query);
-                          runSearch(prompt.query);
-                        }}
-                        className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                      >
-                        {prompt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </form>
 
             {hasSubmittedSearch && isWideFilterLayout && (

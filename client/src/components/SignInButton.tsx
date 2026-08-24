@@ -67,7 +67,7 @@ const SignInButton = ({ label = 'Sign in with Yale CAS' }: SignInButtonProps) =>
         fontWeight: 700,
         textTransform: 'none',
         '&:hover': {
-          backgroundColor: '#0f3473',
+          backgroundColor: 'var(--yr-navy)',
           boxShadow: 'none',
         },
         '&:focus-visible': {
