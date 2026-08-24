@@ -73,6 +73,35 @@ export function stripProfileBiographyChromeOpener(value: unknown): string {
   return text.replace(PROFILE_CHROME_OPENER_PATTERN, '').trim();
 }
 
+const LEADING_SPECIALIZATIONS_LABEL_PATTERN = /^Specializations?:\s*/i;
+const ABOUT_FIELD_LABEL_PATTERN = /\bAbout:\s*/;
+
+/**
+ * A faculty-bio page's "Specializations: <topics>. About: <bio>" form-field
+ * scaffold, scraped with the field labels still attached (#1533: Music
+ * department profiles - "Specializations: music theory. About: B.A.
+ * Stanford University... My chief research interest is in tonal theory...").
+ * The "Specializations:" content itself is a genuine topic list, not chrome
+ * to delete - only the bare label tokens are stripped, wherever "About:"
+ * lands in the string, so the surrounding prose reads naturally and a
+ * degree-list lead directly after "About:" is still reachable by
+ * stripLeadingDegreeListPrefix.
+ */
+export function stripProfileFieldLabelChrome(value: unknown): string {
+  const text = textValue(value);
+  if (!text) return '';
+  return text
+    .replace(LEADING_SPECIALIZATIONS_LABEL_PATTERN, '')
+    .replace(ABOUT_FIELD_LABEL_PATTERN, '')
+    .trim();
+}
+
+export function hasProfileFieldLabelChromeSignal(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return LEADING_SPECIALIZATIONS_LABEL_PATTERN.test(text) || ABOUT_FIELD_LABEL_PATTERN.test(text);
+}
+
 const TRAILING_PROFILE_CHROME_PATTERN =
   /\s*Last Updated on [^.]+\.\s*Departments\s*&\s*Organizations[\s\S]*$/i;
 
@@ -246,6 +275,11 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   /\bis\s+(?:currently\s+)?involved\s+with\s+(?:several|numerous|many)\s+editorial\s+and\s+advisory\s+boards\b/i,
   /\bwas\s+(?:also\s+)?the\s+general\s+editor\s+of\b/i,
   /\bhas\s+served\s+as\s+the\s+founder\s+and\s+general\s+editor\s+of\b/i,
+  // A "who we recruit" note, not a description of the research itself
+  // (#1533: faculty-research-area-francis-lee's entire fullDescription is
+  // this one sentence, and the stored shortDescription is a dangling
+  // "-Ph.D. Students, ..." fragment cut from its middle).
+  /\bvisiting\s+fellows\s+for\s+research\s+opportunities\s+and\s+career\s+advancement\b/i,
 ];
 
 export function isEducationOrCareerTimelineSentence(sentence: string): boolean {
@@ -313,7 +347,9 @@ export function repairPersonBiographyLeakedDescription({
   const originalFull = textValue(fullDescription);
   const originalShort = textValue(shortDescription);
   const dechromed = stripLeadingDegreeListPrefix(
-    stripTrailingProfileChromeFooter(stripProfileBiographyChromeOpener(originalFull)),
+    stripProfileFieldLabelChrome(
+      stripTrailingProfileChromeFooter(stripProfileBiographyChromeOpener(originalFull)),
+    ),
   );
   const sentences = protectedSentenceList(dechromed);
   const keptSentences = sentences.filter((sentence) => !isEducationOrCareerTimelineSentence(sentence));

@@ -6,6 +6,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   hasLeadingDegreeListSignal,
+  hasProfileFieldLabelChromeSignal,
   repairPersonBiographyLeakedDescription,
 } from '../utils/researchEntityBiographyDescriptionRepair';
 import { describesResearchFocus } from '../utils/researchEntityDescriptionQuality';
@@ -30,6 +31,7 @@ function isHumanitiesCvBioCandidate(entity: Record<string, any>): boolean {
   const full = typeof entity.fullDescription === 'string' ? entity.fullDescription : '';
   if (!full) return false;
   if (hasLeadingDegreeListSignal(full)) return true;
+  if (hasProfileFieldLabelChromeSignal(full)) return true;
 
   const isIndividualOrLab =
     entity.kind === 'individual' || INDIVIDUAL_OR_LAB_ENTITY_TYPES.has(String(entity.entityType || ''));
