@@ -16,6 +16,7 @@ import { Fellowship } from '../models/fellowship';
 import {
   buildResearchAreasCardSummary,
   fullDescriptionQuality,
+  isFullDescriptionRestatementOfShortDescription,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
@@ -2585,8 +2586,14 @@ export async function materializeEntity(
   }
   if (isResearchEntityObservationType(entityType)) {
     if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
+      const currentShortForFullDistinctness = textValue(
+        set.shortDescription ?? entityDoc?.shortDescription,
+      );
       const winnerFull = textValue(set.fullDescription);
-      const winnerFullUseful = !!winnerFull && fullDescriptionQuality(winnerFull).isUseful;
+      const winnerFullUseful =
+        !!winnerFull &&
+        fullDescriptionQuality(winnerFull).isUseful &&
+        !isFullDescriptionRestatementOfShortDescription(winnerFull, currentShortForFullDistinctness);
       if (!winnerFullUseful) {
         const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
           manuallyLockedFields,
@@ -2601,7 +2608,16 @@ export async function materializeEntity(
             sourceEntityIdentity,
           );
           const materializedText = textValue(materialized);
-          if (!materializedText || !fullDescriptionQuality(materializedText).isUseful) continue;
+          if (
+            !materializedText ||
+            !fullDescriptionQuality(materializedText).isUseful ||
+            isFullDescriptionRestatementOfShortDescription(
+              materializedText,
+              currentShortForFullDistinctness,
+            )
+          ) {
+            continue;
+          }
           if (materialized !== set.fullDescription) {
             set.fullDescription = materialized;
             confidenceByField.fullDescription = candidate.confidence;
@@ -2615,6 +2631,14 @@ export async function materializeEntity(
           }
           break;
         }
+      }
+      const finalFullText = textValue(set.fullDescription);
+      if (
+        finalFullText &&
+        isFullDescriptionRestatementOfShortDescription(finalFullText, currentShortForFullDistinctness)
+      ) {
+        set.fullDescription = '';
+        fieldsWritten++;
       }
     }
     const fullDescription =

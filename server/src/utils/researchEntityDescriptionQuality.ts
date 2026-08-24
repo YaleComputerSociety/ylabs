@@ -1020,6 +1020,78 @@ export function fullDescriptionQuality(
   };
 }
 
+const FULL_DESCRIPTION_LEAD_CLAUSE_RE =
+  /^(?:(?:the|in\s+the)\s+(?:[\p{L}][\p{L}\s.'’-]{0,60}?\s+)?(?:lab|laboratory|group)\b[,:]?\s*(?:we\s+)?|our\s+(?:research|lab|laboratory|group)\s+|we\s+)/iu;
+
+const stripFullDescriptionLeadClause = (value: string): string =>
+  value.replace(FULL_DESCRIPTION_LEAD_CLAUSE_RE, '');
+
+const normalizeForRestatementComparison = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const restatementTokenSet = (value: string): Set<string> =>
+  new Set(value.split(/\s+/).filter(Boolean));
+
+function restatementJaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  let intersection = 0;
+  for (const token of a) {
+    if (b.has(token)) intersection += 1;
+  }
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * A fullDescription that is a near-verbatim restatement of the same entity's
+ * shortDescription - most commonly the identical sentence with a "The <Name>
+ * Lab" / "Our research" / "We" / "In the <Name> lab" clause prepended, or
+ * byte-identical outright - adds no information on the detail page beyond
+ * what the card already showed (#1721). Strips a leading subject clause from
+ * the full, then accepts an exact match after normalization, a long shared
+ * prefix with little added length (catches a lead-clause-only prepend), or -
+ * for a full under 260 chars, where the difference is more likely a wording
+ * paraphrase than a clause prepend - high word-level overlap.
+ */
+export function isFullDescriptionRestatementOfShortDescription(
+  fullValue: unknown,
+  shortValue: unknown,
+): boolean {
+  const full = textValue(fullValue);
+  const short = textValue(shortValue);
+  if (!full || !short) return false;
+  if (full.toLowerCase() === short.toLowerCase()) return true;
+
+  const normalizedFull = normalizeForRestatementComparison(stripFullDescriptionLeadClause(full));
+  const normalizedShort = normalizeForRestatementComparison(short);
+  if (!normalizedFull || !normalizedShort) return false;
+  if (normalizedFull === normalizedShort) return true;
+
+  const [shorter, longer] =
+    normalizedShort.length <= normalizedFull.length
+      ? [normalizedShort, normalizedFull]
+      : [normalizedFull, normalizedShort];
+  if (
+    shorter.length >= 80 &&
+    longer.startsWith(shorter) &&
+    (longer.length - shorter.length < 45 || longer.length < shorter.length * 1.45)
+  ) {
+    return true;
+  }
+
+  if (full.length < 260) {
+    return (
+      restatementJaccardSimilarity(
+        restatementTokenSet(normalizedFull),
+        restatementTokenSet(normalizedShort),
+      ) >= 0.72
+    );
+  }
+  return false;
+}
+
 export function shortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
