@@ -112,6 +112,13 @@ const hasRecruitmentBoilerplate = (value: string): boolean =>
   ) ||
   /\bwelcome to (?:the )?.{0,80}\bwebsite\b/i.test(value);
 
+const isSolicitationCallToActionShort = (value: string): boolean =>
+  /\bif you(?:'re| are)\s+interested in participating\b/i.test(value) ||
+  /\bif you(?:'re| are)\s+interested in\b[^.!?]{0,140}\b(?:please\s+(?:provide|send|submit|view|apply|contact|email|reach out)|send (?:your |an )?(?:inquiry|application|cv|cover letter)|apply\b)/i.test(
+    value,
+  ) ||
+  /\bplease provide the following\b[^.!?]{0,80}\b(?:cover letter|curriculum vitae|\bcv\b)/i.test(value);
+
 const isConsentBoilerplateSentence = (sentence: string): boolean =>
   /\bwe use cookies\b/i.test(sentence) ||
   (/\bcookies?\b/i.test(sentence) &&
@@ -809,6 +816,7 @@ export function shortDescriptionQuality(
   if (text && isResearchAreaTemplateLeakText(text)) flags.push('broken-template');
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
+  if (text && isSolicitationCallToActionShort(text)) flags.push('recruitment-boilerplate');
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (text && isStudiesTemplateGlueMalformed(text)) flags.push('malformed-generated-text');

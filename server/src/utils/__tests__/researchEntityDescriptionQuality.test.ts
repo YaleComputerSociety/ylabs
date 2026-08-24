@@ -103,6 +103,41 @@ describe('fullDescriptionQuality', () => {
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
+  it('rejects a study-participation solicitation call to action as a card short', () => {
+    const shortDescription =
+      'If you are interested in participating in one of our studies please view the current ongoing studies on our website for further information.';
+    const fullDescription =
+      'The lab studies the neurobiology of post-traumatic stress disorder and its treatment in humans.';
+
+    const quality = shortDescriptionQuality(shortDescription, fullDescription);
+
+    expect(quality.flags).toContain('recruitment-boilerplate');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects a postdoc-application solicitation call to action as a card short', () => {
+    const shortDescription =
+      'If you are interested in a Postdoctoral position in the lab, please send your inquiry with a cover letter and Curriculum Vitae.';
+    const fullDescription =
+      'The lab investigates immune regulation and cancer immunotherapy mechanisms.';
+
+    const quality = shortDescriptionQuality(shortDescription, fullDescription);
+
+    expect(quality.flags).toContain('recruitment-boilerplate');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('keeps a genuine research-focus short that merely mentions student interest', () => {
+    const shortDescription =
+      'Studies how interested undergraduates can contribute to peripheral pain and itch neuroscience experiments.';
+    const fullDescription =
+      'The lab uses single-cell electrophysiology to study the peripheral neural mechanisms of pain and itch.';
+
+    expect(shortDescriptionQuality(shortDescription, fullDescription).flags).not.toContain(
+      'recruitment-boilerplate',
+    );
+  });
+
   it('does not split a decimal number into a fragment card', () => {
     const fullDescription =
       'Major surgery is a common event in the lives of community-living older persons, with a 5-year cumulative incidence of 13.8%, representing nearly 5 million persons aged 65 years or older in the US. This value will increase substantially in the coming years.';
