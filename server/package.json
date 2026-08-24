@@ -32,6 +32,7 @@
     "research-entity:purge-same-name-area-grafts": "tsx src/scripts/purgeSameNameCollisionAreaGrafts.ts",
     "research-entity:rematerialize": "tsx src/scripts/rematerializeResearchEntities.ts",
     "research-entity:retire-foreign-lead-grafts": "tsx src/scripts/retireForeignLeadGrafts.ts",
+    "research-entity:consolidate-faculty-type": "tsx src/scripts/consolidateFacultyResearchEntityType.ts",
     "users:dedupe-by-identity": "tsx src/scripts/dedupeUsersByIdentity.ts",
     "users:email-hygiene": "tsx src/scripts/userEmailHygiene.ts",
     "users:repair-mismatched-emails": "tsx src/scripts/repairMismatchedPersonEmails.ts",

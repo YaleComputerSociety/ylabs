@@ -10,7 +10,8 @@ describe('research access models', () => {
   it('maps legacy ResearchGroup kind values to target entity types', () => {
     expect(mapResearchGroupKindToEntityType('lab')).toBe('LAB');
     expect(mapResearchGroupKindToEntityType('center')).toBe('CENTER');
-    expect(mapResearchGroupKindToEntityType('individual')).toBe('INDIVIDUAL_RESEARCH');
+    expect(mapResearchGroupKindToEntityType('individual')).toBe('FACULTY_RESEARCH_AREA');
+    expect(mapResearchGroupKindToEntityType('solo')).toBe('FACULTY_RESEARCH_AREA');
     expect(mapResearchGroupKindToEntityType('unknown')).toBe('LAB');
   });
 
