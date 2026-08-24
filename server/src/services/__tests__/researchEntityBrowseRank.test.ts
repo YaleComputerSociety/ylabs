@@ -156,6 +156,77 @@ describe('computeResearchEntityBrowseRank', () => {
     expect(__testing.entityTypeRankAdjustment({ kind: 'lab' }, true)).toBe(0);
   });
 
+  describe('shape-fair access baseline for structurally unobservable shapes', () => {
+    it('lifts a signal-less faculty-directory home off the REACH_OUT floor', () => {
+      const facultyArea = computeResearchEntityBrowseRank({
+        entity: { ...completeEntity(), entityType: 'FACULTY_RESEARCH_AREA' },
+        leadMembers: attachedLead(),
+        accessSignalTypes: [],
+      });
+      const weakLab = computeResearchEntityBrowseRank({
+        entity: { ...completeEntity(), entityType: 'LAB' },
+        leadMembers: attachedLead(),
+        accessSignalTypes: ['REACH_OUT_PLAUSIBLE'],
+      });
+      expect(facultyArea).toBeGreaterThan(weakLab);
+    });
+
+    it('applies the neutral baseline to both unobservable shapes', () => {
+      for (const entityType of __testing.ACCESS_UNOBSERVABLE_ENTITY_TYPES) {
+        expect(__testing.accessContribution([], entityType)).toBe(
+          __testing.NEUTRAL_ACCESS_BASELINE,
+        );
+        expect(__testing.accessContribution(['REACH_OUT_PLAUSIBLE'], entityType)).toBe(
+          __testing.NEUTRAL_ACCESS_BASELINE,
+        );
+      }
+    });
+
+    it('still lets a genuinely strong observed signal outrank the baseline', () => {
+      expect(__testing.accessContribution(['CURRENT_UNDERGRADS'], 'INDIVIDUAL_RESEARCH')).toBe(
+        __testing.ACCESS_SIGNAL_POINTS.CURRENT_UNDERGRADS,
+      );
+      const strongLab = computeResearchEntityBrowseRank({
+        entity: { ...completeEntity(), entityType: 'LAB' },
+        leadMembers: attachedLead(),
+        accessSignalTypes: ['CURRENT_UNDERGRADS'],
+      });
+      const neutralFaculty = computeResearchEntityBrowseRank({
+        entity: { ...completeEntity(), entityType: 'FACULTY_RESEARCH_AREA' },
+        leadMembers: attachedLead(),
+        accessSignalTypes: [],
+      });
+      expect(strongLab).toBeGreaterThan(neutralFaculty);
+    });
+
+    it('honors an explicit not-available signal on an unobservable shape', () => {
+      expect(
+        __testing.accessContribution(['NOT_CURRENTLY_AVAILABLE'], 'FACULTY_RESEARCH_AREA'),
+      ).toBe(__testing.ACCESS_SIGNAL_POINTS.NOT_CURRENTLY_AVAILABLE);
+    });
+
+    it('does not lift observable lab shapes off their raw access points', () => {
+      expect(__testing.accessContribution([], 'LAB')).toBe(0);
+      expect(__testing.accessContribution(['REACH_OUT_PLAUSIBLE'], 'LAB')).toBe(
+        __testing.ACCESS_SIGNAL_POINTS.REACH_OUT_PLAUSIBLE,
+      );
+    });
+
+    it('lets completeness order two signal-less faculty homes', () => {
+      const complete = computeResearchEntityBrowseRank({
+        entity: { ...completeEntity(), entityType: 'FACULTY_RESEARCH_AREA' },
+        leadMembers: attachedLead(),
+        accessSignalTypes: [],
+      });
+      const thin = computeResearchEntityBrowseRank({
+        entity: { fullDescription: '', entityType: 'FACULTY_RESEARCH_AREA' },
+        leadMembers: [],
+        accessSignalTypes: [],
+      });
+      expect(complete).toBeGreaterThan(thin);
+    });
+  });
+
   it('keeps a strong umbrella center above a bare lab despite the demotion', () => {
     const strongCenter = computeResearchEntityBrowseRank({
       entity: { ...completeEntity(), entityType: 'CENTER' },
