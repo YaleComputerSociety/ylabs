@@ -293,10 +293,12 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale Institute for Global Health',
     department: 'Affiliated faculty',
     rendering: 'static',
-    status: 'gap',
+    status: 'covered',
+    coveredBy: ['centers-institutes-index'],
     studentImpactTier: 3,
     approxFacultyCount: 210,
-    notes: 'Affiliate overlap with Medicine/Public Health/Nursing; low net-new headcount.',
+    notes:
+      'Covered via the centers-institutes-index "yigh" config row (#1334): the page renders four static sections (Medicine, Nursing, Public Health, University), each a flat `/yigh/profile/<slug>/` list styled like the Yale Cancer Center directory, so it reuses the same Last-First-flip extraction shape. Affiliate overlap with Medicine/Public Health/Nursing; low net-new headcount.',
   },
   {
     url: 'https://yibs.yale.edu/people/faculty-affiliates',
@@ -708,11 +710,13 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of Architecture',
     department: 'Faculty',
     rendering: 'static',
-    status: 'partial',
+    status: 'covered',
     coveredBy: ['dept-faculty-roster'],
     studentImpactTier: 6,
     approxFacultyCount: 90,
     paginated: true,
+    notes:
+      'The "infinite load" grid degrades to server-rendered `?page=N` pages (#1334): the same Drupal view that renders the first batch of cards honors ?page=N for the rest, so the dept-faculty-roster "architecture" config now paginates the whole ~90-person roster statically instead of the first-batch-only partial it originally landed as. Names are not in the card markup (only the profile-URL slug); each faculty member\'s own /faculty/<id>-<slug> profile page is enriched at write time for the readable name and cited as the per-faculty source.',
   },
   {
     url: 'https://www.art.yale.edu/about/people/faculty-and-staff',
