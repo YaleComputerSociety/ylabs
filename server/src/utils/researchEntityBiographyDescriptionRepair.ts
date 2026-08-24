@@ -44,7 +44,10 @@ function protectAbbreviations(value: string): string {
     .replace(/\b(Dr|Prof|Mr|Mrs|Ms)\./g, `$1${INITIAL_DOT_TOKEN}`)
     .replace(/\b(?:[A-Z]\.){2,}/g, (match) => match.split('.').join(INITIAL_DOT_TOKEN))
     .replace(/\b([A-Z])\.(?=\s*[A-Z][A-Za-z.'-]*)/g, `$1${INITIAL_DOT_TOKEN}`)
-    .replace(/\.(?=[A-Za-z])/g, INITIAL_DOT_TOKEN);
+    // A genuine sentence-ending period is always followed by whitespace or
+    // end-of-string; anything else (glued abbreviation, decimal, a period
+    // before a closing bracket/quote) is not a sentence boundary.
+    .replace(/\.(?!\s|$)/g, INITIAL_DOT_TOKEN);
 }
 
 export function protectedSentenceList(value: string): string[] {
@@ -100,16 +103,22 @@ export function stripTrailingProfileChromeFooter(value: unknown): string {
 const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   /\bwas born in\b/i,
   /\bmoved,?\s+as a teenager\b/i,
-  /\b(?:received|earned|obtained)\s+(?:his|her|their)\b[^.!?]{0,80}\b(?:degree|Ph\.?D\.?|M\.?D\.?|MPH|MBA|MSc|M\.?S\.?|M\.?A\.?|B\.?S\.?|B\.?A\.?)\b/i,
+  /\b(?:received|earned|obtained)\s+(?:the|his|her|their|an?)\b[^.!?]{0,80}\b(?:degrees?|Ph\.?D\.?|M\.?D\.?|MPH|MBA|MSc|M\.?S\.?|M\.?A\.?|B\.?S\.?|B\.?A\.?)\b/i,
   /\b(?:completed|did)\s+(?:his|her|their)\s+(?:graduate|undergraduate|postdoctoral|clinical|doctoral)\b/i,
   /\bdid\s+(?:his|her|their)\s+(?:ph\.?d|doctorate|postdoctoral)\b/i,
   /\bpost-?doc(?:toral)?\s+(?:work|training|fellowship|research)\s+(?:with|at|on)\b/i,
   /\bunder\s+the\s+(?:supervision|guidance|direction|mentorship)\s+of\b/i,
-  /\bjoined\s+(?:the\s+)?Yale\b[^.!?]{0,40}\bfaculty\b/i,
-  /\bjoined\s+the\s+Yale\s+Faculty\b/i,
+  // Any institution's faculty/staff, not just Yale's - a CV career-timeline
+  // fact regardless of which employer is named (#1791: Holly Rushmeier's bio
+  // lists Georgia Tech, NIST, and IBM in the same pattern before ever joining
+  // Yale).
+  /\bjoined\s+(?:the\s+)?[\p{L}][\p{L} .,&'-]{0,80}?\b(?:faculty|staff)\b/iu,
+  /\bwas\s+a\s+research\s+staff\s+member\b/i,
   /\b(?:before|prior\s+to)\s+joining\b/i,
   /\bwas\s+appointed\s+(?:as\s+)?(?:an?\s+)?(?:assistant|associate|full)?\s*professor\b/i,
   /\bserved\s+as\s+(?:Senior|Associate|Assistant|Director|Dean|Chief|Section\s+Chief)\b/i,
+  /\b(?:served|serves)\s+as\s+(?:the\s+)?[\p{L} .,'-]{0,40}?\b(?:chair|co-chair|editor-in-chief)\b/iu,
+  /\bwas\s+Editor-in-Chief\s+of\b/i,
   /\bmoved\s+to\s+[\p{L} .-]+,?\s+(?:with\s+(?:his|her|their)\s+family\s+)?in\s+\d{4}\b/iu,
   /^(?:Next,|Subsequently,|After completing\b|In \d{4},\s+(?:he|she|they)\b)/i,
 ];
