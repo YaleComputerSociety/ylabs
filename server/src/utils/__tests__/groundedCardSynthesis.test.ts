@@ -222,6 +222,46 @@ describe('resolveServedShortDescription entityType-aware fallback (#1616)', () =
   });
 });
 
+describe('resolveServedShortDescription bare researchArea-chip-echo residual (#1680)', () => {
+  const richDistinctFull =
+    'Stephen Darwall is the Andrew Downey Orrick Professor of Philosophy at Yale University and the John Dewey Distinguished University Professor Emeritus at the University of Michigan. He has taught in the Department of Philosophy at Yale University. His research interests include moral philosophy, particularly in the areas of second-fixtureal ethics, moral reasoning, and the relationship between morality and authority.';
+
+  it('replaces a shortDescription that only restates the researchArea chips with a full-derived one-liner', () => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.',
+      fullDescription: richDistinctFull,
+      researchAreas: ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'],
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(resolved).toBe(deriveShortDescriptionFromFullDescription(richDistinctFull));
+    expect(resolved).not.toBe('Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.');
+  });
+
+  it('keeps a fluent list-shaped short whose items are not literally the entity\'s researchAreas', () => {
+    const full =
+      'Ray C. Fair is the John M. Musser Professor of Economics at Yale University. His main research is in macroeconometrics, but he has also done work in the areas of finance, voting behavior, and aging in sports.';
+    const short = 'Studies econometrics, financial economics, international finance, and international trade.';
+    const resolved = resolveServedShortDescription({
+      shortDescription: short,
+      fullDescription: full,
+      researchAreas: ['Macroeconometrics'],
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(resolved).toBe(short);
+  });
+
+  it('keeps a chip-echo short when there is no richer full to compress instead', () => {
+    const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
+    const resolved = resolveServedShortDescription({
+      shortDescription: short,
+      fullDescription: 'A short bio.',
+      researchAreas: ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'],
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(resolved).toBe(short);
+  });
+});
+
 describe('resolveGroundedCardDescription program path (#1425)', () => {
   const PROGRAM_FULL =
     'Yale Economics summer research opportunities that match undergraduate students with faculty research projects.';

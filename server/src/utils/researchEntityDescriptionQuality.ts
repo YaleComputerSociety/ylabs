@@ -425,6 +425,51 @@ function isUngroundedSingleClauseStudiesShort(text: string, full: string): boole
   return tokens.every((token) => !normalizedFull.includes(token));
 }
 
+const RESEARCH_AREA_CHIP_ECHO_MIN_FULL_LENGTH = 220;
+
+const normalizeResearchAreaChipText = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+function isBareResearchAreaChipEnumeration(fields: string[], researchAreas: unknown[]): boolean {
+  if (fields.length < 3) return false;
+  const areaSet = new Set(
+    researchAreas.map((area) => normalizeResearchAreaChipText(textValue(area))).filter(Boolean),
+  );
+  if (areaSet.size === 0) return false;
+  return fields.every((field) => areaSet.has(normalizeResearchAreaChipText(field)));
+}
+
+/**
+ * The #1673-excluded residual (#1680): a LAB/FACULTY_RESEARCH_AREA short that
+ * is nothing but its own researchArea chips restated in sentence form
+ * (`Studies <Area>, <Area>, and <Area>.`) is faithful to a richer
+ * fullDescription - so #1616's ungrounded-topic gate above correctly leaves it
+ * `student_ready` - but it still wastes the card headline on a redundant
+ * re-listing of the chip row already shown beside it, when a genuinely
+ * distinct, compressible fullDescription is available. Detected by literal
+ * membership in the entity's own `researchAreas` array (not a wording/
+ * Title-Case heuristic) so a fluent short that merely resembles a list - e.g.
+ * "Studies econometrics, financial economics, ..." over researchAreas that
+ * don't literally contain those exact strings - is never mistaken for a chip
+ * echo and swapped out.
+ */
+export function isReplaceableResearchAreaChipEchoShort(
+  text: string,
+  full: string,
+  researchAreas: unknown,
+  entityType: unknown,
+): boolean {
+  if (!isTopicLabelListEligibleEntityType(entityType)) return false;
+  const fields = parseLabelListFields(text);
+  if (!fields) return false;
+  const areas = Array.isArray(researchAreas) ? researchAreas : [];
+  if (!isBareResearchAreaChipEnumeration(fields, areas)) return false;
+  if (!full || text.toLowerCase() === full.toLowerCase() || LABEL_LIST_SHORT_PATTERN.test(full)) {
+    return false;
+  }
+  return full.length >= RESEARCH_AREA_CHIP_ECHO_MIN_FULL_LENGTH;
+}
+
 const VACUOUS_FOCUS_HEAD_NOUNS = [
   'field',
   'fields',

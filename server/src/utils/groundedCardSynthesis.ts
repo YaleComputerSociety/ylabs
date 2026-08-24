@@ -5,6 +5,7 @@ import {
   deriveProgramCardShortDescription,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  isReplaceableResearchAreaChipEchoShort,
   isVacuousGenericFocusSummary,
   shortDescriptionQuality,
 } from './researchEntityDescriptionQuality';
@@ -186,12 +187,33 @@ export interface ResolveServedShortDescriptionInput {
  * `entityType` is threaded into the derived-candidate quality check only, so
  * the `LAB`/`FACULTY_RESEARCH_AREA` bare topic-label-list guard (#1616) also
  * applies to a candidate synthesized here, not just to an already-stored one.
+ * A non-blank `cleaned` short is also swapped for a fresh full-derived one
+ * when it is nothing but the entity's own researchArea chips restated as a
+ * sentence and a genuinely richer full exists to compress instead (#1680):
+ * that short survives #1616's ungrounded-topic gate (it is faithful to the
+ * full), but it still wastes the card headline on a redundant re-listing of
+ * the chip row already shown beside it.
  */
 export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
   const full = textValue(input.fullDescription);
   const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
   const cleaned = sanitizeResearchEntityShortDescription(textValue(input.shortDescription));
-  if (cleaned) return cleaned;
+  if (cleaned) {
+    if (isReplaceableResearchAreaChipEchoShort(cleaned, full, researchAreas, input.entityType)) {
+      const derivedFromChipEcho = sanitizeResearchEntityShortDescription(
+        deriveShortDescriptionFromFullDescription(full),
+      );
+      if (
+        derivedFromChipEcho &&
+        shortDescriptionQuality(derivedFromChipEcho, full, researchAreas, {
+          entityType: input.entityType,
+        }).isUseful
+      ) {
+        return derivedFromChipEcho;
+      }
+    }
+    return cleaned;
+  }
 
   const derived = sanitizeResearchEntityShortDescription(deriveShortDescriptionFromFullDescription(full));
   if (
