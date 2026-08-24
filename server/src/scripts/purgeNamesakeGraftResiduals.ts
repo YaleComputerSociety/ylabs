@@ -21,7 +21,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import mongoose, { type AnyBulkWriteOperation } from 'mongoose';
+import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { syncEntities } from '../services/meiliSyncService';
@@ -179,6 +179,47 @@ const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
     removeAreas: ['Islamic Law and Civilization'],
     clearShortDescriptionIfEquals: 'Studies Islamic Law and Civilization.',
   },
+  {
+    // Grafted areas laundered into a fluent "The X Lab focuses on..."
+    // description (soft-robotics PI served an Optics/Photonics/Semiconductor
+    // Lasers narrative); the entity's own recentGrants (2024 Waterman Award,
+    // granular metamaterials) are unambiguously soft robotics/materials science.
+    entityId: '6a64722718a92957f5bec46d',
+    slug: 'nsf-pi-67d8922b50621bcef4348f57',
+    removeAreas: ['Optics', 'Photonics'],
+    clearFullDescriptionIfEquals:
+      'The Rebecca Kramer-Bottiglio Lab focuses on research in Optical Network Technologies, Photonic and Optical Devices, and Semiconductor Lasers and Optical Devices. The lab investigates the development and application of these technologies to advance the field of optics and photonics.',
+    clearShortDescriptionIfEquals:
+      'The lab studies Optical Network Technologies and Photonic Devices.',
+  },
+  {
+    // Disease-ecology lab (Colin Carlson, VERENA host-virus network per its own
+    // recentGrants/sourceUrls) carrying an unrelated geochemistry graft cluster.
+    // fullDescription is already correct, so only the areas need stripping.
+    entityId: '6a057f10fab31be25f983b2a',
+    slug: 'nsf-pi-67d891de50621bcef4347f97',
+    removeAreas: [
+      'Geological and Geochemical Analysis',
+      'Calibration and Measurement Techniques',
+      'Geochemistry and Geologic Mapping',
+    ],
+  },
+  {
+    // Synthetic organic chemist (NIGMS C-H functionalization grants) fully
+    // relabeled as a parasitic-disease/malaria lab in both areas and the
+    // areas-derived "Research fields include..." description template.
+    entityId: '6a057df113fc60d57ec2a3a3',
+    slug: 'nih-pi-jonathan-ellman',
+    removeAreas: [
+      'Parasitic Diseases Research and Treatment',
+      'Malaria Research and Control',
+      'Parasites and Host Interactions',
+    ],
+    clearFullDescriptionIfEquals:
+      'Research fields include Parasitic Diseases Research and Treatment, Malaria Research and Control, and Parasites and Host Interactions.',
+    clearShortDescriptionIfEquals:
+      'Research fields include Parasitic Diseases Research and Treatment, Malaria Research and Control, and Parasites and Host Interactions.',
+  },
 ];
 
 interface CliOptions {
@@ -253,7 +294,7 @@ async function main() {
   };
 
   if (options.apply && changedPlans.length > 0) {
-    const operations: AnyBulkWriteOperation[] = changedPlans.map((plan) => {
+    const operations = changedPlans.map((plan) => {
       const set: Record<string, unknown> = {};
       const unset: Record<string, unknown> = {};
       if (!plan.areasAfter.every((area, index) => area === plan.areasBefore[index]) ||
@@ -273,7 +314,11 @@ async function main() {
         },
       };
     });
-    await ResearchEntity.bulkWrite(operations, { ordered: false });
+    // `studentDecisionExplanation` is no longer declared on the ResearchEntity
+    // Mongoose schema (retired #437/#440), so `ResearchEntity.bulkWrite` would
+    // silently strip an $unset on it under strict-mode casting. Write through
+    // the raw driver collection instead so the unset actually reaches Mongo.
+    await ResearchEntity.collection.bulkWrite(operations, { ordered: false });
 
     const changedIds = changedPlans.map((plan) => new mongoose.Types.ObjectId(plan.entityId));
     const fresh = await ResearchEntity.find({ _id: { $in: changedIds } }).lean();
