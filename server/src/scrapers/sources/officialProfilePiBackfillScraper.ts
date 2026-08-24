@@ -1559,11 +1559,23 @@ function nameMatchesEntity(displayName: string, entity: Record<string, any>): bo
  * grafting onto an unrelated non-medical entity (issue #585), and an
  * engineering professor's engineering.yale.edu profile grafting onto an
  * unrelated medical-school entity that merely shares a surname (issue #1290).
+ * The arts/professional-school hosts below (issue #1407/#1413) are the same
+ * single-discipline set `personProfileEntityMatch.ts`'s
+ * `CONTRADICTION_SOURCE_SUBDOMAINS` already treats as never hosting
+ * cross-appointed researchers, so a guessed match there is just as reliably a
+ * same-name-different-person collision as the medicine/engineering case.
  */
 const SINGLE_DISCIPLINE_PROFILE_HOST_TEXT: ReadonlyMap<string, RegExp> = new Map([
   ['medicine.yale.edu', /\b(?:medicine|medical|health|nursing|hospital)\b/i],
   ['ysph.yale.edu', /\b(?:medicine|medical|health|nursing|hospital)\b/i],
   ['engineering.yale.edu', /\b(?:engineering|applied science)\b/i],
+  ['som.yale.edu', /\b(?:management|business)\b/i],
+  ['law.yale.edu', /\blaw\b/i],
+  ['divinity.yale.edu', /\bdivinity\b/i],
+  ['drama.yale.edu', /\bdrama\b/i],
+  ['architecture.yale.edu', /\barchitecture\b/i],
+  ['art.yale.edu', /\bart\b/i],
+  ['music.yale.edu', /\bmusic\b/i],
 ]);
 
 function singleDisciplineProfileHostText(url: string): RegExp | undefined {

@@ -259,6 +259,56 @@ export function sourceUrlSchoolContradictsEntity(
   return !entitySchools.has(urlSchool);
 }
 
+// medicine.yale.edu, ysph.yale.edu, and seas.yale.edu are excluded from
+// CONTRADICTION_SOURCE_SUBDOMAINS because they legitimately host cross-appointed
+// faculty whose primary school is elsewhere, so a page there must never be a hard
+// contradiction. But that same tolerance is what let an exact full-name homonym
+// through in issue #1413 (a CS professor's medicine.yale.edu namesake, and the
+// mirror-image case of a medical professor's seas.yale.edu namesake): a full
+// given+family name match at one of these hosts is treated as strong identity
+// evidence even though it is exactly the shape a same-name-different-person
+// collision takes. Requiring extra corroboration only in that narrow shape
+// (full name match, tolerant host, entity's own school known and different)
+// closes the gap without reintroducing a hard, one-directional rejection.
+const TOLERANT_DIVERGENT_SCHOOL_SUBDOMAINS: ReadonlyMap<string, string> = new Map([
+  ['medicine', 'medicine'],
+  ['ysph', 'public-health'],
+  ['publichealth', 'public-health'],
+  ['seas', 'engineering'],
+]);
+
+function toleratedSchoolTokenFromUrl(value: unknown): string | null {
+  const urlText = textValue(value);
+  if (!urlText) return null;
+  let hostname: string;
+  try {
+    hostname = new URL(urlText).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)yale\.edu$/i.test(hostname)) return null;
+  const label = hostname.replace(/\.yale\.edu$/i, '').split('.').filter(Boolean).at(-1) || '';
+  return TOLERANT_DIVERGENT_SCHOOL_SUBDOMAINS.get(label) || null;
+}
+
+/**
+ * Whether a source URL comes from a cross-appointment-tolerant Yale school host
+ * whose implied school nonetheless diverges from the entity's own recorded,
+ * known school. Unlike `sourceUrlSchoolContradictsEntity`, this is deliberately
+ * a soft signal (used only to require corroboration, never to hard-reject) so a
+ * genuinely cross-appointed person is never blocked outright.
+ */
+export function sourceUrlToleratedSchoolDivergesFromEntity(
+  value: unknown,
+  entity: ResearchEntityIdentity,
+): boolean {
+  const urlSchool = toleratedSchoolTokenFromUrl(value);
+  if (!urlSchool) return false;
+  const entitySchools = yaleSchoolTokensFromEntity(entity);
+  if (entitySchools.size === 0) return false;
+  return !entitySchools.has(urlSchool);
+}
+
 function normalizeUrlForCompare(value: string): string {
   return value.trim().toLowerCase().replace(/\/+$/, '');
 }
@@ -302,12 +352,19 @@ function entityProseNameTokens(entity: ResearchEntityIdentity): Set<string> {
  * names the same person, or the same person appears on two or more of the entity's
  * other recorded `sourceUrls`.
  */
-function entityCorroboratesPersonProfile(
+/**
+ * How many of an entity's OTHER recorded `sourceUrls` are themselves name-shaped
+ * Yale person pages naming the same full person as `urlTokens`, excluding the
+ * candidate URL itself. Deliberately independent of the entity's own prose: a
+ * full-name-match entity's `fullDescription` trivially names its own person by
+ * construction, so counting prose here would corroborate a same-name graft as
+ * readily as a genuine match.
+ */
+function independentCorroboratingSourcePageCount(
   urlTokens: string[],
   value: unknown,
   entity: ResearchEntityIdentity,
-): boolean {
-  if (distinctTokensPresent(urlTokens, entityProseNameTokens(entity)) >= 2) return true;
+): number {
   const sourceUrls = Array.isArray(entity.sourceUrls)
     ? entity.sourceUrls.map(textValue).filter(Boolean)
     : [];
@@ -320,7 +377,16 @@ function entityCorroboratesPersonProfile(
       corroboratingPages += 1;
     }
   }
-  return corroboratingPages >= 2;
+  return corroboratingPages;
+}
+
+function entityCorroboratesPersonProfile(
+  urlTokens: string[],
+  value: unknown,
+  entity: ResearchEntityIdentity,
+): boolean {
+  if (distinctTokensPresent(urlTokens, entityProseNameTokens(entity)) >= 2) return true;
+  return independentCorroboratingSourcePageCount(urlTokens, value, entity) >= 2;
 }
 
 /**
@@ -342,7 +408,12 @@ function entityCorroboratesPersonProfile(
  * identity/dedupe resolution. A URL whose Yale school subdomain contradicts the
  * entity's own recorded school is always rejected first, so an exact full-name
  * homonym at a different Yale school (issue #1045) is ruled out even when every
- * name token matches.
+ * name token matches. An exact full-name match (given name and family name both
+ * overlap) at a cross-appointment-tolerant host (medicine, public health,
+ * engineering) whose implied school diverges from the entity's own recorded
+ * school still requires the same corroboration as a no-token-match, so the
+ * same-name-different-person collision those tolerant hosts otherwise let
+ * through (issue #1413) is caught symmetrically in either direction.
  */
 export function personProfileSourceMatchesEntity(
   value: unknown,
@@ -353,12 +424,21 @@ export function personProfileSourceMatchesEntity(
   if (!urlTokens) return true;
   const identityTokens = researchEntityIdentityTokens(entity);
   if (identityTokens.length === 0) return true;
+  const givenNameToken = urlTokens[0];
   const familyNameTokens = urlTokens.slice(1);
-  if (
-    familyNameTokens.some((urlToken) =>
-      identityTokens.some((identityToken) => tokensOverlap(urlToken, identityToken)),
-    )
-  ) {
+  const familyNameMatches = familyNameTokens.some((urlToken) =>
+    identityTokens.some((identityToken) => tokensOverlap(urlToken, identityToken)),
+  );
+  if (familyNameMatches) {
+    const givenNameAlsoMatches = identityTokens.some((identityToken) =>
+      tokensOverlap(givenNameToken, identityToken),
+    );
+    if (givenNameAlsoMatches && sourceUrlToleratedSchoolDivergesFromEntity(value, entity)) {
+      // The entity's own prose trivially names itself (it IS this person's page),
+      // so prose can never distinguish this profile from a same-full-name
+      // homonym at a different school; only an independent second page counts.
+      return independentCorroboratingSourcePageCount(urlTokens, value, entity) >= 2;
+    }
     return true;
   }
   return entityCorroboratesPersonProfile(urlTokens, value, entity);

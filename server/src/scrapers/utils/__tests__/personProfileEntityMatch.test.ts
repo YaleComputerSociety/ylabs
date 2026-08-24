@@ -4,6 +4,7 @@ import {
   personProfileSourceMatchesEntity,
   researchEntityIdentityTokens,
   sourceUrlSchoolContradictsEntity,
+  sourceUrlToleratedSchoolDivergesFromEntity,
 } from '../personProfileEntityMatch';
 
 describe('personProfileNameTokensFromUrl', () => {
@@ -228,6 +229,90 @@ describe('personProfileSourceMatchesEntity', () => {
         name: 'Jordan Avery Lab',
       }),
     ).toBe(true);
+  });
+
+  it('rejects an exact full-name homonym at a tolerant host that diverges from the entity own school (#1413)', () => {
+    const engineeringEntity = {
+      slug: 'faculty-research-area-rex-ying',
+      name: 'Rex Ying Research',
+      school: 'School of Engineering & Applied Science',
+      departments: ['Computer Science'],
+    };
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/rex-ying', engineeringEntity),
+    ).toBe(false);
+
+    const medicalEntity = {
+      slug: 'nih-pi-pei-yu-chen',
+      name: 'Pei-Yu Chen Lab',
+      school: 'School of Medicine',
+      departments: ['Internal Medicine'],
+    };
+    expect(
+      personProfileSourceMatchesEntity('https://seas.yale.edu/profile/pei-yu-chen', medicalEntity),
+    ).toBe(false);
+  });
+
+  it('is not corroborated by the entity own prose naming itself (#1413)', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/rex-ying', {
+        slug: 'faculty-research-area-rex-ying',
+        name: 'Rex Ying Research',
+        school: 'School of Engineering & Applied Science',
+        departments: ['Computer Science'],
+        fullDescription: "Rex Ying's research focuses on graph neural networks and scalable machine learning.",
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps a full-name match at a tolerant host corroborated by an independent second profile page', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/rex-ying', {
+        slug: 'faculty-research-area-rex-ying',
+        name: 'Rex Ying Research',
+        school: 'School of Engineering & Applied Science',
+        departments: ['Computer Science'],
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/rex-ying',
+          'https://engineering.yale.edu/people/rex-ying',
+          'https://cs.yale.edu/people/rex-ying',
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps a full-name match at a tolerant host when it agrees with the entity own school', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/pei-yu-chen', {
+        slug: 'nih-pi-pei-yu-chen',
+        name: 'Pei-Yu Chen Lab',
+        school: 'School of Medicine',
+        departments: ['Internal Medicine'],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('sourceUrlToleratedSchoolDivergesFromEntity', () => {
+  it('fires only for a tolerant host whose implied school diverges from a known entity school', () => {
+    expect(
+      sourceUrlToleratedSchoolDivergesFromEntity('https://medicine.yale.edu/profile/rex-ying', {
+        school: 'School of Engineering & Applied Science',
+      }),
+    ).toBe(true);
+    expect(
+      sourceUrlToleratedSchoolDivergesFromEntity('https://medicine.yale.edu/profile/rex-ying', {
+        school: 'School of Medicine',
+      }),
+    ).toBe(false);
+    expect(
+      sourceUrlToleratedSchoolDivergesFromEntity('https://medicine.yale.edu/profile/rex-ying', {}),
+    ).toBe(false);
+    expect(
+      sourceUrlToleratedSchoolDivergesFromEntity('https://som.yale.edu/profile/rex-ying', {
+        school: 'School of Engineering & Applied Science',
+      }),
+    ).toBe(false);
   });
 });
 
