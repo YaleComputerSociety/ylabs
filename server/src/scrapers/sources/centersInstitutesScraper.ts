@@ -289,6 +289,83 @@ export const ycgaExtractor: CenterExtractor = (html, ctx) => {
   return { members };
 };
 
+interface PeopleCardSelectors {
+  card: string;
+  headingLink: string;
+  subheading: string;
+  snippet?: string;
+}
+
+function extractPeopleCards(
+  html: string,
+  ctx: ExtractorCtx,
+  selectors: PeopleCardSelectors,
+): ExtractorResult {
+  const $ = cheerio.load(html);
+  const members: CenterMember[] = [];
+  const seen = new Set<string>();
+  $(selectors.card).each((_i, el) => {
+    const card = $(el);
+    const link = card.find(selectors.headingLink).first();
+    const name = link.text().replace(/\s+/g, ' ').trim();
+    if (!name) return;
+    const href = link.attr('href') || '';
+    const dedupeKey = href || slugify(name);
+    if (!dedupeKey || seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
+    const subheading = card.find(selectors.subheading).first().text().replace(/\s+/g, ' ').trim();
+    const snippet = selectors.snippet
+      ? card.find(selectors.snippet).first().text().replace(/\s+/g, ' ').trim()
+      : '';
+    const roleText = [subheading, snippet].filter(Boolean).join(' ') || undefined;
+    members.push({
+      name,
+      profileUrl,
+      title: subheading || undefined,
+      role: inferRole(roleText),
+    });
+  });
+  return { members };
+}
+
+/**
+ * YaleSites "directory-listing-card" people block (Quantitative Biology
+ * Institute `qbio.yale.edu/members`, and the sibling YaleSites institute
+ * rosters). Each card links to the member's own official profile/lab page:
+ *   <li class="directory-listing-card">
+ *     <h3 class="directory-listing-card__heading">
+ *       <a class="directory-listing-card__heading-link" href="<member site>">Name</a>
+ *     </h3>
+ *     <div class="directory-listing-card__subheading"><div>Title</div></div>
+ *     <div class="directory-listing-card__snippet"><div>Director, …</div></div>
+ *   </li>
+ * Leadership is often carried in the snippet rather than the subheading, so both
+ * feed the role heuristic.
+ */
+export const directoryListingCardExtractor: CenterExtractor = (html, ctx) =>
+  extractPeopleCards(html, ctx, {
+    card: '.directory-listing-card',
+    headingLink: '.directory-listing-card__heading-link',
+    subheading: '.directory-listing-card__subheading',
+    snippet: '.directory-listing-card__snippet',
+  });
+
+/**
+ * YaleSites "reference-card" people block (Data-Intensive Social Science Center
+ * `dissc.yale.edu`, and the sibling YaleSites institute rosters). Same shape as
+ * the directory-listing-card block under a different class prefix; each card
+ * carries both a heading link and an aria-hidden image link to the same href, so
+ * only the heading link is read to avoid double-counting.
+ */
+export const referenceCardPeopleExtractor: CenterExtractor = (html, ctx) =>
+  extractPeopleCards(html, ctx, {
+    card: '.reference-card',
+    headingLink: '.reference-card__heading-link',
+    subheading: '.reference-card__subheading',
+    snippet: '.reference-card__snippet',
+  });
+
 /**
  * Jackson School centers/initiatives index page is a META index — it lists
  * child centers, not people. Each child center becomes its own ResearchGroup.
@@ -332,7 +409,8 @@ export const jsRenderedStub: CenterExtractor = () => {
 };
 
 // ---------------------------------------------------------------------------
-// Default config — the v1 ten-center set
+// Default config — the wired center set (see centersInstitutesRegistry.ts for
+// the full coverage map, including evaluated-but-unwired gaps).
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
@@ -422,6 +500,24 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     url: 'https://medicine.yale.edu/genetics/research/ycga/people/',
     paginated: false,
     extractor: ycgaExtractor,
+  },
+  {
+    centerKey: 'qbio',
+    centerName: 'Quantitative Biology Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://qbio.yale.edu/members',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    centerKey: 'dissc',
+    centerName: 'Data-Intensive Social Science Center',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://dissc.yale.edu/about/dissc-faculty-and-staff',
+    paginated: false,
+    extractor: referenceCardPeopleExtractor,
   },
   {
     centerKey: 'jackson-centers',
