@@ -86,6 +86,7 @@ export const researchGroupKinds = [
   'group',
   'individual',
   'solo',
+  'core_facility',
 ] as const;
 
 export type ResearchGroupKind = (typeof researchGroupKinds)[number];
@@ -99,6 +100,7 @@ export const ResearchGroupKindToEntityType: Record<ResearchGroupKind, ResearchEn
   group: 'GROUP',
   individual: 'FACULTY_RESEARCH_AREA',
   solo: 'FACULTY_RESEARCH_AREA',
+  core_facility: 'CORE_FACILITY',
 };
 
 export const mapResearchGroupKindToEntityType = (kind?: string): ResearchEntityType => {

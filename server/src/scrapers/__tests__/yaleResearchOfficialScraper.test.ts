@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_YALE_RESEARCH_DIRECTORY_CONFIGS,
   YaleResearchOfficialScraper,
+  classifyResearchYaleEntity,
   entityToObservations,
   inferResearchYaleKind,
   isMintableResearchYaleEntity,
@@ -139,8 +140,8 @@ describe('yaleResearchOfficialScraper', () => {
         name: 'Aberration-Corrected Electron Microscopy (ACEM) Core',
         url: 'https://research.yale.edu/cores/acem',
         slug: 'research-yale-aberration-corrected-electron-microscopy-acem-core',
-        kind: 'center',
-        entityType: 'CENTER',
+        kind: 'core_facility',
+        entityType: 'CORE_FACILITY',
         description:
           "Our core's focus is cutting-edge and high-throughput capability in electron microscopy techniques.",
         sourceCategory: 'core-facility',
@@ -148,9 +149,36 @@ describe('yaleResearchOfficialScraper', () => {
       expect.objectContaining({
         name: 'Advanced Instrumentation Development Center (AIDC)',
         url: 'https://research.yale.edu/cores/aidc',
+        kind: 'core_facility',
+        entityType: 'CORE_FACILITY',
         sourceCategory: 'core-facility',
       }),
     ]);
+  });
+
+  it('classifies cores catalog records as CORE_FACILITY from sourceCategory, not the display name', () => {
+    const entities = parseResearchYaleCoreFacilities(
+      CORES_HTML,
+      'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
+    );
+
+    expect(entities.length).toBeGreaterThan(0);
+    for (const entity of entities) {
+      expect(entity.sourceCategory).toBe('core-facility');
+      expect(entity.entityType).toBe('CORE_FACILITY');
+      expect(entity.kind).toBe('core_facility');
+    }
+
+    expect(classifyResearchYaleEntity('Yale Center for Genome Analysis', 'core-facility')).toEqual({
+      kind: 'core_facility',
+      entityType: 'CORE_FACILITY',
+    });
+    expect(
+      classifyResearchYaleEntity('Yale Center for Genome Analysis', 'centers-institutes'),
+    ).toEqual({
+      kind: 'center',
+      entityType: 'CENTER',
+    });
   });
 
   it('does not mint template, FAQ, or placeholder pages as core entities', () => {

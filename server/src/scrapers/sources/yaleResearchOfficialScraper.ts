@@ -20,7 +20,14 @@ const MAX_PAGES_PER_DIRECTORY = 20;
 
 export type YaleResearchDirectoryParser = 'centers-institutes' | 'core-facilities';
 export type YaleResearchSourceCategory = 'centers-institutes' | 'core-facility';
-export type YaleResearchKind = 'center' | 'institute' | 'lab' | 'program' | 'initiative' | 'group';
+export type YaleResearchKind =
+  | 'center'
+  | 'institute'
+  | 'lab'
+  | 'program'
+  | 'initiative'
+  | 'group'
+  | 'core_facility';
 
 export interface YaleResearchOfficialEntity {
   name: string;
@@ -101,6 +108,16 @@ export function inferResearchYaleKind(name: string): {
   return { kind: 'group', entityType: 'GROUP' };
 }
 
+export function classifyResearchYaleEntity(
+  name: string,
+  sourceCategory: YaleResearchSourceCategory,
+): { kind: YaleResearchKind; entityType: ResearchEntityType } {
+  if (sourceCategory === 'core-facility') {
+    return { kind: 'core_facility', entityType: 'CORE_FACILITY' };
+  }
+  return inferResearchYaleKind(name);
+}
+
 function entityFromRecord(
   $: cheerio.CheerioAPI,
   record: cheerio.Cheerio<any>,
@@ -112,7 +129,7 @@ function entityFromRecord(
   const url = absoluteUrl(link.attr('href'), pageUrl);
   if (!name || !url) return null;
 
-  const classification = inferResearchYaleKind(name);
+  const classification = classifyResearchYaleEntity(name, sourceCategory);
   const description = cleanText(record.find('p').first().text()) || undefined;
   const researchAreas = uniqueStrings(
     record
