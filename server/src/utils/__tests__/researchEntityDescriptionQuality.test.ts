@@ -170,6 +170,61 @@ describe('fullDescriptionQuality', () => {
     expect(fullDescriptionQuality(fullDescription).isUseful).toBe(true);
   });
 
+  it('rejects a fluent two-sentence fullDescription that only restates researchAreas chips (#1625)', () => {
+    const fullDescription =
+      'The James Giles Lab focuses on acute ischemic stroke management, cerebrovascular and carotid artery diseases, venous thromboembolism diagnosis and management, and atrial fibrillation management and outcomes. The lab investigates the clinical implications and treatment strategies associated with these conditions.';
+    const researchAreas = [
+      'Acute ischemic stroke management',
+      'Cerebrovascular and carotid artery diseases',
+      'Venous thromboembolism diagnosis and management',
+      'Atrial fibrillation management and outcomes',
+    ];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects a fluent area-echo fullDescription even when it paraphrases the chip wording (#1625)', () => {
+    const fullDescription =
+      'The Jacob Tebes Lab focuses on research related to schizophrenia and mental health, exploring health policy implementation science and its impact on access to care. Additionally, the lab investigates topics related to school health and nursing education, aiming to improve health outcomes in these areas.';
+    const researchAreas = [
+      'Schizophrenia research and treatment',
+      'Mental Health Treatment and Access',
+      'Health Policy Implementation Science',
+      'School Health and Nursing Education',
+      'Family Caregiving in Mental Illness',
+      'Resilience, Psychological',
+    ];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('keeps a fluent fullDescription that names specific methods and model systems beyond the researchAreas chips (#1625)', () => {
+    const fullDescription =
+      'The Liang Lab focuses on neural computation in the visual thalamus, utilizing two-photon calcium imaging to study visually evoked responses in retinal axons at the awake mouse thalamus.';
+    const researchAreas = [
+      'Neural computation',
+      'Visual thalamus',
+      'Calcium imaging',
+      'Retinal axons',
+    ];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).not.toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(true);
+  });
+
+  it('does not flag area-echo-fallback when the entity has no researchAreas to compare against (#1625)', () => {
+    const fullDescription =
+      'The James Giles Lab focuses on acute ischemic stroke management. The lab investigates the clinical implications and treatment strategies associated with these conditions.';
+
+    expect(fullDescriptionQuality(fullDescription, []).flags).not.toContain('area-echo-fallback');
+    expect(fullDescriptionQuality(fullDescription).flags).not.toContain('area-echo-fallback');
+  });
+
   it('derives card copy from later research activity when profile biographies start with appointments', () => {
     const fullDescription =
       'Dr Roberts has worked at the University of Vermont, Virginia Commonwealth University, and Yale University. He is board certified in internal medicine, pediatrics, medical oncology, and hospice and palliative care. Current activities are clinical research and consulting for non-governmental organizations and the pharmaceutical and pharmacy industries.';

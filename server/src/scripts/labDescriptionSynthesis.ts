@@ -259,6 +259,7 @@ export interface SynthesisAcceptance {
 export function evaluateSynthesisOutput(
   output: { fullDescription: string; shortDescription: string },
   groundingAnchor: string,
+  researchAreas?: unknown,
 ): SynthesisAcceptance {
   if (!output.fullDescription || !output.shortDescription) {
     return { accepted: false, reason: 'empty-output', grounding: 0 };
@@ -273,6 +274,7 @@ export function evaluateSynthesisOutput(
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: output.fullDescription,
     shortDescription: output.shortDescription,
+    researchAreas,
   });
   if (!quality.full.isUseful || !quality.short.isUseful) {
     return { accepted: false, reason: 'low-quality', grounding };

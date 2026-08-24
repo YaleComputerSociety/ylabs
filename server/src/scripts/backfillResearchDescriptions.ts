@@ -864,7 +864,7 @@ export async function runLabDescriptionSynthesis(options: {
         totalCompletionTokens += output.usage.completionTokens;
         callCount += 1;
       }
-      const verdict = evaluateSynthesisOutput(output, groundingAnchor);
+      const verdict = evaluateSynthesisOutput(output, groundingAnchor, entity.researchAreas);
       if (!verdict.accepted) {
         skipped[verdict.reason ?? 'low-quality'] += 1;
         continue;

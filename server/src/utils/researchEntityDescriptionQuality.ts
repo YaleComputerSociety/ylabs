@@ -27,6 +27,7 @@ export type DescriptionQualityFlag =
   | 'profile-chrome'
   | 'research-area-placeholder'
   | 'research-area-echo'
+  | 'area-echo-fallback'
   | 'appointment-only'
   | 'role-only'
   | 'incomplete-sentence'
@@ -494,6 +495,179 @@ const isTeachingOnlyProfileDescription = (value: string): boolean => {
   );
 };
 
+// Filler that a fluent synthesized full description leans on when it has no
+// real source to draw from beyond the entity's own researchAreas chips: verbs
+// that just announce the topic list, and generic closer nouns ("underlying
+// mechanisms", "clinical implications", "these conditions") that name no
+// method, model system, or finding. Distinct from `isStudiesResearchAreaEchoDescription`,
+// which only matches a single bare "Studies A, B, and C." sentence that is
+// fully consumed by chip text - this one is fluent, multi-sentence prose (#1625).
+const AREA_ECHO_FALLBACK_STOPWORDS = new Set([
+  'research',
+  'studies',
+  'study',
+  'studying',
+  'field',
+  'fields',
+  'interest',
+  'interests',
+  'area',
+  'areas',
+  'include',
+  'includes',
+  'including',
+  'focus',
+  'focuses',
+  'focused',
+  'work',
+  'works',
+  'with',
+  'that',
+  'this',
+  'their',
+  'from',
+  'into',
+  'across',
+  'using',
+  'based',
+  'also',
+  'such',
+  'have',
+  'related',
+  'various',
+  'particularly',
+  'broadly',
+  'generally',
+  'these',
+  'those',
+  'about',
+  'between',
+  'laboratory',
+  'investigates',
+  'investigate',
+  'investigating',
+  'explores',
+  'explore',
+  'exploring',
+  'examines',
+  'examine',
+  'examining',
+  'understanding',
+  'understand',
+  'underlying',
+  'mechanisms',
+  'mechanism',
+  'implications',
+  'implication',
+  'interplay',
+  'conditions',
+  'condition',
+  'impacts',
+  'impact',
+  'effects',
+  'effect',
+  'effectiveness',
+  'strategies',
+  'strategy',
+  'outcomes',
+  'outcome',
+  'connections',
+  'connection',
+  'connects',
+  'connecting',
+  'aiming',
+  'aims',
+  'aim',
+  'improve',
+  'improves',
+  'improving',
+  'enhance',
+  'enhances',
+  'enhancing',
+  'address',
+  'addresses',
+  'addressing',
+  'topics',
+  'topic',
+  'additionally',
+  'employs',
+  'employ',
+  'employing',
+  'utilizing',
+  'utilize',
+  'utilizes',
+  'utilization',
+  'context',
+  'aspects',
+  'aspect',
+  'factors',
+  'factor',
+  'role',
+  'roles',
+  'processes',
+  'process',
+  'practices',
+  'practice',
+  'approaches',
+  'approach',
+  'clinical',
+  'treatment',
+  'treatments',
+  'patients',
+  'patient',
+  'disease',
+  'diseases',
+  'disorder',
+  'disorders',
+  'management',
+  'diagnosis',
+  'care',
+  'crisis',
+  'situations',
+  'situation',
+  'several',
+  'certain',
+  'different',
+  'primarily',
+  'well',
+  'provide',
+  'providing',
+  'insights',
+  'insight',
+  'encompasses',
+  'encompass',
+  'centered',
+  'centers',
+  'conducts',
+  'conduct',
+  'conducting',
+]);
+
+const AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS = 4;
+
+const areaEchoFallbackContentTokens = (value: string): Set<string> =>
+  new Set(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length >= 4 && !AREA_ECHO_FALLBACK_STOPWORDS.has(word)),
+  );
+
+const isAreaEchoFallbackFullDescription = (value: string, researchAreas: unknown): boolean => {
+  const areas = Array.isArray(researchAreas)
+    ? researchAreas.filter((area): area is string => typeof area === 'string')
+    : [];
+  if (areas.length === 0) return false;
+  const textTokens = areaEchoFallbackContentTokens(value);
+  if (textTokens.size === 0) return false;
+  const areaTokens = areaEchoFallbackContentTokens(areas.join(' '));
+  let extra = 0;
+  for (const token of textTokens) {
+    if (!areaTokens.has(token)) extra += 1;
+  }
+  return extra < AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS;
+};
+
 const isAppointmentOnly = (value: string): boolean => {
   if (isUndergraduateResearchProgramDescription(value)) return false;
   if (hasLaterResearchFocusSentence(value)) return false;
@@ -529,6 +703,9 @@ export function fullDescriptionQuality(
     flags.push('research-area-echo');
   }
   if (text && isConnectedToKeywordListStub(text)) flags.push('research-area-echo');
+  if (text && isAreaEchoFallbackFullDescription(text, researchAreas)) {
+    flags.push('area-echo-fallback');
+  }
   if (
     text &&
     (!/[.!?]$/.test(text) || /:\s*$/.test(text)) &&
