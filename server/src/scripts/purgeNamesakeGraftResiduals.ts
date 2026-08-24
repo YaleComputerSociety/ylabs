@@ -50,6 +50,17 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
   {
+    entityId: '6a058e29ba66f3c14bd8701b',
+    slug: 'horwitz-lab-cmh6',
+    removeAreas: [
+      'Pneumonia and Respiratory Infections',
+      'Bacterial Infections and Vaccines',
+      'Influenza Virus Research Studies',
+      'Vibrio bacteria research studies',
+      'Vitamin C and Antioxidants Research',
+    ],
+  },
+  {
     entityId: '6a0d17e83fa399fefb6e625b',
     slug: 'faculty-research-area-rex-ying',
     removeAreas: ['Neuroscience', 'Psychology', 'Developmental Biology', 'Immunotherapy'],
