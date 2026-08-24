@@ -6,6 +6,7 @@ import {
   isMidCvContinuationOpener,
   isPersonBiographyOrAdvisingDescription,
   isResearchEntitySourceChromeText,
+  isSyntheticResearchHomeMetadataDescription,
   publicResearchEntityDescriptionText,
   repairSubjectlessResearchLead,
   revoiceFirstPersonResearchLead,
@@ -713,5 +714,38 @@ describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1
       researchAreas: ['Mammalian evolutionary morphology', 'Functional morphology', 'Primate evolution'],
     };
     expect(sanitizeServedResearchEntityCopyFields(entity)).toBe(entity);
+  });
+});
+
+describe('isSyntheticResearchHomeMetadataDescription "is connected to <chips>" stub (#1511)', () => {
+  it('flags the keyword-list-fallback stub even when a chip label ends in a bare research-activity noun', () => {
+    expect(
+      isSyntheticResearchHomeMetadataDescription(
+        'Example Lab is connected to health disparities and outcomes, posttraumatic stress disorder, suicide and self-harm studies, and schizophrenia.',
+      ),
+    ).toBe(true);
+    expect(
+      isSyntheticResearchHomeMetadataDescription(
+        'Example Research is connected to genetic neurodegenerative diseases, mitochondrial function and pathology, and developmental biology and gene regulation.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a genuine "is connected to" sentence whose verb takes a real object', () => {
+    expect(
+      isSyntheticResearchHomeMetadataDescription(
+        'Example Lab is connected to a broader effort that investigates how neurons in the hippocampus encode memory.',
+      ),
+    ).toBe(false);
+  });
+
+  it('blanks the served fullDescription for the keyword-list "is connected to" stub', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      fullDescription:
+        'Example Lab is connected to health disparities and outcomes, posttraumatic stress disorder, suicide and self-harm studies, and schizophrenia.',
+      shortDescription:
+        'Research connected to health disparities and outcomes, posttraumatic stress disorder, and schizophrenia.',
+    });
+    expect(served.fullDescription).toBe('');
   });
 });

@@ -96,24 +96,22 @@ describe('researchEntityPublicDescription', () => {
     expect(representation.invariant.pass).toBe(false);
   });
 
-  it('fails the invariant when only the full description is a research-area echo the quality assessor still calls useful (#1417)', () => {
+  it('fails the invariant on a keyword-list "is connected to" full description (#1417/#1511)', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: {
         kind: 'individual',
         entityType: 'FACULTY_RESEARCH_AREA',
         shortDescription:
-          'Research connected to genetic neurodegenerative diseases and mitochondrial function.',
+          "Some Researcher's work spans genetic neurodegenerative diseases and mitochondrial function.",
         fullDescription:
-          'Janghoo Lim Research is connected to genetic neurodegenerative diseases, mitochondrial function and pathology, and ubiquitin and proteasome pathways.',
-        sourceUrls: ['https://example.yale.edu/labs/lim-lab'],
+          'Some Researcher Lab is connected to genetic neurodegenerative diseases, mitochondrial function and pathology, and ubiquitin and proteasome pathways.',
+        sourceUrls: ['https://example.yale.edu/labs/some-researcher-lab'],
       },
     });
 
-    expect(representation.quality.full.isUseful).toBe(true);
-    expect(representation.quality.short.isUseful).toBe(true);
-    expect(representation.entity.fullDescription).not.toBe('');
+    expect(representation.quality.full.isUseful).toBe(false);
     expect(representation.invariant.pass).toBe(false);
-    expect(representation.invariant.reasons).toContain('research_area_echo_description');
+    expect(representation.invariant.reasons).toContain('missing_public_full_description');
   });
 
   it('uses the public detail lead-name contract when explicit names are supplied', () => {

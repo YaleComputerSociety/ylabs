@@ -99,6 +99,13 @@ describe('classifyFullDescription', () => {
     expect(isTemplatedKeywordStub(prose)).toBe(false);
   });
 
+  it('classifies the "is connected to" stub as templated even when a chip label ends in a bare research-activity noun (#1511)', () => {
+    const connectedStubWithNounTail =
+      'Example Lab is connected to health disparities and outcomes, posttraumatic stress disorder, suicide and self-harm studies, and schizophrenia.';
+    expect(isTemplatedKeywordStub(connectedStubWithNounTail)).toBe(true);
+    expect(classifyFullDescription(connectedStubWithNounTail)).toBe('templated-stub');
+  });
+
   it('classifies empty, thin, and genuine research prose', () => {
     expect(classifyFullDescription('')).toBe('empty');
     expect(classifyFullDescription('Studies bats.')).toBe('thin');
