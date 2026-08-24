@@ -72,4 +72,20 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
     const areas = ['Queer Theory'];
     expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toBe(areas);
   });
+
+  it('does not let generic RCT-methodology boilerplate false-corroborate an unrelated chip via the fuzzy prefix', () => {
+    const rideshareContext = {
+      name: 'A Lab',
+      departments: [],
+      fullDescription:
+        'The research focuses on the impacts of subsidized ridesharing on drunk driving and alcohol consumption. It employs a randomized controlled trial and will analyze variations in outcomes, aiming to provide evidence for effective interventions.',
+      shortDescription: 'The lab studies the effects of subsidized ridesharing on drunk driving.',
+    };
+    const areas = [
+      'Heart Rate Variability and Autonomic Control',
+      'Long-Term Effects of COVID-19',
+      'Employment and Welfare Studies',
+    ];
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, rideshareContext)).toEqual([]);
+  });
 });
