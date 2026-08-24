@@ -149,17 +149,12 @@ function hasUsefulResearchAreas(entity: Record<string, any>): boolean {
   );
 }
 
-function hasUsefulDepartments(entity: Record<string, any>): boolean {
-  return (
-    Array.isArray(entity.departments) && entity.departments.some((department) => textValue(department))
-  );
-}
+const RESEARCH_AREA_FACET_REQUIRED_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
 
 function missingFacultyResearchAreaFacetSignal(entity: Record<string, any>): boolean {
   return (
-    entity.entityType === 'FACULTY_RESEARCH_AREA' &&
-    !hasUsefulResearchAreas(entity) &&
-    !hasUsefulDepartments(entity)
+    RESEARCH_AREA_FACET_REQUIRED_ENTITY_TYPES.has(entity.entityType) &&
+    !hasUsefulResearchAreas(entity)
   );
 }
 

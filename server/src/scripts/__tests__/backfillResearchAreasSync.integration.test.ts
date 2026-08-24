@@ -37,6 +37,7 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
   let replSet: MongoMemoryReplSet;
   const driftedId = new mongoose.Types.ObjectId();
   const cleanId = new mongoose.Types.ObjectId();
+  const emptyAreaId = new mongoose.Types.ObjectId();
 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -70,6 +71,16 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
         name: 'Synthetic Clean Lab',
         kind: 'lab',
         researchAreas: ['Economics'],
+        archived: false,
+      },
+      {
+        _id: emptyAreaId,
+        slug: 'synthetic-empty-area-fra',
+        name: 'Synthetic Empty Area FRA',
+        kind: 'faculty-research-area',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        departments: ['Sociology'],
+        researchAreas: [],
         archived: false,
       },
     ]);
@@ -132,5 +143,20 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
     await runResearchAreaBackfill({ ...options, dryRun: false });
 
     expect(observedAreasAtSyncTime).toEqual(['Machine Learning', 'Neuroscience']);
+  });
+
+  it('scopes the run to only the given record ids, leaving other empty-area docs untouched (issue #1717)', async () => {
+    const result = await runResearchAreaBackfill({
+      ...options,
+      dryRun: false,
+      recordIds: [emptyAreaId.toString()],
+    });
+
+    expect(result.summary.considered).toBe(1);
+
+    const drifted = await mongoose.connection.db!
+      .collection('research_entities')
+      .findOne({ _id: driftedId });
+    expect(drifted?.researchAreas).toEqual(['Machine Learning, Neuroscience']);
   });
 });

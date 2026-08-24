@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyResearchAreaChanges } from '../backfillResearchAreas';
+import { applyResearchAreaChanges, parseResearchAreaBackfillArgs } from '../backfillResearchAreas';
 import type { ResearchAreaBackfillPlanRow } from '../backfillResearchAreasCore';
 
 function changedRow(id: string, after: string[]): ResearchAreaBackfillPlanRow {
@@ -86,5 +86,17 @@ describe('applyResearchAreaChanges', () => {
 
     expect(result.persisted).toBe(2);
     expect(result.synced).toBe(1);
+  });
+});
+
+describe('parseResearchAreaBackfillArgs --record-id (issue #1717)', () => {
+  it('collects repeated --record-id flags into recordIds', () => {
+    const options = parseResearchAreaBackfillArgs(['--record-id=abc', '--record-id=def']);
+    expect(options.recordIds).toEqual(['abc', 'def']);
+  });
+
+  it('leaves recordIds undefined when the flag is not passed', () => {
+    const options = parseResearchAreaBackfillArgs([]);
+    expect(options.recordIds).toBeUndefined();
   });
 });
