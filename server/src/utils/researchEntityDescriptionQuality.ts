@@ -67,6 +67,7 @@ const INITIAL_DOT_TOKEN = '<initialdot>';
 
 const sentenceList = (value: string): string[] => {
   const protectedText = textValue(value)
+    .replace(/(\d)\.(?=\d)/g, `$1${INITIAL_DOT_TOKEN}`)
     .replace(/\bU\.S\./g, `U${INITIAL_DOT_TOKEN}S${INITIAL_DOT_TOKEN}`)
     .replace(/\bPh\.D\./g, `Ph${INITIAL_DOT_TOKEN}D${INITIAL_DOT_TOKEN}`)
     .replace(/\b(Dr|Prof|Mr|Mrs|Ms)\./g, `$1${INITIAL_DOT_TOKEN}`)
