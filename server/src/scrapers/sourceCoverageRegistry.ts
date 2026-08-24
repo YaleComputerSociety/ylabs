@@ -324,6 +324,36 @@ export const sourceCoverageRegistry = {
     notes:
       'Beinecke Rare Book & Manuscript Library curatorial-units catalog (library.yale.edu/beinecke/collections); producer for the ARCHIVE_OR_MUSEUM_PROJECT rare-book/manuscript/archive research home, reusing the Peabody path (#1349/#1367) and complementing the Beinecke research-fellowships producer (#1455). Each individual unit page is the cited source; the units index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity and the official-page summary description. Verified live, the migrated site publishes no structured named-curator credit on unit pages (curator mentions are historical body prose), so the curatorial-lead extractor reads only a structured staff/contact block and fails closed; a unit without a named director still earns the organizational REACH_OUT_PLAUSIBLE ways-in from its official page. Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
   },
+  'yuag-curatorial-areas': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'ENTITY_MEMBERSHIP',
+      'OFFICIAL_PROFILE',
+      'TOPICS',
+      'LAB_WEBSITE',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale University Art Gallery curatorial-areas catalog (artgallery.yale.edu/research-and-learning/curatorial-areas); producer for the ARCHIVE_OR_MUSEUM_PROJECT art-museum research home, reusing the Peabody path (#1349/#1367). YUAG fronts every page with a Cloudflare bot interstitial, so pages are fetched through the shared rendered (headless) path (#1453) and the producer fails closed when no rendered fetcher is configured rather than parsing the challenge shell. Each individual curatorial-area page is the cited source; the curatorial-areas index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity and the official-page summary description. Verified live, area pages publish no structured named-curator credit, so the curatorial-lead extractor reads only a structured staff/credit block and fails closed; an area without a named director still earns the organizational REACH_OUT_PLAUSIBLE ways-in from its official page. Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
+  },
+  'ycba-collections-research': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'ENTITY_MEMBERSHIP',
+      'OFFICIAL_PROFILE',
+      'TOPICS',
+      'LAB_WEBSITE',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Yale Center for British Art curatorial departments and museum-run research programs (britishart.yale.edu); producer for the ARCHIVE_OR_MUSEUM_PROJECT art-museum research home, reusing the Peabody path (#1349/#1367). YCBA publishes no enumerable department index (the Collecting Areas landing and departments-and-staff roster are contact-laden, non-card pages), so the producer carries a curated seed of each department's own official page and cites that page directly; no museum landing/index root is ever recorded as a source. Discovery-only: emits identity and the official-page summary description. Verified live, department pages publish no structured named-curator credit (staff and their contact details live only on the deliberately-unused departments-and-staff roster), so the curatorial-lead extractor reads only a structured staff/credit block and fails closed; a department without a named director still earns the organizational REACH_OUT_PLAUSIBLE ways-in from its official page. Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.",
+  },
   'library-collections-as-data': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

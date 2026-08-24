@@ -37,6 +37,8 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'beinecke-collections-research', phase: 'discovery' },
   { name: 'library-collections-as-data', phase: 'discovery' },
   { name: 'beinecke-curatorial-units', phase: 'discovery' },
+  { name: 'yuag-curatorial-areas', phase: 'discovery' },
+  { name: 'ycba-collections-research', phase: 'discovery' },
   { name: 'dept-faculty-roster', phase: 'discovery' },
   { name: 'department-undergrad-research', phase: 'discovery' },
   { name: 'course-based-research-pathways', phase: 'discovery' },
