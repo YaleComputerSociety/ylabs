@@ -182,6 +182,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'course-based-research-pathways',
+    displayName: 'Course-based research pathways',
+    description:
+      "Official per-department directed-research, independent-study, and senior-essay/senior-thesis course pages, minted as discovery-only COURSE_SEQUENCE research homes. Each department's own course page is the cited source; catalog and course-search index roots are never cited.",
+    baseUrl: '',
+    defaultWeight: 0.75,
+    cadence: 'monthly',
+  },
+  {
     name: 'yale-directory',
     displayName: 'Yale Directory',
     description: 'Yale-wide faculty roster and appointment metadata.',

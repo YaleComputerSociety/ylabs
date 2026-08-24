@@ -146,7 +146,6 @@ function hasUsefulResearchAreas(entity: Record<string, any>): boolean {
   );
 }
 
-
 const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
 
 /**
