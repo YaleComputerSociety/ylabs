@@ -73,6 +73,8 @@
     "playwright:run": "bash scripts/with-playwright-libs.sh npx playwright",
     "audit:unified-research": "bash scripts/with-playwright-libs.sh node scripts/unified-research-search-audit.mjs",
     "audit:research-detail-professors": "bash scripts/with-playwright-libs.sh node scripts/research-detail-professor-audit.mjs",
+    "e2e:seed-smoke": "yarn --cwd server e2e:seed-smoke",
+    "e2e:smoke": "bash scripts/with-playwright-libs.sh node scripts/e2e-student-journey-smoke.mjs",
     "start": "concurrently \"yarn start:client\" \"yarn start:server\"",
     "start:client": "cd client && yarn dev",
     "start:server": "cd server && yarn start",
