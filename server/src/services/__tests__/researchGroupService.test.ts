@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
+  searchSimilarDocuments: vi.fn(),
   getEmbedders: vi.fn(),
   listingDistinct: vi.fn(),
   listingFind: vi.fn(),
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../utils/meiliClient', () => ({
   getMeiliIndex: vi.fn(async () => ({
     search: mocks.search,
+    searchSimilarDocuments: mocks.searchSimilarDocuments,
     getEmbedders: mocks.getEmbedders,
   })),
 }));
@@ -116,6 +118,7 @@ import {
   dropUncorroboratedPhantomLeads,
   getResearchGroupDetail,
   listResearchEntityRelationshipPayload,
+  listSimilarResearchEntities,
   normalizeResearchSearchQuery,
   promoteExactAliasFieldMatches,
   normalizeResearchGroupObjectId,
@@ -162,6 +165,8 @@ const validPublicDescriptions = {
 beforeEach(() => {
   invalidateResearchEntitySearchEmbedderCache();
   mocks.search.mockReset();
+  mocks.searchSimilarDocuments.mockReset();
+  mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
   mocks.getEmbedders.mockReset();
   mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
   mocks.listingDistinct.mockReset();
@@ -3458,6 +3463,171 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
     const relatedSlugs = result.relatedResearchEntities.map((entity) => entity.slug);
     expect(new Set(relatedSlugs).size).toBe(relatedSlugs.length);
+  });
+});
+
+describe('listSimilarResearchEntities', () => {
+  const viewedEntity = {
+    _id: '67d8928150621bcef434a1d5',
+    slug: 'viewed-lab',
+    name: 'Viewed Lab',
+  };
+
+  it('excludes the viewed entity and caller-supplied structural relations', async () => {
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          id: '67d8928150621bcef434a1d5',
+          slug: 'viewed-lab',
+          name: 'Viewed Lab',
+          kind: 'lab',
+          departments: ['Physics'],
+          studentVisibilityTier: 'student_ready',
+          _rankingScore: 0.99,
+          ...validPublicDescriptions,
+        },
+        {
+          id: '67d8928150621bcef434a201',
+          slug: 'structural-neighbor',
+          name: 'Structural Neighbor',
+          kind: 'lab',
+          departments: ['Physics'],
+          studentVisibilityTier: 'student_ready',
+          _rankingScore: 0.8,
+          ...validPublicDescriptions,
+        },
+        {
+          id: '67d8928150621bcef434a202',
+          slug: 'topical-neighbor',
+          name: 'Topical Neighbor',
+          kind: 'lab',
+          departments: ['Physics'],
+          studentVisibilityTier: 'student_ready',
+          _rankingScore: 0.7,
+          ...validPublicDescriptions,
+        },
+      ],
+    });
+
+    const result = await listSimilarResearchEntities(viewedEntity, {
+      excludeEntityKeys: ['structural-neighbor', '67d8928150621bcef434a201'],
+    });
+
+    const slugs = result.map((entity) => entity.slug);
+    expect(slugs).toEqual(['topical-neighbor']);
+    expect(slugs).not.toContain('viewed-lab');
+    expect(slugs).not.toContain('structural-neighbor');
+  });
+
+  it('drops entities below the public visibility tier and weak-similarity noise', async () => {
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          id: '67d8928150621bcef434a210',
+          slug: 'private-neighbor',
+          name: 'Private Neighbor',
+          kind: 'lab',
+          departments: ['Physics'],
+          studentVisibilityTier: 'operator_review',
+          _rankingScore: 0.9,
+          ...validPublicDescriptions,
+        },
+        {
+          id: '67d8928150621bcef434a211',
+          slug: 'noise-neighbor',
+          name: 'Noise Neighbor',
+          kind: 'lab',
+          departments: ['Physics'],
+          studentVisibilityTier: 'student_ready',
+          _rankingScore: 0.05,
+          ...validPublicDescriptions,
+        },
+        {
+          id: '67d8928150621bcef434a212',
+          slug: 'real-neighbor',
+          name: 'Real Neighbor',
+          kind: 'lab',
+          departments: ['Physics'],
+          studentVisibilityTier: 'student_ready',
+          _rankingScore: 0.6,
+          ...validPublicDescriptions,
+        },
+      ],
+    });
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual(['real-neighbor']);
+  });
+
+  it('projects a bounded allowlist card and never leaks operator or contact fields', async () => {
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          id: '67d8928150621bcef434a220',
+          slug: 'bounded-neighbor',
+          name: 'Bounded Neighbor',
+          kind: 'lab',
+          entityType: 'LAB',
+          departments: ['Physics'],
+          studentVisibilityTier: 'student_ready',
+          _rankingScore: 0.7,
+          privateNotes: 'operator only',
+          sourceUrls: ['https://example.edu/private'],
+          shortDescription:
+            "Studies molecular dynamics reachable at hidden@example.edu across the group's program.",
+          fullDescription: validPublicDescriptions.fullDescription,
+        },
+      ],
+    });
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result).toHaveLength(1);
+    expect(Object.keys(result[0]).sort()).toEqual(
+      ['blurb', 'departments', 'entityType', 'id', 'kind', 'name', 'slug'].sort(),
+    );
+    const encoded = JSON.stringify(result);
+    expect(encoded).not.toContain('operator only');
+    expect(encoded).not.toContain('@example.edu');
+    expect(encoded).not.toContain('example.edu/private');
+  });
+
+  it('caps results at the bounded maximum', async () => {
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: Array.from({ length: 20 }, (_, index) => ({
+        id: `67d8928150621bcef434b${String(index).padStart(3, '0')}`,
+        slug: `neighbor-${index}`,
+        name: `Neighbor ${index}`,
+        kind: 'lab',
+        departments: ['Physics'],
+        studentVisibilityTier: 'student_ready',
+        _rankingScore: 0.9,
+        ...validPublicDescriptions,
+      })),
+    });
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.length).toBeLessThanOrEqual(6);
+    expect(result.length).toBe(6);
+  });
+
+  it('returns an empty list when the semantic embedder is not configured', async () => {
+    mocks.getEmbedders.mockResolvedValue({});
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result).toEqual([]);
+    expect(mocks.searchSimilarDocuments).not.toHaveBeenCalled();
+  });
+
+  it('hides the section by returning empty when the similar-documents lookup fails', async () => {
+    mocks.searchSimilarDocuments.mockRejectedValue(new Error('embedder unavailable'));
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result).toEqual([]);
   });
 });
 

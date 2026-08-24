@@ -191,6 +191,46 @@ const AffiliatedResearchEntitiesSection = ({
   </section>
 );
 
+const SimilarResearchEntitiesSection = ({
+  similarResearchEntities,
+}: {
+  similarResearchEntities: LabRelatedResearchEntitySummary[];
+}) => (
+  <section>
+    <SectionHeading>More like this</SectionHeading>
+    <p className="-mt-2 mb-3 text-sm text-gray-500">
+      Other research homes studying similar topics.
+    </p>
+    <div className="grid gap-3 sm:grid-cols-2">
+      {similarResearchEntities.map((entity) => (
+        <Link
+          key={entity.slug || entity.id}
+          to={`/research/${safeRouteSegment(entity.slug)}`}
+          className="block rounded-lg border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-blue-300 hover:shadow-sm"
+        >
+          <div className="flex flex-wrap gap-2">
+            {uniqueCompact(
+              [formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)],
+              3,
+            ).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-gray-700"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+          <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
+          {entity.blurb && (
+            <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-gray-600">{entity.blurb}</p>
+          )}
+        </Link>
+      ))}
+    </div>
+  </section>
+);
+
 const sourceHost = (url: string): string => {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -876,6 +916,7 @@ const LabDetail = () => {
     entityRelationships = [],
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
+    similarResearchEntities = [],
     undergraduateLogistics,
   } = payload;
   const group = legacyGroup ?? researchEntity;
@@ -883,8 +924,17 @@ const LabDetail = () => {
   const dedupedAffiliatedResearchEntities = dedupeResearchEntitySummaries(
     affiliatedResearchEntities,
   );
+  const structuralResearchEntityKeys = new Set(
+    [...dedupedRelatedResearchEntities, ...dedupedAffiliatedResearchEntities].map(
+      researchEntitySummaryKey,
+    ),
+  );
+  const dedupedSimilarResearchEntities = dedupeResearchEntitySummaries(similarResearchEntities).filter(
+    (entity) => !structuralResearchEntityKeys.has(researchEntitySummaryKey(entity)),
+  );
   const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
+  const hasSimilarResearchEntities = dedupedSimilarResearchEntities.length > 0;
   const loadedEntitySlug = (group.slug || '').toLowerCase();
   const requestedSlug = (slug || '').toLowerCase();
   const isEntityTransition =
@@ -1101,6 +1151,12 @@ const LabDetail = () => {
           {hasAffiliatedResearchEntities && (
             <AffiliatedResearchEntitiesSection
               affiliatedResearchEntities={dedupedAffiliatedResearchEntities}
+            />
+          )}
+
+          {hasSimilarResearchEntities && (
+            <SimilarResearchEntitiesSection
+              similarResearchEntities={dedupedSimilarResearchEntities}
             />
           )}
 

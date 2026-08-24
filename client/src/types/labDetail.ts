@@ -199,4 +199,5 @@ export interface LabDetailPayload {
   affiliatedRelationships?: LabEntityRelationship[];
   affiliatedResearchEntities?: LabRelatedResearchEntitySummary[];
   affiliatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;
+  similarResearchEntities?: LabRelatedResearchEntitySummary[];
 }
