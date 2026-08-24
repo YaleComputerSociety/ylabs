@@ -156,6 +156,20 @@ export function isBrokenResearchEntityDescriptionFragment(value: unknown): boole
   );
 }
 
+const MID_CV_CONTINUATION_OPENER_PATTERN =
+  /^(?:Next,|Subsequently,|After completing\b|In \d{4},\s+(?:he|she|they)\b)/i;
+
+/**
+ * A description field that opens mid-CV, continuing a biography narrative cut
+ * from elsewhere in the source page (#1456: "Next, he completed his graduate
+ * studies..."). Distinct from `isBrokenResearchEntityDescriptionFragment`,
+ * which catches fragments broken at the end rather than a resumed opener.
+ */
+export function isMidCvContinuationOpener(value: unknown): boolean {
+  const cleaned = textValue(value);
+  return Boolean(cleaned) && MID_CV_CONTINUATION_OPENER_PATTERN.test(cleaned);
+}
+
 export function isSyntheticResearchHomeMetadataDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
@@ -176,7 +190,15 @@ export function isResearchAreaPlaceholderDescription(value: unknown): boolean {
 
 export function isAcademicAppointmentDescription(value: unknown): boolean {
   const cleaned = textValue(value);
-  if (!cleaned) return false;
+  // The appointment patterns below identify a short title-only fragment ("X
+  // is Associate Professor of Y"). A long multi-sentence description that
+  // happens to open with that same sentence is not appointment-only - it is
+  // a research description with an orienting lead-in - so this check does
+  // not apply past a single-sentence-ish length (#1456: this false-positive
+  // was misclassifying real research prose as appointment-only whenever the
+  // research verbs elsewhere in the text used a different inflection than
+  // hasResearchDescriptionVerb's fixed list, e.g. "to develop", "investigation of").
+  if (!cleaned || cleaned.length > 300) return false;
   const hasResearchDescriptionVerb =
     /\b(studies|investigates|examines|explores|focuses on|works on|develops|uses|employs)\b/i.test(
       cleaned,
@@ -235,6 +257,7 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
     isRoleOnlyTitleFragment(cleaned) ||
     isSyntheticResearchHomeMetadataDescription(cleaned) ||
     isBrokenResearchEntityDescriptionFragment(cleaned) ||
+    isMidCvContinuationOpener(cleaned) ||
     isDirectoryIndexChromeText(cleaned) ||
     isResearchEntitySourceChromeText(cleaned) ||
     isInstitutionalCenterBlurbText(cleaned)

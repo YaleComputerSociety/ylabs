@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isAcademicAppointmentDescription,
   isDirectoryIndexChromeText,
+  isMidCvContinuationOpener,
   isPersonBiographyOrAdvisingDescription,
   isResearchEntitySourceChromeText,
   publicResearchEntityDescriptionText,
@@ -37,6 +39,49 @@ describe('isDirectoryIndexChromeText', () => {
   });
 });
 
+describe('isAcademicAppointmentDescription', () => {
+  it('flags a short appointment-only title fragment', () => {
+    expect(
+      isAcademicAppointmentDescription('Jane Doe is Associate Professor of Biomedical Engineering.'),
+    ).toBe(true);
+  });
+
+  it('does not flag a long multi-sentence research description that opens with an appointment sentence (#1456)', () => {
+    const description =
+      'Anjelica L. Gonzalez is Associate Professor of Biomedical Engineering. Her appointment in Biomedical Engineering, in association with the Vascular Biology and Therapeutics Program, has provided a supportive and convenient platform for her research, focused on the development of biomaterials for use as investigational tools, particularly for the investigation of immunological responses to inflammatory signals from endogenous and exogenous sources. Gonzalez has a dedicated interest in training the next generation of scientists to think with an interdisciplinary approach to problems and to have a scientifically global perspective. The Gonzalez lab combines organic chemistry, molecular biology, mathematics, computational modeling and image analysis to develop human tissue-based biomimetic scaffolds to better understand healthy and diseased states.';
+    expect(isAcademicAppointmentDescription(description)).toBe(false);
+  });
+});
+
+describe('isMidCvContinuationOpener', () => {
+  it('flags a description that opens mid-CV, continuing a biography cut from elsewhere on the page (#1456)', () => {
+    expect(
+      isMidCvContinuationOpener(
+        'Next, he completed his graduate studies on cell cytoskeleton and protein trafficking under the direction of John V. Cox at the University of Tennessee, Memphis.',
+      ),
+    ).toBe(true);
+    expect(
+      isMidCvContinuationOpener(
+        'Subsequently, Dr. Ghosh did his postdoctoral research on cell signaling at the Salk Institute for Biological Studies.',
+      ),
+    ).toBe(true);
+    expect(
+      isMidCvContinuationOpener('After completing his fellowship, he joined Geneva University Hospital.'),
+    ).toBe(true);
+    expect(
+      isMidCvContinuationOpener('In 2018, he joined the Department of Neuroscience at Yale University.'),
+    ).toBe(true);
+  });
+
+  it('does not flag a genuine research-focused description', () => {
+    expect(isMidCvContinuationOpener('Studies chromatin dynamics and nuclear envelope assembly.')).toBe(
+      false,
+    );
+    expect(isMidCvContinuationOpener('')).toBe(false);
+    expect(isMidCvContinuationOpener(undefined)).toBe(false);
+  });
+});
+
 describe('publicResearchEntityDescriptionText', () => {
   it('suppresses scraped sentence fragments that should not display as descriptions', () => {
     expect(
@@ -65,6 +110,14 @@ describe('publicResearchEntityDescriptionText', () => {
     expect(
       publicResearchEntityDescriptionText(
         'Two primary projects use MRI images in collaboration with Dr.',
+      ),
+    ).toBe('');
+  });
+
+  it('suppresses a mid-CV continuation opener (#1456)', () => {
+    expect(
+      publicResearchEntityDescriptionText(
+        'Next, he completed his graduate studies on cell cytoskeleton and protein trafficking under the direction of John V. Cox at the University of Tennessee, Memphis.',
       ),
     ).toBe('');
   });
