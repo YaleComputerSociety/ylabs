@@ -334,6 +334,65 @@ const FIRST_PERSON_ADVISING_INVITATION_PATTERN = new RegExp(
 const PERSON_BIOGRAPHY_OPENER_PATTERN =
   /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:the|an?)\s+(?:[\p{L}][\p{L}'’-]*[\s,/-]+){0,8}Professor\b/u;
 
+const NAME_LEAD_PATTERN = /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4}\b/u;
+const DECEASED_LEAD_DATE_RANGE_PATTERN = /\(\s*(?:1[6-9]|20)\d{2}\s*[-–—]\s*(?:1[6-9]|20)\d{2}\s*\)/;
+const EMERITUS_APPOINTMENT_PATTERN = /\bEmeritus\b/i;
+
+/**
+ * A LAB card's lead already opens on the PI's name and reads "(1932 - 2025),
+ * ... Emeritus ..." or otherwise flags the lead as deceased/emeritus within
+ * the opening clause (#1638: Demarque Lab spans 1932-2025, Costa Lab is
+ * emeritus). `isPersonBiographyOrAdvisingDescription`'s appointment-opener
+ * pattern requires a present-tense "is the/an ... Professor" clause and
+ * misses this retrospective phrasing entirely, so a deceased/emeritus lead is
+ * a distinct, stronger signal: the whole bio reads as a career retrospective,
+ * not a single stray opening sentence, so it is never worth salvaging via
+ * `repairFacultyBiographyOpener`'s single-sentence strip.
+ */
+export function isDeceasedOrEmeritusLeadBiography(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned || !NAME_LEAD_PATTERN.test(cleaned)) return false;
+  const opening = cleaned.slice(0, 220);
+  return DECEASED_LEAD_DATE_RANGE_PATTERN.test(opening) || EMERITUS_APPOINTMENT_PATTERN.test(opening);
+}
+
+const DEGREE_SUFFIX_CLAUSE = '(?:,\\s*(?:PhD|Ph\\.D\\.?|MD|M\\.D\\.?|MPH|ScD|Sc\\.D\\.?|DPhil|JD|MS|MA|MBA|EdD)\\b\\.?)*';
+
+/**
+ * `PERSON_BIOGRAPHY_OPENER_PATTERN` only recognizes a present-tense "is
+ * the/an ... Professor" clause with a capitalized "Professor" - it misses a
+ * name-lead opener that names a different title ("is Director of ...", "is a
+ * senior lecturer at ...", "is a Fellow of ...") or uses a lowercase
+ * "professor" inline (#1638: Kotchen Lab reads "... is the Langdon K. Storm
+ * professor of economics ..."; King Lab reads "... is a senior lecturer at
+ * ..."; Latham Lab reads "... JD, PhD is Director of ...").
+ */
+const NAME_LEAD_TITLE_PATTERN = new RegExp(
+  `^[A-Z][\\p{L}.'’-]+(?:\\s+[A-Z][\\p{L}.'’-]+){1,4}${DEGREE_SUFFIX_CLAUSE}\\s+is\\s+(?:(?:the|an?)\\s+)?.{0,70}?\\b(?:professor|director|lecturer|fellow|scientist)\\b`,
+  'iu',
+);
+
+/**
+ * A "Dr. <Name>, a graduate of <institution>, is ..." lead, often preceded by
+ * a job-title fragment rather than opening directly on the name (#1638:
+ * Wisnewski Lab reads "Senior Research Scientist in Medicine ... Dr.
+ * Wisnewski, a graduate of the University of California and Brown
+ * University's ..., is a widely experienced ..."; Redlich Lab reads "Dr.
+ * Redlich, a graduate of Williams College and Yale University School of
+ * Medicine, is trained in ..."). Scanned within the opening window rather
+ * than anchored at the very start so the leading title fragment doesn't
+ * block the match.
+ */
+const GRADUATE_OF_LEAD_PATTERN =
+  /\bDr\.\s+[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3},\s+a\s+graduate\s+of\b/iu;
+
+export function isCredentialOrTitleLeadBiography(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+  const opening = cleaned.slice(0, 260);
+  return NAME_LEAD_TITLE_PATTERN.test(opening) || GRADUATE_OF_LEAD_PATTERN.test(opening);
+}
+
 export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
@@ -349,8 +408,23 @@ export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean 
   return PERSON_BIOGRAPHY_OPENER_PATTERN.test(cleaned);
 }
 
-function stripPersonBiographyOpenerSentence(value: string): string {
-  const match = value.match(PERSON_BIOGRAPHY_OPENER_PATTERN);
+/**
+ * The credential/title-lead and graduate-of fallback patterns are only tried
+ * for LAB entities - `PERSON_BIOGRAPHY_OPENER_PATTERN` alone remains the sole
+ * match for FACULTY_RESEARCH_AREA/INDIVIDUAL_RESEARCH so their existing,
+ * already-tuned opener-strip behavior is unaffected (#1638).
+ */
+function firstBiographyOpenerMatch(value: string, allowLabCredentialPatterns: boolean): RegExpMatchArray | null {
+  return (
+    value.match(PERSON_BIOGRAPHY_OPENER_PATTERN) ||
+    (allowLabCredentialPatterns
+      ? value.match(NAME_LEAD_TITLE_PATTERN) || value.match(GRADUATE_OF_LEAD_PATTERN)
+      : null)
+  );
+}
+
+function stripPersonBiographyOpenerSentence(value: string, allowLabCredentialPatterns: boolean): string {
+  const match = firstBiographyOpenerMatch(value, allowLabCredentialPatterns);
   if (!match || match.index === undefined) return value;
   const openerEnd = match.index + match[0].length;
   const sentenceTail = value.slice(openerEnd).match(/^[^.!?]*[.!?]+\s*/);
@@ -365,8 +439,8 @@ function stripPersonBiographyOpenerSentence(value: string): string {
  * sentence and keep the remainder when it still reads as a research
  * description on its own, instead of blanking the whole field (#1586).
  */
-function repairFacultyBiographyOpener(value: string): string {
-  const stripped = stripPersonBiographyOpenerSentence(value);
+function repairFacultyBiographyOpener(value: string, allowLabCredentialPatterns: boolean): string {
+  const stripped = stripPersonBiographyOpenerSentence(value, allowLabCredentialPatterns);
   if (!stripped || stripped === value) return '';
   return isLikelyResearchFocusedText(stripped) && !isPersonBiographyOrAdvisingDescription(stripped)
     ? stripped
@@ -529,26 +603,58 @@ export function revoiceFirstPersonResearchLead(value: unknown): string {
   return next;
 }
 
+export interface BiographyOrDeceasedEmeritusLeadRepair {
+  changed: boolean;
+  value: string;
+}
+
+/**
+ * The single guard-and-repair decision shared by every description/summary
+ * field: does this field's text open on a person-biography/advising note or a
+ * deceased/emeritus lead, and if so, is it salvageable by stripping just the
+ * opener (faculty/lab entities) or does it need to be blanked outright (a
+ * non-person org, or a deceased/emeritus lead whose whole bio reads as a
+ * retrospective rather than one stray sentence)? Exported standalone so a
+ * one-time backfill can apply exactly this decision to already-stored text
+ * without also re-running the unrelated first-person-revoice/subjectless-lead
+ * repairs that the rest of `sanitizeResearchEntityPublicDescriptionFields`
+ * performs on every read (#1638).
+ */
+export function repairBiographyOrDeceasedEmeritusLead(
+  value: unknown,
+  entity: FacultyResearchTextEntity,
+): BiographyOrDeceasedEmeritusLeadRepair {
+  const text = typeof value === 'string' ? value : '';
+  const rejectPersonBiography = isNonPersonOrgEntityType(entity);
+  const isLabEntity = isLabResearchTextEntity(entity);
+  const shouldGuard = rejectPersonBiography || isFacultyResearchTextEntity(entity) || isLabEntity;
+  const deceasedOrEmeritusLead = isLabEntity && isDeceasedOrEmeritusLeadBiography(text);
+  const credentialLead = isLabEntity && isCredentialOrTitleLeadBiography(text);
+  if (!shouldGuard || !(isPersonBiographyOrAdvisingDescription(text) || deceasedOrEmeritusLead || credentialLead)) {
+    return { changed: false, value: text };
+  }
+  const repaired = deceasedOrEmeritusLead
+    ? ''
+    : isFacultyResearchTextEntity(entity) || isLabEntity
+      ? repairFacultyBiographyOpener(text, isLabEntity)
+      : '';
+  return { changed: repaired !== text, value: repaired };
+}
+
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
 ): T {
   let changed = false;
   const next: Record<string, any> = { ...entity };
-  const rejectPersonBiography = isNonPersonOrgEntityType(next);
-  const shouldGuardPersonBiography = rejectPersonBiography || isFacultyResearchTextEntity(next);
 
   for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {
       if (typeof next[field] !== 'string') continue;
-      if (shouldGuardPersonBiography && isPersonBiographyOrAdvisingDescription(next[field])) {
-        const repaired = isFacultyResearchTextEntity(next)
-          ? repairFacultyBiographyOpener(next[field])
-          : '';
-        if (repaired !== next[field]) {
-          next[field] = repaired;
-          changed = true;
-        }
+      const biographyRepair = repairBiographyOrDeceasedEmeritusLead(next[field], next);
+      if (biographyRepair.changed) {
+        next[field] = biographyRepair.value;
+        changed = true;
         continue;
       }
       const withResearchLeadRepair = repairSubjectlessResearchLead(next[field]);
@@ -579,12 +685,8 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   }
 
   if ('summary' in next) {
-    const guardedSummary =
-      shouldGuardPersonBiography && isPersonBiographyOrAdvisingDescription(next.summary)
-        ? isFacultyResearchTextEntity(next)
-          ? repairFacultyBiographyOpener(next.summary)
-          : ''
-        : next.summary;
+    const summaryBiographyRepair = repairBiographyOrDeceasedEmeritusLead(next.summary, next);
+    const guardedSummary = summaryBiographyRepair.changed ? summaryBiographyRepair.value : next.summary;
     const cleaned = publicResearchEntityDescriptionText(guardedSummary);
     if (cleaned !== next.summary) {
       next.summary = cleaned;
@@ -603,6 +705,10 @@ export function isFacultyResearchTextEntity(entity?: FacultyResearchTextEntity |
         entity.entityType === 'FACULTY_RESEARCH_AREA' ||
         entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
+}
+
+export function isLabResearchTextEntity(entity?: FacultyResearchTextEntity | null): boolean {
+  return Boolean(entity && (entity.kind === 'lab' || entity.entityType === 'LAB'));
 }
 
 function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
