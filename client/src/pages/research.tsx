@@ -4,6 +4,7 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
+import ResearchFieldDirectory from '../components/research/ResearchFieldDirectory';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchSortDropdown, {
   ResearchSortField,
@@ -25,6 +26,7 @@ import {
   StudentVisibilityTier,
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { buildResearchFieldDirectory } from '../utils/researchFieldDirectory';
 import {
   relaxResearchQuery,
   suggestCorpusResearchAreas,
@@ -364,7 +366,8 @@ const Research = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useContext(UserContext);
-  const { departments, researchAreas } = useConfig();
+  const { departments, researchAreas, researchFields, fieldOrder, getResearchAreaByName } =
+    useConfig();
   const isAdmin = user?.userType === 'admin';
   const pageSnapshotKey = searchParams.toString();
   const restorableSnapshot =
@@ -536,6 +539,20 @@ const Research = () => {
   const browseResearchAreaOptions = useMemo(
     () => buildResearchAreaOptions(browseFacetDistribution.researchAreas),
     [buildResearchAreaOptions, browseFacetDistribution.researchAreas],
+  );
+  const fieldColorKeyByName = useMemo(
+    () => new Map(researchFields.map((field) => [field.name, field.colorKey])),
+    [researchFields],
+  );
+  const researchFieldDirectory = useMemo(
+    () =>
+      buildResearchFieldDirectory({
+        areaOptions: browseResearchAreaOptions,
+        fieldForArea: (name) => getResearchAreaByName(name)?.field,
+        fieldOrder,
+        colorKeyForField: (field) => fieldColorKeyByName.get(field),
+      }),
+    [browseResearchAreaOptions, getResearchAreaByName, fieldOrder, fieldColorKeyByName],
   );
   const typeBucketOptions = useMemo(
     () => aggregateResearchTypeBucketCounts(facetDistribution.entityType),
@@ -1805,6 +1822,15 @@ const Research = () => {
           </header>
 
           <div className="min-w-0">
+            {!hasSubmittedSearch && researchFieldDirectory.length > 0 && (
+              <div className="mb-6">
+                <ResearchFieldDirectory
+                  domains={researchFieldDirectory}
+                  selectedAreas={selectedResearchAreas}
+                  onSelectArea={pivotToResearchArea}
+                />
+              </div>
+            )}
             {!hasSubmittedSearch && (
               <section aria-busy={defaultSearchLoading} aria-label="Research homes to explore">
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
