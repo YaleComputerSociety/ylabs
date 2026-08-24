@@ -33,6 +33,7 @@ import {
   stripCatalogChrome,
   containsHtmlTagMarkup,
   normalizeHygieneWhitespace,
+  isContentlessResearchProjectsBoilerplateText,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeResearchAreaLabelList } from '../utils/researchAreaLabelHygiene';
@@ -111,7 +112,11 @@ function sanitizeResearchAreaListField(value: unknown): SanitizedObservationFiel
 
 function sanitizeProseField(value: string): SanitizedObservationField {
   const cleaned = normalizeHygieneWhitespace(stripCatalogChrome(redactDirectContactInfo(value)));
-  return cleaned ? accepted(cleaned) : rejected('prose-chrome-only');
+  if (!cleaned) return rejected('prose-chrome-only');
+  if (isContentlessResearchProjectsBoilerplateText(cleaned)) {
+    return rejected('contentless-research-projects-boilerplate');
+  }
+  return accepted(cleaned);
 }
 
 /**

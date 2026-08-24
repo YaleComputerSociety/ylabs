@@ -982,6 +982,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (isNonSelfContainedShortDescription(cleaned)) return '';
   if (containsHtmlTagMarkup(cleaned)) return '';
   if (isCitationAuthorListDumpText(cleaned)) return '';
+  if (isContentlessResearchProjectsBoilerplateText(cleaned)) return '';
   return cleaned;
 }
 
@@ -1289,6 +1290,25 @@ export function isPatientCareMarketingCopyText(text: string): boolean {
     patientCareMarketingPhrasePattern.test(normalized) &&
     patientCareSecondPersonAddressPattern.test(normalized)
   );
+}
+
+const contentlessResearchProjectsBoilerplatePattern =
+  /^(?:studies\s+)?i\s+have\s+\d+\s+research\s+projects?\s+that\s+(?:are|is)\s+focused\s+on\s+fabrication,\s+measurement,?\s+and\/or\s+theory\b/i;
+
+/**
+ * A department undergrad-research page's contentless "I have N research projects
+ * that are focused on fabrication, measurement, and/or theory, depending on
+ * student interest and experience" boilerplate, scraped verbatim as a lab's
+ * description. It names no research topic, so it is not entity-specific: the same
+ * sentence was extracted for multiple distinct physics faculty and, at its high
+ * source confidence, out-competed each lab's genuine specific description (#1636).
+ * Rejecting it here keeps a specific lower-confidence description as the winner
+ * instead of a shared template that describes none of them.
+ */
+export function isContentlessResearchProjectsBoilerplateText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  return contentlessResearchProjectsBoilerplatePattern.test(normalized);
 }
 
 const STREET_SUFFIX_WORD = 'Street|Avenue|Road|Boulevard|Drive|Way|Lane|Place|Court|Circle';
@@ -1774,7 +1794,8 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
     isInstitutionalCenterBlurbText(stripped) ||
     containsHtmlTagMarkup(stripped) ||
     isClinicalTrialRecruitmentFlyerText(stripped) ||
-    isPatientCareMarketingCopyText(stripped)
+    isPatientCareMarketingCopyText(stripped) ||
+    isContentlessResearchProjectsBoilerplateText(stripped)
   ) {
     return '';
   }

@@ -15,6 +15,7 @@ import {
   stripGluedProfileRoleLabel,
   stripGluedProfileSectionLabel,
   stripGluedResearchRoleTrackToken,
+  isContentlessResearchProjectsBoilerplateText,
   isCurationRationaleText,
   isInstitutionalCenterBlurbText,
   isFaqDumpText,
@@ -2415,5 +2416,38 @@ describe('evergreenizeStaleCycleDatePhrase stale fellowship/grant cycle date nor
     expect(sanitizeStoredCatalogDescription(input)).toBe(
       'The lab invites applications for the Alden Fellowship. It supports summer research.',
     );
+  });
+});
+
+describe('descriptionHygiene contentless research-projects boilerplate fail-closed (#1636)', () => {
+  const BOILERPLATE =
+    'I have 3 research projects that are focused on fabrication, measurement, and/or theory, depending on student interest and experience.';
+  const BOILERPLATE_STUDIES_PREFIX =
+    'Studies i have 3 research projects that are focused on fabrication, measurement, and/or theory, depending on student interest and experience.';
+  const SPECIFIC =
+    'Investigates experimental and theoretical studies of energy-relevant materials and charge transport.';
+
+  it('flags the contentless projects boilerplate and its "Studies "-prefixed derivation', () => {
+    expect(isContentlessResearchProjectsBoilerplateText(BOILERPLATE)).toBe(true);
+    expect(isContentlessResearchProjectsBoilerplateText(BOILERPLATE_STUDIES_PREFIX)).toBe(true);
+  });
+
+  it('does not flag a specific research description or empty input', () => {
+    expect(isContentlessResearchProjectsBoilerplateText(SPECIFIC)).toBe(false);
+    expect(isContentlessResearchProjectsBoilerplateText('')).toBe(false);
+    expect(
+      isContentlessResearchProjectsBoilerplateText(
+        'The lab has 3 research projects on quantum optics and circuit QED.',
+      ),
+    ).toBe(false);
+  });
+
+  it('fails the research-entity description closed to empty on the boilerplate', () => {
+    expect(sanitizeResearchEntityDescription(BOILERPLATE)).toBe('');
+    expect(sanitizeResearchEntityShortDescription(BOILERPLATE_STUDIES_PREFIX)).toBe('');
+  });
+
+  it('keeps a specific research description', () => {
+    expect(sanitizeResearchEntityDescription(SPECIFIC)).toBe(SPECIFIC);
   });
 });

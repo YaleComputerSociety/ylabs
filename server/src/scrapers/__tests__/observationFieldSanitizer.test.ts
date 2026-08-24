@@ -142,6 +142,26 @@ describe('sanitizeObservationField', () => {
       expect(result.rejected).toBe(true);
       expect(result.reason).toBe('prose-chrome-only');
     });
+
+    it('rejects the contentless research-projects boilerplate so it never wins a description (#1636)', () => {
+      const result = sanitizeObservationField(
+        'researchEntity',
+        'fullDescription',
+        'I have 3 research projects that are focused on fabrication, measurement, and/or theory, depending on student interest and experience.',
+      );
+      expect(result.rejected).toBe(true);
+      expect(result.reason).toBe('contentless-research-projects-boilerplate');
+    });
+
+    it('keeps a specific research description that mentions projects', () => {
+      const result = sanitizeObservationField(
+        'researchEntity',
+        'fullDescription',
+        'The lab has three research projects on quantum optics, circuit QED, and superconducting qubits.',
+      );
+      expect(result.rejected).toBe(false);
+      expect(String(result.value)).toContain('quantum optics');
+    });
   });
 
   describe('evidence quotes (leak class A: never store a raw contact detail)', () => {
