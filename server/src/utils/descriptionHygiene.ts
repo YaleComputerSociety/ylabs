@@ -1088,7 +1088,7 @@ function synthesisBlurbHasDanglingFirstPersonPluralReference(text: string): bool
 export const roleTitleAppointmentHeaderPattern =
   /\bserves\s+as\s+(?:an?\s+)?[A-Z]|\b(?:is|was)\s+(?:the\s+)?Director\s+of\b|\b(?:is|was)\s+an?\s+(?:Instructor|Assistant\s+Professor|Associate\s+Professor|Clinical\s+Professor|Professor|Lecturer)\b[^.!?]{0,100}?\bat\b|\bmember\s+of\s+the\s+Center\s+for\b|\bholds?\s+a\s+joint\s+appointment\s+in\s+the\s+departments?\s+of\b/i;
 
-function isRoleTitleHeaderOpenerShortDescription(text: string): boolean {
+export function isRoleTitleHeaderOpenerShortDescription(text: string): boolean {
   if (!roleTitleAppointmentHeaderPattern.test(text)) return false;
   return !researchActivityVerbWithObjectPattern.test(text);
 }
