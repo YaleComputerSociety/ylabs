@@ -6,7 +6,10 @@ import {
   getEvaluatedSkippedFellowshipCatalogs,
 } from '../fellowshipProgramSourceRegistry';
 import { sourceCoverageRegistry } from '../sourceCoverageRegistry';
-import { DEFAULT_PAGE_URLS } from '../sources/yaleCollegeFellowshipsOfficeScraper';
+import {
+  DEFAULT_PAGE_URLS,
+  FUNDING_YALE_SITEMAP_URLS,
+} from '../sources/yaleCollegeFellowshipsOfficeScraper';
 import { isProgramApplicationPortalUrl } from '../../utils/researchHomeWebsiteUrl';
 
 const statuses = new Set(['covered', 'partial', 'gap', 'evaluated-skipped']);
@@ -57,9 +60,14 @@ describe('fellowshipProgramSourceRegistry', () => {
     }
   });
 
-  it('backfills every covered catalog from the fellowships-office seed list', () => {
+  it('backs every covered catalog with a fellowships-office seed or sitemap crawl', () => {
+    const sitemapHosts = new Set(
+      FUNDING_YALE_SITEMAP_URLS.map((url) => new URL(url).hostname.toLowerCase()),
+    );
     for (const entry of getFellowshipProgramCatalogsByStatus('covered')) {
-      expect(DEFAULT_PAGE_URLS as readonly string[], entry.url).toContain(entry.url);
+      const seeded = (DEFAULT_PAGE_URLS as readonly string[]).includes(entry.url);
+      const sitemapCovered = sitemapHosts.has(new URL(entry.url).hostname.toLowerCase());
+      expect(seeded || sitemapCovered, entry.url).toBe(true);
       expect(entry.coveredBy, entry.url).toContain('yale-college-fellowships-office');
     }
   });
@@ -88,7 +96,6 @@ describe('fellowshipProgramSourceRegistry', () => {
 
   it('enumerates the known-uncovered public catalogs as gaps', () => {
     const gapUrls = new Set(getFellowshipProgramCatalogGaps().map((entry) => entry.url));
-    expect(gapUrls.has('https://funding.yale.edu/find-funding')).toBe(true);
     expect(gapUrls.has('https://macmillan.yale.edu/undergraduate-research-grants')).toBe(true);
   });
 
@@ -116,6 +123,16 @@ describe('fellowshipProgramSourceRegistry', () => {
         'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/children',
       ),
     ).toBe(false);
+  });
+
+  it('marks the full find-funding database as covered by the sitemap-driven crawl', () => {
+    const findFunding = FELLOWSHIP_PROGRAM_SOURCE_REGISTRY.find(
+      (entry) => entry.url === 'https://funding.yale.edu/find-funding',
+    );
+    expect(findFunding?.status).toBe('covered');
+    expect(findFunding?.coveredBy).toContain('yale-college-fellowships-office');
+    const gapUrls = new Set(getFellowshipProgramCatalogGaps().map((entry) => entry.url));
+    expect(gapUrls.has('https://funding.yale.edu/find-funding')).toBe(false);
   });
 
   it('ranks gaps by student impact tier then discoverable program count', () => {

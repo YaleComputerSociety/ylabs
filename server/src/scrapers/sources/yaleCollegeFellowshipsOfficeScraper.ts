@@ -48,6 +48,30 @@ export const DEFAULT_PAGE_URLS = [
   CBEY_FUNDING_OPPORTUNITIES_URL,
 ];
 
+export const FUNDING_YALE_SITEMAP_URLS = ['https://funding.yale.edu/sitemap.xml'];
+
+const MAX_FUNDING_YALE_PROGRAM_PAGES = 250;
+
+const FUNDING_YALE_FIND_FUNDING_HUB_SLUGS = new Set([
+  'search-fellowships',
+  'external-awards-non-yale',
+  'yale-fellowships-offered-through',
+  'getting-started',
+  'other-funding',
+  'alternative-funding-options',
+  'define-your-project',
+  'identify-goals',
+  'make-contacts',
+  'class-year',
+  'uk-fellowships',
+  'uk-fellowships-direct-application',
+  'uk-fellowship-applications-through',
+  'uk-irish-graduate-courses',
+  'finding-uk-graduate-course',
+  'graduate-study-uk-ireland-0',
+  'apply-marshall-rhodes',
+]);
+
 const PUBLIC_YALE_HOSTS = new Set([
   'funding.yale.edu',
   'yalecollege.yale.edu',
@@ -116,6 +140,7 @@ type FetchPage = (url: string, useCache: boolean) => Promise<string>;
 
 interface YaleCollegeFellowshipsOfficeScraperDeps {
   pageUrls?: string[];
+  sitemapUrls?: string[];
   fetchPage?: FetchPage;
   retryDelay?: (attempt: number) => Promise<void>;
 }
@@ -221,6 +246,20 @@ function isIndexSeedOnlyUrl(url: string | undefined): boolean {
   return INDEX_SEED_ONLY_URL_KEYS.has(indexSeedKey(url));
 }
 
+function isFundingYaleIndexOrHubUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.toLowerCase() !== 'funding.yale.edu') return false;
+    const pathname = parsed.pathname.toLowerCase().replace(/\/+$/, '');
+    if (pathname === '/find-funding') return true;
+    const childMatch = pathname.match(/^\/find-funding\/([^/]+)$/);
+    return !!childMatch && FUNDING_YALE_FIND_FUNDING_HUB_SLUGS.has(childMatch[1]);
+  } catch {
+    return false;
+  }
+}
+
 function isCommunityForceUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
@@ -306,6 +345,34 @@ function isLikelyPublicFellowshipDetailUrl(url: string): boolean {
 
 function isEligibleCandidateHref(url: string): boolean {
   return isCommunityForceUrl(url) || isLikelyPublicFellowshipDetailUrl(url);
+}
+
+/**
+ * The funding.yale.edu find-funding database is a JS-rendered faceted search, so
+ * its listing/index roots expose no crawlable static rows. The site's sitemap is
+ * the canonical, complete enumeration of the individual program pages behind it
+ * (external awards, Yale fellowships), so it is used as a crawl seed to discover
+ * every citable per-program page. The sitemap and every find-funding index/hub
+ * root are crawl seeds only and are never emitted as a source citation (#516/#549).
+ */
+export function parseFundingYaleSitemapProgramUrls(xml: string): string[] {
+  const urls = new Set<string>();
+  for (const match of xml.matchAll(/<loc>\s*([^<>\s]+)\s*<\/loc>/gi)) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+    let normalized: string;
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol === 'http:') parsed.protocol = 'https:';
+      normalized = normalizeLinkUrl(parsed.toString());
+    } catch {
+      continue;
+    }
+    if (isFundingYaleIndexOrHubUrl(normalized)) continue;
+    if (!isLikelyPublicFellowshipDetailUrl(normalized)) continue;
+    urls.add(normalized);
+  }
+  return Array.from(urls).sort();
 }
 
 function isInExcludedPageRegion($link: cheerio.Cheerio<any>): boolean {
@@ -979,6 +1046,7 @@ function candidateFromDetailPage(
   pageUrl: string,
   referenceDate: Date,
 ): FellowshipCatalogCandidate | undefined {
+  if (isFundingYaleIndexOrHubUrl(pageUrl)) return undefined;
   const title = normalizedCandidateTitle($('h1').first().text());
   if (!title || isGenericCatalogTitle(title)) return undefined;
   if (isIndexSeedOnlyUrl(pageUrl)) return undefined;
@@ -1296,11 +1364,13 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
   readonly displayName = 'Yale College Fellowships Office';
 
   private readonly pageUrls: string[];
+  private readonly sitemapUrls: string[];
   private readonly fetchPage: FetchPage;
   private readonly retryDelay: (attempt: number) => Promise<void>;
 
   constructor(deps: YaleCollegeFellowshipsOfficeScraperDeps = {}) {
     this.pageUrls = deps.pageUrls || DEFAULT_PAGE_URLS;
+    this.sitemapUrls = deps.sitemapUrls || FUNDING_YALE_SITEMAP_URLS;
     this.fetchPage = deps.fetchPage || fetchHtml;
     this.retryDelay =
       deps.retryDelay ||
@@ -1367,17 +1437,45 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       );
     }
 
-    const detailUrls = Array.from(
-      new Set([
-        ...Array.from(candidatesByKey.values()).flatMap((candidate) =>
-          candidate.sourcePageKind === 'catalog' ? candidate.links.map((link) => link.url) : [],
-        ),
-        ...indexDiscoveredDetailUrls,
-      ]),
-    ).filter(
-      (url) =>
-        isLikelyPublicFellowshipDetailUrl(url) && !this.pageUrls.includes(url) && !fetched.has(url),
+    const catalogLinkedUrls = Array.from(candidatesByKey.values()).flatMap((candidate) =>
+      candidate.sourcePageKind === 'catalog' ? candidate.links.map((link) => link.url) : [],
     );
+
+    const sitemapProgramUrls: string[] = [];
+    for (const sitemapUrl of this.sitemapUrls) {
+      if (!isPublicYaleUrl(sitemapUrl)) continue;
+      try {
+        const xml = await this.fetchPage(sitemapUrl, ctx.options.useCache);
+        sitemapProgramUrls.push(...parseFundingYaleSitemapProgramUrls(xml));
+      } catch (error) {
+        ctx.log('Skipping fellowship sitemap after fetch/parse failure', {
+          url: sitemapUrl,
+          error: sanitizeLogValue(error),
+        });
+      }
+    }
+
+    const discoveredDetailUrls = Array.from(
+      new Set([...catalogLinkedUrls, ...indexDiscoveredDetailUrls, ...sitemapProgramUrls]),
+    )
+      .filter(
+        (url) =>
+          isLikelyPublicFellowshipDetailUrl(url) &&
+          !isFundingYaleIndexOrHubUrl(url) &&
+          !this.pageUrls.includes(url) &&
+          !fetched.has(url),
+      )
+      .sort();
+
+    const detailCrawlCap = MAX_FUNDING_YALE_PROGRAM_PAGES;
+    const detailUrls = discoveredDetailUrls.slice(0, detailCrawlCap);
+    const detailUrlsCapped = discoveredDetailUrls.length - detailUrls.length;
+    if (detailUrlsCapped > 0) {
+      ctx.log('Capping fellowship program detail crawl at page limit', {
+        cap: detailCrawlCap,
+        skipped: detailUrlsCapped,
+      });
+    }
 
     for (const url of detailUrls) {
       await tryParseAndMerge(url);
@@ -1394,13 +1492,20 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     const deadlineParsed = selected.filter((candidate) => !!candidate.deadline).length;
     const reviewRequired = selected.filter((candidate) => candidate.reviewRequired).length;
 
+    const noteParts: string[] = [];
+    if (failedUrls.length > 0) {
+      noteParts.push(`Skipped ${failedUrls.length} fellowship page(s) after fetch/parse failure.`);
+    }
+    if (detailUrlsCapped > 0) {
+      noteParts.push(
+        `Capped ${detailUrlsCapped} program detail page(s) at the ${detailCrawlCap}-page crawl limit.`,
+      );
+    }
+
     return {
       observationCount: observations.length,
       entitiesObserved: selected.length,
-      notes:
-        failedUrls.length > 0
-          ? `Skipped ${failedUrls.length} fellowship page(s) after fetch/parse failure.`
-          : undefined,
+      notes: noteParts.length > 0 ? noteParts.join(' ') : undefined,
       metrics: {
         fellowshipCatalog: {
           discovered: allCandidates.length,
@@ -1412,6 +1517,9 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
           missingPreviouslySeen: 0,
           deadlineParsed,
           deadlineMissing: selected.length - deadlineParsed,
+          sitemapProgramsDiscovered: sitemapProgramUrls.length,
+          detailPagesCrawled: detailUrls.length,
+          detailPagesCapped: detailUrlsCapped,
         },
       },
     };

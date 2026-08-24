@@ -6,6 +6,7 @@ import {
   parseFellowshipCatalogPage,
   STEM_FELLOWSHIPS_FUNDING_HUB_URL,
   STUDENT_FACULTY_AWARDS_INDEX_URL,
+  parseFundingYaleSitemapProgramUrls,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
 
@@ -738,6 +739,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     const emitted: any[] = [];
     const scraper = new YaleCollegeFellowshipsOfficeScraper({
       pageUrls: [detailPageUrl],
+      sitemapUrls: [],
       fetchPage,
     });
 
@@ -1184,6 +1186,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     const emitted: any[] = [];
     const scraper = new YaleCollegeFellowshipsOfficeScraper({
       pageUrls: [fundingPageUrl],
+      sitemapUrls: [],
       fetchPage,
     });
 
@@ -1359,6 +1362,117 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(emitted.find((obs) => obs.field === 'links')?.value).toEqual([
       { label: 'Fixture Undergraduate Fellowship Program', url: staleDetailUrl },
     ]);
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper find-funding sitemap crawl (#1536)', () => {
+  const sitemapUrl = 'https://funding.yale.edu/sitemap.xml';
+  const externalAwardUrl = 'https://funding.yale.edu/external-award/fixture-goldwater-scholarship';
+  const findFundingProgramUrl = 'https://funding.yale.edu/find-funding/fixture-light-fellowship';
+  const communityForceUrl =
+    'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=1536';
+
+  const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url><loc>http://funding.yale.edu/</loc></url>
+      <url><loc>http://funding.yale.edu/find-funding</loc></url>
+      <url><loc>http://funding.yale.edu/find-funding/search-fellowships</loc></url>
+      <url><loc>http://funding.yale.edu/find-funding/external-awards-non-yale</loc></url>
+      <url><loc>http://funding.yale.edu/find-funding/yale-fellowships-offered-through</loc></url>
+      <url><loc>http://funding.yale.edu/connect/fellowships-staff</loc></url>
+      <url><loc>http://funding.yale.edu/external-award/fixture-goldwater-scholarship</loc></url>
+      <url><loc>http://funding.yale.edu/find-funding/fixture-light-fellowship</loc></url>
+    </urlset>`;
+
+  it('selects only individual program pages, normalizes to https, and drops index/hub roots', () => {
+    expect(parseFundingYaleSitemapProgramUrls(sitemapXml)).toEqual([
+      externalAwardUrl,
+      findFundingProgramUrl,
+    ]);
+  });
+
+  it('never emits a find-funding index or hub root as a candidate source', () => {
+    for (const indexUrl of [
+      'https://funding.yale.edu/find-funding',
+      'https://funding.yale.edu/find-funding/external-awards-non-yale',
+      'https://funding.yale.edu/find-funding/search-fellowships',
+    ]) {
+      const candidates = parseFellowshipCatalogPage(
+        `
+          <main>
+            <div class="node">
+              <h1 id="page-title">External Awards (non-Yale Fellowships)</h1>
+              <p>Browse the full database of external fellowships and scholarships.</p>
+            </div>
+          </main>
+        `,
+        indexUrl,
+        new Date('2026-01-01T00:00:00Z'),
+      );
+      expect(candidates, indexUrl).toEqual([]);
+    }
+  });
+
+  it('crawls sitemap program pages, cites each own page, and never fetches gated portals', async () => {
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === sitemapUrl) return sitemapXml;
+      if (url === externalAwardUrl) {
+        return `
+          <main>
+            <div class="node">
+              <h1 id="page-title">Fixture Goldwater Scholarship</h1>
+              <p>Supports undergraduate research in the natural sciences and engineering.</p>
+              <a href="${communityForceUrl}">Apply</a>
+            </div>
+          </main>
+        `;
+      }
+      if (url === findFundingProgramUrl) {
+        return `
+          <main>
+            <div class="node">
+              <h1 id="page-title">Fixture Light Fellowship</h1>
+              <p>Funds intensive language study abroad for undergraduates.</p>
+            </div>
+          </main>
+        `;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [],
+      sitemapUrls: [sitemapUrl],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(result.entitiesObserved).toBe(2);
+    const sourceUrls = emitted
+      .filter((observation) => observation.field === 'sourceUrl')
+      .map((observation) => observation.value)
+      .sort();
+    expect(sourceUrls).toEqual([externalAwardUrl, findFundingProgramUrl]);
+    expect(sourceUrls).not.toContain(sitemapUrl);
+
+    const goldwaterApplicationLink = emitted.find(
+      (observation) =>
+        observation.field === 'applicationLink' && observation.entityKey.includes('goldwater'),
+    );
+    expect(goldwaterApplicationLink?.value).toBe(communityForceUrl);
+    expect(fetchPage).not.toHaveBeenCalledWith(communityForceUrl, expect.anything());
+    expect(result.metrics?.fellowshipCatalog?.sitemapProgramsDiscovered).toBe(2);
   });
 });
 
