@@ -24,8 +24,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-async function loadArchivedEntityIds(): Promise<string[]> {
-  const docs = await ResearchEntity.find({ archived: true })
+async function loadLiveEntityIds(): Promise<string[]> {
+  const docs = await ResearchEntity.find({ archived: { $ne: true } })
     .select('_id')
     .lean<Array<{ _id: unknown }>>();
   return docs.map((doc) => String(doc._id));
@@ -93,9 +93,9 @@ async function main(): Promise<void> {
 
   await initializeConnections();
 
-  const archivedEntityIds = await loadArchivedEntityIds();
+  const liveEntityIds = await loadLiveEntityIds();
   const indexedDocIds = await loadIndexedDocumentIds(args.pageSize);
-  const prunableDocIds = computeIndexDocIdsToPrune(archivedEntityIds, indexedDocIds);
+  const prunableDocIds = computeIndexDocIdsToPrune(liveEntityIds, indexedDocIds);
 
   let prunedCount = 0;
   let stillPresentAfter: number | undefined;
@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     db: guard.dbLabel,
     index: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
     mode: args.apply ? 'apply' : 'dry-run',
-    archivedEntitiesInMongo: archivedEntityIds.length,
+    liveEntitiesInMongo: liveEntityIds.length,
     indexedDocumentsScanned: indexedDocIds.length,
     prunableDocumentCount: prunableDocIds.length,
     prunableDocumentIds: prunableDocIds,

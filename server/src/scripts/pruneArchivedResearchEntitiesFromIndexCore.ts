@@ -63,17 +63,24 @@ export function assertPruneArchivedIndexApplyAllowed(
   }
 }
 
+/**
+ * A Meili doc is prunable whenever it has no live (non-archived) Mongo
+ * counterpart - whether that entity was archived-in-place, re-slugged into a
+ * different id, or hard-deleted outright (#1364). Comparing against the full
+ * live-id set (rather than only ids Mongo still marks `archived: true`)
+ * catches all three cases instead of only the first.
+ */
 export function computeIndexDocIdsToPrune(
-  archivedEntityIds: Iterable<string>,
+  liveEntityIds: Iterable<string>,
   indexedDocIds: Iterable<string>,
 ): string[] {
-  const archived = new Set<string>();
-  for (const id of archivedEntityIds) archived.add(String(id));
+  const live = new Set<string>();
+  for (const id of liveEntityIds) live.add(String(id));
   const pruned: string[] = [];
   const emitted = new Set<string>();
   for (const id of indexedDocIds) {
     const key = String(id);
-    if (archived.has(key) && !emitted.has(key)) {
+    if (!live.has(key) && !emitted.has(key)) {
       emitted.add(key);
       pruned.push(key);
     }
