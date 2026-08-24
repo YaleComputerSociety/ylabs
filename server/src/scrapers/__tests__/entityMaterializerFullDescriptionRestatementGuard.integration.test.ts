@@ -126,3 +126,65 @@ describe('materializeEntity rejects a fullDescription that restates shortDescrip
     expect(persisted?.fullDescription).toBe(MU_LAB_RICHER_FULL);
   });
 });
+
+const PROGRAM_SINGLE_SENTENCE_TEXT =
+  'Fosters research and teaching across disciplines, including computer science, data science, and economics.';
+
+describe('materializeEntity blanks a program fullDescription that is byte-identical to its shortDescription (#1773)', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['observations', 'research_entities', 'role_assignments']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  it('blanks a stale byte-identical fullDescription on rematerialize even with no new fullDescription observation', async () => {
+    await ResearchEntity.create({
+      slug: 'program-restatement-fixture',
+      name: 'Schmidt Program on AI',
+      kind: 'program',
+      entityType: 'PROGRAM',
+      studentVisibilityTier: 'operator_review',
+      archived: false,
+      shortDescription: PROGRAM_SINGLE_SENTENCE_TEXT,
+      fullDescription: PROGRAM_SINGLE_SENTENCE_TEXT,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: 'program-restatement-fixture',
+      field: 'name',
+      value: 'Schmidt Program on AI',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'jackson-centers',
+      sourceUrl: 'https://example.edu/jackson-centers/',
+      confidence: 0.9,
+      observedAt: new Date('2026-02-01T00:00:00Z'),
+      superseded: false,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: 'program-restatement-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'program-restatement-fixture',
+    }).lean<PersistedEntity>();
+    expect(persisted?.fullDescription).toBe('');
+    expect(persisted?.shortDescription).toBe(PROGRAM_SINGLE_SENTENCE_TEXT);
+  });
+});
