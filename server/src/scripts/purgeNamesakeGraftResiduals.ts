@@ -13,6 +13,16 @@
  * reported wrong-person sourceUrls) are intentionally omitted rather than
  * re-verified against stale audit-comment snapshots.
  *
+ * Round 3 (this batch) adds 10 more entries surfaced by a fresh #1407 audit
+ * (FACULTY_RESEARCH_AREA humanities/social-science faculty carrying wrong-
+ * domain biomedical or cross-language area chips) plus a CENTER and a
+ * PROGRAM entity whose grafts trace to a different mechanism (research-area
+ * extractor mis-scoping, not the identity-resolver namesake merge) - see the
+ * per-entry comments below. `kraus-csk33`, flagged as borderline in the same
+ * audit, is intentionally excluded: only one of its five areas ("Biblical
+ * Studies and Interpretation") is even arguably off-field for a Latin
+ * historiographer, which is not the unambiguous-graft bar this list holds to.
+ *
  *   yarn --cwd server tsx src/scripts/purgeNamesakeGraftResiduals.ts               # dry-run
  *   yarn --cwd server tsx src/scripts/purgeNamesakeGraftResiduals.ts --apply \
  *     --confirm-namesake-graft-purge
@@ -370,6 +380,174 @@ const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
       'The Genevieve Rios Lab focuses on cellular transport and secretion processes, glycosylation and glycoproteins, as well as the study of cell adhesion molecules. The lab investigates the mechanisms and implications of these biological processes in various cellular contexts.',
     clearShortDescriptionIfEquals:
       'The Genevieve Rios Lab studies cellular transport, glycosylation, and cell adhesion molecules.',
+  },
+  {
+    // #1407: a `medicine.yale.edu` namesake's `researchAreas` grafted onto a
+    // Classics historian; his own fullDescription/shortDescription (Roman
+    // cultural history and kingship) are already correct and untouched.
+    entityId: '6a058d9dba66f3c14bd85cf4',
+    slug: 'johnston-aj346',
+    removeAreas: [
+      'CRISPR and Genetic Engineering',
+      'Hidradenitis Suppurativa and Treatments',
+      'Epigenetics and DNA Methylation',
+      'Cytomegalovirus and herpesvirus research',
+      'Synthetic Organic Chemistry Methods',
+    ],
+  },
+  {
+    // #1407: Black Studies / performance-studies scholar carrying a fully
+    // unrelated muscle-metabolism/nutrition area cluster.
+    entityId: '6a058debba66f3c14bd86276',
+    slug: 'vogel-spv9',
+    removeAreas: [
+      'Muscle metabolism and nutrition',
+      'Eating Disorders and Behaviors',
+      'Cardiovascular and exercise physiology',
+      'Coffee research and impacts',
+      'Adipose Tissue and Metabolism',
+      'Nutrition',
+    ],
+  },
+  {
+    // #1407: poetry/literary-biography scholar carrying an unrelated
+    // dental/head-and-neck-oncology area cluster.
+    entityId: '6a058d76ba66f3c14bd85a2c',
+    slug: 'hammer-lhammer',
+    removeAreas: [
+      'Oral and gingival health research',
+      'Oral and Maxillofacial Pathology',
+      'Medical and Biological Sciences',
+      'Head and Neck Cancer Studies',
+      'Craniofacial Disorders and Treatments',
+    ],
+  },
+  {
+    // #1407: macroeconomist (FAS Dean of Social Science) carrying an
+    // unrelated breast-cancer/BRCA oncology area cluster.
+    entityId: '6a058cf8ba66f3c14bd8516e',
+    slug: 'smith-aas59',
+    removeAreas: [
+      'Breast Cancer Treatment Studies',
+      'BRCA gene mutations in cancer',
+      'Breast Lesions and Carcinomas',
+      'DNA Repair Mechanisms',
+      'Genomic variations and chromosomal abnormalities',
+    ],
+  },
+  {
+    // #1407: comparative-literature/modernism scholar carrying an unrelated
+    // rabies/venomous-animal/microbial-infection area cluster.
+    entityId: '6a058d29ba66f3c14bd854cf',
+    slug: 'lewis-pl54',
+    removeAreas: [
+      'Rabies epidemiology and control',
+      'Venomous Animal Envenomation and Studies',
+      'Cellular transport and secretion',
+      'Microbial infections and disease research',
+      'Nicotinic Acetylcholine Receptors Study',
+    ],
+  },
+  {
+    // #1407: modern-Chinese-literature scholar whose first 5 (of 9) areas are
+    // an unrelated single-cell/microscopy/biomedical-imaging cluster; the
+    // trailing 4 (Intellectual History, Media Studies, Religious Studies,
+    // Comparative Literature) are her own and are left in place.
+    entityId: '6a058dcaba66f3c14bd8601b',
+    slug: 'tsu-jyt5',
+    removeAreas: [
+      'Single-cell and spatial transcriptomics',
+      'Cell Image Analysis Techniques',
+      '3D Printing in Biomedical Research',
+      'Microfluidic and Capillary Electrophoresis Applications',
+      'Advanced Fluorescence Microscopy Techniques',
+    ],
+  },
+  {
+    // #1407: early-modern-Italian-literature scholar (Boccaccio, pastoral,
+    // women's roles) carrying an unrelated Spanish-lit/political-movements
+    // cluster. `Renaissance and Early Modern Studies` and `Poetry Analysis
+    // and Criticism` are left in place as plausibly her own (both cover her
+    // actual period and genre); only the language- and domain-mismatched
+    // entries are removed.
+    entityId: '6a058da7ba66f3c14bd85d9f',
+    slug: 'lorenzini-sl675',
+    removeAreas: [
+      'Early Modern Spanish Literature',
+      'Communism, Protests, Social Movements',
+      'American Political and Social Dynamics',
+    ],
+  },
+  {
+    // #1407: premodern South Asian Buddhist philosophy scholar carrying a
+    // single unrelated agricultural-economics area alongside two areas that
+    // are clearly his own (Indian and Buddhist Studies; South Asian Studies
+    // and Diaspora), which are left in place.
+    entityId: '6a058e02ba66f3c14bd86d57',
+    slug: 'kachru-sk2999',
+    removeAreas: ['Agricultural Economics and Practices'],
+  },
+  {
+    // #1407: sole NIH grant (5K99EY035344, Cardin/Higley labs) is visual-
+    // cortex fear-learning / cortical-network systems neuroscience; areas and
+    // both description fields were instead entirely a wrong-person
+    // olfaction/insect-physiology/chemical-sensor narrative with no
+    // observation backing any of the three fields (fieldProvenance has no
+    // entry for researchAreas, fullDescription, or shortDescription), so no
+    // supersede is needed - there is nothing to re-derive from.
+    entityId: '6a057e3f13fc60d57ec2b5b1',
+    slug: 'nih-pi-andrew-moberly',
+    removeAreas: [
+      'Olfactory and Sensory Function Studies',
+      'Neurobiology and Insect Physiology Research',
+      'Biochemical Analysis and Sensing Techniques',
+      'Neural dynamics and brain function',
+      'Advanced Chemical Sensor Technologies',
+    ],
+    clearFullDescriptionIfEquals:
+      'The Andrew Moberly Lab focuses on olfactory and sensory function studies, exploring neurobiology and insect physiology. The lab employs biochemical analysis and sensing techniques to investigate these areas.',
+    clearShortDescriptionIfEquals:
+      'The Andrew Moberly Lab studies olfactory and sensory functions, neurobiology, and insect physiology using biochemical analysis.',
+  },
+  {
+    // #1407 CENTER variant, a different mechanism than the person-namesake
+    // grafts above: `research-area-source-extractor` scraped the shared
+    // `research.yale.edu/cores` listing page (not the MRRC-specific page) and
+    // wrote an aggregate-looking, imaging-unrelated area set (Genomics,
+    // Proteomics, Bioinformatics, Catalysis, ...) onto this entity. A
+    // correct, still-active `lab-microsite-description-llm` observation
+    // sourced from the center director's own medicine.yale.edu profile
+    // already carries the right imaging/cognitive-neuroscience areas, so
+    // this uses `setAreas` to adopt that value directly and supersedes the
+    // wrong extractor observation so it isn't re-picked. The extractor's
+    // page-scoping bug itself (why it produced a cores-listing aggregate
+    // rather than a per-core value) is a distinct follow-up, not fixed here.
+    entityId: '6a6463da9817287a528b5828',
+    slug: 'research-yale-magnetic-resonance-research-center-mrrc',
+    setAreas: [
+      'Functional Magnetic Resonance Imaging',
+      'Cognitive Processes',
+      'Language and Memory',
+      'Brain Disorders',
+      'Neuronal Processes',
+      'MRI Device Development',
+    ],
+    supersedeObservationIds: ['6a8917d0c09917b33b26ecbb'],
+  },
+  {
+    // #1407 PROGRAM variant, also a distinct mechanism from the person-
+    // namesake grafts above: the sole `researchAreas` observation for this
+    // general "explore 100+ neuroscience labs" undergrad-opportunities page
+    // is a `lab-microsite-description-llm` extraction that narrowed to one
+    // specific affiliated lab's clinical-psychiatry areas instead of the
+    // program's own general scope; the page's own description text never
+    // mentions psychiatry. No corroborated program-level replacement exists,
+    // so this clears to empty and supersedes the sole backing observation
+    // rather than setting a fabricated value.
+    entityId: '6a24fccd9457f3cf6851fa4d',
+    slug: 'department-undergrad-research-neuroscience',
+    removeAreas: ['Clinical Psychiatry', 'Computational Psychiatry', 'Mood and Brain Development'],
+    supersedeObservationIds: ['6a2a323896f26c9504b7d0e1'],
   },
 ];
 
