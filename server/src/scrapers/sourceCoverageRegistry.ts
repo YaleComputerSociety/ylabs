@@ -309,6 +309,21 @@ export const sourceCoverageRegistry = {
     notes:
       'Yale Peabody Museum Collections & Research divisions catalog; pilot producer for the ARCHIVE_OR_MUSEUM_PROJECT museum/collections research home. Each individual division page is the cited source; the divisions index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity, an official-page description, and the single named Curator-in-charge as an inferred-director lead (resolved to a Yale User before promotion). Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
   },
+  'beinecke-curatorial-units': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'ENTITY_MEMBERSHIP',
+      'OFFICIAL_PROFILE',
+      'TOPICS',
+      'LAB_WEBSITE',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Beinecke Rare Book & Manuscript Library curatorial-units catalog (library.yale.edu/beinecke/collections); producer for the ARCHIVE_OR_MUSEUM_PROJECT rare-book/manuscript/archive research home, reusing the Peabody path (#1349/#1367) and complementing the Beinecke research-fellowships producer (#1455). Each individual unit page is the cited source; the units index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity and the official-page summary description. Verified live, the migrated site publishes no structured named-curator credit on unit pages (curator mentions are historical body prose), so the curatorial-lead extractor reads only a structured staff/contact block and fails closed; a unit without a named director still earns the organizational REACH_OUT_PLAUSIBLE ways-in from its official page. Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
+  },
   'library-collections-as-data': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

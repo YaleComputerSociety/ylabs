@@ -29,6 +29,7 @@ import { DhLabProjectsScraper } from './sources/dhLabProjectsScraper';
 import { PeabodyCollectionsResearchScraper } from './sources/peabodyCollectionsResearchScraper';
 import { LibraryCollectionsAsDataScraper } from './sources/libraryCollectionsAsDataScraper';
 import { BeineckeCollectionsResearchScraper } from './sources/beineckeCollectionsResearchScraper';
+import { BeineckeCuratorialUnitsScraper } from './sources/beineckeCuratorialUnitsScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -63,5 +64,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new PeabodyCollectionsResearchScraper());
   o.register(new LibraryCollectionsAsDataScraper());
   o.register(new BeineckeCollectionsResearchScraper());
+  o.register(new BeineckeCuratorialUnitsScraper());
   return o;
 }

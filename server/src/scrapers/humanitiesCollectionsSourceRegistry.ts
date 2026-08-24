@@ -77,6 +77,15 @@ export const HUMANITIES_COLLECTIONS_SOURCE_REGISTRY: HumanitiesCollectionsSource
     notes:
       'Yale Library collections-as-data / digital-collections initiatives. library-collections-as-data walks the Yale University Library online exhibitions catalog as a crawl seed and mints COLLECTIONS_INITIATIVE homes citing each individual exhibition own page. This library-wide COLLECTIONS_INITIATIVE producer is the proper home for library-scale digital-collections platforms (Yale Library Digital Collections, Aviary audiovisual collections, the Yale Daily News Historical Archive, EliScholar) rather than the Beinecke ARCHIVE_OR_MUSEUM_PROJECT producer, to avoid misattributing them to Beinecke.',
   },
+  {
+    url: 'https://beinecke.library.yale.edu/beinecke/collections',
+    name: 'Beinecke Rare Book & Manuscript Library curatorial units',
+    entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+    status: 'covered',
+    coveredBy: ['beinecke-curatorial-units'],
+    notes:
+      'Rare-book/manuscript/archive research homes from the Beinecke curatorial-units catalog (#1457), reusing the Peabody path and complementing the Beinecke research-fellowships producer (#1455). beinecke-curatorial-units walks the units index as a crawl seed and cites each unit own page, emitting identity and the official-page summary. Verified live, the migrated site (library.yale.edu/beinecke) publishes no structured named-curator credit on unit pages (curator mentions are historical body prose), so the lead extractor fails closed and units earn the organizational reach-out ways-in from their official page rather than an identified named lead.',
+  },
 ];
 
 export function getHumanitiesCollectionsGaps(): HumanitiesCollectionsSourceEntry[] {
