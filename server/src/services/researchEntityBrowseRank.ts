@@ -12,7 +12,12 @@
  *     low-confidence REACH_OUT_PLAUSIBLE fallback, so a flat boost would
  *     discriminate nothing. Strong, evidence-backed signals (current/past
  *     undergrads) outweigh weak ones; an explicit "not available" signal
- *     pushes the entity down.
+ *     pushes the entity down. Strong signals are only derivable from lab-style
+ *     microsites (roster/join/contact pages), so for shapes that cannot publish
+ *     those (department-directory and individual-profile homes) the access term
+ *     is neutralized to a mid-tier baseline: their missing strong signal is
+ *     uninformative and completeness carries the score, rather than pinning ~39%
+ *     of the corpus to the access floor purely by source shape.
  *
  * Higher score = better. Pure function (no DB access) so it is fully testable;
  * persistence/sync orchestration lives in researchEntityBrowseRankService.ts.
@@ -89,6 +94,52 @@ const accessPoints = (accessSignalTypes: string[]): number => {
 };
 
 /**
+ * Research-home shapes whose only sources are a department-directory row
+ * (FACULTY_RESEARCH_AREA) or an individual faculty profile (INDIVIDUAL_RESEARCH).
+ * These never publish a roster, join page, or contact microsite, so the strong
+ * undergrad-access signals (CURRENT/PAST_UNDERGRADS, APPLICATION_FORM_EXISTS,
+ * CONTACT_INSTRUCTIONS_EXIST) are structurally unobtainable for them. Absence of
+ * those signals is uninformative for these shapes and must not be read as low
+ * undergrad access - unlike an observable lab that published a roster page and
+ * still listed no undergrads, whose weak signal is mildly informative.
+ */
+const ACCESS_UNOBSERVABLE_ENTITY_TYPES = new Set<ResearchEntityType>([
+  'FACULTY_RESEARCH_AREA',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+/**
+ * Neutral access credit for shapes that cannot structurally earn a strong
+ * signal. Placed in the mid-tier of the observed access range so completeness
+ * (description + lead + official URL) decides these entities' rank rather than a
+ * missing +40/+36 term pinning the whole class to the REACH_OUT_PLAUSIBLE floor.
+ * A genuinely stronger observed signal still outranks it, and an explicit
+ * NOT_CURRENTLY_AVAILABLE still pulls the entity down. Tunable pending Dev
+ * browse-mix dogfood.
+ */
+const NEUTRAL_ACCESS_BASELINE = 20;
+
+/**
+ * Shape-aware access contribution. Observable shapes are scored on their raw
+ * signals. For a shape that cannot structurally observe strong signals, the
+ * missing strong term is neutralized to a mid-tier baseline (never a floor)
+ * unless the entity carries an explicit negative signal, so the whole class is
+ * not demoted for evidence it never had the source shape to produce.
+ */
+const accessContribution = (
+  accessSignalTypes: string[],
+  entityType: ResearchEntityType,
+): number => {
+  const observed = accessPoints(accessSignalTypes);
+  if (!ACCESS_UNOBSERVABLE_ENTITY_TYPES.has(entityType)) return observed;
+  if (observed < 0) return observed;
+  return Math.max(observed, NEUTRAL_ACCESS_BASELINE);
+};
+
+const resolveEntityType = (entity: Record<string, any>): ResearchEntityType =>
+  (entity.entityType || mapResearchGroupKindToEntityType(entity.kind)) as ResearchEntityType;
+
+/**
  * Type-based demotion. Umbrella organizations (a center or institute that hosts
  * many labs) are valid research homes but are not the single joinable lab or
  * project a student is usually looking for, so they are ranked below comparable
@@ -115,8 +166,7 @@ const entityTypeRankAdjustment = (
   entity: Record<string, any>,
   hostsAffiliatedResearchHomes = false,
 ): number => {
-  const entityType = (entity.entityType ||
-    mapResearchGroupKindToEntityType(entity.kind)) as ResearchEntityType;
+  const entityType = resolveEntityType(entity);
   const adjustment = ENTITY_TYPE_RANK_ADJUSTMENT[entityType] ?? 0;
   if (adjustment === 0) return 0;
   if (UMBRELLA_GATED_TYPES.has(entityType) && !hostsAffiliatedResearchHomes) return 0;
@@ -134,7 +184,7 @@ export function computeResearchEntityBrowseRank({
   let score = 0;
   score += descriptionPoints(summary);
   score += leadPoints(summary);
-  score += accessPoints(accessSignalTypes);
+  score += accessContribution(accessSignalTypes, resolveEntityType(entity));
   if (summary.repairFlags.includes('missing_source_url')) {
     // Reward a real official source URL; its absence is already implied here.
   } else {
@@ -150,8 +200,11 @@ export const __testing = {
   ACCESS_SIGNAL_POINTS,
   ENTITY_TYPE_RANK_ADJUSTMENT,
   UMBRELLA_GATED_TYPES,
+  ACCESS_UNOBSERVABLE_ENTITY_TYPES,
+  NEUTRAL_ACCESS_BASELINE,
   descriptionPoints,
   leadPoints,
   accessPoints,
+  accessContribution,
   entityTypeRankAdjustment,
 };
