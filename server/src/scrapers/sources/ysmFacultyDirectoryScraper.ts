@@ -35,6 +35,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
+import { flattenHtmlToText } from '../utils/htmlText';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -149,7 +150,7 @@ function nameFromDirectoryText(text: string): string {
 function htmlToText(value: unknown): string {
   const raw = textValue(value);
   if (!raw) return '';
-  return cheerio.load(raw).text().replace(/\s+/g, ' ').trim();
+  return flattenHtmlToText(raw);
 }
 
 function clippedText(value: string, minChars = 40, maxChars = 2000): string | undefined {

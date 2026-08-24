@@ -1,4 +1,6 @@
 import {
+  hasContactBlockResidue,
+  isCitationAuthorListDumpText,
   isInstitutionalCenterBlurbText,
   isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
@@ -128,6 +130,7 @@ export function isResearchEntitySourceChromeText(value: unknown): boolean {
   ) {
     return true;
   }
+  if (hasContactBlockResidue(cleaned) || isCitationAuthorListDumpText(cleaned)) return true;
   return [
     /\byou are here\b/i,
     /[»›][^»›]{1,80}[»›]/,

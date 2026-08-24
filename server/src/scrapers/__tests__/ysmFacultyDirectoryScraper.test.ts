@@ -158,6 +158,18 @@ describe('extractProfile', () => {
     expect(profile?.orcid).toBe('0000-0002-1234-5677');
   });
 
+  it('inserts a block-boundary separator between glued bio/research HTML blocks (#1481)', () => {
+    const html = profileHtml({
+      fullName: 'Jordan Rivers',
+      bio: '<div>Titles</div><div>Assistant Professor of Medicine (Cardiology)</div>',
+      researchDescription:
+        '<div>Overview</div><div>Studies heart failure and cardiac remodeling mechanisms in mouse models.</div>',
+    });
+    const profile = extractProfile(html, RIVERS);
+    expect(profile?.bio).not.toMatch(/TitlesAssistant/);
+    expect(profile?.description).not.toMatch(/OverviewStudies/);
+  });
+
   it('ignores a departmental admin email and keeps no email when none is person-specific', () => {
     const html = profileHtml({ fullName: 'Jordan Rivers', email: 'contact@yale.edu' });
     const profile = extractProfile(html, RIVERS);

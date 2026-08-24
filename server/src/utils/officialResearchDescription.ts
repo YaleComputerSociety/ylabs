@@ -7,6 +7,7 @@ import {
   selectResearchHomeDescription,
   type DescriptionEntityKind,
 } from './researchHomeDescriptionSelection';
+import { extractElementTextWithBlockSeparators } from '../scrapers/utils/htmlText';
 
 export interface OfficialResearchDescription {
   fullDescription: string;
@@ -103,7 +104,7 @@ export function collectVisibleDescriptionCandidates(html: string): string[] {
             ...paragraphs.map((text) => truncateToBoundary(text, MAX_CANDIDATE_LENGTH)),
           );
         }
-        const blockText = clean($(el).text());
+        const blockText = clean(extractElementTextWithBlockSeparators(el));
         if (blockText && sentenceCount(blockText) >= 2) {
           candidates.push(truncateToBoundary(blockText, MAX_CANDIDATE_LENGTH));
         }

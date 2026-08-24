@@ -51,6 +51,24 @@ describe('fullDescriptionQuality', () => {
     expect(describesResearchFocus(bioWithFooter)).toBe(true);
   });
 
+  it('rejects a contact-block-residue bio even when it also carries an explicit research-focus sentence (#1481)', () => {
+    const quality = fullDescriptionQuality(
+      'Jordan Rivera, Ph.D. Professor Email: jordan.rivera@yale.eduPhone: 737-1216 Dr. Jordan Rivera is a Tenure Professor. Her research focuses on CNS mechanisms relating to the regulation of energy and glucose homeostasis.',
+    );
+
+    expect(quality.flags).toContain('profile-chrome');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects a citation-author-list dump even without a "Citations" label (#1481)', () => {
+    const quality = fullDescriptionQuality(
+      'Physiological homology between Drosophila melanogaster and vertebrate cardiovascular systemsChoma MA, Suter MJ, Vakoc BJ, Bouma BE, Tearney GJ.',
+    );
+
+    expect(quality.flags).toContain('profile-chrome');
+    expect(quality.isUseful).toBe(false);
+  });
+
   it('derives card copy from numbered active areas of research instead of copying the first long sentence', () => {
     const fullDescription =
       'Active areas of research 1- Bone marrow Stem Cell niches All blood cells develop from hematopoietic stem cells through complex developmental transitions. 2- Where and how B cell development occurs in vivo. 3- Chemoattractants, receptors, and B cell homeostasis.';
