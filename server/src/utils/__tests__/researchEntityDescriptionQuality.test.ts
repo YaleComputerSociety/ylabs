@@ -1232,6 +1232,79 @@ describe('shortDescriptionQuality location-only lab lead guard (#1595)', () => {
   });
 });
 
+describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH_AREA (#1616)', () => {
+  const labOptions = { entityType: 'LAB' };
+  const fraOptions = { entityType: 'FACULTY_RESEARCH_AREA' };
+
+  it('rejects a bare "Studies <tags>." short that is identical to the fullDescription', () => {
+    const text = 'Studies Condensed Matter Physics, Theorist, and Stochastic processes.';
+    const quality = shortDescriptionQuality(text, text, undefined, fraOptions);
+    expect(quality.flags).toContain('topic-label-list');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects a possessive-name "research fields include" short whose full is the same bare list under a different lead', () => {
+    const full =
+      "Albert Laguna's research interests include transnational Latinx literatures and cultures, comparative ethnic studies, performance studies, and popular culture studies.";
+    const short =
+      'Studies transnational Latinx literatures and cultures, comparative ethnic studies, performance studies, and popular culture studies.';
+    const quality = shortDescriptionQuality(short, full, undefined, fraOptions);
+    expect(quality.flags).toContain('topic-label-list');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects a "Studies <tags>." short that lists an affiliation rather than a topic', () => {
+    const full =
+      "Alicia Schmidt Camacho is a Professor of Ethnicity, Race, and Migration, and holds affiliations with the Yale Center for the Study of Race, Indigeneity, and Transnational Migration, the Council of Latin American and Iberian Studies, and the American Studies and Women's, Gender, and Sexuality Programs. Her scholarship examines migration, social movements, and cultural politics in North America.";
+    const short =
+      "Studies Race, Indigeneity, and Transnational Migration, the Council of Latin American and Iberian Studies, and the American Studies and Women's, Gender, and Sexuality Programs.";
+    const quality = shortDescriptionQuality(short, full, undefined, fraOptions);
+    expect(quality.flags).toContain('topic-label-list');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('keeps a "Studies <tags>." short whose tags are drawn from a richer, distinct fullDescription', () => {
+    const full =
+      'Ray C. Fair is the John M. Musser Professor of Economics at Yale University. His main research is in macroeconometrics, but he has also done work in the areas of finance, voting behavior, and aging in sports.';
+    const short = 'Studies econometrics, financial economics, international finance, and international trade.';
+    const quality = shortDescriptionQuality(short, full, undefined, fraOptions);
+    expect(quality.flags).not.toContain('topic-label-list');
+  });
+
+  it('does not gate a topic-label-list short when no entityType is passed (default, backward compatible)', () => {
+    const text = 'Studies Condensed Matter Physics, Theorist, and Stochastic processes.';
+    const quality = shortDescriptionQuality(text, text);
+    expect(quality.flags).not.toContain('topic-label-list');
+  });
+
+  it('does not gate a topic-label-list short for an entityType outside LAB/FACULTY_RESEARCH_AREA', () => {
+    const text = 'Studies Condensed Matter Physics, Theorist, and Stochastic processes.';
+    const quality = shortDescriptionQuality(text, text, undefined, { entityType: 'CENTER' });
+    expect(quality.flags).not.toContain('topic-label-list');
+  });
+
+  it('rejects a bare "Studies <tags>." LAB short identical to its full', () => {
+    const text =
+      'Studies biophysics, including research in the group is currently focused on three general themes: decoding self-organization, controlling self-organization, and electrophysiological pattern formation.';
+    const quality = shortDescriptionQuality(text, text, undefined, labOptions);
+    expect(quality.flags).toContain('topic-label-list');
+    expect(quality.isUseful).toBe(false);
+  });
+});
+
+describe('shortDescriptionQuality doubled-conjunction glue guard (#1616)', () => {
+  it('rejects a short with an "and and" concatenation artifact', () => {
+    const full =
+      'Elisa is an assistant professor in the Statistics & Data Science department, who studies the manifestation of social and economic biases in our online lives via the algorithms that encode and perpetuate them.';
+    const quality = shortDescriptionQuality(
+      'Studies Algorithms, Data, and and Market Design.',
+      full,
+    );
+    expect(quality.flags).toContain('malformed-generated-text');
+    expect(quality.isUseful).toBe(false);
+  });
+});
+
 describe('programCardShortDescriptionQuality (#1425)', () => {
   it('accepts a program description verbatim even though it does not open with a research verb', () => {
     const full =

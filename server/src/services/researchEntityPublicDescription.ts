@@ -96,6 +96,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
       shortDescription: sanitizedSourceEntity.shortDescription,
       fullDescription: sanitizedSourceEntity.fullDescription,
       researchAreas: sanitizedSourceEntity.researchAreas,
+      entityType: sanitizedSourceEntity.entityType,
     }),
   };
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
@@ -107,6 +108,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     website: sanitizedEntity.website,
     websiteUrl: sanitizedEntity.websiteUrl,
     isProgramLike: programLike,
+    entityType: sanitizedEntity.entityType,
   });
   // The public DTO runs a second read-time hygiene pass over the served copy
   // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
