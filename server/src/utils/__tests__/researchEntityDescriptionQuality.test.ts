@@ -1173,6 +1173,29 @@ describe('shortDescriptionQuality non-self-contained pronoun-opener gate parity 
   });
 });
 
+describe('shortDescriptionQuality location-only lab lead guard (#1595)', () => {
+  it('marks a mid-paragraph location/logistics sentence as not useful', () => {
+    const full =
+      'The Impulsivity and Impulse Control Disorder Research Program studies compulsive behaviors and addictive disorders. The research team is located at the Yale University campus as well as at the West Haven Veterans Administration. Faculty use neuroimaging and behavioral methods to understand decision-making deficits.';
+    const quality = shortDescriptionQuality(
+      'The research team is located at the Yale University campus as well as at the West Haven Veterans Administration.',
+      full,
+    );
+    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).toContain('generic-lead');
+  });
+
+  it('keeps a genuine research-focus sentence that also mentions being located at Yale', () => {
+    const full =
+      'Background on the center. The lab is located at Yale and studies protein folding using cryo-EM techniques in detail.';
+    const quality = shortDescriptionQuality(
+      'The lab is located at Yale and studies protein folding using cryo-EM techniques in detail.',
+      full,
+    );
+    expect(quality.flags).not.toContain('generic-lead');
+  });
+});
+
 describe('programCardShortDescriptionQuality (#1425)', () => {
   it('accepts a program description verbatim even though it does not open with a research verb', () => {
     const full =

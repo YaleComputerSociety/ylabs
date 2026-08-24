@@ -238,17 +238,25 @@ const isIdentityOnlyLabLead = (value: string): boolean =>
     value,
   ) && !hasResearchDescriptionVerb(value);
 
+const LOCATION_ONLY_LAB_SUBJECT_SOURCE =
+  'lab|laboratory|group|center|centre|program|initiative|institute|research team|team';
+const IS_LOCATED_AT_YALE_CAMPUS_RE = new RegExp(
+  `\\b(?:${LOCATION_ONLY_LAB_SUBJECT_SOURCE})\\b.{0,120}\\bis\\s+located\\s+at\\b.{0,60}\\b(?:Yale|campus)\\b`,
+  'i',
+);
+
 const isAffiliationOnlyLabDescription = (value: string): boolean =>
   ((/\b(?:lab|laboratory|group|center|centre|program|initiative)\b.{0,180}\bis\s+part\s+of\b/i.test(value) &&
     /\b(?:center|centre|institute|department|school|university|yale)\b/i.test(value)) ||
-    /\b(?:lab|laboratory|group|center|centre|program|initiative)\b.{0,120}\bis\s+located\s+at\s+Yale\b/i.test(value)) &&
+    IS_LOCATED_AT_YALE_CAMPUS_RE.test(value)) &&
   !hasResearchDescriptionVerb(value);
 
 const isLocationOnlyLabDescription = (value: string): boolean =>
-  /\b(?:lab|laboratory|group|center|centre|program|initiative)\b.{0,120}\bis\s+located\s+at\s+Yale\b/i.test(value) &&
-  !/\b(?:lab|laboratory|group|center|centre|program|initiative)\b.{0,200}\b(?:studies|investigates|examines|explores|focuses on|works on|develops|uses|employs|researches|analyzes|models|measures|conducts research)\b/i.test(
-    value,
-  );
+  IS_LOCATED_AT_YALE_CAMPUS_RE.test(value) &&
+  !new RegExp(
+    `\\b(?:${LOCATION_ONLY_LAB_SUBJECT_SOURCE})\\b.{0,200}\\b(?:studies|investigates|examines|explores|focuses on|works on|develops|uses|employs|researches|analyzes|models|measures|conducts research)\\b`,
+    'i',
+  ).test(value);
 
 const hasSpecificResearchSeries = (value: string): boolean => {
   const text = textValue(value);
