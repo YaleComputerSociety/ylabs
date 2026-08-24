@@ -63,6 +63,10 @@ import {
   isResearchSectionLabel,
   stripResearchSectionLabelPrefix,
 } from '../researchAreaLabels';
+import {
+  fullDescriptionQuality,
+  shortDescriptionQuality,
+} from '../../utils/researchEntityDescriptionQuality';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -2390,7 +2394,11 @@ function entryToResearchEntityObservations(
     observations.push({ ...base, field: 'researchAreas', value: topics });
   }
 
-  const groundedDescription = cleanText(entry.researchHomeDescription);
+  const groundedDescriptionCandidate = cleanText(entry.researchHomeDescription);
+  const groundedDescription =
+    groundedDescriptionCandidate && fullDescriptionQuality(groundedDescriptionCandidate).isUseful
+      ? groundedDescriptionCandidate
+      : '';
   if (groundedDescription) {
     observations.push({
       ...base,
@@ -2398,7 +2406,12 @@ function entryToResearchEntityObservations(
       value: groundedDescription,
       confidenceOverride: ROSTER_PROFILE_DESCRIPTION_CONFIDENCE,
     });
-    const groundedShort = cleanText(entry.researchHomeShortDescription);
+    const groundedShortCandidate = cleanText(entry.researchHomeShortDescription);
+    const groundedShort =
+      groundedShortCandidate &&
+      shortDescriptionQuality(groundedShortCandidate, groundedDescription).isUseful
+        ? groundedShortCandidate
+        : '';
     if (groundedShort) {
       observations.push({
         ...base,

@@ -728,6 +728,53 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('concrete_next_step');
   });
 
+  it('holds a faculty-research-area entity with no department or research area for review, even though its description and lead are otherwise solid', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        departments: [],
+        researchAreas: [],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_facet_signal');
+  });
+
+  it('reaches student ready once a faculty-research-area entity has a research area, with no department needed', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        departments: [],
+        researchAreas: ['Causal Inference'],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_facet_signal');
+  });
+
   it('keeps a strong profile without action evidence limited rather than ready', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
