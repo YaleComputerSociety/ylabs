@@ -130,6 +130,28 @@ const DEGREE_LIST_FRAGMENT_SEARCH_PATTERN = new RegExp(DEGREE_LIST_ENTRY_PATTERN
  * afterward - a bare degree list with nothing else is left alone so the
  * no-usable-description fallback below can decide its fate.
  */
+const DEGREE_OR_INSTITUTION_MENTION_PATTERN = new RegExp(
+  `${DEGREE_TOKEN_PATTERN}|\\b(?:University|College|Institute|School|Academy)\\b`,
+  'giu',
+);
+
+/**
+ * A genuine name-lead sentence essentially never mentions two separate
+ * institutions or degree abbreviations before its first clause boundary, so
+ * two or more hits this early means the entry loop above stopped mid degree
+ * list rather than at the real sentence start (#1533: chang-ksc3's shape -
+ * "Institution, Degree Year, Degree Year" - reorders the degree list so the
+ * entry pattern above can only consume its first token, leaving "Taiwan,
+ * 1966 M.L.S., Rutgers University, 1971 M.A., ..." as a still-broken
+ * remainder that happens to start with a capital letter).
+ */
+function remainderStillLooksLikeDegreeListResidue(remainder: string): boolean {
+  const clauseEnd = remainder.search(/[.!?]/);
+  const window = clauseEnd === -1 ? remainder.slice(0, 150) : remainder.slice(0, clauseEnd);
+  const mentionCount = window.match(DEGREE_OR_INSTITUTION_MENTION_PATTERN)?.length || 0;
+  return mentionCount >= 2;
+}
+
 export function stripLeadingDegreeListPrefix(value: unknown): string {
   const text = textValue(value);
   if (!text) return '';
@@ -137,6 +159,7 @@ export function stripLeadingDegreeListPrefix(value: unknown): string {
   if (!match) return text;
   const remainder = text.slice(match[0].length).trim();
   if (remainder.length < 20 || !/^[A-Z]/.test(remainder)) return text;
+  if (remainderStillLooksLikeDegreeListResidue(remainder)) return text;
   return remainder;
 }
 
