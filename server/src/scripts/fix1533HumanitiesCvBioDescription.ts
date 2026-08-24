@@ -34,7 +34,19 @@ function isHumanitiesCvBioCandidate(entity: Record<string, any>): boolean {
   const isIndividualOrLab =
     entity.kind === 'individual' || INDIVIDUAL_OR_LAB_ENTITY_TYPES.has(String(entity.entityType || ''));
   if (!isIndividualOrLab) return false;
-  return !describesResearchFocus(full);
+  if (!describesResearchFocus(full)) return true;
+  // describesResearchFocus has known false positives on CV/résumé phrasing
+  // that happens to share vocabulary with research-focus language (#1533:
+  // braverman-lab-ericb's "a career focused on innovation, leadership,
+  // institutional transformation, and social impact" trips the shared
+  // hasResearchDescriptionVerb "focused on" alternative even though it
+  // describes an executive résumé, not research). An entity with no
+  // structured researchAreas has nothing to fall back on if the repair
+  // function's own, more careful judgment decides the prose has no
+  // salvageable research content either, so it's worth scanning regardless
+  // of that shared heuristic's verdict.
+  const hasNoResearchAreas = !Array.isArray(entity.researchAreas) || entity.researchAreas.length === 0;
+  return hasNoResearchAreas;
 }
 
 const __filename = fileURLToPath(import.meta.url);
