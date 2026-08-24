@@ -13,7 +13,10 @@ import { ResearchEntityRelationship } from '../models/researchEntityRelationship
 import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
-import { shortDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import {
+  buildResearchAreasCardSummary,
+  shortDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import {
   CARD_SYNTHESIS_MODEL,
   defaultCardSynthesisLLM,
@@ -148,7 +151,15 @@ export async function resolveMaterializedShortDescription(
   input: MaterializedShortDescriptionInput,
 ): Promise<string | null> {
   if (input.manuallyLocked) return null;
-  if (shortDescriptionQuality(input.currentShortDescription, input.fullDescription).isUseful) {
+  const current =
+    typeof input.currentShortDescription === 'string' ? input.currentShortDescription.trim() : '';
+  const isBareResearchAreasFallback =
+    !!current &&
+    current.toLowerCase() === buildResearchAreasCardSummary(input.researchAreas).toLowerCase();
+  if (
+    !isBareResearchAreasFallback &&
+    shortDescriptionQuality(input.currentShortDescription, input.fullDescription).isUseful
+  ) {
     return null;
   }
   const grounded = await resolveGroundedCardDescription({
@@ -156,7 +167,11 @@ export async function resolveMaterializedShortDescription(
     researchAreas: input.researchAreas,
     synthesize: input.synthesize,
   });
-  if (grounded && shortDescriptionQuality(grounded, input.fullDescription).isUseful) {
+  if (
+    grounded &&
+    grounded.toLowerCase() !== current.toLowerCase() &&
+    shortDescriptionQuality(grounded, input.fullDescription).isUseful
+  ) {
     return grounded;
   }
   return null;
