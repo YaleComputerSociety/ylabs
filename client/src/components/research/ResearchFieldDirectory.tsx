@@ -83,7 +83,7 @@ const ResearchFieldDirectory = ({
                       type="button"
                       onClick={() => onSelectField(domain.field)}
                       aria-label={`View the ${domain.field} field page`}
-                      className="min-w-0 truncate rounded-sm text-left hover:text-blue-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      className="yr-focus-ring min-w-0 truncate rounded-sm text-left hover:text-blue-900 hover:underline"
                     >
                       {domain.field}
                     </button>
@@ -107,7 +107,7 @@ const ResearchFieldDirectory = ({
                           area.count === 1 ? 'home' : 'homes'
                         }`}
                         onClick={() => onSelectArea(area.name)}
-                        className={`inline-flex min-h-9 max-w-full min-w-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                        className={`yr-focus-ring inline-flex min-h-9 max-w-full min-w-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm transition-colors ${
                           isSelected
                             ? 'border-blue-700 bg-[var(--yr-panel)] text-blue-900'
                             : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'
@@ -127,7 +127,7 @@ const ResearchFieldDirectory = ({
                   type="button"
                   onClick={() => toggleExpanded(domain.field)}
                   aria-expanded={isExpanded}
-                  className="mt-2 inline-flex min-h-9 items-center rounded-md px-1 text-sm font-semibold text-blue-800 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="yr-focus-ring mt-2 inline-flex min-h-9 items-center rounded-md px-1 text-sm font-semibold text-blue-800 hover:text-blue-900"
                 >
                   {isExpanded ? 'Show fewer' : `Show all ${domain.areas.length}`}
                   {!isExpanded && hiddenCount > 0 ? ` (+${hiddenCount})` : ''}
