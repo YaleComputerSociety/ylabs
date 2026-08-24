@@ -55,7 +55,7 @@ describe('planOrgUnitBackfillRow', () => {
     expect(row.update).toEqual({});
   });
 
-  it('fills a placeable professional-school entity with no department taxonomy so it survives the department facet (#1316)', async () => {
+  it('leaves departments empty for a professional-school entity with no department taxonomy instead of faking one (#1384)', async () => {
     const rowsWithLawSchool = [
       ...rows,
       { slug: 'law-school', name: 'Law School', kind: 'SCHOOL' as const },
@@ -70,12 +70,32 @@ describe('planOrgUnitBackfillRow', () => {
       departments: [],
       schools: ['Law School'],
     });
+    expect(row.changed).toBe(false);
+    expect(row.update.departments).toBeUndefined();
+  });
+
+  it('clears a stale school-name-as-department value left by the retired #1316 fallback', async () => {
+    const rowsWithLawSchool = [
+      ...rows,
+      { slug: 'law-school', name: 'Law School', kind: 'SCHOOL' as const },
+    ];
+    useOrgUnitCanonicalizerForBackfill(
+      createOrgUnitCanonicalizer(buildOrgUnitResolverIndex(rowsWithLawSchool), deptToSchool),
+    );
+    const row = await planOrgUnitBackfillRow({
+      id: 'd',
+      slug: 'moyn-sam250',
+      school: 'Law School',
+      departments: ['Law School'],
+      schools: ['Law School'],
+    });
     expect(row.changed).toBe(true);
-    expect(row.update.departments).toEqual(['Law School']);
+    expect(row.update.departments).toEqual([]);
+    expect(row.droppedDepartments).toEqual(['Law School']);
 
     const rescan = await planOrgUnitBackfillRow({
-      id: 'c',
-      slug: 'moyn-sam249',
+      id: 'd',
+      slug: 'moyn-sam250',
       school: row.afterSchool,
       departments: row.afterDepartments,
       schools: row.afterSchools,

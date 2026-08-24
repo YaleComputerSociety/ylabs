@@ -198,11 +198,11 @@ export function createOrgUnitCanonicalizer(
             hit = resolveOrgUnitCanonical(index, denoised, DEPARTMENT_KINDS);
             fallback = denoised;
           }
-          // A school name is only noise worth dropping when it rides alongside a
-          // real department; a school name on its own is the #1316 graceful-
-          // degradation value applyResearchEntityOrgUnitCanonicalization writes
-          // when no department resolves, and must survive re-canonicalization.
-          if (!hit && entries.length > 1 && resolvesToSchool(index, trimmed, denoised)) {
+          // A school (School of Medicine) is not a peer of a department
+          // (Genetics, Immunobiology): a value that only resolves to a school,
+          // whether alone or alongside a real department, is never a valid
+          // department-facet value and is dropped rather than kept raw (#1384).
+          if (!hit && resolvesToSchool(index, trimmed, denoised)) {
             dropped.push(trimmed);
             continue;
           }
@@ -342,16 +342,16 @@ export function schoolNameFromProfileHosts(urls: string[]): string | null {
  * school it belongs to. When the scalar `school` would otherwise stay empty, it
  * is backfilled from the primary derived school so the singular mirror the
  * client display sites read never desyncs from the canonical `schools[]`.
- * When `departments[]` would otherwise stay empty despite a known school (a
- * professional school with no departmental sub-taxonomy, or a school whose
- * department is simply unresolved from source), it falls back to the school
- * name itself so the entity stays reachable through the department facet
- * instead of being silently dropped from every department-filtered browse
- * (issue #1316). `existing` supplies the entity's current school and
- * departments so `schools[]` reflects the merged record when a scrape updates
- * only one of them. Never throws - a canonicalization failure or an unseeded
- * `org_units` collection leaves the raw scraped values untouched so
- * materialization keeps working.
+ * A school is never written into `departments[]` as a substitute for a real
+ * department: a school (School of Medicine) is not a peer of a department
+ * (Genetics, Immunobiology), so when no real department resolves,
+ * `departments[]` is left as-is (typically empty) and the entity stays
+ * discoverable through the `school`/`schools[]` facet instead (#1384).
+ * `existing` supplies the entity's current school and departments so
+ * `schools[]` reflects the merged record when a scrape updates only one of
+ * them. Never throws - a canonicalization failure or an unseeded `org_units`
+ * collection leaves the raw scraped values untouched so materialization keeps
+ * working.
  */
 export async function applyResearchEntityOrgUnitCanonicalization(
   set: Record<string, unknown>,
@@ -389,6 +389,26 @@ export async function applyResearchEntityOrgUnitCanonicalization(
     }
 
     const effectiveSchool = hasSchool ? set.school : existing?.school;
+    // A department value that is itself the entity's own school (e.g. a
+    // DIVISION-kind org unit such as "Faculty of Arts and Sciences" that
+    // resolves under both SCHOOL_KINDS and DEPARTMENT_KINDS) is the same
+    // category error as the retired fallback and is dropped here even though
+    // canonicalizeDepartments has no entity context to catch it itself (#1384).
+    if (hasDepartments && Array.isArray(set.departments) && typeof effectiveSchool === 'string') {
+      const schoolKey = effectiveSchool.trim().toLocaleLowerCase();
+      if (schoolKey) {
+        const departments = set.departments as string[];
+        const selfReferential = departments.filter(
+          (department) => department.toLocaleLowerCase() === schoolKey,
+        );
+        if (selfReferential.length > 0) {
+          set.departments = departments.filter(
+            (department) => department.toLocaleLowerCase() !== schoolKey,
+          );
+          result.droppedDepartments = [...result.droppedDepartments, ...selfReferential];
+        }
+      }
+    }
     const effectiveDepartments = hasDepartments
       ? asStringList(set.departments)
       : asStringList(existing?.departments);
@@ -414,11 +434,6 @@ export async function applyResearchEntityOrgUnitCanonicalization(
 
     if (schools.length > 0) set.schools = schools;
     if (!scalarSchool && schools.length > 0) set.school = schools[0];
-
-    const finalSchool = scalarSchool || schools[0] || '';
-    if (effectiveDepartments.length === 0 && finalSchool) {
-      set.departments = [finalSchool];
-    }
   } catch {
     return result;
   }
