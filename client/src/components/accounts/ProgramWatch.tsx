@@ -17,10 +17,14 @@ import { createFellowship } from '../../utils/createFellowship';
 import {
   buildProgramDeadlinesIcsCalendar,
   downloadIcsCalendar,
-  fellowshipFutureDeadlineDate,
   icsFilenameForProgram,
   upcomingProgramDeadlineEvents,
 } from '../../utils/calendarExport';
+import {
+  computeWatchedProgramUrgencySummary,
+  sortWatchedProgramsByDeadline,
+  type WatchedProgramUrgencySummary,
+} from '../../utils/watchedProgramUrgency';
 import BrowseListItem from '../shared/BrowseListItem';
 import FellowshipModal from '../fellowship/FellowshipModal';
 import LoadingSpinner from '../shared/LoadingSpinner';
@@ -34,11 +38,7 @@ import {
 } from '../../utils/researchPlanStages';
 
 interface ProgramWatchProps {
-  onSummaryChange?: (summary: {
-    count: number;
-    nextDeadlineLabel?: string;
-    nextDeadlineDate?: string;
-  }) => void;
+  onSummaryChange?: (summary: { count: number } & WatchedProgramUrgencySummary) => void;
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -49,38 +49,6 @@ const fellowshipToBrowsable = (fellowship: Fellowship): BrowsableItem => ({
   type: 'fellowship',
   data: fellowship,
 });
-
-const dateFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-
-export const watchedProgramDeadlineSummary = (
-  fellowships: Fellowship[],
-  now = new Date(),
-): { nextDeadlineDate?: string; nextDeadlineLabel?: string } => {
-  const upcoming = fellowships
-    .map((fellowship) => {
-      const date = fellowshipFutureDeadlineDate(fellowship, now);
-      if (!date) return null;
-      return { fellowship, date };
-    })
-    .filter((item): item is { fellowship: Fellowship; date: Date } => Boolean(item))
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  const next = upcoming[0];
-  if (!next) return {};
-
-  const prefix = next.fellowship.isAcceptingApplications
-    ? `${next.fellowship.title}: Now open; due `
-    : `${next.fellowship.title}: Due `;
-  return {
-    nextDeadlineDate: next.fellowship.deadline || undefined,
-    nextDeadlineLabel: `${prefix}${dateFormatter.format(next.date)}`,
-  };
-};
 
 const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const { favIds: watchedIds, toggleFavorite } = useFavorites('watchedPrograms');
@@ -145,14 +113,19 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     [programs, watchedIds],
   );
 
-  const nextDeadline = useMemo(
-    () => watchedProgramDeadlineSummary(visiblePrograms),
+  const orderedPrograms = useMemo(
+    () => sortWatchedProgramsByDeadline(visiblePrograms),
     [visiblePrograms],
   );
 
+  const urgencySummary = useMemo(
+    () => computeWatchedProgramUrgencySummary(visiblePrograms, stages),
+    [visiblePrograms, stages],
+  );
+
   useEffect(() => {
-    onSummaryChange?.({ count: visiblePrograms.length, ...nextDeadline });
-  }, [visiblePrograms.length, nextDeadline, onSummaryChange]);
+    onSummaryChange?.({ count: visiblePrograms.length, ...urgencySummary });
+  }, [visiblePrograms.length, urgencySummary, onSummaryChange]);
 
   const upcomingDeadlineEventsByProgramId = useMemo(() => {
     const events = upcomingProgramDeadlineEvents(visiblePrograms);
@@ -257,9 +230,9 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         )}
       </div>
 
-      {visiblePrograms.length > 0 ? (
+      {orderedPrograms.length > 0 ? (
         <ul>
-          {visiblePrograms.map((program) => {
+          {orderedPrograms.map((program) => {
             const status = saveStatuses[program.id];
             const isEditing = editingId === program.id;
             const note = notes[program.id] || '';
