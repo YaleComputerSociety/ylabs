@@ -451,6 +451,15 @@ export const sourceCoverageRegistry = {
     notes:
       'DOE/NASA/DoD Yale awards from USAspending.gov, covering physical-science and mission-agency PIs the NSF/NIH fallbacks miss. USAspending exposes no structured PI field, so a PI is only harvested when the award description embeds one inline and resolves to a single existing Yale User; awards with no extractable/resolvable PI are skipped (fail-closed, never minting a person or lab from a free-text name). Emits additive grant activity (recentGrants, recentGrantCount, fundingAgencies, lastObservedAt) only; not undergraduate-access evidence alone.',
   },
+  'doe-osti': {
+    priority: 6,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'DOE physical-sciences funding activity via OSTI technical reports; enriches entity context but is not undergraduate-access evidence alone.',
+  },
 } satisfies Record<string, SourceCoverageMetadata>;
 
 export type SourceCoverageName = keyof typeof sourceCoverageRegistry;

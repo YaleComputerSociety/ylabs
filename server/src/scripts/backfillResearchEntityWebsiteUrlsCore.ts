@@ -15,7 +15,7 @@ export interface WebsiteUrlBackfillCandidateEntity {
 const URL_MAXLENGTH = 2048;
 
 const GRANT_OR_IDENTIFIER_HOST =
-  /(^|\.)(reporter\.nih\.gov|nih\.gov|nsf\.gov|orcid\.org|scholar\.google\.com|doi\.org)$/i;
+  /(^|\.)(reporter\.nih\.gov|nih\.gov|nsf\.gov|osti\.gov|orcid\.org|scholar\.google\.com|doi\.org)$/i;
 
 const CONTENT_PAGE_PATH =
   /(^|[-/])(blog|blogs|news|events|calendar|newsletter|article|stories|press|podcast|video|webinar)([-/]|$)/i;

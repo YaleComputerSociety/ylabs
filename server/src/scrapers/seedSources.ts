@@ -337,6 +337,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'doe-osti',
+    displayName: 'DOE OSTI (Yale technical reports)',
+    description:
+      'Pulls DOE-funded Yale technical reports from OSTI, attributing each to its Yale faculty PI to add physical-sciences funding activity and recency.',
+    baseUrl: 'https://www.osti.gov/api/v1/records',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
     name: 'official-research-home-roster',
     displayName: 'Official research-home current rosters',
     description:

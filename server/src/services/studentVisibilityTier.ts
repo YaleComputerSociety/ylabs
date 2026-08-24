@@ -248,6 +248,8 @@ function isGrantOrOrcidSourceUrl(value: string): boolean {
       host === 'api.reporter.nih.gov' ||
       host === 'www.nsf.gov' ||
       host === 'api.nsf.gov' ||
+      host === 'www.osti.gov' ||
+      host === 'osti.gov' ||
       host === 'orcid.org'
     );
   } catch {
