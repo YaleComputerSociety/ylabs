@@ -33,6 +33,7 @@ import { hasAdminAuthorityForUser } from '../services/adminGrantService';
 import { getStudentResearchInterests } from '../services/studentInterestProfileService';
 import { getDepartmentResearchPage } from '../services/departmentResearchPageService';
 import { isActiveEngagementIntent } from '../services/researchInterestPersonalization';
+import { getSchoolResearchPage } from '../services/schoolResearchPageService';
 
 const MAX_PAGE_SIZE = 100;
 const MAX_PAGE = 1000;
@@ -337,6 +338,22 @@ export const getResearchDepartmentPage = async (request: Request, response: Resp
     }
     console.error('Research department page failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Failed to fetch research department' });
+  }
+};
+
+export const getResearchSchoolPage = async (request: Request, response: Response) => {
+  try {
+    const page = await getSchoolResearchPage(request.params.slug);
+    if (!page) {
+      throw new NotFoundError(`No research school page for slug: ${request.params.slug}`);
+    }
+    return response.status(200).json(page);
+  } catch (error: any) {
+    if (error instanceof NotFoundError) {
+      return response.status(error.status).json({ error: 'Research school not found' });
+    }
+    console.error('Research school page failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Failed to fetch research school' });
   }
 };
 

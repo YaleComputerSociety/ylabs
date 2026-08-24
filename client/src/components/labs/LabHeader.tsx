@@ -4,11 +4,13 @@
  *
  * Pure presentational — takes a ResearchGroup, no fetching or context.
  */
+import { Link } from 'react-router-dom';
 import { ResearchGroup } from '../../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
+import { getSchoolSlug } from '../../utils/schoolNames';
 import { formatTitleCaseLabel } from '../../utils/displayText';
 import { useConfig } from '../../hooks/useConfig';
-import { ensureHttpPrefix } from '../../utils/url';
+import { ensureHttpPrefix, safeRouteSegment } from '../../utils/url';
 import {
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
@@ -54,6 +56,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
     Boolean(websiteDedupeKey) &&
     dedupeWebsiteUrls.some((url) => normalizeActionUrl(url) === websiteDedupeKey);
   const departmentLabels = getUniqueDepartmentLabels(group.departments, departments);
+  const schoolSlug = group.school ? safeRouteSegment(getSchoolSlug(group.school)) : '';
   const departmentKeys = new Set(departmentLabels.map((dept) => dept.toLowerCase()));
   const researchAreaKeys = new Set((group.researchAreas || []).map((area) => area.toLowerCase()));
   const visibleProfileResearchAreas = (group.profileResearchAreas || []).filter((area) => {
@@ -73,7 +76,17 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
     <div className="yr-panel flex flex-col gap-4 rounded-md p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="yr-pill yr-pill-blue">{kindLabel}</span>
-        {group.school && <span className="yr-pill">{group.school}</span>}
+        {group.school &&
+          (schoolSlug ? (
+            <Link
+              to={`/research/school/${safeRouteSegment(getSchoolSlug(group.school))}`}
+              className="yr-pill yr-focus-ring transition-colors hover:border-blue-300 hover:text-[var(--yr-blue)]"
+            >
+              {group.school}
+            </Link>
+          ) : (
+            <span className="yr-pill">{group.school}</span>
+          ))}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

@@ -28,6 +28,7 @@ import {
   StudentVisibilityTier,
 } from '../types/researchEntity';
 import { getDepartmentSlug, getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { getSchoolSlug } from '../utils/schoolNames';
 import { buildResearchFieldDirectory } from '../utils/researchFieldDirectory';
 import { researchAreaPath, researchFieldPath } from '../utils/researchAreaSlug';
 import {
@@ -2360,6 +2361,17 @@ const Research = () => {
                       className="yr-link yr-focus-ring rounded-sm font-semibold"
                     >
                       View the {departmentSearch.label} department page →
+                    </Link>
+                  </p>
+                )}
+
+                {selectedSchool && getSchoolSlug(selectedSchool) && (
+                  <p className="mt-2 text-sm">
+                    <Link
+                      to={`/research/school/${safeRouteSegment(getSchoolSlug(selectedSchool))}`}
+                      className="yr-link yr-focus-ring rounded-sm font-semibold"
+                    >
+                      View the {selectedSchool} school page →
                     </Link>
                   </p>
                 )}

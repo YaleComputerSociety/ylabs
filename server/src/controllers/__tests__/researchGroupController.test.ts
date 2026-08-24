@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getDepartmentResearchPage: vi.fn(),
   getAreaResearchPage: vi.fn(),
   getFieldResearchPage: vi.fn(),
+  getSchoolResearchPage: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -46,10 +47,15 @@ vi.mock('../../services/departmentResearchPageService', () => ({
   getDepartmentResearchPage: mocks.getDepartmentResearchPage,
 }));
 
+vi.mock('../../services/schoolResearchPageService', () => ({
+  getSchoolResearchPage: mocks.getSchoolResearchPage,
+}));
+
 import {
   getResearchDepartmentPage,
   getResearchAreaPage,
   getResearchFieldPage,
+  getResearchSchoolPage,
   getResearchGroupBySlug,
   getResearcherProfile,
   recordResearchOutreach,
@@ -721,5 +727,43 @@ describe('researchGroupController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(page);
     });
+  });
+
+  it('serves the aggregated school page for a resolvable slug', async () => {
+    const page = { school: { slug: 'school-of-medicine', label: 'School of Medicine' }, homeGroups: [] };
+    mocks.getSchoolResearchPage.mockResolvedValue(page);
+    const req = { params: { slug: 'school-of-medicine' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchSchoolPage(req, res);
+
+    expect(mocks.getSchoolResearchPage).toHaveBeenCalledWith('school-of-medicine');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(page);
+  });
+
+  it('returns 404 when the school slug does not resolve', async () => {
+    mocks.getSchoolResearchPage.mockResolvedValue(null);
+    const req = { params: { slug: 'not-a-school' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchSchoolPage(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Research school not found' });
+  });
+
+  it('does not leak internal errors from school page failures', async () => {
+    mocks.getSchoolResearchPage.mockRejectedValue(
+      new Error('mongodb://user:pass@example.invalid school page failed'),
+    );
+    const req = { params: { slug: 'school-of-medicine' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchSchoolPage(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch research school' });
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
   });
 });
