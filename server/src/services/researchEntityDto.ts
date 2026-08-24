@@ -85,18 +85,33 @@ const SERVED_COPY_TEXT_FIELDS = [
   'summary',
 ] as const;
 
+const SERVED_COPY_NAME_FIELDS = ['name', 'displayName'] as const;
+const SERVED_COPY_ARRAY_FIELDS = ['researchAreas', 'profileResearchAreas'] as const;
+
 /**
- * Run the single canonical serve-time sanitizer over an entity's copy fields so
- * the DTO applies the full guard union (text re-voicing/relabel/fail-close plus
- * descriptionHygiene) rather than the descriptionHygiene subset alone (#1269).
- * Inputs are bounded to the public length cap first; the sanitizer clamps to its
- * own sentence/word boundary after.
+ * Run the single canonical serve-time sanitizer over an entity's copy, name, and
+ * research-area chip fields so the DTO applies the full guard union (text
+ * re-voicing/relabel/fail-close, descriptionHygiene, doubled-suffix name collapse,
+ * and research-area chip hygiene) from one place (#1269/#1374). Inputs are bounded
+ * to the public caps first so the union never traverses past the DTO's array/text
+ * limits on a polluted input; the sanitizer clamps copy to its own sentence/word
+ * boundary after.
  */
 function servedResearchEntityCopy(group: Record<string, any>): Record<string, any> {
   const bounded: Record<string, any> = { ...group };
   for (const field of SERVED_COPY_TEXT_FIELDS) {
     if (typeof bounded[field] === 'string') {
       bounded[field] = bounded[field].slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
+    }
+  }
+  for (const field of SERVED_COPY_NAME_FIELDS) {
+    if (typeof bounded[field] === 'string') {
+      bounded[field] = bounded[field].slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
+    }
+  }
+  for (const field of SERVED_COPY_ARRAY_FIELDS) {
+    if (Array.isArray(bounded[field])) {
+      bounded[field] = bounded[field].slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS);
     }
   }
   return sanitizeServedResearchEntityCopyFields(bounded);
@@ -207,7 +222,7 @@ export function toPublicResearchEntitySummaryDto(
   return {
     id: publicResearchEntityId(group),
     slug: publicTextString(group.slug || ''),
-    name: publicResearchEntityName(group.name || group.displayName || ''),
+    name: publicResearchEntityName(served.name || served.displayName || ''),
     kind: group.kind === undefined ? undefined : publicTextString(group.kind),
     entityType:
       group.entityType === undefined
@@ -292,14 +307,14 @@ export function toPublicResearchEntityDto(
     _id: id,
     id,
     slug: publicTextString(group.slug || ''),
-    name: publicResearchEntityName(group.name || group.displayName || ''),
+    name: publicResearchEntityName(served.name || served.displayName || ''),
     displayName:
-      group.displayName === undefined ? undefined : publicResearchEntityName(group.displayName),
+      group.displayName === undefined ? undefined : publicResearchEntityName(served.displayName),
     kind,
     entityKind: kind,
     entityType,
     departments: publicDepartmentArray(group.departments),
-    researchAreas: publicResearchAreaArray(group.researchAreas),
+    researchAreas: publicResearchAreaArray(served.researchAreas),
     sourceUrls: publicHttpUrlArray(group.sourceUrls),
   };
 
@@ -319,7 +334,7 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (field === 'profileResearchAreas') {
-        dto[field] = publicResearchAreaArray(group[field]);
+        dto[field] = publicResearchAreaArray(served[field]);
         continue;
       }
       dto[field] = publicTextValue(group[field]);

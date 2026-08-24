@@ -244,6 +244,66 @@ describe('research-entity description serve contract - clean prose preserved', (
   }
 });
 
+describe('research-entity serve contract - names and research-area chips (#1374)', () => {
+  it('collapses a doubled research-home name suffix on name and displayName', () => {
+    const out = sanitizeServedResearchEntityCopyFields({
+      entityType: 'CENTER',
+      kind: 'center',
+      name: 'Systems Biology Institute Institute',
+      displayName: 'Systems Biology Lab Lab',
+    });
+    expect(out.name).toBe('Systems Biology Institute');
+    expect(out.displayName).toBe('Systems Biology Lab');
+  });
+
+  it('splits a bare comma-delimited research-area blob into chips', () => {
+    const out = sanitizeServedResearchEntityCopyFields({
+      entityType: 'CENTER',
+      kind: 'center',
+      researchAreas: ['genomics, proteomics, metabolomics'],
+    });
+    expect(out.researchAreas).toEqual(['genomics', 'proteomics', 'metabolomics']);
+  });
+
+  it('strips a glued role-label suffix and fails closed on prose/label-leak chips', () => {
+    const out = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      researchAreas: [
+        'Immunobiology YSM Researcher',
+        'Research areas include cancer and immunotherapy',
+        'We investigate how tumors evade the immune system across many patient cohorts.',
+        'Cancer Immunology',
+      ],
+    });
+    expect(out.researchAreas).toEqual(['Immunobiology', 'Cancer Immunology']);
+  });
+
+  it('sanitizes profileResearchAreas chips with the same rules', () => {
+    const out = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      profileResearchAreas: ['Neuroscience YSM Researcher', 'a, b, c'],
+    });
+    expect(out.profileResearchAreas).toEqual(['Neuroscience', 'a', 'b', 'c']);
+  });
+
+  it('leaves clean names and chips untouched and stays idempotent', () => {
+    const entity = {
+      entityType: 'CENTER',
+      kind: 'center',
+      name: 'Center for Climate Science',
+      researchAreas: ['Climate Modeling', 'Ocean Dynamics'],
+    };
+    const once = sanitizeServedResearchEntityCopyFields(entity);
+    expect(once.name).toBe('Center for Climate Science');
+    expect(once.researchAreas).toEqual(['Climate Modeling', 'Ocean Dynamics']);
+    const twice = sanitizeServedResearchEntityCopyFields(once);
+    expect(twice.name).toBe(once.name);
+    expect(twice.researchAreas).toEqual(once.researchAreas);
+  });
+});
+
 describe('research-entity description serve contract - idempotent', () => {
   it('a second pass never changes an already-served description', () => {
     const inputs: Array<[Record<string, any>, ServeField, string]> = [

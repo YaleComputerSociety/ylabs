@@ -11,6 +11,7 @@ import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribu
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
+import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -637,8 +638,9 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
     _bioWebsite,
     _bioWebsiteUrl,
     description: _legacyDescription,
-    ...publicEntity
+    ...rawPublicEntity
   } = entity || {};
+  const publicEntity = sanitizeServedResearchEntityCopyFields(rawPublicEntity);
   const publicId = (
     publicProfileText(publicEntity.slug) ||
     publicProfileText(publicEntity.name) ||

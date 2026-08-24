@@ -3,6 +3,10 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
+import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormalization';
+import { normalizeResearchAreaList } from './researchAreaHygiene';
+import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
+import { filterProseResearchAreaChips } from './profileResearchTerms';
 
 const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
 const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
@@ -565,12 +569,54 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
   return changed ? (next as T) : entity;
 }
 
+const SERVED_NAME_FIELDS = ['name', 'displayName'] as const;
+const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as const;
+
 /**
- * The single canonical serve-time sanitizer for research-entity copy: the one
- * "clean this entity's descriptions before serving" entry point that every
- * public serve path (detail, browse/search cards, embedded summaries) must run,
- * so a guard added to any underlying layer takes effect on every surface at once
- * rather than only on whichever serve path happened to run its subset (#1269).
+ * Serve-time fail-safe for a research-entity name/title: collapse a doubled
+ * research-home suffix ("Smith Lab Lab", "Foo Research Research") that a stored
+ * name can still carry when it predates the materialize-time normalization
+ * (#1108). The materialize seam owns the fuller name normalization (dash and
+ * trailing-description repair); serve only needs this idempotent fail-safe so
+ * every surface renders the same collapsed name.
+ */
+export function sanitizeServedResearchEntityName(value: unknown): string {
+  return typeof value === 'string' ? collapseDuplicateResearchHomeSuffix(value) : '';
+}
+
+/**
+ * Serve-time research-area chip hygiene: split bare comma-delimited blobs
+ * (#884), strip role-label suffixes / fail closed on prose, corrupt, and
+ * label-leak chips (#877/#1029/#867), dedupe, then drop prose-sentence chips
+ * (#870). Idempotent, so a re-run over already-clean chips is a no-op.
+ */
+const MAX_SERVED_RESEARCH_AREA_CHIPS = 200;
+
+export function sanitizeServedResearchAreaChips(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  const boundedInput = values
+    .slice(0, MAX_SERVED_RESEARCH_AREA_CHIPS)
+    .filter((v): v is string => typeof v === 'string');
+  for (const raw of normalizeResearchAreaList(boundedInput)) {
+    const cleaned = sanitizeResearchAreaLabel(raw);
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    labels.push(cleaned);
+  }
+  return filterProseResearchAreaChips(labels);
+}
+
+/**
+ * The single canonical serve-time sanitizer for a served research entity: the
+ * one "clean this entity before serving" entry point that every public serve
+ * path (detail, browse/search cards, embedded summaries, saved-plan cards,
+ * profile research-home lists) must run, so a guard added to any underlying
+ * layer takes effect on every surface at once rather than only on whichever
+ * serve path happened to run its subset (#1269/#1374).
  *
  * It composes the full guard union in a fixed order:
  *  1. the text-transform layer (researchEntityDescriptionText) - subjectless-lead
@@ -582,7 +628,11 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
  *  3. the research-home self-reference pass ("the lab" -> "the center");
  *  4. the descriptionHygiene layer (chrome/dump strip, contact-block/publications/
  *     center-blurb/html fail-close, and length clamp) that the DTO already ran
- *     but the text/quality serve path did not.
+ *     but the text/quality serve path did not;
+ *  5. the name fail-safe (doubled research-home suffix collapse) and the
+ *     research-area chip hygiene (split/relabel/fail-close/prose-drop), so a
+ *     serve path that never touched the DTO's per-field helpers still emits the
+ *     same names and chips as every other surface.
  *
  * Every step is idempotent, so a description already cleaned upstream (the detail
  * path runs the text-transform layer before the DTO) is unchanged by a second
@@ -613,6 +663,25 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     const cleaned = sanitizeResearchEntityShortDescription(next.shortDescription);
     if (cleaned !== next.shortDescription) {
       next.shortDescription = cleaned;
+      changed = true;
+    }
+  }
+
+  for (const field of SERVED_NAME_FIELDS) {
+    if (typeof next[field] !== 'string') continue;
+    const cleaned = sanitizeServedResearchEntityName(next[field]);
+    if (cleaned !== next[field]) {
+      next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  for (const field of SERVED_RESEARCH_AREA_FIELDS) {
+    if (!Array.isArray(next[field])) continue;
+    const cleaned = sanitizeServedResearchAreaChips(next[field]);
+    const current = next[field] as unknown[];
+    if (cleaned.length !== current.length || cleaned.some((value, index) => value !== current[index])) {
+      next[field] = cleaned;
       changed = true;
     }
   }

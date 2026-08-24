@@ -404,9 +404,9 @@ describe('profileService profile shaping', () => {
       website: 'https://ada-lab.example.test/',
       sourceUrls: ['https://source.example.test/profile'],
       shortDescription: 'Studies computing history. Questions: [email redacted]',
-      fullDescription: 'The lab studies computing history. Call [phone redacted] before applying.',
       researchAreas: ['Computing History'],
     });
+    expect(profile.researchEntities[0]).not.toHaveProperty('fullDescription');
     expect(profile.researchEntities[0]).not.toHaveProperty('websiteUrl');
     expect(profile.researchEntities[0]).not.toHaveProperty('description');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('hidden@example.edu');
