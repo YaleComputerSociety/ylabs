@@ -30,6 +30,7 @@ const Account = () => {
   useDocumentTitle('Dashboard');
   const [surface, setSurface] = useState<AccountSurface>('dashboard');
   const [savedResearchCount, setSavedResearchCount] = useState(0);
+  const [savedResearchOpenCount, setSavedResearchOpenCount] = useState(0);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
   const tabRefs = useRef<Record<AccountSurface, HTMLButtonElement | null>>({
     dashboard: null,
@@ -76,6 +77,7 @@ const Account = () => {
       <div className="mx-auto max-w-[1300px] px-6 pt-6 pb-16">
         <PlanningOverview
           savedResearchCount={savedResearchCount}
+          savedResearchOpenCount={savedResearchOpenCount}
           savedFellowshipCount={programSummary.count}
           nextDeadlineLabel={programSummary.nextDeadlineLabel}
         />
@@ -128,7 +130,10 @@ const Account = () => {
           tabIndex={0}
           className={surface === 'dashboard' ? '' : 'hidden'}
         >
-          <SavedResearchPlans onCountChange={setSavedResearchCount} />
+          <SavedResearchPlans
+            onCountChange={setSavedResearchCount}
+            onOpenCountChange={setSavedResearchOpenCount}
+          />
         </div>
         <div
           id="account-programs-panel"

@@ -58,6 +58,9 @@ export interface SavedResearchEntitySummary {
   school?: string;
   shortDescription?: string;
   description?: string;
+  undergraduateCurrentAvailability?: string;
+  accessAcceptanceLevel?: string;
+  hasUndergradHostingEvidence?: boolean;
 }
 
 export interface ResearchPlanChecklistItem {
@@ -109,7 +112,7 @@ export const boundSavedResearchEntitySummaryText = (
 };
 
 const savedResearchEntityProjection =
-  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl';
+  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl undergraduateCurrentAvailability accessAcceptanceLevel hasUndergradHostingEvidence';
 
 const exportTextWithoutDirectContact = (value: unknown): string =>
   safeSpreadsheetCell(redactDirectContactInfo(String(value || '')));
@@ -334,6 +337,13 @@ const visibleSavedResearchEntities = async (
           : [],
         ...(entity.school ? { school: String(entity.school) } : {}),
         ...(shortDescription ? { shortDescription } : {}),
+        ...(entity.undergraduateCurrentAvailability
+          ? { undergraduateCurrentAvailability: String(entity.undergraduateCurrentAvailability) }
+          : {}),
+        ...(entity.accessAcceptanceLevel
+          ? { accessAcceptanceLevel: String(entity.accessAcceptanceLevel) }
+          : {}),
+        hasUndergradHostingEvidence: entity.hasUndergradHostingEvidence === true,
       },
     ];
   });

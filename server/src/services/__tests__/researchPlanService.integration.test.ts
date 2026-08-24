@@ -101,6 +101,39 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     expect(resavedPlans[entityId].stage).toBe('SAVED');
   });
 
+  it('exposes undergrad-access fields on saved research entities (#1382)', async () => {
+    const openId = new mongoose.Types.ObjectId('64a0000000000000000000aa');
+    await mongoose.connection.db!.collection('research_entities').insertOne({
+      _id: openId,
+      slug: 'open-lab',
+      name: 'Open Lab',
+      kind: 'group',
+      departments: ['Computer Science'],
+      studentVisibilityTier: 'student_ready',
+      shortDescription:
+        'Studies distributed systems, networked computation, and fault tolerance at scale.',
+      fullDescription:
+        'This research studies distributed systems, networked computation, and fault tolerance across large-scale deployments.',
+      sourceUrls: ['https://example.yale.edu/labs/open-lab'],
+      undergraduateCurrentAvailability: 'OPEN',
+      accessAcceptanceLevel: 'verified',
+      hasUndergradHostingEvidence: true,
+      archived: false,
+    });
+
+    await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString(), openId.toHexString()]);
+    const savedEntities = await getSavedResearchEntities(NETID);
+
+    const plainLab = savedEntities.find((entity) => entity.slug === 'test-lab');
+    expect(plainLab?.undergraduateCurrentAvailability).toBeUndefined();
+    expect(plainLab?.hasUndergradHostingEvidence).toBe(false);
+
+    const openLab = savedEntities.find((entity) => entity.slug === 'open-lab');
+    expect(openLab?.undergraduateCurrentAvailability).toBe('OPEN');
+    expect(openLab?.accessAcceptanceLevel).toBe('verified');
+    expect(openLab?.hasUndergradHostingEvidence).toBe(true);
+  });
+
   it('clears watched-program private notes on unwatch and does not resurrect them on re-watch', async () => {
     const programId = PROGRAM_ID.toHexString();
     await addWatchedPrograms(NETID, [programId]);

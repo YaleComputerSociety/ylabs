@@ -12,9 +12,14 @@ import useFavorites from '../../hooks/useFavorites';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import { safeRouteSegment } from '../../utils/url';
 import ResearchHomeComparison from './ResearchHomeComparison';
+import {
+  computeSavedHomeAvailabilityBadge,
+  savedHomeAvailabilityBadgeToneClasses,
+} from '../../utils/savedHomeAvailabilityBadge';
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number) => void;
+  onOpenCountChange?: (openCount: number) => void;
 }
 
 interface SavedResearchEntity {
@@ -26,6 +31,9 @@ interface SavedResearchEntity {
   departments?: string[];
   school?: string;
   shortDescription?: string;
+  undergraduateCurrentAvailability?: string;
+  accessAcceptanceLevel?: string;
+  hasUndergradHostingEvidence?: boolean;
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -54,7 +62,7 @@ const entitySubtitle = (entity: SavedResearchEntity): string => {
   return parts.join(' · ');
 };
 
-const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
+const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchPlansProps) => {
   const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -138,10 +146,25 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     void setFavorite(slug, false);
   };
 
-  const visibleEntities = useMemo(
-    () => entities.filter((entity) => savedSlugs.includes(entity.slug)),
-    [entities, savedSlugs],
+  const visibleEntities = useMemo(() => {
+    const filtered = entities.filter((entity) => savedSlugs.includes(entity.slug));
+    return [...filtered].sort((a, b) => {
+      const aOpen = computeSavedHomeAvailabilityBadge(a)?.isCurrentlyOpen ? 1 : 0;
+      const bOpen = computeSavedHomeAvailabilityBadge(b)?.isCurrentlyOpen ? 1 : 0;
+      return bOpen - aOpen;
+    });
+  }, [entities, savedSlugs]);
+
+  const openCount = useMemo(
+    () =>
+      visibleEntities.filter((entity) => computeSavedHomeAvailabilityBadge(entity)?.isCurrentlyOpen)
+        .length,
+    [visibleEntities],
   );
+
+  useEffect(() => {
+    onOpenCountChange?.(openCount);
+  }, [openCount, onOpenCountChange]);
 
   const selectableIds = useMemo(
     () => new Set(visibleEntities.map((entity) => entity._id)),
@@ -223,6 +246,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             const status = saveStatuses[entity._id];
             const isEditing = editingId === entity._id;
             const note = notes[entity._id] || '';
+            const availabilityBadge = computeSavedHomeAvailabilityBadge(entity);
             return (
               <li key={entity._id} className="mb-2">
                 <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
@@ -254,6 +278,13 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         </h3>
                         {entitySubtitle(entity) && (
                           <p className="truncate text-xs text-gray-500">{entitySubtitle(entity)}</p>
+                        )}
+                        {availabilityBadge && (
+                          <span
+                            className={`mt-1 inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${savedHomeAvailabilityBadgeToneClasses(availabilityBadge.tone)}`}
+                          >
+                            {availabilityBadge.label}
+                          </span>
                         )}
                       </div>
                     </div>

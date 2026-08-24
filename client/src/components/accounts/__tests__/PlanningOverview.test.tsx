@@ -57,4 +57,27 @@ describe('PlanningOverview Next up card', () => {
 
     expect(screen.getByText('Save a research home to start planning')).toBeTruthy();
   });
+
+  it('rolls up how many saved homes are currently open to undergraduates', () => {
+    renderOverview({ savedResearchCount: 3, savedResearchOpenCount: 2, savedFellowshipCount: 0 });
+
+    expect(
+      screen.getByText('2 of your saved homes are currently open to undergraduates'),
+    ).toBeTruthy();
+    expect(screen.queryByText('Reach out to a saved research home')).toBeNull();
+  });
+
+  it('keeps an upcoming program deadline ahead of the saved-homes-open rollup', () => {
+    renderOverview({
+      savedResearchCount: 3,
+      savedResearchOpenCount: 2,
+      savedFellowshipCount: 1,
+      nextDeadlineLabel: 'Summer Research Grant: Due Jun 30, 2099',
+    });
+
+    expect(screen.getByText('Summer Research Grant: Due Jun 30, 2099')).toBeTruthy();
+    expect(
+      screen.queryByText('2 of your saved homes are currently open to undergraduates'),
+    ).toBeNull();
+  });
 });

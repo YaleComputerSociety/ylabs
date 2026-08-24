@@ -196,6 +196,64 @@ describe('SavedResearchPlans', () => {
     );
   });
 
+  it('badges an open home, mutes a not-currently-available home, and reports the open count', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({
+          data: { savedResearchEntityIds: ['open-lab', 'closed-lab', 'quiet-lab'] },
+        });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              {
+                _id: 'id-closed',
+                slug: 'closed-lab',
+                name: 'Closed Lab',
+                kind: 'lab',
+                departments: [],
+                undergraduateCurrentAvailability: 'NOT_CURRENTLY_AVAILABLE',
+              },
+              {
+                _id: 'id-quiet',
+                slug: 'quiet-lab',
+                name: 'Quiet Lab',
+                kind: 'lab',
+                departments: [],
+              },
+              {
+                _id: 'id-open',
+                slug: 'open-lab',
+                name: 'Open Lab',
+                kind: 'lab',
+                departments: [],
+                undergraduateCurrentAvailability: 'OPEN',
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+    });
+    const onOpenCountChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans onOpenCountChange={onOpenCountChange} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Open Lab');
+    expect(screen.getByText('Open now')).toBeTruthy();
+    expect(screen.getByText('May not be accepting - reach out to confirm')).toBeTruthy();
+    expect(screen.getByText('Quiet Lab')).toBeTruthy();
+    await waitFor(() => expect(onOpenCountChange).toHaveBeenCalledWith(1));
+
+    const names = screen.getAllByRole('heading', { level: 3 }).map((node) => node.textContent);
+    expect(names?.[0]).toBe('Open Lab');
+  });
+
   it('enables comparison only when two to four homes are selected', async () => {
     withSavedPlans();
 

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 
 interface PlanningOverviewProps {
   savedResearchCount: number;
+  savedResearchOpenCount?: number;
   savedFellowshipCount: number;
   nextDeadlineLabel?: string;
 }
@@ -9,12 +10,19 @@ interface PlanningOverviewProps {
 const pluralize = (count: number, singular: string, plural: string): string =>
   `${count} ${count === 1 ? singular : plural}`;
 
+const openSavedHomesLabel = (savedResearchOpenCount: number): string =>
+  savedResearchOpenCount === 1
+    ? '1 of your saved homes is currently open to undergraduates'
+    : `${savedResearchOpenCount} of your saved homes are currently open to undergraduates`;
+
 const nextUpLabel = (
   savedResearchCount: number,
+  savedResearchOpenCount: number,
   savedFellowshipCount: number,
   nextDeadlineLabel?: string,
 ): string => {
   if (nextDeadlineLabel) return nextDeadlineLabel;
+  if (savedResearchOpenCount > 0) return openSavedHomesLabel(savedResearchOpenCount);
   if (savedResearchCount > 0) return 'Reach out to a saved research home';
   if (savedFellowshipCount > 0) return 'Review a program you are watching';
   return 'Save a research home to start planning';
@@ -22,6 +30,7 @@ const nextUpLabel = (
 
 const PlanningOverview = ({
   savedResearchCount,
+  savedResearchOpenCount = 0,
   savedFellowshipCount,
   nextDeadlineLabel,
 }: PlanningOverviewProps) => (
@@ -47,7 +56,7 @@ const PlanningOverview = ({
     <div className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Next up</p>
       <p className="mt-1 text-sm font-semibold text-gray-950">
-        {nextUpLabel(savedResearchCount, savedFellowshipCount, nextDeadlineLabel)}
+        {nextUpLabel(savedResearchCount, savedResearchOpenCount, savedFellowshipCount, nextDeadlineLabel)}
       </p>
       <p className="mt-1 text-sm text-gray-600">
         Open a saved research home to find its official profile and reach out, and keep private
