@@ -10,6 +10,7 @@ import {
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import {
+  isResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
@@ -28,6 +29,7 @@ export interface ResearchEntityPublicDescriptionRepresentation {
       | 'missing_public_full_description'
       | 'missing_public_card_description'
       | 'blank_served_public_description'
+      | 'research_area_echo_description'
     >;
   };
 }
@@ -92,12 +94,10 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // fail closed when both fields reduce to empty so a stored `student_ready`
   // entity never renders a blank detail page (#998 precedent). Idempotent with
   // the DTO's own pass, and name-agnostic like the rest of this gate.
-  const servedFullDescription = sanitizeResearchEntityDescription(
-    textValue(sanitizedEntity.fullDescription),
-  );
-  const servedShortDescription = sanitizeResearchEntityShortDescription(
-    textValue(sanitizedEntity.shortDescription),
-  );
+  const rawFullDescription = textValue(sanitizedEntity.fullDescription);
+  const rawShortDescription = textValue(sanitizedEntity.shortDescription);
+  const servedFullDescription = sanitizeResearchEntityDescription(rawFullDescription);
+  const servedShortDescription = sanitizeResearchEntityShortDescription(rawShortDescription);
   // A program-like home's student-facing copy describes what the program offers
   // and how to apply, not a lab-style "Studies X" research focus, so the
   // research-focus card invariant is the wrong bar for it: require a useful full
@@ -111,6 +111,18 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   if (!quality.short.isUseful && !programLike) reasons.push('missing_public_card_description');
   if (!servedFullDescription && !servedShortDescription) {
     reasons.push('blank_served_public_description');
+  }
+  // quality.full/short.isUseful accepts this echo template (#1417); check it independently so a
+  // sibling field surviving sanitization can't mask the other field going blank at serve.
+  if (
+    (rawFullDescription &&
+      !servedFullDescription &&
+      isResearchAreaEchoDescription(rawFullDescription)) ||
+    (rawShortDescription &&
+      !servedShortDescription &&
+      isResearchAreaEchoDescription(rawShortDescription))
+  ) {
+    reasons.push('research_area_echo_description');
   }
 
   return {
