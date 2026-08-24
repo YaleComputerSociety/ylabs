@@ -10,8 +10,10 @@ import {
   isCitationAuthorListDumpText,
   isCtaNewsTickerDumpText,
   isStudiesTemplateGlueMalformed,
+  stripDirectoryResearcherNavChrome,
   stripGluedProfileRoleLabel,
   stripGluedProfileSectionLabel,
+  stripGluedResearchRoleTrackToken,
   isCurationRationaleText,
   isInstitutionalCenterBlurbText,
   isFaqDumpText,
@@ -1598,6 +1600,54 @@ describe('stripGluedProfileRoleLabel + doubled-verb collapse (#975)', () => {
   it('leaves a spaced acronym in genuine prose untouched', () => {
     const clean = 'Studies how YSM researchers collaborate across departments.';
     expect(stripGluedProfileRoleLabel(clean)).toBe(clean);
+  });
+});
+
+describe('stripDirectoryResearcherNavChrome (#1394)', () => {
+  it('strips a directory researcher-count + related-publications widget block', () => {
+    expect(
+      stripDirectoryResearcherNavChrome(
+        'Studies genomics50 YSM researchersView 18 related publicationsComputational biology47 YSM researchersView 6 related publications.',
+      ),
+    ).toBe('Studies genomics Computational biology.');
+  });
+
+  it('leaves genuine prose untouched', () => {
+    const clean = 'Studies how genomics researchers view related publications across labs.';
+    expect(stripDirectoryResearcherNavChrome(clean)).toBe(clean);
+  });
+
+  it('is wired into the served fullDescription and shortDescription sanitizers', () => {
+    const raw =
+      'Studies genomics50 YSM researchersView 18 related publicationsComputational biology.';
+    expect(sanitizeResearchEntityDescription(raw)).toBe('Studies genomics Computational biology.');
+    expect(sanitizeResearchEntityShortDescription(raw)).toBe(
+      'Studies genomics Computational biology.',
+    );
+  });
+});
+
+describe('stripGluedResearchRoleTrackToken (#1394)', () => {
+  it('strips a glued physics role-track token between two topic terms', () => {
+    expect(
+      stripGluedResearchRoleTrackToken(
+        'Studies Atomic, Molecular, and Optical PhysicsExperimentalistUltracold atomic physics.',
+      ),
+    ).toBe('Studies Atomic, Molecular, and Optical Physics Ultracold atomic physics.');
+  });
+
+  it('leaves a legitimately spaced role-track word in prose untouched', () => {
+    const clean = 'Studies observational astronomy as an experimentalist would.';
+    expect(stripGluedResearchRoleTrackToken(clean)).toBe(clean);
+  });
+
+  it('is wired into the served fullDescription and shortDescription sanitizers', () => {
+    const raw =
+      'Studies Atomic, Molecular, and Optical PhysicsExperimentalistUltracold atomic physics and quantum simulation.';
+    const cleaned =
+      'Studies Atomic, Molecular, and Optical Physics Ultracold atomic physics and quantum simulation.';
+    expect(sanitizeResearchEntityDescription(raw)).toBe(cleaned);
+    expect(sanitizeResearchEntityShortDescription(raw)).toBe(cleaned);
   });
 });
 

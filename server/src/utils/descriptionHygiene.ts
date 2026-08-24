@@ -504,6 +504,46 @@ export function stripGluedProfileRoleLabel(text: string): string {
   return normalizeHygieneWhitespace(stripped.replace(/\s+([,;])/g, '$1'));
 }
 
+const directoryResearcherNavChromePattern =
+  /\d{0,3}\s*(?:YSM|FAS|YSE|SOM|STEM|SEAS|WGSS)\s+Researchers?\s*View\s*\d*\s*Related\s+Publications?/gi;
+
+/**
+ * Strip a "<count> YSM Researchers View <count> Related Publications" widget
+ * block that a profile-directory extractor glued between two topic terms with
+ * no delimiter ("genomics50 YSM researchersView 18 related publicationsComputational
+ * biology..."), the same source chrome `stripResearchAreaSourceChrome`
+ * (#487) already splits out of the `researchAreas` array, reaching stale
+ * description text that was materialized before that array-side fix (#1394).
+ * Replacing the whole block with a single space keeps the surviving topic
+ * terms readable, and the leftover space/punctuation seam is repaired.
+ */
+export function stripDirectoryResearcherNavChrome(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(directoryResearcherNavChromePattern, ' ');
+  if (stripped === value) return value;
+  return normalizeHygieneWhitespace(stripped.replace(/\s+([.,;:!?])/g, '$1'));
+}
+
+const gluedResearchRoleTrackTokenPattern =
+  /(?<=[a-z])(?:Theorist|Experimentalist|Observational|Observer)(?=[A-Z])/g;
+
+/**
+ * Strip a physics/astronomy profile's "Research Type" role track
+ * (Theorist/Experimentalist/Observational/Observer) that a legacy extractor
+ * glued directly onto a topic term with no delimiter ("Condensed Matter
+ * PhysicsTheoristQuantum criticality"), the same camelCase glue joint
+ * `splitGluedRoleTrackLabels` (#943) already splits out of the researchAreas
+ * array, reaching stale description text baked before that fix (#1394).
+ * Anchored on the glued (no-space) letter boundary on both sides so a
+ * legitimately spaced role track word in prose is untouched.
+ */
+export function stripGluedResearchRoleTrackToken(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(gluedResearchRoleTrackTokenPattern, ' ');
+  if (stripped === value) return value;
+  return normalizeHygieneWhitespace(stripped.replace(/\s+([.,;:!?])/g, '$1'));
+}
+
 const PROFILE_SECTION_LABEL_TOKENS = [
   'Titles?',
   'Biography',
@@ -817,12 +857,16 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
     collapseDoubledSynthesisVerb(
       stripTrailingSourceLayoutLabelSection(
         stripGluedProfileSectionLabel(
-          stripGluedProfileRoleLabel(
-            stripLeadingPageChrome(
-              stripTrailingContactAddress(
-                stripBibliographicReferenceArtifacts(
-                  stripInternalConfidenceHedge(
-                    stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+          stripGluedResearchRoleTrackToken(
+            stripDirectoryResearcherNavChrome(
+              stripGluedProfileRoleLabel(
+                stripLeadingPageChrome(
+                  stripTrailingContactAddress(
+                    stripBibliographicReferenceArtifacts(
+                      stripInternalConfidenceHedge(
+                        stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -1612,8 +1656,12 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
   const stripped = stripLeadingAdministrativeLocationSentences(
     stripTrailingSourceLayoutLabelSection(
       stripGluedProfileSectionLabel(
-        stripGluedProfileRoleLabel(
-          stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+        stripGluedResearchRoleTrackToken(
+          stripDirectoryResearcherNavChrome(
+            stripGluedProfileRoleLabel(
+              stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+            ),
+          ),
         ),
       ),
     ),
