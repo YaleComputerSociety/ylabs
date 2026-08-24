@@ -114,6 +114,27 @@ describe('LabMembersList', () => {
     ).toBe('https://medicine.yale.edu/profile/lead-two/');
   });
 
+  it('links the lead card to the person page while keeping the official profile secondary', () => {
+    const { getByRole } = render(
+      <MemoryRouter>
+        <LabMembersList
+          members={[member('')]}
+          resolveMemberProfileUrl={() => 'https://medicine.yale.edu/profile/fixture-advisor/'}
+          resolvePersonHref={() => '/research/person/a1b2c3d4e5f6a1b2c3d4e5f6-pi'}
+        />
+      </MemoryRouter>,
+    );
+
+    const personLink = getByRole('link', { name: "View Fixture Advisor's Yale Research profile" });
+    expect(personLink.getAttribute('href')).toBe('/research/person/a1b2c3d4e5f6a1b2c3d4e5f6-pi');
+
+    const officialLink = getByRole('link', { name: "Open Fixture Advisor's official profile" });
+    expect(officialLink.getAttribute('href')).toBe(
+      'https://medicine.yale.edu/profile/fixture-advisor/',
+    );
+    expect(officialLink.getAttribute('target')).toBe('_blank');
+  });
+
   it('does not link a card when the resolver returns an unsafe URL', () => {
     const { container } = render(
       <MemoryRouter>
