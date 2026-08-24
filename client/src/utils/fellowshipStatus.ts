@@ -8,6 +8,7 @@ export type FellowshipApplicationStatusKind =
   | 'notOpenYet'
   | 'closed'
   | 'deadlinePassed'
+  | 'projectedNextCycle'
   | 'unknown';
 
 export interface FellowshipApplicationStatus {
@@ -97,6 +98,7 @@ export const getFellowshipApplicationStatus = (
     | 'isAcceptingApplications'
     | 'applicationOpenDate'
     | 'deadline'
+    | 'deadlineProjectedNextCycle'
     | 'eligibility'
     | 'yearOfStudy'
     | 'termOfAward'
@@ -133,6 +135,17 @@ export const getFellowshipApplicationStatus = (
     needsDateReview,
     needsEligibilityReview,
   };
+
+  if (fellowship.deadlineProjectedNextCycle) {
+    return {
+      ...base,
+      kind: 'projectedNextCycle',
+      label: 'Projected next cycle',
+      detail: `Est. next deadline ~${formatShortFellowshipDate(fellowship.deadline)} - unconfirmed, verify at source`,
+      isCurrentlyRelevant: true,
+      isApplicationWindowOpen: false,
+    };
+  }
 
   if (deadlinePassed) {
     return {

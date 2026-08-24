@@ -295,6 +295,61 @@ export const deadlineIsPast = (value: unknown, now: Date): boolean => {
   return date !== undefined && date.getTime() < now.getTime();
 };
 
+const RECURRING_PROGRAM_TEXT_RE =
+  /\b(fellowship|grant|award|funding|stipend|summer|annual|year|cycle|term|spring|fall|deadline|application)\b/i;
+const MAX_NEXT_CYCLE_PROJECTION_YEARS = 6;
+
+const hasFellowshipSourceUrl = (fellowship: any): boolean => {
+  if (
+    typeof fellowship.applicationLink === 'string' &&
+    /^https?:\/\//i.test(fellowship.applicationLink.trim())
+  ) {
+    return true;
+  }
+  return Array.isArray(fellowship.links)
+    ? fellowship.links.some(
+        (link: any) => typeof link?.url === 'string' && /^https?:\/\//i.test(link.url.trim()),
+      )
+    : false;
+};
+
+const textForRecurrenceDetection = (fellowship: any): string =>
+  [
+    fellowship.title,
+    fellowship.competitionType,
+    fellowship.summary,
+    fellowship.description,
+    fellowship.applicationInformation,
+    fellowship.eligibility,
+    fellowship.additionalInformation,
+    ...(Array.isArray(fellowship.purpose) ? fellowship.purpose : []),
+    ...(Array.isArray(fellowship.termOfAward) ? fellowship.termOfAward : []),
+  ]
+    .filter((part): part is string => typeof part === 'string')
+    .join(' ');
+
+export const isLikelyRecurringProgram = (fellowship: any): boolean =>
+  hasFellowshipSourceUrl(fellowship) &&
+  RECURRING_PROGRAM_TEXT_RE.test(textForRecurrenceDetection(fellowship));
+
+export const projectNextCycleDeadline = (deadline: Date, now: Date): Date | undefined => {
+  let projected = deadline;
+  for (let yearsAdded = 0; yearsAdded < MAX_NEXT_CYCLE_PROJECTION_YEARS; yearsAdded += 1) {
+    projected = new Date(
+      Date.UTC(
+        projected.getUTCFullYear() + 1,
+        projected.getUTCMonth(),
+        projected.getUTCDate(),
+        projected.getUTCHours(),
+        projected.getUTCMinutes(),
+        projected.getUTCSeconds(),
+      ),
+    );
+    if (projected.getTime() > now.getTime()) return projected;
+  }
+  return undefined;
+};
+
 const MONTH_NAME_TO_INDEX: Record<string, number> = {
   january: 0,
   february: 1,
@@ -339,11 +394,21 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
     }
   }
 
-  if (
-    publicFellowship.isAcceptingApplications === true &&
-    deadlineIsPast(publicFellowship.deadline, now)
-  ) {
+  const deadlinePast = deadlineIsPast(publicFellowship.deadline, now);
+  if (publicFellowship.isAcceptingApplications === true && deadlinePast) {
     publicFellowship.isAcceptingApplications = false;
+  }
+
+  publicFellowship.deadlineProjectedNextCycle = false;
+  if (deadlinePast && isLikelyRecurringProgram(fellowship)) {
+    const originalDeadline = toValidDate(publicFellowship.deadline);
+    const projectedDeadline = originalDeadline
+      ? projectNextCycleDeadline(originalDeadline, now)
+      : undefined;
+    if (projectedDeadline) {
+      publicFellowship.deadline = projectedDeadline;
+      publicFellowship.deadlineProjectedNextCycle = true;
+    }
   }
 
   const deadlineDate = toValidDate(publicFellowship.deadline);

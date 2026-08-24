@@ -90,7 +90,11 @@ async function main() {
     archived: false,
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   })
-    .select('title isAcceptingApplications deadline sourceKey')
+    .select(
+      'title isAcceptingApplications deadline sourceKey applicationLink links summary ' +
+        'description applicationInformation eligibility additionalInformation competitionType ' +
+        'purpose termOfAward',
+    )
     .lean();
 
   const report = computeCatalogFreshness(records, new Date(), options.thresholds);

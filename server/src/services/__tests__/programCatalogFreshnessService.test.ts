@@ -13,6 +13,9 @@ interface FixtureRecord {
   isAcceptingApplications?: boolean;
   deadline?: Date | null;
   sourceKey?: string;
+  title?: string;
+  summary?: string;
+  applicationLink?: string;
 }
 
 const record = (fields: FixtureRecord): FixtureRecord => fields;
@@ -115,6 +118,25 @@ describe('computeCatalogFreshness', () => {
 
     expect(report.staleSourceKeys).toHaveLength(1);
     expect(report.staleSourceKeys[0].sourceKey).toBe('(none)');
+  });
+
+  it('counts a projected next-cycle deadline as future but flags it separately from a genuine one', () => {
+    const corpus = [
+      record({
+        isAcceptingApplications: true,
+        deadline: PAST_DEADLINE,
+        title: 'Annual undergraduate research grant',
+        summary: 'An annual grant for undergraduate research, awarded each spring.',
+        applicationLink: 'https://fellowships.yale.edu/annual-grant',
+      }),
+      record({ isAcceptingApplications: true, deadline: FUTURE_DEADLINE }),
+    ];
+
+    const report = computeCatalogFreshness(corpus, NOW);
+
+    expect(report.totals.deadlineFuture).toBe(2);
+    expect(report.totals.deadlineFutureProjected).toBe(1);
+    expect(report.totals.deadlinePast).toBe(0);
   });
 
   it('honors overridden thresholds', () => {

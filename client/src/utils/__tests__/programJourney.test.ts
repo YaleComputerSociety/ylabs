@@ -103,6 +103,14 @@ describe('summarizeProgramJourney', () => {
       isAcceptingApplications: false,
       deadline: isoDaysFromNow(-40),
     }),
+    baseFellowship({
+      id: 'projected-next-cycle',
+      programKind: 'OTHER',
+      requiresMentorBeforeApply: false,
+      isAcceptingApplications: false,
+      deadline: isoDaysFromNow(180),
+      deadlineProjectedNextCycle: true,
+    }),
   ];
 
   it('partitions the set so the buckets sum to the total record count', () => {
@@ -129,6 +137,15 @@ describe('summarizeProgramJourney', () => {
     expect(summary.structured).toBe(1);
     expect(summary.fundingAfterMentor).toBe(2);
     expect(summary.archive).toBe(1);
+    expect(summary.openingSoon).toBe(1);
+  });
+
+  it('folds a server-projected next-cycle deadline into the opening-soon bucket', () => {
+    const status = getProgramJourneyStatus(
+      fellowships.find((f) => f.id === 'projected-next-cycle')!,
+      now,
+    );
+    expect(status.category).toBe('openingSoon');
   });
 });
 

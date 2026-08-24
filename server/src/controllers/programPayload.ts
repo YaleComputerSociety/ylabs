@@ -162,6 +162,7 @@ export const publicProgramForReader = (program: any) => {
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,
     deadline: program.deadline,
+    deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
     contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],

@@ -92,6 +92,7 @@ export type Fellowship = {
   isAcceptingApplications: boolean;
   applicationOpenDate: string | null;
   deadline: string | null;
+  deadlineProjectedNextCycle?: boolean;
   contactName: string;
   contactEmail: string;
   contactPhone: string;

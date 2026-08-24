@@ -108,6 +108,71 @@ describe('fellowship public serializer', () => {
     expect(noDeadline.isAcceptingApplications).toBe(true);
   });
 
+  it('projects a stale, source-backed recurring deadline forward to its next annual cycle', () => {
+    const now = new Date('2026-08-22T00:00:00.000Z');
+    const payload = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1d8',
+        title: 'Mellon Mays Undergraduate Fellowship',
+        summary: 'An annual grant awarded each spring for undergraduate research.',
+        isAcceptingApplications: true,
+        deadline: new Date('2026-02-17T00:00:00.000Z'),
+        applicationLink: 'https://fellowships.yale.edu/mellon-mays',
+      },
+      now,
+    );
+    expect(payload.deadlineProjectedNextCycle).toBe(true);
+    expect(payload.deadline).toEqual(new Date('2027-02-17T00:00:00.000Z'));
+    expect(payload.isAcceptingApplications).toBe(false);
+  });
+
+  it('does not project a stale deadline when the program is not source-backed', () => {
+    const now = new Date('2026-08-22T00:00:00.000Z');
+    const payload = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1d9',
+        title: 'Annual undergraduate research grant',
+        summary: 'An annual grant for undergraduate research.',
+        deadline: new Date('2026-02-17T00:00:00.000Z'),
+      },
+      now,
+    );
+    expect(payload.deadlineProjectedNextCycle).toBe(false);
+    expect(payload.deadline).toEqual(new Date('2026-02-17T00:00:00.000Z'));
+  });
+
+  it('does not project a stale deadline when the program text has no recurrence signal', () => {
+    const now = new Date('2026-08-22T00:00:00.000Z');
+    const payload = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1da',
+        title: 'Book Purchase Reimbursement',
+        summary: 'A single reimbursement for course materials with no repeat schedule.',
+        deadline: new Date('2026-02-17T00:00:00.000Z'),
+        applicationLink: 'https://fellowships.yale.edu/one-time',
+      },
+      now,
+    );
+    expect(payload.deadlineProjectedNextCycle).toBe(false);
+    expect(payload.deadline).toEqual(new Date('2026-02-17T00:00:00.000Z'));
+  });
+
+  it('leaves a future deadline untouched', () => {
+    const now = new Date('2026-08-22T00:00:00.000Z');
+    const payload = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1db',
+        title: 'Annual fellowship',
+        summary: 'An annual fellowship for undergraduates.',
+        deadline: new Date('2026-12-20T00:00:00.000Z'),
+        applicationLink: 'https://fellowships.yale.edu/annual',
+      },
+      now,
+    );
+    expect(payload.deadlineProjectedNextCycle).toBe(false);
+    expect(payload.deadline).toEqual(new Date('2026-12-20T00:00:00.000Z'));
+  });
+
   it('strips a stale present-by clause whose month precedes the record deadline', () => {
     const staleText =
       'To provide funding to off-set the costs associated with a senior research project or senior essay. For funding research which must take place during the academic year and awardees must present the result of their research either to the Senior Mellon Forum or another educational forum in the college by April, 2025.';
