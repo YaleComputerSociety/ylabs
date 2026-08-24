@@ -64,6 +64,27 @@ const SLUG_SHELL_PREFIXES = [
   /^center-/,
 ];
 
+// A department-roster listing page (`/people/linguistics-faculty`,
+// `/people/our-people`) splits into two dash-separated tokens just like a real
+// person slug, but names a page, not a person. Rejecting any slug that carries one
+// of these words keeps such listing pages from being misparsed as a two-token name.
+const ROSTER_PAGE_WORDS = new Set([
+  'faculty',
+  'people',
+  'staff',
+  'directory',
+  'index',
+  'roster',
+  'listing',
+  'emeriti',
+  'postdocs',
+  'students',
+  'alumni',
+  'members',
+  'team',
+  'our',
+]);
+
 function textValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -93,6 +114,7 @@ export function personProfileNameTokensFromUrl(value: unknown): string[] | null 
     .toLowerCase()
     .split(/[^a-z]+/i)
     .filter((token) => token.length >= 2 && !CREDENTIAL_TOKENS.has(token));
+  if (tokens.some((token) => ROSTER_PAGE_WORDS.has(token))) return null;
   return tokens.length >= 2 ? tokens : null;
 }
 

@@ -24,6 +24,14 @@ describe('personProfileNameTokensFromUrl', () => {
     expect(personProfileNameTokensFromUrl('https://example.com/people/keith-baker')).toBeNull();
     expect(personProfileNameTokensFromUrl(undefined)).toBeNull();
   });
+
+  it('returns null for dash-separated department-roster listing pages (#1301)', () => {
+    expect(
+      personProfileNameTokensFromUrl('https://linguistics.yale.edu/people/linguistics-faculty'),
+    ).toBeNull();
+    expect(personProfileNameTokensFromUrl('https://cbb.yale.edu/people/our-people')).toBeNull();
+    expect(personProfileNameTokensFromUrl('https://medicine.yale.edu/people/ladder-faculty')).toBeNull();
+  });
 });
 
 describe('researchEntityIdentityTokens', () => {
