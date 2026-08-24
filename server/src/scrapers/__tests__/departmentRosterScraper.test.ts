@@ -1157,6 +1157,75 @@ describe('profileGridItemExtractor', () => {
       },
     ]);
   });
+
+  it('cites the department-hosted profile URL for a basic-science department card', () => {
+    const html = `
+      <div class="profile-grid-item">
+        <a href="#"><div><span class="profile-grid-item__name--link">Alex Sample, PhD</span></div></a>
+        <div class="profile-grid-item__title-container"><p class="profile-grid-item__title">Professor of Genetics</p></div>
+        <div class="profile-grid-item__link-details-container"><a href="/genetics/profile/alex-sample/">View Full Profile</a></div>
+      </div>`;
+    expect(
+      profileGridItemExtractor(html, {
+        pageUrl: 'https://medicine.yale.edu/genetics/people/',
+      }),
+    ).toEqual([
+      {
+        name: 'Alex Sample',
+        profileUrl: 'https://medicine.yale.edu/genetics/profile/alex-sample/',
+        title: 'Professor of Genetics',
+      },
+    ]);
+  });
+});
+
+describe('YSM basic-science department roster configs (#1629)', () => {
+  const configsByKey = new Map(DEFAULT_DEPT_CONFIGS.map((config) => [config.deptKey, config]));
+
+  const expectedYsmBasicScienceConfigs: Array<{ deptKey: string; deptName: string; url: string }> =
+    [
+      { deptKey: 'ysm-cell-biology', deptName: 'Cell Biology', url: 'https://medicine.yale.edu/cellbio/people/' },
+      { deptKey: 'ysm-immunobiology', deptName: 'Immunobiology', url: 'https://medicine.yale.edu/immuno/people/' },
+      { deptKey: 'ysm-pharmacology', deptName: 'Pharmacology', url: 'https://medicine.yale.edu/pharm/people/' },
+      { deptKey: 'ysm-genetics', deptName: 'Genetics', url: 'https://medicine.yale.edu/genetics/people/' },
+      {
+        deptKey: 'ysm-cellular-molecular-physiology',
+        deptName: 'Cellular & Molecular Physiology',
+        url: 'https://medicine.yale.edu/physiology/faculty/',
+      },
+      {
+        deptKey: 'ysm-microbial-pathogenesis',
+        deptName: 'Microbial Pathogenesis',
+        url: 'https://medicine.yale.edu/micropath/people/primary-faculty/',
+      },
+      {
+        deptKey: 'ysm-microbial-pathogenesis-research',
+        deptName: 'Microbial Pathogenesis',
+        url: 'https://medicine.yale.edu/micropath/people/research-faculty/',
+      },
+      { deptKey: 'ysm-comparative-medicine', deptName: 'Comparative Medicine', url: 'https://medicine.yale.edu/compmed/people/' },
+      { deptKey: 'ysm-pathology', deptName: 'Pathology', url: 'https://medicine.yale.edu/pathology/people/' },
+      { deptKey: 'ysm-neuroscience', deptName: 'Neuroscience', url: 'https://medicine.yale.edu/neuroscience/people/' },
+      {
+        deptKey: 'ysm-biomedical-informatics-data-science',
+        deptName: 'Biomedical Informatics & Data Science',
+        url: 'https://medicine.yale.edu/biomedical-informatics-data-science/people/',
+      },
+    ];
+
+  it.each(expectedYsmBasicScienceConfigs)(
+    'wires $deptKey as an official-profile-only profile-grid-item roster',
+    ({ deptKey, deptName, url }) => {
+      expect(configsByKey.get(deptKey)).toMatchObject({
+        deptName,
+        schoolName: 'Yale School of Medicine',
+        url,
+        extractor: profileGridItemExtractor,
+        officialProfileOnly: true,
+        paginated: false,
+      });
+    },
+  );
 });
 
 describe('nodeTeaserFacultyExtractor', () => {
