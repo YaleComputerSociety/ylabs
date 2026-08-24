@@ -11,6 +11,7 @@ import {
 } from '../models/researchPlan';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { researchEntityServesPublicDetail } from './researchEntityPublicDescription';
+import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { NotFoundError } from '../utils/errors';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
@@ -315,16 +316,17 @@ const visibleSavedResearchEntities = async (
     .select(savedResearchEntityProjection)
     .lean();
   return entities.filter(researchEntityServesPublicDetail).flatMap((entity: any) => {
+    const served = sanitizeServedResearchEntityCopyFields(entity);
     const shortDescription = boundSavedResearchEntitySummaryText(
-      entity.shortDescription,
+      served.shortDescription,
       MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
     );
     return [
       {
         _id: String(entity._id),
         slug: String(entity.slug || ''),
-        name: String(entity.name || entity.displayName || 'Research profile'),
-        ...(entity.displayName ? { displayName: String(entity.displayName) } : {}),
+        name: String(served.name || served.displayName || 'Research profile'),
+        ...(served.displayName ? { displayName: String(served.displayName) } : {}),
         kind: String(entity.kind || 'group'),
         ...(entity.entityType ? { entityType: String(entity.entityType) } : {}),
         departments: Array.isArray(entity.departments)
