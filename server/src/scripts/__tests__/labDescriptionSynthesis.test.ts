@@ -200,6 +200,35 @@ describe('buildSynthesisSources', () => {
     });
     expect(sourceText).toContain('sonnets');
   });
+
+  const areaEchoFallbackFull =
+    'The lab focuses on cardiac ischemia and reperfusion and platelet disorders. The lab investigates therapeutic strategies for these cardiovascular conditions.';
+  const cardiacResearchAreas = [
+    'Cardiac ischemia and reperfusion',
+    'Platelet disorders',
+    'Antiplatelet therapy',
+  ];
+
+  it('drops a fullDescription that is itself an area-echo fallback rather than laundering it as source (#1625)', () => {
+    const { sourceText, groundingAnchor } = buildSynthesisSources({
+      fullDescription: areaEchoFallbackFull,
+      researchAreas: cardiacResearchAreas,
+    });
+    expect(sourceText).toBe('');
+    expect(groundingAnchor).toContain('Cardiac ischemia and reperfusion');
+  });
+
+  it('still uses a corroborating secondary source when the primary is an area-echo fallback (#1625)', () => {
+    const corroboratingCardiacProse =
+      'The group studies how platelet activation contributes to reperfusion injury after cardiac ischemia, using mouse models of coronary occlusion.';
+    const { sourceText } = buildSynthesisSources({
+      fullDescription: areaEchoFallbackFull,
+      profileSynthesisDescription: corroboratingCardiacProse,
+      researchAreas: cardiacResearchAreas,
+    });
+    expect(sourceText).toContain('mouse models of coronary occlusion');
+    expect(sourceText).not.toContain('therapeutic strategies');
+  });
 });
 
 describe('identity conflation guard (#470)', () => {
