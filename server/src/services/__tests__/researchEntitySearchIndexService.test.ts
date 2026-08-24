@@ -55,13 +55,13 @@ describe('researchEntitySearchIndexService', () => {
       opennessComputedAt: '2026-01-01T00:00:00.000Z',
       opennessLastSignalAt: '2026-01-01T00:00:00.000Z',
       accessAcceptanceLevel: 'verified',
-      accessSummary: { status: 'posted-opening', confidence: 0.9 },
+      accessSummary: { status: 'reach-out-plausible', confidence: 0.9 },
     });
 
     expect(doc).toMatchObject({
       id: 'entity-access',
       accessAcceptanceLevel: 'verified',
-      accessSummary: { status: 'posted-opening', confidence: 0.9 },
+      accessSummary: { status: 'reach-out-plausible', confidence: 0.9 },
     });
     expect(doc).not.toHaveProperty('openness');
     expect(doc).not.toHaveProperty('acceptingUndergrads');

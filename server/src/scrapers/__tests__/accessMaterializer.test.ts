@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MATERIALIZED_ACCESS_SIGNAL_TYPES,
   deriveAccessArtifactsFromObservations,
   deriveAccessArtifactsForResearchGroup,
   deriveIdentifiedLeadWaysIn,
@@ -544,6 +545,76 @@ describe('deriveAccessArtifactsFromObservations', () => {
         }),
       ]),
     );
+  });
+
+  it('emits exactly the signal types listed in MATERIALIZED_ACCESS_SIGNAL_TYPES (#1303)', () => {
+    const perBranchFixtures: AccessObservation[][] = [
+      [
+        obs({ field: 'offersIndependentStudy', value: true, confidence: 0.7 }),
+        obs({
+          field: 'independentStudyCourses',
+          value: [{ code: 'HIST 491', title: 'Senior Essay' }],
+          confidence: 0.7,
+        }),
+      ],
+      [obs({ field: 'currentUndergradCount', value: 2, confidence: 0.5 })],
+      [
+        obs({
+          field: 'pastUndergradAdvisees',
+          value: [{ year: 2025, programName: 'STARS', count: 2 }],
+          sourceName: 'undergrad-fellowships-recipients',
+          confidence: 0.8,
+        }),
+      ],
+      [
+        obs({
+          field: 'undergradAccessEvidence',
+          value: {
+            openToUndergrads: 'yes',
+            evidenceSource: 'explicit_text',
+            evidenceQuote: 'We invite undergraduates to apply.',
+          },
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+        obs({
+          field: 'joinPageUrl',
+          value: 'https://lab.example.edu/join',
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+        obs({
+          field: 'contactInstructionsQuote',
+          value: 'Apply using the form on this page.',
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+      ],
+      [
+        obs({
+          field: 'acceptingUndergrads',
+          value: false,
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+        obs({
+          field: 'undergradEvidenceQuote',
+          value: 'We are not taking undergraduate researchers this year.',
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+      ],
+    ];
+
+    const emitted = new Set(
+      perBranchFixtures.flatMap((observations) =>
+        deriveAccessArtifactsFromObservations('64f000000000000000000001', observations).accessSignals.map(
+          (signal) => signal.type,
+        ),
+      ),
+    );
+
+    expect([...emitted].sort()).toEqual([...MATERIALIZED_ACCESS_SIGNAL_TYPES].sort());
   });
 
   it('deduplicates repeated evidence by derivation key', () => {

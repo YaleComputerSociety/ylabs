@@ -195,12 +195,12 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
     evidence.push({
       kind: 'access-signal',
       label: summary.bestNextStep || 'Evidence available',
-      strength: summary.status === 'posted-opening' ? 'strong' : 'moderate',
+      strength: 'moderate',
     });
   }
 
   return {
-    verdict: summary.status === 'posted-opening' ? 'verified-accepting' : 'likely-accepting',
+    verdict: 'likely-accepting',
     confidence: summary.confidence,
     evidence,
   };

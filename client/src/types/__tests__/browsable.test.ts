@@ -119,11 +119,11 @@ describe('isItemOpen for research entities', () => {
       type: 'researchGroup',
       data: researchEntity({
         accessSummary: {
-          status: 'posted-opening',
+          status: 'reach-out-plausible',
           confidence: 0.9,
           evidence: [],
-          signalTypes: ['POSTED_OPENING'],
-          bestNextStep: 'Apply through the official posting.',
+          signalTypes: ['REACH_OUT_PLAUSIBLE'],
+          bestNextStep: 'Review the official profile.',
         },
       }),
     };
