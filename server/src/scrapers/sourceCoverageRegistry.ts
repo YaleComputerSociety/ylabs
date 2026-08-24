@@ -285,6 +285,21 @@ export const sourceCoverageRegistry = {
     notes:
       'Official research.yale.edu directories for centers, institutes, cores, and infrastructure resources. Discovery-only; must not imply undergraduate access, contact routes, or posted openings without a more explicit source.',
   },
+  'peabody-collections-research': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'ENTITY_MEMBERSHIP',
+      'OFFICIAL_PROFILE',
+      'TOPICS',
+      'LAB_WEBSITE',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale Peabody Museum Collections & Research divisions catalog; pilot producer for the ARCHIVE_OR_MUSEUM_PROJECT museum/collections research home. Each individual division page is the cited source; the divisions index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity, an official-page description, and the single named Curator-in-charge as an inferred-director lead (resolved to a Yale User before promotion). Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
+  },
   'undergrad-fellowships-recipients': {
     priority: 4,
     tier: 'DERIVED_OFFICIAL',

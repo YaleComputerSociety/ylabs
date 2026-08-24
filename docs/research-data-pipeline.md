@@ -152,6 +152,19 @@ Ambiguous Yale user matches and archived or non-current lead memberships are ine
 At materialization, only each source's latest grant snapshot participates.
 The public grant display is a recency-sorted, deduplicated union capped at ten records, while `recentGrantCount` sums the independent latest source totals without applying that display cap and funding agencies are unioned across sources.
 
+### Museum and collections research homes
+
+The `peabody-collections-research` source is the pilot producer for the museum/collections research-home type `ARCHIVE_OR_MUSEUM_PROJECT` (issue #1349).
+It walks the Yale Peabody Museum "Collections & Research" divisions index only to enumerate divisions, then fetches and cites each individual division page (for example `https://peabody.yale.edu/explore/collections/vertebrate-paleontology`), never the index root, per the self-referential and index-page source guards (#516/#549).
+It is discovery-only: it emits division identity, an official-page description, and the single named Curator-in-charge as an entity-level `inferredDirector*` observation, reusing the existing `materializeInferredDirectorMembership` path so the curator is resolved to a unique Yale User before any lead is written and no new access logic is introduced.
+It fails closed on contact data and never emits contact routes, undergraduate-access claims, or posted openings; a division that names no Curator-in-charge yields no lead rather than a fabricated one.
+A division with a resolved curatorial lead plus its official page lands on the `IDENTIFIED_LEAD_WAYS_IN` path in the access materializer with no new derivation.
+
+Sibling museum/collections acquisition gaps remain open follow-ups once this pilot proves the path, each its own issue:
+Beinecke Rare Book & Manuscript Library, Yale University Art Gallery, Yale Center for British Art, and Yale Library collections-as-data initiatives.
+The natural next entity-type sibling is `COLLECTIONS_INITIATIVE`, which is reserved and consumed downstream but still has no producer.
+This note sits alongside the digital-humanities `DIGITAL_HUMANITIES_PROJECT` pilot follow-up tracked in issue #1345.
+
 ## Canonical Collections
 
 Runtime research discovery is centered on:

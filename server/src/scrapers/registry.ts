@@ -25,6 +25,7 @@ import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBac
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
 import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtractor';
 import { DhLabProjectsScraper } from './sources/dhLabProjectsScraper';
+import { PeabodyCollectionsResearchScraper } from './sources/peabodyCollectionsResearchScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -55,5 +56,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new OfficialResearchHomeRosterScraper());
   o.register(new ResearchAreaSourceExtractor());
   o.register(new DhLabProjectsScraper());
+  o.register(new PeabodyCollectionsResearchScraper());
   return o;
 }

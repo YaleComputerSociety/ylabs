@@ -347,6 +347,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'peabody-collections-research',
+    displayName: 'Yale Peabody Museum collections & research divisions',
+    description:
+      'Yale Peabody Museum Collections & Research divisions catalog; pilot producer for ARCHIVE_OR_MUSEUM_PROJECT museum/collections research homes. Cites each individual division page (never the index) and emits discovery-only identity, an official-page description, and the single Curator-in-charge as an inferred-director lead. Fails closed on contact data.',
+    baseUrl: 'https://peabody.yale.edu/explore/collections',
+    defaultWeight: 0.85,
+    cadence: 'monthly',
+  },
+  {
     name: 'research-area-source-extractor',
     displayName: 'Research-area source extractor',
     description:
