@@ -205,6 +205,46 @@ describe('researchEntitySearchIndexService', () => {
     expect(JSON.stringify(doc)).not.toContain('203-555-1212');
   });
 
+  it('strips endowed-chair honorific titles from searchable description text so a chair-name term does not surface unrelated faculty (#1286)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-townsend-chair',
+      name: 'Nicholas Parrillo Faculty Research',
+      fullDescription:
+        'Nicholas Parrillo is the William K. Townsend Professor of Law at Yale Law School.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription).not.toMatch(/townsend/i);
+    expect(doc?.fullDescription).toBe('Nicholas Parrillo is at Yale Law School.');
+  });
+
+  it('strips a bare "Sterling Professor of X" chair title without eating the surrounding sentence (#1286)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sterling-chair',
+      name: 'Ian Shapiro Faculty Research',
+      shortDescription:
+        'Ian Shapiro is Sterling Professor of Political Science and studies democracy.',
+      archived: false,
+    });
+
+    expect(doc?.shortDescription).not.toMatch(/sterling/i);
+    expect(doc?.shortDescription).toBe('Ian Shapiro is and studies democracy.');
+  });
+
+  it('leaves ordinary description text untouched when no chair-title boilerplate is present (#1286)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-no-chair-title',
+      name: 'Genomics Lab',
+      fullDescription:
+        'The lab studies protein folding and works closely with the chemistry department.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription).toBe(
+      'The lab studies protein folding and works closely with the chemistry department.',
+    );
+  });
+
   it('exposes clone-safe settings used by the live Research browse filters', () => {
     const settings = getResearchEntitySearchIndexSettings();
 
