@@ -800,6 +800,93 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('missing_facet_signal');
   });
 
+  it('holds a lab whose description opens with a death-year range for its PI out of student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'LAB',
+        shortDescription: 'Studies stellar evolution and astronomical spectroscopy.',
+        fullDescription:
+          'Pierre R. Demarque (1932 - 2025), Munson Professor Emeritus of Natural Philosophy and Astronomy, came to Yale in 1968 and studied stellar evolution and astronomical spectroscopy.',
+        sourceUrls: ['https://astronomy.yale.edu/people/pierre-demarque'],
+        activeAtYaleCache: true,
+        departments: ['Astronomy'],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('deceased_or_emeritus_lead');
+  });
+
+  it('holds a lab led by an emeritus professor out of student_ready even without a death-year range', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'LAB',
+        shortDescription: 'Studies tumor pathology and cancer diagnostics.',
+        fullDescription:
+          'Jose Costa, MD, FACP, is Professor Emeritus of Pathology and studies tumor pathology and cancer diagnostics.',
+        sourceUrls: ['https://medicine.yale.edu/people/jose-costa'],
+        activeAtYaleCache: true,
+        departments: ['Pathology'],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('deceased_or_emeritus_lead');
+  });
+
+  it('does not let an explicit student_ready override bypass the deceased/emeritus lead guard', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'LAB',
+        studentVisibilityOverrideTier: 'student_ready',
+        shortDescription: 'Studies tumor pathology and cancer diagnostics.',
+        fullDescription:
+          'Jose Costa, MD, FACP, is Professor Emeritus of Pathology and studies tumor pathology and cancer diagnostics.',
+        sourceUrls: ['https://medicine.yale.edu/people/jose-costa'],
+        activeAtYaleCache: true,
+        departments: ['Pathology'],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('deceased_or_emeritus_lead');
+  });
+
+  it('does not flag an active lab whose description never mentions a deceased or emeritus lead', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'LAB',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        departments: ['Biostatistics'],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('deceased_or_emeritus_lead');
+  });
+
   it('keeps a strong profile without action evidence limited rather than ready', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
