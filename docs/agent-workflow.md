@@ -23,16 +23,8 @@ For product, schema, or architecture decisions, also check the durable docs:
 
 ## Skill Index
 
-| Skill | Use |
-|-------|-----|
-| [`graphify`](../skills/graphify/SKILL.md) | Repo navigation, local cache freshness, graph queries, and generated-file policy. |
-| [`product-model`](../skills/product-model/SKILL.md) | Research discovery behavior, product vocabulary, Ways In, visibility, and entity pages. |
-| [`architecture`](../skills/architecture/SKILL.md) | Repo map, commands, stack, routes, services, environments, and integrations. |
-| [`search-data`](../skills/search-data/SKILL.md) | MongoDB, Meilisearch, browse ranking, migrations, and search rebuilds. |
-| [`auth-security`](../skills/auth-security/SKILL.md) | CAS auth, sessions, middleware, rate limits, CORS, CSRF, SSRF, and sensitive env vars. |
-| [`scrapers`](../skills/scrapers/SKILL.md) | Scraper sources, observations, materializers, confidence resolution, CLI, and write guards. |
-| [`contributing`](../skills/contributing/SKILL.md) | Endpoints, client pages or routes, and Mongoose schema changes. |
-| [`finishing-work`](../skills/finishing-work/SKILL.md) | Verification, diff review, docs maintenance, and roadmap cleanup. |
+The canonical skill table lives in [`AGENTS.md`](../AGENTS.md#on-demand-skills).
+Read it there and open the smallest relevant skill under [`skills/`](../skills/); this router intentionally does not duplicate the per-skill list.
 
 ## Durable Notes
 
