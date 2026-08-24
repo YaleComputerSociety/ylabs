@@ -2720,14 +2720,6 @@ export async function materializeEntity(
           break;
         }
       }
-      const finalFullText = textValue(set.fullDescription);
-      if (
-        finalFullText &&
-        isFullDescriptionRestatementOfShortDescription(finalFullText, currentShortForFullDistinctness)
-      ) {
-        set.fullDescription = '';
-        fieldsWritten++;
-      }
     }
     const fullDescription =
       textValue(set.fullDescription) ||
@@ -2769,6 +2761,18 @@ export async function materializeEntity(
         : undefined;
       if (provenance) set['fieldProvenance.shortDescription'] = provenance;
       fieldsWritten++;
+    }
+    if (!manuallyLockedFields.includes('fullDescription')) {
+      const finalShortText = textValue(set.shortDescription ?? entityDoc?.shortDescription);
+      const finalFullText = textValue(set.fullDescription ?? entityDoc?.fullDescription);
+      if (
+        finalFullText &&
+        finalShortText &&
+        isFullDescriptionRestatementOfShortDescription(finalFullText, finalShortText)
+      ) {
+        set.fullDescription = '';
+        fieldsWritten++;
+      }
     }
   }
   if (isResearchEntityObservationType(entityType)) {
