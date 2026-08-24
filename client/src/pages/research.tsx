@@ -2114,11 +2114,15 @@ const Research = () => {
                 to="/account?tab=programs"
                 className="mt-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 hover:border-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
                 aria-label={`${watchedProgramUrgency.closingWithin14DaysCount} watched ${
-                  watchedProgramUrgency.closingWithin14DaysCount === 1 ? 'program' : 'programs'
-                } close within the next 14 days. View Program Watch.`}
+                  watchedProgramUrgency.closingWithin14DaysCount === 1
+                    ? 'program closes'
+                    : 'programs close'
+                } within the next 14 days. View Program Watch.`}
               >
                 {watchedProgramUrgency.closingWithin14DaysCount} watched{' '}
-                {watchedProgramUrgency.closingWithin14DaysCount === 1 ? 'program' : 'programs'} close
+                {watchedProgramUrgency.closingWithin14DaysCount === 1
+                  ? 'program closes'
+                  : 'programs close'}{' '}
                 within 2 weeks
               </Link>
             )}

@@ -2897,6 +2897,115 @@ describe('Research page', () => {
   });
 });
 
+describe('Research landing watched-program urgency CTA', () => {
+  const mockWatchedProgramsGet = (
+    watchedPrograms: unknown[],
+    watchedProgramPlans: Record<string, { stage?: string }> = {},
+  ) => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({ data: { watchedPrograms } });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans } });
+      }
+      return Promise.resolve({ data: { suggestions: [] } });
+    });
+  };
+
+  it('is hidden for a guest browsing without an account', async () => {
+    mockWatchedProgramsGet([
+      {
+        _id: 'p1',
+        id: 'p1',
+        title: 'Closing Soon Grant',
+        deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+        isAcceptingApplications: true,
+      },
+    ]);
+
+    renderResearch();
+
+    await screen.findByRole('heading', { name: 'Find a Yale lab that fits you.' });
+    expect(screen.queryByText(/close within 2 weeks/)).toBeNull();
+  });
+
+  it('is hidden for a logged-in student with no watched programs closing soon', async () => {
+    mockWatchedProgramsGet([
+      {
+        _id: 'p1',
+        id: 'p1',
+        title: 'Far-off Fellowship',
+        deadline: '2099-06-30T00:00:00.000Z',
+        isAcceptingApplications: true,
+      },
+    ]);
+
+    renderResearch(departments, ['/research'], { netId: 'student1', userType: 'student' });
+
+    await screen.findByRole('heading', { name: 'Find a Yale lab that fits you.' });
+    await waitFor(() => expect(screen.queryByText(/close within 2 weeks/)).toBeNull());
+  });
+
+  it('is hidden for a logged-in student with no watched programs at all', async () => {
+    mockWatchedProgramsGet([]);
+
+    renderResearch(departments, ['/research'], { netId: 'student1', userType: 'student' });
+
+    await screen.findByRole('heading', { name: 'Find a Yale lab that fits you.' });
+    await waitFor(() => expect(screen.queryByText(/close within 2 weeks/)).toBeNull());
+  });
+
+  it('shows a CTA linking to Program Watch when a watched program closes within 2 weeks', async () => {
+    mockWatchedProgramsGet(
+      [
+        {
+          _id: 'p1',
+          id: 'p1',
+          title: 'Closing Soon Grant',
+          deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+          isAcceptingApplications: true,
+        },
+      ],
+      { p1: { stage: 'SAVED' } },
+    );
+
+    renderResearch(departments, ['/research'], { netId: 'student1', userType: 'student' });
+
+    const cta = await screen.findByRole('link', {
+      name: '1 watched program closes within the next 14 days. View Program Watch.',
+    });
+    expect(cta.getAttribute('href')).toBe('/account?tab=programs');
+    expect(screen.getByText(/1 watched program closes within 2 weeks/)).toBeTruthy();
+  });
+
+  it('pluralizes the CTA for multiple watched programs closing soon', async () => {
+    mockWatchedProgramsGet(
+      [
+        {
+          _id: 'p1',
+          id: 'p1',
+          title: 'Closing Soon Grant',
+          deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+          isAcceptingApplications: true,
+        },
+        {
+          _id: 'p2',
+          id: 'p2',
+          title: 'Another Closing Grant',
+          deadline: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+          isAcceptingApplications: true,
+        },
+      ],
+      { p1: { stage: 'SAVED' }, p2: { stage: 'SAVED' } },
+    );
+
+    renderResearch(departments, ['/research'], { netId: 'student1', userType: 'student' });
+
+    await screen.findByText(/2 watched programs close within 2 weeks/);
+  });
+});
+
 describe('Research zero-result recovery', () => {
   const recoveryResearchAreas = [
     { name: 'Genomics', field: 'Life Sciences', colorKey: 'a', isDefault: false },
