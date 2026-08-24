@@ -118,4 +118,10 @@ describe('buildResearchAreasCardSummary', () => {
       buildResearchAreasCardSummary(['Studies on Chitinases and Chitosanases', 'Lung Cancer']),
     ).toBe('Studies on Chitinases and Chitosanases and Lung Cancer.');
   });
+
+  it('drops a leaked leading conjunction so the oxford join never doubles it (#1681)', () => {
+    expect(buildResearchAreasCardSummary(['Algorithms', 'Data', 'and Market Design'])).toBe(
+      'Studies Algorithms, Data, and Market Design.',
+    );
+  });
 });

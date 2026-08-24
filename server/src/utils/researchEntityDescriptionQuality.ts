@@ -1,4 +1,5 @@
 import {
+  collapseDoubledConjunction,
   collapseDoubledSynthesisVerb,
   hasContactBlockResidue,
   isCitationAuthorListDumpText,
@@ -1262,7 +1263,10 @@ export function buildResearchAreasCardSummary(researchAreas: unknown): string {
   const seen = new Set<string>();
   for (const raw of researchAreas) {
     if (typeof raw !== 'string') continue;
-    const topic = textValue(raw).replace(/[.;:,]+$/g, '').trim();
+    const topic = textValue(raw)
+      .replace(/[.;:,]+$/g, '')
+      .replace(/^(?:and|or)\s+/i, '')
+      .trim();
     if (topic.length < 3 || topic.length > 60) continue;
     if (wordCount(topic) > 6) continue;
     if (/https?:\/\/|\bwww\./i.test(topic)) continue;
@@ -1274,7 +1278,9 @@ export function buildResearchAreasCardSummary(researchAreas: unknown): string {
     if (topics.length >= MAX_RESEARCH_AREA_CARD_TOPICS) break;
   }
   if (topics.length === 0) return '';
-  const candidate = collapseDoubledSynthesisVerb(`Studies ${oxfordJoin(topics)}.`);
+  const candidate = collapseDoubledConjunction(
+    collapseDoubledSynthesisVerb(`Studies ${oxfordJoin(topics)}.`),
+  );
   if (candidate.length > 200 || isVacuousGenericFocusSummary(candidate)) return '';
   return candidate;
 }
