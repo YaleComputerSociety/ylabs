@@ -624,6 +624,56 @@ describe('researchEntityDto', () => {
     expect(result.researchEntities[0].name).toBe('The Solo Lab');
   });
 
+  it('trims fullDescription/profileSynthesisDescription from search results and ships a resolved cardDescription instead (#1583)', () => {
+    const result = addResearchEntitySearchAliases({
+      hits: [
+        {
+          _id: 'trimmed-lab',
+          slug: 'trimmed-lab',
+          name: 'Trimmed Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          shortDescription:
+            'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+          fullDescription:
+            'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+          profileSynthesisDescription: 'A profile-derived summary that should not reach the wire.',
+        },
+      ],
+      estimatedTotalHits: 1,
+      page: 1,
+      pageSize: 24,
+    });
+
+    const entity = result.researchEntities[0];
+    expect(entity.fullDescription).toBeUndefined();
+    expect(entity.profileSynthesisDescription).toBeUndefined();
+    expect(entity.cardDescription).toEqual({
+      text: 'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+      state: 'complete',
+      label: 'Research description',
+    });
+  });
+
+  it('keeps fullDescription on the detail DTO untrimmed', () => {
+    const detail = addResearchEntityDetailAlias({
+      group: {
+        _id: 'detail-lab',
+        slug: 'detail-lab',
+        name: 'Detail Lab',
+        kind: 'lab',
+        shortDescription: 'Studies protein folding.',
+        fullDescription: 'This lab studies protein folding across many organisms.',
+      },
+      members: [],
+    });
+
+    expect(detail.researchEntity.fullDescription).toBe(
+      'This lab studies protein folding across many organisms.',
+    );
+    expect(detail.researchEntity.cardDescription).toBeUndefined();
+  });
+
   it('returns canonical detail entity without legacy group', () => {
     const detail = addResearchEntityDetailAlias({
       group: {

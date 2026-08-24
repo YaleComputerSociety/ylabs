@@ -226,6 +226,31 @@ describe('buildGroupedSearchResults', () => {
     expect(grouped.clusters[0].contextLine).toBe('Neuroscience');
   });
 
+  it('uses a server-resolved cardDescription instead of re-deriving from absent raw fields (#1583)', () => {
+    const grouped = buildGroupedSearchResults({
+      query: 'neuroscience',
+      researchEntities: [
+        entity({
+          _id: 'trimmed',
+          slug: 'trimmed-lab',
+          name: 'Trimmed Lab',
+          departments: ['Neuroscience'],
+          shortDescription: undefined,
+          fullDescription: undefined,
+          cardDescription: {
+            text: 'Server-resolved summary text.',
+            state: 'complete',
+            label: 'Research description',
+          },
+        }),
+      ],
+      pathways: [],
+    });
+
+    expect(grouped.clusters[0].description).toBe('Server-resolved summary text.');
+    expect(grouped.clusters[0].contextState).toBe('complete');
+  });
+
   it('collapses prefixed and plain department labels in research home cards', () => {
     const grouped = buildGroupedSearchResults({
       query: 'odonnell',

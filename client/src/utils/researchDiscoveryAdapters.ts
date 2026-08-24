@@ -43,6 +43,7 @@ export interface ResearchHomeContextInput {
   shortDescription?: string | null;
   fullDescription?: string | null;
   profileSynthesisDescription?: string | null;
+  cardDescription?: ResearchHomeContextSummary | null;
   researchAreas?: Array<string | undefined | null>;
   departments?: Array<string | undefined | null>;
   sourceUrls?: Array<string | undefined | null>;
@@ -335,6 +336,8 @@ const selectResearchDescriptionSummary = (
 export const buildResearchHomeContextSummary = (
   input: ResearchHomeContextInput = {},
 ): ResearchHomeContextSummary => {
+  if (input.cardDescription) return input.cardDescription;
+
   const descriptionSummary = selectResearchDescriptionSummary(input);
 
   if (descriptionSummary) return descriptionSummary;
@@ -575,6 +578,7 @@ const buildProfileDiscoveryClusters = (
       shortDescription: entity.shortDescription,
       fullDescription: entity.fullDescription,
       profileSynthesisDescription: entity.profileSynthesisDescription,
+      cardDescription: entity.cardDescription,
       researchAreas: entity.researchAreas,
       departments: entity.departments,
       sourceUrls: entity.sourceUrls,

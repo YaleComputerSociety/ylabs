@@ -1,6 +1,7 @@
 /**
  * Root application component with route definitions.
  */
+import { lazy, Suspense } from 'react';
 import PrivateRoute from './components/PrivateRoute';
 import UnprivateRoute from './components/UnprivateRoute';
 import AdminRoute from './components/AdminRoute';
@@ -17,13 +18,15 @@ import Unknown from './pages/unknown';
 import LoginError from './pages/loginError';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
-import Analytics from './pages/analytics';
 import NotFound from './pages/notFound';
 import ConfigContextProvider from './providers/ConfigContextProvider';
 import FellowshipSearchContextProvider from './providers/FellowshipSearchContextProvider';
 import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
 import HttpStatusNotifier from './components/HttpStatusNotifier';
+import LoadingSpinner from './components/shared/LoadingSpinner';
+
+const Analytics = lazy(() => import('./pages/analytics'));
 
 const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
 const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
@@ -92,7 +95,14 @@ const App = () => {
                       path="/profile/:netid"
                       element={<PrivateRoute Component={Profile} unknownBlocked={true} />}
                     />
-                    <Route path="/analytics" element={<AdminRoute Component={Analytics} />} />
+                    <Route
+                      path="/analytics"
+                      element={
+                        <Suspense fallback={<LoadingSpinner size="lg" />}>
+                          <AdminRoute Component={Analytics} />
+                        </Suspense>
+                      }
+                    />
                     <Route path="/login" element={<Login />} />
                     <Route
                       path="/login-error"

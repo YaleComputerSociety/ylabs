@@ -55,7 +55,9 @@ vi.mock('../pages/account', () => ({ default: () => null }));
 vi.mock('../pages/profile', () => ({ default: () => null }));
 vi.mock('../pages/unknown', () => ({ default: () => null }));
 vi.mock('../pages/loginError', () => ({ default: () => null }));
-vi.mock('../pages/analytics', () => ({ default: () => null }));
+vi.mock('../pages/analytics', () => ({
+  default: () => <div data-testid="analytics-page">Analytics</div>,
+}));
 vi.mock('../pages/notFound', () => ({
   default: () => <div data-testid="not-found-page">Page not found</div>,
 }));
@@ -123,6 +125,16 @@ describe('App routing', () => {
 
     expect(getByTestId('not-found-page').textContent).toBe('Page not found');
     expect(window.location.pathname).toBe(retiredPath);
+  });
+
+  it('resolves the lazily-loaded admin analytics route behind AdminRoute at /analytics', async () => {
+    window.history.pushState({}, '', '/analytics');
+
+    const { getByTestId } = render(<App />);
+
+    await waitFor(() => {
+      expect(getByTestId('analytics-page').textContent).toBe('Analytics');
+    });
   });
 
   it('exposes a skip-to-content link that precedes the navigation and targets the main landmark', () => {
