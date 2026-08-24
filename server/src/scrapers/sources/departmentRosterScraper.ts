@@ -151,6 +151,17 @@ export interface DeptConfig {
    * this source contributes official-profile coverage without minting duplicates.
    */
   officialProfileOnly?: boolean;
+  /**
+   * When true, this "department" is actually a cross-cutting institute/center
+   * affiliates roster (e.g. YIBS faculty-affiliates) rather than a listing of
+   * people whose home department is `deptName`. A person appears on the page
+   * because they are affiliated, not because the institute is their department -
+   * every affiliate would otherwise get the identical `deptName` stamped as a
+   * fabricated home department (#1427). Suppresses `primaryDepartment` and
+   * `departments` emission for both the person and any derived research entity;
+   * the person's real department is left to resolve from a better source.
+   */
+  affiliatesOnly?: boolean;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
   jsRenderedSkip?: boolean;
 }
@@ -1647,6 +1658,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: fieldCollectionPersonExtractor,
     officialProfileOnly: true,
+    affiliatesOnly: true,
   },
   {
     deptKey: 'architecture',
@@ -2290,8 +2302,10 @@ function entryToUserObservations(
   if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
   obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
-  obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
-  obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
+  if (!dept.affiliatesOnly) {
+    obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
+    obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
+  }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
   if (entry.title) obs.push({ ...profileBase, field: 'title', value: entry.title });
   if (entry.profileUrl) {
@@ -2356,7 +2370,7 @@ function entryToResearchEntityObservations(
     { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
     { ...base, field: 'school', value: dept.schoolName },
-    { ...base, field: 'departments', value: [dept.deptName] },
+    ...(dept.affiliatesOnly ? [] : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
     { ...base, field: 'websiteUrl', value: entry.labUrl },
     { ...base, field: 'sourceUrls', value: [sourceUrl, entry.labUrl] },
     {
