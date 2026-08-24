@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import ResearchAreaTypeahead from './ResearchAreaTypeahead';
+import {
+  readResearchTypeBucketKeys,
+  researchTypeBucketLabel,
+  type ResearchTypeBucketOption,
+} from '../../utils/researchTypeBuckets';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -9,12 +14,20 @@ interface FacetOption {
   label?: string;
 }
 
+interface TypeBucketDisplayOption {
+  key: string;
+  label: string;
+  count?: number;
+}
+
 interface ResearchFilterDisclosureProps {
   facetDistribution: FacetDistribution;
   selectedSchool: string;
   selectedDepartment: string;
   selectedResearchAreas: string[];
   researchAreaOptions: FacetOption[];
+  typeBucketOptions: ResearchTypeBucketOption[];
+  selectedTypeBuckets: string[];
   hostsUndergrads: boolean;
   currentAvailabilityOptions: FacetOption[];
   selectedCurrentAvailability: string[];
@@ -25,6 +38,7 @@ interface ResearchFilterDisclosureProps {
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onResearchAreasChange: (value: string[]) => void;
+  onTypeBucketsChange: (value: string[]) => void;
   onHostsUndergradsChange: (value: boolean) => void;
   onCurrentAvailabilityChange: (value: string[]) => void;
   onClearAll: () => void;
@@ -49,12 +63,30 @@ const MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT = 20;
 const sumOptionCounts = (options: FacetOption[]): number =>
   options.reduce((total, option) => total + (option.count ?? 0), 0);
 
+const withSelectedTypeBuckets = (
+  options: ResearchTypeBucketOption[],
+  selected: string[],
+): TypeBucketDisplayOption[] => {
+  const optionByKey = new Map(options.map((option) => [option.key, option]));
+  const missingSelected = selected
+    .filter((key) => !optionByKey.has(key))
+    .map((key) => ({ key, label: researchTypeBucketLabel(key) }));
+  return readResearchTypeBucketKeys([
+    ...options.map((option) => option.key),
+    ...missingSelected.map((option) => option.key),
+  ]).map(
+    (key) => optionByKey.get(key) ?? { key, label: researchTypeBucketLabel(key) },
+  );
+};
+
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedSchool,
   selectedDepartment,
   selectedResearchAreas,
   researchAreaOptions,
+  typeBucketOptions,
+  selectedTypeBuckets,
   hostsUndergrads,
   currentAvailabilityOptions,
   selectedCurrentAvailability,
@@ -65,6 +97,7 @@ const ResearchFilterDisclosure = ({
   onSchoolChange,
   onDepartmentChange,
   onResearchAreasChange,
+  onTypeBucketsChange,
   onHostsUndergradsChange,
   onCurrentAvailabilityChange,
   onClearAll,
@@ -114,9 +147,22 @@ const ResearchFilterDisclosure = ({
     () => researchAreaOptions.filter((option) => !selectedResearchAreas.includes(option.value)),
     [researchAreaOptions, selectedResearchAreas],
   );
+  const displayedTypeBuckets = useMemo(
+    () => withSelectedTypeBuckets(typeBucketOptions, selectedTypeBuckets),
+    [typeBucketOptions, selectedTypeBuckets],
+  );
   const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
   const showResearchAreas = availableResearchAreas.length > 0 || selectedResearchAreas.length > 0;
+  const showType = typeBucketOptions.length > 1 || selectedTypeBuckets.length > 0;
+  const toggleTypeBucket = (key: string) =>
+    onTypeBucketsChange(
+      readResearchTypeBucketKeys(
+        selectedTypeBuckets.includes(key)
+          ? selectedTypeBuckets.filter((value) => value !== key)
+          : [...selectedTypeBuckets, key],
+      ),
+    );
   const showCurrentAvailability =
     sumOptionCounts(currentAvailabilityOptions) >= MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT ||
     selectedCurrentAvailability.length > 0;
@@ -124,6 +170,7 @@ const ResearchFilterDisclosure = ({
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
     selectedResearchAreas.length +
+    selectedTypeBuckets.length +
     Number(hostsUndergrads) +
     selectedCurrentAvailability.length;
   const visibleFacetKey = `${String(showSchool)}:${String(showDepartment)}`;
@@ -266,6 +313,31 @@ const ResearchFilterDisclosure = ({
           onSelect={(value) => onResearchAreasChange([...selectedResearchAreas, value])}
         />
       )}
+      {showType && (
+        <fieldset className="min-w-0 border-0 p-0">
+          <legend className="mb-2 block text-sm font-medium text-slate-800">Type</legend>
+          <div className="flex flex-col gap-2">
+            {displayedTypeBuckets.map((option) => (
+              <label
+                key={option.key}
+                className="flex min-w-0 items-start gap-2 text-sm font-medium text-slate-800"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedTypeBuckets.includes(option.key)}
+                  onChange={() => toggleTypeBucket(option.key)}
+                  aria-label={`Filter by type: ${option.label}`}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                />
+                <span className="min-w-0">
+                  {option.label}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
       {showSchool && (
         <label className="block min-w-0 text-sm font-medium text-slate-800">
           School
@@ -306,9 +378,13 @@ const ResearchFilterDisclosure = ({
           </select>
         </label>
       )}
-      {!showSchool && !showDepartment && !showResearchAreas && !showCurrentAvailability && (
-        <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
-      )}
+      {!showSchool &&
+        !showDepartment &&
+        !showResearchAreas &&
+        !showType &&
+        !showCurrentAvailability && (
+          <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+        )}
     </fieldset>
   );
 
@@ -327,6 +403,20 @@ const ResearchFilterDisclosure = ({
       className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
       aria-label="Active research filters"
     >
+      {selectedTypeBuckets.map((key) => (
+        <button
+          key={`type-${key}`}
+          type="button"
+          onClick={() => onTypeBucketsChange(selectedTypeBuckets.filter((value) => value !== key))}
+          aria-label={`Remove Type: ${researchTypeBucketLabel(key)}`}
+          className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
+          <span className="min-w-0 truncate">Type: {researchTypeBucketLabel(key)}</span>
+          <span aria-hidden="true" className="shrink-0">
+            ×
+          </span>
+        </button>
+      ))}
       {selectedSchool && (
         <button
           type="button"

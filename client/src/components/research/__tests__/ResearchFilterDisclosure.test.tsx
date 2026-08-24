@@ -18,6 +18,8 @@ const renderFilters = (
     selectedDepartment: '',
     selectedResearchAreas: [],
     researchAreaOptions: [],
+    typeBucketOptions: [],
+    selectedTypeBuckets: [],
     hostsUndergrads: false,
     currentAvailabilityOptions: [],
     selectedCurrentAvailability: [],
@@ -28,6 +30,7 @@ const renderFilters = (
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
     onResearchAreasChange: vi.fn(),
+    onTypeBucketsChange: vi.fn(),
     onHostsUndergradsChange: vi.fn(),
     onCurrentAvailabilityChange: vi.fn(),
     onClearAll: vi.fn(),
@@ -245,6 +248,8 @@ describe('ResearchFilterDisclosure', () => {
         selectedDepartment: '',
         selectedResearchAreas: [],
         researchAreaOptions: [{ value: 'Artificial Intelligence', count: 23 }],
+        typeBucketOptions: [],
+        selectedTypeBuckets: [],
         hostsUndergrads: false,
         currentAvailabilityOptions: [],
         selectedCurrentAvailability: [],
@@ -255,6 +260,7 @@ describe('ResearchFilterDisclosure', () => {
         onSchoolChange: vi.fn(),
         onDepartmentChange: vi.fn(),
         onResearchAreasChange: () => setHasSubmittedSearch(true),
+        onTypeBucketsChange: vi.fn(),
         onHostsUndergradsChange: vi.fn(),
         onCurrentAvailabilityChange: vi.fn(),
         onClearAll: vi.fn(),
@@ -290,6 +296,62 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByTestId('search-results')).toBeTruthy();
     expect(screen.queryByTestId('browse')).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Research filters' })).toBeTruthy();
+  });
+
+  it('renders type buckets with counts, applies, chips, and clears like other filters', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      typeBucketOptions: [
+        { key: 'labs', label: 'Research groups & labs', count: 12 },
+        { key: 'programs', label: 'Programs & fellowships', count: 4 },
+      ],
+    });
+
+    const labsCheckbox = screen.getByLabelText('Filter by type: Research groups & labs');
+    expect(screen.getByText('Research groups & labs (12)')).toBeTruthy();
+    expect(screen.getByText('Programs & fellowships (4)')).toBeTruthy();
+    fireEvent.click(labsCheckbox);
+    expect(props.onTypeBucketsChange).toHaveBeenCalledWith(['labs']);
+
+    const { props: selectedProps } = renderFilters({
+      variant: 'sidebar',
+      typeBucketOptions: [
+        { key: 'labs', label: 'Research groups & labs', count: 12 },
+        { key: 'programs', label: 'Programs & fellowships', count: 4 },
+      ],
+      selectedTypeBuckets: ['labs'],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Research groups & labs' }));
+    expect(selectedProps.onTypeBucketsChange).toHaveBeenCalledWith([]);
+  });
+
+  it('keeps a selected type bucket visible even when its facet count disappears', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
+      variant: 'sidebar',
+      typeBucketOptions: [],
+      selectedTypeBuckets: ['collections'],
+    });
+
+    expect(
+      screen.getByLabelText('Filter by type: Collections, museum & digital humanities'),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: 'Remove Type: Collections, museum & digital humanities',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('hides the type control when only a single bucket has results', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
+      variant: 'sidebar',
+      typeBucketOptions: [{ key: 'labs', label: 'Research groups & labs', count: 9 }],
+    });
+
+    expect(screen.queryByLabelText('Filter by type: Research groups & labs')).toBeNull();
   });
 
   it('hides single and non-positive facets unless selected', () => {

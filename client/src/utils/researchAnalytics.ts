@@ -59,6 +59,7 @@ export type ResearchJourneyPayload =
         | 'admin_quality'
         | 'admin_trust'
         | 'research_area'
+        | 'research_type'
         | 'hosts_undergrads'
         | 'current_availability';
     }

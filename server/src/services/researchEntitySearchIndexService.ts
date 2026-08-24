@@ -37,6 +37,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   filterableAttributes: [
     'archived',
     'kind',
+    'entityType',
     'school',
     'schools',
     'departments',

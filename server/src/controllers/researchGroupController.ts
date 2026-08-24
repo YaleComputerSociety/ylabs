@@ -34,6 +34,7 @@ const MAX_SEARCH_PAGINATION_PARAM_LENGTH = 16;
 const POSITIVE_INTEGER_PARAM_RE = /^[1-9]\d*$/;
 const SEARCH_FILTER_KEYS = [
   'kind',
+  'entityType',
   'school',
   'departments',
   'researchAreas',
@@ -72,6 +73,9 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
 
   const kind = toStringArray(r.kind);
   if (kind) filters.kind = kind;
+
+  const entityType = toStringArray(r.entityType);
+  if (entityType) filters.entityType = entityType;
 
   const school = toStringArray(r.school);
   if (school) filters.school = school;
