@@ -891,7 +891,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'researchAreas'],
+        facets: ['schools', 'departments', 'researchAreas', 'undergraduateCurrentAvailability'],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -937,6 +937,44 @@ describe('searchResearchGroupsViaMeili', () => {
       'Law School': 6,
       'School of Medicine': 12,
       'Yale College': 24,
+    });
+  });
+
+  it('computes the current-availability facet disjunctively and filters on the browse-filterable field (#1285)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 3,
+      facetDistribution: {
+        undergraduateCurrentAvailability: { OPEN: 3 },
+      },
+    });
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 20,
+      facetDistribution: {
+        undergraduateCurrentAvailability: { OPEN: 3, ROLLING: 5 },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { currentAvailability: ['OPEN'] },
+      1,
+      24,
+    );
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1].filter).toMatch(
+      /undergraduateCurrentAvailability = "OPEN"/,
+    );
+    const disjunctiveCall = mocks.search.mock.calls[1];
+    expect(disjunctiveCall[1]).toEqual(
+      expect.objectContaining({ facets: ['undergraduateCurrentAvailability'], limit: 0 }),
+    );
+    expect(disjunctiveCall[1].filter).not.toMatch(/undergraduateCurrentAvailability/);
+    expect(result.facetDistribution?.undergraduateCurrentAvailability).toEqual({
+      OPEN: 3,
+      ROLLING: 5,
     });
   });
 
@@ -1464,7 +1502,7 @@ describe('searchResearchGroupsViaMeili', () => {
       rankingScoreThreshold: 0.15,
       page: 1,
       hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-      facets: ['schools', 'departments', 'researchAreas'],
+      facets: ['schools', 'departments', 'researchAreas', 'undergraduateCurrentAvailability'],
     });
     expect(result.estimatedTotalHits).toBe(313);
     expect(result.facetDistribution).toEqual({

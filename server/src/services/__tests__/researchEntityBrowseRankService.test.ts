@@ -125,4 +125,45 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await evidenceOf(outreachOnly._id)).toBe(false);
     expect(await evidenceOf(notAvailableWithOutreach._id)).toBe(false);
   });
+
+  it('persists undergraduateCurrentAvailability from a fresh KNOWN signal and fails closed otherwise (#1285)', async () => {
+    const now = new Date('2026-08-23T12:00:00.000Z');
+    const freshExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const staleExpiry = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const open = await createEntity('lab-open', 'LAB');
+    const stale = await createEntity('lab-stale', 'LAB');
+    const noSignal = await createEntity('lab-no-signal', 'LAB');
+
+    await Signal.create({
+      researchEntityId: open._id,
+      type: 'CURRENT_AVAILABILITY',
+      status: 'KNOWN',
+      value: { status: 'OPEN' },
+      expiresAt: freshExpiry,
+    });
+    await Signal.create({
+      researchEntityId: stale._id,
+      type: 'CURRENT_AVAILABILITY',
+      status: 'KNOWN',
+      value: { status: 'OPEN' },
+      expiresAt: staleExpiry,
+    });
+
+    await recomputeBrowseRankForEntities([open._id, stale._id, noSignal._id], {
+      sync: false,
+      now,
+    });
+
+    const availabilityOf = async (id: mongoose.Types.ObjectId): Promise<string> => {
+      const doc = await ResearchEntity.findById(id).lean<{
+        undergraduateCurrentAvailability?: string;
+      }>();
+      return doc?.undergraduateCurrentAvailability ?? 'UNKNOWN';
+    };
+
+    expect(await availabilityOf(open._id)).toBe('OPEN');
+    expect(await availabilityOf(stale._id)).toBe('UNKNOWN');
+    expect(await availabilityOf(noSignal._id)).toBe('UNKNOWN');
+  });
 });

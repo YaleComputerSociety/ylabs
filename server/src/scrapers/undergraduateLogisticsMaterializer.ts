@@ -53,6 +53,47 @@ const COMPENSATION_MODES = [
 const MODALITY_MODES = ['IN_PERSON', 'HYBRID', 'REMOTE'] as const;
 const AVAILABILITY_STATUSES = ['OPEN', 'ROLLING', 'NOT_CURRENTLY_AVAILABLE'] as const;
 
+export const CURRENT_UNDERGRAD_AVAILABILITY_VALUES = [
+  'OPEN',
+  'ROLLING',
+  'NOT_CURRENTLY_AVAILABLE',
+  'UNKNOWN',
+] as const;
+
+export type CurrentUndergradAvailability = (typeof CURRENT_UNDERGRAD_AVAILABILITY_VALUES)[number];
+
+export interface CurrentAvailabilitySignalInput {
+  type?: unknown;
+  status?: unknown;
+  value?: unknown;
+  expiresAt?: Date | string | null;
+}
+
+/**
+ * Re-derives the browse-filterable current-availability status from raw
+ * Signal rows, independently re-applying the 60-day freshness window rather
+ * than trusting a status written by a possibly-stale materialize run. Any
+ * missing, non-KNOWN, or expired signal fails closed to 'UNKNOWN' - it must
+ * never surface as 'OPEN'.
+ */
+export function currentUndergradAvailabilityFromSignals(
+  signals: CurrentAvailabilitySignalInput[],
+  now: Date = new Date(),
+): CurrentUndergradAvailability {
+  const fresh = signals.find(
+    (signal) =>
+      signal.type === 'CURRENT_AVAILABILITY' &&
+      signal.status === 'KNOWN' &&
+      signal.expiresAt != null &&
+      new Date(signal.expiresAt).getTime() > now.getTime(),
+  );
+  const status = fresh ? (fresh.value as { status?: unknown } | undefined)?.status : undefined;
+  return typeof status === 'string' &&
+    AVAILABILITY_STATUSES.includes(status as (typeof AVAILABILITY_STATUSES)[number])
+    ? (status as CurrentUndergradAvailability)
+    : 'UNKNOWN';
+}
+
 type LogisticsValue =
   | { levels: string[] }
   | { modes: string[] }

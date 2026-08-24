@@ -7,6 +7,8 @@
 
 export type AcceptanceLevelInput = 'verified' | 'verified-or-likely' | 'all';
 
+export type CurrentAvailabilityFilterInput = 'OPEN' | 'ROLLING';
+
 export interface ResearchGroupFilterInput {
   kind?: string[];
   school?: string[];
@@ -14,6 +16,7 @@ export interface ResearchGroupFilterInput {
   researchAreas?: string[];
   acceptanceLevel?: AcceptanceLevelInput;
   hostsUndergrads?: boolean;
+  currentAvailability?: CurrentAvailabilityFilterInput[];
   studentVisibilityTier?: string[];
 }
 
@@ -88,6 +91,11 @@ export function buildResearchGroupFilterString(
   if (effectiveFilters.hostsUndergrads === true) {
     parts.push('hasUndergradHostingEvidence = true');
   }
+
+  const currentAvailabilityClause = effectiveFilters.currentAvailability
+    ? orEqualsClause('undergraduateCurrentAvailability', effectiveFilters.currentAvailability)
+    : null;
+  if (currentAvailabilityClause) parts.push(currentAvailabilityClause);
 
   const studentVisibilityClause = effectiveFilters.studentVisibilityTier
     ? orEqualsClause('studentVisibilityTier', effectiveFilters.studentVisibilityTier)

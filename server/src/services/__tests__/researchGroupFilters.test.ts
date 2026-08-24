@@ -147,4 +147,36 @@ describe('buildResearchGroupFilterString', () => {
       );
     });
   });
+
+  describe('currentAvailability filter', () => {
+    it('single value → filters the current-availability field', () => {
+      const filter = buildResearchGroupFilterString({ currentAvailability: ['OPEN'] });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateCurrentAvailability = "OPEN")',
+      );
+    });
+
+    it('two values → ORs them within the field', () => {
+      const filter = buildResearchGroupFilterString({
+        currentAvailability: ['OPEN', 'ROLLING'],
+      });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateCurrentAvailability = "OPEN" OR undergraduateCurrentAvailability = "ROLLING")',
+      );
+    });
+
+    it('unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('combines with other filters via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        departments: ['Genetics'],
+        currentAvailability: ['OPEN'],
+      });
+      expect(filter).toBe(
+        'archived = false AND (departments = "Genetics") AND (undergraduateCurrentAvailability = "OPEN")',
+      );
+    });
+  });
 });

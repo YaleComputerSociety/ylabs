@@ -6,6 +6,7 @@ type FacetDistribution = Record<string, Record<string, number>>;
 interface FacetOption {
   value: string;
   count?: number;
+  label?: string;
 }
 
 interface ResearchFilterDisclosureProps {
@@ -15,6 +16,8 @@ interface ResearchFilterDisclosureProps {
   selectedResearchAreas: string[];
   researchAreaOptions: FacetOption[];
   hostsUndergrads: boolean;
+  currentAvailabilityOptions: FacetOption[];
+  selectedCurrentAvailability: string[];
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
@@ -22,6 +25,7 @@ interface ResearchFilterDisclosureProps {
   onDepartmentChange: (value: string) => void;
   onResearchAreasChange: (value: string[]) => void;
   onHostsUndergradsChange: (value: boolean) => void;
+  onCurrentAvailabilityChange: (value: string[]) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
@@ -46,6 +50,8 @@ const ResearchFilterDisclosure = ({
   selectedResearchAreas,
   researchAreaOptions,
   hostsUndergrads,
+  currentAvailabilityOptions,
+  selectedCurrentAvailability,
   isApplying,
   hasFacetError,
   departmentLabel,
@@ -53,6 +59,7 @@ const ResearchFilterDisclosure = ({
   onDepartmentChange,
   onResearchAreasChange,
   onHostsUndergradsChange,
+  onCurrentAvailabilityChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
@@ -103,12 +110,22 @@ const ResearchFilterDisclosure = ({
   const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
   const showResearchAreas = availableResearchAreas.length > 0 || selectedResearchAreas.length > 0;
+  const showCurrentAvailability =
+    currentAvailabilityOptions.length > 0 || selectedCurrentAvailability.length > 0;
   const activeCount =
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
     selectedResearchAreas.length +
-    Number(hostsUndergrads);
+    Number(hostsUndergrads) +
+    selectedCurrentAvailability.length;
   const visibleFacetKey = `${String(showSchool)}:${String(showDepartment)}`;
+  const toggleCurrentAvailability = (value: string, checked: boolean) => {
+    onCurrentAvailabilityChange(
+      checked
+        ? [...selectedCurrentAvailability, value]
+        : selectedCurrentAvailability.filter((selected) => selected !== value),
+    );
+  };
 
   const getFocusableElements = () =>
     Array.from(
@@ -191,7 +208,7 @@ const ResearchFilterDisclosure = ({
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
 
-  const facetCountWarning = hasFacetError && (showSchool || showDepartment) && (
+  const facetCountWarning = hasFacetError && (showSchool || showDepartment || showCurrentAvailability) && (
     <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
       Current filter counts are unavailable. Active values remain clearable.
     </p>
@@ -210,6 +227,30 @@ const ResearchFilterDisclosure = ({
         />
         <span>Has hosted undergrads before</span>
       </label>
+      {showCurrentAvailability && (
+        <fieldset className="min-w-0 space-y-2 border-0 p-0">
+          <legend className="text-sm font-medium text-slate-800">
+            Current undergraduate availability
+          </legend>
+          {currentAvailabilityOptions.map((option) => (
+            <label
+              key={option.value}
+              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
+            >
+              <input
+                type="checkbox"
+                checked={selectedCurrentAvailability.includes(option.value)}
+                onChange={(event) => toggleCurrentAvailability(option.value, event.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+              />
+              <span>
+                {option.label ?? option.value}
+                {option.count !== undefined ? ` (${option.count})` : ''}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
       {showResearchAreas && (
         <ResearchAreaTypeahead
           options={availableResearchAreas}
@@ -257,7 +298,7 @@ const ResearchFilterDisclosure = ({
           </select>
         </label>
       )}
-      {!showSchool && !showDepartment && !showResearchAreas && (
+      {!showSchool && !showDepartment && !showResearchAreas && !showCurrentAvailability && (
         <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
       )}
     </fieldset>
@@ -333,6 +374,28 @@ const ResearchFilterDisclosure = ({
           </span>
         </button>
       )}
+      {selectedCurrentAvailability.map((value) => {
+        const label =
+          currentAvailabilityOptions.find((option) => option.value === value)?.label ?? value;
+        return (
+          <button
+            key={value}
+            type="button"
+            onClick={() =>
+              onCurrentAvailabilityChange(
+                selectedCurrentAvailability.filter((selected) => selected !== value),
+              )
+            }
+            aria-label={`Remove ${label}`}
+            className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            <span className="min-w-0 truncate">{label}</span>
+            <span aria-hidden="true" className="shrink-0">
+              ×
+            </span>
+          </button>
+        );
+      })}
       <button
         type="button"
         onClick={onClearAll}

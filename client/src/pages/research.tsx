@@ -49,14 +49,27 @@ interface DepartmentSearchTarget {
   };
 }
 
+type CurrentAvailabilityFilterValue = 'OPEN' | 'ROLLING';
+
 type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
   school?: string[];
   hostsUndergrads?: boolean;
+  currentAvailability?: CurrentAvailabilityFilterValue[];
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
 type ResearchTrustTierFilter = StudentVisibilityTier;
+
+const CURRENT_AVAILABILITY_FILTER_VALUES: readonly CurrentAvailabilityFilterValue[] = [
+  'OPEN',
+  'ROLLING',
+];
+
+const CURRENT_AVAILABILITY_FILTER_LABELS: Record<CurrentAvailabilityFilterValue, string> = {
+  OPEN: 'Open now',
+  ROLLING: 'Rolling',
+};
 
 const FILTERED_RESULT_QUERY_LABEL = 'filtered research';
 const DEFAULT_RESEARCH_HOME_LIMIT = 24;
@@ -130,7 +143,13 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter: 'school' | 'department' | 'documented_way_in' | 'research_area' | 'hosts_undergrads';
+  filter:
+    | 'school'
+    | 'department'
+    | 'documented_way_in'
+    | 'research_area'
+    | 'hosts_undergrads'
+    | 'current_availability';
 }
 
 interface ResearchPageSnapshot {
@@ -146,6 +165,7 @@ interface ResearchPageSnapshot {
   selectedDepartment: string;
   selectedResearchAreas: string[];
   hostsUndergrads: boolean;
+  selectedCurrentAvailability: CurrentAvailabilityFilterValue[];
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
@@ -397,6 +417,13 @@ const Research = () => {
   const [hostsUndergrads, setHostsUndergrads] = useState(
     () => restoredSnapshotRef.current?.hostsUndergrads ?? searchParams.get('undergrad') === '1',
   );
+  const [selectedCurrentAvailability, setSelectedCurrentAvailability] = useState<
+    CurrentAvailabilityFilterValue[]
+  >(
+    () =>
+      restoredSnapshotRef.current?.selectedCurrentAvailability ??
+      readSearchParamList(searchParams, 'availability', CURRENT_AVAILABILITY_FILTER_VALUES),
+  );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
   );
@@ -497,6 +524,24 @@ const Research = () => {
     () => buildResearchAreaOptions(browseFacetDistribution.researchAreas),
     [buildResearchAreaOptions, browseFacetDistribution.researchAreas],
   );
+  const buildCurrentAvailabilityOptions = useCallback(
+    (counts: Record<string, number> | undefined) =>
+      CURRENT_AVAILABILITY_FILTER_VALUES.map((value) => ({
+        value,
+        label: CURRENT_AVAILABILITY_FILTER_LABELS[value],
+        count: (counts || {})[value],
+      })).filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0),
+    [],
+  );
+  const currentAvailabilityOptions = useMemo(
+    () => buildCurrentAvailabilityOptions(facetDistribution.undergraduateCurrentAvailability),
+    [buildCurrentAvailabilityOptions, facetDistribution.undergraduateCurrentAvailability],
+  );
+  const browseCurrentAvailabilityOptions = useMemo(
+    () =>
+      buildCurrentAvailabilityOptions(browseFacetDistribution.undergraduateCurrentAvailability),
+    [buildCurrentAvailabilityOptions, browseFacetDistribution.undergraduateCurrentAvailability],
+  );
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
     [departments],
@@ -519,6 +564,7 @@ const Research = () => {
       department?: string;
       researchAreas?: string[];
       hostsUndergrads?: boolean;
+      currentAvailability?: CurrentAvailabilityFilterValue[];
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -533,6 +579,9 @@ const Research = () => {
       params.set('researchAreas', nextState.researchAreas.join(','));
     }
     if (nextState.hostsUndergrads) params.set('undergrad', '1');
+    if (nextState.currentAvailability?.length) {
+      params.set('availability', nextState.currentAvailability.join(','));
+    }
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -737,6 +786,7 @@ const Research = () => {
           department: filters.departments?.[0],
           researchAreas: filters.researchAreas,
           hostsUndergrads: filters.hostsUndergrads === true,
+          currentAvailability: filters.currentAvailability,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -913,11 +963,13 @@ const Research = () => {
     department = selectedDepartment,
     areas = selectedResearchAreas,
     undergrads = hostsUndergrads,
+    availability = selectedCurrentAvailability,
   ): ResearchSearchFilters => ({
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
     ...(areas.length ? { researchAreas: areas } : {}),
     ...(undergrads ? { hostsUndergrads: true } : {}),
+    ...(availability.length ? { currentAvailability: availability } : {}),
   });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -939,6 +991,7 @@ const Research = () => {
     setSelectedDepartment('');
     setSelectedResearchAreas([]);
     setHostsUndergrads(false);
+    setSelectedCurrentAvailability([]);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -1003,6 +1056,11 @@ const Research = () => {
     const urlDepartment = searchParams.get('department') || '';
     const urlResearchAreas = readSearchParamCsv(searchParams, 'researchAreas');
     const urlHostsUndergrads = searchParams.get('undergrad') === '1';
+    const urlCurrentAvailability = readSearchParamList(
+      searchParams,
+      'availability',
+      CURRENT_AVAILABILITY_FILTER_VALUES,
+    );
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
     const urlQualityFilters = isAdmin
       ? readSearchParamList(
@@ -1053,11 +1111,16 @@ const Research = () => {
       setHostsUndergrads(urlHostsUndergrads);
       return;
     }
+    if (selectedCurrentAvailability.join(',') !== urlCurrentAvailability.join(',')) {
+      setSelectedCurrentAvailability(urlCurrentAvailability);
+      return;
+    }
     const studentFilters: ResearchSearchFilters = {
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
       ...(urlResearchAreas.length ? { researchAreas: urlResearchAreas } : {}),
       ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
+      ...(urlCurrentAvailability.length ? { currentAvailability: urlCurrentAvailability } : {}),
     };
 
     const urlDepartmentSearch = urlDepartmentLabel
@@ -1153,6 +1216,7 @@ const Research = () => {
     selectedDepartment,
     selectedResearchAreas,
     hostsUndergrads,
+    selectedCurrentAvailability,
     departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
@@ -1174,6 +1238,7 @@ const Research = () => {
       selectedDepartment,
       selectedResearchAreas,
       hostsUndergrads,
+      selectedCurrentAvailability,
       sortBy,
       sortOrder,
       facetDistribution,
@@ -1205,6 +1270,7 @@ const Research = () => {
     selectedDepartment,
     selectedResearchAreas,
     hostsUndergrads,
+    selectedCurrentAvailability,
     sortBy,
     sortOrder,
     facetDistribution,
@@ -1277,7 +1343,11 @@ const Research = () => {
     filteredCount: searchResultResearchEntities.length,
   });
   const hasStudentFacetSelection = Boolean(
-    selectedSchool || selectedDepartment || selectedResearchAreas.length || hostsUndergrads,
+    selectedSchool ||
+      selectedDepartment ||
+      selectedResearchAreas.length ||
+      hostsUndergrads ||
+      selectedCurrentAvailability.length,
   );
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =
@@ -1295,11 +1365,13 @@ const Research = () => {
     department?: string;
     researchAreas?: string[];
     hostsUndergrads?: boolean;
+    currentAvailability?: CurrentAvailabilityFilterValue[];
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
     const areas = next.researchAreas ?? selectedResearchAreas;
     const undergrads = next.hostsUndergrads ?? hostsUndergrads;
+    const availability = next.currentAvailability ?? selectedCurrentAvailability;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (school !== selectedSchool) {
       filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
@@ -1319,11 +1391,18 @@ const Research = () => {
         filter: 'hosts_undergrads',
       });
     }
+    if (availability.join(',') !== selectedCurrentAvailability.join(',')) {
+      filterChanges.push({
+        operation: availability.length > selectedCurrentAvailability.length ? 'apply' : 'remove',
+        filter: 'current_availability',
+      });
+    }
     setSelectedSchool(school);
     setSelectedDepartment(department);
     setSelectedResearchAreas(areas);
     setHostsUndergrads(undergrads);
-    const filters = studentSearchFilters(school, department, areas, undergrads);
+    setSelectedCurrentAvailability(availability);
+    const filters = studentSearchFilters(school, department, areas, undergrads, availability);
     if (!query.trim() && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
         void trackResearchEvent({
@@ -1467,6 +1546,8 @@ const Research = () => {
     selectedResearchAreas,
     researchAreaOptions,
     hostsUndergrads,
+    currentAvailabilityOptions,
+    selectedCurrentAvailability,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
@@ -1474,12 +1555,15 @@ const Research = () => {
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
     onResearchAreasChange: (areas: string[]) => applyStudentFilters({ researchAreas: areas }),
     onHostsUndergradsChange: (value: boolean) => applyStudentFilters({ hostsUndergrads: value }),
+    onCurrentAvailabilityChange: (values: string[]) =>
+      applyStudentFilters({ currentAvailability: values as CurrentAvailabilityFilterValue[] }),
     onClearAll: () =>
       applyStudentFilters({
         school: '',
         department: '',
         researchAreas: [],
         hostsUndergrads: false,
+        currentAvailability: [],
       }),
   };
 
@@ -1487,6 +1571,7 @@ const Research = () => {
     ...researchFilterProps,
     facetDistribution: browseFacetDistribution,
     researchAreaOptions: browseResearchAreaOptions,
+    currentAvailabilityOptions: browseCurrentAvailabilityOptions,
     isApplying: false,
     hasFacetError: false,
   };

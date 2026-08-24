@@ -22,6 +22,7 @@ vi.mock('../../models/signal', async (importOriginal) => {
 });
 
 import {
+  currentUndergradAvailabilityFromSignals,
   materializeUndergraduateLogisticsForResearchEntity,
   quoteExplicitlyDeclinesUndergraduates,
   resolveUndergraduateLogisticsClaims,
@@ -1174,5 +1175,94 @@ describe('lab-as-subject non-acceptance availability (symmetric to direct recrui
     expect(
       quoteExplicitlyDeclinesUndergraduates('We are now accepting undergraduate applications.'),
     ).toBe(false);
+  });
+});
+
+describe('currentUndergradAvailabilityFromSignals', () => {
+  const freshExpiry = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+  const staleExpiry = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
+
+  it('returns the status from a fresh KNOWN CURRENT_AVAILABILITY signal', () => {
+    expect(
+      currentUndergradAvailabilityFromSignals(
+        [{ type: 'CURRENT_AVAILABILITY', status: 'KNOWN', value: { status: 'OPEN' }, expiresAt: freshExpiry }],
+        NOW,
+      ),
+    ).toBe('OPEN');
+    expect(
+      currentUndergradAvailabilityFromSignals(
+        [
+          {
+            type: 'CURRENT_AVAILABILITY',
+            status: 'KNOWN',
+            value: { status: 'ROLLING' },
+            expiresAt: freshExpiry,
+          },
+        ],
+        NOW,
+      ),
+    ).toBe('ROLLING');
+  });
+
+  it('fails closed to UNKNOWN when the signal has expired, even if status is still KNOWN', () => {
+    expect(
+      currentUndergradAvailabilityFromSignals(
+        [{ type: 'CURRENT_AVAILABILITY', status: 'KNOWN', value: { status: 'OPEN' }, expiresAt: staleExpiry }],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
+  });
+
+  it('fails closed to UNKNOWN when the signal is STALE_UNDER_REVIEW or CONFLICTING_WITHHELD', () => {
+    expect(
+      currentUndergradAvailabilityFromSignals(
+        [
+          {
+            type: 'CURRENT_AVAILABILITY',
+            status: 'STALE_UNDER_REVIEW',
+            expiresAt: freshExpiry,
+          },
+        ],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
+    expect(
+      currentUndergradAvailabilityFromSignals(
+        [
+          {
+            type: 'CURRENT_AVAILABILITY',
+            status: 'CONFLICTING_WITHHELD',
+            expiresAt: freshExpiry,
+          },
+        ],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
+  });
+
+  it('fails closed to UNKNOWN when no CURRENT_AVAILABILITY signal is present', () => {
+    expect(currentUndergradAvailabilityFromSignals([], NOW)).toBe('UNKNOWN');
+    expect(
+      currentUndergradAvailabilityFromSignals(
+        [{ type: 'PAST_UNDERGRADS', status: 'KNOWN', expiresAt: freshExpiry }],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
+  });
+
+  it('surfaces NOT_CURRENTLY_AVAILABLE distinctly from UNKNOWN', () => {
+    expect(
+      currentUndergradAvailabilityFromSignals(
+        [
+          {
+            type: 'CURRENT_AVAILABILITY',
+            status: 'KNOWN',
+            value: { status: 'NOT_CURRENTLY_AVAILABLE' },
+            expiresAt: freshExpiry,
+          },
+        ],
+        NOW,
+      ),
+    ).toBe('NOT_CURRENTLY_AVAILABLE');
   });
 });

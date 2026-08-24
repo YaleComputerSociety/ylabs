@@ -19,6 +19,10 @@ import {
   type AccessAcceptanceLevel,
   type AccessSignalConfidenceInput,
 } from './accessAcceptanceLevel';
+import {
+  currentUndergradAvailabilityFromSignals,
+  type CurrentAvailabilitySignalInput,
+} from '../scrapers/undergraduateLogisticsMaterializer';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { syncEntity } from './meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -81,11 +85,41 @@ const accessSignalsByEntityId = async (
   return byId;
 };
 
+const currentAvailabilitySignalsByEntityId = async (
+  entityIds: any[],
+): Promise<Map<string, CurrentAvailabilitySignalInput[]>> => {
+  if (entityIds.length === 0) return new Map();
+  const signals = await Signal.find({
+    researchEntityId: { $in: entityIds },
+    type: 'CURRENT_AVAILABILITY',
+    archived: { $ne: true },
+  })
+    .select('researchEntityId type status value expiresAt')
+    .lean();
+  const byId = new Map<string, CurrentAvailabilitySignalInput[]>();
+  for (const signal of signals as any[]) {
+    const key = browseRankDocumentId(signal.researchEntityId);
+    if (!key) continue;
+    byId.set(key, [
+      ...(byId.get(key) || []),
+      {
+        type: signal.type,
+        status: signal.status,
+        value: signal.value,
+        expiresAt: signal.expiresAt,
+      },
+    ]);
+  }
+  return byId;
+};
+
 export interface RecomputeBrowseRankOptions {
   /** When true, compute and report but do not write to Mongo or Meilisearch. */
   dryRun?: boolean;
   /** When true, re-sync each updated doc to Meilisearch (default true). */
   sync?: boolean;
+  /** Injected for deterministic tests; defaults to the current time. */
+  now?: Date;
 }
 
 export interface RecomputeBrowseRankResult {
@@ -110,13 +144,16 @@ export async function recomputeBrowseRankForEntities(
     return { considered: 0, updated: 0, scoresByEntityId, acceptanceLevelsByEntityId };
   }
 
+  const now = options.now ?? new Date();
   const entities = (await ResearchEntity.find({ _id: { $in: entityIds } }).lean()) as any[];
   const ids = entities.map((entity) => entity._id);
-  const [leadMembers, accessSignals, hostingAffiliations] = await Promise.all([
-    leadMembersByEntityId(ids),
-    accessSignalsByEntityId(ids),
-    entitiesHostingAffiliations(ids),
-  ]);
+  const [leadMembers, accessSignals, hostingAffiliations, currentAvailabilitySignals] =
+    await Promise.all([
+      leadMembersByEntityId(ids),
+      accessSignalsByEntityId(ids),
+      entitiesHostingAffiliations(ids),
+      currentAvailabilitySignalsByEntityId(ids),
+    ]);
 
   let updated = 0;
   for (const entity of entities) {
@@ -133,12 +170,18 @@ export async function recomputeBrowseRankForEntities(
     const acceptanceLevel = canonicalAcceptanceLevelFromSignals(entitySignals);
     acceptanceLevelsByEntityId.set(id, acceptanceLevel);
     const undergradHostingEvidence = hasUndergradHostingEvidenceFromSignals(entitySignals);
+    const currentAvailability = currentUndergradAvailabilityFromSignals(
+      currentAvailabilitySignals.get(id) || [],
+      now,
+    );
 
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const levelUnchanged = (entity.accessAcceptanceLevel ?? 'none') === acceptanceLevel;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
-    if (scoreUnchanged && levelUnchanged && hostingUnchanged) continue;
+    const availabilityUnchanged =
+      (entity.undergraduateCurrentAvailability ?? 'UNKNOWN') === currentAvailability;
+    if (scoreUnchanged && levelUnchanged && hostingUnchanged && availabilityUnchanged) continue;
     updated += 1;
     if (options.dryRun) continue;
 
@@ -149,6 +192,7 @@ export async function recomputeBrowseRankForEntities(
           browseRankScore: score,
           accessAcceptanceLevel: acceptanceLevel,
           hasUndergradHostingEvidence: undergradHostingEvidence,
+          undergraduateCurrentAvailability: currentAvailability,
         },
       },
       { timestamps: false },
