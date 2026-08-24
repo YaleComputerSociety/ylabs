@@ -529,15 +529,15 @@ export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean 
 }
 
 /**
- * The credential/title-lead and graduate-of fallback patterns are only tried
- * for LAB entities - `PERSON_BIOGRAPHY_OPENER_PATTERN` alone remains the sole
- * match for FACULTY_RESEARCH_AREA/INDIVIDUAL_RESEARCH so their existing,
- * already-tuned opener-strip behavior is unaffected (#1638).
+ * The credential/title-lead and graduate-of fallback patterns were
+ * originally tried only for LAB entities (#1638); FACULTY_RESEARCH_AREA and
+ * INDIVIDUAL_RESEARCH carry the identical name+appointment-lead shape and are
+ * now covered too (#1793).
  */
-function firstBiographyOpenerMatch(value: string, allowLabCredentialPatterns: boolean): RegExpMatchArray | null {
+function firstBiographyOpenerMatch(value: string, allowCredentialTitlePatterns: boolean): RegExpMatchArray | null {
   return (
     value.match(PERSON_BIOGRAPHY_OPENER_PATTERN) ||
-    (allowLabCredentialPatterns
+    (allowCredentialTitlePatterns
       ? value.match(NAME_LEAD_TITLE_PATTERN) || value.match(GRADUATE_OF_LEAD_PATTERN)
       : null) ||
     value.match(DEGREE_RECEIPT_LEAD_PATTERN) ||
@@ -569,11 +569,11 @@ const MAX_BIOGRAPHY_OPENER_SENTENCES_STRIPPED = 8;
  * leading CV sentence, if any, until either a non-matching sentence is
  * reached or the text is exhausted.
  */
-function stripPersonBiographyOpenerSentence(value: string, allowLabCredentialPatterns: boolean): string {
+function stripPersonBiographyOpenerSentence(value: string, allowCredentialTitlePatterns: boolean): string {
   let remaining = value;
   let strippedAny = false;
   for (let iteration = 0; iteration < MAX_BIOGRAPHY_OPENER_SENTENCES_STRIPPED; iteration += 1) {
-    const match = firstBiographyOpenerMatch(remaining, allowLabCredentialPatterns);
+    const match = firstBiographyOpenerMatch(remaining, allowCredentialTitlePatterns);
     if (!match || match.index === undefined) break;
     const openerEnd = match.index + match[0].length;
     const consumedEnd = sentenceEndIndex(remaining, openerEnd);
@@ -591,8 +591,8 @@ function stripPersonBiographyOpenerSentence(value: string, allowLabCredentialPat
  * sentence and keep the remainder when it still reads as a research
  * description on its own, instead of blanking the whole field (#1586).
  */
-function repairFacultyBiographyOpener(value: string, allowLabCredentialPatterns: boolean): string {
-  const stripped = stripPersonBiographyOpenerSentence(value, allowLabCredentialPatterns);
+function repairFacultyBiographyOpener(value: string, allowCredentialTitlePatterns: boolean): string {
+  const stripped = stripPersonBiographyOpenerSentence(value, allowCredentialTitlePatterns);
   if (!stripped || stripped === value) return '';
   return isLikelyResearchFocusedText(stripped) && !isPersonBiographyOrAdvisingDescription(stripped)
     ? stripped
@@ -851,9 +851,10 @@ export function repairBiographyOrDeceasedEmeritusLead(
   const text = typeof value === 'string' ? value : '';
   const rejectPersonBiography = isNonPersonOrgEntityType(entity);
   const isLabEntity = isLabResearchTextEntity(entity);
-  const shouldGuard = rejectPersonBiography || isFacultyResearchTextEntity(entity) || isLabEntity;
+  const isFacultyEntity = isFacultyResearchTextEntity(entity);
+  const shouldGuard = rejectPersonBiography || isFacultyEntity || isLabEntity;
   const deceasedOrEmeritusLead = isLabEntity && isDeceasedOrEmeritusLeadBiography(text);
-  const credentialLead = isLabEntity && isCredentialOrTitleLeadBiography(text);
+  const credentialLead = (isLabEntity || isFacultyEntity) && isCredentialOrTitleLeadBiography(text);
   const credentialOrAwardLead = shouldGuard && isCredentialOrAwardLeadBiography(text);
   if (
     !shouldGuard ||
@@ -868,8 +869,8 @@ export function repairBiographyOrDeceasedEmeritusLead(
   }
   const repaired = deceasedOrEmeritusLead
     ? ''
-    : isFacultyResearchTextEntity(entity) || isLabEntity
-      ? repairFacultyBiographyOpener(text, isLabEntity)
+    : isFacultyEntity || isLabEntity
+      ? repairFacultyBiographyOpener(text, isLabEntity || isFacultyEntity)
       : '';
   return { changed: repaired !== text, value: repaired };
 }

@@ -263,6 +263,15 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     expectContains:
       'He has received the Best Economics PhD Advisor Award at Yale University in 2022 and 2023, and was a runner-up in 2024. Hansen is a fellow of the Econometric Society and has received several prestigious awards.',
   },
+  {
+    id: 'fra-credential-title-lead',
+    issues: '#1793',
+    field: 'fullDescription',
+    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    disposition: 'transformed',
+    expectContains: 'His research focuses on big data and data-driven policy analyses and solutions.',
+    expectNotContains: 'is a senior lecturer',
+  },
 ];
 
 describe('research-entity description serve contract (#1269)', () => {
@@ -313,6 +322,8 @@ const SEED_TEXT: Record<string, string> = {
     'Welcome to Social Robotics at Yale! We study human behavior using computational and robotic models.',
   'residual-i-verb-mid-sentence':
     'This primary research focus is mechanisms of disease. In particular, I am interested in the role of a specific pathway.',
+  'fra-credential-title-lead':
+    'Robin Hansen is a senior lecturer at the Jackson School of Global Affairs. His research focuses on big data and data-driven policy analyses and solutions.',
 };
 
 describe('research-entity description serve contract - clean prose preserved', () => {
