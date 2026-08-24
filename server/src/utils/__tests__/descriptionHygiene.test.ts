@@ -39,6 +39,7 @@ import {
   sanitizeStoredCatalogDescription,
   stripBibliographicReferenceArtifacts,
   stripCatalogChrome,
+  stripDanglingSourceSiteReferenceSentences,
   stripDeadAnchorCtaSentences,
   stripLeadingAdministrativeLocationSentences,
   stripLeadingPageChrome,
@@ -391,6 +392,39 @@ describe('descriptionHygiene self-referential research CTA fail-closed (#1283)',
     const prose =
       'The lab develops a unifying theory of protein folding and asks how cells organize themselves under stress.';
     expect(stripSelfReferentialResearchCtaSentences(prose)).toBe(prose);
+    expect(sanitizeCatalogDescription(prose)).toBe(prose);
+  });
+});
+
+describe('descriptionHygiene dangling source-site section/page reference strip (#1632)', () => {
+  it('drops a "please visit the X section" clause glued onto real prose', () => {
+    const text =
+      'Currently we have an open post-doctoral position, please visit the Positions section for more information, or contact the lab.';
+    expect(stripDanglingSourceSiteReferenceSentences(text)).toBe('');
+  });
+
+  it('drops a "please check the X section" CTA sentence', () => {
+    const text =
+      'Our lab studies cell signaling pathways. For more information about our research, please check the Research section.';
+    expect(sanitizeCatalogDescription(text)).toBe('Our lab studies cell signaling pathways.');
+  });
+
+  it('drops a bare, anchor-less "can be found here" sentence', () => {
+    const text =
+      'We study protein folding and dynamics. A short, but by no means exhaustive, list of areas of active study can be found here.';
+    expect(sanitizeCatalogDescription(text)).toBe('We study protein folding and dynamics.');
+  });
+
+  it('drops a "look at the X section of the FAQ page" CTA sentence', () => {
+    const text =
+      'The program supports independent research. Interested students should look at the Research section of the FAQ page.';
+    expect(sanitizeCatalogDescription(text)).toBe('The program supports independent research.');
+  });
+
+  it('leaves ordinary "learn more about a subfield" prose untouched', () => {
+    const prose =
+      'Reading widely across topics is a great way to learn more about a subfield you are interested in.';
+    expect(stripDanglingSourceSiteReferenceSentences(prose)).toBe(prose);
     expect(sanitizeCatalogDescription(prose)).toBe(prose);
   });
 });
