@@ -234,6 +234,54 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
     parser: 'general-guidance',
     title: 'Biomedical Engineering Undergraduate Research',
   },
+  {
+    key: 'statistics-and-data-science',
+    url: 'https://statistics.yale.edu/undergraduates/the-major/49104920-senior-essay',
+    department: 'Statistics and Data Science',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Statistics and Data Science Senior Research',
+  },
+  {
+    key: 'english',
+    url: 'https://english.yale.edu/undergraduate/senior-essay',
+    department: 'English',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'English Senior Essay Research',
+  },
+  {
+    key: 'comparative-literature',
+    url: 'https://complit.yale.edu/undergraduates/the-senior-essay',
+    department: 'Comparative Literature',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Comparative Literature Senior Essay Research',
+  },
+  {
+    key: 'religious-studies',
+    url: 'https://religiousstudies.yale.edu/undergraduate/senior-essay',
+    department: 'Religious Studies',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Religious Studies Senior Essay Research',
+  },
+  {
+    key: 'american-studies',
+    url: 'https://americanstudies.yale.edu/undergraduate-program/senior-year/senior-essay-course-requirements',
+    department: 'American Studies',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'American Studies Senior Essay Research',
+  },
+  {
+    key: 'womens-gender-sexuality-studies',
+    url: 'https://wgss.yale.edu/single-term-senior-essay-instructions-and-registration-form',
+    department: "Women's, Gender, and Sexuality Studies",
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: "Women's, Gender, and Sexuality Studies Senior Essay Research",
+  },
 ];
 
 function normalizeText(value: string): string {
@@ -287,7 +335,7 @@ const sentenceList = (text: string): string[] =>
     .filter(Boolean) || [];
 
 const undergradResearchGuidancePattern =
-  /\b(?:undergraduate students?|students?|majors?)\b.{0,180}\bresearch\b|\bresearch\b.{0,180}\b(?:undergraduate students?|students?|majors?|faculty|laborator(?:y|ies)|opportunit(?:y|ies)|assistantships?)\b/i;
+  /\b(?:undergraduate students?|students?|majors?)\b.{0,180}\bresearch\b|\bresearch\b.{0,180}\b(?:undergraduate students?|students?|majors?|faculty|laborator(?:y|ies)|opportunit(?:y|ies)|assistantships?)\b|\bsenior\s+(?:essay|thesis|project)\b.{0,180}\b(?:research|writing|write|independent|faculty|advis(?:e|er|or)|prospectus|mentor|director of undergraduate studies)\b|\b(?:research|writing|independent research|faculty advis(?:e|er|or)|prospectus|director of undergraduate studies)\b.{0,180}\bsenior\s+(?:essay|thesis|project)\b/i;
 
 function usefulUndergradResearchSentences(text: string): string[] {
   const seen = new Set<string>();
@@ -392,11 +440,20 @@ function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | un
     ?.url;
 }
 
+const seniorPathwayPattern =
+  /\bsenior\s+(?:essay|thesis|project|research)\b|\bdirected\s+(?:reading|study|research)\b|\bindependent\s+(?:study|research)\b/i;
+
+const seniorPathwayResearchContextPattern =
+  /\b(?:research|writing|write|independent|faculty|advis(?:e|er|or)|prospectus|mentor|director of undergraduate studies)\b/i;
+
 function pageHasUndergradResearchEvidence(text: string): boolean {
-  return (
+  if (
     /undergrad|bachelor/i.test(text) &&
     /\b(research|laborator|assistant|opportunit|project|mentor)/i.test(text)
-  );
+  ) {
+    return true;
+  }
+  return seniorPathwayPattern.test(text) && seniorPathwayResearchContextPattern.test(text);
 }
 
 export function parsePhysicsUndergradResearchPage(
