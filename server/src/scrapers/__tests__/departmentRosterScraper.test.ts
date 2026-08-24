@@ -1144,6 +1144,15 @@ describe('lawPersonListingExtractor', () => {
       },
     ]);
   });
+
+  it('is wired to the paginated Law faculty directory so the whole roster is walked', () => {
+    const law = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'law');
+    expect(law).toBeDefined();
+    expect(law?.url).toBe('https://law.yale.edu/faculty?type=faculty');
+    expect(law?.schoolName).toBe('Yale Law School');
+    expect(law?.extractor).toBe(lawPersonListingExtractor);
+    expect(law?.paginated).toBe(true);
+  });
 });
 
 describe('nursingFacultyExtractor', () => {

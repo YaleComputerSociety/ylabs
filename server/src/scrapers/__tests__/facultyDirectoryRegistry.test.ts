@@ -60,6 +60,10 @@ describe('facultyDirectoryRegistry', () => {
     expect(som?.approxFacultyCount).toBe(241);
     expect(byUrl.get('https://sociology.yale.edu/faculty')?.status).toBe('covered');
     expect(byUrl.get('https://english.yale.edu/people/ladder-faculty')?.status).toBe('covered');
+    const law = byUrl.get('https://law.yale.edu/faculty?type=faculty');
+    expect(law?.status).toBe('covered');
+    expect(law?.coveredBy).toEqual(['dept-faculty-roster']);
+    expect(law?.paginated).toBe(true);
     expect(
       byUrl.get('https://engineering.yale.edu/research-and-faculty/faculty-directory')?.status,
     ).toBe('covered');

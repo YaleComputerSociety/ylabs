@@ -1458,7 +1458,9 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'Law',
     schoolName: 'Yale Law School',
     url: 'https://law.yale.edu/faculty?type=faculty',
-    paginated: false,
+    // Load More is client-side, but the same Drupal view honors server-side
+    // ?page=N pagination, so the static path walks the whole roster (#1348).
+    paginated: true,
     extractor: lawPersonListingExtractor,
   },
   {

@@ -693,13 +693,14 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     url: 'https://law.yale.edu/faculty?type=faculty',
     school: 'Yale Law School',
     department: 'Faculty',
-    rendering: 'js-rendered',
-    status: 'partial',
+    rendering: 'static',
+    status: 'covered',
     coveredBy: ['dept-faculty-roster'],
     studentImpactTier: 6,
-    approxFacultyCount: 130,
+    approxFacultyCount: 97,
     paginated: true,
-    notes: 'Requires the ?type=faculty filter; Load More is client-side.',
+    notes:
+      'Covered via the dept-faculty-roster "law" config row (#1348). Requires the ?type=faculty filter (adjunct/visiting and lecturers/affiliates are separate tabs, out of scope). Load More is client-side, but the same Drupal view renders each page server-side and honors ?page=N pagination, so the config paginates the whole ladder-faculty roster (~10 cards per page) instead of the first-page-only partial it originally landed as. Each card links the faculty member\'s own law.yale.edu/<slug> page, cited as the per-faculty source; the directory root is only a crawl seed.',
   },
   {
     url: 'https://www.architecture.yale.edu/faculty',
