@@ -578,6 +578,14 @@ describe('grantAbstractToDescription', () => {
     ).toBe('Vascular smooth muscle cells adapt to stress.');
   });
 
+  it('strips a leading PROGRAM SUMMARY/ABSTRACT header', () => {
+    expect(
+      grantAbstractToDescription(
+        'Program Summary/Abstract In 2020, over 85,000 people died from drug overdoses in the US.',
+      ),
+    ).toBe('In 2020, over 85,000 people died from drug overdoses in the US.');
+  });
+
   it('returns empty for placeholder or blank abstracts', () => {
     expect(grantAbstractToDescription('No Abstract')).toBe('');
     expect(grantAbstractToDescription('   ')).toBe('');

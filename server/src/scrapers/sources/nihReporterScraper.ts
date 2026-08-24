@@ -271,7 +271,7 @@ export function grantToRecord(grant: NihGrant): RecentGrantRecord {
   };
 }
 
-const GRANT_ABSTRACT_HEADER_WORD = '(?:overall|proposal|project|research)';
+const GRANT_ABSTRACT_HEADER_WORD = '(?:overall|proposal|project|research|program)';
 const GRANT_ABSTRACT_HEADER_KIND = '(?:summary|narrative|abstract)';
 const GRANT_ABSTRACT_LEADING_NOISE = /^[\s\d.)(/:;#*-]+/;
 const GRANT_ABSTRACT_HEADER = new RegExp(

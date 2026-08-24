@@ -4184,6 +4184,65 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(emitted).toHaveLength(0);
   });
 
+  it('does not attach an institutional research home to a grant-derived PI shell', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => yalePrefixedLeadershipProfileHtml),
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [
+        {
+          _id: 'entity-1',
+          name: 'Morgan Fixture Lab',
+          slug: 'nih-pi-morgan-fixture',
+          sourceUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+          leadUserProfileUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+          leadUsers: [{ fname: 'Morgan', lname: 'Fixture', email: 'morgan.fixture@yale.edu' }],
+        },
+      ]),
+    );
+
+    const result = await scraper.run(profileResearchHomeContextFor(emitted));
+
+    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('still attaches a lab-classified profile-linked home to a grant-derived PI shell', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => profileLinkedExternalLabWebsiteHtml),
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [
+        {
+          _id: 'entity-1',
+          name: 'Hayden Fixture Lab',
+          slug: 'nih-pi-hayden-fixture',
+          sourceUrls: ['https://medicine.yale.edu/profile/hayden-fixture/'],
+          leadUserProfileUrls: ['https://medicine.yale.edu/profile/hayden-fixture/'],
+          leadUsers: [{ fname: 'Hayden', lname: 'Fixture', email: 'hayden.fixture@yale.edu' }],
+        },
+      ]),
+    );
+
+    const result = await scraper.run(profileResearchHomeContextFor(emitted));
+
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+    expect(emitted.find((o) => o.field === 'entityType')?.value).toBe('LAB');
+    expect(emitted.find((o) => o.field === 'name')?.value).toBe('Hayden Fixture Lab');
+  });
+
   it('does not promote navigation programs when the profile only names an unlinked lab', () => {
     const homes = extractOfficialProfileResearchHomes(
       navigationResearchProgramProfileHtml,
