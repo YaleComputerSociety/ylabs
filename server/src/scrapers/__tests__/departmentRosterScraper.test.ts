@@ -2018,6 +2018,53 @@ describe('DepartmentRosterScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('preserves casing on hyphenated/slashed/mixed-case topic labels in roster topic descriptions (#1722)', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Casey Topic',
+        email: 'casey.topic@yale.edu',
+        labUrl: 'https://www.eng.yale.edu/caseylab/',
+        topics: [
+          'Large-Scale Structure',
+          'NMR/MRI',
+          'Structure+Formation',
+          'Non-Hodgkin Lymphoma',
+          'SARS-CoV-2',
+        ],
+        researchInterests: [
+          'Large-Scale Structure',
+          'NMR/MRI',
+          'Structure+Formation',
+          'Non-Hodgkin Lymphoma',
+          'SARS-CoV-2',
+        ],
+      },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/physics',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'fullDescription')?.value).toBe(
+      'Studies Large-Scale structure, including NMR/MRI, Structure+Formation, Non-Hodgkin lymphoma, and SARS-CoV-2.',
+    );
+
+    getSpy.mockRestore();
+  });
+
   it('rejects a grounded short description that is only an appointment, not research', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
