@@ -9,6 +9,7 @@ import {
 } from './scrapeJobLock';
 import { reclaimInferredPiLeads } from './inferredPiLeadReclaim';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { markSourceCrawled } from './sourceCrawlStamp';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type { ScraperEnvironment } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
@@ -20,6 +21,7 @@ export interface CronRunnerDependencies {
   materializeFromRun: typeof materializeFromRun;
   reclaimInferredPiLeads: typeof reclaimInferredPiLeads;
   runStudentVisibilityGate: typeof runStudentVisibilityGate;
+  markSourceCrawled: typeof markSourceCrawled;
   getScrapeRunReport: typeof getScrapeRunReport;
   acquireScrapeJobLock: typeof acquireScrapeJobLock;
   heartbeatScrapeJobLock: typeof heartbeatScrapeJobLock;
@@ -66,6 +68,7 @@ export function createCronRunnerDependencies(
     materializeFromRun,
     reclaimInferredPiLeads,
     runStudentVisibilityGate,
+    markSourceCrawled,
     getScrapeRunReport,
     acquireScrapeJobLock,
     heartbeatScrapeJobLock,
@@ -139,6 +142,9 @@ export async function runScraperCron(
             sourceName: input.sourceName,
           })
         : undefined;
+    if (materializationResult.errors === 0) {
+      await deps.markSourceCrawled(input.sourceName, input.now ?? new Date());
+    }
     const report = await deps.getScrapeRunReport(runId);
     const exitCode = materializationResult.errors > 0 ? 1 : 0;
 

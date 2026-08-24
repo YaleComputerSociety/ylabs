@@ -73,4 +73,28 @@ describe('research access models', () => {
 
     expect(doc.validateSync()?.errors['coverage.artifactTypes.0']).toBeTruthy();
   });
+
+  it('leaves re-crawl freshness fields unset when never crawled (#1705)', () => {
+    const doc = new Source({
+      name: 'never-crawled-source',
+      displayName: 'Never crawled source',
+      defaultWeight: 0.5,
+    });
+
+    expect(doc.validateSync()).toBeUndefined();
+    expect(doc.lastCrawledAt).toBeUndefined();
+    expect(doc.cadenceDays).toBeUndefined();
+  });
+
+  it('validates a re-crawled source with a target cadence', () => {
+    const doc = new Source({
+      name: 'recrawled-source',
+      displayName: 'Recrawled source',
+      defaultWeight: 0.5,
+      lastCrawledAt: new Date('2026-05-07T12:00:00.000Z'),
+      cadenceDays: 30,
+    });
+
+    expect(doc.validateSync()).toBeUndefined();
+  });
 });
