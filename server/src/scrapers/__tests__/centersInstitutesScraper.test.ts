@@ -34,11 +34,14 @@ import {
   contentSpotlightFacultyExtractor,
   fdsUsersGridExtractor,
   jacksonCentersExtractor,
+  jacksonProfileItemExtractor,
+  deriveChildEngagementCandidates,
   jsRenderedStub,
   centerToGroupObservations,
   memberToObservations,
   centerMemberRelationshipObservations,
   childCenterToObservations,
+  childCenterEntityKey,
   type CenterConfig,
   type CenterMember,
   type ExtractorResult,
@@ -226,35 +229,19 @@ const YCGA_HTML = `
 </body></html>
 `;
 
-/** Jackson School centers index meta-listing. */
+/** Jackson School centers index meta-listing (Drupal child-menu block). */
 const JACKSON_HTML = `
 <html><body>
-  <div class="jordan_item">
-    <div class="cta_box">
-      <a href="https://jackson.yale.edu/centers-initiatives/blue-center/"><img/></a>
-      <div class="cta_box_content">
-        <h3 class="cta_title">Blue Center for Global Strategic Assessment</h3>
-        <div class="content">Supports interdisciplinary research on statecraft.</div>
-      </div>
-    </div>
-  </div>
-  <div class="jordan_item">
-    <div class="cta_box">
-      <a href="https://jackson.yale.edu/environment/"><img/></a>
-      <div class="cta_box_content">
-        <h3 class="cta_title">Deitz Family Initiative on Environment and Global Affairs</h3>
-        <div class="content">Supports environmental change studies.</div>
-      </div>
-    </div>
-  </div>
-  <div class="jordan_item">
-    <div class="cta_box">
-      <a href="https://jackson.yale.edu/centers-initiatives/schmidt-program/"><img/></a>
-      <div class="cta_box_content">
-        <h3 class="cta_title">Schmidt Program on AI and National Power</h3>
-        <div class="content">AI research program.</div>
-      </div>
-    </div>
+  <nav><ul class="menu">
+    <li class="menu-item"><a href="/faculty-research">Faculty &amp; Research</a></li>
+    <li class="menu-item"><a href="/blue-center">Blue Center for Global Strategic Assessment</a></li>
+  </ul></nav>
+  <div class="child-menu__wrapper">
+    <ul class="menu">
+      <li class="menu-item"><a href="/blue-center">Blue Center for Global Strategic Assessment</a></li>
+      <li class="menu-item"><a href="/deitz">Deitz Family Initiative on Environment &amp; Global Affairs</a></li>
+      <li class="menu-item"><a href="/schmidt-program-artificial-intelligence">Schmidt Program on Artificial Intelligence</a></li>
+    </ul>
   </div>
 </body></html>
 `;
@@ -483,7 +470,7 @@ describe('ycgaExtractor', () => {
 });
 
 describe('jacksonCentersExtractor', () => {
-  it('emits child centers (no members) and infers kind from name', () => {
+  it('emits child centers from the child-menu block (no members), scoped away from site nav', () => {
     const out = jacksonCentersExtractor(JACKSON_HTML, {
       pageUrl: 'https://jackson.yale.edu/centers-initiatives/',
     });
@@ -491,9 +478,10 @@ describe('jacksonCentersExtractor', () => {
     expect(out.childCenters).toHaveLength(3);
     expect(out.childCenters![0]).toMatchObject({
       name: 'Blue Center for Global Strategic Assessment',
-      url: 'https://jackson.yale.edu/centers-initiatives/blue-center/',
+      url: 'https://jackson.yale.edu/blue-center',
       kind: 'center',
     });
+    expect(out.childCenters!.map((c) => c.name)).not.toContain('Faculty & Research');
     expect(out.childCenters![1].kind).toBe('initiative');
     expect(out.childCenters![2].kind).toBe('program');
   });
@@ -1483,5 +1471,196 @@ describe('CentersInstitutesScraper.run', () => {
     ]);
 
     getSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Jackson child-center engagement crawl
+// ---------------------------------------------------------------------------
+
+/** Jackson person-card theme, shared by every center homepage and /people page. */
+const JACKSON_PEOPLE_HTML = `
+<html><body>
+  <nav><a href="/directory">Directory</a><a href="/about/leadership">Leadership</a></nav>
+  <ul class="profiles">
+    <li>
+      <article class="profile profile--component profile__item">
+        <div class="profile__content">
+          <h3><a href="/directory/pat-fixture">Pat Fixture</a></h3>
+          <ul class="profile-positions list--semicolon-separate"><li>Executive Director, Blue Center</li></ul>
+        </div>
+      </article>
+    </li>
+    <li>
+      <article class="profile profile--component profile__item">
+        <div class="profile__content">
+          <h3><a href="/directory/jamie-fellow">Jamie Fellow</a></h3>
+          <ul class="profile-positions"><li>Senior Fellow</li></ul>
+        </div>
+      </article>
+    </li>
+  </ul>
+  <footer><a href="/directory/site-admin">Site Admin</a></footer>
+</body></html>
+`;
+
+/** Blue Center homepage: links its people page under its own /blue-center/ prefix. */
+const BLUE_CENTER_HOME_HTML = `
+<html><body>
+  <nav>
+    <a href="/faculty-research">Faculty & Research</a>
+    <a href="/about/leadership">Leadership</a>
+    <a href="/directory">Directory</a>
+    <a href="/blue-center/blue-center-people">People</a>
+    <a href="/blue-center/events">Events</a>
+  </nav>
+</body></html>
+`;
+
+describe('jacksonProfileItemExtractor', () => {
+  it('reads profile__item cards and ignores nav/footer directory links', () => {
+    const out = jacksonProfileItemExtractor(JACKSON_PEOPLE_HTML, {
+      pageUrl: 'https://jackson.yale.edu/blue-center/people',
+    });
+    expect(out.members).toHaveLength(2);
+    expect(out.members[0]).toMatchObject({
+      name: 'Pat Fixture',
+      profileUrl: 'https://jackson.yale.edu/directory/pat-fixture',
+      role: 'director',
+    });
+    expect(out.members[0].title).toContain('Executive Director');
+    expect(out.members.map((m) => m.name)).not.toContain('Site Admin');
+  });
+});
+
+describe('deriveChildEngagementCandidates', () => {
+  it('derives a gate-passing /people alias from a prefix-scoped people link', () => {
+    const candidates = deriveChildEngagementCandidates(
+      BLUE_CENTER_HOME_HTML,
+      'https://jackson.yale.edu/blue-center',
+    );
+    expect(candidates).toContain('https://jackson.yale.edu/blue-center/people');
+  });
+
+  it('excludes school-wide, off-prefix, and homepage-self links', () => {
+    const candidates = deriveChildEngagementCandidates(
+      BLUE_CENTER_HOME_HTML,
+      'https://jackson.yale.edu/blue-center',
+    );
+    expect(candidates).not.toContain('https://jackson.yale.edu/about/leadership');
+    expect(candidates.some((u) => u.includes('/events'))).toBe(false);
+    expect(candidates).not.toContain('https://jackson.yale.edu/blue-center');
+  });
+
+  it('ranks a people-tier link ahead of a programs-tier link', () => {
+    const html = `
+      <a href="/johnson-center/fellowships">Fellowships</a>
+      <a href="/johnson-center/our-people">Our People</a>
+    `;
+    const candidates = deriveChildEngagementCandidates(
+      html,
+      'https://jackson.yale.edu/johnson-center',
+    );
+    expect(candidates[0]).toBe('https://jackson.yale.edu/johnson-center/people');
+    expect(candidates).toContain('https://jackson.yale.edu/johnson-center/fellowships');
+  });
+
+  it('yields no candidate when only a programs page exists', () => {
+    const html = `<a href="/johnson-center/fellowships">Fellowships</a>`;
+    expect(
+      deriveChildEngagementCandidates(html, 'https://jackson.yale.edu/johnson-center'),
+    ).toEqual(['https://jackson.yale.edu/johnson-center/fellowships']);
+  });
+
+  it('returns nothing for a child with only school-wide links (genuine dead end)', () => {
+    const html = `<a href="/about/leadership">Leadership</a><a href="/directory">Directory</a>`;
+    expect(deriveChildEngagementCandidates(html, 'https://jackson.yale.edu/leitner-program')).toEqual(
+      [],
+    );
+  });
+});
+
+describe('CentersInstitutesScraper.run child crawl', () => {
+  const jacksonConfig: CenterConfig = {
+    centerKey: 'jackson-centers',
+    centerName: 'Jackson centers index',
+    schoolName: 'Jackson School of Global Affairs',
+    kind: 'center',
+    url: 'https://jackson.yale.edu/centers-initiatives/',
+    extractor: (): ExtractorResult => ({
+      members: [],
+      childCenters: [
+        { name: 'Blue Center', url: 'https://jackson.yale.edu/blue-center', kind: 'center' },
+        { name: 'Leitner Program', url: 'https://jackson.yale.edu/leitner-program', kind: 'program' },
+      ],
+    }),
+    crawlChildCenters: true,
+  };
+
+  it('discovers a child engagement subpage and roster, and leaves dead ends untouched', async () => {
+    const pages: Record<string, string> = {
+      'https://jackson.yale.edu/centers-initiatives/': '<html></html>',
+      'https://jackson.yale.edu/blue-center': BLUE_CENTER_HOME_HTML,
+      'https://jackson.yale.edu/blue-center/people': JACKSON_PEOPLE_HTML,
+      'https://jackson.yale.edu/leitner-program': '<html><body><a href="/directory">Directory</a></body></html>',
+    };
+    const fetcher = vi.fn(async (url: string) => {
+      if (url in pages) return pages[url];
+      throw new Error(`404 ${url}`);
+    });
+
+    const scraper = new CentersInstitutesScraper([jacksonConfig], null, fetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const blueGroup = emitted.filter(
+      (o) =>
+        o.entityType === 'researchEntity' && o.entityKey === 'center-jackson-centers-blue-center',
+    );
+    const blueSourceUrls = blueGroup.find((o) => o.field === 'sourceUrls')!.value as string[];
+    expect(blueSourceUrls).toContain('https://jackson.yale.edu/blue-center/people');
+
+    const blueMemberKeys = emitted
+      .filter((o) => o.entityType === 'researchGroupMember' && o.field === 'role')
+      .map((o) => o.entityKey);
+    expect(blueMemberKeys).toContain('center-jackson-centers-blue-center:pat-fixture');
+    expect(blueMemberKeys).toContain('center-jackson-centers-blue-center:jamie-fellow');
+
+    const leitnerGroup = emitted.filter(
+      (o) =>
+        o.entityType === 'researchEntity' &&
+        o.entityKey === 'center-jackson-centers-leitner-program',
+    );
+    const leitnerSourceUrls = leitnerGroup.find((o) => o.field === 'sourceUrls')!.value as string[];
+    expect(leitnerSourceUrls).toEqual([
+      'https://jackson.yale.edu/centers-initiatives/',
+      'https://jackson.yale.edu/leitner-program',
+    ]);
+    expect(
+      emitted.some(
+        (o) =>
+          o.entityType === 'researchGroupMember' &&
+          o.entityKey?.startsWith('center-jackson-centers-leitner-program:'),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not crawl children when crawlChildCenters is unset', async () => {
+    const fetcher = vi.fn(async () => '<html></html>');
+    const scraper = new CentersInstitutesScraper(
+      [{ ...jacksonConfig, crawlChildCenters: false }],
+      null,
+      fetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(childCenterEntityKey(jacksonConfig, { name: 'Blue Center', url: 'x', kind: 'center' })).toBe(
+      'center-jackson-centers-blue-center',
+    );
+    expect(
+      emitted.some((o) => o.entityType === 'researchGroupMember'),
+    ).toBe(false);
   });
 });
