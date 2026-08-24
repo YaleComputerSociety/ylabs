@@ -1868,11 +1868,20 @@ const nonResearchTopicLabels = new Set([
   'emeritus',
 ]);
 
+function shouldPreserveTopicWordCasing(word: string): boolean {
+  return (
+    /^[A-Z0-9&-]{2,}$/.test(word) ||
+    /[A-Z]/.test(word.slice(1)) ||
+    /[/+.]/.test(word) ||
+    /-[A-Z]/.test(word)
+  );
+}
+
 function lowerTopicPhrase(value: string): string {
   return cleanText(value)
     .split(/\s+/)
     .map((word) =>
-      /^[A-Z0-9&-]{2,}$/.test(word) ? word : `${word.charAt(0).toLowerCase()}${word.slice(1)}`,
+      shouldPreserveTopicWordCasing(word) ? word : `${word.charAt(0).toLowerCase()}${word.slice(1)}`,
     )
     .join(' ');
 }
