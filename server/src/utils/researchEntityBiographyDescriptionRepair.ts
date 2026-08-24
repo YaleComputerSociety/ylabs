@@ -130,8 +130,15 @@ const DEGREE_LIST_FRAGMENT_SEARCH_PATTERN = new RegExp(DEGREE_LIST_ENTRY_PATTERN
  * afterward - a bare degree list with nothing else is left alone so the
  * no-usable-description fallback below can decide its fate.
  */
+// Every character in DEGREE_TOKEN_PATTERN is individually optional (periods,
+// internal spaces), so applied case-insensitively and unanchored it also
+// matches an ordinary two-letter run inside an unrelated word ("Ma" inside
+// "Marisa" satisfies the M.A. alternative). The lookaround pair keeps that
+// loose token definition - needed so the anchored entry matcher above still
+// recognizes "B.A" / "B A" / "B.A." spacing variants - from also matching
+// mid-word when scanning free text for leftover degree/institution mentions.
 const DEGREE_OR_INSTITUTION_MENTION_PATTERN = new RegExp(
-  `${DEGREE_TOKEN_PATTERN}|\\b(?:University|College|Institute|School|Academy)\\b`,
+  `(?<![\\p{L}])(?:${DEGREE_TOKEN_PATTERN}|University|College|Institute|School|Academy)(?!\\p{L})`,
   'giu',
 );
 
