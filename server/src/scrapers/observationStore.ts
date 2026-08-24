@@ -10,6 +10,7 @@ import { Source } from '../models/source';
 import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isSelfReferentialUrl } from '../utils/urlSafety';
+import { sanitizeObservationField } from './observationFieldSanitizer';
 import type { ObservationInput } from './types';
 
 const ENUM_FIELD_VALIDATORS: Record<string, ReadonlySet<string>> = {
@@ -46,13 +47,26 @@ export async function appendObservations(
 
   const rejectedSelfReferential = inputs.filter((obs) => isSelfReferentialUrl(obs.sourceUrl));
   const candidateInputs = inputs.filter((obs) => !isSelfReferentialUrl(obs.sourceUrl));
-  const rejectedInvalidEnum = candidateInputs.filter((obs) =>
+  const sanitizedInputs: ObservationInput[] = [];
+  let rejectedFurniture = 0;
+  for (const obs of candidateInputs) {
+    const sanitized = sanitizeObservationField(obs.entityType, obs.field, obs.value);
+    if (sanitized.rejected) {
+      rejectedFurniture += 1;
+      continue;
+    }
+    sanitizedInputs.push(
+      sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value },
+    );
+  }
+  const rejectedInvalidEnum = sanitizedInputs.filter((obs) =>
     isObservationValueRejected(obs.field, obs.value),
   );
-  const acceptedInputs = candidateInputs.filter(
+  const acceptedInputs = sanitizedInputs.filter(
     (obs) => !isObservationValueRejected(obs.field, obs.value),
   );
-  const skippedCount = rejectedSelfReferential.length + rejectedInvalidEnum.length;
+  const skippedCount =
+    rejectedSelfReferential.length + rejectedFurniture + rejectedInvalidEnum.length;
   if (acceptedInputs.length === 0) {
     return { inserted: 0, skipped: skippedCount, superseded: 0 };
   }

@@ -469,6 +469,73 @@ describe('appendObservations', () => {
     expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
+  it('rejects a furniture-shaped person title at ingest and stores the sanitized name (#1375)', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-1', observationFingerprint: 'fp:user:name' },
+    ] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'user',
+          entityKey: 'abc123',
+          field: 'name',
+          value: 'Ada Lovelace',
+        },
+        {
+          entityType: 'user',
+          entityKey: 'abc123',
+          field: 'title',
+          value: 'HomeAboutPeopleContact',
+        },
+      ],
+      {
+        scrapeRunId: 'run-1375a',
+        sourceId: 'source-1',
+        sourceName: 'yale-directory',
+        sourceWeight: 0.9,
+        dryRun: false,
+      },
+    );
+
+    const insertedDocs = insertMany.mock.calls[0][0] as any[];
+    expect(insertedDocs).toHaveLength(1);
+    expect(insertedDocs[0]).toMatchObject({ field: 'name', value: 'Ada Lovelace' });
+    expect(result).toEqual({ inserted: 1, skipped: 1, superseded: 0 });
+  });
+
+  it('stores a chrome-stripped, contact-redacted description at ingest (#1375)', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:fullDescription' },
+    ] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'fullDescription',
+          value: 'Skip to main content The lab studies X. Email jdoe@example.edu.',
+        },
+      ],
+      {
+        scrapeRunId: 'run-1375b',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.8,
+        dryRun: false,
+      },
+    );
+
+    const insertedDocs = insertMany.mock.calls[0][0] as any[];
+    const storedDescription = String(insertedDocs[0].value);
+    expect(storedDescription).not.toContain('Skip to main content');
+    expect(storedDescription).not.toContain('@');
+    expect(storedDescription).toContain('studies X');
+  });
+
   it('does not supersede anything during dry runs', async () => {
     const insertMany = vi.spyOn(Observation, 'insertMany');
     const bulkWrite = vi.spyOn(Observation, 'bulkWrite');
