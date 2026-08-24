@@ -159,6 +159,7 @@ export interface ResearchDescriptionBackfillOptions {
   confirmLlmSynthesis: boolean;
   confirmCardSynthesis: boolean;
   projectedEntities: number;
+  recordIds?: string[];
   output?: string;
 }
 
@@ -191,7 +192,13 @@ export function parseResearchDescriptionBackfillArgs(
     else if (arg === '--confirm-short-descriptions') options.confirmShortDescriptions = true;
     else if (arg === '--confirm-llm-synthesis') options.confirmLlmSynthesis = true;
     else if (arg === '--confirm-card-synthesis') options.confirmCardSynthesis = true;
-    else if (arg.startsWith('--projected-entities=')) {
+    else if (arg.startsWith('--record-id=')) {
+      const id = arg.slice('--record-id='.length).trim();
+      if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+        throw new Error('--record-id must be a 24-character hex ObjectId');
+      }
+      options.recordIds = [...(options.recordIds || []), id];
+    } else if (arg.startsWith('--projected-entities=')) {
       options.projectedEntities = parsePositiveInt(arg.slice('--projected-entities='.length));
     } else if (arg === '--projected-entities') {
       options.projectedEntities = parsePositiveInt(argv[i + 1]);
@@ -1025,6 +1032,7 @@ export interface CardSynthesisBackfillResult {
 export async function runCardSynthesisBackfill(options: {
   dryRun: boolean;
   limit?: number;
+  recordIds?: string[];
   cardSynthesizer?: CardSynthesisLLMFn;
   cardModel?: string;
 }): Promise<CardSynthesisBackfillResult> {
@@ -1039,8 +1047,14 @@ export async function runCardSynthesisBackfill(options: {
         })
       : Promise.resolve('');
 
+  const scopedIds = (options.recordIds || []).map((id) => new mongoose.Types.ObjectId(id));
+  const query: Record<string, unknown> = {
+    archived: { $ne: true },
+    studentVisibilityReasons: CARD_BLOCKER_REASON,
+  };
+  if (scopedIds.length > 0) query._id = { $in: scopedIds };
   const docs = (await ResearchEntity.find(
-    { archived: { $ne: true }, studentVisibilityReasons: CARD_BLOCKER_REASON },
+    query,
     {
       _id: 1,
       slug: 1,
@@ -1138,8 +1152,11 @@ export async function runCardSynthesisBackfill(options: {
 
 async function runCardSynthesisLane(options: ResearchDescriptionBackfillOptions): Promise<void> {
   const apply = !options.dryRun;
-  if (apply && !options.explicitLimit) {
-    throw new Error('Card-synthesis apply requires an explicit --limit to bound generation.');
+  const scoped = (options.recordIds || []).length > 0;
+  if (apply && !options.explicitLimit && !scoped) {
+    throw new Error(
+      'Card-synthesis apply requires an explicit --limit or --record-id to bound generation.',
+    );
   }
   if (apply && !options.confirmCardSynthesis) {
     throw new Error('Card-synthesis apply requires --confirm-card-synthesis.');
@@ -1159,6 +1176,7 @@ async function runCardSynthesisLane(options: ResearchDescriptionBackfillOptions)
     const result = await runCardSynthesisBackfill({
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
+      recordIds: options.recordIds,
     });
     writeBackfillReport(
       options,
@@ -1167,7 +1185,11 @@ async function runCardSynthesisLane(options: ResearchDescriptionBackfillOptions)
         environment: guard.environment,
         db: guard.dbLabel,
         lane: 'card-synthesis',
-        options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+        options: {
+          dryRun: options.dryRun,
+          limit: options.explicitLimit ? options.limit : undefined,
+          recordIds: options.recordIds,
+        },
         result,
       },
       'card-description synthesis backfill',
