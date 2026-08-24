@@ -80,6 +80,12 @@ const ROSTER_PROFILE_DESCRIPTION_CONFIDENCE = 0.55;
 /** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
   name: string;
+  /**
+   * True when `name` is a slug-derived placeholder (the listing exposed only a
+   * profile-URL slug, no readable name). Profile enrichment replaces it with the
+   * real name read from the profile page. Used by thumbnail-only rosters.
+   */
+  namePlaceholder?: boolean;
   /** Yale profile URL (relative or absolute) if present on the listing. */
   profileUrl?: string;
   /** Title / position string ("Sterling Professor of …") if present. */
@@ -990,6 +996,84 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+/**
+ * Derive a display-name placeholder from a faculty profile slug such as
+ * `/faculty/318-emily-abruzzo` (strip a leading numeric id, title-case tokens).
+ * Placeholder only: profile enrichment replaces it with the real profile name.
+ */
+function nameFromFacultySlug(href: string): string {
+  const segment = href.split(/[?#]/)[0].split('/').filter(Boolean).pop() || '';
+  const nameSlug = segment.replace(/^\d+-/, '');
+  return nameSlug
+    .split('-')
+    .map((token) => (token ? `${token.charAt(0).toUpperCase()}${token.slice(1)}` : token))
+    .join(' ')
+    .trim();
+}
+
+const GENERIC_DIRECTORY_NAME_TOKENS = new Set([
+  'faculty',
+  'staff',
+  'people',
+  'directory',
+  'home',
+  'profile',
+  'members',
+  'affiliates',
+  'overview',
+  'index',
+  'and',
+]);
+
+function isPersonNameShaped(name: string): boolean {
+  const tokens = name.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2 || tokens.length > 4) return false;
+  return tokens.every(
+    (token) => /^\p{Lu}/u.test(token) && !GENERIC_DIRECTORY_NAME_TOKENS.has(token.toLowerCase()),
+  );
+}
+
+/**
+ * Read a person's name from their official profile page's og:title / <title>,
+ * dropping the trailing site-name segment (e.g. "Emily Abruzzo - Yale Architecture").
+ * Returns undefined when the leading segment does not look like a personal name so a
+ * generic listing/section title cannot overwrite a reliable slug-derived placeholder.
+ */
+function personNameFromProfileHtml($: cheerio.CheerioAPI): string | undefined {
+  const raw =
+    $('meta[property="og:title"]').attr('content') || cleanText($('title').first().text());
+  const leading = cleanText(raw).split(/\s+[|–—-]\s+/)[0];
+  if (!leading || !isPersonNameShaped(leading)) return undefined;
+  return leading;
+}
+
+/**
+ * Yale School of Architecture faculty grid. Cards expose only a headshot linking
+ * `/faculty/<id>-<name-slug>`; the readable name is on the profile page, so this
+ * emits a slug placeholder plus `namePlaceholder` and lets enrichment fill the
+ * real name. The grid lazy-loads, so a static fetch covers the first page only.
+ */
+export const facultyThumbnailExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('.faculty-member-thumbnail').each((_i, el) => {
+    const card = $(el);
+    const href = card.find('a.blank-link, a[href*="/faculty/"]').first().attr('href') || '';
+    if (!/\/faculty\/\d+-/.test(href)) return;
+
+    const name = normalizeName(nameFromFacultySlug(href));
+    if (!name) return;
+
+    const profileUrl = absolutize(href, ctx.pageUrl);
+    const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
+
+    out.push({ name, namePlaceholder: true, profileUrl, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -1524,6 +1608,14 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: fieldCollectionPersonExtractor,
     officialProfileOnly: true,
   },
+  {
+    deptKey: 'architecture',
+    deptName: 'Architecture',
+    schoolName: 'Yale School of Architecture',
+    url: 'https://www.architecture.yale.edu/faculty',
+    paginated: false,
+    extractor: facultyThumbnailExtractor,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1917,6 +2009,7 @@ function profileEnrichmentFromHtml(
   Pick<
     FacultyEntry,
     | 'profileUrl'
+    | 'name'
     | 'email'
     | 'labUrl'
     | 'title'
@@ -2003,6 +2096,7 @@ function profileEnrichmentFromHtml(
   return {
     profileUrl: canonicalUrl,
     profileSourceUrl: canonicalUrl,
+    name: personNameFromProfileHtml($),
     email,
     title,
     labUrl,
@@ -2043,6 +2137,7 @@ function mergeProfileEnrichment(
     Pick<
       FacultyEntry,
       | 'profileUrl'
+      | 'name'
       | 'email'
       | 'labUrl'
       | 'title'
@@ -2058,8 +2153,12 @@ function mergeProfileEnrichment(
     >
   >,
 ): FacultyEntry {
+  const resolvedName =
+    entry.namePlaceholder && enrichment.name ? normalizeName(enrichment.name) : entry.name;
   return {
     ...entry,
+    name: resolvedName || entry.name,
+    namePlaceholder: entry.namePlaceholder && resolvedName === entry.name ? true : undefined,
     profileUrl: enrichment.profileUrl || entry.profileUrl,
     profileSourceUrl: enrichment.profileSourceUrl || entry.profileSourceUrl,
     title: entry.title || enrichment.title,

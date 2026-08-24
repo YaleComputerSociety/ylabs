@@ -27,6 +27,7 @@ import {
   directoryListingCardExtractor,
   nodePersonCardExtractor,
   fieldCollectionPersonExtractor,
+  facultyThumbnailExtractor,
   profileGridItemExtractor,
   nodeTeaserFacultyExtractor,
   jacksonProfileComponentExtractor,
@@ -900,6 +901,39 @@ describe('fieldCollectionPersonExtractor', () => {
       {
         name: 'Casey Fixture',
         title: 'Lecturer',
+      },
+    ]);
+  });
+});
+
+describe('facultyThumbnailExtractor', () => {
+  it('emits a slug placeholder name plus profile URL for headshot-only cards', () => {
+    const html = `
+      <div class="faculty-member-thumbnail">
+        <a class="blank-link" href="/faculty/1001-robin-fixture">
+          <div class="faculty-member-thumbnail__image"><img src="/img/robin.jpg"></div>
+        </a>
+      </div>
+      <div class="faculty-member-thumbnail">
+        <a class="blank-link" href="/faculty/1002-quinn-example-fixture"><img src="/img/quinn.jpg"></a>
+      </div>
+      <div class="faculty-member-thumbnail">
+        <a class="blank-link" href="/about/leadership">Not a faculty link</a>
+      </div>`;
+    expect(
+      facultyThumbnailExtractor(html, { pageUrl: 'https://www.architecture.yale.edu/faculty' }),
+    ).toEqual([
+      {
+        name: 'Robin Fixture',
+        namePlaceholder: true,
+        profileUrl: 'https://www.architecture.yale.edu/faculty/1001-robin-fixture',
+        imageUrl: 'https://www.architecture.yale.edu/img/robin.jpg',
+      },
+      {
+        name: 'Quinn Example Fixture',
+        namePlaceholder: true,
+        profileUrl: 'https://www.architecture.yale.edu/faculty/1002-quinn-example-fixture',
+        imageUrl: 'https://www.architecture.yale.edu/img/quinn.jpg',
       },
     ]);
   });
@@ -1981,6 +2015,70 @@ describe('DepartmentRosterScraper.run', () => {
     expect(fullDescription?.value).toBe('Studies condensed matter physics.');
     expect(fullDescription?.confidenceOverride).toBe(0.5);
     expect(entityObs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+  });
+
+  it('keeps the slug placeholder name when the profile title is a generic section title', async () => {
+    const profileUrl = 'https://www.architecture.yale.edu/faculty/1001-robin-fixture-vane';
+    const profileHtml = `
+      <html><head>
+        <meta property="og:title" content="Faculty - Yale School of Architecture" />
+        <link rel="canonical" href="${profileUrl}" />
+      </head><body><main><p>Directory listing.</p></main></body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === profileUrl) return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'architecture',
+        deptName: 'Architecture',
+        schoolName: 'Yale School of Architecture',
+        url: 'https://www.architecture.yale.edu/faculty',
+        paginated: false,
+        extractor: () => [{ name: 'Robin Fixture Vane', namePlaceholder: true, profileUrl }],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Robin Fixture');
+    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Vane');
+  });
+
+  it('overwrites the slug placeholder with a person-shaped profile title, restoring hyphens', async () => {
+    const profileUrl = 'https://www.architecture.yale.edu/faculty/1001-robin-fixture-vane';
+    const profileHtml = `
+      <html><head>
+        <meta property="og:title" content="Robin Fixture-Vane - Yale School of Architecture" />
+        <link rel="canonical" href="${profileUrl}" />
+      </head><body><main><p>Bio.</p></main></body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === profileUrl) return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'architecture',
+        deptName: 'Architecture',
+        schoolName: 'Yale School of Architecture',
+        url: 'https://www.architecture.yale.edu/faculty',
+        paginated: false,
+        extractor: () => [{ name: 'Robin Fixture Vane', namePlaceholder: true, profileUrl }],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Robin');
+    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Fixture-Vane');
   });
 
   it('honors the limit option across departments', async () => {
