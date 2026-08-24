@@ -105,7 +105,10 @@ const hasRecruitmentBoilerplate = (value: string): boolean =>
   /\bwelcome to (?:the )?.{0,80}\b(?:lab|laboratory)\s+(?:home\s*page|homepage|website)\b/i.test(
     value,
   ) ||
-  /\bwelcome to (?:the )?.{0,80}\bwebsite\b/i.test(value);
+  /\bwelcome to (?:the )?.{0,80}\bwebsite\b/i.test(value) ||
+  /\b(?:I|we)\s+have\s+\d+\s+research\s+projects?\b[^.]*\bfabrication,?\s+measurement,?\s+and\/or\s+theory\b/i.test(
+    value,
+  );
 
 const isConsentBoilerplateSentence = (sentence: string): boolean =>
   /\bwe use cookies\b/i.test(sentence) ||

@@ -28,6 +28,18 @@ describe('fullDescriptionQuality', () => {
     expect(quality.isUseful).toBe(false);
   });
 
+  it('rejects the shared topic-free undergraduate project-count recruiting template', () => {
+    const sharedTemplate =
+      'I have 3 research projects that are focused on fabrication, measurement, and/or theory, depending on student interest and experience.';
+    const quality = fullDescriptionQuality(sharedTemplate);
+    expect(quality.flags).toContain('recruitment-boilerplate');
+    expect(quality.isUseful).toBe(false);
+
+    const genuineProjectDescription =
+      'I have 3 research projects on the fabrication of superconducting qubits, the measurement of coherence times, and the theory of circuit QED for quantum error correction.';
+    expect(fullDescriptionQuality(genuineProjectDescription).isUseful).toBe(true);
+  });
+
   it('rejects cookie-consent boilerplate while accepting genuine first-person research prose', () => {
     const cookieBanner =
       'We use cookies and similar technologies to improve your experience, analyze site traffic, and personalize content. By continuing to use this site, you consent to our use of cookies in accordance with our privacy policy.';
