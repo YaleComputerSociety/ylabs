@@ -286,7 +286,7 @@ const clauseSupportsWeeklyHours = (
   return false;
 };
 
-const quoteHasUndergraduatePopulation = (quote: string): boolean => {
+export const quoteHasUndergraduatePopulation = (quote: string): boolean => {
   if (
     /\b(?:undergrads?|undergraduates?|undergraduate\s+students?|college\s+students?|yale\s+college\s+students?)\b/i.test(
       quote,

@@ -20,6 +20,12 @@ import {
   validateAccessArtifactBundle,
   type AccessArtifactCandidate,
 } from '../services/claimValidation/accessClaims';
+import {
+  isExplicitUndergradUnavailabilityPhrase,
+  isPlausibleUndergradEvidenceQuote,
+} from './undergradEvidenceQuoteValidation';
+
+export { isExplicitUndergradUnavailabilityPhrase };
 
 /**
  * Every access-signal type the materializer has a live emission path for. This
@@ -144,21 +150,6 @@ function undergradAccessVerdict(value: unknown): 'yes' | 'no' | 'unclear' {
 function undergradAccessEvidenceQuote(value: unknown): string {
   if (!value || typeof value !== 'object') return '';
   return firstString((value as { evidenceQuote?: unknown }).evidenceQuote);
-}
-
-const EXPLICIT_UNDERGRAD_UNAVAILABILITY_PATTERNS: RegExp[] = [
-  /\bnot\s+(?!only\b|just\b|merely\b|simply\b)(?:currently\s+|presently\s+|at\s+(?:this|the\s+present)\s+time\s+|actively\s+)?(?:accepting|taking(?:\s+on)?|admitting|recruiting|considering|seeking|looking\s+for|able\s+to\s+(?:take|accept|host|supervise|mentor|advise))\b[\s\S]{0,48}?(?:undergrad|under-grad|\bstudents?\b|\binterns?\b|research\s+assistants?|new\s+(?:lab\s+)?members?|mentees?|trainees?|applicants?)/i,
-  /(?:undergrad(?:uate)?s?|\bstudents?\b|\binterns?\b)[\s\S]{0,48}?\bare\s+not\s+(?:currently\s+|presently\s+)?(?:being\s+)?(?:accepted|admitted|taken(?:\s+on)?|considered|recruited|hosted)\b/i,
-  /\b(?:unable|not\s+able|cannot|can'?t|do(?:es)?\s+not|will\s+not|won'?t)\s+(?:currently\s+)?(?:to\s+)?(?:accept|take(?:\s+on)?|host|supervise|mentor|advise)\b[\s\S]{0,48}?(?:undergrad|\bstudents?\b|\binterns?\b)/i,
-  /\bno\s+(?:undergraduate\s+|student\s+|open\s+|current\s+)?(?:openings|positions|opportunities|vacancies|spots|slots)\b/i,
-  /\b(?:lab|group|position|opening|team|roster)s?\s+(?:is|are)\s+(?:currently\s+|now\s+|presently\s+)?(?:full|closed|at\s+(?:full\s+)?capacity)\b/i,
-  /\bnot\s+(?:currently\s+|presently\s+)?accepting\s+applications\b/i,
-];
-
-export function isExplicitUndergradUnavailabilityPhrase(quote?: string): boolean {
-  const text = (quote || '').trim();
-  if (!text) return false;
-  return EXPLICIT_UNDERGRAD_UNAVAILABILITY_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 function isPositiveBoolean(obs: AccessObservation): boolean {
@@ -363,16 +354,17 @@ export function deriveAccessArtifactsFromObservations(
     ...acceptingObservations.filter(isPositiveBoolean),
     ...positiveAccessEvidence,
   ];
+  const plausibleUndergradEvidenceQuote = (byField.get('undergradEvidenceQuote') || []).filter(
+    (obs) => typeof obs.value !== 'string' || isPlausibleUndergradEvidenceQuote(obs.value),
+  );
   const undergradAccessQuote =
     publicExcerpt(bestObservation(byField.get('undergradRoleEvidenceQuote') || [])?.value) ||
-    publicExcerpt(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value);
+    publicExcerpt(bestObservation(plausibleUndergradEvidenceQuote)?.value);
   const independentPositiveSources = new Set(
     positiveAccepting.map((obs) => obs.sourceName).filter(Boolean),
   );
   const hasCorroboratedUndergradAccess =
-    positiveAccessEvidence.length > 0 ||
-    Boolean(undergradAccessQuote) ||
-    independentPositiveSources.size >= 2;
+    positiveAccessEvidence.length > 0 || independentPositiveSources.size >= 2;
   if (positiveAccepting.length > 0 && hasCorroboratedUndergradAccess) {
     const score = maxConfidence(positiveAccepting);
     accessSignals.push(

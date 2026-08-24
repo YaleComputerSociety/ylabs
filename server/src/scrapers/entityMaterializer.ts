@@ -55,6 +55,7 @@ import {
   materializeUndergraduateLogisticsForResearchEntity,
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
 } from './undergraduateLogisticsMaterializer';
+import { isPlausibleUndergradEvidenceQuote } from './undergradEvidenceQuoteValidation';
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
 import { applyResearchEntityResearchAreaCanonicalization } from './researchAreaCanonicalization';
@@ -305,6 +306,14 @@ export function shouldIgnoreObservationForEntityMaterialization(
     return true;
   }
   if (entityType === 'user' && isOfficialProfileBioChromeObservation(observation)) {
+    return true;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    observation.field === 'undergradEvidenceQuote' &&
+    typeof observation.value === 'string' &&
+    !isPlausibleUndergradEvidenceQuote(observation.value)
+  ) {
     return true;
   }
   return (

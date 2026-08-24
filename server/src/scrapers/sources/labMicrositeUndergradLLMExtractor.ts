@@ -34,6 +34,7 @@ import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { quoteExplicitlyDeclinesUndergraduates } from '../undergraduateLogisticsMaterializer';
+import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
 import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
 import {
@@ -812,7 +813,7 @@ export function extractionToObservations(
   }
 
   const quote = (extraction.evidenceQuote || '').trim();
-  if (quote) {
+  if (quote && isPlausibleUndergradEvidenceQuote(quote)) {
     out.push({
       ...base,
       sourceUrl: quoteSourceUrl,
