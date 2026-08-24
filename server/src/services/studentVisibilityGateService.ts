@@ -60,6 +60,16 @@ export interface StudentVisibilityGateOptions {
   sourceName?: string;
   recordIds?: string[];
   limit?: number;
+  staleVersion?: boolean;
+}
+
+// A stale-version sweep targets records whose stored gate-logic generation no
+// longer matches the current one - including never-gated records (no stored
+// version) - so a gate-logic change (#1405) can be re-applied corpus-wide
+// without a full unconditional rescan. Only honored when no explicit record or
+// source scope is set, which always take precedence.
+export function staleStudentVisibilityVersionClause(): Record<string, any> {
+  return { studentVisibilityVersion: { $ne: STUDENT_VISIBILITY_VERSION } };
 }
 
 export interface StudentVisibilityGatePlan {
@@ -921,10 +931,13 @@ export async function applyStudentVisibilityGatePlans(
 }
 
 async function planResearchEntityGateUpdates(
-  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
+  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit' | 'staleVersion'>,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: { $ne: true } };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
+  if (options.staleVersion && !options.recordIds?.length && !options.sourceName) {
+    Object.assign(match, staleStudentVisibilityVersionClause());
+  }
   if (options.sourceName) {
     const [accessEntityIds, observationEntityIds, observationEntityKeys] = await Promise.all([
       Signal.distinct('researchEntityId', {
@@ -1164,10 +1177,13 @@ async function planResearchEntityGateUpdates(
 }
 
 async function planProgramGateUpdates(
-  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
+  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit' | 'staleVersion'>,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: false };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
+  if (options.staleVersion && !options.recordIds?.length && !options.sourceName) {
+    Object.assign(match, staleStudentVisibilityVersionClause());
+  }
   if (options.sourceName) match.sourceName = options.sourceName;
   const query = Fellowship.find(match).sort({ title: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);

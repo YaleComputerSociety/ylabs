@@ -25,9 +25,14 @@ import {
   researchEntityGateProjection,
   runStudentVisibilityGateForPlans,
   selectExactUrlDuplicateRiskEntityIds,
+  staleStudentVisibilityVersionClause,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
-import { computeResearchEntityStudentVisibility } from '../studentVisibilityTier';
+import {
+  computeResearchEntityStudentVisibility,
+  isStudentVisibilityVersionCurrent,
+  STUDENT_VISIBILITY_VERSION,
+} from '../studentVisibilityTier';
 import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../accessAcceptanceLevel';
 
 const safePlan = (
@@ -819,5 +824,20 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
         entity: officialPageEntity,
       }),
     ).toBe(false);
+  });
+});
+
+describe('stale student-visibility-version sweep selector', () => {
+  it('selects records whose stored gate-logic version differs from the current one', () => {
+    expect(staleStudentVisibilityVersionClause()).toEqual({
+      studentVisibilityVersion: { $ne: STUDENT_VISIBILITY_VERSION },
+    });
+  });
+
+  it('treats the current version as fresh and any other version or a missing one as drifted', () => {
+    expect(isStudentVisibilityVersionCurrent(STUDENT_VISIBILITY_VERSION)).toBe(true);
+    expect(isStudentVisibilityVersionCurrent('student-visibility-v1')).toBe(false);
+    expect(isStudentVisibilityVersionCurrent(undefined)).toBe(false);
+    expect(isStudentVisibilityVersionCurrent(null)).toBe(false);
   });
 });

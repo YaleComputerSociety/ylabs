@@ -24,6 +24,7 @@ export interface StudentVisibilityGateCliOptions {
   recordIds?: string[];
   limit?: number;
   maxApply?: number;
+  staleVersion?: boolean;
   output?: string;
 }
 
@@ -62,6 +63,8 @@ export function parseStudentVisibilityGateArgs(argv: string[]): StudentVisibilit
       options.collection = 'programs';
     } else if (arg === '--collection=all') {
       options.collection = 'all';
+    } else if (arg === '--stale-version') {
+      options.staleVersion = true;
     } else if (arg.startsWith('--source=')) {
       options.sourceName = arg.slice('--source='.length).trim();
     } else if (arg.startsWith('--record-id=')) {
