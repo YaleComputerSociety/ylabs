@@ -27,6 +27,7 @@ import {
   directoryListingCardExtractor,
   nodePersonCardExtractor,
   fieldCollectionPersonExtractor,
+  facultyThumbnailExtractor,
   profileGridItemExtractor,
   nodeTeaserFacultyExtractor,
   jacksonProfileComponentExtractor,
@@ -900,6 +901,37 @@ describe('fieldCollectionPersonExtractor', () => {
       {
         name: 'Casey Fixture',
         title: 'Lecturer',
+      },
+    ]);
+  });
+});
+
+describe('facultyThumbnailExtractor', () => {
+  it('emits a slug placeholder name plus profile URL for headshot-only cards', () => {
+    const html = `
+      <div class="faculty-member-thumbnail">
+        <a class="blank-link" href="/faculty/1001-robin-fixture">
+          <div class="faculty-member-thumbnail__image"><img src="/img/robin.jpg"></div>
+        </a>
+      </div>
+      <div class="faculty-member-thumbnail">
+        <a class="blank-link" href="/faculty/1002-quinn-example-fixture"><img src="/img/quinn.jpg"></a>
+      </div>
+      <div class="faculty-member-thumbnail">
+        <a class="blank-link" href="/about/leadership">Not a faculty link</a>
+      </div>`;
+    expect(facultyThumbnailExtractor(html, { pageUrl: 'https://www.architecture.yale.edu/faculty' })).toEqual([
+      {
+        name: 'Robin Fixture',
+        namePlaceholder: true,
+        profileUrl: 'https://www.architecture.yale.edu/faculty/1001-robin-fixture',
+        imageUrl: 'https://www.architecture.yale.edu/img/robin.jpg',
+      },
+      {
+        name: 'Quinn Example Fixture',
+        namePlaceholder: true,
+        profileUrl: 'https://www.architecture.yale.edu/faculty/1002-quinn-example-fixture',
+        imageUrl: 'https://www.architecture.yale.edu/img/quinn.jpg',
       },
     ]);
   });
