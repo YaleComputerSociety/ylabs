@@ -3,6 +3,7 @@
  */
 import { lazy, Suspense } from 'react';
 import PrivateRoute from './components/PrivateRoute';
+import PublicRoute from './components/PublicRoute';
 import UnprivateRoute from './components/UnprivateRoute';
 import AdminRoute from './components/AdminRoute';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
@@ -56,7 +57,7 @@ const App = () => {
                   <Routes>
                     <Route
                       path="/"
-                      element={<PrivateRoute Component={RootRedirect} unknownBlocked={true} />}
+                      element={<PublicRoute Component={RootRedirect} unknownBlocked={true} />}
                     />
                     <Route
                       path="/listings"
@@ -79,11 +80,11 @@ const App = () => {
                     />
                     <Route
                       path="/research"
-                      element={<PrivateRoute Component={Research} unknownBlocked={true} />}
+                      element={<PublicRoute Component={Research} unknownBlocked={true} />}
                     />
                     <Route
                       path="/research/person/:publicKey"
-                      element={<PrivateRoute Component={ResearchPerson} unknownBlocked={true} />}
+                      element={<PublicRoute Component={ResearchPerson} unknownBlocked={true} />}
                     />
                     <Route
                       path="/research/department/:slug"
@@ -93,11 +94,11 @@ const App = () => {
                     />
                     <Route
                       path="/research/:slug"
-                      element={<PrivateRoute Component={ResearchDetail} unknownBlocked={true} />}
+                      element={<PublicRoute Component={ResearchDetail} unknownBlocked={true} />}
                     />
                     <Route
                       path="/about"
-                      element={<PrivateRoute Component={About} unknownBlocked={true} />}
+                      element={<PublicRoute Component={About} unknownBlocked={true} />}
                     />
                     <Route
                       path="/account"

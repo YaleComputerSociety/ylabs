@@ -1,10 +1,15 @@
 /**
- * Authenticated routes for browsing ResearchGroups (labs, centers, individual prof pages).
+ * Routes for browsing ResearchGroups (labs, centers, individual prof pages).
  *
  * - POST /search → Meilisearch-backed hybrid search with filter strings.
  * - GET  /:slug  → Full lab detail payload (group + members + papers + listings).
  *
- * Every endpoint requires a Yale CAS session; there is no anonymous browsing.
+ * The read paths (search, related-programs, detail, and researcher profile) are
+ * public: a logged-out visitor can browse and open any research home, and the
+ * controllers only ever serve the public student-visibility tiers because no
+ * authenticated principal means no operator authority and no personalization.
+ * Write and account paths (outreach, correction reports) stay behind
+ * `isAuthenticated` so nothing state-changing is reachable anonymously.
  */
 import { Router } from 'express';
 import * as researchGroupController from '../controllers/researchGroupController';
@@ -14,13 +19,9 @@ import { writeLimit } from '../middleware/rateLimiters';
 
 const router = Router();
 
-router.post('/search', isAuthenticated, asyncHandler(researchGroupController.searchResearchGroups));
+router.post('/search', asyncHandler(researchGroupController.searchResearchGroups));
 
-router.post(
-  '/related-programs',
-  isAuthenticated,
-  asyncHandler(researchGroupController.searchRelatedPrograms),
-);
+router.post('/related-programs', asyncHandler(researchGroupController.searchRelatedPrograms));
 
 router.post(
   '/:slug/outreach',
@@ -42,11 +43,7 @@ router.get(
   entityCorrectionReportController.listMyEntityCorrectionReports,
 );
 
-router.get(
-  '/person/:publicKey',
-  isAuthenticated,
-  asyncHandler(researchGroupController.getResearcherProfile),
-);
+router.get('/person/:publicKey', asyncHandler(researchGroupController.getResearcherProfile));
 
 router.get(
   '/department/:slug',
@@ -54,10 +51,6 @@ router.get(
   asyncHandler(researchGroupController.getResearchDepartmentPage),
 );
 
-router.get(
-  '/:slug',
-  isAuthenticated,
-  asyncHandler(researchGroupController.getResearchGroupBySlug),
-);
+router.get('/:slug', asyncHandler(researchGroupController.getResearchGroupBySlug));
 
 export default router;

@@ -47,6 +47,28 @@ const renderNavbar = (user: any = { userType: 'student' }) => {
   );
 };
 
+const renderGuestNavbar = (initialPath = '/research') =>
+  render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <UserContext.Provider
+        value={{
+          isLoading: false,
+          isAuthenticated: false,
+          user: undefined,
+          checkContext: vi.fn(),
+        }}
+      >
+        <ConfigContext.Provider value={defaultConfigContext}>
+          <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+            <UIContext.Provider value={defaultUIContext}>
+              <Navbar />
+            </UIContext.Provider>
+          </FellowshipSearchContext.Provider>
+        </ConfigContext.Provider>
+      </UserContext.Provider>
+    </MemoryRouter>,
+  );
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -112,6 +134,21 @@ describe('Navbar', () => {
     expect(screen.getByRole('menuitem', { name: 'Public Profile' }).getAttribute('href')).toBe(
       '/profile/prof1',
     );
+  });
+
+  it('gives logged-out visitors public research/about nav and a sign-in link', () => {
+    renderGuestNavbar();
+
+    const primaryNav = screen.getByRole('navigation', { name: 'Primary navigation' });
+    expect(within(primaryNav).getByRole('link', { name: 'Yale Research' }).getAttribute('href')).toBe(
+      '/research',
+    );
+    expect(within(primaryNav).getByRole('link', { name: 'About' }).getAttribute('href')).toBe(
+      '/about',
+    );
+    expect(within(primaryNav).queryByRole('link', { name: 'Programs & Fellowships' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Sign in' }).getAttribute('href')).toBe('/login');
+    expect(screen.queryByRole('button', { name: 'Open user menu' })).toBeNull();
   });
 
   it('keeps a named close-menu control inside the mobile drawer', () => {

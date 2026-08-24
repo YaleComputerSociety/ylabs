@@ -140,6 +140,21 @@ describe('LabDetail page', () => {
     expect(profileOpenEvents).toHaveLength(1);
   });
 
+  it('shows a Yale CAS login CTA instead of the save button for logged-out visitors', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    renderLabDetail(basePayload, { isAuthenticated: false });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const loginCta = await screen.findByRole('link', { name: /log in with yale to save/i });
+    expect(loginCta.getAttribute('href')).toBe('/login');
+    expect(screen.queryByRole('button', { name: /save research plan/i })).toBeNull();
+    expect(mockedAxios.get).not.toHaveBeenCalledWith(
+      '/users/savedResearchEntityIds',
+      expect.anything(),
+    );
+  });
+
   it('redirects an archived slug to the canonical entity slug', async () => {
     const OLD_SLUG = 'nsf-pi-archived-shell';
     const CANONICAL_SLUG = 'named-canonical-lab';
@@ -836,11 +851,11 @@ describe('LabDetail page', () => {
     });
   });
 
-  it('sends signed-out visitors to Yale sign in before saving a research plan', async () => {
+  it('sends signed-out visitors to Yale sign in from the save CTA before saving a research plan', async () => {
     renderLabDetail(basePayload, { isAuthenticated: false });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
-    fireEvent.click(screen.getByRole('button', { name: 'Save research plan' }));
+    fireEvent.click(screen.getByRole('link', { name: /log in with yale to save/i }));
 
     expect(await screen.findByText('Yale sign in')).toBeTruthy();
     expect(mockedAxios.put).not.toHaveBeenCalled();

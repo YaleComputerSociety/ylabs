@@ -265,6 +265,45 @@ describe('researchGroupController', () => {
     );
   });
 
+  it('serves an unauthenticated visitor only public tiers with no personalization', async () => {
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    const req = {
+      body: {
+        q: '',
+        studentVisibilityTier: ['operator_review'],
+        includeSuppressed: true,
+        browseQuality: 'low-first',
+        qualityFilters: ['missing-lead'],
+      },
+    } as any;
+    const res = {
+      json: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+    } as any;
+
+    await searchResearchGroups(req, res);
+
+    expect(mocks.hasAdminAuthorityForUser).toHaveBeenCalledWith(undefined);
+    expect(mocks.getStudentResearchInterests).not.toHaveBeenCalled();
+    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
+      '',
+      { studentVisibilityTier: ['student_ready'] },
+      1,
+      24,
+      {},
+      {
+        includeNonPublic: false,
+        lowQualityFirst: false,
+        qualityFilters: [],
+      },
+    );
+  });
+
   it('allows active admin authority to request nonpublic research review filters', async () => {
     mocks.hasAdminAuthorityForUser.mockResolvedValue(true);
     mocks.searchResearchGroupsViaMeili.mockResolvedValue({

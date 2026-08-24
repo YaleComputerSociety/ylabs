@@ -19,7 +19,7 @@ const Login = () => {
     if (returnPath.startsWith('/research') || returnPath.startsWith('/listings')) {
       return {
         heading: 'Continue to Yale Research',
-        description: 'Use your Yale account to browse research homes, evidence, and source-backed profiles.',
+        description: 'Use your Yale account to save research homes, keep private notes, and reach out.',
       };
     }
     if (returnPath.startsWith('/programs') || returnPath.startsWith('/fellowships')) {

@@ -59,7 +59,7 @@ describe('Login', () => {
 
     expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
     expect(
-      screen.getByText(/browse research homes, evidence, and source-backed profiles/i),
+      screen.getByText(/save research homes, keep private notes, and reach out/i),
     ).toBeTruthy();
   });
 

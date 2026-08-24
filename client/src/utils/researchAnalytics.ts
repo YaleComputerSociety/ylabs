@@ -88,6 +88,16 @@ interface TrackResearchEventParams {
 
 const sentOnceKeys = new Set<string>();
 let fallbackInteractionSequence = 0;
+let analyticsEnabled = true;
+
+/**
+ * The research journey analytics endpoints require an authenticated session, and
+ * personalization/analytics stay off for logged-out visitors. Callers set this
+ * from auth state so guest browsing never emits an event.
+ */
+export const setResearchAnalyticsEnabled = (enabled: boolean): void => {
+  analyticsEnabled = enabled;
+};
 
 export const createResearchAnalyticsInteractionId = (prefix = 'journey'): string => {
   const randomId = globalThis.crypto?.randomUUID?.().replace(/-/g, '');
@@ -213,6 +223,7 @@ const scheduleResearchAnalyticsFlush = (): void => {
  * promise always resolves so a blocked tracker can never affect interaction.
  */
 export const trackResearchEvent = async (params: TrackResearchEventParams): Promise<void> => {
+  if (!analyticsEnabled) return;
   bindUnloadFlush();
   eventBuffer.push(buildOutgoingEvent(params));
   if (eventBuffer.length >= RESEARCH_EVENT_MAX_BATCH) {
@@ -226,6 +237,7 @@ export const trackResearchEventOnce = (
   onceKey: string,
   event: TrackResearchEventParams,
 ): Promise<void> => {
+  if (!analyticsEnabled) return Promise.resolve();
   if (sentOnceKeys.has(onceKey)) return Promise.resolve();
   sentOnceKeys.add(onceKey);
   return trackResearchEvent({ ...event, dedupeKey: event.dedupeKey || onceKey });
@@ -234,6 +246,7 @@ export const trackResearchEventOnce = (
 export const resetResearchAnalyticsDedupeForTests = (): void => {
   sentOnceKeys.clear();
   fallbackInteractionSequence = 0;
+  analyticsEnabled = true;
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;

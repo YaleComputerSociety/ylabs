@@ -7,6 +7,7 @@ import {
   researchPositionBucket,
   researchResultCountBucket,
   resetResearchAnalyticsDedupeForTests,
+  setResearchAnalyticsEnabled,
   trackResearchEvent,
   trackResearchEventOnce,
 } from '../researchAnalytics';
@@ -25,6 +26,31 @@ afterEach(() => {
 });
 
 describe('research journey analytics client', () => {
+  it('emits nothing while analytics is disabled for logged-out visitors', async () => {
+    post.mockResolvedValue({ status: 202 });
+    setResearchAnalyticsEnabled(false);
+
+    await trackResearchEvent({
+      eventType: 'research_search',
+      payload: {
+        outcome: 'results',
+        resultCountBucket: '1-5',
+        searchKind: 'query',
+        filterCountBucket: '0',
+      },
+      dedupeKey: 'search:guest',
+    });
+    await trackResearchEventOnce('guest:once', {
+      eventType: 'research_profile_open',
+      entityType: 'research_entity',
+      entityId: 'entity-guest',
+      payload: { source: 'direct' },
+    });
+    await flushResearchAnalytics();
+
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('sends the canonical search contract without raw query text', async () => {
     post.mockResolvedValue({ status: 202 });
 
