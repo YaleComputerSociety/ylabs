@@ -309,6 +309,20 @@ export const sourceCoverageRegistry = {
     notes:
       'Yale Peabody Museum Collections & Research divisions catalog; pilot producer for the ARCHIVE_OR_MUSEUM_PROJECT museum/collections research home. Each individual division page is the cited source; the divisions index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity, an official-page description, and the single named Curator-in-charge as an inferred-director lead (resolved to a Yale User before promotion). Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
   },
+  'library-collections-as-data': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'ENTITY_MEMBERSHIP',
+      'OFFICIAL_PROFILE',
+      'LAB_WEBSITE',
+    ],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale University Library online exhibitions catalog (onlineexhibits.library.yale.edu); pilot producer for the COLLECTIONS_INITIATIVE collections-as-data / digital-scholarship research home. The Omeka sites API is a crawl seed only and is never recorded as a source; each individual exhibition page is the cited source. Discovery-only: emits identity, the official-page summary description, and, where an exhibition publishes a "curated by" credit, the named curator as an inferred-director lead (resolved to a Yale User before promotion, fails closed otherwise). Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
+  },
   'undergrad-fellowships-recipients': {
     priority: 4,
     tier: 'DERIVED_OFFICIAL',

@@ -161,9 +161,21 @@ It fails closed on contact data and never emits contact routes, undergraduate-ac
 A division with a resolved curatorial lead plus its official page lands on the `IDENTIFIED_LEAD_WAYS_IN` path in the access materializer with no new derivation.
 
 Sibling museum/collections acquisition gaps remain open follow-ups once this pilot proves the path, each its own issue:
-Beinecke Rare Book & Manuscript Library, Yale University Art Gallery, Yale Center for British Art, and Yale Library collections-as-data initiatives.
-The natural next entity-type sibling is `COLLECTIONS_INITIATIVE`, which is reserved and consumed downstream but still has no producer.
+Beinecke Rare Book & Manuscript Library, Yale University Art Gallery, and Yale Center for British Art.
+The reserved `COLLECTIONS_INITIATIVE` sibling now has a producer via the `library-collections-as-data` source below (#1360).
 This note sits alongside the digital-humanities `DIGITAL_HUMANITIES_PROJECT` pilot follow-up tracked in issue #1345.
+
+### Collections-as-data research homes
+
+The `library-collections-as-data` source is the pilot producer for the collections-as-data / digital-scholarship research-home type `COLLECTIONS_INITIATIVE` (issue #1360).
+It enumerates Yale University Library online exhibitions through the Omeka sites API (`onlineexhibits.library.yale.edu/api/sites`) only to discover exhibitions, then cites each individual exhibition page (for example `https://onlineexhibits.library.yale.edu/s/prospectsofempire`), never the sites index or the browse landing site, per the self-referential and index-page source guards (#516/#549).
+It is discovery-only: it emits exhibition identity, the official-page summary as a description, and, where an exhibition publishes a "curated by" credit, the named curator as an entity-level `inferredDirector*` observation, reusing the existing `materializeInferredDirectorMembership` path so the curator is resolved to a unique Yale User before any lead is written and no new access logic is introduced.
+It fails closed on contact data and never emits contact routes, undergraduate-access claims, or posted openings; an exhibition with no unambiguous curator credit yields no lead rather than a fabricated one.
+A faculty-curated exhibition whose lead resolves lands on the identified-faculty-lead ways-in; a librarian- or externally-curated exhibition whose lead does not resolve still earns an organizational ways-in from its official page, because `COLLECTIONS_INITIATIVE` is an organizational research home (`ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES`).
+
+Sibling collections/archive acquisition gaps remain open follow-ups once this pilot proves the path, each its own issue:
+Beinecke Rare Book & Manuscript Library, Yale University Art Gallery, and Yale Center for British Art collections.
+This note sits alongside the DHLab `DIGITAL_HUMANITIES_PROJECT` pilot (#1345) and the Peabody `ARCHIVE_OR_MUSEUM_PROJECT` pilot (#1349).
 
 ## Canonical Collections
 
