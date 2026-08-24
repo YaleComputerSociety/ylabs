@@ -21,8 +21,6 @@ export const PROGRAM_CARD_WRONG_SENTENCE_TARGET_IDS: Record<string, string> = {
   '6a8bc39a3bf820baddf79c55': 'Clinical research projects will not be considered for funding.',
   '6a8bc3483bf820baddf793cd':
     'Fellowship applications will be reviewed and recipients selected by the Council on Southeast Asia Studies at the MacMillan Center.',
-  '6a6470b3b65d4cb51393aa4a':
-    'The research team is located at the Yale University campus as well as at the West Haven Veterans Administration.',
 };
 
 export interface ProgramCardWrongSentenceRepairEntityFacts {
@@ -60,7 +58,7 @@ export function planProgramCardWrongSentenceRepairRow(
   }
 
   const after = deriveProgramCardShortDescription(facts.fullDescription);
-  if (after === before) {
+  if (!after || after === before) {
     return { ...base, after: before, changed: false, skipReason: 'no-op' };
   }
   return { ...base, after, changed: true };
