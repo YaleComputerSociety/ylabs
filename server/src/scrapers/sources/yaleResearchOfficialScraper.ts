@@ -118,6 +118,29 @@ export function classifyResearchYaleEntity(
   return inferResearchYaleKind(name);
 }
 
+/**
+ * research.yale.edu tags each directory record with its own topic-specific
+ * `.item__type` chips, but also reuses the page's top-level facet buckets
+ * (its own domain-filter categories) as one of those chips. A bucket this
+ * broad describes every entity in the domain, not this one, so it is dropped
+ * rather than served as a researchArea chip (#1580 delta 1 / #1584).
+ */
+export const GENERIC_TAXONOMY_BUCKET_LABEL_LIST = [
+  'Sciences & engineering',
+  'Medical & health sciences',
+  'Arts, humanities, & social sciences',
+  'Research administration & collaboration',
+  'Faculty resources',
+];
+
+const GENERIC_TAXONOMY_BUCKET_LABELS = new Set(
+  GENERIC_TAXONOMY_BUCKET_LABEL_LIST.map((label) => label.toLowerCase()),
+);
+
+export function isGenericTaxonomyBucketLabel(value: string): boolean {
+  return GENERIC_TAXONOMY_BUCKET_LABELS.has(value.trim().toLowerCase());
+}
+
 function entityFromRecord(
   $: cheerio.CheerioAPI,
   record: cheerio.Cheerio<any>,
@@ -136,7 +159,7 @@ function entityFromRecord(
       .find('.item__types .item__type, .item__type')
       .map((_i, el) => cleanText($(el).text()))
       .get(),
-  );
+  ).filter((area) => !isGenericTaxonomyBucketLabel(area));
 
   return {
     name,

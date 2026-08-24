@@ -8,10 +8,16 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { isListingOrIndexUrl } from '../utils/researchHomeWebsiteUrl';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  GENERIC_TAXONOMY_BUCKET_LABEL_LIST,
+  isGenericTaxonomyBucketLabel,
+} from '../scrapers/sources/yaleResearchOfficialScraper';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   isResearchAreaFacetGraftObservation,
+  planGenericTaxonomyBucketStrip,
   planUnbackedResearchAreaClear,
+  type GenericTaxonomyBucketStripResult,
   type UnbackedResearchAreaClearResult,
 } from './fix1580CenterResearchAreaFacetGraftCore';
 
@@ -27,7 +33,11 @@ const ROLLBACK_REASON =
 // written before the observation pipeline existed for this record, which a
 // stranded-field sweep can never reach because it has no observation history
 // to key off of.
-const UNBACKED_EXTRA_SLUGS = ['leaderer-lab-bpl2'];
+// - leaderer-lab-bpl2 (CPPEE): unrelated Lymphoma/Noise chips, #1580's own example.
+// - faculty-research-area-godfrey-pearlson (Olin Research Center): a single PI's
+//   grant-derived "Mental Health" chip standing in for the center's actual
+//   multi-PI neuropsychiatry scope (#1584 delta 1).
+const UNBACKED_EXTRA_SLUGS = ['leaderer-lab-bpl2', 'faculty-research-area-godfrey-pearlson'];
 
 export interface Fix1580Args {
   apply: boolean;
@@ -173,6 +183,36 @@ async function applyStrandedClears(plans: UnbackedResearchAreaClearResult[]): Pr
   return cleared;
 }
 
+export async function loadGenericTaxonomyBucketStripPlans(): Promise<GenericTaxonomyBucketStripResult[]> {
+  const entities = await ResearchEntity.find({
+    archived: { $ne: true },
+    researchAreas: { $in: GENERIC_TAXONOMY_BUCKET_LABEL_LIST },
+  })
+    .select('slug researchAreas')
+    .lean();
+  return (entities as any[]).map((entity) =>
+    planGenericTaxonomyBucketStrip(
+      { slug: entity.slug, currentResearchAreas: entity.researchAreas },
+      isGenericTaxonomyBucketLabel,
+    ),
+  );
+}
+
+async function applyGenericTaxonomyBucketStrips(
+  plans: GenericTaxonomyBucketStripResult[],
+): Promise<number> {
+  let updated = 0;
+  for (const plan of plans) {
+    if (!plan.changed) continue;
+    const result = await ResearchEntity.updateOne(
+      { slug: plan.slug },
+      { $set: { researchAreas: plan.cleaned } },
+    );
+    updated += result.modifiedCount || 0;
+  }
+  return updated;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
@@ -184,8 +224,10 @@ async function main() {
 
   const graftedObservations = await loadGraftedObservations();
   const strandedClearPlans = await loadStrandedResearchAreaClearPlans();
+  const bucketStripPlans = await loadGenericTaxonomyBucketStripPlans();
   const plannedClears = strandedClearPlans.filter((plan) => plan.shouldClear).length;
-  const plannedTotal = graftedObservations.length + plannedClears;
+  const plannedBucketStrips = bucketStripPlans.filter((plan) => plan.changed).length;
+  const plannedTotal = graftedObservations.length + plannedClears + plannedBucketStrips;
 
   if (args.apply) {
     if (!args.confirm) {
@@ -198,6 +240,9 @@ async function main() {
 
   const supersededObservations = args.apply ? await applyGraftRollback(graftedObservations) : 0;
   const clearedEntities = args.apply ? await applyStrandedClears(strandedClearPlans) : 0;
+  const bucketStrippedEntities = args.apply
+    ? await applyGenericTaxonomyBucketStrips(bucketStripPlans)
+    : 0;
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -208,8 +253,11 @@ async function main() {
     supersededObservations,
     plannedUnbackedClears: plannedClears,
     clearedEntities,
+    plannedBucketStrips,
+    bucketStrippedEntities,
     graftedObservations,
     strandedClearPlans,
+    bucketStripPlans,
   };
 
   if (args.output) {

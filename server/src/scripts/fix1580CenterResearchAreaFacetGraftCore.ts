@@ -74,3 +74,36 @@ export function planUnbackedResearchAreaClear(
   }
   return { slug: input.slug, shouldClear: true, reason: 'unbacked value with no active observation' };
 }
+
+export interface GenericTaxonomyBucketStripInput {
+  slug: string;
+  currentResearchAreas: unknown;
+}
+
+export interface GenericTaxonomyBucketStripResult {
+  slug: string;
+  cleaned: string[];
+  removed: string[];
+  changed: boolean;
+}
+
+/**
+ * research.yale.edu's own top-level domain-filter buckets ("Sciences &
+ * engineering", "Medical & health sciences", ...) sometimes ride along in the
+ * same `.item__type` chip list as an entity's real, specific research areas.
+ * A bucket this broad describes every entity in the domain, not this one, so
+ * it is dropped rather than served as a chip (#1580 delta 1 / #1584) - unlike
+ * the graft rollback above, the surviving specific areas on the same entity
+ * are kept as-is.
+ */
+export function planGenericTaxonomyBucketStrip(
+  input: GenericTaxonomyBucketStripInput,
+  isGenericLabel: (value: string) => boolean,
+): GenericTaxonomyBucketStripResult {
+  const current = Array.isArray(input.currentResearchAreas)
+    ? input.currentResearchAreas.filter((value): value is string => typeof value === 'string')
+    : [];
+  const removed = current.filter((value) => isGenericLabel(value));
+  const cleaned = current.filter((value) => !isGenericLabel(value));
+  return { slug: input.slug, cleaned, removed, changed: removed.length > 0 };
+}

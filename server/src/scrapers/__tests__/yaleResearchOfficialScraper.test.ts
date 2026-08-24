@@ -6,6 +6,7 @@ import {
   classifyResearchYaleEntity,
   entityToObservations,
   inferResearchYaleKind,
+  isGenericTaxonomyBucketLabel,
   isMintableResearchYaleEntity,
   parseResearchYaleCenters,
   parseResearchYaleCoreFacilities,
@@ -38,6 +39,7 @@ const CENTERS_HTML = `
       </h3>
       <ul class="item__types">
         <li class="item__type">Arts, humanities, &amp; social sciences</li>
+        <li class="item__type">Geospatial Analysis</li>
         <li class="item__type">Sciences &amp; engineering</li>
       </ul>
       <p>The center focuses on geospatial science, data, and analysis.</p>
@@ -113,7 +115,6 @@ describe('yaleResearchOfficialScraper', () => {
         entityType: 'INSTITUTE',
         description:
           'The institute integrates faculty from across campus to help scholars apply new methods of data science.',
-        researchAreas: ['Sciences & engineering'],
         sourceCategory: 'centers-institutes',
       },
       {
@@ -123,10 +124,19 @@ describe('yaleResearchOfficialScraper', () => {
         kind: 'center',
         entityType: 'CENTER',
         description: 'The center focuses on geospatial science, data, and analysis.',
-        researchAreas: ['Arts, humanities, & social sciences', 'Sciences & engineering'],
+        researchAreas: ['Geospatial Analysis'],
         sourceCategory: 'centers-institutes',
       },
     ]);
+  });
+
+  it('drops top-level taxonomy-bucket chips instead of serving them as a research area (#1580 delta 1 / #1584)', () => {
+    expect(isGenericTaxonomyBucketLabel('Sciences & engineering')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Medical & health sciences')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Arts, humanities, & social sciences')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Research administration & collaboration')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Faculty resources')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Genomics')).toBe(false);
   });
 
   it('parses only core/facility rows from the filtered cores directory', () => {

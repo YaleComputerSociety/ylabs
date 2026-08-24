@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   isResearchAreaFacetGraftObservation,
+  planGenericTaxonomyBucketStrip,
   planUnbackedResearchAreaClear,
 } from '../fix1580CenterResearchAreaFacetGraftCore';
 
 const isListingUrl = (value: unknown) =>
   typeof value === 'string' && /^https:\/\/research\.yale\.edu\/(cores|centers-institutes)(\?.*)?$/i.test(value);
+
+const GENERIC_LABELS = new Set(['sciences & engineering', 'medical & health sciences']);
+const isGenericLabel = (value: string) => GENERIC_LABELS.has(value.trim().toLowerCase());
 
 describe('isResearchAreaFacetGraftObservation', () => {
   it('flags an active research-area-source-extractor observation sourced from a listing page', () => {
@@ -115,5 +119,50 @@ describe('planUnbackedResearchAreaClear', () => {
       activeResearchAreaObservationCount: 0,
     });
     expect(result.shouldClear).toBe(false);
+  });
+});
+
+describe('planGenericTaxonomyBucketStrip', () => {
+  it('drops a generic bucket while keeping the entity\'s specific areas', () => {
+    expect(
+      planGenericTaxonomyBucketStrip(
+        {
+          slug: 'center-wu-tsai',
+          currentResearchAreas: ['Neuroimaging', 'Medical & health sciences', 'Sciences & engineering'],
+        },
+        isGenericLabel,
+      ),
+    ).toEqual({
+      slug: 'center-wu-tsai',
+      cleaned: ['Neuroimaging'],
+      removed: ['Medical & health sciences', 'Sciences & engineering'],
+      changed: true,
+    });
+  });
+
+  it('leaves an entity with no generic bucket untouched', () => {
+    const result = planGenericTaxonomyBucketStrip(
+      { slug: 'center-ycga', currentResearchAreas: ['Genomics', 'Proteomics'] },
+      isGenericLabel,
+    );
+    expect(result.changed).toBe(false);
+    expect(result.cleaned).toEqual(['Genomics', 'Proteomics']);
+  });
+
+  it('empties out a value that is entirely generic buckets', () => {
+    const result = planGenericTaxonomyBucketStrip(
+      { slug: 'yale-research-center-nanobiology-institute', currentResearchAreas: ['Sciences & engineering'] },
+      isGenericLabel,
+    );
+    expect(result.cleaned).toEqual([]);
+    expect(result.changed).toBe(true);
+  });
+
+  it('treats a non-array value as empty', () => {
+    const result = planGenericTaxonomyBucketStrip(
+      { slug: 'some-center', currentResearchAreas: undefined },
+      isGenericLabel,
+    );
+    expect(result).toEqual({ slug: 'some-center', cleaned: [], removed: [], changed: false });
   });
 });
