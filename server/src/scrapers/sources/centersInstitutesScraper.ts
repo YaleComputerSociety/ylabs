@@ -722,6 +722,166 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     extractor: nodeTeaserPersonExtractor,
   },
   {
+    centerKey: 'macmillan-middle-east',
+    centerName: 'Council on Middle East Studies',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://macmillan.yale.edu/middleeast/people',
+    homeUrl: 'https://macmillan.yale.edu/middleeast',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-east-asian',
+    centerName: 'Council on East Asian Studies',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://macmillan.yale.edu/eastasia/people',
+    homeUrl: 'https://macmillan.yale.edu/eastasia',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-latin-american',
+    centerName: 'Council on Latin American & Iberian Studies',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://macmillan.yale.edu/latam/people',
+    homeUrl: 'https://macmillan.yale.edu/latam',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-african',
+    centerName: 'Council on African Studies',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://macmillan.yale.edu/africa/people',
+    homeUrl: 'https://macmillan.yale.edu/africa',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-european',
+    centerName: 'European Studies Council',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://macmillan.yale.edu/europe/people',
+    homeUrl: 'https://macmillan.yale.edu/europe',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-south-asian',
+    centerName: 'South Asian Studies Council',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://macmillan.yale.edu/southasia/people',
+    homeUrl: 'https://macmillan.yale.edu/southasia',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-southeast-asia',
+    centerName: 'Council on Southeast Asia Studies',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://macmillan.yale.edu/southeast-asia/seas-people',
+    homeUrl: 'https://macmillan.yale.edu/southeast-asia',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-reees',
+    centerName: 'Council on Russian, East European, and Eurasian Studies',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://macmillan.yale.edu/reees/people',
+    homeUrl: 'https://macmillan.yale.edu/reees',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-genocide-studies',
+    centerName: 'Genocide Studies Program',
+    schoolName: '',
+    kind: 'program',
+    url: 'https://macmillan.yale.edu/gsp/steering-committee',
+    homeUrl: 'https://macmillan.yale.edu/gsp',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-iranian-studies',
+    centerName: 'Program in Iranian Studies',
+    schoolName: '',
+    kind: 'program',
+    url: 'https://macmillan.yale.edu/iranian-studies/people',
+    homeUrl: 'https://macmillan.yale.edu/iranian-studies',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-hellenic-studies',
+    centerName: 'Hellenic Studies Program',
+    schoolName: '',
+    kind: 'program',
+    url: 'https://macmillan.yale.edu/hellenic/people',
+    homeUrl: 'https://macmillan.yale.edu/hellenic',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-korean-studies',
+    centerName: 'Korean Studies at Yale',
+    schoolName: '',
+    kind: 'program',
+    url: 'https://macmillan.yale.edu/korean-studies/korean-studies-faculty-librarians',
+    homeUrl: 'https://macmillan.yale.edu/korean-studies',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-eu-studies',
+    centerName: 'European Union Studies Program',
+    schoolName: '',
+    kind: 'program',
+    url: 'https://macmillan.yale.edu/eustudies/european-union-studies-people',
+    homeUrl: 'https://macmillan.yale.edu/eustudies',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-baltic-studies',
+    centerName: 'Baltic Studies Program',
+    schoolName: '',
+    kind: 'program',
+    url: 'https://macmillan.yale.edu/baltic/people',
+    homeUrl: 'https://macmillan.yale.edu/baltic',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-canadian-studies',
+    centerName: 'Committee on Canadian Studies',
+    schoolName: '',
+    kind: 'program',
+    url: 'https://macmillan.yale.edu/canada/people',
+    homeUrl: 'https://macmillan.yale.edu/canada',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
+    centerKey: 'macmillan-central-asia',
+    centerName: 'Central Asia Initiative',
+    schoolName: '',
+    kind: 'initiative',
+    url: 'https://macmillan.yale.edu/central-asia/people',
+    homeUrl: 'https://macmillan.yale.edu/central-asia',
+    paginated: true,
+    extractor: nodeTeaserPersonExtractor,
+  },
+  {
     centerKey: 'whitney-humanities',
     centerName: 'Whitney Humanities Center',
     schoolName: 'Yale Faculty of Arts and Sciences',
@@ -1223,13 +1383,14 @@ export class CentersInstitutesScraper implements IScraper {
 
       const allMembers: CenterMember[] = [];
       const allChildCenters: ChildCenter[] = [];
+      const seenPaginationKeys = new Set<string>();
       let firstPageUrl: string | null = null;
       let pagesFetched = 0;
       const maxPages = config.paginated ? MAX_PAGES_PER_CENTER : 1;
-      let lastPageHadEntries = true;
+      let lastPageHadNewEntries = true;
       let fetchFailed = false;
 
-      for (let pageIdx = 0; pageIdx < maxPages && lastPageHadEntries; pageIdx++) {
+      for (let pageIdx = 0; pageIdx < maxPages && lastPageHadNewEntries; pageIdx++) {
         const pageUrl = pageUrlForIndex(config.url, pageIdx);
         if (!firstPageUrl) firstPageUrl = pageUrl;
         let html: string;
@@ -1252,15 +1413,24 @@ export class CentersInstitutesScraper implements IScraper {
           );
           break;
         }
-        if (
-          (!result.members || result.members.length === 0) &&
-          (!result.childCenters || result.childCenters.length === 0)
-        ) {
-          lastPageHadEntries = false;
+        const newMembers = (result.members ?? []).filter((member) => {
+          const key = `member:${slugify(normalizeName(member.name))}`;
+          if (key === 'member:' || seenPaginationKeys.has(key)) return false;
+          seenPaginationKeys.add(key);
+          return true;
+        });
+        const newChildCenters = (result.childCenters ?? []).filter((child) => {
+          const key = `child:${slugify(child.name)}`;
+          if (key === 'child:' || seenPaginationKeys.has(key)) return false;
+          seenPaginationKeys.add(key);
+          return true;
+        });
+        if (newMembers.length === 0 && newChildCenters.length === 0) {
+          lastPageHadNewEntries = false;
           break;
         }
-        if (result.members) allMembers.push(...result.members);
-        if (result.childCenters) allChildCenters.push(...result.childCenters);
+        allMembers.push(...newMembers);
+        allChildCenters.push(...newChildCenters);
         if (!config.paginated) break;
       }
 

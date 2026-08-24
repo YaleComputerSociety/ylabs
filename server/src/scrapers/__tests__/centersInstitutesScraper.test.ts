@@ -393,6 +393,48 @@ describe('childStudyCenterExtractor', () => {
   });
 });
 
+describe('MacMillan constituent councils', () => {
+  const councilKeys = DEFAULT_CENTER_CONFIGS.filter((c) =>
+    c.centerKey.startsWith('macmillan-'),
+  );
+
+  it('wires every council as a distinct entity under its own /{council} home, not folded into macmillan', () => {
+    expect(councilKeys.length).toBeGreaterThanOrEqual(16);
+    for (const council of councilKeys) {
+      expect(council.centerKey).not.toBe('macmillan');
+      expect(council.extractor).toBe(nodeTeaserPersonExtractor);
+      expect(council.paginated).toBe(true);
+      expect(council.url).toMatch(/^https:\/\/macmillan\.yale\.edu\/.+/);
+      expect(council.homeUrl).toMatch(/^https:\/\/macmillan\.yale\.edu\/[^/]+$/);
+      expect(council.url).not.toBe(council.homeUrl);
+      expect(['center', 'program', 'initiative']).toContain(council.kind);
+    }
+  });
+
+  it('emits each council as its own center-<key> entity with the council landing page as the website', () => {
+    const middleEast = DEFAULT_CENTER_CONFIGS.find(
+      (c) => c.centerKey === 'macmillan-middle-east',
+    )!;
+    const { entityKey, observations } = centerToGroupObservations(
+      middleEast,
+      [{ name: 'Jane Doe', role: 'core-faculty' }],
+      middleEast.url,
+    );
+    expect(entityKey).toBe('center-macmillan-middle-east');
+    expect(observations.find((o) => o.field === 'name')!.value).toBe(
+      'Council on Middle East Studies',
+    );
+    expect(observations.find((o) => o.field === 'kind')!.value).toBe('center');
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
+      'https://macmillan.yale.edu/middleeast',
+    );
+    expect(observations.find((o) => o.field === 'sourceUrls')!.value).toEqual([
+      'https://macmillan.yale.edu/middleeast/people',
+      'https://macmillan.yale.edu/middleeast',
+    ]);
+  });
+});
+
 describe('viewsFieldNameExtractor', () => {
   it('pairs name with title from the surrounding row and skips known meta-pages', () => {
     const out = viewsFieldNameExtractor(VIEWS_FIELD_HTML, {
@@ -1360,6 +1402,85 @@ describe('CentersInstitutesScraper.run', () => {
     expect(groupKeys.has('center-jackson-centers')).toBe(true);
     expect(groupKeys.has('center-jackson-centers-schmidt-program')).toBe(true);
     expect(groupKeys.has('center-jackson-centers-blue-center')).toBe(true);
+
+    getSpy.mockRestore();
+  });
+
+  it('stops paginating a repeat-page roster after the first page that adds no new members', async () => {
+    const repeatExt = vi.fn(
+      (): ExtractorResult => ({
+        members: [
+          { name: 'Jane Doe', role: 'core-faculty' },
+          { name: 'Bob Smith', role: 'core-faculty' },
+        ],
+      }),
+    );
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'repeat-council',
+        centerName: 'Repeat Council',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://example.invalid/repeat/people',
+        paginated: true,
+        extractor: repeatExt,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new CentersInstitutesScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    // Page 0 yields the members; page 1 repeats them (no new) and terminates.
+    expect(repeatExt).toHaveBeenCalledTimes(2);
+    const memberKeys = emitted
+      .filter((o) => o.entityType === 'researchGroupMember' && o.field === 'role')
+      .map((o) => o.entityKey);
+    expect(memberKeys.sort()).toEqual([
+      'center-repeat-council:bob-smith',
+      'center-repeat-council:jane-doe',
+    ]);
+
+    getSpy.mockRestore();
+  });
+
+  it('gathers all members across genuinely distinct pages before the empty page', async () => {
+    const pages: ExtractorResult[] = [
+      { members: [{ name: 'Alpha One' }, { name: 'Beta Two' }] },
+      { members: [{ name: 'Gamma Three' }] },
+      { members: [] },
+    ];
+    let call = 0;
+    const pagedExt = vi.fn((): ExtractorResult => pages[Math.min(call++, pages.length - 1)]);
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'paged-council',
+        centerName: 'Paged Council',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://example.invalid/paged/people',
+        paginated: true,
+        extractor: pagedExt,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new CentersInstitutesScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const memberKeys = emitted
+      .filter((o) => o.entityType === 'researchGroupMember' && o.field === 'role')
+      .map((o) => o.entityKey)
+      .sort();
+    expect(memberKeys).toEqual([
+      'center-paged-council:alpha-one',
+      'center-paged-council:beta-two',
+      'center-paged-council:gamma-three',
+    ]);
 
     getSpy.mockRestore();
   });
