@@ -45,6 +45,7 @@ export interface ResearchAreaBackfillCliOptions {
   limit?: number;
   batchSize: number;
   kinds?: string[];
+  recordIds?: string[];
   output?: string;
 }
 
@@ -108,6 +109,8 @@ export function parseResearchAreaBackfillArgs(argv: string[]): ResearchAreaBackf
     } else if (arg === '--kind') {
       options.kinds = parseKinds(argv[i + 1]);
       i += 1;
+    } else if (arg.startsWith('--record-id=')) {
+      options.recordIds = [...(options.recordIds || []), arg.slice('--record-id='.length).trim()];
     } else if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
@@ -116,6 +119,10 @@ export function parseResearchAreaBackfillArgs(argv: string[]): ResearchAreaBackf
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+  if (options.recordIds) {
+    options.recordIds = options.recordIds.filter(Boolean);
+    if (options.recordIds.length === 0) delete options.recordIds;
   }
   return options;
 }
@@ -188,12 +195,16 @@ export async function runResearchAreaBackfill(
     limit?: number;
     batchSize: number;
     kinds?: string[];
+    recordIds?: string[];
   },
   deps: ResearchAreaApplyDeps = createResearchAreaApplyDeps(),
 ): Promise<ResearchAreaBackfillResult> {
   const canonicalizer = await getResearchAreaCanonicalizer();
 
   const filter: Record<string, unknown> = { archived: { $ne: true } };
+  if (options.recordIds && options.recordIds.length > 0) {
+    filter._id = { $in: options.recordIds };
+  }
   if (options.kinds && options.kinds.length > 0) filter.kind = { $in: options.kinds };
   if (options.onlyEmpty) {
     filter.$or = [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }];
@@ -264,6 +275,7 @@ async function main(): Promise<void> {
       limit: options.limit,
       batchSize: options.batchSize,
       kinds: options.kinds,
+      recordIds: options.recordIds,
     });
     const payload = {
       generatedAt: new Date().toISOString(),
@@ -276,6 +288,7 @@ async function main(): Promise<void> {
         limit: options.limit,
         batchSize: options.batchSize,
         kinds: options.kinds,
+        recordIds: options.recordIds,
       },
       result,
     };

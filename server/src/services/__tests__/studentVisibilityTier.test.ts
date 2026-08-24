@@ -1167,6 +1167,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         fullDescription:
           'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
         activeAtYaleCache: true,
+        researchAreas: ['Causal Inference'],
       },
       leadMembers: [
         {
@@ -1202,6 +1203,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         fullDescription:
           'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
         activeAtYaleCache: true,
+        researchAreas: ['Causal Inference'],
       },
       leadMembers: [{ role: 'pi', userId: 'jane-doe', user: { fname: 'Jane', lname: 'Doe' } }],
       accessSignalCount: 1,
@@ -1257,6 +1259,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         fullDescription:
           'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
         activeAtYaleCache: true,
+        researchAreas: ['Causal Inference'],
       },
       leadMembers: [
         {
