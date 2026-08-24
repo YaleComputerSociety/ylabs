@@ -1804,13 +1804,11 @@ describe('repairMissingSpaceAfterSentence block-boundary glue (#1776)', () => {
 
   it('is wired into the served fullDescription and shortDescription sanitizers', () => {
     const raw =
-      'We are interested in how membrane proteins fold.Our most recent work examines transmembrane domains and their signaling role in cells.';
-    expect(sanitizeResearchEntityDescription(raw)).toBe(
-      'We are interested in how membrane proteins fold. Our most recent work examines transmembrane domains and their signaling role in cells.',
-    );
-    expect(sanitizeResearchEntityShortDescription(raw)).toBe(
-      'We are interested in how membrane proteins fold. Our most recent work examines transmembrane domains and their signaling role in cells.',
-    );
+      'The group studies how membrane proteins fold.Their most recent work examines transmembrane domains and their signaling role in cells.';
+    const cleaned =
+      'The group studies how membrane proteins fold. Their most recent work examines transmembrane domains and their signaling role in cells.';
+    expect(sanitizeResearchEntityDescription(raw)).toBe(cleaned);
+    expect(sanitizeResearchEntityShortDescription(raw)).toBe(cleaned);
   });
 });
 
