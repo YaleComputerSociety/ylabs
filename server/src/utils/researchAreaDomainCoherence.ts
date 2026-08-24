@@ -22,6 +22,8 @@ const MIN_CONTEXT_TOKENS = 3;
 const COHERENCE_STOPWORDS: ReadonlySet<string> = new Set([
   'about',
   'across',
+  'active',
+  'actively',
   'address',
   'addresses',
   'addressing',

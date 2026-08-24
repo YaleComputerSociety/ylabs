@@ -88,4 +88,21 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
     ];
     expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, rideshareContext)).toEqual([]);
   });
+
+  it('does not let a genuinely-sourced bio\'s "actively" false-corroborate an unrelated "Activities" chip via the fuzzy prefix (#1730 roberts-cer63)', () => {
+    const historianContext = {
+      name: 'Carolyn Roberts',
+      departments: ['Black Studies'],
+      fullDescription:
+        'Dr. Carolyn Roberts is an historian of science and medicine at Yale University. She holds a joint appointment in the departments of History/History of Science and Medicine, and African American Studies. With scientific rigor and compassion, Dr. Roberts has been actively creating usable history for medical and nursing students.',
+      shortDescription:
+        'She holds a joint appointment in the departments of History/History of Science and Medicine, and African American Studies.',
+    };
+    const areas = [
+      'Crime, Illicit Activities, and Governance',
+      'Gun Ownership and Violence Research',
+      'Substance Abuse Treatment and Outcomes',
+    ];
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, historianContext)).toEqual([]);
+  });
 });
