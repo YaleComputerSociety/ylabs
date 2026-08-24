@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   YsmMeshKeywordScraper,
+  buildYsmMeshCandidateMatch,
   candidateEntityFromDoc,
   facultyNameMatchKey,
   isYsmListingOrFacetUrl,
@@ -329,6 +330,48 @@ describe('candidateEntityFromDoc', () => {
     });
     expect(candidate.profileUrls).toEqual(['https://medicine.yale.edu/profile/marlow-riverstone/']);
     expect(candidate.name).toBe('Riverstone Lab');
+  });
+});
+
+describe('buildYsmMeshCandidateMatch', () => {
+  const clauses = (match: Record<string, unknown>): Record<string, unknown>[] => {
+    const and = (match.$and || []) as Record<string, unknown>[];
+    const ysm = and.find((clause) => Array.isArray((clause as { $or?: unknown[] }).$or)) as {
+      $or: Record<string, unknown>[];
+    };
+    return ysm.$or;
+  };
+
+  it('includes a YSM individual-profile URL clause across profile/source/website fields', () => {
+    const or = clauses(buildYsmMeshCandidateMatch([]));
+    const profileUrlFields = or
+      .filter((clause) => {
+        const value = Object.values(clause)[0] as { $regex?: string } | undefined;
+        return value?.$regex === '^https?://medicine\\.yale\\.edu/profile/';
+      })
+      .map((clause) => Object.keys(clause)[0]);
+    expect(profileUrlFields.sort()).toEqual(['profileUrls', 'sourceUrls', 'website', 'websiteUrl']);
+  });
+
+  it('still matches the school and ysm- slug seeds', () => {
+    const or = clauses(buildYsmMeshCandidateMatch([]));
+    expect(or).toContainEqual({ school: 'Yale School of Medicine' });
+    expect(or.some((clause) => (clause as { slug?: RegExp }).slug instanceof RegExp)).toBe(true);
+  });
+
+  it('drops the empty-areas restriction when explicit only targets are provided', () => {
+    const match = buildYsmMeshCandidateMatch(['ysm-riverstone']);
+    const and = (match.$and || []) as Record<string, unknown>[];
+    const hasEmptyAreasClause = and.some(
+      (clause) => JSON.stringify(clause).includes('researchAreas'),
+    );
+    const hasIdentityClause = and.some((clause) =>
+      ((clause as { $or?: Record<string, unknown>[] }).$or || []).some(
+        (inner) => (inner as { slug?: { $in?: string[] } }).slug?.$in?.includes('ysm-riverstone'),
+      ),
+    );
+    expect(hasEmptyAreasClause).toBe(false);
+    expect(hasIdentityClause).toBe(true);
   });
 });
 
