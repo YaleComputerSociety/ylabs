@@ -2065,6 +2065,53 @@ describe('DepartmentRosterScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('drops a page section heading ("Selected Presentations and Articles for a General Audience") from roster topics instead of treating it as a research area (#1678)', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Avery Faculty',
+        email: 'avery.faculty@yale.edu',
+        labUrl: 'https://hep.yale.edu/people/faculty/avery-faculty/research',
+        topics: [
+          'Particle Physics',
+          'ATLAS',
+          'Selected Presentations and Articles for a General Audience',
+        ],
+        researchInterests: [
+          'Particle Physics',
+          'ATLAS',
+          'Selected Presentations and Articles for a General Audience',
+        ],
+      },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/physics',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'researchAreas')?.value).toEqual([
+      'Particle Physics',
+      'ATLAS',
+    ]);
+    expect(entityObs.find((o) => o.field === 'fullDescription')?.value).toBe(
+      'Studies particle physics, including ATLAS.',
+    );
+
+    getSpy.mockRestore();
+  });
+
   it('rejects a grounded short description that is only an appointment, not research', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
