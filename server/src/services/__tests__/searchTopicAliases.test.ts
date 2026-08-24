@@ -75,8 +75,29 @@ describe('searchTopicAliases source of truth', () => {
     );
   });
 
-  it('enriches an entity that already carries a canonical area with the sibling cluster terms', () => {
-    expect(STUDENT_TOPIC_TEXT_ALIASES.oncology).toEqual(expect.arrayContaining(['cancer']));
-    expect(STUDENT_TOPIC_TEXT_ALIASES.immunology).toEqual(expect.arrayContaining(['immune']));
+  it('restricts free-text enrichment to the curated legacy triggers and never scans generic or new-domain terms', () => {
+    expect(Object.keys(STUDENT_TOPIC_TEXT_ALIASES).sort()).toEqual(
+      [
+        'ai',
+        'artificial intelligence',
+        'computational vision',
+        'computer vision',
+        'cv',
+        'machine learning',
+        'ml',
+        'natural language processing',
+        'neuro',
+        'neuroscience',
+        'nlp',
+        'psych',
+        'psychology',
+      ].sort(),
+    );
+    for (const generic of ['neural', 'brain', 'genetic', 'oncology', 'immunology', 'heart']) {
+      expect(STUDENT_TOPIC_TEXT_ALIASES[generic]).toBeUndefined();
+    }
+    expect(STUDENT_TOPIC_TEXT_ALIASES.neuro).toEqual(
+      expect.arrayContaining(['neuroscience', 'neurology']),
+    );
   });
 });

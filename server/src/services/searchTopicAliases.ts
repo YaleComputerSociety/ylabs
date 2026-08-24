@@ -7,6 +7,7 @@ export interface TopicAliasCluster {
   shortAliases?: string[];
   queryOnly?: boolean;
   freeTextGuarded?: boolean;
+  textTriggers?: string[];
 }
 
 const dedupeInOrder = (values: string[]): string[] => {
@@ -28,12 +29,14 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
     canonical: ['artificial intelligence', 'machine learning', 'deep learning'],
     aliases: ['ai', 'ml'],
     shortAliases: ['ai', 'ml'],
+    textTriggers: ['ai', 'artificial intelligence', 'ml', 'machine learning'],
   },
   {
     kind: 'topical',
     canonical: ['natural language processing', 'computational linguistics'],
     aliases: ['nlp'],
     shortAliases: ['nlp'],
+    textTriggers: ['nlp', 'natural language processing'],
   },
   {
     kind: 'topical',
@@ -47,16 +50,19 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
     aliases: ['cv'],
     shortAliases: ['cv'],
     freeTextGuarded: true,
+    textTriggers: ['cv', 'computer vision', 'computational vision'],
   },
   {
     kind: 'topical',
     canonical: ['neuroscience', 'neurology', 'neural', 'brain'],
     aliases: ['neuro'],
+    textTriggers: ['neuro', 'neuroscience'],
   },
   {
     kind: 'topical',
     canonical: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
     aliases: ['psych'],
+    textTriggers: ['psych', 'psychology'],
   },
   {
     kind: 'topical',
@@ -188,9 +194,9 @@ export const RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS: string[] = dedupeInOrder(
 export const STUDENT_TOPIC_TEXT_ALIASES: Record<string, string[]> = (() => {
   const aliases: Record<string, string[]> = {};
   for (const cluster of topicalClusters) {
-    if (cluster.queryOnly) continue;
+    if (!cluster.textTriggers) continue;
     const family = clusterFamily(cluster);
-    for (const trigger of family) {
+    for (const trigger of cluster.textTriggers) {
       aliases[trigger] = family;
     }
   }
