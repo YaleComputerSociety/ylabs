@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  assessResearchEntityDescriptionQuality,
   deriveProgramCardShortDescription,
   describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
@@ -1557,6 +1558,43 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
       'The analysis in Making Morocco focuses on interactions between state and society during the Protectorate period.';
     const quality = shortDescriptionQuality('Studies Texas from the first.', full);
     expect(quality.flags).not.toContain('ungrounded-topic-short');
+  });
+});
+
+describe('fullDescriptionQuality / shortDescriptionQuality provenance-independent bare-list gate', () => {
+  it('rejects a FACULTY_RESEARCH_AREA full description that is a title/role dump unrelated to its own researchAreas chips', () => {
+    const full =
+      'Professor of Internal Medicine (Hematology) Acting Director, Stem Cell Transplantation; Chairman, Car-T Cell Joint Steering Committee; Director, Unrelated Donor Transplant Program, Stem Cell Transplantation; Co-Director, Immune Effector Cell Therapy; Co-Director, Adult CAR T-Cell Therapy Program';
+    const quality = fullDescriptionQuality(full, ['Cell Therapy'], 'FACULTY_RESEARCH_AREA');
+    expect(quality.flags).toContain('topic-label-list');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('does not gate the title/role dump without an eligible entityType (backward compatible)', () => {
+    const full =
+      'Professor of Internal Medicine (Hematology) Acting Director, Stem Cell Transplantation; Chairman, Car-T Cell Joint Steering Committee; Director, Unrelated Donor Transplant Program, Stem Cell Transplantation; Co-Director, Immune Effector Cell Therapy; Co-Director, Adult CAR T-Cell Therapy Program';
+    const quality = fullDescriptionQuality(full, ['Cell Therapy']);
+    expect(quality.flags).not.toContain('topic-label-list');
+  });
+
+  it('keeps genuine full-description prose whose object list uses a verb outside the research-focus vocabulary', () => {
+    const full =
+      "Kaiama Glover's research spans the intersection of French, francophone, Caribbean, and Haitian literary studies.";
+    const quality = fullDescriptionQuality(full, [], 'FACULTY_RESEARCH_AREA');
+    expect(quality.flags).not.toContain('topic-label-list');
+    expect(quality.isUseful).toBe(true);
+  });
+
+  it('drops descriptionState to non-source_backed via assessResearchEntityDescriptionQuality when only the full is a bare title dump but the short is a real chip-grounded sentence', () => {
+    const quality = assessResearchEntityDescriptionQuality({
+      fullDescription:
+        'Professor of Internal Medicine (Hematology) Acting Director, Stem Cell Transplantation; Chairman, Car-T Cell Joint Steering Committee; Director, Unrelated Donor Transplant Program, Stem Cell Transplantation; Co-Director, Immune Effector Cell Therapy; Co-Director, Adult CAR T-Cell Therapy Program',
+      shortDescription: 'Studies Hodgkin Disease, Lymphoma, Non-Hodgkin, and Hematopoietic Stem Cells.',
+      researchAreas: ['Cell Therapy'],
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(quality.full.isUseful).toBe(false);
+    expect(quality.cardState).toBe('sparse');
   });
 });
 

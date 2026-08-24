@@ -1828,6 +1828,58 @@ export function isStudiesResearchAreaEchoDescription(
   return matchedAny;
 }
 
+const LABEL_ENUMERATION_LEAD_PATTERN =
+  /^(?:Area(?:s)?\s+of\s+interest|Research\s+interests?|Interests?|Specializ(?:ations?|es?\s+in)|Keywords?)\s*:\s*/i;
+
+const titleCaseLedField = (field: string): boolean => /^[A-Z]/.test(field.trim());
+
+/**
+ * The provenance-independent sibling of `isStudiesResearchAreaEchoDescription`
+ * / `isConnectedToKeywordListStub`: those both require the enumerated items to
+ * match the entity's own `researchAreas`/`profileResearchAreas` chips, so a
+ * bio-sourced bare list that happens not to trace back to those chips - a
+ * scraped "Area of interest: A; B; C." caption, or a title/role dump like
+ * "Acting Director, Stem Cell Transplantation; Chairman, ..." with no chip
+ * overlap at all - passes both checks untouched even though it carries the
+ * same zero-content shape (a different provenance path onto the same defect).
+ * Detects the shape directly instead, anchored on one of two structural tells
+ * rather than a verb blocklist (a real sentence can use any of hundreds of
+ * verbs - "spans", "uses", "encompasses" - so excluding by verb absence alone
+ * flags genuinely good prose too readily, as a corpus survey against this
+ * function confirmed):
+ *
+ * - an explicit label-caption lead ("Area of interest:", "Research
+ *   interests:", ...), the scraped-bio-field tell itself, or
+ * - every delimiter-joined item independently reads as a title/role/topic
+ *   label - i.e. starts with a capital letter - rather than continuing a
+ *   sentence in lowercase (a real sentence's list items, torn out of their
+ *   surrounding clause, are lowercase: "...spans playwriting, theater,
+ *   screenwriting"; a title dump's items are not: "Chairman, Car-T Cell Joint
+ *   Steering Committee; Director, ...").
+ *
+ * Requires at least four delimiter-joined items and, as a final safety net,
+ * still backs off if a research-activity verb governs an object anywhere in
+ * the text. Gated to a single punctuation "sentence" (no internal
+ * `.`/`!`/`?`) so a genuine multi-sentence description that merely contains a
+ * comma-heavy sentence elsewhere is never touched - only a field that IS the
+ * list, start to finish, qualifies.
+ */
+export function isBareLabelOrTopicEnumerationText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (partitionSentencesLossless(normalized).length > 1) return false;
+  const hasLabelLead = LABEL_ENUMERATION_LEAD_PATTERN.test(normalized);
+  const body = normalized
+    .replace(LABEL_ENUMERATION_LEAD_PATTERN, '')
+    .replace(/[.!?]+$/, '')
+    .trim();
+  if (!body) return false;
+  const fields = body.split(/\s*[,;]\s*(?:and\s+)?/i).filter(Boolean);
+  if (fields.length < 4) return false;
+  if (!hasLabelLead && !fields.every(titleCaseLedField)) return false;
+  return !researchActivityVerbWithObjectPattern.test(body);
+}
+
 const provenanceHedgePattern = /[,;]?\s*\bwhen\s+source-confirmed\b/gi;
 const internalConfidenceHedgePattern =
   /\s*This profile-derived summary should be checked against the linked official sources before outreach\.?/gi;
