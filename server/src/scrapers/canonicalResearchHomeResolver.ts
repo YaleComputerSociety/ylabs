@@ -36,10 +36,7 @@ export function hasIneligibleLeadMembership(
   );
 }
 
-export function isOfficialResearchHomeCandidate(candidate: ResearchHomeCandidate): boolean {
-  const slug = text(candidate.slug);
-  if (!slug || candidate.archived === true || GRANT_SHELL_SLUG.test(slug)) return false;
-
+function hasNonGrantOfficialWebsite(candidate: ResearchHomeCandidate): boolean {
   const urls = [
     text(candidate.websiteUrl),
     text(candidate.website),
@@ -48,26 +45,43 @@ export function isOfficialResearchHomeCandidate(candidate: ResearchHomeCandidate
   return urls.some((url) => /^https?:\/\//i.test(url) && !GRANT_SOURCE_URL.test(url));
 }
 
+export function isOfficialResearchHomeCandidate(candidate: ResearchHomeCandidate): boolean {
+  const slug = text(candidate.slug);
+  if (!slug || candidate.archived === true || GRANT_SHELL_SLUG.test(slug)) return false;
+  return hasNonGrantOfficialWebsite(candidate);
+}
+
+export function isGraduatedGrantShellCandidate(candidate: ResearchHomeCandidate): boolean {
+  const slug = text(candidate.slug);
+  if (!slug || candidate.archived === true || !GRANT_SHELL_SLUG.test(slug)) return false;
+  return hasNonGrantOfficialWebsite(candidate);
+}
+
+function distinctSlugs(candidates: ResearchHomeCandidate[]): string[] {
+  return Array.from(new Set(candidates.map((candidate) => text(candidate.slug)).filter(Boolean)));
+}
+
 export function selectCanonicalResearchHomeSlug(
   candidates: ResearchHomeCandidate[],
 ): string | null {
-  const eligible = candidates.filter(isOfficialResearchHomeCandidate);
-  const slugs = Array.from(
-    new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)),
-  );
-  return slugs.length === 1 ? slugs[0] : null;
+  const officialSlugs = distinctSlugs(candidates.filter(isOfficialResearchHomeCandidate));
+  if (officialSlugs.length === 1) return officialSlugs[0];
+  if (officialSlugs.length > 1) return null;
+  const graduatedSlugs = distinctSlugs(candidates.filter(isGraduatedGrantShellCandidate));
+  return graduatedSlugs.length === 1 ? graduatedSlugs[0] : null;
 }
 
 export function resolveCanonicalResearchHome(
   candidates: ResearchHomeCandidate[],
 ): CanonicalResearchHomeResolution {
   if (candidates.length === 0) return { status: 'safe-shell' };
-  const eligible = candidates.filter(isOfficialResearchHomeCandidate);
-  const slugs = Array.from(
-    new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)),
-  );
-  if (slugs.length === 1) return { status: 'canonical', slug: slugs[0] };
-  if (slugs.length > 1) return { status: 'ambiguous' };
+  const officialSlugs = distinctSlugs(candidates.filter(isOfficialResearchHomeCandidate));
+  if (officialSlugs.length === 1) return { status: 'canonical', slug: officialSlugs[0] };
+  if (officialSlugs.length > 1) return { status: 'ambiguous' };
+
+  const graduatedSlugs = distinctSlugs(candidates.filter(isGraduatedGrantShellCandidate));
+  if (graduatedSlugs.length === 1) return { status: 'canonical', slug: graduatedSlugs[0] };
+  if (graduatedSlugs.length > 1) return { status: 'ambiguous' };
   return { status: 'ineligible' };
 }
 
