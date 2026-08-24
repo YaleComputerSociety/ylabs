@@ -176,6 +176,22 @@ export function isProgramApplicationPortalUrl(value: unknown): boolean {
   return PROGRAM_APPLICATION_PORTAL_HOST.test(url.hostname);
 }
 
+/**
+ * A record-specific application-portal URL points at one individual fund/record
+ * (CommunityForce `/Funds/FundDetails.aspx?...` with a query string), not the
+ * bare portal root. It is globally unique per fund, so it is a safe cross-source
+ * identity key: a fund enumerated by the Student Grants Database source and the
+ * same fund linked as an applicationLink from a public fellowship page share it,
+ * and merge into one record rather than duplicating.
+ */
+export function isRecordSpecificApplicationPortalUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url || !isProgramApplicationPortalUrl(url.toString())) return false;
+  const hasPath = url.pathname.replace(/\/+$/, '').length > 0;
+  const hasQuery = url.search.replace(/^\?/, '').trim().length > 0;
+  return hasPath && hasQuery;
+}
+
 const PROGRAM_DETAIL_PATH_KEYWORD_PATTERN =
   /(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|research-internship-program|tobin-ra)/i;
 

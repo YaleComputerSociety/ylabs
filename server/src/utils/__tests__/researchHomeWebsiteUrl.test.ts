@@ -9,11 +9,33 @@ import {
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
+  isRecordSpecificApplicationPortalUrl,
   isSameHostShallowChromeUrl,
   isSiteNavigationOrFooterChromeUrl,
   isUnhelpfulProgramUrl,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../researchHomeWebsiteUrl';
+
+describe('isRecordSpecificApplicationPortalUrl', () => {
+  it('accepts a record-specific FundDetails URL with a query on a portal host', () => {
+    expect(
+      isRecordSpecificApplicationPortalUrl(
+        'https://yale.communityforce.com/Funds/FundDetails.aspx?FundID=42',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects a bare portal root, a pathless host, and non-portal hosts', () => {
+    expect(isRecordSpecificApplicationPortalUrl('https://yale.communityforce.com/')).toBe(false);
+    expect(
+      isRecordSpecificApplicationPortalUrl('https://yale.communityforce.com/Funds/Search.aspx'),
+    ).toBe(false);
+    expect(
+      isRecordSpecificApplicationPortalUrl('https://example.com/Funds/FundDetails.aspx?FundID=42'),
+    ).toBe(false);
+    expect(isRecordSpecificApplicationPortalUrl('not a url')).toBe(false);
+  });
+});
 
 describe('isProfileOrPeopleDirectoryPath', () => {
   it('matches profile, people, faculty, and faculty-directory paths', () => {

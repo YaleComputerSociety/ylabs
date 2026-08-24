@@ -20,10 +20,13 @@
  * The registry exists for planning and reporting; it does not itself change
  * scraper behavior (same contract as the other three registries).
  *
- * Gated application portals (`communityforce.com`, `studentgrants.yale.edu`) are
- * recorded as `evaluated-skipped`: they are treated as application links and are
- * never fetch targets, per `isProgramApplicationPortalUrl`. They are kept in the
- * registry so they are never silently re-proposed as a coverage gap.
+ * The bare `communityforce.com` portal root is recorded as `evaluated-skipped`:
+ * it is treated as an application link and never a fetch target, per
+ * `isProgramApplicationPortalUrl`, and is kept so it is never silently
+ * re-proposed as a coverage gap. The Yale Student Grants Database
+ * (`studentgrants.yale.edu` -> the CommunityForce fund catalog) is now `covered`
+ * by the `student-grants-database` source, which enumerates individual funds from
+ * the rendered fund search and cites each fund's own FundDetails page (#1630).
  *
  * `coveredBy` names are `Source.name` keys from `sourceCoverageRegistry`.
  */
@@ -221,11 +224,12 @@ export const FELLOWSHIP_PROGRAM_SOURCE_REGISTRY: FellowshipProgramEntry[] = [
   {
     url: 'https://studentgrants.yale.edu/',
     catalogName: 'Yale Student Grants Database',
-    owningOffice: 'Yale (studentgrants.yale.edu gated database)',
-    status: 'evaluated-skipped',
-    impactTier: 5,
+    owningOffice: 'Yale (studentgrants.yale.edu / CommunityForce catalog)',
+    status: 'covered',
+    impactTier: 1,
+    coveredBy: ['student-grants-database'],
     notes:
-      'Gated student grants application database. Treated as an application link, never a fetch target, per isProgramApplicationPortalUrl. Recorded as evaluated-and-skipped rather than a coverage gap.',
+      "Yale's most comprehensive officially-curated student funding catalog. studentgrants.yale.edu 301-redirects to yale.communityforce.com, whose fund search is public and browseable (only applying requires login). Covered by the student-grants-database source, which enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx detail page - never the search/index root (#516/#549). The bare CommunityForce portal root stays evaluated-skipped as an application-only host.",
   },
 ];
 

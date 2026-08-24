@@ -313,6 +313,16 @@ const SOURCES: SourceSeed[] = [
     cadence: 'daily-during-cycle',
   },
   {
+    name: 'student-grants-database',
+    displayName: 'Yale Student Grants Database (CommunityForce)',
+    description:
+      "Yale's comprehensive officially-curated student funding catalog. Enumerates each fund from the rendered CommunityForce fund search and cites the fund's own FundDetails page. Disabled by default until an operator confirms the rendered catalog is reliably public on Development; contact and unresolved funds fail closed.",
+    baseUrl: 'https://yale.communityforce.com/Funds/Search.aspx',
+    defaultWeight: 0.95,
+    cadence: 'daily-during-cycle',
+    enabled: false,
+  },
+  {
     name: 'nih-reporter',
     displayName: 'NIH RePORTER',
     description: 'Pulls active NIH grants by Yale PI to identify funded labs and recent activity.',
