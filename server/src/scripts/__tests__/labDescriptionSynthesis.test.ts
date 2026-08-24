@@ -139,6 +139,21 @@ describe('evaluateSynthesisOutput', () => {
     expect(verdict.accepted).toBe(false);
     expect(verdict.reason).toBe('empty-output');
   });
+
+  it('rejects fluent output that only restates the entity researchAreas chips (#1625)', () => {
+    const researchAreas = ['Neural navigation circuits', 'Two-photon imaging', 'Optogenetics'];
+    const verdict = evaluateSynthesisOutput(
+      {
+        fullDescription:
+          'The lab focuses on neural navigation circuits, two-photon imaging, and optogenetics. The lab investigates the underlying mechanisms associated with these techniques.',
+        shortDescription: 'Studies neural navigation circuits, two-photon imaging, and optogenetics.',
+      },
+      labSource,
+      researchAreas,
+    );
+    expect(verdict.accepted).toBe(false);
+    expect(verdict.reason).toBe('low-quality');
+  });
 });
 
 const physicsFieldsStub =
