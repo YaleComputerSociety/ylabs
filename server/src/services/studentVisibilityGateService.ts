@@ -36,6 +36,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
+import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -381,6 +382,7 @@ const hasHttpSourceUrl = (value: unknown): boolean =>
 export interface ReachOutPlausibleGateSignal {
   type?: unknown;
   archived?: unknown;
+  derivationKey?: unknown;
   source?: { url?: unknown; evidenceIds?: unknown; name?: unknown } | null;
 }
 
@@ -398,6 +400,12 @@ export function reachOutPlausibleSignalCreditsActionEvidence(input: {
   const { signal, entity } = input;
   if (signal.archived === true) return false;
   if (signal.type !== REACH_OUT_PLAUSIBLE_SIGNAL_TYPE) return false;
+  if (
+    typeof signal.derivationKey === 'string' &&
+    IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS.has(signal.derivationKey)
+  ) {
+    return false;
+  }
   if (hasHttpSourceUrl(signal.source?.url)) return false;
   const evidenceIds = Array.isArray(signal.source?.evidenceIds) ? signal.source?.evidenceIds : [];
   if (evidenceIds.length === 0) return false;
@@ -979,6 +987,7 @@ async function planResearchEntityGateUpdates(
           type: { $in: [...accessSignalTypes] },
           archived: false,
           'source.url': { $regex: '^https?://', $options: 'i' },
+          derivationKey: { $nin: Array.from(IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS) },
         },
       },
       {
@@ -995,7 +1004,7 @@ async function planResearchEntityGateUpdates(
       archived: false,
       'source.url': { $not: /^https?:\/\//i },
     })
-      .select('researchEntityId type archived source.url source.evidenceIds source.name')
+      .select('researchEntityId type archived derivationKey source.url source.evidenceIds source.name')
       .lean(),
   ]);
 
