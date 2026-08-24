@@ -593,10 +593,13 @@ export function computeResearchEntityStudentVisibility({
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
-    hasActionEvidence &&
-    !duplicateRisk &&
-    !missingFacetSignal
+    !duplicateRisk
   ) {
+    // Reaching out to the professor is always the default next step (see
+    // product-context.md), so concrete_next_step/missing_action_evidence and
+    // missing_facet_signal are soft enrichment signals only (issue #1802) - a
+    // record with a coherent, source-backed, complete card is student_ready
+    // regardless of whether either signal is present.
     computedTier = 'student_ready';
   } else if (
     quality.descriptionState === 'source_backed' &&
@@ -607,8 +610,7 @@ export function computeResearchEntityStudentVisibility({
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
-    !duplicateRisk &&
-    !missingFacetSignal
+    !duplicateRisk
   ) {
     computedTier = 'limited_but_safe';
   }
