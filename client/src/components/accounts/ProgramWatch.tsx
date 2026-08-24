@@ -32,12 +32,19 @@ import {
   normalizeResearchPlanStage,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
+import {
+  sortByUpcomingDeadline,
+  summarizeWatchedDeadlines,
+  type WatchedProgramWithStage,
+} from '../../utils/watchedDeadlineSummary';
 
 interface ProgramWatchProps {
   onSummaryChange?: (summary: {
     count: number;
     nextDeadlineLabel?: string;
     nextDeadlineDate?: string;
+    approachingCount?: number;
+    notStartedCount?: number;
   }) => void;
 }
 
@@ -141,7 +148,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   }, []);
 
   const visiblePrograms = useMemo(
-    () => programs.filter((program) => watchedIds.includes(program.id)),
+    () => sortByUpcomingDeadline(programs.filter((program) => watchedIds.includes(program.id))),
     [programs, watchedIds],
   );
 
@@ -150,9 +157,22 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     [visiblePrograms],
   );
 
+  const deadlineUrgency = useMemo(() => {
+    const watched: WatchedProgramWithStage[] = visiblePrograms.map((program) => ({
+      program,
+      stage: stages[program.id],
+    }));
+    return summarizeWatchedDeadlines(watched);
+  }, [visiblePrograms, stages]);
+
   useEffect(() => {
-    onSummaryChange?.({ count: visiblePrograms.length, ...nextDeadline });
-  }, [visiblePrograms.length, nextDeadline, onSummaryChange]);
+    onSummaryChange?.({
+      count: visiblePrograms.length,
+      approachingCount: deadlineUrgency.approachingCount,
+      notStartedCount: deadlineUrgency.notStartedCount,
+      ...nextDeadline,
+    });
+  }, [visiblePrograms.length, nextDeadline, deadlineUrgency, onSummaryChange]);
 
   const upcomingDeadlineEventsByProgramId = useMemo(() => {
     const events = upcomingProgramDeadlineEvents(visiblePrograms);

@@ -122,3 +122,65 @@ describe('PlanningOverview saved-search new-match signal', () => {
     expect(screen.queryByText(/new matches for your saved searches/)).toBeNull();
   });
 });
+
+describe('PlanningOverview watched-deadline urgency signal', () => {
+  it('surfaces the aggregate near-term count and routes to Program Watch on click', () => {
+    const onViewProgramWatch = vi.fn();
+    renderOverview({
+      savedResearchCount: 0,
+      savedFellowshipCount: 3,
+      watchedDeadlineApproachingCount: 2,
+      watchedDeadlineNotStartedCount: 0,
+      onViewProgramWatch,
+    });
+
+    const cta = screen.getByRole('button', {
+      name: '2 watched programs close within 2 weeks',
+    });
+    expect(cta.textContent).toContain('2 watched programs close within 2 weeks');
+    fireEvent.click(cta);
+    expect(onViewProgramWatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('emphasizes the not-started-and-closing-soon case in the accessible label', () => {
+    renderOverview({
+      savedResearchCount: 0,
+      savedFellowshipCount: 3,
+      watchedDeadlineApproachingCount: 3,
+      watchedDeadlineNotStartedCount: 1,
+      onViewProgramWatch: vi.fn(),
+    });
+
+    const cta = screen.getByRole('button', {
+      name: '3 watched programs close within 2 weeks, 1 not started',
+    });
+    expect(cta.textContent).toContain('1 not started');
+  });
+
+  it('uses singular phrasing for a single approaching program', () => {
+    renderOverview({
+      savedResearchCount: 0,
+      savedFellowshipCount: 1,
+      watchedDeadlineApproachingCount: 1,
+      watchedDeadlineNotStartedCount: 0,
+      onViewProgramWatch: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole('button', { name: '1 watched program closes within 2 weeks' }),
+    ).toBeTruthy();
+  });
+
+  it('stays silent when no watched deadline is approaching', () => {
+    renderOverview({
+      savedResearchCount: 0,
+      savedFellowshipCount: 3,
+      watchedDeadlineApproachingCount: 0,
+      watchedDeadlineNotStartedCount: 0,
+      onViewProgramWatch: vi.fn(),
+    });
+
+    expect(screen.queryByText(/close within/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /close within/ })).toBeNull();
+  });
+});

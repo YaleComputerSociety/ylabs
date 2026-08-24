@@ -1,5 +1,11 @@
 import { Link } from 'react-router-dom';
 
+import {
+  approachingDeadlineAriaLabel,
+  approachingDeadlineLabel,
+  notStartedEmphasis,
+} from '../../utils/watchedDeadlineSummary';
+
 interface PlanningOverviewProps {
   savedResearchCount: number;
   savedOpenCount?: number;
@@ -7,6 +13,9 @@ interface PlanningOverviewProps {
   nextDeadlineLabel?: string;
   savedSearchNewMatchCount?: number;
   onViewSavedSearches?: () => void;
+  watchedDeadlineApproachingCount?: number;
+  watchedDeadlineNotStartedCount?: number;
+  onViewProgramWatch?: () => void;
 }
 
 const openHomesSummary = (savedOpenCount: number): string =>
@@ -33,6 +42,9 @@ const PlanningOverview = ({
   nextDeadlineLabel,
   savedSearchNewMatchCount = 0,
   onViewSavedSearches,
+  watchedDeadlineApproachingCount = 0,
+  watchedDeadlineNotStartedCount = 0,
+  onViewProgramWatch,
 }: PlanningOverviewProps) => (
   <section className="mb-6 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -61,6 +73,25 @@ const PlanningOverview = ({
           >
             {savedSearchNewMatchCount} new {savedSearchNewMatchCount === 1 ? 'match' : 'matches'}{' '}
             for your saved searches
+          </button>
+        )}
+        {watchedDeadlineApproachingCount > 0 && onViewProgramWatch && (
+          <button
+            type="button"
+            onClick={onViewProgramWatch}
+            aria-label={approachingDeadlineAriaLabel(
+              watchedDeadlineApproachingCount,
+              watchedDeadlineNotStartedCount,
+            )}
+            className="mt-1 block text-sm font-semibold text-amber-800 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+          >
+            {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
+            {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
+              <span className="font-normal text-amber-700">
+                {' · '}
+                {notStartedEmphasis(watchedDeadlineNotStartedCount)}
+              </span>
+            )}
           </button>
         )}
       </div>

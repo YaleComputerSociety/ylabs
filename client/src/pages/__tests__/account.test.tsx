@@ -10,6 +10,8 @@ type ProgramSummary = {
   count: number;
   nextDeadlineLabel?: string;
   nextDeadlineDate?: string;
+  approachingCount?: number;
+  notStartedCount?: number;
 };
 
 let savedResearchCount = 2;
@@ -211,6 +213,28 @@ describe('Account page', () => {
     renderAccount('student');
 
     expect(screen.queryByText(/new matches for your saved searches/)).toBeNull();
+  });
+
+  it('surfaces the watched-deadline urgency signal and routes to Program Watch', () => {
+    programSummary = { count: 3, approachingCount: 2, notStartedCount: 1 };
+    renderAccount('student');
+
+    const cta = screen.getByRole('button', {
+      name: '2 watched programs close within 2 weeks, 1 not started',
+    });
+    const programTab = screen.getByRole('tab', { name: 'Program Watch (3)' });
+    expect(programTab.getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(cta);
+    expect(programTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(programTab);
+  });
+
+  it('stays silent on the dashboard when no watched deadline is approaching', () => {
+    programSummary = { count: 3, approachingCount: 0, notStartedCount: 0 };
+    renderAccount('student');
+
+    expect(screen.queryByText(/close within/)).toBeNull();
   });
 
   it('deep-links to the Saved Searches tab via a tab query param', () => {
