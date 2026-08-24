@@ -2,6 +2,8 @@ const MIN_COMMAS_FOR_SPLIT = 2;
 
 const ENUMERATION_CONJUNCTION_PATTERN = /(?:^|\s)(?:and|or)(?:\s|$)|&/i;
 
+const COLON_ELABORATION_PATTERN = /:/;
+
 export function splitDelimitedResearchArea(value: string): string[] {
   const trimmed = value.trim();
   if (!trimmed) return [];
@@ -9,6 +11,7 @@ export function splitDelimitedResearchArea(value: string): string[] {
   const commaCount = (trimmed.match(/,/g) || []).length;
   if (commaCount < MIN_COMMAS_FOR_SPLIT) return [trimmed];
   if (ENUMERATION_CONJUNCTION_PATTERN.test(trimmed)) return [trimmed];
+  if (COLON_ELABORATION_PATTERN.test(trimmed)) return [trimmed];
 
   return trimmed
     .split(',')
