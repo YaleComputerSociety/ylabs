@@ -1410,6 +1410,30 @@ describe('programCardShortDescriptionQuality (#1425)', () => {
   });
 });
 
+describe('programCardShortDescriptionQuality administrative-announcement chrome guard (#1653)', () => {
+  it('rejects a self-referential "is listed by" lead that names no offer', () => {
+    const text =
+      'The European Studies Council travel/conference award is listed by the MacMillan Center for Yale undergraduate, graduate, and professional students.';
+    const quality = programCardShortDescriptionQuality(text, text);
+    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).toContain('administrative-chrome');
+  });
+
+  it('rejects a bare "invites applications" announcement that never states the offer', () => {
+    const text = 'The Council on Middle East Studies invites applications to the Ganzfried Family Travel Fellowship competition.';
+    const quality = programCardShortDescriptionQuality(text, text);
+    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).toContain('administrative-chrome');
+  });
+
+  it('accepts an "invites applications" lead that also states who is eligible', () => {
+    const text =
+      'The European Union Studies Program of the MacMillan Center invites applications for the European Union Studies Summer Grants from graduate and undergraduate students whose work or research involves the European Union or some aspect of European integration.';
+    const quality = programCardShortDescriptionQuality(text, text);
+    expect(quality.isUseful).toBe(true);
+  });
+});
+
 describe('deriveProgramCardShortDescription (#1425)', () => {
   it('uses the whole description verbatim when it is already one concise sentence', () => {
     const full =
@@ -1441,5 +1465,47 @@ describe('deriveProgramCardShortDescription (#1425)', () => {
 
   it('returns empty for a blank description', () => {
     expect(deriveProgramCardShortDescription('')).toBe('');
+  });
+});
+
+describe('deriveProgramCardShortDescription administrative-copy fixes (#1653)', () => {
+  it('falls through past a self-referential "is listed by" lead to the offer sentence', () => {
+    const full =
+      'The European Studies Council travel/conference award is listed by the MacMillan Center for Yale undergraduate, graduate, and professional students. It helps defray short-term research or conference travel costs related to Europe, Russia, or Eurasia during the academic year.';
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      'It helps defray short-term research or conference travel costs related to Europe, Russia, or Eurasia during the academic year.',
+    );
+  });
+
+  it('falls through past a bare "invites applications" announcement to the offer sentence', () => {
+    const full =
+      'The Whitney and Betty MacMillan Center for International and Area Studies invites applications to the Strong Family Travel Fellowship for Peace and Development. Grants of up to $1000 will be awarded to current students in Yale College to pursue independent research, as well as academic programs, internships related to study peace-building initiatives and/or economic development either during the summer or the academic year.';
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      'Grants of up to $1000 will be awarded to current students in Yale College to pursue independent research, as well as academic programs, internships related to study peace-building initiatives and/or economic development either during the summer or the academic year.',
+    );
+  });
+
+  it('strips a stray scraped footnote asterisk from the offer sentence', () => {
+    const full =
+      'Appropriate purposes for support include (but are not limited to) language training*, masters thesis summer research, pre-dissertation research field work, and funding supplements required to bring a research project to fruition.';
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      'Appropriate purposes for support include (but are not limited to) language training, masters thesis summer research, pre-dissertation research field work, and funding supplements required to bring a research project to fruition.',
+    );
+  });
+
+  it('relativizes a stale absolute-year season phrase', () => {
+    const full =
+      'The Department of Classics will make available a limited number of summer research and/or travel awards (for up to a maximum of 5 worthy projects) for trips to various research and study venues in the summer of 2017.';
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      'The Department of Classics will make available a limited number of summer research and/or travel awards (for up to a maximum of 5 worthy projects) for trips to various research and study venues each summer.',
+    );
+  });
+
+  it('does not truncate a name mid-word at a "St." (Saint) abbreviation', () => {
+    const full =
+      "The Class of 1960/86 has established several Class of 1960 Travel/Study Fellowships in Branford College, one of which is in memory of Albert St. Pergam '60, father of Lizzie BR '93 and Ilana BR '90. Competition for these Fellowships is open to all Sophomores and Juniors in Branford College.";
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      "The Class of 1960/86 has established several Class of 1960 Travel/Study Fellowships in Branford College, one of which is in memory of Albert St. Pergam '60, father of Lizzie BR '93 and Ilana BR '90.",
+    );
   });
 });
