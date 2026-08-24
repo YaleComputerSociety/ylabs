@@ -58,6 +58,10 @@ import { ResearchEntity } from '../models/researchEntity';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import {
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -468,11 +472,16 @@ export async function runResearchDescriptionBackfill(options: {
         });
         // Also apply to the entity now so the visibility gate sees it
         // immediately; the observations above are the durable provenance record
-        // that keeps the description on future re-materialization.
+        // that keeps the description on future re-materialization. Route the
+        // direct write through the same sanitizers the read surfaces apply so
+        // fail-closed content can never land on a live entity even transiently.
         await ResearchEntity.updateOne(
           { _id: entity._id },
           {
-            $set: { fullDescription: out.fullDescription, shortDescription: out.shortDescription },
+            $set: {
+              fullDescription: sanitizeResearchEntityDescription(out.fullDescription),
+              shortDescription: sanitizeResearchEntityShortDescription(out.shortDescription),
+            },
           },
         );
       }
