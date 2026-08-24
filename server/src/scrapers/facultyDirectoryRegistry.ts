@@ -686,6 +686,8 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     studentImpactTier: 6,
     approxFacultyCount: 104,
     paginated: true,
+    notes:
+      'Covered via the dept-faculty-roster "som" config row (#1293): the school-wide faculty-directory root renders server-side with the Drupal node-teaser--faculty theme and paginates via ?page=N, so it reuses nodeTeaserFacultyExtractor. Paginating the root captures all faculty across the six research disciplines (accounting, economics, finance, marketing, operations, organizational behavior) that the discipline sub-pages partition, so no per-discipline crawl is needed. Each card links the faculty member\'s own som.yale.edu/faculty-research/faculty-directory/<slug> page, which is cited as the per-faculty source; the directory root is only a crawl seed. Expect small dedup against existing economics/joint-appointment entities.',
   },
   {
     url: 'https://law.yale.edu/faculty?type=faculty',
