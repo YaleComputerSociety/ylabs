@@ -1,6 +1,6 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import PlanningOverview from '../PlanningOverview';
 
@@ -56,6 +56,42 @@ describe('PlanningOverview Next up card', () => {
     renderOverview({ savedResearchCount: 0, savedFellowshipCount: 0 });
 
     expect(screen.getByText('Save a research home to start planning')).toBeTruthy();
+  });
+});
+
+describe('PlanningOverview saved-search new-match callout', () => {
+  it('shows the aggregate unseen count and links back to saved searches', () => {
+    const onViewSavedSearchMatches = vi.fn();
+    renderOverview({
+      savedResearchCount: 1,
+      savedFellowshipCount: 0,
+      savedSearchNewMatchCount: 3,
+      onViewSavedSearchMatches,
+    });
+
+    const button = screen.getByRole('button', { name: /3 new matches for your saved searches/i });
+    fireEvent.click(button);
+    expect(onViewSavedSearchMatches).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses singular phrasing for exactly one new match', () => {
+    renderOverview({
+      savedResearchCount: 1,
+      savedFellowshipCount: 0,
+      savedSearchNewMatchCount: 1,
+    });
+
+    expect(screen.getByText('1 new match for your saved searches')).toBeTruthy();
+  });
+
+  it('renders nothing when there are no unseen matches', () => {
+    renderOverview({
+      savedResearchCount: 1,
+      savedFellowshipCount: 0,
+      savedSearchNewMatchCount: 0,
+    });
+
+    expect(screen.queryByText(/new match(es)? for your saved searches/)).toBeNull();
   });
 });
 
