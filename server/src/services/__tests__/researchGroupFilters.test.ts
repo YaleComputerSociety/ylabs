@@ -242,4 +242,50 @@ describe('buildResearchGroupFilterString', () => {
       );
     });
   });
+
+  describe('compensation filter', () => {
+    it('single value → filters the compensation-model field', () => {
+      const filter = buildResearchGroupFilterString({ compensation: ['PAID_OR_STIPEND'] });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateCompensationModel = "PAID_OR_STIPEND")',
+      );
+    });
+
+    it('two values → ORs them within the field', () => {
+      const filter = buildResearchGroupFilterString({
+        compensation: ['PAID_OR_STIPEND', 'COURSE_CREDIT'],
+      });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateCompensationModel = "PAID_OR_STIPEND" OR undergraduateCompensationModel = "COURSE_CREDIT")',
+      );
+    });
+
+    it('unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('is droppable via excludeField for disjunctive faceting (#1080)', () => {
+      const filter = buildResearchGroupFilterString(
+        { compensation: ['PAID_OR_STIPEND'], departments: ['Genetics'] },
+        { excludeField: 'compensation' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+
+    it('combines with current availability and other filters via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        departments: ['Genetics'],
+        currentAvailability: ['OPEN'],
+        compensation: ['PAID_OR_STIPEND'],
+      });
+      expect(filter).toBe(
+        [
+          'archived = false',
+          '(departments = "Genetics")',
+          '(undergraduateCurrentAvailability = "OPEN")',
+          '(undergraduateCompensationModel = "PAID_OR_STIPEND")',
+        ].join(' AND '),
+      );
+    });
+  });
 });

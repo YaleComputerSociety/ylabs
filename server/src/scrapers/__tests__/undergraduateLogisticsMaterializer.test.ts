@@ -23,6 +23,7 @@ vi.mock('../../models/signal', async (importOriginal) => {
 
 import {
   currentUndergradAvailabilityFromSignals,
+  undergradCompensationModelFromSignals,
   materializeUndergraduateLogisticsForResearchEntity,
   quoteExplicitlyDeclinesUndergraduates,
   resolveUndergraduateLogisticsClaims,
@@ -1336,5 +1337,84 @@ describe('currentUndergradAvailabilityFromSignals', () => {
         NOW,
       ),
     ).toBe('NOT_CURRENTLY_AVAILABLE');
+  });
+});
+
+describe('undergradCompensationModelFromSignals', () => {
+  const freshExpiry = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+  const staleExpiry = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
+  const compensationSignal = (modes: string[], overrides: Record<string, unknown> = {}) => ({
+    type: 'COMPENSATION',
+    status: 'KNOWN',
+    value: { modes },
+    expiresAt: freshExpiry,
+    ...overrides,
+  });
+
+  it('maps a paid or stipend mode to PAID_OR_STIPEND', () => {
+    expect(undergradCompensationModelFromSignals([compensationSignal(['PAID'])], NOW)).toBe(
+      'PAID_OR_STIPEND',
+    );
+    expect(undergradCompensationModelFromSignals([compensationSignal(['STIPEND'])], NOW)).toBe(
+      'PAID_OR_STIPEND',
+    );
+  });
+
+  it('maps a course-credit-only mode to COURSE_CREDIT', () => {
+    expect(
+      undergradCompensationModelFromSignals([compensationSignal(['COURSE_CREDIT'])], NOW),
+    ).toBe('COURSE_CREDIT');
+  });
+
+  it('prioritizes PAID_OR_STIPEND when a position offers both pay and course credit', () => {
+    expect(
+      undergradCompensationModelFromSignals([compensationSignal(['COURSE_CREDIT', 'PAID'])], NOW),
+    ).toBe('PAID_OR_STIPEND');
+  });
+
+  it('fails closed to UNKNOWN for volunteer/work-study/fellowship-only modes', () => {
+    expect(undergradCompensationModelFromSignals([compensationSignal(['VOLUNTEER'])], NOW)).toBe(
+      'UNKNOWN',
+    );
+    expect(
+      undergradCompensationModelFromSignals(
+        [compensationSignal(['WORK_STUDY', 'FELLOWSHIP'])],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
+  });
+
+  it('fails closed to UNKNOWN when the signal has expired, even if status is still KNOWN', () => {
+    expect(
+      undergradCompensationModelFromSignals(
+        [compensationSignal(['PAID'], { expiresAt: staleExpiry })],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
+  });
+
+  it('fails closed to UNKNOWN when the signal is STALE_UNDER_REVIEW or CONFLICTING_WITHHELD', () => {
+    expect(
+      undergradCompensationModelFromSignals(
+        [compensationSignal(['PAID'], { status: 'STALE_UNDER_REVIEW' })],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
+    expect(
+      undergradCompensationModelFromSignals(
+        [compensationSignal(['PAID'], { status: 'CONFLICTING_WITHHELD' })],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
+  });
+
+  it('fails closed to UNKNOWN when no COMPENSATION signal is present', () => {
+    expect(undergradCompensationModelFromSignals([], NOW)).toBe('UNKNOWN');
+    expect(
+      undergradCompensationModelFromSignals(
+        [{ type: 'CURRENT_AVAILABILITY', status: 'KNOWN', expiresAt: freshExpiry }],
+        NOW,
+      ),
+    ).toBe('UNKNOWN');
   });
 });

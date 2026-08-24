@@ -369,6 +369,20 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       enum: ['OPEN', 'ROLLING', 'NOT_CURRENTLY_AVAILABLE', 'UNKNOWN'],
       default: 'UNKNOWN',
     },
+    /**
+     * Undergraduate-compensation model ('PAID_OR_STIPEND' / 'COURSE_CREDIT' /
+     * 'UNKNOWN'), re-derived from the COMPENSATION Signal by
+     * researchEntityBrowseRankService with its own freshness re-check,
+     * independent of the Signal's own lastMaterializedAt. Defaults to 'UNKNOWN'
+     * so a sparse/stale signal never surfaces as paid. Mirrored to the
+     * Meilisearch index for the "Paid or stipend" / "Course credit" browse
+     * filter. See #1540.
+     */
+    undergraduateCompensationModel: {
+      type: String,
+      enum: ['PAID_OR_STIPEND', 'COURSE_CREDIT', 'UNKNOWN'],
+      default: 'UNKNOWN',
+    },
     archived: {
       type: Boolean,
       default: false,
@@ -413,6 +427,7 @@ researchEntitySchema.index({ archived: 1, accessAcceptanceLevel: 1 });
 researchEntitySchema.index({ archived: 1, hasUndergradHostingEvidence: 1 });
 researchEntitySchema.index({ archived: 1, hasDocumentedWayIn: 1 });
 researchEntitySchema.index({ archived: 1, undergraduateCurrentAvailability: 1 });
+researchEntitySchema.index({ archived: 1, undergraduateCompensationModel: 1 });
 researchEntitySchema.index({ recentGrantCount: -1 });
 researchEntitySchema.index({ fundingAgencies: 1 });
 researchEntitySchema.index({ offersIndependentStudy: 1 });

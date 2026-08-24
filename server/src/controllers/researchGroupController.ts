@@ -41,11 +41,13 @@ const SEARCH_FILTER_KEYS = [
   'departments',
   'researchAreas',
   'currentAvailability',
+  'compensation',
   'studentVisibilityTier',
   'qualityFilters',
 ] as const;
 
 const CURRENT_AVAILABILITY_FILTER_VALUES = new Set(['OPEN', 'ROLLING']);
+const COMPENSATION_FILTER_VALUES = new Set(['PAID_OR_STIPEND', 'COURSE_CREDIT']);
 
 const toStringArray = (value: unknown): string[] | undefined => {
   if (value === undefined || value === null) return undefined;
@@ -108,6 +110,11 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
     CURRENT_AVAILABILITY_FILTER_VALUES.has(value),
   ) as ResearchGroupFilterInput['currentAvailability'];
   if (currentAvailability?.length) filters.currentAvailability = currentAvailability;
+
+  const compensation = toStringArray(r.compensation)?.filter((value) =>
+    COMPENSATION_FILTER_VALUES.has(value),
+  ) as ResearchGroupFilterInput['compensation'];
+  if (compensation?.length) filters.compensation = compensation;
 
   return filters;
 };

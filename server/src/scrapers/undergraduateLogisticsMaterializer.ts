@@ -94,6 +94,51 @@ export function currentUndergradAvailabilityFromSignals(
     : 'UNKNOWN';
 }
 
+export const UNDERGRAD_COMPENSATION_MODEL_VALUES = [
+  'PAID_OR_STIPEND',
+  'COURSE_CREDIT',
+  'UNKNOWN',
+] as const;
+
+export type UndergradCompensationModel = (typeof UNDERGRAD_COMPENSATION_MODEL_VALUES)[number];
+
+const PAID_OR_STIPEND_MODES = new Set(['PAID', 'STIPEND']);
+
+export interface CompensationSignalInput {
+  type?: unknown;
+  status?: unknown;
+  value?: unknown;
+  expiresAt?: Date | string | null;
+}
+
+/**
+ * Re-derives the browse-filterable undergraduate-compensation model from raw
+ * COMPENSATION Signal rows, independently re-applying the freshness window via
+ * expiresAt rather than trusting a possibly-stale materialize run. Any missing,
+ * non-KNOWN, or expired signal fails closed to 'UNKNOWN' - a sparse or stale
+ * signal must never surface as paid. A position offering pay or a stipend
+ * clears the equity-critical "is this paid?" bar even when it also offers
+ * credit, so PAID_OR_STIPEND takes priority over COURSE_CREDIT.
+ */
+export function undergradCompensationModelFromSignals(
+  signals: CompensationSignalInput[],
+  now: Date = new Date(),
+): UndergradCompensationModel {
+  const fresh = signals.find(
+    (signal) =>
+      signal.type === 'COMPENSATION' &&
+      signal.status === 'KNOWN' &&
+      signal.expiresAt != null &&
+      new Date(signal.expiresAt).getTime() > now.getTime(),
+  );
+  const modes = fresh ? (fresh.value as { modes?: unknown } | undefined)?.modes : undefined;
+  if (!Array.isArray(modes)) return 'UNKNOWN';
+  const known = modes.filter((mode): mode is string => typeof mode === 'string');
+  if (known.some((mode) => PAID_OR_STIPEND_MODES.has(mode))) return 'PAID_OR_STIPEND';
+  if (known.includes('COURSE_CREDIT')) return 'COURSE_CREDIT';
+  return 'UNKNOWN';
+}
+
 type LogisticsValue =
   | { levels: string[] }
   | { modes: string[] }

@@ -226,4 +226,54 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await availabilityOf(stale._id)).toBe('UNKNOWN');
     expect(await availabilityOf(noSignal._id)).toBe('UNKNOWN');
   });
+
+  it('persists undergraduateCompensationModel from a fresh KNOWN signal and fails closed otherwise (#1540)', async () => {
+    const now = new Date('2026-08-23T12:00:00.000Z');
+    const freshExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const staleExpiry = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const paid = await createEntity('lab-paid', 'LAB');
+    const credit = await createEntity('lab-credit', 'LAB');
+    const stale = await createEntity('lab-comp-stale', 'LAB');
+    const noSignal = await createEntity('lab-comp-no-signal', 'LAB');
+
+    await Signal.create({
+      researchEntityId: paid._id,
+      type: 'COMPENSATION',
+      status: 'KNOWN',
+      value: { modes: ['PAID', 'COURSE_CREDIT'] },
+      expiresAt: freshExpiry,
+    });
+    await Signal.create({
+      researchEntityId: credit._id,
+      type: 'COMPENSATION',
+      status: 'KNOWN',
+      value: { modes: ['COURSE_CREDIT'] },
+      expiresAt: freshExpiry,
+    });
+    await Signal.create({
+      researchEntityId: stale._id,
+      type: 'COMPENSATION',
+      status: 'KNOWN',
+      value: { modes: ['PAID'] },
+      expiresAt: staleExpiry,
+    });
+
+    await recomputeBrowseRankForEntities([paid._id, credit._id, stale._id, noSignal._id], {
+      sync: false,
+      now,
+    });
+
+    const compensationOf = async (id: mongoose.Types.ObjectId): Promise<string> => {
+      const doc = await ResearchEntity.findById(id).lean<{
+        undergraduateCompensationModel?: string;
+      }>();
+      return doc?.undergraduateCompensationModel ?? 'UNKNOWN';
+    };
+
+    expect(await compensationOf(paid._id)).toBe('PAID_OR_STIPEND');
+    expect(await compensationOf(credit._id)).toBe('COURSE_CREDIT');
+    expect(await compensationOf(stale._id)).toBe('UNKNOWN');
+    expect(await compensationOf(noSignal._id)).toBe('UNKNOWN');
+  });
 });

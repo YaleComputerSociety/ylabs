@@ -96,6 +96,11 @@ export const RESEARCH_FILTER_KINDS = [
   'documented_way_in',
   'admin_quality',
   'admin_trust',
+  'research_area',
+  'research_type',
+  'hosts_undergrads',
+  'current_availability',
+  'compensation',
 ] as const;
 export const RESEARCH_SAVE_OPERATIONS = ['save', 'remove'] as const;
 export const RESEARCH_SAVE_SURFACES = ['profile', 'search', 'saved_plans'] as const;
