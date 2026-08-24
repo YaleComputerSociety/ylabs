@@ -41,7 +41,8 @@ const fundingProgram = {
   sourceKey: 'richter-summer-fellowship',
   title: 'Richter Summer Research Fellowship',
   summary: 'Summer research funding for independent undergraduate research projects.',
-  description: 'Funds independent undergraduate summer research and senior thesis projects.',
+  description:
+    'The Richter Summer Research Fellowship funds independent undergraduate summer research projects and senior thesis fieldwork, covering living expenses so students can pursue self-designed research under faculty guidance.',
   programKind: 'FELLOWSHIP_FUNDING',
   programCategory: 'FELLOWSHIP',
   entryMode: 'SECURE_MENTOR_THEN_APPLY',
