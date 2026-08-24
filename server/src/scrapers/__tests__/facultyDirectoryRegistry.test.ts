@@ -119,4 +119,43 @@ describe('facultyDirectoryRegistry', () => {
       }
     }
   });
+
+  it('enumerates YSM basic-science departments as covered Tier-2 dept-faculty-roster entries', () => {
+    const byUrl = new Map(FACULTY_DIRECTORY_REGISTRY.map((entry) => [entry.url, entry]));
+    const ysmBasicScience = [
+      { url: 'https://medicine.yale.edu/cellbio/people/', department: 'Cell Biology' },
+      { url: 'https://medicine.yale.edu/immuno/people/', department: 'Immunobiology' },
+      { url: 'https://medicine.yale.edu/pharm/people/', department: 'Pharmacology' },
+      { url: 'https://medicine.yale.edu/genetics/people/', department: 'Genetics' },
+      {
+        url: 'https://medicine.yale.edu/physiology/faculty/',
+        department: 'Cellular & Molecular Physiology',
+      },
+      {
+        url: 'https://medicine.yale.edu/micropath/people/primary-faculty/',
+        department: 'Microbial Pathogenesis',
+      },
+      {
+        url: 'https://medicine.yale.edu/micropath/people/research-faculty/',
+        department: 'Microbial Pathogenesis',
+      },
+      { url: 'https://medicine.yale.edu/compmed/people/', department: 'Comparative Medicine' },
+      { url: 'https://medicine.yale.edu/pathology/people/', department: 'Pathology' },
+      { url: 'https://medicine.yale.edu/neuroscience/people/', department: 'Neuroscience' },
+      {
+        url: 'https://medicine.yale.edu/biomedical-informatics-data-science/people/',
+        department: 'Biomedical Informatics & Data Science',
+      },
+    ];
+
+    for (const { url, department } of ysmBasicScience) {
+      const entry = byUrl.get(url);
+      expect(entry, url).toBeDefined();
+      expect(entry?.school, url).toBe('Yale School of Medicine');
+      expect(entry?.department, url).toBe(department);
+      expect(entry?.status, url).toBe('covered');
+      expect(entry?.studentImpactTier, url).toBe(2);
+      expect(entry?.coveredBy, url).toEqual(['dept-faculty-roster']);
+    }
+  });
 });
