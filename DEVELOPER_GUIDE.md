@@ -25,7 +25,7 @@ They intentionally do not power live REST routes or Meilisearch until the vertic
 
 | Layer           | Technology                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------ |
-| Client          | React 19, TypeScript, Vite 6, React Router v7, MUI v7, styled-components, TailwindCSS v3         |
+| Client          | React 19, TypeScript, Vite 6, React Router v7, MUI v7, TailwindCSS v3                            |
 | Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                                    |
 | Search          | Meilisearch (keyword plus semantic search via OpenAI `text-embedding-3-small` where appropriate) |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                               |
