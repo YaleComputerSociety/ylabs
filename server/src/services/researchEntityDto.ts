@@ -1,11 +1,10 @@
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
-import { isUngroundedSynthesizedCard } from '../utils/groundedCardSynthesis';
+import { resolveGroundedServedShortDescription } from '../utils/groundedCardSynthesis';
 import { isFullDescriptionRestatementOfShortDescription } from '../utils/researchEntityDescriptionQuality';
 import {
   resolveResearchHomeCardSummary,
@@ -123,18 +122,6 @@ function servedResearchEntityCopy(group: Record<string, any>): Record<string, an
   return sanitizeServedResearchEntityCopyFields(bounded);
 }
 
-function publicShortDescriptionString(value: unknown): string {
-  const text = String(value || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-  return sanitizeResearchEntityShortDescription(text);
-}
-
-function groundedShortDescriptionString(shortValue: unknown, fullValue: unknown): string {
-  const shortDescription = publicShortDescriptionString(shortValue);
-  if (!shortDescription) return '';
-  if (isUngroundedSynthesizedCard(shortDescription, fullValue)) return '';
-  return shortDescription;
-}
-
 function publicResearchAreaArray(value: unknown): string[] {
   const seen = new Set<string>();
   const labels: string[] = [];
@@ -220,9 +207,11 @@ export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
   const served = servedResearchEntityCopy(group);
-  const blurbSource =
-    groundedShortDescriptionString(served.shortDescription || '', served.fullDescription) ||
-    String(served.fullDescription || '');
+  const blurbSource = resolveGroundedServedShortDescription({
+    shortDescription: served.shortDescription || '',
+    fullDescription: served.fullDescription,
+    researchAreas: served.researchAreas,
+  });
   const blurb = blurbSource.slice(0, 280);
 
   return {
@@ -312,7 +301,11 @@ export function toPublicResearchEntityDto(
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
   const served = servedResearchEntityCopy(group);
-  const groundedShort = groundedShortDescriptionString(served.shortDescription, served.fullDescription);
+  const groundedShort = resolveGroundedServedShortDescription({
+    shortDescription: served.shortDescription,
+    fullDescription: served.fullDescription,
+    researchAreas: served.researchAreas,
+  });
 
   const dto: PublicResearchEntityDto = {
     _id: id,
@@ -333,7 +326,7 @@ export function toPublicResearchEntityDto(
     if (options.forList && LIST_TRIMMED_DESCRIPTION_FIELDS.has(field)) continue;
     if (field === 'shortDescription') {
       if (group.shortDescription !== undefined || group.fullDescription !== undefined) {
-        dto.shortDescription = groundedShort || String(served.fullDescription || '');
+        dto.shortDescription = groundedShort;
       }
       continue;
     }

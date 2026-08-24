@@ -1144,6 +1144,20 @@ export function isRoleTitleHeaderOpenerShortDescription(text: string): boolean {
  * donor-genealogy trivia ("The Class of ... has established ... in memory
  * of...") likewise fails closed rather than serve verbatim (#1821).
  */
+/**
+ * An enumerated continuation lead ("One line of investigation focuses on...")
+ * presupposes other, unlisted lines a standalone card never supplies (#1832),
+ * so it fails closed unconditionally, unlike the two arms below.
+ */
+const leadingContinuationLineOfResearchOpenerPattern =
+  /^(?:One|Another|A\s+(?:second|third|fourth|further|related|complementary))\s+(?:line|strand|thread|branch|arm)\s+of\s+(?:investigation|research|inquiry|work)\b/i;
+
+const leadingBackgroundDefinerOpenerPattern =
+  /^The\s+[A-Z][a-z]+(?:\s+[a-z]+){0,3},\s+(?:consisting of|composed of|comprised of|made up of)\b/i;
+
+const weldedMethodsListGlueSentencePattern =
+  /^[A-Z][^.!?]*?,\s+using\s+an?\s+(?:range|variety|combination|number)\s+of\s+(?:methods|approaches|techniques),\s+including\b/i;
+
 export function isNonSelfContainedShortDescription(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
@@ -1159,6 +1173,22 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
   if (fundingProgramEligibilityFragmentOpenerPattern.test(normalized)) return true;
   if (fundingProgramDonorProvenanceOpenerPattern.test(normalized)) return true;
   if (isRoleTitleHeaderOpenerShortDescription(normalized)) return true;
+  if (leadingContinuationLineOfResearchOpenerPattern.test(normalized)) return true;
+  // Both arms below read as background/scaffolding prose rather than a research
+  // focus, but only when the sentence never also states one (#1832): a genuine
+  // "The lab, consisting of five students, studies X." keeps its research verb.
+  if (
+    leadingBackgroundDefinerOpenerPattern.test(normalized) &&
+    !researchActivityVerbWithObjectPattern.test(normalized)
+  ) {
+    return true;
+  }
+  if (
+    weldedMethodsListGlueSentencePattern.test(normalized) &&
+    !researchActivityVerbWithObjectPattern.test(normalized)
+  ) {
+    return true;
+  }
   return (
     synthesisBlurbHasDanglingDemonstrative(normalized) ||
     synthesisBlurbHasDanglingFirstPersonPluralReference(normalized)

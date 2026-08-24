@@ -226,6 +226,44 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
   return buildResearchAreasCardSummary(researchAreas);
 }
 
+export interface ResolveGroundedServedShortDescriptionInput {
+  shortDescription: unknown;
+  fullDescription: unknown;
+  researchAreas?: unknown;
+}
+
+/**
+ * The served-DTO shortDescription resolution (#1832), distinct from
+ * `resolveServedShortDescription` above: the live card keeps the grounding
+ * check (`isUngroundedSynthesizedCard`) that resolver deliberately skips, so a
+ * synthesized "Studies <topic>." blurb whose topic contradicts its own
+ * fullDescription is still never served (#1212). What changes is only what
+ * happens once a short is unavailable or grounding-rejected: the fallback runs
+ * through the same self-containment/chrome hygiene a shortDescription must
+ * clear (`sanitizeResearchEntityShortDescription`) instead of serving
+ * fullDescription raw, so a bare-pronoun or CV-bio opener never reaches the
+ * card. When that guarded fallback also fails to clear the bar, a
+ * hygiene-clean short that only failed the grounding check is served instead
+ * of nothing - a self-contained "Studies X." beats an unreadable bio, even
+ * when X is not verbatim in the entity's own prose.
+ */
+export function resolveGroundedServedShortDescription(
+  input: ResolveGroundedServedShortDescriptionInput,
+): string {
+  const full = textValue(input.fullDescription);
+  const cleanedShort = sanitizeResearchEntityShortDescription(textValue(input.shortDescription));
+  const groundedShort =
+    cleanedShort && !isUngroundedSynthesizedCard(cleanedShort, full) ? cleanedShort : '';
+  if (groundedShort) return groundedShort;
+
+  const guardedFallback = sanitizeResearchEntityShortDescription(full);
+  if (guardedFallback) return guardedFallback;
+
+  if (cleanedShort) return cleanedShort;
+
+  return buildResearchAreasCardSummary(input.researchAreas);
+}
+
 function firstSentence(value: string): string {
   const match = value.match(/^[^.!?]+[.!?]/);
   return match ? match[0].trim() : value;
