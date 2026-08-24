@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -9,6 +12,22 @@ import {
   parseCourseBasedResearchPathwayPage,
 } from '../sources/courseBasedResearchPathwayScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+
+const readCoursePathwayFixture = (name: string): string =>
+  readFileSync(join(__dirname, 'fixtures', 'course-based-research', name), 'utf8');
+
+const FABRICATED_EVIDENCE_FIELDS = [
+  'undergradAccessEvidence',
+  'acceptingUndergrads',
+  'undergradEvidenceQuote',
+  'contactName',
+  'contactEmail',
+  'contactRole',
+  'joinPageUrl',
+  'postedOpportunityTitle',
+  'applicationUrl',
+  'deadline',
+];
 
 const PSYCHOLOGY_HTML = `
 <main>
@@ -272,3 +291,110 @@ describe('courseBasedResearchPathwayScraper', () => {
     }
   });
 });
+
+const BROADENED_FIXTURE_KEYS = [
+  'mcdb-senior-research',
+  'mbb-senior-requirement',
+  'chemistry-independent-research',
+  'astronomy-senior-project',
+  'economics-senior-essay',
+  'american-studies-senior-essay',
+  'wgss-senior-essay',
+  'linguistics-senior-essay',
+  'hshm-senior-project',
+  'statistics-data-science-senior-essay',
+] as const;
+
+describe('courseBasedResearchPathwayScraper broadened corpus', () => {
+  it('expands well beyond the three-department pilot', () => {
+    const keys = DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES.map((page) => page.key);
+    expect(keys).toEqual(expect.arrayContaining(['psychology-directed-research', ...BROADENED_FIXTURE_KEYS]));
+    expect(DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES.length).toBeGreaterThanOrEqual(13);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(new Set(DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES.map((page) => page.url)).size).toBe(
+      keys.length,
+    );
+  });
+
+  it('cites each department’s own course page, never a catalog or course-search index root', () => {
+    for (const page of DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES) {
+      const url = new URL(page.url);
+      expect(url.protocol).toBe('https:');
+      expect(url.hostname.endsWith('.yale.edu')).toBe(true);
+      expect(isCatalogOrCourseSearchIndexRootUrl(page.url)).toBe(false);
+      expect(url.hostname).not.toMatch(/^(?:catalog|courses)\.yale\.edu$/);
+      expect(page.name.trim().length).toBeGreaterThan(0);
+      expect(page.department.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  const fixtureConfigs = BROADENED_FIXTURE_KEYS.map((key) => ({
+    key,
+    config: DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES.find((page) => page.key === key)!,
+  }));
+
+  it('has a live-HTML fixture and config row for every broadened department', () => {
+    for (const { key, config } of fixtureConfigs) {
+      expect(config, `missing config row for ${key}`).toBeTruthy();
+      expect(
+        existsSync(join(__dirname, 'fixtures', 'course-based-research', `${key}.html`)),
+        `missing fixture for ${key}`,
+      ).toBe(true);
+    }
+  });
+
+  for (const { key, config } of fixtureConfigs) {
+    describe(`${key}`, () => {
+      const html = readCoursePathwayFixture(`${key}.html`);
+      const records = parseCourseBasedResearchPathwayPage(html, config);
+
+      it('mints exactly one COURSE_SEQUENCE research home with the owning department', () => {
+        expect(records).toHaveLength(1);
+        expect(records[0]).toMatchObject({
+          entityKey: `course-based-research-${key}`,
+          name: config.name,
+          entityType: 'COURSE_SEQUENCE',
+          kind: 'program',
+          department: config.department,
+          school: config.school,
+          sourceUrl: config.url,
+        });
+      });
+
+      it('produces a source-backed description free of chrome and contact data', () => {
+        const { fullDescription, shortDescription } = records[0];
+        expect(fullDescription).toMatch(
+          new RegExp(`^A for-credit, course-based research pathway in ${escapeRegExp(config.department)}\\.`),
+        );
+        expect(fullDescription.length).toBeGreaterThan(
+          `A for-credit, course-based research pathway in ${config.department}.`.length,
+        );
+        expect(shortDescription.length).toBeGreaterThan(0);
+        for (const text of [fullDescription, shortDescription]) {
+          expect(text).not.toMatch(/@[a-z0-9.-]+\.(?:edu|com|org)/i);
+          expect(text).not.toMatch(/\(?\b\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/);
+          expect(text).not.toMatch(/Copyright|Privacy policy|Accessibility at Yale|Skip to main content/i);
+          expect(text).not.toMatch(/https?:\/\//);
+        }
+      });
+
+      it('emits discovery-only observations that cite the department page and fabricate no access data', () => {
+        const observations = courseBasedResearchPathwayRecordsToObservations(records);
+        const fields = observations.map((observation) => observation.field);
+        expect(fields).toEqual(
+          expect.arrayContaining(['slug', 'name', 'entityType', 'departments', 'sourceUrls']),
+        );
+        expect(fields).not.toEqual(expect.arrayContaining(FABRICATED_EVIDENCE_FIELDS));
+        expect(observations.every((observation) => observation.sourceUrl === config.url)).toBe(true);
+        const sourceUrlsObs = observations.find((observation) => observation.field === 'sourceUrls');
+        expect(sourceUrlsObs?.value).toEqual([config.url]);
+        const entityTypeObs = observations.find((observation) => observation.field === 'entityType');
+        expect(entityTypeObs?.value).toBe('COURSE_SEQUENCE');
+      });
+    });
+  }
+});
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
