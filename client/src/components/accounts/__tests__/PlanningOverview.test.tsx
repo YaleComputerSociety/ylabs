@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import PlanningOverview from '../PlanningOverview';
 
@@ -56,6 +56,76 @@ describe('PlanningOverview Next up card', () => {
     renderOverview({ savedResearchCount: 0, savedFellowshipCount: 0 });
 
     expect(screen.getByText('Save a research home to start planning')).toBeTruthy();
+  });
+});
+
+describe('PlanningOverview watched-program urgency signal', () => {
+  it('surfaces an aggregate count of programs closing within 2 weeks', () => {
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 2,
+      closingWithin14DaysCount: 2,
+    });
+
+    expect(screen.getByText(/2 watched programs close within 2 weeks\./)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'View Program Watch' })).toBeTruthy();
+  });
+
+  it('uses singular phrasing for a single program closing soon', () => {
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 1,
+      closingWithin14DaysCount: 1,
+    });
+
+    expect(screen.getByText(/1 watched program close within 2 weeks\./)).toBeTruthy();
+  });
+
+  it('emphasizes when a not-started program is closing soon', () => {
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 1,
+      closingWithin14DaysCount: 1,
+      hasNotStartedClosingSoon: true,
+    });
+
+    expect(screen.getByText(/Including one you haven't started\./)).toBeTruthy();
+  });
+
+  it('stays silent when nothing is closing soon', () => {
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 1,
+      closingWithin14DaysCount: 0,
+    });
+
+    expect(screen.queryByText(/close within 2 weeks/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'View Program Watch' })).toBeNull();
+  });
+
+  it('invokes the Program Watch callback when the link is activated', () => {
+    const onViewProgramWatch = vi.fn();
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 1,
+      closingWithin14DaysCount: 1,
+      onViewProgramWatch,
+    });
+
+    screen.getByRole('button', { name: 'View Program Watch' }).click();
+    expect(onViewProgramWatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows both the aggregate count and the existing next-deadline cue together', () => {
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 2,
+      closingWithin14DaysCount: 2,
+      nextDeadlineLabel: 'Summer Research Grant: Due Jun 30, 2099',
+    });
+
+    expect(screen.getByText('Summer Research Grant: Due Jun 30, 2099')).toBeTruthy();
+    expect(screen.getByText(/2 watched programs close within 2 weeks\./)).toBeTruthy();
   });
 });
 

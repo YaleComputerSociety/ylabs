@@ -95,6 +95,119 @@ describe('ProgramWatch', () => {
     );
   });
 
+  it('reports the watched-program deadline urgency summary', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2', 'p3'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              {
+                _id: 'p1',
+                id: 'p1',
+                title: 'Far-off Fellowship',
+                deadline: '2099-06-30T00:00:00.000Z',
+                isAcceptingApplications: true,
+              },
+              {
+                _id: 'p2',
+                id: 'p2',
+                title: 'Closing Soon Grant',
+                deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+                isAcceptingApplications: true,
+              },
+              {
+                _id: 'p3',
+                id: 'p3',
+                title: 'Already Closed Out',
+                deadline: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+                isAcceptingApplications: false,
+              },
+            ],
+          },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: {
+            watchedProgramPlans: {
+              p1: { stage: 'SAVED' },
+              p2: { stage: 'SAVED' },
+              p3: { stage: 'CLOSED' },
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const onSummaryChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch onSummaryChange={onSummaryChange} />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Closing Soon Grant');
+    await waitFor(() =>
+      expect(onSummaryChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          count: 3,
+          closingWithin14DaysCount: 1,
+          hasNotStartedClosingSoon: true,
+        }),
+      ),
+    );
+  });
+
+  it('orders watched programs soonest-deadline-first, with no-deadline programs last', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2', 'p3'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              { _id: 'p1', id: 'p1', title: 'No Deadline Program', isAcceptingApplications: false },
+              {
+                _id: 'p2',
+                id: 'p2',
+                title: 'Far-off Fellowship',
+                deadline: '2099-06-30T00:00:00.000Z',
+                isAcceptingApplications: true,
+              },
+              {
+                _id: 'p3',
+                id: 'p3',
+                title: 'Sooner Grant',
+                deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+                isAcceptingApplications: true,
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { watchedProgramPlans: {} } });
+    });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Sooner Grant');
+    const titles = screen.getAllByRole('listitem').map((item) => item.textContent || '');
+    const soonerIndex = titles.findIndex((text) => text.includes('Sooner Grant'));
+    const farOffIndex = titles.findIndex((text) => text.includes('Far-off Fellowship'));
+    const noDeadlineIndex = titles.findIndex((text) => text.includes('No Deadline Program'));
+    expect(soonerIndex).toBeLessThan(farOffIndex);
+    expect(farOffIndex).toBeLessThan(noDeadlineIndex);
+  });
+
   it('persists an edited note to the canonical program plan on blur', async () => {
     withWatchedPrograms();
     mockedAxios.put.mockResolvedValue({ data: { watchedProgramPlans: {} } });
