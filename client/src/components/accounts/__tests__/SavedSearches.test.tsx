@@ -144,4 +144,36 @@ describe('SavedSearches', () => {
     const row = screen.getByText('CS labs in ML').closest('li') as HTMLElement;
     expect(within(row).queryByText(/new/)).not.toBeInTheDocument();
   });
+
+  it('reports the aggregate new-match count across saved searches', async () => {
+    withSearches([
+      baseSearch({ _id: 's1', newMatchCount: 2 }),
+      baseSearch({ _id: 's2', newMatchCount: 3 }),
+    ]);
+    const onNewMatchCountChange = vi.fn();
+    render(
+      <MemoryRouter>
+        <SavedSearches onNewMatchCountChange={onNewMatchCountChange} />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(onNewMatchCountChange).toHaveBeenCalledWith(5));
+  });
+
+  it('recomputes the aggregate new-match count to zero after opening clears a search', async () => {
+    withSearches([baseSearch({ newMatchCount: 3 })]);
+    mockedAxios.post.mockResolvedValue({ data: {} });
+    const onNewMatchCountChange = vi.fn();
+    render(
+      <MemoryRouter>
+        <SavedSearches onNewMatchCountChange={onNewMatchCountChange} />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(onNewMatchCountChange).toHaveBeenCalledWith(3));
+
+    fireEvent.click(await screen.findByRole('link', { name: 'Open' }));
+
+    await waitFor(() => expect(onNewMatchCountChange).toHaveBeenLastCalledWith(0));
+  });
 });
