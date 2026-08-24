@@ -5,6 +5,8 @@ interface PlanningOverviewProps {
   savedOpenCount?: number;
   savedFellowshipCount: number;
   nextDeadlineLabel?: string;
+  savedSearchNewMatchCount?: number;
+  onViewSavedSearches?: () => void;
 }
 
 const openHomesSummary = (savedOpenCount: number): string =>
@@ -29,6 +31,8 @@ const PlanningOverview = ({
   savedOpenCount = 0,
   savedFellowshipCount,
   nextDeadlineLabel,
+  savedSearchNewMatchCount = 0,
+  onViewSavedSearches,
 }: PlanningOverviewProps) => (
   <section className="mb-6 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -45,6 +49,19 @@ const PlanningOverview = ({
           <p className="mt-1 text-sm font-semibold text-emerald-800">
             {openHomesSummary(savedOpenCount)}
           </p>
+        )}
+        {savedSearchNewMatchCount > 0 && onViewSavedSearches && (
+          <button
+            type="button"
+            onClick={onViewSavedSearches}
+            aria-label={`${savedSearchNewMatchCount} new ${
+              savedSearchNewMatchCount === 1 ? 'match' : 'matches'
+            } for your saved searches`}
+            className="mt-1 text-sm font-semibold text-[var(--yr-blue)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            {savedSearchNewMatchCount} new {savedSearchNewMatchCount === 1 ? 'match' : 'matches'}{' '}
+            for your saved searches
+          </button>
         )}
       </div>
       <Link

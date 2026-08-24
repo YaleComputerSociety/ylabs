@@ -66,3 +66,6 @@ export const savedSearchTargetPath = (search: SavedSearchView): string => {
   const params = search.urlParams.replace(/^\?+/, '');
   return params ? `/research?${params}` : '/research';
 };
+
+export const totalNewSavedSearchMatches = (searches: SavedSearchView[]): number =>
+  searches.reduce((sum, search) => sum + Math.max(0, search.newMatchCount ?? 0), 0);
