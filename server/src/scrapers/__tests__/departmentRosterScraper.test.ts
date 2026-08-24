@@ -25,6 +25,11 @@ import {
   viewsRowPersonExtractor,
   viewsTableRowExtractor,
   directoryListingCardExtractor,
+  profileGridItemExtractor,
+  nodeTeaserFacultyExtractor,
+  jacksonProfileComponentExtractor,
+  lawPersonListingExtractor,
+  nursingFacultyExtractor,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -922,6 +927,99 @@ describe('viewsTableRowExtractor', () => {
         profileUrl: 'https://english.yale.edu/people/casey-fixture',
         title: 'Sterling Professor of English',
         imageUrl: 'https://english.yale.edu/sites/casey-fixture.jpg',
+      },
+    ]);
+  });
+});
+
+describe('profileGridItemExtractor', () => {
+  it('extracts YSM profile-grid-item cards, choosing the longest title', () => {
+    const html = `
+      <div class="profile-grid-item">
+        <a href="#"><div><span class="profile-grid-item__name--link">Robin Fixture, PhD</span></div></a>
+        <div class="profile-grid-item__title-container"><p class="profile-grid-item__title">Director</p></div>
+        <div class="profile-grid-item__title-container"><p class="profile-grid-item__title">Professor of Cell Biology; Director, Stem Cell Center</p></div>
+        <div class="profile-grid-item__link-details-container"><a href="/stemcell/profile/robin-fixture/">View Full Profile</a></div>
+        <div class="profile-grid-item__thumbnail-container"><img src="/img/robin-fixture.jpg"></div>
+      </div>`;
+    expect(profileGridItemExtractor(html, { pageUrl: 'https://medicine.yale.edu/stemcell/people/listing/' })).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://medicine.yale.edu/stemcell/profile/robin-fixture/',
+        title: 'Professor of Cell Biology; Director, Stem Cell Center',
+        imageUrl: 'https://medicine.yale.edu/img/robin-fixture.jpg',
+      },
+    ]);
+  });
+});
+
+describe('nodeTeaserFacultyExtractor', () => {
+  it('extracts SOM node-teaser--faculty rows', () => {
+    const html = `
+      <article class="node-teaser node-teaser--faculty node-teaser--row">
+        <div class="node-teaser__image"><img src="/img/casey-fixture.jpg"></div>
+        <header><h3 class="node-teaser__heading"><a href="/faculty-research/faculty-directory/casey-fixture">Casey Fixture</a></h3>
+        <div class="node-teaser__job-title">Professor of Economics</div></header>
+      </article>`;
+    expect(nodeTeaserFacultyExtractor(html, { pageUrl: 'https://som.yale.edu/faculty-research/faculty-directory' })).toEqual([
+      {
+        name: 'Casey Fixture',
+        profileUrl: 'https://som.yale.edu/faculty-research/faculty-directory/casey-fixture',
+        title: 'Professor of Economics',
+        imageUrl: 'https://som.yale.edu/img/casey-fixture.jpg',
+      },
+    ]);
+  });
+});
+
+describe('jacksonProfileComponentExtractor', () => {
+  it('extracts Jackson profile--component cards', () => {
+    const html = `
+      <article class="profile profile--component profile__item">
+        <div class="profile__media"><figure><img src="/img/jordan-fixture.jpg"></figure></div>
+        <div class="profile__content"><h3><a href="/directory/jordan-fixture">Jordan Fixture</a></h3>
+          <ul class="profile-positions"><li>Associate Professor of Political Science</li></ul></div>
+      </article>`;
+    expect(jacksonProfileComponentExtractor(html, { pageUrl: 'https://jackson.yale.edu/faculty-research/professors-global-affairs' })).toEqual([
+      {
+        name: 'Jordan Fixture',
+        profileUrl: 'https://jackson.yale.edu/directory/jordan-fixture',
+        title: 'Associate Professor of Political Science',
+        imageUrl: 'https://jackson.yale.edu/img/jordan-fixture.jpg',
+      },
+    ]);
+  });
+});
+
+describe('lawPersonListingExtractor', () => {
+  it('extracts Law node--type-person listing cards', () => {
+    const html = `
+      <div class="views-row"><article class="node node--type-person node--view-mode-filtered-listing">
+        <h3 class="style-fancy"><a href="/emery-fixture"><span class="field field--name-title">Emery Fixture</span></a></h3>
+        <div class="field field--name-field-title">Sterling Professor of Law</div>
+      </article></div>`;
+    expect(lawPersonListingExtractor(html, { pageUrl: 'https://law.yale.edu/faculty?type=faculty' })).toEqual([
+      {
+        name: 'Emery Fixture',
+        profileUrl: 'https://law.yale.edu/emery-fixture',
+        title: 'Sterling Professor of Law',
+      },
+    ]);
+  });
+});
+
+describe('nursingFacultyExtractor', () => {
+  it('extracts Nursing faculty-directory nodes', () => {
+    const html = `
+      <div class="views-row"><div class="node-faculty-directory">
+        <a class="group-faculty-link-wrapper" href="/faculty-research/faculty-directory/quinn-fixture-phd-rn">
+          <div class="field-name-faculty-firstname-lastname"><div class="field-items"><h2 class="field-item"><span>Quinn Fixture</span></h2></div></div>
+        </a>
+      </div></div>`;
+    expect(nursingFacultyExtractor(html, { pageUrl: 'https://nursing.yale.edu/faculty-research/faculty-directory' })).toEqual([
+      {
+        name: 'Quinn Fixture',
+        profileUrl: 'https://nursing.yale.edu/faculty-research/faculty-directory/quinn-fixture-phd-rn',
       },
     ]);
   });

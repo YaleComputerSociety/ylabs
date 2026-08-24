@@ -45,7 +45,7 @@ describe('facultyDirectoryRegistry', () => {
     const byUrl = new Map(FACULTY_DIRECTORY_REGISTRY.map((entry) => [entry.url, entry]));
     expect(byUrl.get('https://mcdb.yale.edu/people/faculty')?.status).toBe('covered');
     expect(byUrl.get('https://physics.yale.edu/people/faculty')?.status).toBe('covered');
-    expect(byUrl.get('https://chem.yale.edu/people/faculty')?.status).toBe('gap');
+    expect(byUrl.get('https://chem.yale.edu/people/faculty')?.status).toBe('covered');
     expect(byUrl.get('https://sociology.yale.edu/faculty')?.status).toBe('covered');
     expect(byUrl.get('https://english.yale.edu/people/ladder-faculty')?.status).toBe('covered');
     expect(
