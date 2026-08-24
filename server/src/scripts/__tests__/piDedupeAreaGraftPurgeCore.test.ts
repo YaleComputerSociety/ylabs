@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeGraftToken, planAreaGraftRemoval } from '../piDedupeAreaGraftPurgeCore';
+import {
+  normalizeGraftToken,
+  planAreaGraftRemoval,
+  planDescriptionGraftRemoval,
+} from '../piDedupeAreaGraftPurgeCore';
 import { parseArgs } from '../purgePiDedupeAreaGrafts';
+
+const CHEN_OPTICS_FULL =
+  'The Pei-Yu Chen Lab focuses on research in semiconductor lasers and optical devices, as well as photonic and optical devices. Additionally, the lab explores conducting polymers and their various applications.';
+const CHEN_OPTICS_SHORT =
+  'The Pei-Yu Chen Lab investigates semiconductor lasers, optical devices, and conducting polymers.';
 
 describe('planAreaGraftRemoval', () => {
   it('removes the verified graft strings and preserves the real discipline area', () => {
@@ -64,6 +73,65 @@ describe('planAreaGraftRemoval', () => {
     });
     expect(result.cleaned).toEqual([]);
     expect(result.changed).toBe(true);
+  });
+});
+
+describe('planDescriptionGraftRemoval', () => {
+  it('clears both fields when the stored text still exactly matches the graft', () => {
+    const result = planDescriptionGraftRemoval({
+      currentFull: CHEN_OPTICS_FULL,
+      currentShort: CHEN_OPTICS_SHORT,
+      removeFull: CHEN_OPTICS_FULL,
+      removeShort: CHEN_OPTICS_SHORT,
+    });
+    expect(result).toEqual({ clearFull: true, clearShort: true, changed: true });
+  });
+
+  it('matches case- and whitespace-insensitively', () => {
+    const result = planDescriptionGraftRemoval({
+      currentFull: `  ${CHEN_OPTICS_FULL.toUpperCase()}  `,
+      removeFull: CHEN_OPTICS_FULL,
+    });
+    expect(result.clearFull).toBe(true);
+    expect(result.changed).toBe(true);
+  });
+
+  it('is a no-op when the record has since self-corrected (fail closed)', () => {
+    const result = planDescriptionGraftRemoval({
+      currentFull:
+        'The Pei-Yu Chen Lab studies cardiovascular medicine and heart-failure mechanisms.',
+      currentShort: 'Cardiovascular medicine lab.',
+      removeFull: CHEN_OPTICS_FULL,
+      removeShort: CHEN_OPTICS_SHORT,
+    });
+    expect(result).toEqual({ clearFull: false, clearShort: false, changed: false });
+  });
+
+  it('clears only the field whose text matches when the other has drifted', () => {
+    const result = planDescriptionGraftRemoval({
+      currentFull: CHEN_OPTICS_FULL,
+      currentShort: 'A corrected short description.',
+      removeFull: CHEN_OPTICS_FULL,
+      removeShort: CHEN_OPTICS_SHORT,
+    });
+    expect(result).toEqual({ clearFull: true, clearShort: false, changed: true });
+  });
+
+  it('never clears when no target string is supplied', () => {
+    const result = planDescriptionGraftRemoval({
+      currentFull: CHEN_OPTICS_FULL,
+      currentShort: CHEN_OPTICS_SHORT,
+    });
+    expect(result).toEqual({ clearFull: false, clearShort: false, changed: false });
+  });
+
+  it('does not treat an empty stored field as a match for an empty target', () => {
+    const result = planDescriptionGraftRemoval({
+      currentFull: '',
+      removeFull: '   ',
+    });
+    expect(result.clearFull).toBe(false);
+    expect(result.changed).toBe(false);
   });
 });
 
