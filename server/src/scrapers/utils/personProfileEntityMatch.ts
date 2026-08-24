@@ -65,6 +65,35 @@ const SLUG_SHELL_PREFIXES = [
   /^center-/,
 ];
 
+// A slug generated from a single PI's grant or profile record rather than the
+// entity's own organizational identity: `nih-pi-<name>`, `nsf-pi-<name>`,
+// `doe-pi-<name>`, and `faculty-research-area-<name>` are minted directly from
+// that person's record, and `<surname>-lab-<code>` is the generated key for a
+// person's lab page. An entity later reclassified to a multi-PI org kind
+// (center/institute/program) keeps this slug, so it remains the tell that the
+// entity's only ever-recorded identity is one person's, not the
+// organization's (issue #1595).
+const PERSON_OR_GRANT_SHELL_SLUG_PREFIXES = [
+  /^nih-pi-/,
+  /^nsf-pi-/,
+  /^doe-pi-/,
+  /^faculty-research-area-/,
+];
+const LAB_SHELL_SLUG_SUFFIX_RE = /-lab-[a-z]{0,4}\d{1,6}$/i;
+
+/**
+ * Whether an entity's slug betrays single-PI/single-grant shell provenance
+ * rather than the entity's own organizational identity.
+ */
+export function isPersonOrGrantShellSlug(slug: unknown): boolean {
+  const value = textValue(slug).toLowerCase();
+  if (!value) return false;
+  return (
+    PERSON_OR_GRANT_SHELL_SLUG_PREFIXES.some((pattern) => pattern.test(value)) ||
+    LAB_SHELL_SLUG_SUFFIX_RE.test(value)
+  );
+}
+
 // A department-roster listing page (`/people/linguistics-faculty`,
 // `/people/our-people`) splits into two dash-separated tokens just like a real
 // person slug, but names a page, not a person. Rejecting any slug that carries one
