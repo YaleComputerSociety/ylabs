@@ -921,16 +921,30 @@ const leadingDanglingDemonstrativePattern =
 
 /**
  * A card blurb whose subject is a bare third-person pronoun ("He earned an MS
- * in...", "She holds a joint appointment...") or a transitional adverbial
- * ("In addition, he...") introducing one, with no name ever established on the
- * standalone card (#1400/#1506). The reader has no antecedent for "he"/"she"/
- * "they" on a card shown out of context, so this fails closed the same way a
- * dangling demonstrative does, whatever the sentence's own content quality.
+ * in...", "She holds a joint appointment...", "It seeks to enhance...") or a
+ * transitional adverbial ("In addition, he...") introducing one, with no name
+ * ever established on the standalone card (#1400/#1506/#1762). The reader has
+ * no antecedent for "he"/"she"/"they"/"it" on a card shown out of context, so
+ * this fails closed the same way a dangling demonstrative does, whatever the
+ * sentence's own content quality.
  */
 const leadingDanglingPronounSubjectPattern =
-  /^(?:He|She|They)\s+(?:is|are|was|were|has|had|earned|received|holds?|held|completed|joined|serves?|served|graduated|obtained|remains?|studies|studied|investigates?|examines?|explores?|develops?|works?|focuses?|focused|specializes?|specialized)\b/;
+  /^(?:He|She|They|It)\s+(?:is|are|was|were|has|had|earned|received|holds?|held|completed|joined|serves?|served|graduated|obtained|remains?|studies|studied|investigates?|examines?|explores?|develops?|works?|focuses?|focused|specializes?|specialized|seeks?|aims?)\b/;
 const leadingTransitionalPronounSubjectPattern =
   /^(?:In addition|Additionally|Also|Moreover|Furthermore),?\s+(?:he|she|they)\b/i;
+
+/**
+ * A card blurb that opens with a discourse connective ("In addition to...",
+ * "Moreover,", "For example,") whose function is to link back to a sentence
+ * that never made it onto the card (#1762). Whatever the connective
+ * introduces next - a named subject ("Moreover, their laboratory..."), a bare
+ * noun phrase ("In addition, a broad area of research..."), or a pronoun
+ * already covered above - the connective itself promises prior context the
+ * standalone card never supplies, so this fails closed unconditionally,
+ * broader than the pronoun-specific arm above.
+ */
+const leadingDiscourseConnectivePattern =
+  /^(?:In addition|Additionally|Furthermore|Moreover|For example|For instance|In contrast|Notably|Similarly)[\s,]/i;
 
 const midDemonstrativePhrasePattern = /\b(?:these|those)\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*)?)/gi;
 
@@ -982,6 +996,23 @@ function synthesisBlurbHasDanglingDemonstrative(text: string): boolean {
   return false;
 }
 
+const synthesisBlurbFirstPersonPluralReferencePattern = /\b(?:us|we|our)\b/;
+
+/**
+ * A synthesized "Uses ..." / "Studies ..." blurb (no explicit subject) that
+ * refers mid-sentence to "us"/"we"/"our" ("Uses integrative tools that allow
+ * us to undertake a systems biology approach ...") (#1762). The synthesis
+ * verb lead never names a subject, so the first-person-plural reference has
+ * nothing on the card to anchor it - the same dangling-reference failure as
+ * `synthesisBlurbHasDanglingDemonstrative`, just a pronoun referent instead
+ * of a `these/those` noun phrase.
+ */
+function synthesisBlurbHasDanglingFirstPersonPluralReference(text: string): boolean {
+  return (
+    synthesisBlurbLeadPattern.test(text) && synthesisBlurbFirstPersonPluralReferencePattern.test(text)
+  );
+}
+
 /**
  * A card blurb / shortDescription that does not stand on its own as a sentence:
  * it begins mid-clause with a lowercase word (a truncated lead such as the
@@ -997,19 +1028,27 @@ function synthesisBlurbHasDanglingDemonstrative(text: string): boolean {
  * Rendered verbatim on the student browse card, such a summary references
  * something never introduced, so it is failed closed rather than shown. A
  * leading lowercase token that carries an internal capital (a scientific token
- * like "mRNA"/"iPSC") is exempt.
+ * like "mRNA"/"iPSC") is exempt. Also fails closed on a leading discourse
+ * connective ("In addition to...", "Moreover,") that promises context the
+ * card never supplies, and on a synthesis-verb-lead blurb that dangles a
+ * first-person-plural reference ("... that allow us to ...") with no subject
+ * ever named to anchor it (#1762).
  */
 export function isNonSelfContainedShortDescription(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (startsMidSentenceLowercase(normalized)) return true;
   if (leadingDanglingDemonstrativePattern.test(normalized)) return true;
+  if (leadingDiscourseConnectivePattern.test(normalized)) return true;
   if (leadingBareSubjectPronounPattern.test(normalized)) return true;
   if (leadingCareerHistoryOpenerPattern.test(normalized)) return true;
   if (leadingDoctorDegreeOpenerPattern.test(normalized)) return true;
   if (leadingDanglingPronounSubjectPattern.test(normalized)) return true;
   if (leadingTransitionalPronounSubjectPattern.test(normalized)) return true;
-  return synthesisBlurbHasDanglingDemonstrative(normalized);
+  return (
+    synthesisBlurbHasDanglingDemonstrative(normalized) ||
+    synthesisBlurbHasDanglingFirstPersonPluralReference(normalized)
+  );
 }
 
 /**
