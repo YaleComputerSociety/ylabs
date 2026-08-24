@@ -336,7 +336,9 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (field === 'shortDescription' && typeof group[field] === 'string') {
-        dto[field] = groundedShortDescriptionString(served.shortDescription, served.fullDescription);
+        dto[field] =
+          groundedShortDescriptionString(served.shortDescription, served.fullDescription) ||
+          String(served.fullDescription || '');
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
