@@ -10,6 +10,7 @@ import {
   containsHtmlTagMarkup,
   evergreenizeStaleCycleDatePhrase,
   hasContactBlockResidue,
+  isBareLabelOrTopicEnumerationText,
   isCitationAuthorListDumpText,
   isCtaNewsTickerDumpText,
   isStudiesTemplateGlueMalformed,
@@ -1416,6 +1417,64 @@ describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {
         'Vascular Biology',
       ]),
     ).toBe(false);
+  });
+});
+
+describe('isBareLabelOrTopicEnumerationText provenance-independent bare-list shape', () => {
+  it('flags a title/role dump with no chip overlap and no lead verb', () => {
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        'Professor of Internal Medicine (Hematology) Acting Director, Stem Cell Transplantation; Chairman, Car-T Cell Joint Steering Committee; Director, Unrelated Donor Transplant Program, Stem Cell Transplantation; Co-Director, Immune Effector Cell Therapy; Co-Director, Adult CAR T-Cell Therapy Program',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a scraped "Area of interest:" caption list', () => {
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        'Area of interest: Portuguese and Brazilian Literatures; Camões, Machado de Assis, Fernando Pessoa; modernist, vanguardist, and inter-arts literature; Portuguese culture in Asia; ethnomusicology.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a genuine sentence whose object list uses a verb outside the research-focus vocabulary', () => {
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        'Creative work spans playwriting, theater, screenwriting, and dramatic storytelling.',
+      ),
+    ).toBe(false);
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        "Kaiama Glover's research spans the intersection of French, francophone, Caribbean, and Haitian literary studies.",
+      ),
+    ).toBe(false);
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        'Uses computational and quantitative methods to examine the intersection of social movements, culture, and technology, including AI interactions and the Blue Lives Matter movement.',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps a short three-item "Studies <A>, <B>, and <C>." sentence', () => {
+    expect(
+      isBareLabelOrTopicEnumerationText('Studies Condensed Matter Physics, Stochastic Processes, and climate dynamics.'),
+    ).toBe(false);
+  });
+
+  it('keeps a genuine multi-sentence description that merely contains a comma-heavy sentence', () => {
+    expect(
+      isBareLabelOrTopicEnumerationText(
+        "Tristan Botelho's research examines how evaluation processes shape opportunities in organizations and markets - who gets hired, which startups are funded, and how workers are rated - explaining why some people, ideas, and firms advance while others stall. His work bridges scholarship on stratification, careers, entrepreneurship, and the future of work.",
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag fewer than four delimiter-joined items', () => {
+    expect(isBareLabelOrTopicEnumerationText('Director, Chairman, and Co-Director.')).toBe(false);
+  });
+
+  it('does not flag blank text', () => {
+    expect(isBareLabelOrTopicEnumerationText('')).toBe(false);
   });
 });
 

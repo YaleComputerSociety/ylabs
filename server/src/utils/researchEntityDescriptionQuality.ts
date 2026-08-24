@@ -2,6 +2,7 @@ import {
   collapseDoubledConjunction,
   collapseDoubledSynthesisVerb,
   hasContactBlockResidue,
+  isBareLabelOrTopicEnumerationText,
   isCitationAuthorListDumpText,
   isConnectedToKeywordListStub,
   isNonSelfContainedShortDescription,
@@ -1039,6 +1040,7 @@ const isAppointmentOnly = (value: string): boolean => {
 export function fullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
+  entityType?: unknown,
 ): FieldQuality {
   const text = textValue(value);
   const flags: DescriptionQualityFlag[] = [];
@@ -1056,6 +1058,13 @@ export function fullDescriptionQuality(
   if (text && isConnectedToKeywordListStub(text)) flags.push('research-area-echo');
   if (text && isAreaEchoFallbackFullDescription(text, researchAreas)) {
     flags.push('area-echo-fallback');
+  }
+  if (
+    text &&
+    isTopicLabelListEligibleEntityType(entityType) &&
+    isBareLabelOrTopicEnumerationText(text)
+  ) {
+    flags.push('topic-label-list');
   }
   if (
     text &&
@@ -1219,7 +1228,7 @@ export function shortDescriptionQuality(
 ): FieldQuality {
   const text = textValue(value);
   const full = textValue(fullDescription);
-  const fullQuality = fullDescriptionQuality(full, researchAreas);
+  const fullQuality = fullDescriptionQuality(full, researchAreas, options?.entityType);
   const firstFullSentence = textValue(sentenceList(full)[0]);
   const flags: DescriptionQualityFlag[] = [];
 
@@ -1241,6 +1250,13 @@ export function shortDescriptionQuality(
     text &&
     isTopicLabelListEligibleEntityType(options?.entityType) &&
     isUngroundedTopicLabelListShort(text, full)
+  ) {
+    flags.push('topic-label-list');
+  }
+  if (
+    text &&
+    isTopicLabelListEligibleEntityType(options?.entityType) &&
+    isBareLabelOrTopicEnumerationText(text)
   ) {
     flags.push('topic-label-list');
   }
@@ -1524,7 +1540,7 @@ export function buildResearchAreasCardSummary(researchAreas: unknown): string {
 export function assessResearchEntityDescriptionQuality(
   input: ResearchEntityDescriptionQualityInput,
 ): ResearchEntityDescriptionQuality {
-  const full = fullDescriptionQuality(input.fullDescription, input.researchAreas);
+  const full = fullDescriptionQuality(input.fullDescription, input.researchAreas, input.entityType);
   const short = input.isProgramLike
     ? programCardShortDescriptionQuality(input.shortDescription, input.fullDescription)
     : shortDescriptionQuality(input.shortDescription, input.fullDescription, input.researchAreas, {
