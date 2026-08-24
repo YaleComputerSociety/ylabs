@@ -8,6 +8,7 @@ import { resolveGroundedCardDescription } from '../utils/groundedCardSynthesis';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 import { isBlockingVisibilityReason } from '../services/studentVisibilityGateService';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 
 export const CARD_BLOCKER_REASON = 'missing_card_description';
 
@@ -57,9 +58,22 @@ export async function planCardBackfillRow(
     kind: entity.kind,
     entityType: entity.entityType,
   });
-  const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
+  // A document persisted via a raw `$set` can carry `kind` without the
+  // `entityType` the schema only backfills as a Mongoose default on document
+  // creation, so falling back to the same kind-derived mapping the serve path
+  // uses (#1732) keeps the entityType-gated topic-label-list/chip-echo guards
+  // below from silently never firing here the way they already do at serve
+  // time - otherwise this planner can believe a bare researchArea-chip-list
+  // short/card is fine when the serve gate would reject it (#1730/#1680 class).
+  const resolvedEntityType =
+    entity.entityType || (entity.kind ? mapResearchGroupKindToEntityType(entity.kind) : undefined);
+  const isShortUseful = (text: string): boolean =>
+    isProgramLike
+      ? programCardShortDescriptionQuality(text, full).isUseful
+      : shortDescriptionQuality(text, full, entity.researchAreas, { entityType: resolvedEntityType })
+          .isUseful;
 
-  if (short && shortQuality(short, full).isUseful) {
+  if (short && isShortUseful(short)) {
     return { ...base, action: 'short-ok', proposedShort: null, gainedCard: false, wouldPromote: false };
   }
   // classifyFullDescription's "genuine" bar (research-focus phrasing, a 120-char
@@ -79,10 +93,11 @@ export async function planCardBackfillRow(
   const card = await resolveGroundedCardDescription({
     fullDescription: full,
     researchAreas: entity.researchAreas,
+    entityType: resolvedEntityType,
     isProgramLike,
     synthesize,
   });
-  if (!card || !shortQuality(card, full).isUseful) {
+  if (!card || !isShortUseful(card)) {
     return { ...base, action: 'no-card', proposedShort: null, gainedCard: false, wouldPromote: false };
   }
 
