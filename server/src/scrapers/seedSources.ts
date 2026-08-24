@@ -383,6 +383,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'beinecke-curatorial-units',
+    displayName: 'Beinecke Rare Book & Manuscript Library curatorial units',
+    description:
+      'Beinecke Rare Book & Manuscript Library curatorial-units catalog; producer for ARCHIVE_OR_MUSEUM_PROJECT rare-book/manuscript/archive research homes, reusing the Peabody path and complementing the Beinecke research-fellowships producer (#1455). Cites each individual unit page (never the index) and emits discovery-only identity and an official-page description. The migrated site publishes no structured named curator on unit pages, so the curatorial-lead extractor fails closed; an unled unit still earns the organizational reach-out ways-in from its official page. Fails closed on contact data.',
+    baseUrl: 'https://beinecke.library.yale.edu/beinecke/collections',
+    defaultWeight: 0.85,
+    cadence: 'monthly',
+  },
+  {
     name: 'research-area-source-extractor',
     displayName: 'Research-area source extractor',
     description:

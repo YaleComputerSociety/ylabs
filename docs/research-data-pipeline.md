@@ -160,8 +160,15 @@ It is discovery-only: it emits division identity, an official-page description, 
 It fails closed on contact data and never emits contact routes, undergraduate-access claims, or posted openings; a division that names no Curator-in-charge yields no lead rather than a fabricated one.
 A division with a resolved curatorial lead plus its official page lands on the `IDENTIFIED_LEAD_WAYS_IN` path in the access materializer with no new derivation.
 
-Sibling museum/collections acquisition gaps remain open follow-ups once this pilot proves the path, each its own issue:
-Beinecke Rare Book & Manuscript Library, Yale University Art Gallery, and Yale Center for British Art.
+The `beinecke-curatorial-units` source extends the same `ARCHIVE_OR_MUSEUM_PROJECT` path to the Beinecke Rare Book & Manuscript Library curatorial units (issue #1457), reusing the Peabody producer's shape and complementing the separate Beinecke research-fellowships producer (#1455).
+It walks the Beinecke curatorial-units index (`https://beinecke.library.yale.edu/beinecke/collections`) only to enumerate units, then fetches and cites each individual unit page (for example `https://beinecke.library.yale.edu/beinecke/collections/osborn-collection`), never the index root.
+It is discovery-only: it emits unit identity and the unit's own official-page summary description.
+Verified live during #1457, the migrated Beinecke site (now under `library.yale.edu/beinecke`) publishes no structured named-curator credit on its unit pages; every "curator" mention is historical body prose ("former curator ...", "served as curator ...").
+The curatorial-lead extractor therefore reads only a structured staff/contact credit block and never body prose, so it fails closed on the current unit pages rather than promoting a prose name.
+Because `ARCHIVE_OR_MUSEUM_PROJECT` is an organizational research home (`ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES`), an unled Beinecke unit still earns the organizational `REACH_OUT_PLAUSIBLE` ways-in from its official page rather than an identified named lead - contrary to the issue's initial hypothesis that Beinecke units would clear the identified-lead gate like Peabody's curators-in-charge.
+
+Sibling museum/collections acquisition gaps remain open follow-ups once these pilots prove the path, each its own issue:
+Yale University Art Gallery and Yale Center for British Art curatorial departments.
 The reserved `COLLECTIONS_INITIATIVE` sibling now has a producer via the `library-collections-as-data` source below (#1360).
 This note sits alongside the digital-humanities `DIGITAL_HUMANITIES_PROJECT` pilot follow-up tracked in issue #1345.
 
@@ -173,9 +180,9 @@ It is discovery-only: it emits exhibition identity, the official-page summary as
 It fails closed on contact data and never emits contact routes, undergraduate-access claims, or posted openings; an exhibition with no unambiguous curator credit yields no lead rather than a fabricated one.
 A faculty-curated exhibition whose lead resolves lands on the identified-faculty-lead ways-in; a librarian- or externally-curated exhibition whose lead does not resolve still earns an organizational ways-in from its official page, because `COLLECTIONS_INITIATIVE` is an organizational research home (`ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES`).
 
-Sibling collections/archive acquisition gaps remain open follow-ups once this pilot proves the path, each its own issue:
-Beinecke Rare Book & Manuscript Library, Yale University Art Gallery, and Yale Center for British Art collections.
-This note sits alongside the DHLab `DIGITAL_HUMANITIES_PROJECT` pilot (#1345) and the Peabody `ARCHIVE_OR_MUSEUM_PROJECT` pilot (#1349).
+Sibling collections/archive acquisition gaps remain open follow-ups once these pilots prove the path, each its own issue:
+Yale University Art Gallery and Yale Center for British Art collections.
+This note sits alongside the DHLab `DIGITAL_HUMANITIES_PROJECT` pilot (#1345), the Peabody `ARCHIVE_OR_MUSEUM_PROJECT` pilot (#1349), and the Beinecke `ARCHIVE_OR_MUSEUM_PROJECT` pilot (#1457).
 
 ## Canonical Collections
 
