@@ -90,6 +90,105 @@ export function stripTrailingProfileChromeFooter(value: unknown): string {
   return text.replace(TRAILING_PROFILE_CHROME_PATTERN, '').trim();
 }
 
+const DEGREE_TOKEN_PATTERN =
+  "(?:Ph\\.?\\s?D\\.?|Sc\\.?\\s?D\\.?|Ed\\.?\\s?D\\.?|Psy\\.?\\s?D\\.?|Th\\.?\\s?D\\.?|D\\.?\\s?Phil\\.?|M\\.?\\s?Phil\\.?|M\\.?\\s?D\\.?|J\\.?\\s?D\\.?|LL\\.?\\s?B\\.?|LL\\.?\\s?M\\.?|M\\.?\\s?T\\.?\\s?S\\.?|M\\.?\\s?Div\\.?|M\\.?\\s?Arch\\.?|M\\.?\\s?F\\.?\\s?A\\.?|M\\.?\\s?B\\.?\\s?A\\.?|B\\.?\\s?Litt\\.?|A\\.?\\s?B\\.?|B\\.?\\s?A\\.?|M\\.?\\s?A\\.?|M\\.?\\s?S\\.?|Hon\\.?)";
+
+// The institution clause after a degree token is usually "<Name> University"
+// but sometimes the qualifying name comes after the keyword ("Graduate
+// School of Fine Arts, University of Pennsylvania") - the optional second
+// keyword clause lets one entry swallow both halves instead of stopping mid
+// institution name and leaving an ungrammatical fragment behind (#1533:
+// rizvi-kr74's "Graduate School of Fine Arts, University of Pennsylvania").
+const INSTITUTION_KEYWORD_CLAUSE =
+  "[\\p{L}&.'\\s-]*?(?:University|College|Institute|School|Academy)(?:\\s*,\\s*[\\p{L}&.'\\s-]*?(?:University|College|Institute|School|Academy))?[^.,;]*?(?:,\\s*\\d{4})?";
+
+// Some faculty bios omit the institution keyword entirely ("Ph.D., Harvard,
+// 1966") - a bare capitalized name is only accepted as an institution when a
+// year anchors it, so this branch can't swallow an unrelated proper noun.
+const BARE_NAMED_INSTITUTION_WITH_YEAR_CLAUSE = "[A-Z][\\p{L}.'\\s-]{2,40}?,\\s*\\d{4}";
+
+const DEGREE_LIST_ENTRY_PATTERN = new RegExp(
+  `${DEGREE_TOKEN_PATTERN}\\.?,?\\s*(?:${INSTITUTION_KEYWORD_CLAUSE}|${BARE_NAMED_INSTITUTION_WITH_YEAR_CLAUSE})\\.?`,
+  'u',
+);
+
+const LEADING_DEGREE_LIST_PATTERN = new RegExp(
+  `^\\s*(?:${DEGREE_LIST_ENTRY_PATTERN.source}\\s*(?:[;,]\\s*)?)+`,
+  'u',
+);
+
+const DEGREE_LIST_FRAGMENT_SEARCH_PATTERN = new RegExp(DEGREE_LIST_ENTRY_PATTERN.source, 'u');
+
+/**
+ * A faculty-bio page's raw "B.A., Yale University, 2003 M.A., Harvard
+ * University, 2006 Ph.D., Harvard University, 2011" degree timeline glued
+ * directly onto the front of the description, with the actual research
+ * prose only starting at the name-lead sentence that follows (#1533:
+ * humanities faculty pages render this list with no separating punctuation
+ * the sentence splitter can key on, so it survives as an unreadable prefix
+ * rather than a real sentence). Only strips when a name-lead clause survives
+ * afterward - a bare degree list with nothing else is left alone so the
+ * no-usable-description fallback below can decide its fate.
+ */
+// Every character in DEGREE_TOKEN_PATTERN is individually optional (periods,
+// internal spaces), so applied case-insensitively and unanchored it also
+// matches an ordinary two-letter run inside an unrelated word ("Ma" inside
+// "Marisa" satisfies the M.A. alternative). The lookaround pair keeps that
+// loose token definition - needed so the anchored entry matcher above still
+// recognizes "B.A" / "B A" / "B.A." spacing variants - from also matching
+// mid-word when scanning free text for leftover degree/institution mentions.
+const DEGREE_OR_INSTITUTION_MENTION_PATTERN = new RegExp(
+  `(?<![\\p{L}])(?:${DEGREE_TOKEN_PATTERN}|University|College|Institute|School|Academy)(?!\\p{L})`,
+  'giu',
+);
+
+/**
+ * A genuine name-lead sentence essentially never mentions two separate
+ * institutions or degree abbreviations in its opening stretch, so two or
+ * more hits this early means the entry loop above stopped mid degree list
+ * rather than at the real sentence start (#1533: chang-ksc3's shape -
+ * "Institution, Degree Year, Degree Year" - reorders the degree list so the
+ * entry pattern above can only consume its first token, leaving "Taiwan,
+ * 1966 M.L.S., Rutgers University, 1971 M.A., ..." as a still-broken
+ * remainder that happens to start with a capital letter). A fixed character
+ * window, not "up to the first period", because several of these
+ * abbreviations (M.L.S., Ph.D.) contain their own periods and would
+ * otherwise truncate the window to almost nothing.
+ */
+function remainderStillLooksLikeDegreeListResidue(remainder: string): boolean {
+  const window = remainder.slice(0, 150);
+  const mentionCount = window.match(DEGREE_OR_INSTITUTION_MENTION_PATTERN)?.length || 0;
+  return mentionCount >= 2;
+}
+
+/**
+ * A looser candidacy signal than stripLeadingDegreeListPrefix succeeding:
+ * two or more degree/institution mentions in the opening stretch means the
+ * description opens with a degree-list dump, even on a shape
+ * stripLeadingDegreeListPrefix can't cleanly resolve on its own (#1533:
+ * dept-history-art-mimi-yiengpruksawan's "A.B., Occidental College M.A.,
+ * UCLA Ph.D., UCLA..." lead never fully strips - UCLA isn't a recognized
+ * institution keyword - but the downstream CV/career-timeline sentence
+ * patterns still clean up the rest once this signals the row as a
+ * candidate).
+ */
+export function hasLeadingDegreeListSignal(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return remainderStillLooksLikeDegreeListResidue(text);
+}
+
+export function stripLeadingDegreeListPrefix(value: unknown): string {
+  const text = textValue(value);
+  if (!text) return '';
+  const match = text.match(LEADING_DEGREE_LIST_PATTERN);
+  if (!match) return text;
+  const remainder = text.slice(match[0].length).trim();
+  if (remainder.length < 20 || !/^[A-Z]/.test(remainder)) return text;
+  if (remainderStillLooksLikeDegreeListResidue(remainder)) return text;
+  return remainder;
+}
+
 /**
  * Unambiguous education-timeline, career-timeline, and personal-life-narrative
  * markers (#1456: "was born in Boston...", "received her doctoral degree
@@ -102,6 +201,9 @@ export function stripTrailingProfileChromeFooter(value: unknown): string {
  */
 const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   /\bwas born in\b/i,
+  // Appositive phrasing drops "was" entirely (#1533: "Seyla Benhabib, born in
+  // Istanbul, Turkey, is the Eugene Meyer Professor...").
+  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3},\s*born in\b/u,
   /\bmoved,?\s+as a teenager\b/i,
   /\b(?:received|earned|obtained)\s+(?:the|his|her|their|an?)\b[^.!?]{0,80}\b(?:degrees?|Ph\.?D\.?|M\.?D\.?|MPH|MBA|MSc|M\.?S\.?|M\.?A\.?|B\.?S\.?|B\.?A\.?)\b/i,
   /\b(?:completed|did)\s+(?:his|her|their)\s+(?:graduate|undergraduate|postdoctoral|clinical|doctoral)\b/i,
@@ -121,16 +223,53 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   /\bwas\s+Editor-in-Chief\s+of\b/i,
   /\bmoved\s+to\s+[\p{L} .-]+,?\s+(?:with\s+(?:his|her|their)\s+family\s+)?in\s+\d{4}\b/iu,
   /^(?:Next,|Subsequently,|After completing\b|In \d{4},\s+(?:he|she|they)\b)/i,
+  // Humanities/social-science CV markers - awards, honorary degrees, editorial
+  // service, teaching history, and career résumé lines - are appointment/CV
+  // facts, not a description of what the person currently researches
+  // (#1533: benhabib-sb422's full description is entirely this shape and
+  // carries no research-topic sentence at all).
+  /\bis\s+the\s+recipient\s+of\s+(?:the|an?)\b[^.!?]{0,80}\b(?:prize|award|medal|honor)\b/i,
+  /\bwas\s+(?:the\s+)?President\s+of\s+the\b/i,
+  /\bhas\s+been\s+a\s+member\s+of\s+the\b[^.!?]{0,60}\bAcademy\b/i,
+  /\bhas\s+previously\s+taught\s+at\b/i,
+  /\b(?:Guggenheim|MacArthur|Fulbright|NEH|NSF)\s+Fellowship\s+recipient\b/i,
+  /\bholds?\s+Honorary\s+Degrees?\s+from\b/i,
+  /\bis\s+the\s+author\s+of\s+(?:several|numerous|many)?\s*(?:influential\s+)?(?:books?|works?)\s+including\b/i,
+  /\bwork\s+has\s+been\s+translated\s+into\s+(?:numerous|several|many)\s+languages\b/i,
+  /\bhas\s+edited\s+and\s+coedited\s+\d+\s+volumes\b/i,
+  /\bhas\s+held\s+(?:many|several|numerous)\s+(?:prestigious\s+)?visiting\s+professorships\b/i,
+  /\bwas\s+CEO\s+of\b/i,
+  /\bwas\s+a\s+partner\s+at\b[^.!?]{0,80}\bco-founded\s+the\s+firm\b/i,
+  /\bhas\s+also\s+led\s+organizations\s+in\b/i,
+  /\bhas\s+authored\s+(?:several|numerous|many)\b[^.!?]{0,40}\bincluding\b/i,
+  /\bhas\s+received\s+an?\b[^.!?]{0,60}\bfellowship\b/i,
+  /\bis\s+(?:currently\s+)?involved\s+with\s+(?:several|numerous|many)\s+editorial\s+and\s+advisory\s+boards\b/i,
+  /\bwas\s+(?:also\s+)?the\s+general\s+editor\s+of\b/i,
+  /\bhas\s+served\s+as\s+the\s+founder\s+and\s+general\s+editor\s+of\b/i,
 ];
 
 export function isEducationOrCareerTimelineSentence(sentence: string): boolean {
   return EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS.some((pattern) => pattern.test(sentence));
 }
 
+/**
+ * A hard defect: this text must never be served, regardless of whether a
+ * better alternative exists to replace it with (#1533: raab-jcr42's stored
+ * short "Studies, Stanford University Ph.D., Yale University Jennifer Raab
+ * specializes..." and lawler-tl4's "Studies , Holy Cross, 1958 Middle
+ * English..." both carry the same degree-list defect as their full).
+ */
+function isDefectiveShortDescription(candidate: string): boolean {
+  if (!candidate) return true;
+  if (isMidCvContinuationOpener(candidate)) return true;
+  if (isEducationOrCareerTimelineSentence(candidate)) return true;
+  if (DEGREE_LIST_FRAGMENT_SEARCH_PATTERN.test(candidate)) return true;
+  if (/^Studies\s*,/i.test(candidate)) return true;
+  return false;
+}
+
 function isSalvageableShortDescription(candidate: string, contextFullDescription: string): boolean {
-  if (!candidate) return false;
-  if (isMidCvContinuationOpener(candidate)) return false;
-  if (isEducationOrCareerTimelineSentence(candidate)) return false;
+  if (isDefectiveShortDescription(candidate)) return false;
   // Exclude 'full-not-useful': it reflects fullDescriptionQuality's whole-text
   // verdict on contextFullDescription, which can false-flag a rebuilt full
   // that opens with a legitimate appointment sentence (see
@@ -173,7 +312,9 @@ export function repairPersonBiographyLeakedDescription({
 }: BiographyDescriptionRepairInput): BiographyDescriptionRepairResult {
   const originalFull = textValue(fullDescription);
   const originalShort = textValue(shortDescription);
-  const dechromed = stripTrailingProfileChromeFooter(stripProfileBiographyChromeOpener(originalFull));
+  const dechromed = stripLeadingDegreeListPrefix(
+    stripTrailingProfileChromeFooter(stripProfileBiographyChromeOpener(originalFull)),
+  );
   const sentences = protectedSentenceList(dechromed);
   const keptSentences = sentences.filter((sentence) => !isEducationOrCareerTimelineSentence(sentence));
   const strippedSentenceCount = sentences.length - keptSentences.length;
@@ -200,11 +341,18 @@ export function repairPersonBiographyLeakedDescription({
   const rebuiltFullIsUsable = rebuiltFullQuality.isUseful || describesResearchFocus(rebuiltFull);
 
   if (rebuiltFull && rebuiltFullIsUsable) {
+    // A short flagged only by shortDescriptionQuality's softer heuristics
+    // (e.g. 'copied-first-sentence') is worth trying to improve on, but
+    // never worth discarding outright if no improvement materializes - only
+    // a hard defect (isDefectiveShortDescription) should end up blank
+    // (#1533: wood-jpw54's stored short was a perfectly good, specific
+    // sentence that both derivation fallbacks failed to replace with
+    // anything, and the prior chain silently dropped it to '').
     const rebuiltShort = isSalvageableShortDescription(originalShort, rebuiltFull)
       ? originalShort
       : deriveShortDescriptionFromFullDescription(rebuiltFull) ||
         buildResearchAreasCardSummary(researchAreas) ||
-        '';
+        (isDefectiveShortDescription(originalShort) ? '' : originalShort);
     return {
       outcome: 'resynthesized',
       fullDescription: rebuiltFull,
