@@ -102,6 +102,22 @@ describe('fellowshipProgramSourceRegistry', () => {
     expect(gapUrls.has('https://college.yale.edu/life-at-yale/student-faculty-awards')).toBe(false);
   });
 
+  it('marks the STEM fellowships hub as covered and retires its child-pages gap', () => {
+    const stemHub = FELLOWSHIP_PROGRAM_SOURCE_REGISTRY.find(
+      (entry) =>
+        entry.url ===
+        'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
+    );
+    expect(stemHub?.status).toBe('covered');
+    expect(stemHub?.coveredBy).toContain('yale-college-fellowships-office');
+    const urls = FELLOWSHIP_PROGRAM_SOURCE_REGISTRY.map((entry) => entry.url);
+    expect(
+      urls.includes(
+        'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/children',
+      ),
+    ).toBe(false);
+  });
+
   it('ranks gaps by student impact tier then discoverable program count', () => {
     const gaps = getFellowshipProgramCatalogGaps();
     expect(gaps.length).toBeGreaterThan(0);

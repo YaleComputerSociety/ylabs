@@ -88,17 +88,7 @@ export const FELLOWSHIP_PROGRAM_SOURCE_REGISTRY: FellowshipProgramEntry[] = [
     coveredBy: ['yale-college-fellowships-office'],
     approxProgramCount: 15,
     notes:
-      'Hub page plus two seeded detail children (yale-college-first-year-summer-research-fellowship and stars/stars-summer-research-program) are in DEFAULT_PAGE_URLS. The remaining STEM fellowship child pages under this hub are not individually seeded - see the STEM fellowships hub children gap entry.',
-  },
-  {
-    url: 'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/children',
-    catalogName: 'Yale College STEM Fellowships - hub child program pages (beyond the two seeded)',
-    owningOffice: 'Yale College Office of Science & Quantitative Reasoning',
-    status: 'gap',
-    impactTier: 2,
-    approxProgramCount: 15,
-    notes:
-      'The STEM fellowships hub links a set of individual STEM program pages; only two are currently seeded in DEFAULT_PAGE_URLS. Enumerating and crawling the remaining child pages (each a citable per-program source) captures the full STEM undergraduate funding menu. The hub root itself is a crawl seed only, never a citation.',
+      'Seeded in DEFAULT_PAGE_URLS as a crawl-seed-only index (isIndexSeedOnlyUrl): the hub root is fetched only to discover its individual STEM program child pages via extractIndexSeedChildDetailUrls, and is never parsed into a candidate nor cited as a source (#516/#549). Each discovered child (STARS I/II, Yale College Deans Research Fellowship sciences track, Tetelman/Bates, BioMed SURF, CRISP REU, SUMRY, GSAS SURF, Herb Scarf SRO, YSEA research grants, and the two first-year/STARS pages still explicitly seeded) cites its own page. Gated communityforce.com application portals linked from the hub (Hixon, Bouchet, Humanities & Social Sciences, Global Health) stay applicationLink evidence and are never fetch targets.',
   },
   {
     url: 'https://college.yale.edu/life-at-yale/student-faculty-awards',
