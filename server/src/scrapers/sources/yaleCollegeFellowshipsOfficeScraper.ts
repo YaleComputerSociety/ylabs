@@ -26,11 +26,14 @@ const CBEY_FUNDING_OPPORTUNITIES_URL = 'https://cbey.yale.edu/funding-opportunit
 export const STUDENT_FACULTY_AWARDS_INDEX_URL =
   'https://college.yale.edu/life-at-yale/student-faculty-awards';
 
+export const STEM_FELLOWSHIPS_FUNDING_HUB_URL =
+  'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale';
+
 export const DEFAULT_PAGE_URLS = [
   'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
-  'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
-  'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/yale-college-first-year-summer-research-fellowship',
-  'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
+  STEM_FELLOWSHIPS_FUNDING_HUB_URL,
+  `${STEM_FELLOWSHIPS_FUNDING_HUB_URL}/yale-college-first-year-summer-research-fellowship`,
+  `${STEM_FELLOWSHIPS_FUNDING_HUB_URL}/stars/stars-summer-research-program`,
   'https://wti.yale.edu/initiatives/undergraduate',
   'https://medicine.yale.edu/whr/training/',
   'https://ycmd.yale.edu/education/summer-undergraduate-internships',
@@ -57,6 +60,9 @@ const PUBLIC_YALE_HOSTS = new Set([
   'engineering.yale.edu',
   'macmillan.yale.edu',
   'cbey.yale.edu',
+  'crisp.yale.edu',
+  'sumry.yale.edu',
+  'gsas.yale.edu',
 ]);
 
 const MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS: Record<string, string> = {
@@ -200,7 +206,15 @@ function indexSeedKey(url: string): string {
   }
 }
 
-const INDEX_SEED_ONLY_URL_KEYS = new Set([STUDENT_FACULTY_AWARDS_INDEX_URL].map(indexSeedKey));
+const STEM_FELLOWSHIPS_LANDING_URL = 'https://science.yalecollege.yale.edu/stem-fellowships';
+
+const INDEX_SEED_ONLY_URL_KEYS = new Set(
+  [
+    STUDENT_FACULTY_AWARDS_INDEX_URL,
+    STEM_FELLOWSHIPS_FUNDING_HUB_URL,
+    STEM_FELLOWSHIPS_LANDING_URL,
+  ].map(indexSeedKey),
+);
 
 function isIndexSeedOnlyUrl(url: string | undefined): boolean {
   if (!url) return false;
@@ -282,7 +296,7 @@ function isLikelyPublicFellowshipDetailUrl(url: string): boolean {
   if (!isPublicYaleUrl(url) || !isHtmlLikeUrl(url) || isGenericPublicYalePath(url)) return false;
   try {
     const pathname = new URL(url).pathname.toLowerCase();
-    return /(?:find-funding|fellowship|fellowships|grant|grants|scholar|scholars|award|awards|prize|prizes|stem-fellowships|yale-undergraduate-research|undergraduate|internships|tobin-ra|research-internship-program|training\/fellowship)/i.test(
+    return /(?:find-funding|fellowship|fellowships|grant|grants|scholar|scholars|award|awards|prize|prizes|stem-fellowships|yale-undergraduate-research|undergraduate|internships|tobin-ra|research-internship-program|training\/fellowship|biomedsurf|sumry|research-experiences?)/i.test(
       pathname,
     );
   } catch {
@@ -966,8 +980,11 @@ function candidateFromDetailPage(
   referenceDate: Date,
 ): FellowshipCatalogCandidate | undefined {
   const title = normalizedCandidateTitle($('h1').first().text());
-  if (!title || !isLikelyFellowshipTitle(title)) return undefined;
-  if (isGenericCatalogTitle(title)) return undefined;
+  if (!title || isGenericCatalogTitle(title)) return undefined;
+  if (isIndexSeedOnlyUrl(pageUrl)) return undefined;
+  if (!isLikelyFellowshipTitle(title) && !isLikelyPublicFellowshipDetailUrl(pageUrl)) {
+    return undefined;
+  }
 
   const specificContent = $('.node, article').first();
   const primaryContent = $('main, [role="main"]').first();

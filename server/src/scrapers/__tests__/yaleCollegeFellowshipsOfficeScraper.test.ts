@@ -4,6 +4,7 @@ import {
   extractIndexSeedChildDetailUrls,
   parseDeadlineToUtcEndOfDay,
   parseFellowshipCatalogPage,
+  STEM_FELLOWSHIPS_FUNDING_HUB_URL,
   STUDENT_FACULTY_AWARDS_INDEX_URL,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
@@ -1834,5 +1835,223 @@ describe('YaleCollegeFellowshipsOfficeScraper student-faculty awards index crawl
     expect(result.notes).toContain('Skipped 1 fellowship page');
     expect(emitted.find((obs) => obs.field === 'sourceUrl')?.value).toBe(bouchetUrl);
     expect(emitted.every((obs) => obs.sourceUrl !== STUDENT_FACULTY_AWARDS_INDEX_URL)).toBe(true);
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper STEM fellowships hub crawl (#1564)', () => {
+  const starsUrl = `${STEM_FELLOWSHIPS_FUNDING_HUB_URL}/stars/stars-i-academic-year-program`;
+  const biomedUrl = 'https://medicine.yale.edu/biomedsurf/';
+  const sumryUrl = 'https://sumry.yale.edu/sumry';
+  const crispUrl =
+    'https://crisp.yale.edu/education/crisp-research-experiences-undergraduates-reu-program';
+  const gsasUrl = 'https://gsas.yale.edu/programs-of-study/summer-undergraduate-research-fellowship-program';
+  const sroUrl = 'https://economics.yale.edu/undergraduate/sro';
+  const hixonPortalUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=hixon';
+
+  const hubHtml = `
+    <header><nav><a href="https://science.yalecollege.yale.edu/academics">Academics</a></nav></header>
+    <main>
+      <h1>Funding STEM Opportunities at Yale</h1>
+      <a href="https://science.yalecollege.yale.edu/stem-fellowships">STEM Fellowships home</a>
+      <a href="${STEM_FELLOWSHIPS_FUNDING_HUB_URL}">Funding STEM Opportunities at Yale</a>
+      <ul>
+        <li><a href="${starsUrl}">STARS I Academic Year Program</a></li>
+        <li><a href="${biomedUrl}">BioMed SURF (Amgen Scholars)</a></li>
+        <li><a href="${sumryUrl}">Summer Undergraduate Math Research at Yale (SUMRY)</a></li>
+        <li><a href="${crispUrl}">CRISP Research Experience for Undergraduates (REU)</a></li>
+        <li><a href="${gsasUrl}">Summer Undergraduate Research Fellowship (SURF)</a></li>
+        <li><a href="${sroUrl}">SRO (Summer Research Opportunities) in Economics</a></li>
+        <li><a href="${hixonPortalUrl}">Alexander P. Hixon Fellowship</a></li>
+      </ul>
+    </main>
+    <footer><a href="https://science.yalecollege.yale.edu/contact">Contact</a></footer>
+  `;
+
+  it('discovers STEM child program pages across subdomains while excluding nav, portal, hub root, and the stem-fellowships landing', () => {
+    const childUrls = extractIndexSeedChildDetailUrls(hubHtml, STEM_FELLOWSHIPS_FUNDING_HUB_URL);
+    expect(childUrls.sort()).toEqual(
+      [starsUrl, biomedUrl, sumryUrl, crispUrl, gsasUrl, sroUrl].sort(),
+    );
+    expect(childUrls).not.toContain(STEM_FELLOWSHIPS_FUNDING_HUB_URL);
+    expect(childUrls).not.toContain('https://science.yalecollege.yale.edu/stem-fellowships');
+    expect(childUrls.some((url) => url.includes('communityforce.com'))).toBe(false);
+    expect(childUrls.some((url) => url.includes('/academics') || url.includes('/contact'))).toBe(
+      false,
+    );
+  });
+
+  it('never parses the hub root itself into a candidate', () => {
+    const candidates = parseFellowshipCatalogPage(
+      hubHtml,
+      STEM_FELLOWSHIPS_FUNDING_HUB_URL,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    expect(
+      candidates.every((candidate) => candidate.title !== 'Funding STEM Opportunities at Yale'),
+    ).toBe(true);
+  });
+
+  it('mints a terse-titled program page reached from the hub and cites its own page', async () => {
+    const biomedHtml = `
+      <main>
+        <article>
+          <h1>Yale BioMed Amgen Scholars Program</h1>
+          <p>The program places undergraduates in mentored summer biomedical research laboratories.</p>
+          <a href="${hixonPortalUrl}">Apply through the application portal</a>
+        </article>
+      </main>
+    `;
+    const sumryHtml = `
+      <main>
+        <article>
+          <h1>SUMRY</h1>
+          <p>The Summer Undergraduate Math Research at Yale program supports undergraduate mathematics research.</p>
+        </article>
+      </main>
+    `;
+    const starsHtml = `
+      <main>
+        <article>
+          <h1>STARS I Academic Year Program</h1>
+          <p>Students conduct faculty-mentored research during the academic year.</p>
+        </article>
+      </main>
+    `;
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === STEM_FELLOWSHIPS_FUNDING_HUB_URL) return hubHtml;
+      if (url === biomedUrl) return biomedHtml;
+      if (url === sumryUrl) return sumryHtml;
+      if (url === starsUrl) return starsHtml;
+      throw new Error('Request failed with status code 404');
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [STEM_FELLOWSHIPS_FUNDING_HUB_URL],
+      fetchPage,
+    });
+
+    await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    const titles = emitted.filter((obs) => obs.field === 'title').map((obs) => obs.value);
+    expect(titles).toContain('SUMRY');
+    expect(titles).toContain('Yale BioMed Amgen Scholars Program');
+    expect(titles).toContain('STARS I Academic Year Program');
+
+    const sumryObservations = emitted.filter(
+      (obs) => obs.entityKey === 'yale-college-fellowships-office:sumry',
+    );
+    expect(sumryObservations.find((obs) => obs.field === 'sourceUrl')?.value).toBe(sumryUrl);
+
+    const sourceUrls = emitted.filter((obs) => obs.field === 'sourceUrl').map((obs) => obs.value);
+    expect(sourceUrls).not.toContain(STEM_FELLOWSHIPS_FUNDING_HUB_URL);
+    expect(emitted.every((obs) => obs.sourceUrl !== STEM_FELLOWSHIPS_FUNDING_HUB_URL)).toBe(true);
+  });
+
+  it('carries a hub-linked CommunityForce portal as an application link, never a fetch target', async () => {
+    const biomedHtml = `
+      <main>
+        <article>
+          <h1>Yale BioMed Amgen Scholars Program</h1>
+          <p>The program places undergraduates in mentored summer biomedical research laboratories.</p>
+          <a href="${hixonPortalUrl}">Apply through the application portal</a>
+        </article>
+      </main>
+    `;
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === STEM_FELLOWSHIPS_FUNDING_HUB_URL) {
+        return `
+          <main>
+            <h1>Funding STEM Opportunities at Yale</h1>
+            <ul><li><a href="${biomedUrl}">BioMed SURF (Amgen Scholars)</a></li></ul>
+          </main>
+        `;
+      }
+      if (url === biomedUrl) return biomedHtml;
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [STEM_FELLOWSHIPS_FUNDING_HUB_URL],
+      fetchPage,
+    });
+
+    await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(fetchPage).not.toHaveBeenCalledWith(hixonPortalUrl, expect.anything());
+    const applicationLinks = emitted
+      .filter((obs) => obs.field === 'applicationLink')
+      .map((obs) => obs.value);
+    expect(applicationLinks).toContain(hixonPortalUrl);
+    const sourceUrls = emitted.filter((obs) => obs.field === 'sourceUrl').map((obs) => obs.value);
+    expect(sourceUrls.some((url) => url.includes('communityforce.com'))).toBe(false);
+  });
+
+  it('drops a hub child that fails to fetch rather than citing the hub root (fail closed)', async () => {
+    const starsHtml = `
+      <main>
+        <article>
+          <h1>STARS I Academic Year Program</h1>
+          <p>Students conduct faculty-mentored research during the academic year.</p>
+        </article>
+      </main>
+    `;
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === STEM_FELLOWSHIPS_FUNDING_HUB_URL) {
+        return `
+          <main>
+            <h1>Funding STEM Opportunities at Yale</h1>
+            <ul>
+              <li><a href="${starsUrl}">STARS I Academic Year Program</a></li>
+              <li><a href="${sumryUrl}">Summer Undergraduate Math Research at Yale (SUMRY)</a></li>
+            </ul>
+          </main>
+        `;
+      }
+      if (url === starsUrl) return starsHtml;
+      if (url === sumryUrl) throw new Error('Request failed with status code 404');
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [STEM_FELLOWSHIPS_FUNDING_HUB_URL],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.notes).toContain('Skipped 1 fellowship page');
+    expect(emitted.find((obs) => obs.field === 'sourceUrl')?.value).toBe(starsUrl);
+    expect(emitted.every((obs) => obs.sourceUrl !== STEM_FELLOWSHIPS_FUNDING_HUB_URL)).toBe(true);
   });
 });
