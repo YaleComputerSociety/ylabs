@@ -83,6 +83,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,
     shortDescription: sanitizedEntity.shortDescription,
+    researchAreas: sanitizedEntity.researchAreas,
     sourceUrls: sanitizedEntity.sourceUrls,
     website: sanitizedEntity.website,
     websiteUrl: sanitizedEntity.websiteUrl,

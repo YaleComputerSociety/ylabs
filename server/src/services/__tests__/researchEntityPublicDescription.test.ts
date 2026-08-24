@@ -202,5 +202,18 @@ describe('researchEntityPublicDescription', () => {
         }),
       ).toBe(false);
     });
+
+    it('rejects a faculty research area whose fullDescription is a bare "Studies <areas>" echo of its own researchAreas chips, with no prose (#1532)', () => {
+      expect(
+        researchEntityServesPublicDetail({
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          researchAreas: ['Extragalactic Astronomy'],
+          shortDescription: 'Studies extragalactic astronomy.',
+          fullDescription: 'Studies extragalactic astronomy.',
+          sourceUrls: ['https://example.yale.edu/faculty/astronomy'],
+        }),
+      ).toBe(false);
+    });
   });
 });
