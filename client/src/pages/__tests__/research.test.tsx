@@ -2923,4 +2923,104 @@ describe('Research zero-result recovery', () => {
       );
     });
   });
+
+  it('renders a Browse by field directory in browse mode and deep-links an area', async () => {
+    const mlEntity = {
+      ...researchEntity,
+      _id: 'ml-1',
+      slug: 'ml-lab',
+      name: 'ML Lab',
+      displayName: 'ML Lab',
+    };
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      if (Array.isArray(body.filters?.researchAreas)) {
+        return researchSearchResponse([mlEntity], { estimatedTotalHits: 9 });
+      }
+      return researchSearchResponse([researchEntity], {
+        estimatedTotalHits: 17,
+        facetDistribution: {
+          researchAreas: { Genomics: 5, 'Machine Learning': 9, Robotics: 3 },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            researchAreas: [
+              { name: 'Genomics', field: 'Life Sciences', colorKey: 'green', isDefault: false },
+              {
+                name: 'Machine Learning',
+                field: 'Computing & AI',
+                colorKey: 'blue',
+                isDefault: false,
+              },
+              {
+                name: 'Robotics',
+                field: 'Computing & AI',
+                colorKey: 'blue',
+                isDefault: false,
+              },
+            ],
+            researchFields: [
+              { name: 'Computing & AI', colorKey: 'blue' },
+              { name: 'Life Sciences', colorKey: 'green' },
+            ],
+            fieldOrder: ['Computing & AI', 'Life Sciences'],
+            getResearchAreaByName: (name: string) =>
+              ({
+                genomics: {
+                  name: 'Genomics',
+                  field: 'Life Sciences',
+                  colorKey: 'green',
+                  isDefault: false,
+                },
+                'machine learning': {
+                  name: 'Machine Learning',
+                  field: 'Computing & AI',
+                  colorKey: 'blue',
+                  isDefault: false,
+                },
+                robotics: {
+                  name: 'Robotics',
+                  field: 'Computing & AI',
+                  colorKey: 'blue',
+                  isDefault: false,
+                },
+              })[name.toLowerCase()],
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const areaButton = await screen.findByRole('button', {
+      name: 'Browse Machine Learning, 9 research homes',
+    });
+    expect(screen.getByRole('heading', { name: 'Browse by field' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Computing & AI' })).toBeTruthy();
+
+    fireEvent.click(areaButton);
+
+    expect(await screen.findByRole('heading', { name: 'ML Lab' })).toBeTruthy();
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/research/search',
+        expect.objectContaining({ filters: { researchAreas: ['Machine Learning'] } }),
+        expect.any(Object),
+      );
+    });
+    expect(screen.getByTestId('location').textContent).toContain(
+      'researchAreas=Machine+Learning',
+    );
+  });
 });
