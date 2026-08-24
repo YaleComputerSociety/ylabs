@@ -1753,7 +1753,17 @@ export function stripProvenanceHedge(text: string): string {
  * here; stored prose that reads awkwardly around a token is cleaned at rest by
  * stripRedactionPlaceholders in the #671 backfill.
  */
-export function sanitizeCatalogDescription(text: string): string {
+export function sanitizeCatalogDescription(
+  text: string,
+  options: { evergreenizeDates?: boolean } = {},
+): string {
+  // Serve callers that own deadline-relative date handling (fellowship read
+  // path) opt out of blanket cycle-date evergreening so this pass contributes
+  // only its chrome/rationale/dump rejection, not date rewriting.
+  const base =
+    options.evergreenizeDates === false
+      ? String(text || '')
+      : evergreenizeStaleCycleDatePhrase(text);
   const stripped = stripInternalConfidenceHedge(
     stripProvenanceHedge(
       collapseRepeatedSentences(
@@ -1762,9 +1772,7 @@ export function sanitizeCatalogDescription(text: string): string {
             stripDanglingSourceSiteReferenceSentences(
               stripSelfReferentialResearchCtaSentences(
                 stripDeadAnchorCtaSentences(
-                  stripBibliographicReferenceArtifacts(
-                    stripCatalogChrome(evergreenizeStaleCycleDatePhrase(text)),
-                  ),
+                  stripBibliographicReferenceArtifacts(stripCatalogChrome(base)),
                 ),
               ),
             ),
