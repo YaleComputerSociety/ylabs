@@ -1125,6 +1125,9 @@ describe('lab-as-subject non-acceptance availability (symmetric to direct recrui
     'We are currently not accepting undergraduate students.',
     'We are not currently accepting undergraduate students for research positions.',
     'We are currently not accepting undergraduate students for research opportunities.',
+    'The Leonard Learning Lab is not currently accepting Research Assistant applications.',
+    'We are not currently accepting Research Aide applications.',
+    'The lab is not currently accepting Lab Assistant applications.',
   ])('accepts NOT_CURRENTLY_AVAILABLE for lab-as-subject non-acceptance: %s', (evidenceQuote) => {
     const result = validateUndergraduateLogisticsObservation(
       observation(
@@ -1175,6 +1178,24 @@ describe('lab-as-subject non-acceptance availability (symmetric to direct recrui
     expect(
       quoteExplicitlyDeclinesUndergraduates('We are now accepting undergraduate applications.'),
     ).toBe(false);
+  });
+
+  it('recognizes a bare research-assistant role title without a literal student/undergrad token', () => {
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'The Leonard Learning Lab is not currently accepting Research Assistant applications.',
+      ),
+    ).toBe(true);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'We are not currently accepting Research Aide applications.',
+      ),
+    ).toBe(true);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'The lab is not currently accepting Lab Assistant applications.',
+      ),
+    ).toBe(true);
   });
 });
 
