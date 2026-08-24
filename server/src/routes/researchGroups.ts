@@ -49,6 +49,12 @@ router.get(
 );
 
 router.get(
+  '/department/:slug',
+  isAuthenticated,
+  asyncHandler(researchGroupController.getResearchDepartmentPage),
+);
+
+router.get(
   '/:slug',
   isAuthenticated,
   asyncHandler(researchGroupController.getResearchGroupBySlug),

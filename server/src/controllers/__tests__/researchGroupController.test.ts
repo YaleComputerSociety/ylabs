@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   recordResearchEntityOutreach: vi.fn(),
   getStudentResearchInterests: vi.fn(),
   getResearcherProfileByPublicKey: vi.fn(),
+  getDepartmentResearchPage: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -34,7 +35,12 @@ vi.mock('../../services/studentInterestProfileService', () => ({
   getStudentResearchInterests: mocks.getStudentResearchInterests,
 }));
 
+vi.mock('../../services/departmentResearchPageService', () => ({
+  getDepartmentResearchPage: mocks.getDepartmentResearchPage,
+}));
+
 import {
+  getResearchDepartmentPage,
   getResearchGroupBySlug,
   getResearcherProfile,
   recordResearchOutreach,
@@ -518,5 +524,42 @@ describe('researchGroupController', () => {
       expect(res.status).toHaveBeenCalledWith(500);
       expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
     });
+  });
+
+  it('serves the aggregated department page for a resolvable slug', async () => {
+    const page = { department: { slug: 'chemistry', label: 'Chemistry' }, homeGroups: [] };
+    mocks.getDepartmentResearchPage.mockResolvedValue(page);
+    const req = { params: { slug: 'chemistry' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchDepartmentPage(req, res);
+
+    expect(mocks.getDepartmentResearchPage).toHaveBeenCalledWith('chemistry');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(page);
+  });
+
+  it('returns 404 when the department slug does not resolve', async () => {
+    mocks.getDepartmentResearchPage.mockResolvedValue(null);
+    const req = { params: { slug: 'school-of-medicine' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchDepartmentPage(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Research department not found' });
+  });
+
+  it('does not leak internal errors from department page failures', async () => {
+    mocks.getDepartmentResearchPage.mockRejectedValue(
+      new Error('mongodb://user:pass@example.invalid department page failed'),
+    );
+    const req = { params: { slug: 'chemistry' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchDepartmentPage(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch research department' });
   });
 });
