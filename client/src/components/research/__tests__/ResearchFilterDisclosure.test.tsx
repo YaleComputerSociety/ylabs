@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState, type ComponentProps } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchFilterDisclosure from '../ResearchFilterDisclosure';
@@ -42,7 +43,14 @@ const renderFilters = (
     onClearAll: vi.fn(),
     ...overrides,
   };
-  return { ...render(<ResearchFilterDisclosure {...props} />), props };
+  return {
+    ...render(
+      <MemoryRouter>
+        <ResearchFilterDisclosure {...props} />
+      </MemoryRouter>,
+    ),
+    props,
+  };
 };
 
 afterEach(() => {

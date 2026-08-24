@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import ResearchAreaTypeahead from './ResearchAreaTypeahead';
 import {
   readResearchTypeBucketKeys,
   researchTypeBucketLabel,
   type ResearchTypeBucketOption,
 } from '../../utils/researchTypeBuckets';
+import { slugifyDepartmentName } from '../../utils/departmentSlug';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -518,6 +520,16 @@ const ResearchFilterDisclosure = ({
             ×
           </span>
         </button>
+      )}
+      {selectedDepartment && (
+        <Link
+          to={`/research/department/${slugifyDepartmentName(selectedDepartment)}`}
+          className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm font-semibold text-[var(--yr-blue)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
+          <span className="min-w-0 truncate">
+            View {departmentLabel(selectedDepartment)} department page
+          </span>
+        </Link>
       )}
       {selectedResearchAreas.map((area) => (
         <button
