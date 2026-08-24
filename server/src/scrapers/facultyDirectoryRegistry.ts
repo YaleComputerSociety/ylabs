@@ -5,7 +5,18 @@
  * roster scraper could ingest, annotated with which existing scraper (if any)
  * already covers it. It drives the coverage program: entries with status `gap`
  * are candidates for a new per-directory scraper config; `partial` entries are
- * only fractionally covered (e.g. one department of a multi-department index).
+ * only fractionally covered (e.g. one department of a multi-department index);
+ * `evaluated-skipped` entries were audited and deliberately left un-crawled
+ * (their `notes` record why), so they are neither a to-do gap nor a live source.
+ *
+ * `directoryCategory` marks the acquisition lane a directory belongs to. Most
+ * entries are Yale school/department/center directories (the default when the
+ * field is absent). `affiliated-institute` is the explicitly-modeled lane for
+ * freestanding, Yale-partnered research organizations that host their own
+ * people/lab directories outside any Yale school faculty directory (issue
+ * #1300); each such entry is evaluated for genuinely-independent, extractable,
+ * Yale-scoped, net-new research homes before it is promoted from
+ * `evaluated-skipped` to a crawled `coveredBy` source.
  *
  * These `url` values are crawl ENTRY POINTS (directory roots / index / loader
  * pages). They must never be persisted as an Observation/Source citation: every
@@ -20,7 +31,15 @@ import type { SourceCoverageName } from './sourceCoverageRegistry';
 
 export type FacultyDirectoryRendering = 'static' | 'js-rendered';
 
-export type FacultyDirectoryCoverageStatus = 'covered' | 'partial' | 'gap';
+export type FacultyDirectoryCoverageStatus = 'covered' | 'partial' | 'gap' | 'evaluated-skipped';
+
+/**
+ * Acquisition lane a directory belongs to. Absent means a Yale school,
+ * department, or center directory (the original registry scope);
+ * `affiliated-institute` is the Yale-affiliated independent-institute lane
+ * added in #1300.
+ */
+export type FacultyDirectoryCategory = 'affiliated-institute';
 
 /**
  * ROI ranking for a student seeking research, highest first:
@@ -40,6 +59,8 @@ export interface FacultyDirectoryEntry {
   department: string;
   rendering: FacultyDirectoryRendering;
   status: FacultyDirectoryCoverageStatus;
+  /** Acquisition lane; absent for Yale school/department/center directories. */
+  directoryCategory?: FacultyDirectoryCategory;
   studentImpactTier: FacultyDirectoryImpactTier;
   /** Existing scraper source(s) that already cover this directory (roster or member level). */
   coveredBy?: SourceCoverageName[];
@@ -298,6 +319,31 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     approxFacultyCount: 55,
     notes:
       'School-wide West Campus faculty directory covered by the dept-faculty-roster "west-campus" config row (#1295) via the reference-card static-HTML extractor. ~55 STEM/life-science PIs across seven institutes (Biomolecular Design & Discovery, Cancer Biology, Energy Sciences, Microbial Sciences, Nanobiology, Systems Biology, Preservation of Cultural Heritage); each card cites the faculty member own /profile/<slug> or off-site lab home, never the directory root. The Microbial Sciences Institute subdomain roster (microbialsciences.yale.edu/faculty-research) was evaluated and is a strict subset of these PIs, so it is not separately wired. Expect meaningful dedup against YSM / FAS Chemistry / MB&B home-department appointments.',
+  },
+
+  // ---- Affiliated independent institutes (#1300) ----------------------------------
+  {
+    url: 'https://haskinslabs.org/people',
+    school: 'Haskins Laboratories (Yale-affiliated independent institute)',
+    department: 'Scientists and affiliates',
+    rendering: 'js-rendered',
+    status: 'evaluated-skipped',
+    directoryCategory: 'affiliated-institute',
+    studentImpactTier: 3,
+    coveredBy: ['ysm-faculty-directory'],
+    notes:
+      'Evaluated 2026-08-23. haskins.yale.edu 302-redirects to the institute\'s own Squarespace site (haskinslabs.org); its /people directory is client-rendered and links each scientist to their home-institution official profile rather than a Haskins-hosted profile. Only three people resolve to Yale profiles (medicine.yale.edu/profile/linda-mayes, /mary-young, /vincent-gracco) and all three are existing YSM faculty already covered by ysm-faculty-directory; the remaining scientists route to UConn profiles outside the Yale product scope. No net-new Yale research homes and no Haskins-hosted profile URLs to cite, so no bespoke crawler is added and the Yale-affiliated faculty already surface via their YSM profiles.',
+  },
+  {
+    url: 'https://jbpierce.org/directory/',
+    school: 'John B. Pierce Laboratory (Yale-affiliated independent institute)',
+    department: 'Directory',
+    rendering: 'static',
+    status: 'evaluated-skipped',
+    directoryCategory: 'affiliated-institute',
+    studentImpactTier: 3,
+    notes:
+      'Evaluated 2026-08-23. jbpierce.org/directory lists only administrative, business-office, and board-of-directors staff (CPAs, JDs, an MBA); it exposes no research scientists, no per-person profile links, and no lab pages, so there is no extractable research people/lab content to ingest. Pierce research faculty are dual-appointed at Yale and surface through their Yale departmental appointments (e.g. YSM cellular and molecular physiology), not this site. Recorded as evaluated-and-skipped rather than a coverage gap.',
   },
 
   // ---- Tier 4: health schools and research-active social sciences -----------------
@@ -712,14 +758,36 @@ export function getFacultyDirectoriesByStatus(
 }
 
 /**
- * Uncovered directories (status `gap` or `partial`), ranked by student research
- * ROI: impact tier first, then approximate faculty count.
+ * Actionable uncovered directories (status `gap` or `partial`), ranked by
+ * student research ROI: impact tier first, then approximate faculty count.
+ * `evaluated-skipped` directories are intentionally excluded because they were
+ * audited and deliberately left un-crawled, so they are not a coverage to-do.
  */
 export function getFacultyDirectoryGaps(): FacultyDirectoryEntry[] {
-  return FACULTY_DIRECTORY_REGISTRY.filter((entry) => entry.status !== 'covered').sort((a, b) => {
+  return FACULTY_DIRECTORY_REGISTRY.filter(
+    (entry) => entry.status === 'gap' || entry.status === 'partial',
+  ).sort((a, b) => {
     if (a.studentImpactTier !== b.studentImpactTier) {
       return a.studentImpactTier - b.studentImpactTier;
     }
     return (b.approxFacultyCount ?? 0) - (a.approxFacultyCount ?? 0);
   });
+}
+
+/**
+ * Directories audited and deliberately left un-crawled (their `notes` record
+ * the rationale). Kept distinct from gaps so evaluated institutes are never
+ * silently dropped nor re-proposed as coverage work.
+ */
+export function getEvaluatedSkippedDirectories(): FacultyDirectoryEntry[] {
+  return FACULTY_DIRECTORY_REGISTRY.filter((entry) => entry.status === 'evaluated-skipped');
+}
+
+/**
+ * Directories in a given acquisition lane (e.g. `affiliated-institute`).
+ */
+export function getFacultyDirectoriesByCategory(
+  category: FacultyDirectoryCategory,
+): FacultyDirectoryEntry[] {
+  return FACULTY_DIRECTORY_REGISTRY.filter((entry) => entry.directoryCategory === category);
 }
