@@ -501,6 +501,17 @@ describe('logisticsAcquisitionAllowed', () => {
       }),
     ).toBe(false);
   });
+
+  it('allows corpus-wide acquisition once production mode is confirmed', () => {
+    expect(logisticsAcquisitionAllowed({ logisticsProductionMode: true })).toBe(true);
+    expect(
+      logisticsAcquisitionAllowed({
+        only: Array.from({ length: 26 }, (_, index) => `lab-${index}`),
+        logisticsProductionMode: true,
+      }),
+    ).toBe(true);
+    expect(logisticsAcquisitionAllowed({ logisticsProductionMode: false })).toBe(false);
+  });
 });
 
 describe('sourceUrlForExtraction', () => {
@@ -1321,6 +1332,49 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(logs.some((log) => log.includes('[fresh-lab] skipped by WorkPlanner'))).toBe(true);
   });
 
+  it('keeps WorkPlanner freshness skips for cost control in confirmed production mode', async () => {
+    const fetchPage = vi.fn();
+    const callLLM = vi.fn();
+    const workPlanLoader: WorkPlanLoaderFn = async (lab, policy) => ({
+      entityType: policy.entityType,
+      entityKey: lab.slug,
+      sourceName: policy.sourceName,
+      fields: policy.targetFields.map((field) => ({
+        field,
+        shouldFetch: false,
+        reason: 'fresh' as const,
+        lastObservedAt: '2026-05-12T00:00:00.000Z',
+      })),
+      shouldFetch: false,
+    });
+
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      workPlanLoader,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fresh-lab',
+          name: 'Fresh Lab',
+          websiteUrl: 'https://fresh.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+      env: { CONFIRM_LOGISTICS_ACQUISITION: 'true' },
+    });
+    const { ctx, emitted, logs } = makeContext({
+      exhaustive: true,
+      logisticsProductionMode: true,
+    });
+    await scraper.run(ctx);
+
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(emitted).toEqual([]);
+    expect(logs.some((log) => log.includes('[fresh-lab] skipped by WorkPlanner'))).toBe(true);
+  });
+
   it('does not let a legacy heartbeat suppress bounded logistics acquisition', async () => {
     const fetchPage = makeFetchPage({
       'https://fresh.example.com/':
@@ -1359,6 +1413,91 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(workPlanLoader).not.toHaveBeenCalled();
     expect(fetchPage).toHaveBeenCalledWith('https://fresh.example.com/');
     expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
+  });
+
+  it('keeps corpus-wide logistics acquisition disabled without CONFIRM_LOGISTICS_ACQUISITION', async () => {
+    const fetchPage = makeFetchPage({
+      'https://fresh.example.com/':
+        '<html><body><h1>Fresh Lab</h1><p>Undergraduate researchers are paid.</p></body></html>',
+    });
+    const callLLM = vi.fn(
+      async (): Promise<LLMExtraction> => ({
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: null,
+        compensationModes: ['PAID'],
+        compensationQuote: 'Undergraduate researchers are paid.',
+      }),
+    );
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fresh-lab',
+          name: 'Fresh Lab',
+          websiteUrl: 'https://fresh.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+      env: {},
+    });
+    const { ctx, emitted, logs } = makeContext({
+      exhaustive: true,
+      logisticsProductionMode: true,
+    });
+
+    await scraper.run(ctx);
+
+    expect(
+      emitted.some((item) => item.field === 'undergraduateLogisticsCompensation'),
+    ).toBe(false);
+    expect(
+      logs.some((log) => log.includes('CONFIRM_LOGISTICS_ACQUISITION=true')),
+    ).toBe(true);
+  });
+
+  it('emits corpus-wide logistics once production mode is confirmed via environment', async () => {
+    const fetchPage = makeFetchPage({
+      'https://fresh.example.com/':
+        '<html><body><h1>Fresh Lab</h1><p>Undergraduate researchers are paid.</p></body></html>',
+    });
+    const callLLM = vi.fn(
+      async (): Promise<LLMExtraction> => ({
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: null,
+        compensationModes: ['PAID'],
+        compensationQuote: 'Undergraduate researchers are paid.',
+      }),
+    );
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fresh-lab',
+          name: 'Fresh Lab',
+          websiteUrl: 'https://fresh.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+      env: { CONFIRM_LOGISTICS_ACQUISITION: 'true' },
+    });
+    const { ctx, emitted } = makeContext({
+      exhaustive: true,
+      logisticsProductionMode: true,
+    });
+
+    await scraper.run(ctx);
+
     expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
   });
 
