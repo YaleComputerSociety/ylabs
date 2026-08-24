@@ -301,6 +301,29 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     expect(set.departments).toEqual([]);
     expect(result.droppedDepartments).toEqual(['Yale School of Medicine']);
   });
+
+  it('drops a department value that is itself the entity own school, even when it resolves under DEPARTMENT_KINDS too', async () => {
+    const rowsWithFasDivision = [
+      ...rows,
+      {
+        slug: 'faculty-of-arts-and-sciences',
+        name: 'Faculty of Arts and Sciences',
+        kind: 'DIVISION' as const,
+        aliases: ['FAS'],
+      },
+    ];
+    setOrgUnitCanonicalizerForTesting(
+      createOrgUnitCanonicalizer(buildOrgUnitResolverIndex(rowsWithFasDivision)),
+    );
+    const set: Record<string, unknown> = {
+      school: 'FAS',
+      departments: ['Faculty of Arts and Sciences'],
+    };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set);
+    expect(set.school).toBe('Faculty of Arts and Sciences');
+    expect(set.departments).toEqual([]);
+    expect(result.droppedDepartments).toEqual(['Faculty of Arts and Sciences']);
+  });
 });
 
 describe('schoolNameFromProfileHosts', () => {

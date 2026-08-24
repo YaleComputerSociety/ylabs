@@ -389,6 +389,26 @@ export async function applyResearchEntityOrgUnitCanonicalization(
     }
 
     const effectiveSchool = hasSchool ? set.school : existing?.school;
+    // A department value that is itself the entity's own school (e.g. a
+    // DIVISION-kind org unit such as "Faculty of Arts and Sciences" that
+    // resolves under both SCHOOL_KINDS and DEPARTMENT_KINDS) is the same
+    // category error as the retired fallback and is dropped here even though
+    // canonicalizeDepartments has no entity context to catch it itself (#1384).
+    if (hasDepartments && Array.isArray(set.departments) && typeof effectiveSchool === 'string') {
+      const schoolKey = effectiveSchool.trim().toLocaleLowerCase();
+      if (schoolKey) {
+        const departments = set.departments as string[];
+        const selfReferential = departments.filter(
+          (department) => department.toLocaleLowerCase() === schoolKey,
+        );
+        if (selfReferential.length > 0) {
+          set.departments = departments.filter(
+            (department) => department.toLocaleLowerCase() !== schoolKey,
+          );
+          result.droppedDepartments = [...result.droppedDepartments, ...selfReferential];
+        }
+      }
+    }
     const effectiveDepartments = hasDepartments
       ? asStringList(set.departments)
       : asStringList(existing?.departments);

@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
+import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -137,6 +138,10 @@ export async function runOrgUnitBackfill(options: {
         })),
       );
     }
+    const updatedDocs = await ResearchEntity.find({
+      _id: { $in: changedRows.map((row) => row.id) },
+    }).lean();
+    await syncEntities('researchEntity', updatedDocs);
   }
 
   return {
@@ -189,7 +194,7 @@ async function main(): Promise<void> {
     }
     console.log(JSON.stringify(result.summary, null, 2));
     if (apply && result.summary.changed > 0) {
-      console.log('Rebuild the Meilisearch research index so the department facet picks up new values.');
+      console.log('Resynced the changed entities to Meilisearch so the department facet reflects them.');
     }
   } finally {
     await mongoose.disconnect();
