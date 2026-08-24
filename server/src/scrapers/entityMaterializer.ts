@@ -2453,7 +2453,7 @@ export async function materializeEntity(
           : []),
     ].filter((url): url is string => typeof url === 'string');
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc, orgUnitProfileUrls);
-    await applyResearchEntityResearchAreaCanonicalization(set);
+    await applyResearchEntityResearchAreaCanonicalization(set, set.departments ?? entityDoc?.departments);
     if (!manuallyLockedFields.includes('websiteUrl')) {
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
       if (websiteResolution.action === 'set') {

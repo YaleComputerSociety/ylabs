@@ -560,4 +560,45 @@ describe('applyResearchEntityResearchAreaCanonicalization', () => {
     expect(set.researchAreas).toEqual(['Artificial Intelligence']);
     expect(result.droppedResearchAreas).toEqual(['Fields of Interest', 'YSM Researcher']);
   });
+
+  it('drops an area entry that duplicates the entity own department (#1451)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = {
+      researchAreas: ['Neuroscience', 'Internal Medicine'],
+    };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, [
+      'Internal Medicine',
+      'Endocrinology',
+    ]);
+    expect(set.researchAreas).toEqual(['Neuroscience']);
+    expect(result.droppedResearchAreas).toEqual(['Internal Medicine']);
+  });
+
+  it('leaves researchAreas empty when every chip is a department name (#1451)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['Pathology'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Pathology']);
+    expect(set.researchAreas).toEqual([]);
+    expect(result.droppedResearchAreas).toEqual(['Pathology']);
+  });
+
+  it('matches a department duplicate case-insensitively and ignores punctuation (#1451)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = {
+      researchAreas: ['neuroscience', 'internal medicine.'],
+    };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, [
+      'Internal Medicine',
+    ]);
+    expect(set.researchAreas).toEqual(['Neuroscience']);
+    expect(result.droppedResearchAreas).toEqual(['internal medicine.']);
+  });
+
+  it('is unaffected by departments when none overlap (#1451)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['AI', 'Quilting'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Psychiatry']);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence', 'Quilting']);
+    expect(result.unmatchedResearchAreas).toEqual(['Quilting']);
+  });
 });
