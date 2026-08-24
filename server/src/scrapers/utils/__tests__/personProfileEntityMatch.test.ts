@@ -122,6 +122,61 @@ describe('personProfileSourceMatchesEntity', () => {
     ).toBe(true);
   });
 
+  it('rejects an uncorroborated surname-only match at a tolerant host when the entity records no given name at all (#1537)', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/thomas-graham/', {
+        slug: 'graham-lab-tg296',
+        name: 'Graham Lab',
+        departments: ['Russian, East European, and Eurasian Studies'],
+        school: 'Faculty of Arts and Sciences',
+        schools: ['Faculty of Arts and Sciences'],
+        fullDescription:
+          'The Graham Lab focuses on the intersection of neuroscience and immunology, particularly in understanding how the immune system interacts with the nervous system.',
+      }),
+    ).toBe(false);
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/maria-kaliambou/', {
+        slug: 'kaliambou-lab-mk655',
+        name: 'Kaliambou Lab',
+        departments: ['Russian, East European, and Eurasian Studies'],
+        school: 'Faculty of Arts and Sciences',
+        schools: ['Faculty of Arts and Sciences'],
+      }),
+    ).toBe(false);
+  });
+
+  it('still allows a surname-only match at a non-tolerant host with no given name recorded', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://physics.yale.edu/people/keith-baker', {
+        slug: 'baker-lab-okb2',
+        name: 'Baker Lab',
+      }),
+    ).toBe(true);
+  });
+
+  it('allows a surname-only match at a tolerant host when independently corroborated', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/thomas-graham/', {
+        slug: 'graham-lab-tg296',
+        name: 'Graham Lab',
+        departments: ['Russian, East European, and Eurasian Studies'],
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/thomas-graham/',
+          'https://reeas.yale.edu/people/thomas-graham',
+          'https://reeas.yale.edu/profile/thomas-graham',
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/thomas-graham/', {
+        slug: 'graham-lab-tg296',
+        name: 'Graham Lab',
+        departments: ['Russian, East European, and Eurasian Studies'],
+        fullDescription: "Thomas Graham's lab studies the immune system.",
+      }),
+    ).toBe(true);
+  });
+
   it('rejects a shared-first-name graft of a different person (#981)', () => {
     expect(
       personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/benjamin-mercer/', {
