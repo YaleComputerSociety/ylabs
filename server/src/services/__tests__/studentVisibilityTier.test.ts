@@ -482,6 +482,54 @@ describe('computeResearchEntityStudentVisibility', () => {
     );
   });
 
+  it('holds a "<Person> Lab"-named entity typed as an org (CENTER/INSTITUTE/PROGRAM) out of student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'nih-pi-lab-org-mismatch',
+        name: 'Michael Nathanson Lab',
+        slug: 'nih-pi-michael-nathanson',
+        kind: 'lab',
+        entityType: 'CENTER',
+        shortDescription: 'The Yale Liver Center supports digestive-disease research.',
+        fullDescription:
+          'The Yale Liver Center is one of 17 Digestive Diseases Research Core Centers, with 43 independent principal investigators and 52 Associate Members from 30 departments.',
+        websiteUrl: 'https://medicine.yale.edu/intmed/digestive/liver/',
+        sourceUrls: ['https://medicine.yale.edu/intmed/digestive/liver/get-involved'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.tier).not.toBe('limited_but_safe');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('lab_name_org_type_mismatch');
+  });
+
+  it('does not flag a genuinely org-named entity whose type matches its name', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-industrial-ecology-no-mismatch',
+        name: 'Center for Industrial Ecology',
+        slug: 'yse-industrial-ecology-no-mismatch',
+        entityType: 'CENTER',
+        shortDescription:
+          'Advances the study of industrial ecology, material flows, and sustainable systems at Yale.',
+        fullDescription:
+          'The Center for Industrial Ecology advances research on material and energy flows, life-cycle assessment, and sustainable industrial systems through interdisciplinary collaboration.',
+        websiteUrl: 'https://environment.yale.edu/research/centers/industrial-ecology',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('lab_name_org_type_mismatch');
+  });
+
   it('keeps sparse faculty-area shells with a specific profile source in operator review', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
