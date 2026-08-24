@@ -29,6 +29,28 @@ export const STUDENT_FACULTY_AWARDS_INDEX_URL =
 export const STEM_FELLOWSHIPS_FUNDING_HUB_URL =
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale';
 
+// The aggregate MacMillan "undergraduate research grants" slug is not a live
+// listing page (it 302-redirects to the site search). It is recorded as a
+// crawl-seed-only / never-cite index root so that if it is ever encountered it
+// can never be persisted as a source (#516/#549); coverage of the councils'
+// undergraduate research / senior-essay grants comes from directly seeding each
+// council's own canonical grant page below.
+export const MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT =
+  'https://macmillan.yale.edu/undergraduate-research-grants';
+
+// Individual MacMillan area-studies councils publish their own undergraduate
+// research / senior-essay grant pages beyond the central fellowships-and-grants
+// catalog. Each is a citable per-program detail page (self-referential source);
+// seeded directly because the aggregate listing root above is not a live page.
+export const MACMILLAN_COUNCIL_GRANT_PAGE_URLS = [
+  'https://macmillan.yale.edu/latam/student-grants-and-prizes',
+  'https://macmillan.yale.edu/southasia/undergraduate-grants',
+  'https://macmillan.yale.edu/europe/student-grants-and-fellowships',
+  'https://macmillan.yale.edu/reees/grants-and-fellowships-undergraduate-students',
+  'https://macmillan.yale.edu/southeast-asia/grants-students',
+  'https://macmillan.yale.edu/eastasia/fellowships-grants',
+];
+
 export const DEFAULT_PAGE_URLS = [
   'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
   STEM_FELLOWSHIPS_FUNDING_HUB_URL,
@@ -46,6 +68,7 @@ export const DEFAULT_PAGE_URLS = [
   `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=2`,
   `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=3`,
   CBEY_FUNDING_OPPORTUNITIES_URL,
+  ...MACMILLAN_COUNCIL_GRANT_PAGE_URLS,
 ];
 
 export const FUNDING_YALE_SITEMAP_URLS = ['https://funding.yale.edu/sitemap.xml'];
@@ -238,6 +261,7 @@ const INDEX_SEED_ONLY_URL_KEYS = new Set(
     STUDENT_FACULTY_AWARDS_INDEX_URL,
     STEM_FELLOWSHIPS_FUNDING_HUB_URL,
     STEM_FELLOWSHIPS_LANDING_URL,
+    MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT,
   ].map(indexSeedKey),
 );
 
