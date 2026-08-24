@@ -7,6 +7,7 @@ import {
   repairPersonBiographyLeakedDescription,
   stripLeadingDegreeListPrefix,
   stripProfileBiographyChromeOpener,
+  stripProfileFieldLabelChrome,
   stripTrailingProfileChromeFooter,
 } from '../researchEntityBiographyDescriptionRepair';
 
@@ -134,6 +135,45 @@ describe('stripLeadingDegreeListPrefix (#1533)', () => {
   it('does not strip a degree list that has nothing usable left afterward', () => {
     const bareDegreeList = 'B.A., Yale University, 2003 M.A., Harvard University, 2006.';
     expect(stripLeadingDegreeListPrefix(bareDegreeList)).toBe(bareDegreeList);
+  });
+});
+
+describe('stripProfileFieldLabelChrome (#1533)', () => {
+  it('strips leading "Specializations:" and a later "About:" form-field label (Music dept)', () => {
+    expect(
+      stripProfileFieldLabelChrome(
+        'Specializations: History of theory. About: My scholarship focuses on the global history of music theory.',
+      ),
+    ).toBe('History of theory. My scholarship focuses on the global history of music theory.');
+  });
+
+  it('strips the labels even with no period between the specialization list and "About:"', () => {
+    expect(
+      stripProfileFieldLabelChrome(
+        'Specializations: opera staging; media archaeology About: Gundula Kreuzer studied musicology at Oxford.',
+      ),
+    ).toBe('opera staging; media archaeology Gundula Kreuzer studied musicology at Oxford.');
+  });
+
+  it('leaves ordinary research prose untouched', () => {
+    expect(stripProfileFieldLabelChrome('Studies chromatin dynamics in stem cells.')).toBe(
+      'Studies chromatin dynamics in stem cells.',
+    );
+  });
+});
+
+describe('isEducationOrCareerTimelineSentence: recruiting-note sentence (#1533)', () => {
+  it('flags a "who we recruit" note as a non-research sentence (faculty-research-area-francis-lee)', () => {
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'My research group is committed to engaging undergraduate students, Yale medical students for Thesis, M.D.-Ph.D. Students, other graduate students, and visiting fellows for research opportunities and career advancement.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        '-Ph.D. Students, other graduate students, and visiting fellows for research opportunities and career advancement.',
+      ),
+    ).toBe(true);
   });
 });
 
