@@ -3,7 +3,10 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
-import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
+import {
+  isStudiesResearchAreaEchoDescription,
+  sanitizeCatalogDescription,
+} from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
@@ -389,9 +392,29 @@ const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [
   'summary',
 ] as const;
 
+// A "Studies <A>, <B>, and <C>." sentence that only re-lists the record's own
+// research-area chips is blanked at serve time as redundant chrome
+// (`sanitizeServedResearchEntityCopyFields`/#1466/#1532), so it is not usable
+// public prose here either: a card whose only description fields are such
+// echoes renders with no sentence beside the chips it merely repeats. Treating
+// it as usable let the gate promote a chips-only ghost card the serve DTO
+// blanks, inconsistent with every other served `student_ready` card (#1547
+// serve/quality unification). Only the free-text research fields carry this
+// template; program `description`/`summary` are unaffected.
+const isStudiesResearchAreaEchoField = (record: Record<string, any>, field: string): boolean => {
+  if (field !== 'fullDescription' && field !== 'shortDescription') return false;
+  const value = record[field];
+  if (typeof value !== 'string' || !value.trim()) return false;
+  return (
+    isStudiesResearchAreaEchoDescription(value, record.researchAreas) ||
+    isStudiesResearchAreaEchoDescription(value, record.profileResearchAreas)
+  );
+};
+
 export function recordHasNoUsablePublicDescription(record: Record<string, any>): boolean {
-  return !PUBLIC_DESCRIPTION_INVARIANT_FIELDS.some((field) =>
-    usablePublicDescriptionText(record[field]),
+  return !PUBLIC_DESCRIPTION_INVARIANT_FIELDS.some(
+    (field) =>
+      usablePublicDescriptionText(record[field]) && !isStudiesResearchAreaEchoField(record, field),
   );
 }
 

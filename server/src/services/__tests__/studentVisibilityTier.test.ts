@@ -1728,4 +1728,39 @@ describe('enforceStudentReadyDescriptionInvariant', () => {
     expect(recordHasNoUsablePublicDescription(blankRecord)).toBe(true);
     expect(recordHasNoUsablePublicDescription(describedRecord)).toBe(false);
   });
+
+  it('treats a description that only echoes the record research-area chips as no usable description', () => {
+    const echoOnlyRecord = {
+      researchAreas: ['Marine Ecology', 'Coral Reefs', 'Ocean Chemistry'],
+      fullDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+      shortDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+    };
+
+    expect(recordHasNoUsablePublicDescription(echoOnlyRecord)).toBe(true);
+
+    const result = enforceStudentReadyDescriptionInvariant(
+      { tier: 'student_ready', computedTier: 'student_ready', reasons: ['source_backed_description'] },
+      echoOnlyRecord,
+    );
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('keeps a record usable when a real full description sits beside an echo card field', () => {
+    const realFullEchoShortRecord = {
+      researchAreas: ['Marine Ecology', 'Coral Reefs', 'Ocean Chemistry'],
+      fullDescription:
+        'The lab combines field surveys and lab experiments to understand how warming oceans reshape reef community structure.',
+      shortDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+    };
+
+    expect(recordHasNoUsablePublicDescription(realFullEchoShortRecord)).toBe(false);
+
+    const result = enforceStudentReadyDescriptionInvariant(
+      { tier: 'student_ready', computedTier: 'student_ready', reasons: ['source_backed_description'] },
+      realFullEchoShortRecord,
+    );
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
 });
