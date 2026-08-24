@@ -942,7 +942,11 @@ describe('profileGridItemExtractor', () => {
         <div class="profile-grid-item__link-details-container"><a href="/stemcell/profile/robin-fixture/">View Full Profile</a></div>
         <div class="profile-grid-item__thumbnail-container"><img src="/img/robin-fixture.jpg"></div>
       </div>`;
-    expect(profileGridItemExtractor(html, { pageUrl: 'https://medicine.yale.edu/stemcell/people/listing/' })).toEqual([
+    expect(
+      profileGridItemExtractor(html, {
+        pageUrl: 'https://medicine.yale.edu/stemcell/people/listing/',
+      }),
+    ).toEqual([
       {
         name: 'Robin Fixture',
         profileUrl: 'https://medicine.yale.edu/stemcell/profile/robin-fixture/',
@@ -961,7 +965,11 @@ describe('nodeTeaserFacultyExtractor', () => {
         <header><h3 class="node-teaser__heading"><a href="/faculty-research/faculty-directory/casey-fixture">Casey Fixture</a></h3>
         <div class="node-teaser__job-title">Professor of Economics</div></header>
       </article>`;
-    expect(nodeTeaserFacultyExtractor(html, { pageUrl: 'https://som.yale.edu/faculty-research/faculty-directory' })).toEqual([
+    expect(
+      nodeTeaserFacultyExtractor(html, {
+        pageUrl: 'https://som.yale.edu/faculty-research/faculty-directory',
+      }),
+    ).toEqual([
       {
         name: 'Casey Fixture',
         profileUrl: 'https://som.yale.edu/faculty-research/faculty-directory/casey-fixture',
@@ -980,7 +988,11 @@ describe('jacksonProfileComponentExtractor', () => {
         <div class="profile__content"><h3><a href="/directory/jordan-fixture">Jordan Fixture</a></h3>
           <ul class="profile-positions"><li>Associate Professor of Political Science</li></ul></div>
       </article>`;
-    expect(jacksonProfileComponentExtractor(html, { pageUrl: 'https://jackson.yale.edu/faculty-research/professors-global-affairs' })).toEqual([
+    expect(
+      jacksonProfileComponentExtractor(html, {
+        pageUrl: 'https://jackson.yale.edu/faculty-research/professors-global-affairs',
+      }),
+    ).toEqual([
       {
         name: 'Jordan Fixture',
         profileUrl: 'https://jackson.yale.edu/directory/jordan-fixture',
@@ -998,7 +1010,9 @@ describe('lawPersonListingExtractor', () => {
         <h3 class="style-fancy"><a href="/emery-fixture"><span class="field field--name-title">Emery Fixture</span></a></h3>
         <div class="field field--name-field-title">Sterling Professor of Law</div>
       </article></div>`;
-    expect(lawPersonListingExtractor(html, { pageUrl: 'https://law.yale.edu/faculty?type=faculty' })).toEqual([
+    expect(
+      lawPersonListingExtractor(html, { pageUrl: 'https://law.yale.edu/faculty?type=faculty' }),
+    ).toEqual([
       {
         name: 'Emery Fixture',
         profileUrl: 'https://law.yale.edu/emery-fixture',
@@ -1016,10 +1030,15 @@ describe('nursingFacultyExtractor', () => {
           <div class="field-name-faculty-firstname-lastname"><div class="field-items"><h2 class="field-item"><span>Quinn Fixture</span></h2></div></div>
         </a>
       </div></div>`;
-    expect(nursingFacultyExtractor(html, { pageUrl: 'https://nursing.yale.edu/faculty-research/faculty-directory' })).toEqual([
+    expect(
+      nursingFacultyExtractor(html, {
+        pageUrl: 'https://nursing.yale.edu/faculty-research/faculty-directory',
+      }),
+    ).toEqual([
       {
         name: 'Quinn Fixture',
-        profileUrl: 'https://nursing.yale.edu/faculty-research/faculty-directory/quinn-fixture-phd-rn',
+        profileUrl:
+          'https://nursing.yale.edu/faculty-research/faculty-directory/quinn-fixture-phd-rn',
       },
     ]);
   });

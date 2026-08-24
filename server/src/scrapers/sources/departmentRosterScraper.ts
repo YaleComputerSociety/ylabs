@@ -712,7 +712,9 @@ export const profileGridItemExtractor: FacultyExtractor = (html, ctx) => {
 
   $('.profile-grid-item').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(cleanText(card.find('.profile-grid-item__name--link').first().text()));
+    const name = normalizeName(
+      cleanText(card.find('.profile-grid-item__name--link').first().text()),
+    );
     if (!name) return;
 
     const profileHref =
@@ -751,7 +753,9 @@ export const nodeTeaserFacultyExtractor: FacultyExtractor = (html, ctx) => {
   $('article.node-teaser--faculty').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.node-teaser__heading a').first();
-    const name = normalizeName(cleanText(nameLink.text() || card.find('.node-teaser__heading').first().text()));
+    const name = normalizeName(
+      cleanText(nameLink.text() || card.find('.node-teaser__heading').first().text()),
+    );
     if (!name) return;
 
     const profileHref = nameLink.attr('href') || '';
@@ -847,7 +851,10 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
     const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
     const title =
       cleanText(
-        card.find('.field-name-faculty-title, .field-name-position, .field-name-title').first().text(),
+        card
+          .find('.field-name-faculty-title, .field-name-position, .field-name-title')
+          .first()
+          .text(),
       ) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.field-name-field-photo').first(), ctx.pageUrl);
 
