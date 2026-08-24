@@ -587,9 +587,20 @@ describe('repairSubjectlessResearchLead', () => {
   it('rewrites each subject-less "Research {verb}" lead to the verb-led canonical form (#999)', () => {
     expect(repairSubjectlessResearchLead('Research examines X.')).toBe('Examines X.');
     expect(repairSubjectlessResearchLead('Research investigates X.')).toBe('Investigates X.');
-    expect(repairSubjectlessResearchLead('Research focuses on X.')).toBe('Focuses on X.');
+    expect(repairSubjectlessResearchLead('Research focuses on X.')).toBe('Studies X.');
     expect(repairSubjectlessResearchLead('Research studies X.')).toBe('Studies X.');
     expect(repairSubjectlessResearchLead('Research explores X.')).toBe('Explores X.');
+  });
+
+  it('rewrites a bare "Focuses on" or "Research on" headless lead to "Studies" (#1658)', () => {
+    expect(repairSubjectlessResearchLead('Focuses on DNA repair and gene function.')).toBe(
+      'Studies DNA repair and gene function.',
+    );
+    expect(
+      repairSubjectlessResearchLead(
+        'Research on cortical mechanisms of behavior through single neuron activity.',
+      ),
+    ).toBe('Studies cortical mechanisms of behavior through single neuron activity.');
   });
 
   it('only repairs the leading fragment, leaving later "Research interests include" sentences intact', () => {
@@ -598,7 +609,7 @@ describe('repairSubjectlessResearchLead', () => {
         'Research focuses on econometric theory. Research interests include inference under partial identification.',
       ),
     ).toBe(
-      'Focuses on econometric theory. Research interests include inference under partial identification.',
+      'Studies econometric theory. Research interests include inference under partial identification.',
     );
   });
 
