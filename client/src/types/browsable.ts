@@ -96,7 +96,10 @@ export function getResearchGroupDisplayName(group: ResearchGroup): string {
 
 export function getResearchEntityBestNextStep(group: ResearchGroup): string | null {
   const bestNextStep = group.accessSummary?.bestNextStep?.trim();
-  if (!bestNextStep || bestNextStep === 'Check back later') return null;
+  const hasAccessEvidence = (group.accessSummary?.evidence?.length ?? 0) > 0;
+  if (!bestNextStep || bestNextStep === 'Check back later') {
+    return hasAccessEvidence ? 'Reach out to confirm current availability' : null;
+  }
   return bestNextStep;
 }
 

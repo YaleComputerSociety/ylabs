@@ -148,4 +148,26 @@ describe('research entity best next step', () => {
       ),
     ).toBeNull();
   });
+
+  it('never suppresses the outreach CTA when access evidence exists (#1304)', () => {
+    expect(
+      getResearchEntityBestNextStep(
+        researchEntity({
+          accessSummary: {
+            status: 'not-currently-available',
+            confidence: 0.8,
+            evidence: [
+              {
+                signalType: 'NOT_CURRENTLY_AVAILABLE',
+                confidence: 'HIGH',
+                excerpt: 'Not accepting undergraduate students at this time.',
+              },
+            ],
+            signalTypes: ['NOT_CURRENTLY_AVAILABLE'],
+            bestNextStep: 'Check back later',
+          },
+        }),
+      ),
+    ).toBe('Reach out to confirm current availability');
+  });
 });

@@ -83,11 +83,46 @@ function confidenceScore(signal: any): number {
   return 0;
 }
 
-function computeStatus(signalTypes: Set<string>): AccessSummaryStatus {
+const HIGH_CONFIDENCE_SCORE = 0.75;
+
+const POSITIVE_ACCESS_SIGNAL_TYPES = new Set([
+  'POSTED_OPENING',
+  'REACH_OUT_PLAUSIBLE',
+  'CURRENT_UNDERGRADS',
+  'PAST_UNDERGRADS',
+  'APPLICATION_FORM_EXISTS',
+  'CONTACT_INSTRUCTIONS_EXIST',
+  'CREDIT_FORMALIZATION_POSSIBLE',
+  'COURSE_CREDIT_PATHWAY',
+  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+  'FELLOWSHIP_COMPATIBLE',
+  'RECURRING_PROGRAM',
+  'LAB_MANAGER_LISTED',
+  'PROGRAM_MANAGER_LISTED',
+]);
+
+function computeStatus(
+  signalTypes: Set<string>,
+  maxScoreByType: Map<string, number>,
+): AccessSummaryStatus {
   if (signalTypes.has('POSTED_OPENING')) {
     return 'posted-opening';
   }
   if (signalTypes.has('NOT_CURRENTLY_AVAILABLE')) {
+    const negativeScore = maxScoreByType.get('NOT_CURRENTLY_AVAILABLE') ?? 0;
+    const positiveScores = Array.from(maxScoreByType.entries())
+      .filter(
+        ([type]) => type !== 'NOT_CURRENTLY_AVAILABLE' && POSITIVE_ACCESS_SIGNAL_TYPES.has(type),
+      )
+      .map(([, score]) => score);
+    const bestPositiveScore = positiveScores.length > 0 ? Math.max(...positiveScores) : 0;
+    const positiveOutweighsNegative =
+      signalTypes.has('APPLICATION_FORM_EXISTS') ||
+      bestPositiveScore >= HIGH_CONFIDENCE_SCORE ||
+      bestPositiveScore >= negativeScore;
+    if (positiveScores.length > 0 && positiveOutweighsNegative) {
+      return 'reach-out-plausible';
+    }
     return 'not-currently-available';
   }
   if (
@@ -103,7 +138,7 @@ function computeStatus(signalTypes: Set<string>): AccessSummaryStatus {
 
 function bestNextStepFor(status: AccessSummaryStatus, signalTypes: Set<string>): string {
   if (status === 'posted-opening') return 'Apply';
-  if (status === 'not-currently-available') return 'Check back later';
+  if (status === 'not-currently-available') return 'Reach out to confirm current availability';
   if (
     signalTypes.has('CREDIT_FORMALIZATION_POSSIBLE') ||
     signalTypes.has('COURSE_CREDIT_PATHWAY') ||
@@ -145,13 +180,17 @@ export async function listAccessSummariesForResearchEntities(
   const out = new Map<string, AccessSummary>();
   for (const id of validIds) {
     const entitySignals = signalsByEntity.get(id) || [];
-    const signalTypes = new Set(
-      entitySignals.flatMap((signal) => {
-        const signalType = boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
-        return signalType ? [signalType] : [];
-      }),
-    );
-    const status = computeStatus(signalTypes);
+    const maxScoreByType = new Map<string, number>();
+    for (const signal of entitySignals) {
+      const signalType = boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
+      if (!signalType) continue;
+      maxScoreByType.set(
+        signalType,
+        Math.max(maxScoreByType.get(signalType) ?? 0, confidenceScore(signal)),
+      );
+    }
+    const signalTypes = new Set(maxScoreByType.keys());
+    const status = computeStatus(signalTypes, maxScoreByType);
     const confidence =
       entitySignals.length > 0 ? Math.max(...entitySignals.map(confidenceScore)) : 0;
 
