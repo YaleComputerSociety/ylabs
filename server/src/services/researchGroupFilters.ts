@@ -9,6 +9,8 @@ export type AcceptanceLevelInput = 'verified' | 'verified-or-likely' | 'all';
 
 export type CurrentAvailabilityFilterInput = 'OPEN' | 'ROLLING';
 
+export type CompensationFilterInput = 'PAID_OR_STIPEND' | 'COURSE_CREDIT';
+
 export interface ResearchGroupFilterInput {
   kind?: string[];
   entityType?: string[];
@@ -19,6 +21,7 @@ export interface ResearchGroupFilterInput {
   hostsUndergrads?: boolean;
   hasDocumentedWayIn?: boolean;
   currentAvailability?: CurrentAvailabilityFilterInput[];
+  compensation?: CompensationFilterInput[];
   studentVisibilityTier?: string[];
 }
 
@@ -107,6 +110,11 @@ export function buildResearchGroupFilterString(
     ? orEqualsClause('undergraduateCurrentAvailability', effectiveFilters.currentAvailability)
     : null;
   if (currentAvailabilityClause) parts.push(currentAvailabilityClause);
+
+  const compensationClause = effectiveFilters.compensation
+    ? orEqualsClause('undergraduateCompensationModel', effectiveFilters.compensation)
+    : null;
+  if (compensationClause) parts.push(compensationClause);
 
   const studentVisibilityClause = effectiveFilters.studentVisibilityTier
     ? orEqualsClause('studentVisibilityTier', effectiveFilters.studentVisibilityTier)

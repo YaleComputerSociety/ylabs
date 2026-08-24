@@ -64,6 +64,7 @@ interface DepartmentSearchTarget {
 }
 
 type CurrentAvailabilityFilterValue = 'OPEN' | 'ROLLING';
+type CompensationFilterValue = 'PAID_OR_STIPEND' | 'COURSE_CREDIT';
 
 type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
@@ -72,6 +73,7 @@ type ResearchSearchFilters = PathwaySearchFilters & {
   hostsUndergrads?: boolean;
   hasDocumentedWayIn?: boolean;
   currentAvailability?: CurrentAvailabilityFilterValue[];
+  compensation?: CompensationFilterValue[];
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
@@ -85,6 +87,16 @@ const CURRENT_AVAILABILITY_FILTER_VALUES: readonly CurrentAvailabilityFilterValu
 const CURRENT_AVAILABILITY_FILTER_LABELS: Record<CurrentAvailabilityFilterValue, string> = {
   OPEN: 'Open now',
   ROLLING: 'Rolling',
+};
+
+const COMPENSATION_FILTER_VALUES: readonly CompensationFilterValue[] = [
+  'PAID_OR_STIPEND',
+  'COURSE_CREDIT',
+];
+
+const COMPENSATION_FILTER_LABELS: Record<CompensationFilterValue, string> = {
+  PAID_OR_STIPEND: 'Paid or stipend',
+  COURSE_CREDIT: 'Course credit',
 };
 
 const FILTERED_RESULT_QUERY_LABEL = 'filtered research';
@@ -158,7 +170,8 @@ interface ResearchFilterAnalyticsChange {
     | 'research_area'
     | 'research_type'
     | 'hosts_undergrads'
-    | 'current_availability';
+    | 'current_availability'
+    | 'compensation';
 }
 
 interface ResearchPageSnapshot {
@@ -177,6 +190,7 @@ interface ResearchPageSnapshot {
   hostsUndergrads: boolean;
   documentedWayIn: boolean;
   selectedCurrentAvailability: CurrentAvailabilityFilterValue[];
+  selectedCompensation: CompensationFilterValue[];
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
@@ -449,6 +463,11 @@ const Research = () => {
       restoredSnapshotRef.current?.selectedCurrentAvailability ??
       readSearchParamList(searchParams, 'availability', CURRENT_AVAILABILITY_FILTER_VALUES),
   );
+  const [selectedCompensation, setSelectedCompensation] = useState<CompensationFilterValue[]>(
+    () =>
+      restoredSnapshotRef.current?.selectedCompensation ??
+      readSearchParamList(searchParams, 'compensation', COMPENSATION_FILTER_VALUES),
+  );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
   );
@@ -600,6 +619,23 @@ const Research = () => {
       buildCurrentAvailabilityOptions(browseFacetDistribution.undergraduateCurrentAvailability),
     [buildCurrentAvailabilityOptions, browseFacetDistribution.undergraduateCurrentAvailability],
   );
+  const buildCompensationOptions = useCallback(
+    (counts: Record<string, number> | undefined) =>
+      COMPENSATION_FILTER_VALUES.map((value) => ({
+        value,
+        label: COMPENSATION_FILTER_LABELS[value],
+        count: (counts || {})[value],
+      })).filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0),
+    [],
+  );
+  const compensationOptions = useMemo(
+    () => buildCompensationOptions(facetDistribution.undergraduateCompensationModel),
+    [buildCompensationOptions, facetDistribution.undergraduateCompensationModel],
+  );
+  const browseCompensationOptions = useMemo(
+    () => buildCompensationOptions(browseFacetDistribution.undergraduateCompensationModel),
+    [buildCompensationOptions, browseFacetDistribution.undergraduateCompensationModel],
+  );
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
     [departments],
@@ -625,6 +661,7 @@ const Research = () => {
       hostsUndergrads?: boolean;
       documentedWayIn?: boolean;
       currentAvailability?: CurrentAvailabilityFilterValue[];
+      compensation?: CompensationFilterValue[];
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -643,6 +680,9 @@ const Research = () => {
     if (nextState.documentedWayIn) params.set('documented', '1');
     if (nextState.currentAvailability?.length) {
       params.set('availability', nextState.currentAvailability.join(','));
+    }
+    if (nextState.compensation?.length) {
+      params.set('compensation', nextState.compensation.join(','));
     }
 
     if (isAdmin) {
@@ -853,6 +893,7 @@ const Research = () => {
           hostsUndergrads: filters.hostsUndergrads === true,
           documentedWayIn: filters.hasDocumentedWayIn === true,
           currentAvailability: filters.currentAvailability,
+          compensation: filters.compensation,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -1032,6 +1073,7 @@ const Research = () => {
     typeBuckets = selectedTypeBuckets,
     availability = selectedCurrentAvailability,
     documented = documentedWayIn,
+    compensation = selectedCompensation,
   ): ResearchSearchFilters => ({
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
@@ -1042,6 +1084,7 @@ const Research = () => {
     ...(undergrads ? { hostsUndergrads: true } : {}),
     ...(documented ? { hasDocumentedWayIn: true } : {}),
     ...(availability.length ? { currentAvailability: availability } : {}),
+    ...(compensation.length ? { compensation } : {}),
   });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -1065,6 +1108,7 @@ const Research = () => {
     setSelectedTypeBuckets([]);
     setHostsUndergrads(false);
     setSelectedCurrentAvailability([]);
+    setSelectedCompensation([]);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -1136,6 +1180,11 @@ const Research = () => {
       'availability',
       CURRENT_AVAILABILITY_FILTER_VALUES,
     );
+    const urlCompensation = readSearchParamList(
+      searchParams,
+      'compensation',
+      COMPENSATION_FILTER_VALUES,
+    );
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
     const urlQualityFilters = isAdmin
       ? readSearchParamList(
@@ -1198,6 +1247,10 @@ const Research = () => {
       setSelectedCurrentAvailability(urlCurrentAvailability);
       return;
     }
+    if (selectedCompensation.join(',') !== urlCompensation.join(',')) {
+      setSelectedCompensation(urlCompensation);
+      return;
+    }
     const studentFilters: ResearchSearchFilters = {
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
@@ -1208,6 +1261,7 @@ const Research = () => {
       ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
       ...(urlDocumentedWayIn ? { hasDocumentedWayIn: true } : {}),
       ...(urlCurrentAvailability.length ? { currentAvailability: urlCurrentAvailability } : {}),
+      ...(urlCompensation.length ? { compensation: urlCompensation } : {}),
     };
 
     const urlDepartmentSearch = urlDepartmentLabel
@@ -1306,6 +1360,7 @@ const Research = () => {
     hostsUndergrads,
     documentedWayIn,
     selectedCurrentAvailability,
+    selectedCompensation,
     departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
@@ -1330,6 +1385,7 @@ const Research = () => {
       hostsUndergrads,
       documentedWayIn,
       selectedCurrentAvailability,
+      selectedCompensation,
       sortBy,
       sortOrder,
       facetDistribution,
@@ -1366,6 +1422,7 @@ const Research = () => {
     hostsUndergrads,
     documentedWayIn,
     selectedCurrentAvailability,
+    selectedCompensation,
     sortBy,
     sortOrder,
     facetDistribution,
@@ -1493,7 +1550,8 @@ const Research = () => {
       selectedResearchAreas.length ||
       selectedTypeBuckets.length ||
       hostsUndergrads ||
-      selectedCurrentAvailability.length,
+      selectedCurrentAvailability.length ||
+      selectedCompensation.length,
   );
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =
@@ -1508,6 +1566,8 @@ const Research = () => {
     getUniqueDepartmentLabels([department], departments)[0] || department;
   const currentAvailabilityFilterLabel = (value: string) =>
     CURRENT_AVAILABILITY_FILTER_LABELS[value as CurrentAvailabilityFilterValue] ?? value;
+  const compensationFilterLabel = (value: string) =>
+    COMPENSATION_FILTER_LABELS[value as CompensationFilterValue] ?? value;
   const applyStudentFilters = (next: {
     school?: string;
     department?: string;
@@ -1516,6 +1576,7 @@ const Research = () => {
     hostsUndergrads?: boolean;
     documentedWayIn?: boolean;
     currentAvailability?: CurrentAvailabilityFilterValue[];
+    compensation?: CompensationFilterValue[];
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
@@ -1524,6 +1585,7 @@ const Research = () => {
     const undergrads = next.hostsUndergrads ?? hostsUndergrads;
     const documented = next.documentedWayIn ?? documentedWayIn;
     const availability = next.currentAvailability ?? selectedCurrentAvailability;
+    const compensation = next.compensation ?? selectedCompensation;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (school !== selectedSchool) {
       filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
@@ -1561,6 +1623,12 @@ const Research = () => {
         filter: 'current_availability',
       });
     }
+    if (compensation.join(',') !== selectedCompensation.join(',')) {
+      filterChanges.push({
+        operation: compensation.length > selectedCompensation.length ? 'apply' : 'remove',
+        filter: 'compensation',
+      });
+    }
     setSelectedSchool(school);
     setSelectedDepartment(department);
     setSelectedResearchAreas(areas);
@@ -1568,6 +1636,7 @@ const Research = () => {
     setHostsUndergrads(undergrads);
     setDocumentedWayIn(documented);
     setSelectedCurrentAvailability(availability);
+    setSelectedCompensation(compensation);
     const filters = studentSearchFilters(
       school,
       department,
@@ -1576,6 +1645,7 @@ const Research = () => {
       typeBuckets,
       availability,
       documented,
+      compensation,
     );
     if (!query.trim() && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
@@ -1736,10 +1806,13 @@ const Research = () => {
     documentedWayIn,
     currentAvailabilityOptions,
     selectedCurrentAvailability,
+    compensationOptions,
+    selectedCompensation,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
     currentAvailabilityLabel: currentAvailabilityFilterLabel,
+    compensationLabel: compensationFilterLabel,
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
     onResearchAreasChange: (areas: string[]) => applyStudentFilters({ researchAreas: areas }),
@@ -1748,6 +1821,8 @@ const Research = () => {
     onDocumentedWayInChange: (value: boolean) => applyStudentFilters({ documentedWayIn: value }),
     onCurrentAvailabilityChange: (values: string[]) =>
       applyStudentFilters({ currentAvailability: values as CurrentAvailabilityFilterValue[] }),
+    onCompensationChange: (values: string[]) =>
+      applyStudentFilters({ compensation: values as CompensationFilterValue[] }),
     onClearAll: () =>
       applyStudentFilters({
         school: '',
@@ -1757,6 +1832,7 @@ const Research = () => {
         hostsUndergrads: false,
         documentedWayIn: false,
         currentAvailability: [],
+        compensation: [],
       }),
   };
 
@@ -1766,6 +1842,7 @@ const Research = () => {
     researchAreaOptions: browseResearchAreaOptions,
     typeBucketOptions: browseTypeBucketOptions,
     currentAvailabilityOptions: browseCurrentAvailabilityOptions,
+    compensationOptions: browseCompensationOptions,
     isApplying: false,
     hasFacetError: false,
   };

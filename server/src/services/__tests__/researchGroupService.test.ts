@@ -1037,6 +1037,7 @@ describe('searchResearchGroupsViaMeili', () => {
           'researchAreas',
           'entityType',
           'undergraduateCurrentAvailability',
+          'undergraduateCompensationModel',
           'hasDocumentedWayIn',
         ],
       }),
@@ -1167,6 +1168,44 @@ describe('searchResearchGroupsViaMeili', () => {
 
     expect(mocks.search).toHaveBeenCalledTimes(1);
     expect(result.facetDistribution?.hasDocumentedWayIn).toEqual({ true: 4, false: 6 });
+  });
+
+  it('computes the compensation facet disjunctively and filters on the browse-filterable field (#1540)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 3,
+      facetDistribution: {
+        undergraduateCompensationModel: { PAID_OR_STIPEND: 3 },
+      },
+    });
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 20,
+      facetDistribution: {
+        undergraduateCompensationModel: { PAID_OR_STIPEND: 3, COURSE_CREDIT: 5 },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { compensation: ['PAID_OR_STIPEND'] },
+      1,
+      24,
+    );
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1].filter).toMatch(
+      /undergraduateCompensationModel = "PAID_OR_STIPEND"/,
+    );
+    const disjunctiveCall = mocks.search.mock.calls[1];
+    expect(disjunctiveCall[1]).toEqual(
+      expect.objectContaining({ facets: ['undergraduateCompensationModel'], limit: 0 }),
+    );
+    expect(disjunctiveCall[1].filter).not.toMatch(/undergraduateCompensationModel/);
+    expect(result.facetDistribution?.undergraduateCompensationModel).toEqual({
+      PAID_OR_STIPEND: 3,
+      COURSE_CREDIT: 5,
+    });
   });
 
   it('does not issue a disjunctive facet query for a field with no active filter', async () => {
@@ -1699,6 +1738,7 @@ describe('searchResearchGroupsViaMeili', () => {
         'researchAreas',
         'entityType',
         'undergraduateCurrentAvailability',
+        'undergraduateCompensationModel',
         'hasDocumentedWayIn',
       ],
     });

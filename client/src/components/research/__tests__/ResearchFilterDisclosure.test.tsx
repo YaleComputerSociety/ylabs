@@ -24,10 +24,13 @@ const renderFilters = (
     documentedWayIn: false,
     currentAvailabilityOptions: [],
     selectedCurrentAvailability: [],
+    compensationOptions: [],
+    selectedCompensation: [],
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
     currentAvailabilityLabel: (value) => value,
+    compensationLabel: (value) => value,
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
     onResearchAreasChange: vi.fn(),
@@ -35,6 +38,7 @@ const renderFilters = (
     onHostsUndergradsChange: vi.fn(),
     onDocumentedWayInChange: vi.fn(),
     onCurrentAvailabilityChange: vi.fn(),
+    onCompensationChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -261,6 +265,64 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByRole('button', { name: 'Remove Open now' })).toBeTruthy();
   });
 
+  it('toggles the compensation filter and exposes a removable chip once coverage clears the minimum', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      compensationOptions: [
+        { value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 15 },
+        { value: 'COURSE_CREDIT', label: 'Course credit', count: 10 },
+      ],
+    });
+
+    fireEvent.click(screen.getByLabelText('Paid or stipend (15)'));
+    expect(props.onCompensationChange).toHaveBeenCalledWith(['PAID_OR_STIPEND']);
+
+    const { props: selectedProps } = renderFilters({
+      variant: 'sidebar',
+      compensationOptions: [{ value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 25 }],
+      selectedCompensation: ['PAID_OR_STIPEND'],
+      compensationLabel: (value) =>
+        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' }[value] ?? value),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Paid or stipend' }));
+    expect(selectedProps.onCompensationChange).toHaveBeenCalledWith([]);
+  });
+
+  it('stays hidden when compensation coverage is below the minimum servable threshold', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    const { container: sparseContainer } = renderFilters({
+      variant: 'sidebar',
+      compensationOptions: [
+        { value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 5 },
+        { value: 'COURSE_CREDIT', label: 'Course credit', count: 2 },
+      ],
+    });
+    expect(within(sparseContainer).queryByText('Undergraduate compensation')).toBeNull();
+
+    const { container: emptyContainer } = renderFilters({
+      variant: 'sidebar',
+      compensationOptions: [],
+    });
+    expect(within(emptyContainer).queryByText('Undergraduate compensation')).toBeNull();
+  });
+
+  it('keeps an already-selected compensation value visible even below the coverage minimum', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    renderFilters({
+      variant: 'sidebar',
+      compensationOptions: [{ value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 1 }],
+      selectedCompensation: ['PAID_OR_STIPEND'],
+      compensationLabel: (value) =>
+        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' }[value] ?? value),
+    });
+
+    expect(screen.getByText('Undergraduate compensation')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Paid or stipend' })).toBeTruthy();
+  });
+
   it('adds a research area from the dropdown and removes it via its chip', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props } = renderFilters({
@@ -307,10 +369,13 @@ describe('ResearchFilterDisclosure', () => {
         documentedWayIn: false,
         currentAvailabilityOptions: [],
         selectedCurrentAvailability: [],
+        compensationOptions: [],
+        selectedCompensation: [],
         isApplying: false,
         hasFacetError: false,
         departmentLabel: (value) => value,
         currentAvailabilityLabel: (value) => value,
+        compensationLabel: (value) => value,
         onSchoolChange: vi.fn(),
         onDepartmentChange: vi.fn(),
         onResearchAreasChange: () => setHasSubmittedSearch(true),
@@ -318,6 +383,7 @@ describe('ResearchFilterDisclosure', () => {
         onHostsUndergradsChange: vi.fn(),
         onDocumentedWayInChange: vi.fn(),
         onCurrentAvailabilityChange: vi.fn(),
+        onCompensationChange: vi.fn(),
         onClearAll: vi.fn(),
         isOpen,
         onOpenChange: setIsOpen,

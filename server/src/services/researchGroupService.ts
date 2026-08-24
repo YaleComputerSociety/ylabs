@@ -567,6 +567,11 @@ const isCurrentAvailabilityFilterInput = (
 ): value is NonNullable<ResearchGroupFilterInput['currentAvailability']>[number] =>
   value === 'OPEN' || value === 'ROLLING';
 
+const isCompensationFilterInput = (
+  value: string,
+): value is NonNullable<ResearchGroupFilterInput['compensation']>[number] =>
+  value === 'PAID_OR_STIPEND' || value === 'COURSE_CREDIT';
+
 const sanitizeResearchGroupSearchFilters = (
   filters: ResearchGroupFilterInput = {},
 ): ResearchGroupFilterInput => ({
@@ -582,6 +587,9 @@ const sanitizeResearchGroupSearchFilters = (
   hasDocumentedWayIn: filters.hasDocumentedWayIn === true ? true : undefined,
   currentAvailability: boundedResearchFilterValues(filters.currentAvailability).filter(
     isCurrentAvailabilityFilterInput,
+  ),
+  compensation: boundedResearchFilterValues(filters.compensation).filter(
+    isCompensationFilterInput,
   ),
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
@@ -663,6 +671,9 @@ const mongoFilterFromResearchFilters = (
   }
   if (filters.currentAvailability?.length) {
     mongoFilter.undergraduateCurrentAvailability = { $in: filters.currentAvailability };
+  }
+  if (filters.compensation?.length) {
+    mongoFilter.undergraduateCompensationModel = { $in: filters.compensation };
   }
 
   return mongoFilter;
@@ -929,19 +940,27 @@ export const promoteExactAliasFieldMatches = <T>(
 // dropped; every other active filter still constrains the distribution. See
 // issue #1080.
 const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
-  filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType' | 'currentAvailability';
+  filterKey:
+    | 'school'
+    | 'departments'
+    | 'researchAreas'
+    | 'entityType'
+    | 'currentAvailability'
+    | 'compensation';
   meiliField:
     | 'schools'
     | 'departments'
     | 'researchAreas'
     | 'entityType'
-    | 'undergraduateCurrentAvailability';
+    | 'undergraduateCurrentAvailability'
+    | 'undergraduateCompensationModel';
 }> = [
   { filterKey: 'school', meiliField: 'schools' },
   { filterKey: 'departments', meiliField: 'departments' },
   { filterKey: 'researchAreas', meiliField: 'researchAreas' },
   { filterKey: 'entityType', meiliField: 'entityType' },
   { filterKey: 'currentAvailability', meiliField: 'undergraduateCurrentAvailability' },
+  { filterKey: 'compensation', meiliField: 'undergraduateCompensationModel' },
 ];
 
 /**
@@ -1097,6 +1116,7 @@ export async function searchResearchGroupsViaMeili(
       'researchAreas',
       'entityType',
       'undergraduateCurrentAvailability',
+      'undergraduateCompensationModel',
       'hasDocumentedWayIn',
     ],
   };
@@ -1285,6 +1305,7 @@ export async function searchResearchGroupsViaMeili(
           'researchAreas',
           'entityType',
           'undergraduateCurrentAvailability',
+          'undergraduateCompensationModel',
           'hasDocumentedWayIn',
         ],
       });
@@ -1659,7 +1680,13 @@ const searchResearchGroupsViaMongoFallback = async (
   // that facet's own clause, so its dropdown keeps every sibling value; other
   // active filters still constrain the counts.
   const disjunctiveMongoFacetCounts = async (
-    filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType' | 'currentAvailability',
+    filterKey:
+      | 'school'
+      | 'departments'
+      | 'researchAreas'
+      | 'entityType'
+      | 'currentAvailability'
+      | 'compensation',
     field: string,
   ): Promise<Record<string, number>> => {
     if (!filters[filterKey]?.length) return facetCounts(visibleCandidates, field);
@@ -1697,6 +1724,7 @@ const searchResearchGroupsViaMongoFallback = async (
     researchAreaFacetCounts,
     entityTypeFacetCounts,
     currentAvailabilityFacetCounts,
+    compensationFacetCounts,
     documentedWayInCounts,
   ] = await Promise.all([
     disjunctiveMongoFacetCounts('school', 'schools'),
@@ -1704,6 +1732,7 @@ const searchResearchGroupsViaMongoFallback = async (
     disjunctiveMongoFacetCounts('researchAreas', 'researchAreas'),
     disjunctiveMongoFacetCounts('entityType', 'entityType'),
     disjunctiveMongoFacetCounts('currentAvailability', 'undergraduateCurrentAvailability'),
+    disjunctiveMongoFacetCounts('compensation', 'undergraduateCompensationModel'),
     documentedWayInFacetCounts(),
   ]);
   const facetDistribution = {
@@ -1712,6 +1741,7 @@ const searchResearchGroupsViaMongoFallback = async (
     researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {},
     entityType: entityTypeFacetCounts,
     undergraduateCurrentAvailability: currentAvailabilityFacetCounts,
+    undergraduateCompensationModel: compensationFacetCounts,
     hasDocumentedWayIn: documentedWayInCounts,
   };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(

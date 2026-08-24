@@ -32,10 +32,13 @@ interface ResearchFilterDisclosureProps {
   documentedWayIn: boolean;
   currentAvailabilityOptions: FacetOption[];
   selectedCurrentAvailability: string[];
+  compensationOptions: FacetOption[];
+  selectedCompensation: string[];
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
   currentAvailabilityLabel: (value: string) => string;
+  compensationLabel: (value: string) => string;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onResearchAreasChange: (value: string[]) => void;
@@ -43,6 +46,7 @@ interface ResearchFilterDisclosureProps {
   onHostsUndergradsChange: (value: boolean) => void;
   onDocumentedWayInChange: (value: boolean) => void;
   onCurrentAvailabilityChange: (value: string[]) => void;
+  onCompensationChange: (value: string[]) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
@@ -61,6 +65,8 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
 };
 
 const MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT = 20;
+
+const MIN_COMPENSATION_SERVABLE_COUNT = 20;
 
 const sumOptionCounts = (options: FacetOption[]): number =>
   options.reduce((total, option) => total + (option.count ?? 0), 0);
@@ -93,10 +99,13 @@ const ResearchFilterDisclosure = ({
   documentedWayIn,
   currentAvailabilityOptions,
   selectedCurrentAvailability,
+  compensationOptions,
+  selectedCompensation,
   isApplying,
   hasFacetError,
   departmentLabel,
   currentAvailabilityLabel,
+  compensationLabel,
   onSchoolChange,
   onDepartmentChange,
   onResearchAreasChange,
@@ -104,6 +113,7 @@ const ResearchFilterDisclosure = ({
   onHostsUndergradsChange,
   onDocumentedWayInChange,
   onCurrentAvailabilityChange,
+  onCompensationChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
@@ -180,6 +190,9 @@ const ResearchFilterDisclosure = ({
   const documentedWayInNegativeCount = documentedWayInCounts?.false ?? 0;
   const showDocumentedWayIn =
     (documentedWayInPositiveCount > 0 && documentedWayInNegativeCount > 0) || documentedWayIn;
+  const showCompensation =
+    sumOptionCounts(compensationOptions) >= MIN_COMPENSATION_SERVABLE_COUNT ||
+    selectedCompensation.length > 0;
   const activeCount =
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
@@ -187,13 +200,21 @@ const ResearchFilterDisclosure = ({
     selectedTypeBuckets.length +
     Number(hostsUndergrads) +
     Number(documentedWayIn) +
-    selectedCurrentAvailability.length;
+    selectedCurrentAvailability.length +
+    selectedCompensation.length;
   const visibleFacetKey = `${String(showSchool)}:${String(showDepartment)}`;
   const toggleCurrentAvailability = (value: string, checked: boolean) => {
     onCurrentAvailabilityChange(
       checked
         ? [...selectedCurrentAvailability, value]
         : selectedCurrentAvailability.filter((selected) => selected !== value),
+    );
+  };
+  const toggleCompensation = (value: string, checked: boolean) => {
+    onCompensationChange(
+      checked
+        ? [...selectedCompensation, value]
+        : selectedCompensation.filter((selected) => selected !== value),
     );
   };
 
@@ -278,7 +299,8 @@ const ResearchFilterDisclosure = ({
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
 
-  const facetCountWarning = hasFacetError && (showSchool || showDepartment || showCurrentAvailability) && (
+  const facetCountWarning = hasFacetError &&
+    (showSchool || showDepartment || showCurrentAvailability || showCompensation) && (
     <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
       Current filter counts are unavailable. Active values remain clearable.
     </p>
@@ -322,6 +344,30 @@ const ResearchFilterDisclosure = ({
                 type="checkbox"
                 checked={selectedCurrentAvailability.includes(option.value)}
                 onChange={(event) => toggleCurrentAvailability(option.value, event.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+              />
+              <span>
+                {option.label ?? option.value}
+                {option.count !== undefined ? ` (${option.count})` : ''}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {showCompensation && (
+        <fieldset className="min-w-0 space-y-2 border-0 p-0">
+          <legend className="text-sm font-medium text-slate-800">
+            Undergraduate compensation
+          </legend>
+          {compensationOptions.map((option) => (
+            <label
+              key={option.value}
+              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
+            >
+              <input
+                type="checkbox"
+                checked={selectedCompensation.includes(option.value)}
+                onChange={(event) => toggleCompensation(option.value, event.target.checked)}
                 className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
               />
               <span>
@@ -409,7 +455,8 @@ const ResearchFilterDisclosure = ({
         !showResearchAreas &&
         !showType &&
         !showCurrentAvailability &&
-        !showDocumentedWayIn && (
+        !showDocumentedWayIn &&
+        !showCompensation && (
           <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
         )}
     </fieldset>
@@ -521,6 +568,27 @@ const ResearchFilterDisclosure = ({
             onClick={() =>
               onCurrentAvailabilityChange(
                 selectedCurrentAvailability.filter((selected) => selected !== value),
+              )
+            }
+            aria-label={`Remove ${label}`}
+            className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            <span className="min-w-0 truncate">{label}</span>
+            <span aria-hidden="true" className="shrink-0">
+              ×
+            </span>
+          </button>
+        );
+      })}
+      {selectedCompensation.map((value) => {
+        const label = compensationLabel(value);
+        return (
+          <button
+            key={value}
+            type="button"
+            onClick={() =>
+              onCompensationChange(
+                selectedCompensation.filter((selected) => selected !== value),
               )
             }
             aria-label={`Remove ${label}`}
