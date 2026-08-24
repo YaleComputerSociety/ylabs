@@ -66,7 +66,10 @@ describe('fellowshipProgramSourceRegistry', () => {
       FUNDING_YALE_SITEMAP_URLS.map((url) => new URL(url).hostname.toLowerCase()),
     );
     for (const entry of getFellowshipProgramCatalogsByStatus('covered')) {
-      expect(entry.coveredBy, entry.url).toContain('yale-college-fellowships-office');
+      // Catalogs covered by a dedicated per-catalog source (e.g. the Student
+      // Grants Database rendered enumerator) are backed by that source's own
+      // crawl, not the fellowships-office public-page seed set.
+      if (!(entry.coveredBy ?? []).includes('yale-college-fellowships-office')) continue;
       if (entry.seedUrls) {
         expect(entry.seedUrls.length, entry.url).toBeGreaterThan(0);
         for (const seed of entry.seedUrls) {

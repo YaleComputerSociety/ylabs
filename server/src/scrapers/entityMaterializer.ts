@@ -51,6 +51,7 @@ import {
   isBoilerplatePlatformHostUrl,
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
+  isRecordSpecificApplicationPortalUrl,
 } from '../utils/researchHomeWebsiteUrl';
 import {
   isLikelyOfficialPersonProfileUrl,
@@ -2199,6 +2200,37 @@ async function findFellowshipBySourceUrl(
   return isProgramTitleQualifierDrift(title, String(candidate.title || '')) ? candidate : null;
 }
 
+/**
+ * Cross-source dedupe: a fund enumerated by the Student Grants Database source
+ * cites its record-specific CommunityForce FundDetails URL as both its sourceUrl
+ * and applicationLink. The same fund linked from a public fellowship page carries
+ * that exact URL as its applicationLink. The FundDetails URL is globally unique
+ * per fund, so when the same-source title/sourceUrl fallbacks miss, resolve to
+ * any existing active fellowship whose applicationLink matches - so the two
+ * sources merge into one record rather than duplicating (#1630). Only fires for a
+ * record-specific application-portal URL (a FundDetails page with a query), never
+ * a bare portal root shared by many funds, and only when exactly one active
+ * record matches.
+ */
+async function findFellowshipByRecordSpecificApplicationLink(
+  Model: mongoose.Model<any>,
+  obs: any[],
+): Promise<any | null> {
+  const applicationLinkObs = obs.find(
+    (o) => o.field === 'applicationLink' && typeof o.value === 'string',
+  );
+  const applicationLink = String(applicationLinkObs?.value || '').trim();
+  if (!applicationLink || !isRecordSpecificApplicationPortalUrl(applicationLink)) return null;
+
+  const candidates = await Model.find({
+    applicationLink,
+    archived: { $ne: true },
+  })
+    .limit(2)
+    .lean();
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 async function findEntityDocByIdentifier(
   Model: mongoose.Model<any>,
   entityType: ObservedEntityType,
@@ -2231,6 +2263,8 @@ async function findEntityDocByIdentifier(
     if (byTitle) return byTitle;
     const bySourceUrl = await findFellowshipBySourceUrl(Model, obs);
     if (bySourceUrl) return bySourceUrl;
+    const byApplicationLink = await findFellowshipByRecordSpecificApplicationLink(Model, obs);
+    if (byApplicationLink) return byApplicationLink;
   }
 
   if (entityType === 'user') {

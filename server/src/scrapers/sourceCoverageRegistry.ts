@@ -415,6 +415,15 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes: 'Authoritative fellowship program, application-cycle, and official office route source.',
   },
+  'student-grants-database': {
+    priority: 4,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Fellowship', 'ContactRoute', 'Observation'],
+    evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK', 'OFFICIAL_CONTACT_ROUTE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Disabled by default until an operator confirms the rendered catalog is reliably public on Development.",
+  },
   'ylabs-listing': {
     priority: 5,
     tier: 'MANUAL_OVERRIDE',

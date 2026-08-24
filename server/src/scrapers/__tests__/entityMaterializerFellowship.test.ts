@@ -210,4 +210,111 @@ describe('fellowship materialization', () => {
     expect(result.created).toBe(true);
     expect(result.entityId).not.toBe('existing-libby-rouse-fellowship-id');
   });
+
+  it('merges a Student Grants Database fund into a public-page fellowship sharing its FundDetails application link (#1630)', async () => {
+    const fundDetailUrl =
+      'https://yale.communityforce.com/Funds/FundDetails.aspx?B4C5D6E7F8091A2B3C4D5E6F';
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue([
+        {
+          field: 'title',
+          value: 'Richter Summer Research Fellowship',
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        },
+        {
+          field: 'sourceName',
+          value: 'student-grants-database',
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        },
+        {
+          field: 'applicationLink',
+          value: fundDetailUrl,
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        },
+      ]),
+    } as any);
+
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const publicPageFund = {
+      _id: 'existing-richter-public-page-id',
+      title: 'Richter Summer Fellowship',
+      sourceName: 'yale-college-fellowships-office',
+      applicationLink: fundDetailUrl,
+      archived: false,
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const find = vi
+      .spyOn(Fellowship, 'find')
+      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([]) } as any)
+      .mockReturnValueOnce({
+        limit: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue([publicPageFund]) }),
+      } as any);
+
+    const result = await materializeEntity(
+      'fellowship',
+      { entityKey: 'student-grants-database:funds-funddetails-aspx-b4c5d6e7f8091a2b3c4d5e6f' },
+      { dryRun: true },
+    );
+
+    expect(find).toHaveBeenLastCalledWith({
+      applicationLink: fundDetailUrl,
+      archived: { $ne: true },
+    });
+    expect(result.created).toBe(false);
+    expect(result.entityId).toBe('existing-richter-public-page-id');
+  });
+
+  it('does not cross-source merge on a bare application-portal root shared by many funds (#1630)', async () => {
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue([
+        {
+          field: 'title',
+          value: 'Some Portal Fund',
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        },
+        {
+          field: 'sourceName',
+          value: 'student-grants-database',
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        },
+        {
+          field: 'applicationLink',
+          value: 'https://yale.communityforce.com/',
+          sourceName: 'student-grants-database',
+          confidence: 0.9,
+          observedAt: new Date('2026-03-01T00:00:00Z'),
+        },
+      ]),
+    } as any);
+
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const find = vi
+      .spyOn(Fellowship, 'find')
+      .mockReturnValue({ lean: vi.fn().mockResolvedValue([]) } as any);
+
+    const result = await materializeEntity(
+      'fellowship',
+      { entityKey: 'student-grants-database:some-portal-fund' },
+      { dryRun: true },
+    );
+
+    for (const call of find.mock.calls as unknown[][]) {
+      expect(call[0]).not.toHaveProperty('applicationLink');
+    }
+    expect(result.created).toBe(true);
+  });
 });
