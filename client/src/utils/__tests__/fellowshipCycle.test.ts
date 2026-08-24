@@ -126,4 +126,20 @@ describe('fellowshipCycle', () => {
     expect(isLikelyRecurringFellowship(fellowship)).toBe(false);
     expect(getFellowshipCycleStatus(fellowship, now).category).toBe('closed');
   });
+
+  it('surfaces a server-projected next-cycle deadline distinctly from a real next-cycle signal', () => {
+    const fellowship = baseFellowship({
+      isAcceptingApplications: false,
+      deadline: '2027-02-17T18:00:00.000Z',
+      deadlineProjectedNextCycle: true,
+    });
+
+    const status = getFellowshipCycleStatus(fellowship, now);
+    expect(status.category).toBe('projectedNextCycle');
+    expect(status.label).toBe('Next Cycle (Est.)');
+    expect(status.deadlinePassed).toBe(false);
+    expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe(
+      'Est. next cycle ~Feb 17 (unconfirmed)',
+    );
+  });
 });

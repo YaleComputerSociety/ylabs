@@ -44,6 +44,7 @@ export interface CatalogFreshnessReport {
     accepting: number;
     deadlinePast: number;
     deadlineFuture: number;
+    deadlineFutureProjected: number;
     deadlineNone: number;
   };
   shares: {
@@ -75,12 +76,14 @@ export function computeCatalogFreshness(
   let accepting = 0;
   let deadlinePast = 0;
   let deadlineFuture = 0;
+  let deadlineFutureProjected = 0;
   let deadlineNone = 0;
 
   for (const record of records) {
     const publicView = publicFellowshipForStudent(record, now);
     const isAccepting = publicView?.isAcceptingApplications === true;
     const bucket = deadlineBucket(publicView?.deadline, now);
+    const isProjected = publicView?.deadlineProjectedNextCycle === true;
     const key = sourceKeyOf(record);
 
     const contribution = perSource.get(key) ?? {
@@ -99,6 +102,7 @@ export function computeCatalogFreshness(
       contribution.pastDeadline += 1;
     } else if (bucket === 'future') {
       deadlineFuture += 1;
+      if (isProjected) deadlineFutureProjected += 1;
     } else {
       deadlineNone += 1;
     }
@@ -143,7 +147,7 @@ export function computeCatalogFreshness(
   return {
     status,
     thresholds,
-    totals: { visible, accepting, deadlinePast, deadlineFuture, deadlineNone },
+    totals: { visible, accepting, deadlinePast, deadlineFuture, deadlineFutureProjected, deadlineNone },
     shares: { accepting: acceptingShare, pastDeadline: pastDeadlineShare },
     breaches,
     staleSourceKeys,

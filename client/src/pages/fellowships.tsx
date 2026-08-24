@@ -470,6 +470,7 @@ const Fellowships = () => {
       closingSoon: [] as Fellowship[],
       open: [] as Fellowship[],
       openingSoon: [] as Fellowship[],
+      projectedNextCycle: [] as Fellowship[],
       nextCycle: [] as Fellowship[],
       closed: [] as Fellowship[],
     };
@@ -500,6 +501,11 @@ const Fellowships = () => {
       cycleGroups.open = sortFellowshipsForDisplay(cycleGroups.open, sortBy, sortDirection);
       cycleGroups.openingSoon = sortFellowshipsForDisplay(
         cycleGroups.openingSoon,
+        sortBy,
+        sortDirection,
+      );
+      cycleGroups.projectedNextCycle = sortFellowshipsForDisplay(
+        cycleGroups.projectedNextCycle,
         sortBy,
         sortDirection,
       );

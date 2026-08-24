@@ -166,6 +166,22 @@ describe('fellowshipStatus', () => {
     expect(status.isApplicationWindowOpen).toBe(false);
   });
 
+  it('surfaces a projected next-cycle deadline as unconfirmed rather than an open window', () => {
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({
+        isAcceptingApplications: false,
+        deadline: '2027-02-17T12:00:00.000Z',
+        deadlineProjectedNextCycle: true,
+      }),
+      NOW,
+    );
+
+    expect(status.kind).toBe('projectedNextCycle');
+    expect(status.label).toBe('Projected next cycle');
+    expect(status.isCurrentlyRelevant).toBe(true);
+    expect(status.isApplicationWindowOpen).toBe(false);
+  });
+
   it('flags missing eligibility when neither text nor structured filters are present', () => {
     const fellowship = makeFellowship({
       eligibility: '',

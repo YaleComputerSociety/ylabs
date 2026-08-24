@@ -3,7 +3,13 @@ import { getFellowshipApplicationStatus } from './fellowshipStatus';
 
 export const CLOSING_SOON_DAYS = 30;
 
-export type FellowshipCycleCategory = 'closingSoon' | 'open' | 'openingSoon' | 'nextCycle' | 'closed';
+export type FellowshipCycleCategory =
+  | 'closingSoon'
+  | 'open'
+  | 'openingSoon'
+  | 'projectedNextCycle'
+  | 'nextCycle'
+  | 'closed';
 
 export interface FellowshipCycleStatus {
   category: FellowshipCycleCategory;
@@ -68,6 +74,17 @@ export function getFellowshipCycleStatus(
     };
   }
 
+  if (applicationStatus.kind === 'projectedNextCycle') {
+    return {
+      category: 'projectedNextCycle',
+      label: 'Next Cycle (Est.)',
+      className: 'bg-sky-50 text-sky-700 border border-sky-100',
+      deadlinePassed: false,
+      sourceBacked,
+      likelyRecurring: true,
+    };
+  }
+
   if (isOpen && deadline) {
     const daysUntil = Math.ceil(
       (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
@@ -124,6 +141,10 @@ export function getFellowshipDeadlineSubtitle(
   if (status.category === 'openingSoon') {
     const openDate = new Date(String(fellowship.applicationOpenDate));
     return `Opens ${openDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  }
+  if (status.category === 'projectedNextCycle' && fellowship.deadline) {
+    const projected = new Date(fellowship.deadline);
+    return `Est. next cycle ~${projected.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (unconfirmed)`;
   }
   if (!fellowship.deadline) {
     return status.category === 'nextCycle' ? 'Track for next cycle' : 'No deadline';

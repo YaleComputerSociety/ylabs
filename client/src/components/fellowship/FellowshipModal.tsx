@@ -512,10 +512,19 @@ const FellowshipModal = ({
                       </p>
                     </div>
                     <div>
-                      <span className="text-xs text-blue-600">Deadline</span>
+                      <span className="text-xs text-blue-600">
+                        {fellowship.deadlineProjectedNextCycle
+                          ? 'Estimated Next Deadline'
+                          : 'Deadline'}
+                      </span>
                       <p className="text-sm font-medium text-blue-900">
                         {formatFellowshipDate(fellowship.deadline)}
                       </p>
+                      {fellowship.deadlineProjectedNextCycle && (
+                        <p className="text-xs text-blue-700">
+                          Projected from the last cycle - unconfirmed, verify at source.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </section>

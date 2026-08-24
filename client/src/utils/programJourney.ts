@@ -62,11 +62,11 @@ export function getProgramJourneyStatus(
     };
   }
 
-  if (cycle.category === 'openingSoon') {
+  if (cycle.category === 'openingSoon' || cycle.category === 'projectedNextCycle') {
     return {
       category: 'openingSoon',
       label: 'Opening Soon',
-      description: 'Upcoming application windows with announced opening dates.',
+      description: 'Upcoming application windows, including projected next-cycle dates.',
     };
   }
 
