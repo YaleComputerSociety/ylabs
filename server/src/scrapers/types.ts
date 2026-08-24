@@ -124,6 +124,9 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     missingPreviouslySeen: number;
     deadlineParsed: number;
     deadlineMissing: number;
+    sitemapProgramsDiscovered?: number;
+    detailPagesCrawled?: number;
+    detailPagesCapped?: number;
   };
   evidenceCoverageImpact?: {
     assessed: number;

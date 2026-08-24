@@ -65,17 +65,18 @@ export const FELLOWSHIP_PROGRAM_SOURCE_REGISTRY: FellowshipProgramEntry[] = [
     impactTier: 1,
     coveredBy: ['yale-college-fellowships-office'],
     notes:
-      'Seeded in yaleCollegeFellowshipsOfficeScraper DEFAULT_PAGE_URLS. Only this single "offered through Yale" landing page is currently ingested; the full funding.yale.edu find-funding database (faceted by discipline, term, citizenship, and region) is a separate coverage gap - see the funding.yale.edu/find-funding gap entry.',
+      'Seeded in yaleCollegeFellowshipsOfficeScraper DEFAULT_PAGE_URLS. The full funding.yale.edu find-funding database is now also wired via the sitemap-driven individual-program-page crawl - see the funding.yale.edu/find-funding covered entry.',
   },
   {
     url: 'https://funding.yale.edu/find-funding',
     catalogName: 'Yale Fellowships & Funding - full find-funding database',
     owningOffice: 'Yale Office of Fellowship Programs (funding.yale.edu)',
-    status: 'gap',
+    status: 'covered',
     impactTier: 1,
+    coveredBy: ['yale-college-fellowships-office'],
     approxProgramCount: 200,
     notes:
-      'The complete find-funding database is the broadest single fellowship acquisition surface at Yale, spanning far more programs than the one "offered through Yale" landing page currently seeded. It is a faceted listing whose root is a crawl seed only; each individual program page is the citable source. Wiring it (pagination + per-facet crawl) is the highest-ROI follow-up this registry unblocks.',
+      'The complete find-funding database is the broadest single fellowship acquisition surface at Yale. Its faceted search listing is JS-rendered with no crawlable static rows, so yaleCollegeFellowshipsOfficeScraper enumerates the individual program pages behind it via the funding.yale.edu sitemap (parseFundingYaleSitemapProgramUrls) and crawls each as a citable per-program source. The sitemap and every find-funding index/hub root are crawl seeds only, never cited (isFundingYaleIndexOrHubUrl; #516/#549). The crawl is bounded by a page cap.',
   },
 
   // ---- Tier 2: school-wide / college-wide fellowship hubs and awards indexes -------
