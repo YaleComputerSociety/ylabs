@@ -2897,6 +2897,48 @@ describe('Research page', () => {
   });
 });
 
+describe('Research landing saved-search new-match signal', () => {
+  const mockSavedSearchNewMatches = (savedSearches: Array<{ newMatchCount: number | null }>) => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === '/users/savedSearches'
+        ? Promise.resolve({ data: { savedSearches } })
+        : Promise.resolve({ data: { suggestions: [] } }),
+    );
+  };
+
+  it('shows the aggregate new-match count for a signed-in student and links to Saved Searches', async () => {
+    mockSavedSearchNewMatches([{ newMatchCount: 2 }, { newMatchCount: 3 }]);
+
+    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
+
+    const cta = await screen.findByRole('link', { name: '5 new matches for your saved searches' });
+    expect(cta).toHaveAttribute('href', '/account?tab=searches');
+  });
+
+  it('stays silent when the student has no new saved-search matches', async () => {
+    mockSavedSearchNewMatches([{ newMatchCount: 0 }]);
+
+    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
+
+    await waitFor(() => expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedSearches', {
+      withCredentials: true,
+    }));
+    expect(screen.queryByText(/new matches for your saved searches/)).toBeNull();
+  });
+
+  it('stays silent for a guest, never fetching saved searches', async () => {
+    mockSavedSearchNewMatches([{ newMatchCount: 5 }]);
+
+    renderResearch(departments, ['/research']);
+
+    expect(screen.getByText(/browsing as a guest/i)).toBeTruthy();
+    expect(mockedAxios.get).not.toHaveBeenCalledWith(
+      '/users/savedSearches',
+      expect.anything(),
+    );
+  });
+});
+
 describe('Research zero-result recovery', () => {
   const recoveryResearchAreas = [
     { name: 'Genomics', field: 'Life Sciences', colorKey: 'a', isDefault: false },
