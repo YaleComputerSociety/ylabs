@@ -5,6 +5,7 @@ import {
   describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  isReplaceableResearchAreaChipEchoShort,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
@@ -1406,6 +1407,50 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
       'The analysis in Making Morocco focuses on interactions between state and society during the Protectorate period.';
     const quality = shortDescriptionQuality('Studies Texas from the first.', full);
     expect(quality.flags).not.toContain('ungrounded-topic-short');
+  });
+});
+
+describe('isReplaceableResearchAreaChipEchoShort (#1680)', () => {
+  const richDistinctFull =
+    'Stephen Darwall is the Andrew Downey Orrick Professor of Philosophy at Yale University and the John Dewey Distinguished University Professor Emeritus at the University of Michigan. He has taught in the Department of Philosophy at Yale University. His research interests include moral philosophy, particularly in the areas of second-fixtureal ethics, moral reasoning, and the relationship between morality and authority.';
+
+  it('flags a short that only restates the entity\'s own researchArea chips over a rich, distinct full', () => {
+    const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
+    const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
+    expect(
+      isReplaceableResearchAreaChipEchoShort(short, richDistinctFull, researchAreas, 'FACULTY_RESEARCH_AREA'),
+    ).toBe(true);
+  });
+
+  it('does not flag a fluent list-shaped short whose items are not literally the entity\'s researchAreas', () => {
+    const short = 'Studies econometrics, financial economics, international finance, and international trade.';
+    const full =
+      'Ray C. Fair is the John M. Musser Professor of Economics at Yale University. His main research is in macroeconometrics, but he has also done work in the areas of finance, voting behavior, and aging in sports.';
+    expect(
+      isReplaceableResearchAreaChipEchoShort(short, full, ['Macroeconometrics'], 'FACULTY_RESEARCH_AREA'),
+    ).toBe(false);
+  });
+
+  it('does not flag a chip echo when the fullDescription is too thin to be worth compressing', () => {
+    const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
+    const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
+    expect(isReplaceableResearchAreaChipEchoShort(short, 'A short bio.', researchAreas, 'FACULTY_RESEARCH_AREA')).toBe(
+      false,
+    );
+  });
+
+  it('does not flag a chip echo for an entityType outside LAB/FACULTY_RESEARCH_AREA', () => {
+    const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
+    const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
+    expect(isReplaceableResearchAreaChipEchoShort(short, richDistinctFull, researchAreas, 'CENTER')).toBe(false);
+  });
+
+  it('does not flag a short that is only a partial, not total, chip echo', () => {
+    const short = 'Studies Moral Philosophy, Ethics of War, and Moral Reasoning.';
+    const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
+    expect(
+      isReplaceableResearchAreaChipEchoShort(short, richDistinctFull, researchAreas, 'FACULTY_RESEARCH_AREA'),
+    ).toBe(false);
   });
 });
 
