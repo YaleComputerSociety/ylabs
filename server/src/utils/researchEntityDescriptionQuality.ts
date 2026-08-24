@@ -43,6 +43,7 @@ export type DescriptionQualityFlag =
   | 'malformed-generated-text'
   | 'non-self-contained'
   | 'non-offer-clause'
+  | 'topic-label-list'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -53,6 +54,7 @@ export interface ResearchEntityDescriptionQualityInput {
   website?: unknown;
   websiteUrl?: unknown;
   isProgramLike?: boolean;
+  entityType?: unknown;
 }
 
 export interface FieldQuality {
@@ -142,6 +144,7 @@ const isDominatedByConsentBoilerplate = (value: string): boolean =>
 
 const hasMalformedGeneratedText = (value: string): boolean =>
   /\bstudies\s+attack\b/i.test(value) ||
+  /\band\s+and\b/i.test(value) ||
   /\b[a-z]\.\s*\),/i.test(value) ||
   /^(?:how|what|why|when|where|which|who)\b.+\?$/i.test(value) ||
   /\bgreat\s+Professor\b/i.test(value) ||
@@ -287,6 +290,80 @@ const isConciseSpecificResearchDescription = (value: string): boolean =>
   (/^(?:Research\s+(?:focuses\s+on|fields\s+include)|Studies)\b/i.test(value) &&
     /\b[a-z][a-z-]+(?:ics|ology|tion|ment|nance|theory|design|cycles)\b/i.test(value) &&
     (value.match(/,/g)?.length || 0) + (/\band\b/i.test(value) ? 1 : 0) >= 1);
+
+/**
+ * The bare label-list template flagged by #1616 (a `LAB`/`FACULTY_RESEARCH_AREA`
+ * shortDescription that reads as researchAreas tags rather than a description:
+ * `Studies <tag>, <tag>, and <tag>.` or `<Name>'s research fields include <tag>,
+ * <tag>, and <tag>.`). Matched as a whole-sentence shape (the entire short is the
+ * lead plus the list, nothing else) so a real sentence that happens to open with
+ * "Studies" is never touched.
+ */
+const LABEL_LIST_LEAD_PATTERN = new RegExp(
+  "^(?:Studies\\s+|(?:[A-Z][\\p{L}.''’-]*(?:\\s+[A-Z][\\p{L}.''’-]*)*['’]s\\s+)?[Rr]esearch\\s+(?:fields|interests|areas)\\s+include\\s+)",
+  'u',
+);
+
+const LABEL_LIST_SHORT_PATTERN = new RegExp(`${LABEL_LIST_LEAD_PATTERN.source}[^.]+\\.$`, 'u');
+
+/**
+ * A list item that names an affiliation (a center, council, program, or
+ * committee) rather than a research topic: you can be affiliated with a
+ * Council, but you cannot "study" one (#1616, Schmidt Camacho's short serving
+ * her affiliations - "the Council of Latin American and Iberian Studies" - as
+ * things she researches).
+ */
+const LABEL_LIST_AFFILIATION_NOUN_PATTERN =
+  /\b(?:Council|Committee|Consortium|Program|Programs|Institute|Foundation|Board|Initiative|Center\s+for|Centre\s+for|School\s+of|Department\s+of|Office\s+of)\b/;
+
+function parseLabelListFields(text: string): string[] | null {
+  if (!LABEL_LIST_SHORT_PATTERN.test(text)) return null;
+  const lead = text.match(LABEL_LIST_LEAD_PATTERN)?.[0] ?? '';
+  const body = text.slice(lead.length).replace(/[.!?]+$/g, '');
+  const fields = body
+    .split(/\s*,\s*(?:and\s+)?|\s+and\s+/i)
+    .map((field) => field.trim())
+    .filter((field) => field.length >= 3);
+  return fields.length >= 2 ? fields : null;
+}
+
+/**
+ * A `Studies <tags>.` / `<Name>'s research fields include <tags>.` short is
+ * not a faithful compression of its own fullDescription (#1616) when there is
+ * no real fullDescription prose to compress in the first place - full is
+ * blank, full is itself just the same bare label-list shape, or short and
+ * full are the literal same text (a short is supposed to be a distinct
+ * summary, so contributing zero delta over the full is substantively empty) -
+ * or when a listed item names an affiliation rather than a topic (Schmidt
+ * Camacho's short serves her Council/Program affiliations as things she
+ * "studies", which is incoherent - you can be affiliated with a Council, but
+ * you cannot study one).
+ *
+ * Does NOT attempt a general topic-grounding check against the full
+ * description: an approximate word-overlap comparison was tried and produces
+ * real false positives on genuinely good, topically-faithful lists whose
+ * wording simply does not repeat the full's exact phrasing (e.g. "Studies
+ * econometrics, financial economics, ..." over a full that only says
+ * "macroeconometrics" and "finance") - the same false-positive class already
+ * documented against `resolveServedShortDescription`'s grounding check. A
+ * short list that is topically wrong rather than structurally empty (e.g. a
+ * "rock art" short over a human-evolution full) needs either a semantic check
+ * or a much larger tuning corpus than this issue affords, so those are left
+ * for one-off data correction rather than a general rule.
+ */
+function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
+  if (!LABEL_LIST_SHORT_PATTERN.test(text)) return false;
+  if (!full || text.toLowerCase() === full.toLowerCase() || LABEL_LIST_SHORT_PATTERN.test(full)) {
+    return true;
+  }
+  const fields = parseLabelListFields(text);
+  return Boolean(fields?.some((field) => LABEL_LIST_AFFILIATION_NOUN_PATTERN.test(field)));
+}
+
+const TOPIC_LABEL_LIST_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
+
+const isTopicLabelListEligibleEntityType = (entityType: unknown): boolean =>
+  typeof entityType === 'string' && TOPIC_LABEL_LIST_ENTITY_TYPES.has(entityType.toUpperCase());
 
 const VACUOUS_FOCUS_HEAD_NOUNS = [
   'field',
@@ -799,6 +876,7 @@ export function shortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
   researchAreas?: unknown,
+  options?: { entityType?: unknown },
 ): FieldQuality {
   const text = textValue(value);
   const full = textValue(fullDescription);
@@ -820,6 +898,13 @@ export function shortDescriptionQuality(
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (text && isStudiesTemplateGlueMalformed(text)) flags.push('malformed-generated-text');
+  if (
+    text &&
+    isTopicLabelListEligibleEntityType(options?.entityType) &&
+    isUngroundedTopicLabelListShort(text, full)
+  ) {
+    flags.push('topic-label-list');
+  }
   if (
     text &&
     hasSourceNewsFragment(text) &&
@@ -1042,7 +1127,9 @@ export function assessResearchEntityDescriptionQuality(
   const full = fullDescriptionQuality(input.fullDescription, input.researchAreas);
   const short = input.isProgramLike
     ? programCardShortDescriptionQuality(input.shortDescription, input.fullDescription)
-    : shortDescriptionQuality(input.shortDescription, input.fullDescription, input.researchAreas);
+    : shortDescriptionQuality(input.shortDescription, input.fullDescription, input.researchAreas, {
+        entityType: input.entityType,
+      });
   // A program-like home's card is a bonus, not a requirement (it is described by
   // what it offers, not a lab-style research focus - see the invariant exemption
   // in researchEntityPublicDescription.ts): a program with no short at all is

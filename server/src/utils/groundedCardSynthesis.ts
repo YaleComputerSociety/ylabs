@@ -158,6 +158,7 @@ export interface ResolveServedShortDescriptionInput {
   shortDescription: unknown;
   fullDescription: unknown;
   researchAreas?: unknown;
+  entityType?: unknown;
 }
 
 /**
@@ -182,6 +183,9 @@ export interface ResolveServedShortDescriptionInput {
  * cardiovascular full description). A wrong-entity topic graft needs either
  * a semantic check or a much larger tuning corpus than a single PR affords,
  * so `cohen-lab-cohenls` is fixed as a one-off data correction instead.
+ * `entityType` is threaded into the derived-candidate quality check only, so
+ * the `LAB`/`FACULTY_RESEARCH_AREA` bare topic-label-list guard (#1616) also
+ * applies to a candidate synthesized here, not just to an already-stored one.
  */
 export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
   const full = textValue(input.fullDescription);
@@ -190,7 +194,12 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
   if (cleaned) return cleaned;
 
   const derived = sanitizeResearchEntityShortDescription(deriveShortDescriptionFromFullDescription(full));
-  if (derived && shortDescriptionQuality(derived, full).isUseful) return derived;
+  if (
+    derived &&
+    shortDescriptionQuality(derived, full, researchAreas, { entityType: input.entityType }).isUseful
+  ) {
+    return derived;
+  }
 
   return buildResearchAreasCardSummary(researchAreas);
 }

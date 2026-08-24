@@ -6,6 +6,7 @@ import {
   isUngroundedSynthesizedCard,
   normalizeCardText,
   resolveGroundedCardDescription,
+  resolveServedShortDescription,
   synthesizeGroundedCardDescription,
 } from '../groundedCardSynthesis';
 import {
@@ -193,6 +194,31 @@ describe('resolveGroundedCardDescription', () => {
       fullDescription: RICH_FIRST_PERSON_FULL,
     });
     expect(resolved).toBe('');
+  });
+});
+
+describe('resolveServedShortDescription entityType-aware fallback (#1616)', () => {
+  it('falls through past a re-derived affiliation-list first sentence for a FACULTY_RESEARCH_AREA entity', () => {
+    const full =
+      "Alicia Schmidt Camacho is a Professor of Ethnicity, Race, and Migration, and holds affiliations with the Yale Center for the Study of Race, Indigeneity, and Transnational Migration, the Council of Latin American and Iberian Studies, and the American Studies and Women's, Gender, and Sexuality Programs. Her scholarship examines migration, social movements, and cultural politics in North America.";
+    const resolved = resolveServedShortDescription({
+      shortDescription: '',
+      fullDescription: full,
+      researchAreas: [],
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(resolved).toBe('');
+  });
+
+  it('still derives a short from the same full when no entityType is passed (backward compatible)', () => {
+    const full =
+      "Alicia Schmidt Camacho is a Professor of Ethnicity, Race, and Migration, and holds affiliations with the Yale Center for the Study of Race, Indigeneity, and Transnational Migration, the Council of Latin American and Iberian Studies, and the American Studies and Women's, Gender, and Sexuality Programs. Her scholarship examines migration, social movements, and cultural politics in North America.";
+    const resolved = resolveServedShortDescription({
+      shortDescription: '',
+      fullDescription: full,
+      researchAreas: [],
+    });
+    expect(resolved).not.toBe('');
   });
 });
 
