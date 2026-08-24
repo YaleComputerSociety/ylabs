@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeGraftToken,
   planAreaGraftRemoval,
+  planGrantGraftRemoval,
   planWebsiteClear,
 } from '../sameNameCollisionAreaGraftPurgeCore';
 import { parseArgs } from '../purgeSameNameCollisionAreaGrafts';
@@ -92,6 +93,41 @@ describe('planWebsiteClear', () => {
       clearIfEquals: 'https://medicine.yale.edu/profile/maurice-samuels/',
     });
     expect(result.cleared).toBe(false);
+  });
+});
+
+describe('planGrantGraftRemoval', () => {
+  it('removes only the same-surname PI grants and keeps the rest', () => {
+    const result = planGrantGraftRemoval({
+      current: [
+        { id: 'grant-a', agency: 'NIGMS' },
+        { id: 'grant-b', agency: 'NIH' },
+      ],
+      removeGrantIds: ['grant-a'],
+    });
+    expect(result.changed).toBe(true);
+    expect(result.cleaned).toEqual([{ id: 'grant-b', agency: 'NIH' }]);
+    expect(result.removed).toEqual([{ id: 'grant-a', agency: 'NIGMS' }]);
+    expect(result.fundingAgencies).toEqual(['NIH']);
+  });
+
+  it('is a no-op when no grant id is on the removal list (fail closed)', () => {
+    const result = planGrantGraftRemoval({
+      current: [{ id: 'grant-a', agency: 'NIH' }],
+      removeGrantIds: ['grant-z'],
+    });
+    expect(result.changed).toBe(false);
+    expect(result.cleaned).toEqual([{ id: 'grant-a', agency: 'NIH' }]);
+  });
+
+  it('empties fundingAgencies when every grant is removed', () => {
+    const result = planGrantGraftRemoval({
+      current: [{ id: 'grant-a', agency: 'NIH' }],
+      removeGrantIds: ['grant-a'],
+    });
+    expect(result.cleaned).toEqual([]);
+    expect(result.fundingAgencies).toEqual([]);
+    expect(result.changed).toBe(true);
   });
 });
 

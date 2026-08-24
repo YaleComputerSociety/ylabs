@@ -55,6 +55,31 @@ const profileHtml = `
   </html>
 `;
 
+const engineeringProfileUrl =
+  'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture/';
+
+const engineeringProfileHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="${engineeringProfileUrl}" />
+      <meta name="description" content="Assistant Professor of Biomedical Engineering" />
+    </head>
+    <body>
+      <main>
+        <h1>Drew Fixture</h1>
+        <div class="title">Assistant Professor of Biomedical Engineering</div>
+        <a href="mailto:drew.fixture@yale.edu">drew.fixture@yale.edu</a>
+        <div class="department">Biomedical Engineering</div>
+        <section class="biography">
+          Drew Fixture studies cellular signaling and maximum entropy methods for modeling
+          population heterogeneity.
+        </section>
+        <div class="research-interests">Cellular signaling; Maximum entropy methods</div>
+      </main>
+    </body>
+  </html>
+`;
+
 const emailLessProfileHtml = `
   <html>
     <head>
@@ -2115,6 +2140,34 @@ describe('officialProfilePiBackfillScraper', () => {
     });
 
     expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
+  it('still matches a guessed engineering.yale.edu profile when the entity has no known non-engineering discipline', () => {
+    const entity = {
+      name: 'Drew Fixture Lab',
+      slug: 'nih-pi-drew-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(engineeringProfileHtml, engineeringProfileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity?.displayName).toBe('Drew Fixture');
+  });
+
+  it('rejects a guessed engineering.yale.edu profile when the known lead has no recorded email to verify identity and the entity rules out engineering (#1290)', () => {
+    const entity = {
+      name: 'Fixture Lab',
+      slug: 'ysm-fixture',
+      school: 'Yale School of Medicine',
+      departments: ['Pathology'],
+    };
+
+    const identity = extractOfficialProfileIdentity(engineeringProfileHtml, engineeringProfileUrl, entity, {
+      expectedPeople: [{ fname: 'Drew', lname: 'Fixture' }],
+    });
+
+    expect(identity).toBeNull();
   });
 
   it('skips profile chrome headings when extracting the appointment title', () => {

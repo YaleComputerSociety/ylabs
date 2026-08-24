@@ -61,3 +61,42 @@ export function planWebsiteClear(input: WebsiteClearInput): WebsiteClearResult {
   const cleared = normalizeGraftToken(from) === normalizeGraftToken(input.clearIfEquals);
   return { cleared, from };
 }
+
+export interface GraftGrant {
+  id?: string;
+  agency?: string;
+  [key: string]: unknown;
+}
+
+export interface GrantGraftRemovalInput {
+  current: GraftGrant[];
+  removeGrantIds: string[];
+}
+
+export interface GrantGraftRemovalResult {
+  cleaned: GraftGrant[];
+  removed: GraftGrant[];
+  fundingAgencies: string[];
+  changed: boolean;
+}
+
+/**
+ * Removes grants belonging to a different, same-surname PI from a `recentGrants`
+ * array (issue #1290: an NIH grant-shell backfill can attach a same-surname
+ * PI's grants to the wrong lab entity) and recomputes `fundingAgencies` from
+ * what remains, matching the removal-by-exact-id scoping used elsewhere in
+ * this module.
+ */
+export function planGrantGraftRemoval(input: GrantGraftRemovalInput): GrantGraftRemovalResult {
+  const removeSet = new Set(input.removeGrantIds.map(normalizeGraftToken));
+  const removed: GraftGrant[] = [];
+  const cleaned = input.current.filter((grant) => {
+    const isGraft = removeSet.has(normalizeGraftToken(String(grant.id || '')));
+    if (isGraft) removed.push(grant);
+    return !isGraft;
+  });
+  const fundingAgencies = Array.from(
+    new Set(cleaned.map((grant) => String(grant.agency || '')).filter(Boolean)),
+  );
+  return { cleaned, removed, fundingAgencies, changed: removed.length > 0 };
+}
