@@ -1120,9 +1120,6 @@ describe('revoiceFirstPersonResearchLead', () => {
   });
 
   it('agrees the demonstrative with the noun phrase\'s actual head noun before a copula, not the first captured word (#1806)', () => {
-    expect(revoiceFirstPersonResearchLead('Our goal is to understand disease mechanisms.')).toBe(
-      'This goal is to understand disease mechanisms.',
-    );
     expect(
       revoiceFirstPersonResearchLead('My research interests are broad and span several disciplines.'),
     ).toBe('These research interests are broad and span several disciplines.');
@@ -1136,6 +1133,37 @@ describe('revoiceFirstPersonResearchLead', () => {
         'My primary research focus is mechanisms of endothelial dysfunction in preeclampsia.',
       ),
     ).toBe('This primary research focus is mechanisms of endothelial dysfunction in preeclampsia.');
+  });
+
+  it('revoices a possessive abstract-goal lead to an entity-possessive subject instead of a dangling demonstrative (#1829)', () => {
+    expect(revoiceFirstPersonResearchLead('Our goal is to understand cardiac arrhythmia.')).toBe(
+      "This research group's goal is to understand cardiac arrhythmia.",
+    );
+    expect(revoiceFirstPersonResearchLead('Our mission is to develop new therapies.')).toBe(
+      "This research group's mission is to develop new therapies.",
+    );
+    expect(
+      revoiceFirstPersonResearchLead('Our science goal is to characterize exoplanet atmospheres.'),
+    ).toBe("This research group's science goal is to characterize exoplanet atmospheres.");
+  });
+
+  it('uses the entity name and type for the abstract-goal possessive subject when available (#1829)', () => {
+    expect(
+      revoiceFirstPersonResearchLead('Our goal is to understand cardiac arrhythmia.', {
+        displayName: 'Foxman Lab',
+        entityType: 'LAB',
+      }),
+    ).toBe("Foxman's goal is to understand cardiac arrhythmia.");
+    expect(
+      revoiceFirstPersonResearchLead('My mission is to advance clinical trials.', {
+        entityType: 'LAB',
+      }),
+    ).toBe("This lab's mission is to advance clinical trials.");
+    expect(
+      revoiceFirstPersonResearchLead('My mission is to advance clinical trials.', {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe("This researcher's mission is to advance clinical trials.");
   });
 });
 
