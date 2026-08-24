@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isAcademicAppointmentDescription,
+  isCredentialOrTitleLeadBiography,
+  isDeceasedOrEmeritusLeadBiography,
   isDirectoryIndexChromeText,
   isMidCvContinuationOpener,
   isPersonBiographyOrAdvisingDescription,
@@ -553,6 +555,197 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.fullDescription).toBe(
       'Examines musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.',
     );
+  });
+
+  it('strips only the appointment-opener sentence on a LAB entity, keeping the research content (#1638)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'Jane Doe is an Associate Professor of Biostatistics at Yale. Her research is focused on statistical modeling of longitudinal cohort data.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      'Her research is focused on statistical modeling of longitudinal cohort data.',
+    );
+  });
+
+  it('blanks a LAB-entity biography opener with no surviving research content (#1638)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription: 'Samuel Doe is a Professor Adjunct Emeritus of Art at Yale University.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
+  it('blanks a deceased-lead LAB fullDescription rather than stripping a single sentence (#1638)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'Pierre R. Demarque (1932 - 2025), Munson Professor Emeritus of Natural Philosophy and Astronomy, came to Yale as professor of astronomy and department chair in 1968, holding the latter post until 1975.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
+  it('does not guard a non-LAB, non-faculty entity against the deceased/emeritus lead signal', () => {
+    const program = {
+      entityType: 'PROGRAM',
+      fullDescription:
+        'Pierre R. Demarque (1932 - 2025) endowed this fellowship to support graduate study in astronomy.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(program);
+
+    expect(sanitized.fullDescription).toBe(
+      'Pierre R. Demarque (1932 - 2025) endowed this fellowship to support graduate study in astronomy.',
+    );
+  });
+
+  it('strips a lowercase "professor" credential opener on a LAB entity (#1638)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'Matthew Kotchen is the Langdon K. Storm professor of economics in the Yale School of the Environment. His research interests lie at the intersection of environmental and public economics and policy.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      'His research interests lie at the intersection of environmental and public economics and policy.',
+    );
+  });
+
+  it('strips a "Director of"/"senior lecturer" credential opener on a LAB entity (#1638)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'William Casey King is a senior lecturer at the Jackson School of Global Affairs. His research focuses on big data and data-driven policy analyses and solutions.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      'His research focuses on big data and data-driven policy analyses and solutions.',
+    );
+  });
+
+  it('strips a "Dr. X, a graduate of ..." credential opener behind a leading title fragment on a LAB entity (#1638)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'Senior Research Scientist in Medicine Dr. Wisnewski, a graduate of the University of California, is a widely experienced research scientist. His laboratory studies chemicals that cause asthma in the workplace.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      'His laboratory studies chemicals that cause asthma in the workplace.',
+    );
+  });
+
+  it('does not treat a leading pronoun as a credential-opener name lead (#1638)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'She is excited to be the inaugural director of a research program space for open collaboration among practitioners and policymakers.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      'She is excited to be the inaugural director of a research program space for open collaboration among practitioners and policymakers.',
+    );
+  });
+});
+
+describe('isDeceasedOrEmeritusLeadBiography', () => {
+  it('flags a name-lead opening with a parenthetical death-date range (#1638)', () => {
+    expect(
+      isDeceasedOrEmeritusLeadBiography(
+        'Pierre R. Demarque (1932 - 2025), Munson Professor Emeritus of Natural Philosophy and Astronomy, came to Yale in 1968.',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a name-lead opening that states emeritus status (#1638)', () => {
+    expect(
+      isDeceasedOrEmeritusLeadBiography(
+        'Jose Costa, MD, FACP, is Professor Emeritus of Pathology at Yale University School of Medicine.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag ordinary research prose with no name lead', () => {
+    expect(
+      isDeceasedOrEmeritusLeadBiography(
+        'Studies the mechanics of soft robotic materials using bio-inspired actuators.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag a first-person research description', () => {
+    expect(
+      isDeceasedOrEmeritusLeadBiography(
+        'I am a physician-scientist with specialized training in immunology and clinical dermatology.',
+      ),
+    ).toBe(false);
+  });
+
+  it('returns false for blank input', () => {
+    expect(isDeceasedOrEmeritusLeadBiography('')).toBe(false);
+    expect(isDeceasedOrEmeritusLeadBiography(undefined)).toBe(false);
+  });
+});
+
+describe('isCredentialOrTitleLeadBiography', () => {
+  it('flags a name-lead opening with a lowercase "professor" title (#1638)', () => {
+    expect(
+      isCredentialOrTitleLeadBiography(
+        'Matthew Kotchen is the Langdon K. Storm professor of economics in the Yale School of the Environment.',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a name-lead opening naming a director/lecturer/fellow title (#1638)', () => {
+    expect(
+      isCredentialOrTitleLeadBiography('William Casey King is a senior lecturer at the Jackson School.'),
+    ).toBe(true);
+    expect(
+      isCredentialOrTitleLeadBiography('Stephen R. Latham, JD, PhD is Director of the Yale Center for Bioethics.'),
+    ).toBe(true);
+  });
+
+  it('flags a "Dr. X, a graduate of ..." lead behind a leading title fragment (#1638)', () => {
+    expect(
+      isCredentialOrTitleLeadBiography(
+        'Senior Research Scientist in Medicine Dr. Wisnewski, a graduate of the University of California, is a widely experienced research scientist.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not treat a leading pronoun as a name lead (#1638)', () => {
+    expect(
+      isCredentialOrTitleLeadBiography(
+        'She is excited to be the inaugural director of a research program space.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag ordinary research prose with no name lead', () => {
+    expect(
+      isCredentialOrTitleLeadBiography('Studies the mechanics of soft robotic materials.'),
+    ).toBe(false);
+  });
+
+  it('returns false for blank input', () => {
+    expect(isCredentialOrTitleLeadBiography('')).toBe(false);
+    expect(isCredentialOrTitleLeadBiography(undefined)).toBe(false);
   });
 });
 
