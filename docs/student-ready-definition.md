@@ -1,7 +1,7 @@
 # Student-Ready Definition
 
 This is the human-readable source of truth for what `student_ready` means.
-The executable source of truth is `researchEntityMeetsStudentReadyDefinition` in `server/src/services/studentVisibilityTier.ts`.
+The executable source of truth is `researchEntityMeetsStudentReadyDefinition` plus the `STUDENT_READY_HARD_BLOCKER_REASONS` and `STUDENT_READY_SOFT_SIGNAL_REASONS` constants in `server/src/services/studentVisibilityTier.ts`.
 The two must stay in sync: change the definition in one place, then mirror it here.
 
 ## Definition
@@ -9,10 +9,10 @@ The two must stay in sync: change the definition in one place, then mirror it he
 A research entity is `student_ready` if, and only if, what we show is CORRECT and COHERENT:
 
 - (a) It has a real, coherent, non-boilerplate description that actually describes THIS entity.
-- (b) The right person or lead is attached.
-- (c) It is not a duplicate or a suppressed shell.
+- (b) The right, currently-active person or lead is attached.
+- (c) It is not a duplicate or a suppressed shell, and it is in scope and active.
 
-If all three hold, the entity is `student_ready`, full stop.
+If all of these hold, the entity is `student_ready`, full stop.
 Missing enrichment does not change that.
 
 ## Why enrichment never gates
@@ -27,27 +27,32 @@ If it is merely LESS ENRICHED, it stays `student_ready`.
 ## Hard blockers (these gate `student_ready`)
 
 These are genuine correctness or quality failures - the entity as shown would be wrong or nonsensical to a student.
-Each maps to one field of `ResearchEntityStudentReadyCorrectness`.
+They are the set `STUDENT_READY_HARD_BLOCKER_REASONS`, and each maps to one field of `ResearchEntityStudentReadyCorrectness` (or is applied one tier earlier at `suppressed`).
 
-- Incoherent, boilerplate, off-entity, or serve-time-blank description (a card that renders no real prose, or prose about something else). `descriptionCoherent`.
-- Content about a different entity than the card claims (for example a "<Person> Lab" name typed as an org whose body describes a center). `entityContentMatchesCard`.
-- Wrong person or lead attached: identity mis-attribution, an identity conflict, or a lead-requiring entity with no resolved lead. `rightLeadAttached`.
-- No reachable target: no usable link-out, or an organizational home that is a lead-less dead end with no way in. `reachable`.
-- Duplicate of an already-known entity. `notDuplicate`.
+- Description: `missing_description`, `missing_card_description`, `thin_description`, `blank_public_description`. A card that renders no real prose, or prose about something else. Maps to `descriptionCoherent` (and `entityContentMatchesCard` for off-entity content, e.g. a "<Person> Lab" name typed as an org whose body describes a center).
+- Identity / lead: `missing_lead`, `duplicate_name_risk`, `duplicate_risk`, `exact_url_duplicate_risk`, `pi_identity_conflict`, `profile_identity_risk`. Maps to `rightLeadAttached` and `notDuplicate`.
+- Wrong-type / shell: `generic_directory_shell`, `profile_biography_shell`, `content_page_risk`, `non_research_entity`, `non_research_program`, `research_infrastructure_only`, `non_owner_grant_shell`, `lab_name_org_type_mismatch`. Removed at `suppressed` (a stronger form of the duplicate / suppressed-shell blocker).
+- Inactive / out of scope: `inactive_at_yale`, `archive_review`, `not_undergraduate_relevant`.
 
-Suppressed shells (generic directory-only profile-area shells, biography-only shells, non-owner grant shells, off-scope or inactive records) are removed one tier earlier, at `suppressed`, and are a stronger form of the "duplicate / suppressed shell" hard blocker.
-
-A lead-requiring entity with no lead, an identity risk, or no link-out target is never published even under an explicit operator override: an override may pass softer gates, but not these correctness floors.
+A lead-requiring entity with no lead, an identity risk, or an off-entity/off-scope failure is never published even under an explicit operator override: an override may pass softer gates, but not these correctness floors.
 
 ## Soft signals (these NEVER gate `student_ready`)
 
 These enrich ranking, badges, and the card's optional sub-payloads, and may hide their own sub-payload when absent, but they never hold a correct, coherent card out of `student_ready`.
-They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`.
+They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`, and they are never repair blockers either - including the `missing_*` ones that a blanket `missing_` prefix rule would otherwise sweep in.
 
 - `source_backed_description` - anti-fabrication signal; a coherent description is enough on its own, source-backing only strengthens ranking.
-- `concrete_next_step` - reaching out is already the next step.
-- `missing_action_evidence` - reaching out is already the action.
+- `concrete_next_step` / `missing_action_evidence` - reaching out is already the next step and the action.
 - `missing_facet_signal` - facets are query-scoped nice-to-haves, not a student-facing blocker.
+- `missing_alternate_access_path` - an organizational home is reachable through its own official page even without a separate engagement path.
+- `missing_application_route` / `missing_source_route` - a program is still reachable and describable without a distinct apply/source route.
+- `missing_source_url` / `missing_official_source` - **critical:** every discovered entity carries its source in observation provenance (`fieldProvenance[*].sourceUrl` and/or the entity's observations' `sourceUrl`). The gate only inspected `entity.sourceUrls` / `website` / `websiteUrl`, so a bare `sourceUrls` is a PROJECTION GAP, never a genuinely source-less entity. The materializer projects that provenance onto `entity.sourceUrls` at write time (`bestMaterializationProvenanceSourceUrl`), and the gate never blocks on it either way.
+
+## Root cause: source-url projection
+
+`missing_source_url` used to hard-block coherent, source-backed entities whose `sourceUrls` happened to be empty even though every observation that produced them recorded a `sourceUrl`.
+The fix is at the source: when a materialized entity would otherwise expose no reachable http source, the materializer projects its best-confidence provenance `sourceUrl` onto `entity.sourceUrls` (scoped to the empty case so already-sourced entities do not accrue extra shared urls).
+Source-backing is then recognized and `missing_source_url` clears legitimately for discovered entities.
 
 ## Tiers
 
@@ -58,5 +63,6 @@ They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`.
 
 ## History
 
-Realigned in issue #1802: `source_backed_description`, `concrete_next_step` / `missing_action_evidence`, and `missing_facet_signal` were demoted from hard blockers to soft signals, and the definition was codified as a single named function.
-This supersedes the earlier `missing_facet_signal` gating from issue #1717.
+Realigned in issue #1802.
+First, `source_backed_description`, `concrete_next_step` / `missing_action_evidence`, and `missing_facet_signal` were demoted from hard blockers to soft signals (superseding the `missing_facet_signal` gating from issue #1717).
+The finalized realignment then moved the remaining enrichment/reachability signals - `missing_alternate_access_path`, `missing_application_route`, `missing_source_route`, `missing_source_url`, `missing_official_source` - out of blocking as well, codified the hard-vs-soft split as two named constants, and fixed the materializer to project discovery provenance onto `entity.sourceUrls` so `missing_source_url` stops firing as a projection gap.

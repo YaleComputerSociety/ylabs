@@ -13,6 +13,7 @@ import {
   emptyPostMaterializationMetrics,
   materializedFieldValue,
   normalizeMaterializerObjectId,
+  bestMaterializationProvenanceSourceUrl,
   officialLeadProfileSourceUrl,
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
@@ -1011,6 +1012,52 @@ describe('officialLeadProfileSourceUrl', () => {
           confidence: 0.9,
         },
       ]),
+    ).toBeUndefined();
+  });
+});
+
+describe('bestMaterializationProvenanceSourceUrl (#1802 source-url projection)', () => {
+  it('projects the highest-confidence discovery provenance url of a grant-discovered entity', () => {
+    expect(
+      bestMaterializationProvenanceSourceUrl([
+        {
+          field: 'name',
+          value: 'Example Research Group',
+          sourceUrl: 'https://api.nsf.gov/services/v1/awards/2012345.json',
+          confidence: 0.6,
+        },
+        {
+          field: 'fundingAgencies',
+          value: ['NSF'],
+          sourceUrl: 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2012345',
+          confidence: 0.9,
+        },
+      ]),
+    ).toBe('https://www.nsf.gov/awardsearch/showAward?AWD_ID=2012345');
+  });
+
+  it('drops directory-loader provenance urls and returns the first usable one', () => {
+    expect(
+      bestMaterializationProvenanceSourceUrl([
+        {
+          field: 'name',
+          value: 'Example Lab',
+          sourceUrl: 'https://medicine.yale.edu/people/12345',
+          confidence: 0.95,
+        },
+        {
+          field: 'websiteUrl',
+          value: 'https://medicine.yale.edu/lab/example/',
+          sourceUrl: 'https://medicine.yale.edu/lab/example/',
+          confidence: 0.7,
+        },
+      ]),
+    ).toBe('https://medicine.yale.edu/lab/example/');
+  });
+
+  it('returns undefined when no observation carries a usable source url', () => {
+    expect(
+      bestMaterializationProvenanceSourceUrl([{ field: 'name', value: 'X', sourceUrl: null }]),
     ).toBeUndefined();
   });
 });

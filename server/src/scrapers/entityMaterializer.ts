@@ -713,6 +713,23 @@ export function officialLeadProfileSourceUrl(
   return winner?.sourceUrl ? String(winner.sourceUrl).trim() : undefined;
 }
 
+// The discovery provenance every materialized entity carries: the highest-
+// confidence `sourceUrl` recorded on the observations that produced it, after
+// the same materialization sanitizer that drops directory/content/self-
+// referential/boilerplate pages. Used to project source-backing onto an
+// entity's `sourceUrls` when it would otherwise expose none, closing the
+// `missing_source_url` projection gap at write time (issue #1802).
+export function bestMaterializationProvenanceSourceUrl(
+  observations: MaterializerObservationLike[],
+): string | undefined {
+  const ranked = observations
+    .filter((observation) => textValue(observation.sourceUrl))
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+    .map((observation) => String(observation.sourceUrl).trim());
+  const sanitized = sanitizeResearchEntitySourceUrlsForMaterialization(ranked);
+  return Array.isArray(sanitized) ? (sanitized[0] as string | undefined) : undefined;
+}
+
 export function deriveResearchEntityWebsiteUrl(
   set: Record<string, unknown>,
   entityDoc?: Record<string, unknown> | null,
@@ -2901,6 +2918,37 @@ export async function materializeEntity(
         if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
         set.yaleStatusCache = yaleStatusSignal.yaleStatusCache;
         set.activeAtYaleCache = yaleStatusSignal.activeAtYaleCache;
+      }
+    }
+    // Root-cause fix (issue #1802): a discovered entity always carries its
+    // source in observation provenance, yet its own `sourceUrls` can be empty,
+    // so `missing_source_url` fired for source-backed records purely as a
+    // projection gap. When the entity would otherwise expose no reachable http
+    // source, project its best-confidence provenance source url so source-backing
+    // is recognized. Runs AFTER yale-status derivation so an incidental provenance
+    // url never perturbs the explicit-signal status derivation (#1308); scoped to
+    // the empty case so already-sourced entities do not accrue extra shared urls
+    // that could trip exact-url duplicate detection.
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const currentSourceUrls = Array.isArray(set.sourceUrls)
+        ? (set.sourceUrls as unknown[])
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? (entityDoc?.sourceUrls as unknown[])
+          : [];
+      const hasReachableHttpSource = [
+        set.websiteUrl ?? entityDoc?.websiteUrl,
+        (entityDoc as Record<string, unknown> | null | undefined)?.website,
+        ...currentSourceUrls,
+      ].some((value) => /^https?:\/\//i.test(textValue(value)));
+      if (!hasReachableHttpSource) {
+        const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(materializationObs);
+        if (provenanceSourceUrl) {
+          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
+            ...currentSourceUrls,
+            provenanceSourceUrl,
+          ]);
+          fieldsWritten++;
+        }
       }
     }
   }
