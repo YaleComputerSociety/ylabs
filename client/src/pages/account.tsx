@@ -11,26 +11,31 @@
  * profiles are source-derived and admin-curated.
  */
 import { useRef, useState, type KeyboardEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
 import ResearchInterestsEditor from '../components/accounts/ResearchInterestsEditor';
 import SavedResearchPlans from '../components/accounts/SavedResearchPlans';
 import SavedSearches from '../components/accounts/SavedSearches';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import type { WatchedProgramUrgencySummary } from '../utils/watchedProgramUrgency';
 
 type AccountSurface = 'dashboard' | 'programs' | 'searches' | 'interests';
 
-type ProgramSummary = {
-  count: number;
-  nextDeadlineLabel?: string;
-  nextDeadlineDate?: string;
-};
+type ProgramSummary = { count: number } & Partial<WatchedProgramUrgencySummary>;
 
 const SURFACES: AccountSurface[] = ['dashboard', 'programs', 'searches', 'interests'];
 
+const isAccountSurface = (value: string | null): value is AccountSurface =>
+  SURFACES.includes(value as AccountSurface);
+
 const Account = () => {
   useDocumentTitle('Dashboard');
-  const [surface, setSurface] = useState<AccountSurface>('dashboard');
+  const [searchParams] = useSearchParams();
+  const [surface, setSurface] = useState<AccountSurface>(() => {
+    const tab = searchParams.get('tab');
+    return isAccountSurface(tab) ? tab : 'dashboard';
+  });
   const [savedResearchCount, setSavedResearchCount] = useState(0);
   const [savedOpenCount, setSavedOpenCount] = useState(0);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
@@ -85,6 +90,9 @@ const Account = () => {
           savedOpenCount={savedOpenCount}
           savedFellowshipCount={programSummary.count}
           nextDeadlineLabel={programSummary.nextDeadlineLabel}
+          closingWithin14DaysCount={programSummary.closingWithin14DaysCount}
+          hasNotStartedClosingSoon={programSummary.hasNotStartedClosingSoon}
+          onViewProgramWatch={() => activateSurface('programs', true)}
         />
 
         <div className="mb-6 flex justify-center">

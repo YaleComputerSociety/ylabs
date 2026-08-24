@@ -5,6 +5,9 @@ interface PlanningOverviewProps {
   savedOpenCount?: number;
   savedFellowshipCount: number;
   nextDeadlineLabel?: string;
+  closingWithin14DaysCount?: number;
+  hasNotStartedClosingSoon?: boolean;
+  onViewProgramWatch?: () => void;
 }
 
 const openHomesSummary = (savedOpenCount: number): string =>
@@ -12,6 +15,11 @@ const openHomesSummary = (savedOpenCount: number): string =>
 
 const pluralize = (count: number, singular: string, plural: string): string =>
   `${count} ${count === 1 ? singular : plural}`;
+
+const closingSoonSummary = (closingWithin14DaysCount: number, hasNotStartedClosingSoon: boolean): string => {
+  const base = `${pluralize(closingWithin14DaysCount, 'watched program', 'watched programs')} close within 2 weeks.`;
+  return hasNotStartedClosingSoon ? `${base} Including one you haven't started.` : base;
+};
 
 const nextUpLabel = (
   savedResearchCount: number,
@@ -29,6 +37,9 @@ const PlanningOverview = ({
   savedOpenCount = 0,
   savedFellowshipCount,
   nextDeadlineLabel,
+  closingWithin14DaysCount = 0,
+  hasNotStartedClosingSoon = false,
+  onViewProgramWatch,
 }: PlanningOverviewProps) => (
   <section className="mb-6 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -44,6 +55,18 @@ const PlanningOverview = ({
         {savedOpenCount > 0 && (
           <p className="mt-1 text-sm font-semibold text-emerald-800">
             {openHomesSummary(savedOpenCount)}
+          </p>
+        )}
+        {closingWithin14DaysCount > 0 && (
+          <p className="mt-1 text-sm font-semibold text-amber-800" role="status">
+            {closingSoonSummary(closingWithin14DaysCount, hasNotStartedClosingSoon)}{' '}
+            <button
+              type="button"
+              onClick={onViewProgramWatch}
+              className="underline underline-offset-2 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+            >
+              View Program Watch
+            </button>
           </p>
         )}
       </div>
