@@ -209,6 +209,30 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
     parser: 'general-guidance',
     title: 'Linguistics Undergraduate Research Opportunities',
   },
+  {
+    key: 'computer-science',
+    url: 'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+    department: 'Computer Science',
+    school: 'Yale School of Engineering & Applied Science',
+    parser: 'structured-opportunity',
+    title: 'Computer Science Research Internship Program',
+  },
+  {
+    key: 'sociology',
+    url: 'https://sociology.yale.edu/undergraduate-program/senior-project',
+    department: 'Sociology',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Sociology Undergraduate Research',
+  },
+  {
+    key: 'biomedical-engineering',
+    url: 'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/undergraduate-study',
+    department: 'Biomedical Engineering',
+    school: 'Yale School of Engineering & Applied Science',
+    parser: 'general-guidance',
+    title: 'Biomedical Engineering Undergraduate Research',
+  },
 ];
 
 function normalizeText(value: string): string {
@@ -326,9 +350,14 @@ function stripLeadingContactChrome(text: string): string {
     .trim();
 }
 
-function pageMainText($: cheerio.CheerioAPI): string {
+function mainContentRoot($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
   const root = $('main').length ? $('main').first().clone() : $('body').clone();
   root.find('script, style, nav, header, footer, .breadcrumb, .breadcrumbs').remove();
+  return root;
+}
+
+function pageMainText($: cheerio.CheerioAPI): string {
+  const root = mainContentRoot($);
   const chunks = root
     .find('p, li')
     .toArray()
@@ -350,7 +379,8 @@ function facultyEntityKey(config: DepartmentUndergradResearchPageConfig, name: s
 }
 
 function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | undefined {
-  const links = $('a')
+  const links = mainContentRoot($)
+    .find('a')
     .toArray()
     .map((node) => ({
       text: normalizeText($(node).text()),
@@ -362,7 +392,10 @@ function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | un
 }
 
 function pageHasUndergradResearchEvidence(text: string): boolean {
-  return /undergraduate/i.test(text) && /\b(research|laborator|assistant|opportunit|project|mentor)/i.test(text);
+  return (
+    /undergrad|bachelor/i.test(text) &&
+    /\b(research|laborator|assistant|opportunit|project|mentor)/i.test(text)
+  );
 }
 
 export function parsePhysicsUndergradResearchPage(
