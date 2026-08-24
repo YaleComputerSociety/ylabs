@@ -18,6 +18,8 @@ import {
   groupGrantsByPi,
   isTraineeFellowshipGrant,
   grantToRecord,
+  grantAbstractToDescription,
+  labDescriptionFromRecentGrants,
   piGrantsToObservations,
   findUserForPi,
   resolveUserForPi,
@@ -555,6 +557,50 @@ describe('findUserForPi recall', () => {
 // piGrantsToObservations
 // ---------------------------------------------------------------------------
 
+describe('grantAbstractToDescription', () => {
+  it('strips a leading PROJECT SUMMARY/ABSTRACT header and keeps lead prose', () => {
+    const out = grantAbstractToDescription(
+      'PROJECT SUMMARY/ABSTRACT\nThe lab investigates malaria transmission dynamics in the Amazon. It develops field-deployable diagnostics.',
+    );
+    expect(out.startsWith('The lab investigates malaria transmission')).toBe(true);
+    expect(out).not.toMatch(/project summary/i);
+  });
+
+  it('strips numbered, parenthetical, and PROPOSAL/OVERALL header variants', () => {
+    expect(grantAbstractToDescription('7. PROJECT SUMMARY/ABSTRACT Stimulant use disorder is a major burden.')).toBe(
+      'Stimulant use disorder is a major burden.',
+    );
+    expect(grantAbstractToDescription('(ABSTRACT) Humoral immunity forms the basis for vaccine protection.')).toBe(
+      'Humoral immunity forms the basis for vaccine protection.',
+    );
+    expect(
+      grantAbstractToDescription('Modified Project Summary/Abstract Section Vascular smooth muscle cells adapt to stress.'),
+    ).toBe('Vascular smooth muscle cells adapt to stress.');
+  });
+
+  it('returns empty for placeholder or blank abstracts', () => {
+    expect(grantAbstractToDescription('No Abstract')).toBe('');
+    expect(grantAbstractToDescription('   ')).toBe('');
+    expect(grantAbstractToDescription(undefined)).toBe('');
+    expect(grantAbstractToDescription('N/A')).toBe('');
+  });
+
+  it('bounds output to whole sentences within the character budget', () => {
+    const long = `Sentence one is a complete clause about neurons. ${'x'.repeat(500)} tail.`;
+    const out = grantAbstractToDescription(long);
+    expect(out).toBe('Sentence one is a complete clause about neurons.');
+  });
+
+  it('picks the first recent grant that carries a usable abstract', () => {
+    expect(
+      labDescriptionFromRecentGrants([
+        grantToRecord({ ...grantArnsten, abstract_text: 'No Abstract' }),
+        grantToRecord({ ...grantArnsten, abstract_text: 'PROJECT SUMMARY The circuit study is underway.' }),
+      ]),
+    ).toBe('The circuit study is underway.');
+  });
+});
+
 describe('piGrantsToObservations', () => {
   it('emits user + research-group observations when no Yale user is matched', () => {
     const obs = piGrantsToObservations('Amy Arnsten', [grantArnsten, grantArnsten2], null);
@@ -572,6 +618,9 @@ describe('piGrantsToObservations', () => {
     expect(groupObs.find((o) => o.field === 'name')?.value).toBe('Amy Arnsten Lab');
     expect(groupObs.find((o) => o.field === 'name')?.confidenceOverride).toBe(0.3);
     expect(groupObs.find((o) => o.field === 'kind')?.value).toBe('lab');
+    const fullDescription = groupObs.find((o) => o.field === 'fullDescription');
+    expect(fullDescription?.value).toBe('We will study PFC circuit dynamics in aging primates.');
+    expect(fullDescription?.confidenceOverride).toBe(0.35);
     expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
 
     const recentGrants = groupObs.find((o) => o.field === 'recentGrants')?.value as any[];
@@ -616,6 +665,7 @@ describe('piGrantsToObservations', () => {
     expect(groupObs.find((o) => o.field === 'kind')).toBeUndefined();
     expect(groupObs.find((o) => o.field === 'departments')).toBeUndefined();
     expect(groupObs.find((o) => o.field === 'sourceUrls')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'fullDescription')).toBeUndefined();
     expect(groupObs.find((o) => o.field === 'recentGrants')).toBeDefined();
     expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
   });

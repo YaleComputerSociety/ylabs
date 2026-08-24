@@ -49,6 +49,11 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 // "<PI> Lab" is only a placeholder when no real name is known; keep it well below
 // any real-name source (microsite, official profile) so those always win (issue #456).
 const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
+// A funded-project abstract describes the lead's actual research, but it is grant
+// prose, not an authored lab page. Keep it below the 0.5 default so any real
+// lab-page/microsite description wins on confidence resolution (issue #1418).
+const GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE = 0.35;
+const GRANT_DESCRIPTION_MAX_CHARS = 420;
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
 const RECENT_GRANTS_PER_PI = 10;
@@ -266,6 +271,73 @@ export function grantToRecord(grant: NihGrant): RecentGrantRecord {
   };
 }
 
+const GRANT_ABSTRACT_HEADER_WORD = '(?:overall|proposal|project|research)';
+const GRANT_ABSTRACT_HEADER_KIND = '(?:summary|narrative|abstract)';
+const GRANT_ABSTRACT_LEADING_NOISE = /^[\s\d.)(/:;#*-]+/;
+const GRANT_ABSTRACT_HEADER = new RegExp(
+  `^\\s*(?:modified\\s+)?(?:${GRANT_ABSTRACT_HEADER_WORD}\\s*)?${GRANT_ABSTRACT_HEADER_KIND}` +
+    `(?:\\s*[/&]\\s*${GRANT_ABSTRACT_HEADER_KIND})*\\s*(?:section)?\\s*[:.)-]*\\s*`,
+  'i',
+);
+const GRANT_ABSTRACT_INLINE_MARKER =
+  /^(?:.{0,130}?\b(?:abstract|project\s+summary)\b\s*[:.)-]+\s*)/i;
+const GRANT_ABSTRACT_UNAVAILABLE =
+  /^\s*(?:no\s+abstract|abstract\s+not\s+available|n\/?a)\s*\.?\s*$/i;
+
+const normalizeAbstractWhitespace = (value: string): string =>
+  value.replace(/\s+/g, ' ').trim();
+
+function stripGrantAbstractHeaders(value: string): string {
+  let out = value;
+  for (let i = 0; i < 4; i += 1) {
+    const before = out;
+    out = out.replace(GRANT_ABSTRACT_LEADING_NOISE, '').replace(GRANT_ABSTRACT_HEADER, '');
+    if (out === before) break;
+  }
+  return out;
+}
+
+function firstSentencesWithinBudget(text: string, maxChars: number): string {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  let acc = '';
+  for (const sentence of sentences) {
+    if (!acc) {
+      acc = sentence;
+      continue;
+    }
+    if (`${acc} ${sentence}`.length > maxChars) break;
+    acc = `${acc} ${sentence}`;
+  }
+  if (acc.length > maxChars + 160) acc = acc.slice(0, maxChars);
+  return acc.trim();
+}
+
+/**
+ * Derive a source-backed lab description from a funded-project abstract. Strips
+ * RePORTER boilerplate headers ("PROJECT SUMMARY/ABSTRACT", "OVERALL:",
+ * numbering) and returns sentence-bounded lead prose. Returns '' when the
+ * abstract is empty or a "No Abstract" placeholder so the scraper emits nothing
+ * rather than junk (issue #1418).
+ */
+export function grantAbstractToDescription(abstract: string | undefined | null): string {
+  const normalized = normalizeAbstractWhitespace(String(abstract || ''));
+  if (!normalized || GRANT_ABSTRACT_UNAVAILABLE.test(normalized)) return '';
+  const withoutInlineMarker = normalized.replace(GRANT_ABSTRACT_INLINE_MARKER, '');
+  const withoutHeaders = stripGrantAbstractHeaders(withoutInlineMarker);
+  return normalizeAbstractWhitespace(
+    firstSentencesWithinBudget(withoutHeaders, GRANT_DESCRIPTION_MAX_CHARS),
+  );
+}
+
+/** Pick the newest grant with a usable abstract and reduce it to a description. */
+export function labDescriptionFromRecentGrants(records: RecentGrantRecord[]): string {
+  for (const record of records) {
+    const description = grantAbstractToDescription(record.abstract);
+    if (description) return description;
+  }
+  return '';
+}
+
 function parseDate(s: string | undefined): Date | undefined {
   if (!s) return undefined;
   const d = new Date(s);
@@ -450,6 +522,15 @@ export function piGrantsToObservations(
       confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
     });
     out.push({ ...groupBase, field: 'kind', value: 'lab' });
+    const grantDescription = labDescriptionFromRecentGrants(recentRecords);
+    if (grantDescription) {
+      out.push({
+        ...groupBase,
+        field: 'fullDescription',
+        value: grantDescription,
+        confidenceOverride: GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE,
+      });
+    }
   }
   out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });
   out.push({ ...groupBase, field: 'recentGrantCount', value: sorted.length });
