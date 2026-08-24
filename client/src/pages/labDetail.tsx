@@ -75,6 +75,11 @@ import { UndergraduateLogisticsSection } from '../components/research/Undergradu
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
+const buildYaleDirectorySearchUrl = (name?: string): string => {
+  const trimmed = name?.trim();
+  if (!trimmed) return YALE_DIRECTORY_URL;
+  return `${YALE_DIRECTORY_URL}?query=${encodeURIComponent(trimmed)}`;
+};
 const RESEARCH_PROFILE_NOT_FOUND_ERROR = 'Research profile not found.';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
@@ -537,6 +542,8 @@ const DecisionSummary = ({
       .filter(Boolean)
       .join(' ')
       .trim();
+  const directorySearchName = piName || researchEntityTitle(group).trim();
+  const directorySearchUrl = buildYaleDirectorySearchUrl(directorySearchName);
   const canonicalPiDepartment = canonicalizeResearcherDepartmentLabel(
     principalInvestigator?.user?.primaryDepartment ||
       principalInvestigator?.user?.primary_department,
@@ -787,7 +794,7 @@ const DecisionSummary = ({
                       : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
                   </p>
                   <a
-                    href={YALE_DIRECTORY_URL}
+                    href={directorySearchUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
                     className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
