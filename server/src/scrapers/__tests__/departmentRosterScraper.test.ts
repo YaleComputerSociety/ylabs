@@ -817,9 +817,9 @@ describe('psychExtractor', () => {
           <tbody>
             <tr>
               <td class="views-field views-field-name">
-                <a href="/people/river-longform" class="username">River Longform</a><br />
+                <a href="/people/casey-jordan" class="username">Casey Jordan</a><br />
                 Professor of Physics<br />
-                <a href="mailto:river.longform@yale.edu">river.longform@yale.edu</a>
+                <a href="mailto:casey.jordan@yale.edu">casey.jordan@yale.edu</a>
               </td>
               <td class="views-field views-field-field-field-of-study">
                 Condensed Matter Physics<p><em>Theorist</em><p><small><div>Stochastic processes, asymptotic analysis and other approaches and methods from modern applied mathematics and physics, along with numerical simulations to probe a broad range of problems including the microscopic theory of melting, the mechanisms underlying cosmogony, climate dynamics, information theory and turbulence.</div></small>
