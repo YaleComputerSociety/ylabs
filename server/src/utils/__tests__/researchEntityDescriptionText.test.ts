@@ -1165,6 +1165,29 @@ describe('revoiceFirstPersonResearchLead', () => {
       }),
     ).toBe("This researcher's mission is to advance clinical trials.");
   });
+
+  it('re-voices a comma-clause-introduced "my"/"our" that the sentence-boundary anchor previously missed (#1824)', () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'As a physician scientist, my research program is aiming to uncover new therapeutic targets.',
+      ),
+    ).toBe(
+      'As a physician scientist, this research program is aiming to uncover new therapeutic targets.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead('In this role, our team focuses on translational immunology.'),
+    ).toBe('In this role, this team focuses on translational immunology.');
+  });
+
+  it('converts a same-sentence residual "my"/"our" that refers back to an already-converted I/We subject (#1824)', () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'This researcher studies immunology. I received my doctorate from a large public university.',
+      ),
+    ).toBe(
+      'This researcher studies immunology. This researcher received their doctorate from a large public university.',
+    );
+  });
 });
 
 describe('repairSubjectlessResearchLead', () => {

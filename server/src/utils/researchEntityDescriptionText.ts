@@ -808,8 +808,16 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string | 
     (_match: string, offset: number, full: string) =>
       isAtSentenceStart(offset, full) ? 'This researcher has' : 'this researcher has',
   ],
-  [/(^|[.!?]\s+)(?:My|Our)\s+careers?\b/gi, "$1This researcher's career"],
-  [/(^|[.!?]\s+)(?:My|Our)\s+group\b/gi, '$1This research group'],
+  [
+    /(^|[.!?]\s+|,\s+)(?:my|our)\s+careers?\b/gi,
+    (_match: string, lead: string, offset: number, full: string) =>
+      `${lead}${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} researcher's career`,
+  ],
+  [
+    /(^|[.!?]\s+|,\s+)(?:my|our)\s+group\b/gi,
+    (_match: string, lead: string, offset: number, full: string) =>
+      `${lead}${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} research group`,
+  ],
   [
     new RegExp(`\\b(I|We)\\s+(${FIRST_PERSON_VERB_ALTERNATION})\\b`, 'g'),
     (_match: string, subject: string, verb: string, offset: number, full: string) => {
@@ -830,11 +838,12 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string | 
    * with in the first place).
    */
   [
-    /(^|[.!?]\s+)(?:My|Our)\s+((?:[A-Za-z]+\s+){0,4}?[A-Za-z]+)(?=\s+(?:is|are|was|were|has|have)\b)/g,
-    (_match: string, lead: string, phrase: string) => {
+    /(^|[.!?]\s+|,\s+)(?:my|our)\s+((?:[A-Za-z]+\s+){0,4}?[A-Za-z]+)(?=\s+(?:is|are|was|were|has|have)\b)/gi,
+    (_match: string, lead: string, phrase: string, offset: number, full: string) => {
       const words = phrase.trim().split(/\s+/);
       const headNoun = words[words.length - 1];
-      return `${lead}${pluralAwareDemonstrative(headNoun)} ${phrase}`;
+      const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
+      return `${lead}${pluralAwareDemonstrative(headNoun, atSentenceStart)} ${phrase}`;
     },
   ],
 ];
@@ -859,11 +868,34 @@ function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): strin
 
 const SINGULAR_NOUN_S_ENDING_EXCEPTIONS = /(?:ss|us|is|ics)$/i;
 
-function pluralAwareDemonstrative(noun: string): string {
-  return /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun) ? 'These' : 'This';
+function pluralAwareDemonstrative(noun: string, capitalized: boolean): string {
+  const isPlural = /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun);
+  const word = isPlural ? 'these' : 'this';
+  return capitalized ? `${word[0].toUpperCase()}${word.slice(1)}` : word;
 }
 
-const GENERIC_POSSESSIVE_LEAD_PATTERN = /(^|[.!?]\s+)(?:My|Our)\s+(\w+)\b/g;
+const GENERIC_POSSESSIVE_LEAD_PATTERN = /(^|[.!?]\s+|,\s+)(?:my|our)\s+(\w+)\b/gi;
+
+const CONVERTED_FIRST_PERSON_SUBJECT_PATTERN = /\bthis (?:researcher|group)\b/i;
+
+/**
+ * A converted subject ("I received" -> "This researcher received") can leave
+ * a same-sentence possessive referring to that same subject unconverted
+ * ("This researcher received my PhD..."), since the possessive itself never
+ * matched any I/We rule (#1824). Scoped to the current sentence only, so a
+ * genuinely third-person sentence with an unrelated "our"/"my" (e.g. "This
+ * work advances our understanding...") is left untouched.
+ */
+function sentenceHasConvertedFirstPersonSubject(offset: number, full: string): boolean {
+  const beforeMatch = full.slice(0, offset);
+  const boundaryPattern = /[.!?]\s+/g;
+  let sentenceStart = 0;
+  let boundary: RegExpExecArray | null;
+  while ((boundary = boundaryPattern.exec(beforeMatch))) {
+    sentenceStart = boundary.index + boundary[0].length;
+  }
+  return CONVERTED_FIRST_PERSON_SUBJECT_PATTERN.test(beforeMatch.slice(sentenceStart));
+}
 
 export function revoiceFirstPersonResearchLead(
   value: unknown,
@@ -882,7 +914,13 @@ export function revoiceFirstPersonResearchLead(
   }
   next = next.replace(
     GENERIC_POSSESSIVE_LEAD_PATTERN,
-    (_match: string, lead: string, noun: string) => `${lead}${pluralAwareDemonstrative(noun)} ${noun}`,
+    (_match: string, lead: string, noun: string, offset: number, full: string) => {
+      const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
+      return `${lead}${pluralAwareDemonstrative(noun, atSentenceStart)} ${noun}`;
+    },
+  );
+  next = next.replace(/\b(?:my|our)\b/gi, (match: string, offset: number, full: string) =>
+    sentenceHasConvertedFirstPersonSubject(offset, full) ? 'their' : match,
   );
   return next;
 }
