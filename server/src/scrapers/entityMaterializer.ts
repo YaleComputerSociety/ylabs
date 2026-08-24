@@ -76,7 +76,10 @@ import {
 } from './sources/labMicrositeUndergradLLMExtractor';
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
-import { applyResearchEntityResearchAreaCanonicalization } from './researchAreaCanonicalization';
+import {
+  applyResearchEntityResearchAreaCanonicalization,
+  getResearchAreaCanonicalizer,
+} from './researchAreaCanonicalization';
 import { deriveFundingProgramTopic } from './fundingProgramTopicDerivation';
 import {
   resolveBackfillWebsiteUrl,
@@ -392,6 +395,49 @@ function applyFundingProgramTopicDerivation(
   const topic = deriveFundingProgramTopic(name, fullDescription);
   if (topic.department) set.departments = [topic.department];
   if (topic.researchArea) set.researchAreas = [topic.researchArea];
+}
+
+const DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
+
+// LAB/FACULTY_RESEARCH_AREA entities seeded from PI-centric sources (NIH RePORTER,
+// ORCID, official-profile PI backfill) carry a fullDescription but no researchAreas
+// observation, so `set.researchAreas` is never populated and the canonicalizer below
+// returns early - leaving the row with empty chips even when its own description names
+// clear topics. Such a row is then held out of student_ready on the research-area facet
+// gate (missing_facet_signal) despite being otherwise complete (issue #1717 covered only
+// already-student_ready rows). Mirror `applyFundingProgramTopicDerivation` (#1700): when
+// both are genuinely empty, derive chips from the entity's own name/short/full via the
+// curated canonical phrase index and seed `set` as if an observation had written them, so
+// the normal canonicalization pass still owns dedup and department-duplicate rejection.
+async function applyDescriptionResearchAreaDerivation(
+  set: Record<string, unknown>,
+  entityDoc: Record<string, unknown> | null,
+): Promise<void> {
+  const entityType = set.entityType ?? entityDoc?.entityType;
+  if (
+    typeof entityType !== 'string' ||
+    !DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)
+  ) {
+    return;
+  }
+  if (hasNonEmptyStringArray(set.researchAreas, entityDoc?.researchAreas)) return;
+
+  const textBlob = [
+    set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
+    set.shortDescription ?? entityDoc?.shortDescription,
+    set.fullDescription ?? entityDoc?.fullDescription,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n');
+  if (!textBlob) return;
+
+  try {
+    const canonicalizer = await getResearchAreaCanonicalizer();
+    const derived = canonicalizer.deriveResearchAreasFromText(textBlob);
+    if (derived.length > 0) set.researchAreas = derived;
+  } catch {
+    // Canonicalizer load failure is non-fatal: leave researchAreas untouched.
+  }
 }
 
 const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set(['acceptingUndergrads', 'openness']);
@@ -2798,6 +2844,7 @@ export async function materializeEntity(
           : []),
     ].filter((url): url is string => typeof url === 'string');
     applyFundingProgramTopicDerivation(set, entityDoc);
+    await applyDescriptionResearchAreaDerivation(set, entityDoc);
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc, orgUnitProfileUrls);
     await applyResearchEntityResearchAreaCanonicalization(set, set.departments ?? entityDoc?.departments);
     if (!manuallyLockedFields.includes('websiteUrl')) {
