@@ -508,6 +508,23 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     );
   });
 
+  it('strips a leading zero-width space so sentence-start revoicing still applies (#1802)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          '\u200bMy research focuses on domestic and international drivers of state building, using historical archives and quantitative methods.',
+        shortDescription: '',
+        topics: [],
+        methods: [],
+      },
+      { entityKey: 'queralt', sourceUrl: 'https://www.example-faculty-site.com/' },
+    );
+
+    const full = observations.find((obs) => obs.field === 'fullDescription')?.value as string;
+    expect(full.startsWith('\u200b')).toBe(false);
+    expect(full.startsWith('My')).toBe(true);
+  });
+
   it('preserves the description when the model returns non-array topics or methods', () => {
     const observations = descriptionExtractionToObservations(
       {
