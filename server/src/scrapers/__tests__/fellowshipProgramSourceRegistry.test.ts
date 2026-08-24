@@ -89,8 +89,17 @@ describe('fellowshipProgramSourceRegistry', () => {
   it('enumerates the known-uncovered public catalogs as gaps', () => {
     const gapUrls = new Set(getFellowshipProgramCatalogGaps().map((entry) => entry.url));
     expect(gapUrls.has('https://funding.yale.edu/find-funding')).toBe(true);
-    expect(gapUrls.has('https://college.yale.edu/life-at-yale/student-faculty-awards')).toBe(true);
     expect(gapUrls.has('https://macmillan.yale.edu/undergraduate-research-grants')).toBe(true);
+  });
+
+  it('marks the Yale College student-faculty awards index as covered by the fellowships-office crawl', () => {
+    const awardsIndex = FELLOWSHIP_PROGRAM_SOURCE_REGISTRY.find(
+      (entry) => entry.url === 'https://college.yale.edu/life-at-yale/student-faculty-awards',
+    );
+    expect(awardsIndex?.status).toBe('covered');
+    expect(awardsIndex?.coveredBy).toContain('yale-college-fellowships-office');
+    const gapUrls = new Set(getFellowshipProgramCatalogGaps().map((entry) => entry.url));
+    expect(gapUrls.has('https://college.yale.edu/life-at-yale/student-faculty-awards')).toBe(false);
   });
 
   it('ranks gaps by student impact tier then discoverable program count', () => {

@@ -23,6 +23,9 @@ const MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL = 'https://macmillan.yale.edu/fellows
 
 const CBEY_FUNDING_OPPORTUNITIES_URL = 'https://cbey.yale.edu/funding-opportunities';
 
+export const STUDENT_FACULTY_AWARDS_INDEX_URL =
+  'https://college.yale.edu/life-at-yale/student-faculty-awards';
+
 export const DEFAULT_PAGE_URLS = [
   'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
@@ -33,6 +36,7 @@ export const DEFAULT_PAGE_URLS = [
   'https://ycmd.yale.edu/education/summer-undergraduate-internships',
   'https://economics.yale.edu/undergraduate/tobin-ra',
   'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+  STUDENT_FACULTY_AWARDS_INDEX_URL,
   'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
   MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL,
   `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=1`,
@@ -183,6 +187,26 @@ function isYaleOwnedUrl(url: string | undefined): boolean {
   }
 }
 
+function indexSeedKey(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hostname = parsed.hostname.toLowerCase();
+    parsed.search = '';
+    parsed.hash = '';
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.protocol}//${parsed.hostname}${pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+const INDEX_SEED_ONLY_URL_KEYS = new Set([STUDENT_FACULTY_AWARDS_INDEX_URL].map(indexSeedKey));
+
+function isIndexSeedOnlyUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  return INDEX_SEED_ONLY_URL_KEYS.has(indexSeedKey(url));
+}
+
 function isCommunityForceUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
@@ -282,6 +306,29 @@ function isInPrimaryContent($: cheerio.CheerioAPI, $link: cheerio.Cheerio<any>):
   const primaryScopes = $('main, [role="main"], article');
   if (primaryScopes.length === 0) return true;
   return $link.closest('main, [role="main"], article').length > 0;
+}
+
+/**
+ * A crawl-seed index/hub page (e.g. the Yale College student-faculty awards
+ * index) is fetched only to discover the individual award/program pages linked
+ * from its primary content. The index root is never parsed into a candidate and
+ * never cited as a source; each discovered child page is fetched separately and
+ * cites its own URL (self-referential / index-page source guards #516, #549).
+ */
+export function extractIndexSeedChildDetailUrls(html: string, pageUrl: string): string[] {
+  const $ = cheerio.load(html);
+  $('script, style, noscript').remove();
+  const urls = new Set<string>();
+  for (const link of $('a').toArray()) {
+    const $link = $(link);
+    if (isInExcludedPageRegion($link) || !isInPrimaryContent($, $link)) continue;
+    const rawHref = absoluteUrl($link.attr('href'), pageUrl);
+    const href = rawHref ? normalizeLinkUrl(rawHref) : undefined;
+    if (!href || isIndexSeedOnlyUrl(href)) continue;
+    if (!isLikelyPublicFellowshipDetailUrl(href)) continue;
+    urls.add(href);
+  }
+  return Array.from(urls);
 }
 
 const MAX_DETAIL_PROGRAM_LINKS = 12;
@@ -1251,6 +1298,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
 
     const referenceDate = new Date();
     const candidatesByKey = new Map<string, FellowshipCatalogCandidate>();
+    const indexDiscoveredDetailUrls = new Set<string>();
     const fetched = new Set<string>();
     const failedUrls: string[] = [];
 
@@ -1258,6 +1306,12 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       if (fetched.has(url)) return;
       fetched.add(url);
       const html = await this.fetchPage(url, ctx.options.useCache);
+      if (isIndexSeedOnlyUrl(url)) {
+        for (const childUrl of extractIndexSeedChildDetailUrls(html, url)) {
+          indexDiscoveredDetailUrls.add(childUrl);
+        }
+        return;
+      }
       const parsed = parseFellowshipCatalogPage(html, url, referenceDate);
       for (const candidate of parsed) {
         upsertCandidate(candidatesByKey, candidate);
@@ -1297,11 +1351,12 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     }
 
     const detailUrls = Array.from(
-      new Set(
-        Array.from(candidatesByKey.values()).flatMap((candidate) =>
+      new Set([
+        ...Array.from(candidatesByKey.values()).flatMap((candidate) =>
           candidate.sourcePageKind === 'catalog' ? candidate.links.map((link) => link.url) : [],
         ),
-      ),
+        ...indexDiscoveredDetailUrls,
+      ]),
     ).filter(
       (url) =>
         isLikelyPublicFellowshipDetailUrl(url) && !this.pageUrls.includes(url) && !fetched.has(url),
@@ -1311,9 +1366,9 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       await tryParseAndMerge(url);
     }
 
-    const allCandidates = Array.from(candidatesByKey.values()).sort((a, b) =>
-      a.title.localeCompare(b.title),
-    );
+    const allCandidates = Array.from(candidatesByKey.values())
+      .filter((candidate) => !isIndexSeedOnlyUrl(candidate.sourceUrl))
+      .sort((a, b) => a.title.localeCompare(b.title));
     const selected =
       limitOption !== undefined ? allCandidates.slice(0, limitOption) : allCandidates;
     const observations = selected.flatMap(candidateToObservations);

@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   candidateToObservations,
+  extractIndexSeedChildDetailUrls,
   parseDeadlineToUtcEndOfDay,
   parseFellowshipCatalogPage,
+  STUDENT_FACULTY_AWARDS_INDEX_URL,
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
 
@@ -1663,5 +1665,174 @@ describe('YaleCollegeFellowshipsOfficeScraper cbey funding-opportunities catalog
     expect(observations.find((obs) => obs.field === 'sourceName')?.value).toBe(
       'yale-college-fellowships-office',
     );
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper student-faculty awards index crawl (#1562)', () => {
+  const bouchetUrl =
+    'https://college.yale.edu/life-at-yale/student-faculty-awards/fixture-bouchet-undergraduate-fellows-program';
+  const nakanishiUrl =
+    'https://college.yale.edu/life-at-yale/student-faculty-awards/fixture-nakanishi-research-prize';
+
+  const indexHtml = `
+    <header><nav><a href="https://college.yale.edu/academics">Academics</a></nav></header>
+    <main>
+      <h1>Student-Faculty Awards</h1>
+      <ul>
+        <li><a href="${bouchetUrl}">Fixture Bouchet Undergraduate Fellows Program</a></li>
+        <li><a href="${nakanishiUrl}">Fixture Nakanishi Research Prize</a></li>
+        <li><a href="https://yale.communityforce.com/Funds/Search.aspx">Student Grants &amp; Fellowships database</a></li>
+        <li><a href="${STUDENT_FACULTY_AWARDS_INDEX_URL}">Student-Faculty Awards home</a></li>
+      </ul>
+    </main>
+    <footer><a href="https://college.yale.edu/privacy">Privacy</a></footer>
+  `;
+
+  const bouchetHtml = `
+    <main>
+      <article>
+        <h1>Fixture Bouchet Undergraduate Fellows Program</h1>
+        <p>The program supports independent undergraduate research projects mentored by Yale faculty. Applications are reviewed on a rolling basis.</p>
+        <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=810">Apply through the Student Grants Database</a>
+      </article>
+    </main>
+  `;
+
+  const nakanishiHtml = `
+    <main>
+      <article>
+        <h1>Fixture Nakanishi Research Prize</h1>
+        <p>The prize recognizes outstanding undergraduate research projects on race, ethnicity, and migration.</p>
+        <a href="https://studentgrants.yale.edu/">Student Grants &amp; Fellowships database</a>
+      </article>
+    </main>
+  `;
+
+  it('discovers child award pages from the index while excluding nav, portal, and index-root links', () => {
+    const childUrls = extractIndexSeedChildDetailUrls(indexHtml, STUDENT_FACULTY_AWARDS_INDEX_URL);
+    expect(childUrls).toEqual([bouchetUrl, nakanishiUrl]);
+    expect(childUrls).not.toContain(STUDENT_FACULTY_AWARDS_INDEX_URL);
+    expect(childUrls.some((url) => url.includes('communityforce.com'))).toBe(false);
+    expect(childUrls.some((url) => url.includes('/academics') || url.includes('/privacy'))).toBe(
+      false,
+    );
+  });
+
+  it('never parses the index root itself into a candidate', () => {
+    const candidates = parseFellowshipCatalogPage(
+      indexHtml,
+      STUDENT_FACULTY_AWARDS_INDEX_URL,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    expect(candidates.every((candidate) => candidate.title !== 'Student-Faculty Awards')).toBe(true);
+  });
+
+  it('cites each discovered program page as its own source and never the index root', async () => {
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === STUDENT_FACULTY_AWARDS_INDEX_URL) return indexHtml;
+      if (url === bouchetUrl) return bouchetHtml;
+      if (url === nakanishiUrl) return nakanishiHtml;
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [STUDENT_FACULTY_AWARDS_INDEX_URL],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(result.entitiesObserved).toBe(2);
+    const sourceUrls = emitted
+      .filter((obs) => obs.field === 'sourceUrl')
+      .map((obs) => obs.value)
+      .sort();
+    expect(sourceUrls).toEqual([bouchetUrl, nakanishiUrl].sort());
+    expect(emitted.some((obs) => obs.value === STUDENT_FACULTY_AWARDS_INDEX_URL)).toBe(false);
+    expect(emitted.every((obs) => obs.sourceUrl !== STUDENT_FACULTY_AWARDS_INDEX_URL)).toBe(true);
+  });
+
+  it('carries CommunityForce and studentgrants links as application links, never as sources', async () => {
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === STUDENT_FACULTY_AWARDS_INDEX_URL) return indexHtml;
+      if (url === bouchetUrl) return bouchetHtml;
+      if (url === nakanishiUrl) return nakanishiHtml;
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [STUDENT_FACULTY_AWARDS_INDEX_URL],
+      fetchPage,
+    });
+
+    await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(fetchPage).not.toHaveBeenCalledWith(
+      'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=810',
+      expect.anything(),
+    );
+    expect(fetchPage).not.toHaveBeenCalledWith('https://studentgrants.yale.edu/', expect.anything());
+
+    const applicationLinks = emitted
+      .filter((obs) => obs.field === 'applicationLink')
+      .map((obs) => obs.value);
+    expect(applicationLinks).toContain(
+      'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=810',
+    );
+    expect(applicationLinks).toContain('https://studentgrants.yale.edu/');
+    const sourceUrls = emitted.filter((obs) => obs.field === 'sourceUrl').map((obs) => obs.value);
+    expect(sourceUrls.some((url) => url.includes('communityforce.com'))).toBe(false);
+    expect(sourceUrls.some((url) => url.includes('studentgrants.yale.edu'))).toBe(false);
+  });
+
+  it('drops a child page that fails to fetch rather than citing the index root (fail closed)', async () => {
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === STUDENT_FACULTY_AWARDS_INDEX_URL) return indexHtml;
+      if (url === bouchetUrl) return bouchetHtml;
+      if (url === nakanishiUrl) throw new Error('Request failed with status code 404');
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [STUDENT_FACULTY_AWARDS_INDEX_URL],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.notes).toContain('Skipped 1 fellowship page');
+    expect(emitted.find((obs) => obs.field === 'sourceUrl')?.value).toBe(bouchetUrl);
+    expect(emitted.every((obs) => obs.sourceUrl !== STUDENT_FACULTY_AWARDS_INDEX_URL)).toBe(true);
   });
 });
