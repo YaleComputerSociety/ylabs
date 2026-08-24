@@ -496,12 +496,18 @@ export function deriveAccessArtifactsFromObservations(
  * Research-home entity types where an identified faculty lead plus an official
  * (non-grant) source page is itself a legitimate, evidence-based "ways in":
  * the student can plan specific outreach to a named faculty mentor whose
- * documented work matches their interest.
+ * documented work matches their interest. Organizational homes here fall back
+ * to the lead-optional center-level ways-in when no single director is named.
  *
- * Excluded by design: programs/fellowships (own program logic), core
- * facilities, and any entity the visibility gate has flagged as a duplicate.
+ * Must be a superset of ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES: any type granted a
+ * lead-exempt organizational ways-in must also be eligible here, or that class
+ * (e.g. CORE_FACILITY, #1361) can never derive its organizational signal and is
+ * left a permanent missing_action_evidence dead-end. Guarded by a subset test.
+ *
+ * Excluded by design: programs/fellowships (own program logic) and any entity
+ * the visibility gate has flagged as a duplicate.
  */
-const IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES = new Set([
+export const IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES = new Set([
   'LAB',
   'CENTER',
   'INSTITUTE',
@@ -511,6 +517,7 @@ const IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES = new Set([
   'COLLECTIONS_INITIATIVE',
   'ARCHIVE_OR_MUSEUM_PROJECT',
   'INITIATIVE',
+  'CORE_FACILITY',
   'GROUP',
   'INDIVIDUAL_RESEARCH',
 ]);
@@ -524,7 +531,7 @@ const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']
  * institutionally contactable via their official page - so they get a
  * center-level ways-in even when no single named director is published.
  */
-const ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES = new Set([
+export const ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES = new Set([
   'CENTER',
   'INSTITUTE',
   'INITIATIVE',

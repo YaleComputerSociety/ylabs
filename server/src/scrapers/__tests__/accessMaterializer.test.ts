@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES,
   MATERIALIZED_ACCESS_SIGNAL_TYPES,
+  ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES,
   deriveAccessArtifactsFromObservations,
   deriveAccessArtifactsForResearchGroup,
   deriveIdentifiedLeadWaysIn,
@@ -9,6 +11,7 @@ import {
   officialNonGrantSourceUrl,
   type AccessObservation,
 } from '../accessMaterializer';
+import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../../services/accessAcceptanceLevel';
 
 const D = new Date('2026-05-07T12:00:00.000Z');
 
@@ -740,6 +743,23 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     });
     expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
     expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
+  });
+
+  it('keeps every organizational ways-in type eligible for the lead ways-in (three-allowlist consistency, #1361)', () => {
+    for (const entityType of ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES) {
+      expect(IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES.has(entityType)).toBe(true);
+    }
+  });
+
+  it('derives the organizational center-level ways-in for a lead-exempt CORE_FACILITY (#1361)', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      ...baseInput,
+      entity: { entityType: 'CORE_FACILITY', name: 'Keck Mass Spectrometry Resource' },
+      officialUrl: 'https://medicine.yale.edu/keck/ms/',
+      leadName: undefined,
+    });
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.accessSignals[0].derivationKey).toBe(ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY);
   });
 });
 
