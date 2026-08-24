@@ -35,6 +35,32 @@ describe('isEducationOrCareerTimelineSentence', () => {
       ),
     ).toBe(false);
   });
+
+  it('flags a career-timeline sentence naming a non-Yale institution (#1791: Holly Rushmeier)', () => {
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'In 1988 she joined the Mechanical Engineering faculty at Georgia Tech.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'Holly Rushmeier received the BS, MS and PhD degrees in Mechanical Engineering from Cornell University.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'From 1996 to early 2004 Dr. Rushmeier was a research staff member at the IBM T.J. Watson Research Center.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'In 1996 she served as the papers chair for the ACM SIGGRAPH conference.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence('Dr. Rushmeier was Editor-in-Chief of ACM Transactions on Graphics from 1996-99.'),
+    ).toBe(true);
+  });
 });
 
 describe('isProfileBiographyChromeOpener / stripProfileBiographyChromeOpener', () => {
@@ -74,6 +100,15 @@ describe('protectedSentenceList', () => {
     );
     expect(sentences).toEqual([
       'He then came to the U.S. to pursue Ph.D studies with Carl Nathan in the Immunology program.',
+    ]);
+  });
+
+  it('does not drop text around a sentence whose interior period sits before a closing parenthesis (#1791)', () => {
+    const sentences = protectedSentenceList(
+      'She has lectured at many meetings, including three invited keynote presentations (Eurographics Rendering Workshop 94, 3DIM 01, Eurographics Conference 2001.) Dr. Rushmeier has also served on program committees.',
+    );
+    expect(sentences).toEqual([
+      'She has lectured at many meetings, including three invited keynote presentations (Eurographics Rendering Workshop 94, 3DIM 01, Eurographics Conference 2001.) Dr. Rushmeier has also served on program committees.',
     ]);
   });
 });
@@ -131,6 +166,26 @@ describe('repairPersonBiographyLeakedDescription', () => {
     expect(result.outcome).toBe('resynthesized');
     expect(result.fullDescription).toBe('Studies Cell Biology and Genetics.');
     expect(result.shortDescription).toBe('Studies Cell Biology and Genetics.');
+  });
+
+  it('strips a multi-institution career chronology, keeping past-employer research topics and dropping degree/faculty/service facts (rushmeier-lab-hr77, #1791)', () => {
+    const result = repairPersonBiographyLeakedDescription({
+      fullDescription:
+        "Holly Rushmeier received the BS, MS and PhD degrees in Mechanical Engineering from Cornell University in 1977, 1986 and 1988 respectively. Between receiving the BS and returning to graduate school in 1983 she worked as an engineer at the Boeing Commercial Airplane Company. In 1988 she joined the Mechanical Engineering faculty at Georgia Tech. While there she conducted sponsored research in the area of computer graphics image synthesis. From 1996 to early 2004 Dr. Rushmeier was a research staff member at the IBM T.J. Watson Research Center. At IBM she worked on a variety of data visualization problems in applications ranging from engineering to finance. Dr. Rushmeier was Editor-in-Chief of ACM Transactions on Graphics from 1996-99. In 1996 she served as the papers chair for the ACM SIGGRAPH conference.",
+      shortDescription:
+        'Studies Computer Graphics and Visualization Techniques, 3D Shape Modeling and Analysis, and 3D Surveying and Cultural Heritage.',
+      researchAreas: ['Computer Graphics', 'Image Synthesis', 'Scientific Data Visualization'],
+    });
+    expect(result.outcome).toBe('resynthesized');
+    expect(result.fullDescription).not.toMatch(/received the BS, MS and PhD degrees/i);
+    expect(result.fullDescription).not.toMatch(/joined the Mechanical Engineering faculty/i);
+    expect(result.fullDescription).not.toMatch(/was a research staff member/i);
+    expect(result.fullDescription).not.toMatch(/was Editor-in-Chief/i);
+    expect(result.fullDescription).not.toMatch(/served as the papers chair/i);
+    expect(result.fullDescription).toMatch(/conducted sponsored research in the area of computer graphics/i);
+    expect(result.shortDescription).toBe(
+      'Studies Computer Graphics and Visualization Techniques, 3D Shape Modeling and Analysis, and 3D Surveying and Cultural Heritage.',
+    );
   });
 
   it('blanks the description when nothing usable can be derived at all', () => {
