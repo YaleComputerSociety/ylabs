@@ -71,8 +71,15 @@ describe('centersInstitutesRegistry', () => {
     expect(byKey.get('wu-tsai')?.status).toBe('covered');
     expect(byKey.get('fds')?.status).toBe('covered');
     expect(byKey.get('natural-carbon-capture')?.status).toBe('covered');
+    expect(byKey.get('child-study-center')?.status).toBe('covered');
+    expect(byKey.get('child-study-center')?.school).toBe('Yale School of Medicine');
 
     const byUrl = new Map(CENTERS_INSTITUTES_REGISTRY.map((e) => [e.url, e]));
+    expect(byUrl.get('https://medicine.yale.edu/childstudy/faculty/')?.status).toBe('covered');
+    expect(
+      byUrl.get('https://medicine.yale.edu/center-clinical-investigation/about/leadership/')
+        ?.status,
+    ).toBe('evaluated-skipped');
     expect(byUrl.get('https://naturalcarboncapture.yale.edu/people')?.status).toBe('covered');
     expect(byUrl.get('https://cie.research.yale.edu/people')?.status).toBe('partial');
     expect(byUrl.get('https://yibs.yale.edu/people/faculty-affiliates')?.status).toBe('partial');

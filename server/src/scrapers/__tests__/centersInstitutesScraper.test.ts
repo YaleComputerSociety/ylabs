@@ -23,6 +23,7 @@ import {
   wuTsaiExtractor,
   yaleCancerCenterExtractor,
   yighAffiliatedFacultyExtractor,
+  childStudyCenterExtractor,
   viewsFieldNameExtractor,
   ispsExtractor,
   ycgaExtractor,
@@ -125,6 +126,20 @@ const YIGH_HTML = `
     </ul>
   </div>
   <a href="/yigh/about/contact" class="hyperlink">Contact Us</a>
+</body></html>
+`;
+
+/** Yale Child Study Center faculty A-Z, same medicine.yale.edu link-items-list theme. */
+const CHILD_STUDY_HTML = `
+<html><body>
+  <div class="categorized-list-item__inner-list">
+    <ul class="link-items-list">
+      <li class="link-items-list__item"><div><a href="/childstudy/profile/benedicte-aarestrup/" tabindex="0" class="hyperlink">Aarestrup, Benedicte</a></div></li>
+      <li class="link-items-list__item"><div><a href="/childstudy/profile/HAA2/" class="hyperlink">Allen, Henry</a></div></li>
+      <li class="link-items-list__item"><div><a href="/childstudy/profile/benedicte-aarestrup/" class="hyperlink">Aarestrup, Benedicte</a></div></li>
+    </ul>
+  </div>
+  <a href="/childstudy/about/contact" class="hyperlink">Contact Us</a>
 </body></html>
 `;
 
@@ -330,6 +345,51 @@ describe('yighAffiliatedFacultyExtractor', () => {
     );
     expect(yigh?.extractor).toBe(yighAffiliatedFacultyExtractor);
     expect(yigh?.paginated).toBeFalsy();
+  });
+});
+
+describe('childStudyCenterExtractor', () => {
+  it('flips Last, First names, dedupes by href, and ignores non-profile links', () => {
+    const out = childStudyCenterExtractor(CHILD_STUDY_HTML, {
+      pageUrl: 'https://medicine.yale.edu/childstudy/faculty/',
+    });
+    expect(out.members).toHaveLength(2);
+    expect(out.members[0]).toMatchObject({
+      name: 'Benedicte Aarestrup',
+      profileUrl: 'https://medicine.yale.edu/childstudy/profile/benedicte-aarestrup/',
+      role: 'core-faculty',
+    });
+    expect(out.members[1].name).toBe('Henry Allen');
+    // dedupe by href; the /childstudy/about/contact nav link is ignored
+    expect(out.members.filter((m) => m.name === 'Benedicte Aarestrup')).toHaveLength(1);
+  });
+
+  it('is wired into the default center configs with a homeUrl identity override', () => {
+    const ycsc = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'child-study-center');
+    expect(ycsc).toBeDefined();
+    expect(ycsc?.url).toBe('https://medicine.yale.edu/childstudy/faculty/');
+    expect(ycsc?.homeUrl).toBe('https://medicine.yale.edu/childstudy/');
+    expect(ycsc?.schoolName).toBe('Yale School of Medicine');
+    expect(ycsc?.kind).toBe('center');
+    expect(ycsc?.extractor).toBe(childStudyCenterExtractor);
+    expect(ycsc?.paginated).toBeFalsy();
+    expect(ycsc?.entityKey).toBeUndefined();
+  });
+
+  it('emits the /childstudy/ landing page (not the roster subpage) as the entity website', () => {
+    const ycsc = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'child-study-center')!;
+    const { observations } = centerToGroupObservations(
+      ycsc,
+      [{ name: 'Benedicte Aarestrup', role: 'core-faculty' }],
+      ycsc.url,
+    );
+    const website = observations.find((o) => o.field === 'websiteUrl');
+    expect(website?.value).toBe('https://medicine.yale.edu/childstudy/');
+    const sourceUrls = observations.find((o) => o.field === 'sourceUrls');
+    expect(sourceUrls?.value).toEqual([
+      'https://medicine.yale.edu/childstudy/faculty/',
+      'https://medicine.yale.edu/childstudy/',
+    ]);
   });
 });
 

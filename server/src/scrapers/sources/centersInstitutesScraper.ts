@@ -222,59 +222,66 @@ export const wuTsaiExtractor: CenterExtractor = (html) => {
 };
 
 /**
- * Yale Cancer Center member directory (`/cancer/research/membership/directory`).
- * 470+ members on a single page, alphabetized:
- *   <a href="/cancer/profile/<slug>/" class="hyperlink">Last, First</a>
- * Names are "Last, First" — flipped for downstream split. No title in listing.
+ * Factory for the shared medicine.yale.edu / YSM directory theme where a center's
+ * A-Z roster is a flat list of profile links under its own `/<unit>/profile/`
+ * namespace:
+ *   <a href="/<unit>/profile/<slug>/" class="hyperlink">Last, First</a>
+ * Names are "Last, First" — flipped for downstream split; no title in the listing.
+ * Scoping to the unit's own profile prefix keeps sibling nav/contact `.hyperlink`
+ * links out, and deduping by href drops the photo+name double links. This is the
+ * one place the Cancer Center, Global Health, and Child Study Center rosters (and
+ * any future YSM center on the same theme) share, so a new such center is a
+ * one-row config change rather than a copied extractor.
  */
-export const yaleCancerCenterExtractor: CenterExtractor = (html, ctx) => {
-  const $ = cheerio.load(html);
-  const members: CenterMember[] = [];
-  const seen = new Set<string>();
-  $('a[href^="/cancer/profile/"].hyperlink').each((_i, el) => {
-    const link = $(el);
-    const raw = link.text().trim();
-    if (!raw) return;
-    const href = link.attr('href') || '';
-    if (!href || seen.has(href)) return;
-    seen.add(href);
-    const flipped = flipLastFirst(raw);
-    members.push({
-      name: flipped,
-      profileUrl: absolutize(href, ctx.pageUrl),
-      role: 'core-faculty',
+export function profileHyperlinkDirectoryExtractor(
+  profilePathPrefix: string,
+  role: MemberRole = 'core-faculty',
+): CenterExtractor {
+  const selector = `a[href^="${profilePathPrefix}"].hyperlink`;
+  return (html, ctx) => {
+    const $ = cheerio.load(html);
+    const members: CenterMember[] = [];
+    const seen = new Set<string>();
+    $(selector).each((_i, el) => {
+      const link = $(el);
+      const raw = link.text().trim();
+      if (!raw) return;
+      const href = link.attr('href') || '';
+      if (!href || seen.has(href)) return;
+      seen.add(href);
+      members.push({
+        name: flipLastFirst(raw),
+        profileUrl: absolutize(href, ctx.pageUrl),
+        role,
+      });
     });
-  });
-  return { members };
-};
+    return { members };
+  };
+}
+
+/**
+ * Yale Cancer Center member directory (`/cancer/research/membership/directory`).
+ * 470+ members on a single page, alphabetized.
+ */
+export const yaleCancerCenterExtractor: CenterExtractor =
+  profileHyperlinkDirectoryExtractor('/cancer/profile/');
 
 /**
  * Yale Institute for Global Health affiliated-faculty directory
  * (`/yigh/faculty-support-initiative/affiliated-faculty/`), grouped into
  * Medicine/Nursing/Public Health/University sections, each rendering the same
- * flat list:
- *   <a href="/yigh/profile/<slug>/" class="hyperlink">Last, First</a>
- * Names are "Last, First" — flipped for downstream split. No title in listing.
+ * flat `/yigh/profile/<slug>/` list.
  */
-export const yighAffiliatedFacultyExtractor: CenterExtractor = (html, ctx) => {
-  const $ = cheerio.load(html);
-  const members: CenterMember[] = [];
-  const seen = new Set<string>();
-  $('a[href^="/yigh/profile/"].hyperlink').each((_i, el) => {
-    const link = $(el);
-    const raw = link.text().trim();
-    if (!raw) return;
-    const href = link.attr('href') || '';
-    if (!href || seen.has(href)) return;
-    seen.add(href);
-    members.push({
-      name: flipLastFirst(raw),
-      profileUrl: absolutize(href, ctx.pageUrl),
-      role: 'affiliated',
-    });
-  });
-  return { members };
-};
+export const yighAffiliatedFacultyExtractor: CenterExtractor =
+  profileHyperlinkDirectoryExtractor('/yigh/profile/', 'affiliated');
+
+/**
+ * Yale Child Study Center faculty A-Z (`/childstudy/faculty/`). A broad
+ * developmental-neuroscience / child-psychiatry roster of 500+ faculty on a
+ * single page under the `/childstudy/profile/<slug>/` namespace.
+ */
+export const childStudyCenterExtractor: CenterExtractor =
+  profileHyperlinkDirectoryExtractor('/childstudy/profile/');
 
 /**
  * Drupal "views-field" people-table layout used by both Yale Quantum Institute
@@ -848,6 +855,16 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     url: 'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
     paginated: false,
     extractor: yighAffiliatedFacultyExtractor,
+  },
+  {
+    centerKey: 'child-study-center',
+    centerName: 'Yale Child Study Center',
+    schoolName: 'Yale School of Medicine',
+    kind: 'center',
+    url: 'https://medicine.yale.edu/childstudy/faculty/',
+    homeUrl: 'https://medicine.yale.edu/childstudy/',
+    paginated: false,
+    extractor: childStudyCenterExtractor,
   },
 ];
 

@@ -23,11 +23,15 @@
  * behavior.
  *
  * Scope: this enumerates Yale's Provost-purview university-wide centers and
- * institutes (`research.yale.edu/centers-institutes`), every wired center, and
- * the highest-ROI evaluated gaps from Yale's broader comprehensive list
- * (`yale.edu/about-yale/centers-institutes`). The long tail of clinical,
- * area-studies, and single-department micro-centers on the comprehensive list is
- * intentionally not yet enumerated and is the remaining burn-down surface.
+ * institutes (`research.yale.edu/centers-institutes`), every wired center, the
+ * highest-ROI evaluated gaps from Yale's broader comprehensive list
+ * (`yale.edu/about-yale/centers-institutes`), and the highest-ROI named research
+ * centers of the Yale School of Medicine / Yale School of Public Health
+ * biomedical layer (starting with the Yale Child Study Center, #1474). The long
+ * tail of single-department clinical and area-studies micro-centers is
+ * intentionally not yet enumerated and is the remaining burn-down surface; only
+ * flagship, broad-roster, undergrad-relevant biomedical centers are pulled
+ * forward, not every clinical service unit.
  *
  * `coveredByCenterKey` is a `centerKey` from `DEFAULT_CENTER_CONFIGS`.
  */
@@ -297,6 +301,18 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
       'Wired in #1334 (Tier B) via yighAffiliatedFacultyExtractor. The affiliated-faculty directory is fully static: it groups faculty into Medicine/Nursing/Public Health/University sections, each rendering a flat list of `<a href="/yigh/profile/<slug>/" class="hyperlink">Last, First</a>` links (names flipped to First Last downstream), so no rendered fetch is needed. Each row links to the member\'s YIGH profile; the roster spans the health schools and enriches cross-department discovery.',
   },
   {
+    url: 'https://medicine.yale.edu/childstudy/faculty/',
+    centerName: 'Yale Child Study Center (YCSC)',
+    school: 'Yale School of Medicine',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 3,
+    coveredByCenterKey: 'child-study-center',
+    approxMemberCount: 540,
+    notes:
+      "Wired in #1474 as the first tranche of the YSM/YSPH named research-center layer. The faculty A-Z page is fully static: a flat `link-items-list` of `<a href=\"/childstudy/profile/<slug>/\" class=\"hyperlink\">Last, First</a>` rows (names flipped to First Last downstream), the same medicine.yale.edu directory theme as Yale Cancer Center and YIGH, so it reuses the shared profileHyperlinkDirectoryExtractor and needs no rendered fetch. The entity websiteUrl is the /childstudy/ landing page via the config homeUrl override (the roster subpage is the crawl entry point and provenance source, never persisted as the website). The broad developmental-neuroscience / child-psychiatry roster overlaps heavily with Psychiatry/Psychology/YSM home departments; the materializer resolve-or-skip gate resolves each member to their existing canonical Yale researcher and attaches the center affiliation rather than minting duplicate person entities, and non-research clinical/adjunct rows that do not resolve are dropped.",
+  },
+  {
     url: 'https://yibs.yale.edu/people/faculty-affiliates',
     centerName: 'Yale Institute for Biospheric Studies (YIBS)',
     school: '',
@@ -360,6 +376,36 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     studentImpactTier: 4,
     notes:
       'Evaluated in #1376. People page path not found under /people or /about/people; the homepage is the only verified entry point. Next step: directory-path discovery before wiring.',
+  },
+  {
+    url: 'https://medicine.yale.edu/center-clinical-investigation/about/leadership/',
+    centerName: 'Yale Center for Clinical Investigation (YCCI)',
+    school: 'Yale School of Medicine',
+    rendering: 'static',
+    status: 'evaluated-skipped',
+    studentImpactTier: 4,
+    notes:
+      'Evaluated in #1474 and skipped. YCCI is Yale\'s CTSA clinical/translational research support infrastructure; medicine.yale.edu/ycci redirects to /center-clinical-investigation/. It exposes no A-Z research-faculty roster (/people and /faculty 404); the only public people surface is /about/leadership/, a prose leadership page of administrative/service directors (regulatory, biostatistics, research-services staff), not a broad research-faculty roster a student would browse for a lab. Per the fail-closed principle for service/administrative units it stays out of student discovery until a genuine research-faculty roster page is found.',
+  },
+  {
+    url: 'https://medicine.yale.edu/cardiovascular-research-center/',
+    centerName: 'Yale Cardiovascular Research Center (YCVRC)',
+    school: 'Yale School of Medicine',
+    rendering: 'static',
+    status: 'gap',
+    studentImpactTier: 4,
+    notes:
+      'Evaluated in #1474. A genuine flagship biomedical center, but no citable public people-page path was verified: /cvrc, /cardiology, and the internal-medicine/cardiology/research paths 404 on medicine.yale.edu. Next step: discover the current landing/roster path (the center moved under a YSM Section of Cardiovascular Medicine reorg) before wiring; the members overlap heavily with Internal Medicine (Cardiology), so a resolve-or-skip roster path is the target.',
+  },
+  {
+    url: 'https://cira.yale.edu/',
+    centerName: 'Center for Interdisciplinary Research on AIDS (CIRA)',
+    school: 'Yale School of Public Health',
+    rendering: 'static',
+    status: 'gap',
+    studentImpactTier: 4,
+    notes:
+      'Evaluated in #1474. A real HIV/AIDS interdisciplinary research center, but no clean public roster path was verified: cira.yale.edu is a small standalone site whose /people path 404s, and the ysph.yale.edu/cira mirror blocks non-browser fetches (403). Next step: discover the affiliates/investigators listing (likely a rendered directory) before wiring; scope is narrower than YCSC so it is a lower-ROI follow-up.',
   },
 
   // ---- Tier 5: humanities / arts research centers ---------------------------------
