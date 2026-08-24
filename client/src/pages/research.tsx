@@ -3,6 +3,7 @@ import { isCancel } from 'axios';
 import { useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
+import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchFieldDirectory from '../components/research/ResearchFieldDirectory';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
@@ -2130,6 +2131,14 @@ const Research = () => {
                     />
                   )}
                 </section>
+                <RelatedProgramsModule
+                  query={activeSearchRequest?.searchQuery ?? ''}
+                  topicFilters={{
+                    school: activeSearchRequest?.filters?.school,
+                    departments: activeSearchRequest?.filters?.departments,
+                    researchAreas: activeSearchRequest?.filters?.researchAreas,
+                  }}
+                />
               </section>
             )}
           </div>

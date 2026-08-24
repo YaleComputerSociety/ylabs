@@ -37,10 +37,10 @@ export type ResearchJourneyPayload =
       filterCountBucket: '0' | '1' | '2' | '3+';
     }
   | {
-      surface: 'browse' | 'search' | 'saved_plans';
+      surface: 'browse' | 'search' | 'saved_plans' | 'related_programs';
       positionBucket: '1-3' | '4-10' | '11-24' | '25+';
     }
-  | { source: 'browse' | 'search' | 'direct' | 'saved_plans' }
+  | { source: 'browse' | 'search' | 'direct' | 'saved_plans' | 'related_programs' }
   | {
       sourceCategory:
         | 'entity_website'

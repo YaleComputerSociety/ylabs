@@ -26,4 +26,12 @@ export function isProgramLikeResearchEntity(entity: Record<string, unknown> | nu
   );
 }
 
-export { PROGRAM_LIKE_ENTITY_TYPES };
+/**
+ * The program/fellowship bucket surfaced by the cross-surface "Related programs
+ * & fellowships" module on `/research` (issue #1509). Course sequences are
+ * deliberately excluded: they are program-like for serve-time gating but are not
+ * the structured programs and fellowships the `/programs` catalog represents.
+ */
+const RELATED_PROGRAM_ENTITY_TYPES = ['PROGRAM', 'RA_PROGRAM', 'FELLOWSHIP_PROGRAM'] as const;
+
+export { PROGRAM_LIKE_ENTITY_TYPES, RELATED_PROGRAM_ENTITY_TYPES };

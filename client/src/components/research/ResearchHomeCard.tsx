@@ -16,6 +16,7 @@ interface ResearchHomeCardProps {
   home: ResearchCluster;
   onSelect?: (label: string) => void;
   onPreview?: (home: ResearchCluster) => void;
+  onOpen?: (home: ResearchCluster) => void;
   variant?: 'default' | 'compact';
   showAdminQuality?: boolean;
 }
@@ -87,6 +88,7 @@ const ResearchHomeCard = ({
   home,
   onSelect,
   onPreview,
+  onOpen,
   variant = 'default',
   showAdminQuality = false,
 }: ResearchHomeCardProps) => {
@@ -160,6 +162,7 @@ const ResearchHomeCard = ({
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
     if (primaryProfileUrl) {
+      onOpen?.(home);
       navigate(primaryProfileUrl);
       return;
     }
@@ -189,7 +192,10 @@ const ResearchHomeCard = ({
               <Link
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
                 className="yr-link yr-focus-ring rounded-sm"
-                onClick={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpen?.(home);
+                }}
               >
                 {home.label}
               </Link>
