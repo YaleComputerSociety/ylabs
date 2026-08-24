@@ -501,13 +501,21 @@ const predicateSupportsResearchParticipation = (clause: string, predicate: RegEx
   );
 };
 
+const OTHER_POPULATION_MENTION_PATTERN =
+  /\b(?:graduate|doctoral|ph\.?d\.?|master'?s?)\s+students?\b|\bgrad(?:uate)?\s+students?\b|\bpostdoc(?:s|toral)?\b|\bpostdoctoral\s+(?:fellows?|scholars?|researchers?|associates?|scientists?)\b|\bfaculty\b|\bstaff\b/i;
+
+const clauseIsPopulationNeutral = (clause: string): boolean =>
+  !quoteHasUndergraduatePopulation(clause) && !OTHER_POPULATION_MENTION_PATTERN.test(clause);
+
+const quoteHasUndergraduateOrNeutralPopulation = (quote: string): boolean =>
+  quoteHasUndergraduatePopulation(quote) || !OTHER_POPULATION_MENTION_PATTERN.test(quote);
+
 function quoteSupportsClaim(
   claimType: UndergraduateLogisticsClaimType,
   value: LogisticsValue,
   quote: string,
 ): boolean {
   const clauses = undergraduateClaimClauses(quote);
-  if (clauses.length === 0 && !quoteExplicitlyDeclinesUndergraduates(quote)) return false;
   if (claimType === 'STUDENT_LEVEL') {
     const levels = (value as { levels: string[] }).levels;
     const patterns: Record<string, RegExp> = {
@@ -627,19 +635,26 @@ function quoteSupportsClaim(
         /\b(?:remote|virtual)\s+(?:work\s+)?(?:is\s+)?(?:not\s+(?:available|allowed|offered)|unavailable)\b|\bno\s+(?:remote|virtual)\s+(?:work|option)\b|\b(?:students?|assistants?)\s+(?:cannot|may\s+not)\s+(?:work\s+)?(?:remotely|virtually)\b/i,
     };
     const modalityPolicy =
-      /\b(?:work|works|working|role|position|research|activities?)\b.{0,40}\b(?:in[- ]person|on[- ]site|in the lab|hybrid|remote(?:ly)?|virtual(?:ly)?)\b|\b(?:in[- ]person|on[- ]site|hybrid|remote|virtual)\s+(?:work|role|position|option|arrangement)\s+(?:is|are)\s+(?:available|offered|allowed|required)\b/i;
+      /\b(?:work|works|working|role|position|research|activities?)\b.{0,40}\b(?:in[- ]person|on[- ]site|in the lab|hybrid|remote(?:ly)?|virtual(?:ly)?)\b|\b(?:in[- ]person|on[- ]site|hybrid|remote|virtual)\s+(?:work|role|position|option|arrangement)\s+(?:is|are)\s+(?:available|offered|allowed|required)\b|\b(?:this|the|it)\s+(?:is|will\s+be)\s+(?:a\s+)?(?:fully\s+|primarily\s+|entirely\s+|mostly\s+)?(?:in[- ]person|on[- ]site|hybrid|remote(?:ly)?|virtual(?:ly)?)\s+(?:work|role|position|job|opportunity|arrangement)\b/i;
+    const modalityClauses = undergraduateClaimClauses(quote, quoteHasUndergraduateOrNeutralPopulation);
     return modes.every((mode) =>
-      clauses.some(
-        (clause) =>
-          patterns[mode]?.test(clause) &&
-          modalityPolicy.test(clause) &&
+      modalityClauses.some((clause) => {
+        if (
+          !patterns[mode]?.test(clause) ||
+          !modalityPolicy.test(clause) ||
+          !clauseIsDeclarative(clause) ||
+          clauseHasExclusionOrConditionalScope(clause) ||
+          negatedPatterns[mode]?.test(clause)
+        ) {
+          return false;
+        }
+        if (clauseIsPopulationNeutral(clause)) return true;
+        return (
           predicateGovernedByUndergraduateSubject(clause, modalityPolicy) &&
           modalityDescribesUndergraduateWork(clause, patterns[mode]) &&
-          predicateSupportsResearchParticipation(clause, modalityPolicy) &&
-          clauseIsDeclarative(clause) &&
-          !clauseHasExclusionOrConditionalScope(clause) &&
-          !negatedPatterns[mode]?.test(clause),
-      ),
+          predicateSupportsResearchParticipation(clause, modalityPolicy)
+        );
+      }),
     );
   }
 
@@ -676,9 +691,13 @@ function quoteSupportsClaim(
   const negatedAvailability =
     /\b(?:not|never)\s+(?:currently\s+|now\s+)?(?:accepting|taking|hiring|recruiting|open)\b|\bno\s+(?:longer\s+)?(?:openings?|positions?|opportunities)|\bapplications?\s+(?:are|is)\s+not\s+open\b|\b(?:positions?|roles?|opportunities)\s+(?:are|is)\s+(?:closed|filled)\b|\bunable\s+to\s+(?:accept|take|hire)\b/i;
   const openPolicy =
-    /\b(?:currently|now)\s+(?:accepting|taking|hiring|recruiting|looking\s+for|seeking)\b|\b(?:is|are)\s+recruiting\b|\bapplications?\s+(?:are\s+|is\s+)?open\b|\b(?:positions?|roles?|opportunities)\s+(?:are\s+|is\s+)?open\b|\bopen\s+(?:positions?|roles?|opportunities)\b|\b(?:accepting|taking)\s+applications?\b|\brecruiting\s+(?:now|currently)\b/i;
-  const directUndergraduateRecruitingPolicy =
-    /\b(?:lab|laboratory|section|program)(?:\s+(?:of|for)\s+[a-z][a-z\s&-]{0,60})?\s+(?:is|are)\s+(?:currently\s+)?(?:looking\s+for|seeking|recruiting)\b[^.!?;]{0,120}\b(?:undergrads?|undergraduates?|undergraduate\s+students?|undergraduate\s+student\s+body|students?\s+to\s+join\s+(?:the\s+)?undergraduate\s+research)\b/i;
+    /\b(?:currently|now|always|actively|still|continually|continuously)\s+(?:accepting|taking|hiring|recruiting|looking\s+for|seeking)\b|\b(?:is|are)\s+(?:currently\s+|actively\s+|also\s+|always\s+|still\s+)?recruiting\b|\bapplications?\s+(?:are\s+|is\s+)?open\b|\b(?:positions?|roles?|opportunities)\s+(?:are\s+|is\s+)?open\b|\bopen\s+(?:positions?|roles?|opportunities)\b|\b(?:accepting|taking)\s+applications?\b|\brecruiting\s+(?:now|currently)\b/i;
+  const RECRUITING_SUBJECT = String.raw`(?:(?:lab|laboratory|section|program|group|team)(?:\s+(?:of|for)\s+[a-z][a-z\s&-]{0,60})?|(?:the\s+)?[a-z][a-z0-9\s&'’.-]{0,60}?\s+(?:lab|laboratory|section|program|group|team)|we|our\s+(?:lab|laboratory|team|group|program))`;
+  const RECRUITING_VERB = String.raw`(?:is|are)\s+(?:currently\s+|actively\s+|also\s+|always\s+|still\s+)?(?:looking\s+for|seeking|recruiting)`;
+  const directUndergraduateRecruitingPolicy = new RegExp(
+    `\\b${RECRUITING_SUBJECT}\\s+${RECRUITING_VERB}\\b[^.!?;]{0,120}\\b(?:undergrads?|undergraduates?|undergraduate\\s+students?|undergraduate\\s+student\\s+body|students?\\s+to\\s+join\\s+(?:the\\s+)?undergraduate\\s+research)\\b`,
+    'i',
+  );
   return clauses.some(
     (clause) =>
       clauseIsDeclarative(clause) &&
