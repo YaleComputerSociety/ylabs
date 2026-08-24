@@ -878,7 +878,9 @@ describe('nodePersonCardExtractor', () => {
           <img srcset="/img/robin-fixture.jpg 1x" src="/img/robin-fixture.jpg" alt="Robin Fixture"></div></div>
         <div class="paragraph--type--title-affiliation">Professor in the Practice of Cello</div>
       </article>`;
-    expect(nodePersonCardExtractor(html, { pageUrl: 'https://music.yale.edu/meet-our-faculty' })).toEqual([
+    expect(
+      nodePersonCardExtractor(html, { pageUrl: 'https://music.yale.edu/meet-our-faculty' }),
+    ).toEqual([
       {
         name: 'Robin Fixture',
         profileUrl: 'https://music.yale.edu/people/robin-fixture',
@@ -895,7 +897,9 @@ describe('nodePersonCardExtractor', () => {
           <img srcset="/img/robin-fixture.jpg 1x" src="/img/robin-fixture.jpg"></div></div>
         <div class="paragraph--type--title-affiliation">Professor in the Practice of Cello</div>
       </article>`;
-    expect(nodePersonCardExtractor(html, { pageUrl: 'https://music.yale.edu/meet-our-faculty' })).toEqual([
+    expect(
+      nodePersonCardExtractor(html, { pageUrl: 'https://music.yale.edu/meet-our-faculty' }),
+    ).toEqual([
       {
         name: 'Robin Fixture',
         profileUrl: 'https://music.yale.edu/people/robin-fixture',

@@ -943,7 +943,9 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
     const title =
       cleanText(
         card
-          .find('.paragraph--type--title-affiliation, [class*="title-affiliation"], .field--name-field-title')
+          .find(
+            '.paragraph--type--title-affiliation, [class*="title-affiliation"], .field--name-field-title',
+          )
           .first()
           .text(),
       ) || undefined;
