@@ -1,9 +1,7 @@
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import {
-  sanitizeResearchEntityDescription,
-  sanitizeResearchEntityShortDescription,
-} from '../utils/descriptionHygiene';
+import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
+import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
@@ -80,9 +78,28 @@ const RESEARCH_ENTITY_DESCRIPTION_FIELDS = new Set([
   'profileSynthesisDescription',
 ]);
 
-function publicDescriptionString(value: unknown): string {
-  const text = String(value || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-  return sanitizeResearchEntityDescription(text);
+const SERVED_COPY_TEXT_FIELDS = [
+  'shortDescription',
+  'fullDescription',
+  'profileSynthesisDescription',
+  'summary',
+] as const;
+
+/**
+ * Run the single canonical serve-time sanitizer over an entity's copy fields so
+ * the DTO applies the full guard union (text re-voicing/relabel/fail-close plus
+ * descriptionHygiene) rather than the descriptionHygiene subset alone (#1269).
+ * Inputs are bounded to the public length cap first; the sanitizer clamps to its
+ * own sentence/word boundary after.
+ */
+function servedResearchEntityCopy(group: Record<string, any>): Record<string, any> {
+  const bounded: Record<string, any> = { ...group };
+  for (const field of SERVED_COPY_TEXT_FIELDS) {
+    if (typeof bounded[field] === 'string') {
+      bounded[field] = bounded[field].slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
+    }
+  }
+  return sanitizeServedResearchEntityCopyFields(bounded);
 }
 
 function publicShortDescriptionString(value: unknown): string {
@@ -181,9 +198,10 @@ function publicDepartmentArray(value: unknown): string[] {
 export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
+  const served = servedResearchEntityCopy(group);
   const blurbSource =
-    groundedShortDescriptionString(group.shortDescription || '', group.fullDescription) ||
-    publicDescriptionString(group.fullDescription || '');
+    groundedShortDescriptionString(served.shortDescription || '', served.fullDescription) ||
+    String(served.fullDescription || '');
   const blurb = blurbSource.slice(0, 280);
 
   return {
@@ -268,6 +286,7 @@ export function toPublicResearchEntityDto(
   const id = publicResearchEntityId(group);
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
+  const served = servedResearchEntityCopy(group);
 
   const dto: PublicResearchEntityDto = {
     _id: id,
@@ -292,11 +311,11 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (field === 'shortDescription' && typeof group[field] === 'string') {
-        dto[field] = groundedShortDescriptionString(group[field], group.fullDescription);
+        dto[field] = groundedShortDescriptionString(served.shortDescription, served.fullDescription);
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
-        dto[field] = publicDescriptionString(group[field]);
+        dto[field] = String(served[field] || '');
         continue;
       }
       if (field === 'profileResearchAreas') {
