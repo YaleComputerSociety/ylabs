@@ -83,7 +83,7 @@ export async function runNihNsfPiCenterLabConflationRepair(options: {
     kind: 'lab',
   })
     .select(
-      '_id slug name kind entityType websiteUrl fullDescription shortDescription recentGrants sourceUrls',
+      '_id slug name kind entityType websiteUrl fullDescription shortDescription researchAreas recentGrants sourceUrls',
     )
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);

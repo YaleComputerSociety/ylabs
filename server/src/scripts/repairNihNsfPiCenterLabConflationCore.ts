@@ -1,4 +1,9 @@
 import { labDescriptionFromRecentGrants } from '../scrapers/sources/nihReporterScraper';
+import {
+  buildResearchAreasCardSummary,
+  deriveShortDescriptionFromFullDescription,
+  shortDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
 
 /**
  * A grant-derived PI shell (`nih-pi-*`/`nsf-pi-*`) carries only that PI's own
@@ -25,11 +30,30 @@ export interface ConflationEntity {
   websiteUrl?: unknown;
   fullDescription?: unknown;
   shortDescription?: unknown;
+  researchAreas?: unknown;
   recentGrants?: Array<{ url?: unknown; abstract?: unknown }> | null;
   sourceUrls?: unknown;
 }
 
 const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+// A grant abstract is a full-length problem statement, not a card headline:
+// copying it verbatim into shortDescription leaves the card sparse and holds the
+// entity at missing_card_description. Ground the card in the entity's curated
+// researchAreas first (a "Studies X, Y." summary is exactly the intended card),
+// fall back to a concise sentence derived from the abstract, and fail closed to
+// '' rather than emit the abstract as a card so a regrounded lab is never served
+// a non-card short.
+export function deriveConflationCardShortDescription(
+  fullDescription: string,
+  researchAreas: unknown,
+): string {
+  const areaCard = buildResearchAreasCardSummary(researchAreas);
+  if (areaCard && shortDescriptionQuality(areaCard, fullDescription).isUseful) return areaCard;
+  const derived = deriveShortDescriptionFromFullDescription(fullDescription);
+  if (derived && shortDescriptionQuality(derived, fullDescription).isUseful) return derived;
+  return '';
+}
 
 export function isNihNsfPiCenterLabConflation(entity: ConflationEntity): boolean {
   const slug = textValue(entity.slug);
@@ -103,11 +127,18 @@ export function planNihNsfPiCenterLabConflationRepair(
 
   if (grantDescription) {
     set.fullDescription = grantDescription;
-    set.shortDescription = grantDescription;
     set['fieldProvenance.fullDescription'] = provenance(0.6);
-    set['fieldProvenance.shortDescription'] = provenance(0.6);
     set['confidenceByField.fullDescription'] = 0.6;
-    set['confidenceByField.shortDescription'] = 0.6;
+    const cardShort = deriveConflationCardShortDescription(grantDescription, entity.researchAreas);
+    if (cardShort) {
+      set.shortDescription = cardShort;
+      set['fieldProvenance.shortDescription'] = provenance(0.6);
+      set['confidenceByField.shortDescription'] = 0.6;
+    } else {
+      unset.shortDescription = '';
+      unset['fieldProvenance.shortDescription'] = '';
+      unset['confidenceByField.shortDescription'] = '';
+    }
   } else {
     unset.fullDescription = '';
     unset.shortDescription = '';
