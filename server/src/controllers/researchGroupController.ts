@@ -252,13 +252,26 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
   }
 };
 
+const OUTREACH_TEMPLATE_VERSION_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/i;
+
+const sanitizeOutreachTemplateVersion = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed && OUTREACH_TEMPLATE_VERSION_PATTERN.test(trimmed) ? trimmed : undefined;
+};
+
 export const recordResearchOutreach = async (request: Request, response: Response) => {
   const currentUser = request.user as { studentProfileId?: unknown } | undefined;
   if (!currentUser?.studentProfileId) {
     return response.status(403).json({ error: 'A student profile is required' });
   }
   try {
-    await recordResearchEntityOutreach(request.params.slug, currentUser.studentProfileId);
+    const isMailto = request.body?.deliveryMethod === 'mailto';
+    await recordResearchEntityOutreach(request.params.slug, currentUser.studentProfileId, {
+      deliveryMethod: isMailto ? 'mailto' : 'official-route',
+      emailGeneratedByPlatform: isMailto && request.body?.emailGeneratedByPlatform === true,
+      templateVersion: isMailto ? sanitizeOutreachTemplateVersion(request.body?.templateVersion) : undefined,
+    });
     return response.status(204).send();
   } catch (error: any) {
     if (error?.message === 'INVALID_OUTREACH_REQUEST') {

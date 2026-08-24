@@ -854,9 +854,46 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
-    expect(emailLink.getAttribute('href')).toBe(
-      'mailto:jordan.researcher@example.test?subject=Interest%20in%20undergraduate%20research',
+    const href = emailLink.getAttribute('href') || '';
+    expect(href.startsWith('mailto:jordan.researcher@example.test?')).toBe(true);
+    const mailto = new URL(href);
+    expect(mailto.searchParams.get('subject')).toBe(
+      `Interest in undergraduate research with ${DEFAULT_ENTITY_NAME}`,
     );
+    const body = mailto.searchParams.get('body') || '';
+    expect(body).toContain('Dear Jordan Researcher,');
+    expect(body).toContain(DEFAULT_ENTITY_NAME);
+    expect(body).toContain('Neuroscience');
+  });
+
+  it('records a scaffolded mailto outreach attempt without blocking the email link', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 204 });
+    renderLabDetail({
+      ...basePayload,
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
+    fireEvent.click(emailLink);
+
+    expect(mockedAxios.post).toHaveBeenCalledWith(`/research/${DEFAULT_SLUG}/outreach`, {
+      deliveryMethod: 'mailto',
+      emailGeneratedByPlatform: true,
+      templateVersion: 'student-intro-v1',
+    });
   });
 
   it('keeps multiple PI cards together in a dedicated pluralized section', async () => {
