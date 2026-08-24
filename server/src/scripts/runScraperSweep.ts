@@ -47,6 +47,7 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'dh-lab-projects', phase: 'discovery' },
   { name: 'nih-reporter', phase: 'funding' },
   { name: 'nsf-award-search', phase: 'funding' },
+  { name: 'neh-funded-projects', phase: 'funding' },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
   { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
