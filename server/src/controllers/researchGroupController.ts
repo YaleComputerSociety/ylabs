@@ -15,6 +15,7 @@ import {
   type ResearchGroupQualityFilter,
   ResearchGroupSearchSort,
 } from '../services/researchGroupService';
+import { getResearcherProfileByPublicKey } from '../services/researcherProfileService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
 import { RELATED_PROGRAM_ENTITY_TYPES } from '../utils/researchEntityProgramLike';
 import {
@@ -338,6 +339,33 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     }
     console.error('ResearchEntity detail failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Failed to fetch research entity' });
+  }
+};
+
+const MAX_PERSON_PUBLIC_KEY_LENGTH = 200;
+const PERSON_PUBLIC_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,199}$/i;
+
+export const getResearcherProfile = async (request: Request, response: Response) => {
+  try {
+    const rawPublicKey = request.params.publicKey;
+    if (
+      !rawPublicKey ||
+      typeof rawPublicKey !== 'string' ||
+      rawPublicKey.length > MAX_PERSON_PUBLIC_KEY_LENGTH ||
+      !PERSON_PUBLIC_KEY_PATTERN.test(rawPublicKey)
+    ) {
+      return response.status(400).json({ error: 'Invalid researcher key' });
+    }
+
+    const profile = await getResearcherProfileByPublicKey(rawPublicKey);
+    if (!profile) {
+      return response.status(404).json({ error: 'Researcher not found' });
+    }
+
+    return response.status(200).json(profile);
+  } catch (error) {
+    console.error('Researcher profile failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Failed to fetch researcher profile' });
   }
 };
 

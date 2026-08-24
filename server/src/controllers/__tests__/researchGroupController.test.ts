@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   resolveArchivedResearchEntityCanonicalSlug: vi.fn(),
   recordResearchEntityOutreach: vi.fn(),
   getStudentResearchInterests: vi.fn(),
+  getResearcherProfileByPublicKey: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -21,6 +22,10 @@ vi.mock('../../services/researchGroupService', () => ({
   recordResearchEntityOutreach: mocks.recordResearchEntityOutreach,
 }));
 
+vi.mock('../../services/researcherProfileService', () => ({
+  getResearcherProfileByPublicKey: mocks.getResearcherProfileByPublicKey,
+}));
+
 vi.mock('../../services/adminGrantService', () => ({
   hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
@@ -31,6 +36,7 @@ vi.mock('../../services/studentInterestProfileService', () => ({
 
 import {
   getResearchGroupBySlug,
+  getResearcherProfile,
   recordResearchOutreach,
   searchRelatedPrograms,
   searchResearchGroups,
@@ -464,5 +470,53 @@ describe('researchGroupController', () => {
 
     expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({ error: 'No approved outreach route is available' });
+  });
+
+  describe('getResearcherProfile', () => {
+    it('rejects malformed researcher keys before service work', async () => {
+      const req = { params: { publicKey: '../secret' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearcherProfile(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mocks.getResearcherProfileByPublicKey).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the key resolves to no student-visible homes', async () => {
+      mocks.getResearcherProfileByPublicKey.mockResolvedValue(null);
+      const req = { params: { publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6-pi' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearcherProfile(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Researcher not found' });
+    });
+
+    it('serves the aggregated researcher profile', async () => {
+      const profile = { publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6-pi', displayName: 'Dr X', homes: [] };
+      mocks.getResearcherProfileByPublicKey.mockResolvedValue(profile);
+      const req = { params: { publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6-pi' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearcherProfile(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(profile);
+    });
+
+    it('does not leak internal service errors', async () => {
+      mocks.getResearcherProfileByPublicKey.mockRejectedValue(
+        new Error('mongodb://user:pass@example.invalid researcher lookup failed'),
+      );
+      const req = { params: { publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6-pi' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearcherProfile(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
+    });
   });
 });

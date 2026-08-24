@@ -43,6 +43,12 @@ router.get(
 );
 
 router.get(
+  '/person/:publicKey',
+  isAuthenticated,
+  asyncHandler(researchGroupController.getResearcherProfile),
+);
+
+router.get(
   '/:slug',
   isAuthenticated,
   asyncHandler(researchGroupController.getResearchGroupBySlug),

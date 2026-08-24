@@ -46,6 +46,7 @@ import {
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
 import { composeStudentIntroEmailDraft } from '../utils/introEmailComposer';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
+import { researcherPersonPagePath } from '../utils/researcherPersonPage';
 import { formatTitleCaseLabel } from '../utils/displayText';
 import {
   computeAcceptanceVerdict,
@@ -704,6 +705,7 @@ const DecisionSummary = ({
                   singleColumn
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={() => leadCardProfileUrl}
+                  resolvePersonHref={(member) => researcherPersonPagePath(member.user.publicKey)}
                 />
               </div>
             </div>
@@ -1090,6 +1092,8 @@ const LabDetail = () => {
     leadIdentityUnderReview || principalInvestigators.length !== 1;
   const resolveLeadOfficialProfileUrl = (member: LabMember): string | undefined =>
     officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>);
+  const resolveMemberPersonHref = (member: LabMember): string | undefined =>
+    researcherPersonPagePath(member.user.publicKey);
   const leadProfilesLinkedInline =
     showDedicatedPrincipalInvestigatorSection &&
     !leadIdentityUnderReview &&
@@ -1236,6 +1240,7 @@ const LabDetail = () => {
                   members={principalInvestigators}
                   entityDepartments={group.departments}
                   resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
+                  resolvePersonHref={resolveMemberPersonHref}
                 />
               )}
             </section>
