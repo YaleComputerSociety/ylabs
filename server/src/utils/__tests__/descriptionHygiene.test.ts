@@ -30,6 +30,7 @@ import {
   isRosterShapedText,
   isStudiesResearchAreaEchoDescription,
   isStaffContactBlockText,
+  MAX_SHORT_DESCRIPTION_LENGTH,
   MID_SENTENCE_TRUNCATION_MIN_LENGTH,
   partitionSentencesLossless,
   repairMidSentenceTruncation,
@@ -2675,5 +2676,20 @@ describe('descriptionHygiene contentless research-projects boilerplate fail-clos
 
   it('keeps a specific research description', () => {
     expect(sanitizeResearchEntityDescription(SPECIFIC)).toBe(SPECIFIC);
+  });
+});
+
+describe('sanitizeResearchEntityShortDescription length cap (#1745)', () => {
+  it('clamps a full CV essay promoted verbatim into a card blurb', () => {
+    const sentence = 'Studies music theory and its historical development in American song. ';
+    const cvEssay = sentence.repeat(30);
+    const cleaned = sanitizeResearchEntityShortDescription(cvEssay);
+    expect(cleaned.length).toBeLessThanOrEqual(MAX_SHORT_DESCRIPTION_LENGTH);
+    expect(cleaned.endsWith('.')).toBe(true);
+  });
+
+  it('leaves an ordinary card blurb under the cap untouched', () => {
+    const clean = 'Studies coral reef resilience under ocean acidification.';
+    expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
   });
 });

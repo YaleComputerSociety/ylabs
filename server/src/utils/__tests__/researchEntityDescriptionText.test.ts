@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isAcademicAppointmentDescription,
+  isCredentialOrAwardLeadBiography,
   isCredentialOrTitleLeadBiography,
   isDeceasedOrEmeritusLeadBiography,
   isDirectoryIndexChromeText,
@@ -662,6 +663,70 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       'She is excited to be the inaugural director of a research program space for open collaboration among practitioners and policymakers.',
     );
   });
+
+  it('blanks a first-person department-appointment opener on a LAB entity with no research content (#1745)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'I am an Instructor in the Department of Medicine, Section of Infectious Diseases.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
+  it('blanks a name-lead degree-receipt CV opener on a FACULTY_RESEARCH_AREA entity with no research content (#1745)', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'Robin Fixture received her PhD in Linguistics from the University of Pennsylvania in 1991.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
+  it('blanks a pronoun-lead awards/fellowship CV opener on a FACULTY_RESEARCH_AREA entity with no research content (#1745)', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'He has received the Best Economics PhD Advisor Award at Yale University in 2022 and 2023, and was a runner-up in 2024. Fixture is a fellow of the Econometric Society and has received several prestigious awards.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
+  it('strips only a degree-receipt opener, keeping surviving research content (#1745)', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'Robin Fixture received her PhD in Linguistics from the University of Pennsylvania in 1991. Her research examines syntactic variation in Romance languages.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toBe(
+      'Her research examines syntactic variation in Romance languages.',
+    );
+  });
+
+  it('does not blank a first-person specialization lead with no department anchor (#1745)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'I am a physician-scientist with specialized training in immunology, molecular biology, genetics, and clinical dermatology.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      'This researcher is a physician-scientist with specialized training in immunology, molecular biology, genetics, and clinical dermatology.',
+    );
+  });
 });
 
 describe('isDeceasedOrEmeritusLeadBiography', () => {
@@ -749,6 +814,59 @@ describe('isCredentialOrTitleLeadBiography', () => {
   });
 });
 
+describe('isCredentialOrAwardLeadBiography (#1745)', () => {
+  it('flags a name-lead degree-receipt CV line', () => {
+    expect(
+      isCredentialOrAwardLeadBiography(
+        'Robin Fixture received her PhD in Linguistics from the University of Pennsylvania in 1991.',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a possessive name-lead degree-list CV line', () => {
+    expect(
+      isCredentialOrAwardLeadBiography(
+        "Dr. Fixture's received degrees from UCLA, the University of Notre Dame and the University of Oklahoma.",
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a pronoun-lead awards/fellowship credential opener', () => {
+    expect(
+      isCredentialOrAwardLeadBiography(
+        'He has received the Best Economics PhD Advisor Award at Yale University in 2022 and 2023, and was a runner-up in 2024.',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a first-person appointment lead anchored to a department', () => {
+    expect(
+      isCredentialOrAwardLeadBiography(
+        'I am an Instructor in the Department of Medicine, Section of Infectious Diseases.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag a first-person specialization lead with no department anchor', () => {
+    expect(
+      isCredentialOrAwardLeadBiography(
+        'I am a physician-scientist with specialized training in immunology, molecular biology, genetics, and clinical dermatology.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag ordinary research prose with no credential/award lead', () => {
+    expect(
+      isCredentialOrAwardLeadBiography('Studies the mechanics of soft robotic materials.'),
+    ).toBe(false);
+  });
+
+  it('returns false for blank input', () => {
+    expect(isCredentialOrAwardLeadBiography('')).toBe(false);
+    expect(isCredentialOrAwardLeadBiography(undefined)).toBe(false);
+  });
+});
+
 describe('revoiceFirstPersonResearchLead', () => {
   it('re-voices a bare first-person bio opener to third person', () => {
     expect(
@@ -812,6 +930,32 @@ describe('revoiceFirstPersonResearchLead', () => {
     expect(
       revoiceFirstPersonResearchLead('We investigate the brain changes in movement disorders.'),
     ).toBe('This group investigates the brain changes in movement disorders.');
+  });
+
+  it('re-voices a residual "I <verb>" clause mid-sentence, lower-cased (#1745)', () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'This primary research focus is mechanisms of disease. In particular, I am interested in the role of a specific pathway.',
+      ),
+    ).toBe(
+      'This primary research focus is mechanisms of disease. In particular, this researcher is interested in the role of a specific pathway.',
+    );
+  });
+
+  it('re-voices a residual "I have <verb>" clause regardless of sentence position (#1745)', () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Since 1996 I have worked and partnered with public health systems. I have also taught seminars on epidemiology.',
+      ),
+    ).toBe(
+      'Since 1996 this researcher has worked and partnered with public health systems. This researcher has also taught seminars on epidemiology.',
+    );
+  });
+
+  it('re-voices "I\'m"/"I\'ve" contractions, capitalized only at a true sentence start (#1745)', () => {
+    expect(revoiceFirstPersonResearchLead("I'm a chemist, and I've published widely on catalysis.")).toBe(
+      "This researcher is a chemist, and this researcher has published widely on catalysis.",
+    );
   });
 
   it('drops a leading personal-page greeting only when substantive copy remains', () => {

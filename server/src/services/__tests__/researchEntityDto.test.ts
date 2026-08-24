@@ -5,6 +5,7 @@ import {
   toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
 } from '../researchEntityDto';
+import { MAX_SHORT_DESCRIPTION_LENGTH } from '../../utils/descriptionHygiene';
 
 describe('researchEntityDto', () => {
   it('strips YSM profile chrome from the served shortDescription without dropping the prose', () => {
@@ -511,7 +512,7 @@ describe('researchEntityDto', () => {
       { includeOperatorFields: true },
     );
 
-    expect(dto.shortDescription).toHaveLength(5000);
+    expect(dto.shortDescription).toBe(`${'X'.repeat(MAX_SHORT_DESCRIPTION_LENGTH)}…`);
     expect(dto.researchAreas).toHaveLength(100);
     expect(dto.sourceUrls).toHaveLength(50);
     expect((dto.planningContext as any).reasons).toHaveLength(100);

@@ -393,6 +393,53 @@ export function isCredentialOrTitleLeadBiography(value: unknown): boolean {
   return NAME_LEAD_TITLE_PATTERN.test(opening) || GRADUATE_OF_LEAD_PATTERN.test(opening);
 }
 
+const DEGREE_ABBREVIATION_ALTERNATION =
+  '(?:Ph\\.?D\\.?|M\\.?D\\.?|B\\.?A\\.?|M\\.?A\\.?|M\\.?S\\.?|M\\.?B\\.?A\\.?|Ed\\.?D\\.?|J\\.?D\\.?|degrees?)';
+
+/**
+ * A name-lead opener whose whole sentence is a degree-receipt CV line rather
+ * than research prose ("Raffaella Zanuttini received her PhD in Linguistics
+ * from..."; "Dr. Mamula's received degrees from UCLA, ..."), served verbatim
+ * as the description with zero research content (#1745).
+ */
+const DEGREE_RECEIPT_LEAD_PATTERN = new RegExp(
+  `^(?:Dr\\.\\s+)?[A-Z][\\p{L}.'’-]+(?:\\s+[A-Z][\\p{L}.'’-]+){0,3}(?:['’]s)?\\s+received\\s+(?:(?:her|his|their)\\s+)?${DEGREE_ABBREVIATION_ALTERNATION}\\b`,
+  'u',
+);
+
+/**
+ * A pronoun- or name-lead awards/fellowship credential opener with no
+ * research content ("He has received the Best Economics PhD Advisor Award
+ * ..."; "Zilibotti is a fellow of the Econometric Society..."), the
+ * third-person sibling of the first-person advising note (#1745).
+ */
+const PRONOUN_CREDENTIAL_LEAD_PATTERN =
+  /^(?:He|She|They)\s+(?:has|have)\s+(?:received|earned|been\s+recognized)\b/iu;
+
+/**
+ * A first-person appointment/title opener ("I am an Instructor in the
+ * Department of Medicine, Section of Infectious Diseases...") that the
+ * researcher-voice revoicer converts to third person but that carries no
+ * research content on its own - the first-person sibling of
+ * `NAME_LEAD_TITLE_PATTERN` (#1745). Requires the title to be anchored to an
+ * organizational unit ("in/at/of the Department/Division/..."), not just any
+ * self-description containing a title-shaped word, so a genuine specialization
+ * lead like "I am a physician-scientist with specialized training in
+ * immunology..." is left for the ordinary revoicer rather than blanked (#964).
+ */
+const FIRST_PERSON_TITLE_LEAD_PATTERN =
+  /^I\s+am\s+(?:(?:the|an?)\s+)?[\p{L}\s,/-]{0,40}\b(?:Professor|Instructor|Lecturer|Director|Fellow|Attending)\b\s+(?:in|at|of)\s+the\s+(?:Department|Division|Section|School|Center|Centre|Office|Program)\b/iu;
+
+export function isCredentialOrAwardLeadBiography(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+  return (
+    DEGREE_RECEIPT_LEAD_PATTERN.test(cleaned) ||
+    PRONOUN_CREDENTIAL_LEAD_PATTERN.test(cleaned) ||
+    FIRST_PERSON_TITLE_LEAD_PATTERN.test(cleaned)
+  );
+}
+
 export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
@@ -419,7 +466,10 @@ function firstBiographyOpenerMatch(value: string, allowLabCredentialPatterns: bo
     value.match(PERSON_BIOGRAPHY_OPENER_PATTERN) ||
     (allowLabCredentialPatterns
       ? value.match(NAME_LEAD_TITLE_PATTERN) || value.match(GRADUATE_OF_LEAD_PATTERN)
-      : null)
+      : null) ||
+    value.match(DEGREE_RECEIPT_LEAD_PATTERN) ||
+    value.match(PRONOUN_CREDENTIAL_LEAD_PATTERN) ||
+    value.match(FIRST_PERSON_TITLE_LEAD_PATTERN)
   );
 }
 
@@ -615,21 +665,41 @@ function pluralAwareDemonstrative(noun: string): string {
   return /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun) ? 'These' : 'This';
 }
 
-const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
-  readonly [RegExp, string | ((...groups: string[]) => string)]
-> = [
-  [/(^|[.!?]\s+)(?:I\s+am|I['’]m)\s+(an?|the)\s+/gi, '$1This researcher is $2 '],
+/**
+ * True when `offset` in `full` sits at the very start of the string or right
+ * after a sentence-ending punctuation mark, vs. mid-sentence (e.g. after a
+ * clause-introducing comma: "In particular, I am interested..."). The
+ * subject-pronoun revoice rules below match `I`/`We` regardless of position
+ * (#1745: a residual "I am" mid-sentence survived because the original rules
+ * only matched at a sentence boundary), so the replacement's capitalization
+ * has to be decided from this rather than baked into the pattern.
+ */
+function isAtSentenceStart(offset: number, full: string): boolean {
+  if (offset === 0) return true;
+  const precedingChar = full.slice(0, offset).trimEnd().slice(-1);
+  return precedingChar === '' || /[.!?]/.test(precedingChar);
+}
+
+const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string | ((...args: any[]) => string)]> = [
+  [
+    /\bI['’]m\b/g,
+    (_match: string, offset: number, full: string) =>
+      isAtSentenceStart(offset, full) ? 'This researcher is' : 'this researcher is',
+  ],
+  [
+    /\bI['’]ve\b/g,
+    (_match: string, offset: number, full: string) =>
+      isAtSentenceStart(offset, full) ? 'This researcher has' : 'this researcher has',
+  ],
   [/(^|[.!?]\s+)(?:My|Our)\s+careers?\b/gi, "$1This researcher's career"],
   [/(^|[.!?]\s+)(?:My|Our)\s+group\b/gi, '$1This research group'],
   [
-    new RegExp(`(^|[.!?]\\s+)We\\s+(${FIRST_PERSON_VERB_ALTERNATION})\\b`, 'g'),
-    (_match: string, lead: string, verb: string) =>
-      `${lead}This group ${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`,
-  ],
-  [
-    new RegExp(`(^|[.!?]\\s+)I\\s+(${FIRST_PERSON_VERB_ALTERNATION})\\b`, 'g'),
-    (_match: string, lead: string, verb: string) =>
-      `${lead}This researcher ${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`,
+    new RegExp(`\\b(I|We)\\s+(${FIRST_PERSON_VERB_ALTERNATION})\\b`, 'g'),
+    (_match: string, subject: string, verb: string, offset: number, full: string) => {
+      const demonstrative = isAtSentenceStart(offset, full) ? 'This' : 'this';
+      const noun = subject === 'We' ? 'group' : 'researcher';
+      return `${demonstrative} ${noun} ${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`;
+    },
   ],
   [
     /(^|[.!?]\s+)(?:My|Our)\s+(\w+)\b/g,
@@ -674,7 +744,16 @@ export function repairBiographyOrDeceasedEmeritusLead(
   const shouldGuard = rejectPersonBiography || isFacultyResearchTextEntity(entity) || isLabEntity;
   const deceasedOrEmeritusLead = isLabEntity && isDeceasedOrEmeritusLeadBiography(text);
   const credentialLead = isLabEntity && isCredentialOrTitleLeadBiography(text);
-  if (!shouldGuard || !(isPersonBiographyOrAdvisingDescription(text) || deceasedOrEmeritusLead || credentialLead)) {
+  const credentialOrAwardLead = shouldGuard && isCredentialOrAwardLeadBiography(text);
+  if (
+    !shouldGuard ||
+    !(
+      isPersonBiographyOrAdvisingDescription(text) ||
+      deceasedOrEmeritusLead ||
+      credentialLead ||
+      credentialOrAwardLead
+    )
+  ) {
     return { changed: false, value: text };
   }
   const repaired = deceasedOrEmeritusLead
