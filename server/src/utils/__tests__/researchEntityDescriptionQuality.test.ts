@@ -1154,6 +1154,25 @@ describe('shortDescriptionQuality Studies-template glue guard (#978)', () => {
   });
 });
 
+describe('shortDescriptionQuality non-self-contained pronoun-opener gate parity (#1518)', () => {
+  it('marks a bare third-person pronoun-opener short as not useful', () => {
+    const quality = shortDescriptionQuality(
+      'She conducted her post doctoral studies here at Yale where she became faculty in 2000.',
+      '',
+    );
+    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).toContain('non-self-contained');
+  });
+
+  it('keeps a genuine third-person research summary useful', () => {
+    const quality = shortDescriptionQuality(
+      'The lab studies cardiovascular development in zebrafish embryos.',
+      'The lab studies cardiovascular development in zebrafish embryos using live imaging.',
+    );
+    expect(quality.flags).not.toContain('non-self-contained');
+  });
+});
+
 describe('programCardShortDescriptionQuality (#1425)', () => {
   it('accepts a program description verbatim even though it does not open with a research verb', () => {
     const full =
