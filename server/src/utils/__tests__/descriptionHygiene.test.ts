@@ -30,6 +30,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
+  stripBibliographicReferenceArtifacts,
   stripCatalogChrome,
   stripDeadAnchorCtaSentences,
   stripLeadingAdministrativeLocationSentences,
@@ -1822,5 +1823,86 @@ describe('descriptionHygiene trailing source-layout label section strip (#1249)'
 
   it('is applied through the served short-description sanitizer', () => {
     expect(sanitizeResearchEntityShortDescription(YSM_LABEL_DUMP)).toBe(YSM_CLEAN);
+  });
+});
+
+describe('descriptionHygiene bibliographic-reference artifact strip (#415)', () => {
+  it('drops a trailing "available at <url> for reference" pointer sentence', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The lab studies retinal degeneration and gene therapy. ' +
+          'Full text available at https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1234567/ for reference.',
+      ),
+    ).toBe('The lab studies retinal degeneration and gene therapy.');
+  });
+
+  it('drops a "See PMC.../PMID: ... for details" pointer sentence', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Investigates neural circuits underlying memory. See PMC7654321 and PMID: 33456789 for details.',
+      ),
+    ).toBe('Investigates neural circuits underlying memory.');
+  });
+
+  it('drops a "More at <www-url> for details" pointer sentence', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Focuses on climate modeling and ocean dynamics. More at www.example-lab.yale.edu for details.',
+      ),
+    ).toBe('Focuses on climate modeling and ocean dynamics.');
+  });
+
+  it('removes a subdomain host in full, not just the registrable domain', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Studies gene therapy for retinal disease. Learn more at lab.yale.edu.',
+      ),
+    ).toBe('Studies gene therapy for retinal disease.');
+  });
+
+  it('collapses a sentence that is nothing but a reference pointer to empty', () => {
+    expect(stripBibliographicReferenceArtifacts('See PMC7654321 for details.')).toBe('');
+    expect(
+      stripBibliographicReferenceArtifacts('Details at doi:10.1000/xyz123 and PMID 12345678.'),
+    ).toBe('');
+  });
+
+  it('keeps a substantive sentence that carries an inline url, dropping only the url', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The Smith Lab studies gene regulation and shares open protocols at protocols.io with the wider community.',
+      ),
+    ).toBe('The Smith Lab studies gene regulation and shares open protocols with the wider community.');
+  });
+
+  it('is a no-op on genuine prose with abbreviations and inequalities', () => {
+    for (const clean of [
+      'Studies immune cell signaling and inflammation.',
+      'Studies U.S. foreign policy and international relations in the postwar era.',
+      'We study C. elegans development and neuronal wiring across the lifespan.',
+      'Studies signaling pathways, e.g. MAPK and PI3K, in cancer cells.',
+      'We study regimes where the rate expression < 0.05 dominates and yields > 100 units accumulate.',
+    ]) {
+      expect(stripBibliographicReferenceArtifacts(clean)).toBe(clean);
+    }
+  });
+
+  it('does not clip an email domain (redacted separately upstream)', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Contact the lab at grants@example.edu for opportunities and mentoring here.',
+      ),
+    ).toBe('Contact the lab at grants@example.edu for opportunities and mentoring here.');
+  });
+
+  it('cleans the artifact through the research-entity full and short sanitizers', () => {
+    const stored =
+      'Investigates neural circuits underlying memory. See PMC7654321 and PMID: 33456789 for details.';
+    expect(sanitizeResearchEntityDescription(stored)).toBe(
+      'Investigates neural circuits underlying memory.',
+    );
+    expect(sanitizeResearchEntityShortDescription(stored)).toBe(
+      'Investigates neural circuits underlying memory.',
+    );
   });
 });
