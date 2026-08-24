@@ -75,6 +75,10 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
+import {
+  personProfileSourceMatchesEntity,
+  type ResearchEntityIdentity,
+} from './utils/personProfileEntityMatch';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -314,9 +318,10 @@ export function materializedFieldValue(
   field: string,
   value: unknown,
   existingValue?: unknown,
+  entityIdentity?: ResearchEntityIdentity,
 ): unknown {
   if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
-    return sanitizeResearchEntitySourceUrlsForMaterialization(value);
+    return sanitizeResearchEntitySourceUrlsForMaterialization(value, entityIdentity);
   }
   if (isResearchEntityObservationType(entityType) && field === 'kind') {
     return typeof value === 'string' && researchGroupKinds.includes(value as any)
@@ -498,13 +503,16 @@ export function isResearchEntityContentPageSourceUrl(value: unknown): boolean {
   }
 }
 
-export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknown): unknown {
+export function sanitizeResearchEntitySourceUrlsForMaterialization(
+  value: unknown,
+  entityIdentity?: ResearchEntityIdentity,
+): unknown {
   const asArray = Array.isArray(value)
     ? value
     : typeof value === 'string' && value.trim()
       ? [value]
       : [];
-  return asArray.filter(
+  const kept = asArray.filter(
     (url) =>
       typeof url === 'string' &&
       url.trim() &&
@@ -514,6 +522,9 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknow
       !isFacetedOrSectionIndexUrl(url) &&
       !isBoilerplatePlatformHostUrl(url),
   );
+  if (!entityIdentity) return kept;
+  const entityForMatch: ResearchEntityIdentity = { ...entityIdentity, sourceUrls: kept as string[] };
+  return kept.filter((url) => personProfileSourceMatchesEntity(url, entityForMatch));
 }
 
 const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
@@ -2243,6 +2254,20 @@ export async function materializeEntity(
   const confidenceByField: Record<string, number> = {
     ...(entityDoc?.confidenceByField || {}),
   };
+  const sourceEntityIdentity: ResearchEntityIdentity | undefined = isResearchEntityObservationType(
+    entityType,
+  )
+    ? {
+        slug: entityDoc?.slug,
+        name: entityDoc?.name,
+        displayName: entityDoc?.displayName,
+        school: entityDoc?.school,
+        schools: entityDoc?.schools,
+        departments: entityDoc?.departments,
+        fullDescription: entityDoc?.fullDescription,
+        recentGrants: entityDoc?.recentGrants,
+      }
+    : undefined;
   let conflicts = 0;
   let fieldsWritten = 0;
   for (const [field, r] of Object.entries(resolved)) {
@@ -2255,7 +2280,13 @@ export async function materializeEntity(
     ) {
       continue;
     }
-    set[field] = materializedFieldValue(entityType, field, nextValue, entityDoc?.[field]);
+    set[field] = materializedFieldValue(
+      entityType,
+      field,
+      nextValue,
+      entityDoc?.[field],
+      sourceEntityIdentity,
+    );
     confidenceByField[field] = r.confidence;
     if (isResearchEntityObservationType(entityType)) {
       const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);

@@ -380,6 +380,30 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toEqual(['https://research.yale.edu/cores/keck-microarray']);
   });
 
+  it('drops a wrong-person Yale profile URL when the entity identity is known (#1301)', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization(
+        [
+          'https://medicine.yale.edu/profile/david-song/',
+          'https://jackson.yale.edu/person/david-simon/',
+        ],
+        { slug: 'simon-lab-djs69', name: 'Simon Lab' },
+      ),
+    ).toEqual(['https://jackson.yale.edu/person/david-simon/']);
+  });
+
+  it('keeps every source URL when no entity identity is supplied', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://medicine.yale.edu/profile/david-song/',
+        'https://jackson.yale.edu/person/david-simon/',
+      ]),
+    ).toEqual([
+      'https://medicine.yale.edu/profile/david-song/',
+      'https://jackson.yale.edu/person/david-simon/',
+    ]);
+  });
+
   it('ignores official-profile bio observations that are address or page chrome', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {
