@@ -262,8 +262,13 @@ export async function resolveGroundedCardDescription(
   input: ResolveGroundedCardInput,
 ): Promise<string> {
   if (input.isProgramLike) {
-    const programDerived = deriveProgramCardShortDescription(input.fullDescription);
-    if (programDerived) return programDerived;
+    // A program/fellowship/RA-program offers or funds rather than researches, so
+    // the lab-voice "Studies <topic>" fallbacks below - and the LLM synthesizer,
+    // whose prompt hardcodes that same researcher-voice - do not apply: they
+    // mis-frame the funding vehicle as the one doing the studying (issue #1555).
+    // A program with no self-contained offer sentence in its own prose is left
+    // with a blank short rather than a mis-framed one.
+    return deriveProgramCardShortDescription(input.fullDescription);
   }
   const derived = deriveShortDescriptionFromFullDescription(input.fullDescription);
   if (derived && shortDescriptionQuality(derived, input.fullDescription).isUseful) {
