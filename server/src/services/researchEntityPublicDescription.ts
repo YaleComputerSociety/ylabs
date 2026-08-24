@@ -14,6 +14,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
+import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 
 export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
@@ -73,12 +74,30 @@ export function buildResearchEntityPublicDescriptionRepresentation({
         .filter(Boolean),
     ),
   );
-  const sanitizedEntity = sanitizeResearchHomeSelfReferenceCopyFields(
+  const sanitizedSourceEntity = sanitizeResearchHomeSelfReferenceCopyFields(
     sanitizeFacultyResearchEntityCopyFields(
       sanitizeResearchEntityPublicDescriptionFields(entity, resolvedLeadMemberNames),
       resolvedLeadMemberNames,
     ),
   );
+  // A shortDescription synthesized independently of fullDescription can fail
+  // hygiene (a dangling pronoun opener, an artwork-commentary chrome prefix)
+  // or reduce to empty on a par with fullDescription's own richer content
+  // (#1506). Resolve it from the entity's own fullDescription before quality
+  // assessment so the card served here - and the invariant computed below -
+  // both reflect the corrected value rather than the independently-synthesized
+  // one. The sanitize helpers above return the input entity by reference when
+  // they change nothing, so build a fresh object here rather than assigning in
+  // place: mutating the resolved short onto a shared reference corrupts the
+  // caller's stored entity (e.g. the repair queue's own backfill diagnosis).
+  const sanitizedEntity: Record<string, any> = {
+    ...sanitizedSourceEntity,
+    shortDescription: resolveServedShortDescription({
+      shortDescription: sanitizedSourceEntity.shortDescription,
+      fullDescription: sanitizedSourceEntity.fullDescription,
+      researchAreas: sanitizedSourceEntity.researchAreas,
+    }),
+  };
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,

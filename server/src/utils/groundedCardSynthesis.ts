@@ -8,6 +8,7 @@ import {
   isVacuousGenericFocusSummary,
   shortDescriptionQuality,
 } from './researchEntityDescriptionQuality';
+import { sanitizeResearchEntityShortDescription } from './descriptionHygiene';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-4o-mini';
 export const MIN_CARD_GROUNDING = 0.9;
@@ -151,6 +152,47 @@ export function isUngroundedSynthesizedCard(
   if (!SYNTHESIS_CARD_LEAD_PATTERN.test(card)) return false;
   if (distinctiveCardTokens(card).length === 0) return false;
   return !isCardGroundedInFullDescription(card, full);
+}
+
+export interface ResolveServedShortDescriptionInput {
+  shortDescription: unknown;
+  fullDescription: unknown;
+  researchAreas?: unknown;
+}
+
+/**
+ * The single served-copy resolution for shortDescription (#1506): sanitize
+ * (dropping a dangling-pronoun opener or artwork-chrome prefix per the
+ * hygiene checks above, alongside the existing echo/first-person/synthesis-
+ * glue checks), and when nothing survives, derive a fresh short from the
+ * entity's own (already-quality-gated, then re-sanitized so a derived
+ * pronoun-subject opener is caught too) fullDescription rather than serving
+ * an empty card, falling back to a researchAreas summary when no
+ * fullDescription-derived short clears quality either. Deliberately does NOT
+ * use `isUngroundedSynthesizedCard` or a general topic-grounding check here:
+ * a >=0.9 full-text grounding bar is tuned for freshly LLM-synthesized cards
+ * and produced dozens of false positives when applied to arbitrary
+ * already-served shorts in a live-corpus dry run (e.g. blanking a perfectly
+ * good "Studies econometrics, financial economics, ..." because a rambling
+ * bio never repeats those exact words); a strict zero-overlap variant avoided
+ * that false-positive class but, checked against the full live corpus,
+ * caught nothing beyond what the other checks here already catch and still
+ * missed the one confirmed wrong-entity graft (`cohen-lab-cohenls`, which
+ * shares one incidental token - "physiology" - with its correct
+ * cardiovascular full description). A wrong-entity topic graft needs either
+ * a semantic check or a much larger tuning corpus than a single PR affords,
+ * so `cohen-lab-cohenls` is fixed as a one-off data correction instead.
+ */
+export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
+  const full = textValue(input.fullDescription);
+  const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
+  const cleaned = sanitizeResearchEntityShortDescription(textValue(input.shortDescription));
+  if (cleaned) return cleaned;
+
+  const derived = sanitizeResearchEntityShortDescription(deriveShortDescriptionFromFullDescription(full));
+  if (derived && shortDescriptionQuality(derived, full).isUseful) return derived;
+
+  return buildResearchAreasCardSummary(researchAreas);
 }
 
 function firstSentence(value: string): string {

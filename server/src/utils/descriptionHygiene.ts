@@ -702,6 +702,24 @@ export function stripLeadingPageChrome(text: string): string {
   return normalizeHygieneWhitespace(String(text || '').replace(leadingPageChromePattern, ''));
 }
 
+const leadingArtCommentaryPrefixPattern =
+  /^[\p{L}][\p{L}'-]*(?:[- ][\p{L}][\p{L}'-]*){0,3}\s+(?:interpretation|depiction|portrayal|rendering|representation)\s+of\s+(?=[a-z])/u;
+
+/**
+ * Strip a leading artwork/exhibit-commentary clause ("Pop-surrealist
+ * interpretation of appetite and body weight regulation...", #1506) glued onto
+ * an otherwise valid research clause. Gated on the trailing "of" being
+ * followed by a lowercase word so the remainder reads as the real topic
+ * continuing mid-sentence, and re-capitalized so the surviving clause still
+ * opens like a sentence.
+ */
+export function stripLeadingArtCommentaryPrefix(text: string): string {
+  const value = normalizeHygieneWhitespace(String(text || ''));
+  const stripped = value.replace(leadingArtCommentaryPrefixPattern, '');
+  if (!stripped || stripped === value) return value;
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
 const firstPersonPronounVoicePattern =
   /\bI['’](?:m|ve|d|ll)\b|\bI\s+(?:am|have|had|study|studies|studied|investigate|examine|explore|use|focus|focused|work|research|develop|lead|direct|analyze|apply|combine|seek|aim|began|started|joined|received|earned|hold|teach|remain|became)\b/;
 
@@ -771,6 +789,19 @@ export function stripUrlTopicsFromCardSummary(text: string): string {
 
 const leadingDanglingDemonstrativePattern =
   /^(?:These|Those|Such)\s+[A-Za-z]|^This\s+(?:is|was|were|are|has|had|will|would|includes?|represents?|remains?|also|too|means?)\b/;
+
+/**
+ * A card blurb whose subject is a bare third-person pronoun ("He earned an MS
+ * in...", "She holds a joint appointment...") or a transitional adverbial
+ * ("In addition, he...") introducing one, with no name ever established on the
+ * standalone card (#1400/#1506). The reader has no antecedent for "he"/"she"/
+ * "they" on a card shown out of context, so this fails closed the same way a
+ * dangling demonstrative does, whatever the sentence's own content quality.
+ */
+const leadingDanglingPronounSubjectPattern =
+  /^(?:He|She|They)\s+(?:is|are|was|were|has|had|earned|received|holds?|held|completed|joined|serves?|served|graduated|obtained|remains?|studies|studied|investigates?|examines?|explores?|develops?|works?|focuses?|focused|specializes?|specialized)\b/;
+const leadingTransitionalPronounSubjectPattern =
+  /^(?:In addition|Additionally|Also|Moreover|Furthermore),?\s+(?:he|she|they)\b/i;
 
 const midDemonstrativePhrasePattern =
   /\b(?:these|those)\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*)?)/gi;
@@ -848,6 +879,8 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
   if (leadingBareSubjectPronounPattern.test(normalized)) return true;
   if (leadingCareerHistoryOpenerPattern.test(normalized)) return true;
   if (leadingDoctorDegreeOpenerPattern.test(normalized)) return true;
+  if (leadingDanglingPronounSubjectPattern.test(normalized)) return true;
+  if (leadingTransitionalPronounSubjectPattern.test(normalized)) return true;
   return synthesisBlurbHasDanglingDemonstrative(normalized);
 }
 
@@ -872,11 +905,13 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
           stripGluedResearchRoleTrackToken(
             stripDirectoryResearcherNavChrome(
               stripGluedProfileRoleLabel(
-                stripLeadingPageChrome(
-                  stripTrailingContactAddress(
-                    stripBibliographicReferenceArtifacts(
-                      stripInternalConfidenceHedge(
-                        stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+                stripLeadingArtCommentaryPrefix(
+                  stripLeadingPageChrome(
+                    stripTrailingContactAddress(
+                      stripBibliographicReferenceArtifacts(
+                        stripInternalConfidenceHedge(
+                          stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+                        ),
                       ),
                     ),
                   ),
