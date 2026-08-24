@@ -236,6 +236,39 @@ const QUANT_SENIOR_PROJECT_HTML = `
 </main>
 `;
 
+const ENVIRONMENTAL_STUDIES_HTML = `
+<main>
+  <h1>The EVST Senior Essay</h1>
+  <p>The senior thesis is the culmination of the Environmental Studies major for both BA and BS degree programs, and students produce an original research essay that aligns with their concentration.</p>
+  <p>In the senior colloquium EVST 4960, students receive regular guidance about the senior thesis research and writing process from their colloquium instructors and a primary Yale faculty thesis advisor.</p>
+</main>
+`;
+
+const GLOBAL_AFFAIRS_CAPSTONE_HTML = `
+<main>
+  <h1>Undergraduate Capstone Faculty</h1>
+  <p>In place of a senior thesis, Global Affairs seniors may complete a capstone project, an opportunity unique to the major at Yale.</p>
+  <p>Working in small groups and overseen by a Yale faculty member, students complete a public policy project on behalf of a client such as a government agency, not-for-profit, or NGO.</p>
+</main>
+`;
+
+const HISTORY_OF_ART_SENIOR_ESSAY_HTML = `
+<main>
+  <h1>Senior Essay</h1>
+  <p>Home Undergraduate Senior Essay.</p>
+  <p>Majors in the History of Art complete a senior essay, an original research and writing project developed with the guidance of a faculty advisor over the senior year.</p>
+  <p>Interested students submit a senior essay proposal to the director of undergraduate studies before the research and writing begins.</p>
+</main>
+`;
+
+const FILM_MEDIA_SENIOR_REQUIREMENT_HTML = `
+<main>
+  <h1>The Senior Requirement</h1>
+  <p>For the student writing a senior essay in Film and Media Studies, several options are possible.</p>
+  <p>The student may do independent research on a yearlong senior essay, submitting a brief prospectus to the director of undergraduate studies for approval and consulting regularly with a faculty adviser.</p>
+</main>
+`;
+
 function buildContext(
   scraper: DepartmentUndergradResearchScraper,
   emitted: ObservationInput[],
@@ -922,6 +955,113 @@ describe('departmentUndergradResearchScraper', () => {
     expect(
       parseGeneralDepartmentResearchPage(RESEARCH_WITHOUT_UNDERGRAD_SIGNAL_HTML, englishConfig),
     ).toEqual([]);
+  });
+
+  it('covers Environmental Studies, Global Affairs, History of Art, and Film & Media Studies pathway pages (#1647)', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+
+    expect(configsByKey.get('environmental-studies')).toMatchObject({
+      url: 'https://evst.yale.edu/evst-senior-essay',
+      parser: 'general-guidance',
+      department: 'Environmental Studies',
+    });
+    expect(configsByKey.get('global-affairs')).toMatchObject({
+      url: 'https://jackson.yale.edu/faculty-research/undergraduate-capstone-faculty',
+      parser: 'general-guidance',
+      department: 'Global Affairs',
+      school: 'Jackson School of Global Affairs',
+    });
+    expect(configsByKey.get('history-of-art')).toMatchObject({
+      url: 'https://arthistory.yale.edu/undergraduate/senior-essay',
+      parser: 'general-guidance',
+      department: 'History of Art',
+    });
+    expect(configsByKey.get('film-and-media-studies')).toMatchObject({
+      url: 'https://filmstudies.yale.edu/undergraduate/senior-requirement',
+      parser: 'general-guidance',
+      department: 'Film and Media Studies',
+    });
+
+    const records = [
+      ...parseGeneralDepartmentResearchPage(
+        ENVIRONMENTAL_STUDIES_HTML,
+        configsByKey.get('environmental-studies')!,
+      ),
+      ...parseGeneralDepartmentResearchPage(
+        GLOBAL_AFFAIRS_CAPSTONE_HTML,
+        configsByKey.get('global-affairs')!,
+      ),
+      ...parseGeneralDepartmentResearchPage(
+        HISTORY_OF_ART_SENIOR_ESSAY_HTML,
+        configsByKey.get('history-of-art')!,
+      ),
+      ...parseGeneralDepartmentResearchPage(
+        FILM_MEDIA_SENIOR_REQUIREMENT_HTML,
+        configsByKey.get('film-and-media-studies')!,
+      ),
+    ];
+
+    expect(records).toMatchObject([
+      {
+        entityKey: 'department-undergrad-research-environmental-studies',
+        name: 'Environmental Studies Senior Essay Research',
+        entityType: 'PROGRAM',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('original research essay'),
+      },
+      {
+        entityKey: 'department-undergrad-research-global-affairs',
+        name: 'Global Affairs Undergraduate Capstone Research',
+        entityType: 'PROGRAM',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('capstone project'),
+      },
+      {
+        entityKey: 'department-undergrad-research-history-of-art',
+        name: 'History of Art Senior Essay Research',
+        entityType: 'PROGRAM',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('original research and writing project'),
+      },
+      {
+        entityKey: 'department-undergrad-research-film-and-media-studies',
+        name: 'Film and Media Studies Senior Essay Research',
+        entityType: 'PROGRAM',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('independent research'),
+      },
+    ]);
+
+    const capstoneRecord = records.find(
+      (record) => record.entityKey === 'department-undergrad-research-global-affairs',
+    )!;
+    expect(capstoneRecord.evidenceQuote).toContain('capstone project');
+
+    const fields = departmentUndergradResearchRecordsToObservations(records).map(
+      (observation) => observation.field,
+    );
+    expect(fields).toEqual(
+      expect.arrayContaining(['undergradAccessEvidence', 'acceptingUndergrads', 'undergradEvidenceQuote']),
+    );
+    expect(fields).not.toEqual(
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),
+    );
+  });
+
+  it('recognizes an undergraduate capstone project as a senior research pathway (#1647)', () => {
+    const globalAffairsConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'global-affairs',
+    )!;
+
+    const [record] = parseGeneralDepartmentResearchPage(
+      GLOBAL_AFFAIRS_CAPSTONE_HTML,
+      globalAffairsConfig,
+    );
+
+    expect(record.description).toMatch(/^Supports undergraduate research in Global Affairs\./);
+    expect(record.description).toContain('capstone project');
   });
 
   it('runs selected configured pages and honors only filters', async () => {
