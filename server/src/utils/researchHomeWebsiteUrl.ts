@@ -47,7 +47,7 @@ const PEOPLE_INDEX_PATH = /\/people\/index(?:\.[a-z0-9]+)?\/$/i;
 
 const PEOPLE_INDEX_FILE_PATH = /\/people\.(?:html?|aspx|php)(?:\/|$)/i;
 
-const MEMBERS_ROOT_PATH = /\/members\/$/i;
+const MEMBERS_ROOT_PATH = /\/(?:members|membership)\/$/i;
 
 const DIRECTORY_ROSTER_ROOT_PATH =
   /\/directory\/(?:faculty(?:-fellows|-directory|-and-staff|-staff|-affiliates)?|staff|people|members|fellows|affiliates)\/$/i;

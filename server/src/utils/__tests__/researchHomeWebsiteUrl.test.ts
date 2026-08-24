@@ -234,6 +234,21 @@ describe('isListingOrIndexUrl', () => {
     expect(isListingOrIndexUrl('https://physics.example.edu/people/faculty-directory')).toBe(true);
   });
 
+  it('flags membership-roster roots that graft shared areas onto every member', () => {
+    expect(
+      isListingOrIndexUrl('https://medicine.example.edu/cancer/research/membership/directory/'),
+    ).toBe(true);
+    expect(isListingOrIndexUrl('https://medicine.example.edu/cancer/research/membership/')).toBe(
+      true,
+    );
+    expect(isListingOrIndexUrl('https://medicine.example.edu/cancer/research/membership')).toBe(
+      true,
+    );
+    expect(isListingOrIndexUrl('https://medicine.example.edu/cancer/profile/jordan-example/')).toBe(
+      false,
+    );
+  });
+
   it('flags directory AJAX/loader endpoints (#549)', () => {
     expect(
       isListingOrIndexUrl(
