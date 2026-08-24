@@ -79,12 +79,26 @@ const record = (name, details = {}) => steps.push({ name, ...details });
 
 const screenshot = async (name, targetPage = page) => {
   const file = path.join(outDir, `${name}.png`);
-  await targetPage.screenshot({ path: file, fullPage: true });
-  record('screenshot', { file });
+  try {
+    await targetPage.screenshot({ path: file, fullPage: true });
+    record('screenshot', { file });
+  } catch (error) {
+    record('screenshot', { file, error: error instanceof Error ? error.message : String(error) });
+  }
 };
 
 const bodyText = async (targetPage = page) =>
   targetPage.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim());
+
+const failureContext = async () => {
+  try {
+    const url = page.url();
+    const preview = (await bodyText()).slice(0, 600);
+    return { url, preview };
+  } catch {
+    return {};
+  }
+};
 
 const step = async (name, fn) => {
   try {
@@ -92,8 +106,9 @@ const step = async (name, fn) => {
     record(name, { status: 'pass' });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    failures.push({ name, message });
-    record(name, { status: 'fail', message });
+    const context = await failureContext();
+    failures.push({ name, message, ...context });
+    record(name, { status: 'fail', message, ...context });
   }
 };
 
@@ -124,11 +139,33 @@ const submitSearch = async (query) => {
   await settleResearchPage();
 };
 
+const readAuthState = async () =>
+  page.evaluate(async (url) => {
+    try {
+      const response = await fetch(url, { credentials: 'include' });
+      const payload = await response.json();
+      return { status: response.status, auth: Boolean(payload && payload.auth) };
+    } catch (error) {
+      return { status: 0, auth: false, error: String(error) };
+    }
+  }, `${baseUrl}/api/check`);
+
 const login = async () => {
-  await page.goto(`${baseUrl}/api/dev-login?redirect=/research`, {
-    waitUntil: 'domcontentloaded',
-  });
-  await settleResearchPage();
+  const deadline = Date.now() + 45000;
+  let state = { status: 0, auth: false };
+  while (Date.now() < deadline) {
+    await page
+      .goto(`${baseUrl}/api/dev-login?redirect=/research`, { waitUntil: 'domcontentloaded' })
+      .catch(() => undefined);
+    await settleResearchPage();
+    state = await readAuthState();
+    if (state.auth) return;
+    await page.waitForTimeout(2000);
+  }
+  assert(
+    state.auth,
+    `dev-login never established an authenticated session within 45s (GET /api/check -> ${JSON.stringify(state)}).`,
+  );
 };
 
 await step('signed-in student reaches the research browse home', async () => {

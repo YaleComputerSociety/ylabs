@@ -66,9 +66,6 @@ jobs:
       - name: Build client
         run: yarn build:client
 
-      - name: Build server
-        run: yarn build:server
-
       - name: Wait for Meilisearch readiness
         run: |
           for attempt in $(seq 1 30); do
@@ -89,7 +86,7 @@ jobs:
 
       - name: Start API and static client
         run: |
-          node server/build/index.js > /tmp/e2e-server.log 2>&1 &
+          nohup yarn --cwd server exec tsx src/index.ts > /tmp/e2e-server.log 2>&1 &
           echo $! > /tmp/e2e-server.pid
           for attempt in $(seq 1 40); do
             if curl -sf http://localhost:4000/api/check >/dev/null; then
