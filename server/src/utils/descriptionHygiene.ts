@@ -752,7 +752,9 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
           stripLeadingPageChrome(
             stripTrailingContactAddress(
               stripBibliographicReferenceArtifacts(
-                stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+                stripInternalConfidenceHedge(
+                  stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+                ),
               ),
             ),
           ),
@@ -761,6 +763,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
     ),
   );
   if (isResearchAreaTemplateLeakText(cleaned)) return '';
+  if (isResearchAreaEchoDescription(cleaned)) return '';
   if (isInstitutionalCenterBlurbText(cleaned)) return '';
   if (isCtaNewsTickerDumpText(cleaned)) return '';
   if (isStudiesTemplateGlueMalformed(cleaned)) return '';
@@ -1168,6 +1171,7 @@ export function isInstitutionalCenterBlurbText(text: string): boolean {
 }
 
 const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?]+[.!?]?$/i;
+const connectedToAreaEchoPattern = /^[^.!?]*\bis\s+connected\s+to\b[^.!?]*[.!?]?$/i;
 
 /**
  * A vacuous "Research fields include <A>, <B>, and <C>." description whose only
@@ -1175,13 +1179,40 @@ const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?
  * chip list carrying no prose, fully redundant with the chips already shown
  * beside it (#623). Gated to a single sentence (the pattern admits no internal
  * sentence terminator) so genuine prose that merely opens with the phrase and
- * continues into a real description is kept.
+ * continues into a real description is kept. The sibling "<Name/lab> is
+ * connected to <A>, <B>, and <C>." fallback template is the same vacuous shape
+ * under a different lead verb, so it is caught here too, but only when the
+ * sentence carries no independent research-activity verb - a genuine one-line
+ * summary that happens to use "connected to" as connective tissue around real
+ * content is kept (#1393/#1394).
  */
 export function isResearchAreaEchoDescription(text: string): boolean {
-  return researchAreaEchoPattern.test(normalizeHygieneWhitespace(text));
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (researchAreaEchoPattern.test(normalized)) return true;
+  return (
+    connectedToAreaEchoPattern.test(normalized) && !researchActivitySignalPattern.test(normalized)
+  );
 }
 
 const provenanceHedgePattern = /[,;]?\s*\bwhen\s+source-confirmed\b/gi;
+const internalConfidenceHedgePattern =
+  /\s*This profile-derived summary should be checked against the linked official sources before outreach\.?/gi;
+
+/**
+ * Strip the internal QA caveat "This profile-derived summary should be
+ * checked against the linked official sources before outreach." An operator-
+ * facing confidence note about the record itself, not display copy, so as
+ * rendered it undermines the very card it sits on and tells a student the
+ * text may be wrong (#1393/#1394). Removing only the hedge keeps any genuine
+ * prose it was appended to rather than failing the whole field closed.
+ */
+export function stripInternalConfidenceHedge(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(internalConfidenceHedgePattern, '');
+  if (stripped === value) return value;
+  return normalizeHygieneWhitespace(stripped.replace(/\s+([.,;:!?])/g, '$1'));
+}
 
 /**
  * Strip the internal provenance hedge "when source-confirmed" glued onto a
@@ -1216,13 +1247,15 @@ export function stripProvenanceHedge(text: string): string {
  * stripRedactionPlaceholders in the #671 backfill.
  */
 export function sanitizeCatalogDescription(text: string): string {
-  const stripped = stripProvenanceHedge(
-    collapseRepeatedSentences(
-      collapseDuplicatedProseBlock(
-        stripPageLayoutReferentialSentences(
-          stripSelfReferentialResearchCtaSentences(
-            stripDeadAnchorCtaSentences(
-              stripBibliographicReferenceArtifacts(stripCatalogChrome(text)),
+  const stripped = stripInternalConfidenceHedge(
+    stripProvenanceHedge(
+      collapseRepeatedSentences(
+        collapseDuplicatedProseBlock(
+          stripPageLayoutReferentialSentences(
+            stripSelfReferentialResearchCtaSentences(
+              stripDeadAnchorCtaSentences(
+                stripBibliographicReferenceArtifacts(stripCatalogChrome(text)),
+              ),
             ),
           ),
         ),

@@ -35,6 +35,7 @@ import {
   stripDeadAnchorCtaSentences,
   stripLeadingAdministrativeLocationSentences,
   stripLeadingPageChrome,
+  stripInternalConfidenceHedge,
   stripPageLayoutReferentialSentences,
   stripProvenanceHedge,
   stripRedactionPlaceholders,
@@ -1141,6 +1142,62 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
         'Research fields include Gene Expression Regulation, Developmental, Computational Biology, and Cancer.',
       ),
     ).toBe('');
+  });
+
+  it('flags the "is connected to <chips>" sibling template (#1393/#1394)', () => {
+    expect(
+      isResearchAreaEchoDescription(
+        'This lab is connected to diabetes management, pancreatic function and diabetes, and diabetes and management.',
+      ),
+    ).toBe(true);
+    expect(
+      sanitizeResearchEntityDescription(
+        'This lab is connected to diabetes management, pancreatic function and diabetes.',
+      ),
+    ).toBe('');
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'This lab is connected to diabetes management, pancreatic function and diabetes.',
+      ),
+    ).toBe('');
+  });
+
+  it('keeps genuine prose that uses "connected to" alongside a real research verb', () => {
+    const prose =
+      'This work is connected to funding from NIH. The lab studies cardiovascular disease using mouse models.';
+    expect(isResearchAreaEchoDescription(prose)).toBe(false);
+    expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
+});
+
+describe('descriptionHygiene internal confidence-hedge strip (#1393/#1394)', () => {
+  const HEDGE =
+    'This profile-derived summary should be checked against the linked official sources before outreach.';
+
+  it('strips the leaked internal QA caveat but keeps the surrounding prose', () => {
+    const before = `This lab studies marine invertebrate physiology and ecology. ${HEDGE}`;
+    expect(stripInternalConfidenceHedge(before)).toBe(
+      'This lab studies marine invertebrate physiology and ecology.',
+    );
+  });
+
+  it('is a no-op when the hedge is absent', () => {
+    const clean = 'This lab studies marine invertebrate physiology and ecology.';
+    expect(stripInternalConfidenceHedge(clean)).toBe(clean);
+  });
+
+  it('is stripped by the served-description sanitizer', () => {
+    const before = `This lab studies marine invertebrate physiology and ecology. ${HEDGE}`;
+    expect(sanitizeResearchEntityDescription(before)).toBe(
+      'This lab studies marine invertebrate physiology and ecology.',
+    );
+  });
+
+  it('is stripped by the served short-description sanitizer', () => {
+    const before = `Studies marine invertebrate ecology. ${HEDGE}`;
+    expect(sanitizeResearchEntityShortDescription(before)).toBe(
+      'Studies marine invertebrate ecology.',
+    );
   });
 });
 
