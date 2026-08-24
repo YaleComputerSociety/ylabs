@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  hasProfileFieldLabelChromeSignal,
   isEducationOrCareerTimelineSentence,
   isProfileBiographyChromeOpener,
   protectedSentenceList,
@@ -159,6 +160,20 @@ describe('stripProfileFieldLabelChrome (#1533)', () => {
     expect(stripProfileFieldLabelChrome('Studies chromatin dynamics in stem cells.')).toBe(
       'Studies chromatin dynamics in stem cells.',
     );
+  });
+});
+
+describe('hasProfileFieldLabelChromeSignal (#1533)', () => {
+  it('detects the "Specializations:"/"About:" scaffold regardless of research-focus content elsewhere', () => {
+    expect(
+      hasProfileFieldLabelChromeSignal(
+        'Specializations: opera staging; media archaeology About: Gundula Kreuzer studied musicology at Oxford. Her current research interests include contemporary experimental opera.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag ordinary research prose', () => {
+    expect(hasProfileFieldLabelChromeSignal('Studies chromatin dynamics in stem cells.')).toBe(false);
   });
 });
 

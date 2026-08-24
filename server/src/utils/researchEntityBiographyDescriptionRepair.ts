@@ -96,6 +96,12 @@ export function stripProfileFieldLabelChrome(value: unknown): string {
     .trim();
 }
 
+export function hasProfileFieldLabelChromeSignal(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return LEADING_SPECIALIZATIONS_LABEL_PATTERN.test(text) || ABOUT_FIELD_LABEL_PATTERN.test(text);
+}
+
 const TRAILING_PROFILE_CHROME_PATTERN =
   /\s*Last Updated on [^.]+\.\s*Departments\s*&\s*Organizations[\s\S]*$/i;
 
