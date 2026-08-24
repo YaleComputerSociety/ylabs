@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { htmlToText, isRejectedDescriptionSourceUrl } from '../labMicrositeDescriptionLLMExtractor';
+import {
+  htmlToText,
+  isRejectedDescriptionSourceUrl,
+  usefulLabName,
+} from '../labMicrositeDescriptionLLMExtractor';
 
 describe('isRejectedDescriptionSourceUrl', () => {
   it('rejects the YSM A–Z index landing page so its boilerplate is never a lab description', () => {
@@ -55,5 +59,20 @@ describe('htmlToText block-boundary spacing for the LLM prompt (#1776)', () => {
         '<body><nav>Menu</nav><script>var x = 1;</script><p>Real bio prose here.</p><footer>Contact</footer></body>',
       ),
     ).toBe('Real bio prose here.');
+  });
+});
+
+describe('usefulLabName', () => {
+  it('rejects a PI faculty title/credential line so it never becomes the entity name', () => {
+    expect(usefulLabName('Joshua L. Warren Professor of Biostatistics, Yale University')).toBe('');
+    expect(usefulLabName('Jane Doe, Associate Professor of Chemistry')).toBe('');
+    expect(usefulLabName('John Smith, Ph.D.')).toBe('');
+    expect(usefulLabName('Alan Edwards, M.D., Yale University')).toBe('');
+  });
+
+  it('keeps a genuine branded research-home name', () => {
+    expect(usefulLabName('The Yale GRAB Lab')).toBe('The Yale GRAB Lab');
+    expect(usefulLabName('David Spiegel Lab')).toBe('David Spiegel Lab');
+    expect(usefulLabName('The Efficient Computing Lab (ECL)')).toBe('The Efficient Computing Lab (ECL)');
   });
 });

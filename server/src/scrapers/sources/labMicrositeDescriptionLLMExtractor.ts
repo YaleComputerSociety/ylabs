@@ -400,11 +400,20 @@ export function htmlToText(html: string): string {
 const GOVERNANCE_ORG_NAME_RE =
   /^(?:the\s+)?(?:council|committee|consortium|commission|task\s+force|working\s+group|senate|assembly|office\s+of|board\s+of)\b/i;
 
-function usefulLabName(value: unknown): string {
+// A microsite frequently leads with the PI's faculty title/credential line
+// ("Joshua L. Warren Professor of Biostatistics, Yale University") rather than a
+// branded research-home name. The LLM prompt already asks for an empty name in
+// that case, but enforce it deterministically so a title line can never
+// materialize as the entity's student-facing name.
+const PERSON_TITLE_OR_CREDENTIAL_NAME_RE =
+  /\bprofessor\b|\bph\.?\s?d\b|\bm\.?\s?d\b|\bendowed\s+chair\b|,\s*yale\s+university\s*$/i;
+
+export function usefulLabName(value: unknown): string {
   const text = stripTrailingResearchHomeDescription(textValue(value));
   if (text.length < 2 || text.length > 120) return '';
   if (/^(?:n\/a|none|unknown|the lab|lab|laboratory|research)$/i.test(text)) return '';
   if (GOVERNANCE_ORG_NAME_RE.test(text)) return '';
+  if (PERSON_TITLE_OR_CREDENTIAL_NAME_RE.test(text)) return '';
   return text;
 }
 
