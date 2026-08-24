@@ -5,8 +5,9 @@
  * canonical ResearchPlan PROGRAM targets (served by /users/watchedPrograms and
  * /users/watchedProgramPlans). Each watched program keeps its at-a-glance info
  * (deadline, accepting status, eligibility), a link to the program, a private
- * note, an applied marker, and an unwatch control. Watching is a personal
- * bookmark; program content stays read-only.
+ * note, an outreach-stage control across the full ResearchPlan pipeline, and an
+ * unwatch control. Watching is a personal bookmark; program content stays
+ * read-only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -25,6 +26,12 @@ import FellowshipModal from '../fellowship/FellowshipModal';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import useFavorites from '../../hooks/useFavorites';
 import axios from '../../utils/axios';
+import ResearchPlanStageControl from './ResearchPlanStageControl';
+import {
+  DEFAULT_RESEARCH_PLAN_STAGE,
+  normalizeResearchPlanStage,
+  type ResearchPlanStage,
+} from '../../utils/researchPlanStages';
 
 interface ProgramWatchProps {
   onSummaryChange?: (summary: {
@@ -79,10 +86,11 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const { favIds: watchedIds, toggleFavorite } = useFavorites('watchedPrograms');
   const [programs, setPrograms] = useState<Fellowship[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [applied, setApplied] = useState<Record<string, boolean>>({});
+  const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
+  const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedProgram, setSelectedProgram] = useState<Fellowship | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -106,20 +114,20 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           { privateNotes?: string; stage?: string }
         >;
         const loadedNotes: Record<string, string> = {};
-        const loadedApplied: Record<string, boolean> = {};
+        const loadedStages: Record<string, ResearchPlanStage> = {};
         for (const program of loadedPrograms) {
           loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
-          loadedApplied[program.id] = plans[program.id]?.stage === 'APPLIED';
+          loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
         }
         setPrograms(loadedPrograms);
         setNotes(loadedNotes);
-        setApplied(loadedApplied);
+        setStages(loadedStages);
       } catch {
         if (!active) return;
         console.error('Error fetching watched programs.');
         setPrograms([]);
         setNotes({});
-        setApplied({});
+        setStages({});
       } finally {
         if (active) setIsLoading(false);
       }
@@ -190,11 +198,25 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     void savePlan(programId, { privateNotes: notes[programId] || '' });
   };
 
-  const toggleApplied = (programId: string) => {
-    const next = !applied[programId];
-    setApplied((current) => ({ ...current, [programId]: next }));
-    void savePlan(programId, { stage: next ? 'APPLIED' : 'SAVED' });
-  };
+  const changeStage = useCallback(
+    async (programId: string, nextStage: ResearchPlanStage) => {
+      const previousStage = stages[programId] || DEFAULT_RESEARCH_PLAN_STAGE;
+      if (previousStage === nextStage) return;
+      setStages((current) => ({ ...current, [programId]: nextStage }));
+      setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saving' }));
+      try {
+        await axios.put(`/users/watchedProgramPlans/${programId}`, {
+          data: { plan: { stage: nextStage } },
+        });
+        setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saved' }));
+      } catch {
+        console.error('Error saving watched program stage.');
+        setStages((current) => ({ ...current, [programId]: previousStage }));
+        setStageStatuses((statuses) => ({ ...statuses, [programId]: 'error' }));
+      }
+    },
+    [stages],
+  );
 
   const openModal = (program: Fellowship) => {
     setSelectedProgram(program);
@@ -241,7 +263,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
             const status = saveStatuses[program.id];
             const isEditing = editingId === program.id;
             const note = notes[program.id] || '';
-            const hasApplied = applied[program.id] === true;
+            const stage = stages[program.id] || DEFAULT_RESEARCH_PLAN_STAGE;
             return (
               <li key={program.id} className="mb-2">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
@@ -257,36 +279,6 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                     />
                   </div>
                   <div className="flex flex-row gap-1 sm:flex-col sm:justify-center">
-                    <button
-                      type="button"
-                      onClick={() => toggleApplied(program.id)}
-                      aria-pressed={hasApplied}
-                      aria-label={
-                        hasApplied
-                          ? `Mark ${program.title} as not applied`
-                          : `Mark ${program.title} as applied`
-                      }
-                      title={hasApplied ? 'Mark as not applied' : 'Mark as applied'}
-                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
-                        hasApplied
-                          ? 'border-green-300 bg-green-50 text-green-600'
-                          : 'border-[var(--yr-line)] text-gray-400 hover:border-[var(--yr-line-strong)] hover:text-gray-600'
-                      }`}
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill={hasApplied ? 'currentColor' : 'none'}
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </button>
                     <button
                       type="button"
                       onClick={() =>
@@ -345,6 +337,15 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       </button>
                     )}
                   </div>
+                </div>
+                <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                  <span className="ml-1 text-xs font-medium text-gray-600">Outreach stage</span>
+                  <ResearchPlanStageControl
+                    stage={stage}
+                    onChange={(nextStage) => void changeStage(program.id, nextStage)}
+                    controlLabel={`Outreach stage for ${program.title}`}
+                    status={stageStatuses[program.id]}
+                  />
                 </div>
                 {isEditing && (
                   <div className="mt-1">

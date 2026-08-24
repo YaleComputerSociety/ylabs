@@ -116,10 +116,30 @@ describe('ProgramWatch', () => {
         data: { plan: { privateNotes: 'Apply before spring' } },
       }),
     );
-    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
   });
 
-  it('marks a program as applied through the canonical plan stage', async () => {
+  it('reads the persisted outreach stage for each watched program', async () => {
+    withWatchedPrograms();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    const savedStage = screen.getByRole('combobox', {
+      name: 'Outreach stage for Summer Research Grant',
+    }) as HTMLSelectElement;
+    const appliedStage = screen.getByRole('combobox', {
+      name: 'Outreach stage for Travel Fellowship',
+    }) as HTMLSelectElement;
+    expect(savedStage.value).toBe('SAVED');
+    expect(appliedStage.value).toBe('APPLIED');
+  });
+
+  it('persists a full-pipeline stage change through the canonical plan stage', async () => {
     withWatchedPrograms();
     mockedAxios.put.mockResolvedValue({ data: { watchedProgramPlans: {} } });
 
@@ -130,13 +150,38 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getByRole('button', { name: 'Mark Summer Research Grant as applied' }));
+    const stageSelect = screen.getByRole('combobox', {
+      name: 'Outreach stage for Summer Research Grant',
+    });
+    fireEvent.change(stageSelect, { target: { value: 'CONTACTED' } });
 
     await waitFor(() =>
       expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/p1', {
-        data: { plan: { stage: 'APPLIED' } },
+        data: { plan: { stage: 'CONTACTED' } },
       }),
     );
+    expect((stageSelect as HTMLSelectElement).value).toBe('CONTACTED');
+    expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
+  });
+
+  it('reverts the displayed stage and surfaces an error when a stage save fails', async () => {
+    withWatchedPrograms();
+    mockedAxios.put.mockRejectedValue(new Error('network'));
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    const stageSelect = screen.getByRole('combobox', {
+      name: 'Outreach stage for Summer Research Grant',
+    }) as HTMLSelectElement;
+    fireEvent.change(stageSelect, { target: { value: 'APPLIED' } });
+
+    await screen.findByText(/Not saved/);
+    expect(stageSelect.value).toBe('SAVED');
   });
 
   it('unwatches a program through the canonical watched-programs endpoint', async () => {

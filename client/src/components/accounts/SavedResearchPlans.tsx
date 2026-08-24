@@ -17,6 +17,14 @@ import {
   type UndergraduateAccessStatus,
 } from '../../utils/undergraduateAccessStatus';
 import ResearchHomeComparison from './ResearchHomeComparison';
+import ResearchPlanStageControl from './ResearchPlanStageControl';
+import {
+  DEFAULT_RESEARCH_PLAN_STAGE,
+  isActiveResearchPlanStage,
+  normalizeResearchPlanStage,
+  researchPlanStageOrder,
+  type ResearchPlanStage,
+} from '../../utils/researchPlanStages';
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number) => void;
@@ -78,9 +86,11 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
   const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
+  const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [isComparing, setIsComparing] = useState(false);
   const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -103,19 +113,23 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
           entityResponse.data.savedResearchEntities || [];
         const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
           string,
-          { privateNotes?: string }
+          { privateNotes?: string; stage?: string }
         >;
         const loadedNotes: Record<string, string> = {};
+        const loadedStages: Record<string, ResearchPlanStage> = {};
         for (const entity of loadedEntities) {
           loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
+          loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
         }
         setEntities(loadedEntities);
         setNotes(loadedNotes);
+        setStages(loadedStages);
       } catch {
         if (!active) return;
         console.error('Error fetching saved research plans.');
         setEntities([]);
         setNotes({});
+        setStages({});
       } finally {
         if (active) setIsLoading(false);
       }
@@ -154,6 +168,26 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
     void savePlanNote(entityId, notes[entityId] || '');
   };
 
+  const changeStage = useCallback(
+    async (entityId: string, nextStage: ResearchPlanStage) => {
+      const previousStage = stages[entityId] || DEFAULT_RESEARCH_PLAN_STAGE;
+      if (previousStage === nextStage) return;
+      setStages((current) => ({ ...current, [entityId]: nextStage }));
+      setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
+      try {
+        await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
+          data: { plan: { stage: nextStage } },
+        });
+        setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
+      } catch {
+        console.error('Error saving research plan stage.');
+        setStages((current) => ({ ...current, [entityId]: previousStage }));
+        setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
+      }
+    },
+    [stages],
+  );
+
   const unsavePlan = (slug: string) => {
     void setFavorite(slug, false);
   };
@@ -172,14 +206,28 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
     return statuses;
   }, [visibleEntities]);
 
+  const stageOf = useCallback(
+    (entityId: string): ResearchPlanStage => stages[entityId] || DEFAULT_RESEARCH_PLAN_STAGE,
+    [stages],
+  );
+
   const orderedEntities = useMemo(
     () =>
-      [...visibleEntities].sort(
-        (a, b) =>
-          undergraduateAccessSortRank(accessStatuses.get(a._id) || null) -
-          undergraduateAccessSortRank(accessStatuses.get(b._id) || null),
-      ),
-    [visibleEntities, accessStatuses],
+      visibleEntities
+        .map((entity, index) => ({ entity, index }))
+        .sort((a, b) => {
+          const stageDelta =
+            researchPlanStageOrder(stageOf(a.entity._id)) -
+            researchPlanStageOrder(stageOf(b.entity._id));
+          if (stageDelta !== 0) return stageDelta;
+          const accessDelta =
+            undergraduateAccessSortRank(accessStatuses.get(a.entity._id) || null) -
+            undergraduateAccessSortRank(accessStatuses.get(b.entity._id) || null);
+          if (accessDelta !== 0) return accessDelta;
+          return a.index - b.index;
+        })
+        .map(({ entity }) => entity),
+    [visibleEntities, stageOf, accessStatuses],
   );
 
   const currentlyOpenCount = useMemo(
@@ -273,9 +321,15 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
             const accessStatus = accessStatuses.get(entity._id) || null;
             const isEditing = editingId === entity._id;
             const note = notes[entity._id] || '';
+            const stage = stageOf(entity._id);
+            const isClosed = !isActiveResearchPlanStage(stage);
             return (
               <li key={entity._id} className="mb-2">
-                <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+                <div
+                  className={`rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 ${
+                    isClosed ? 'opacity-60' : ''
+                  }`}
+                >
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-start gap-3">
                       {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
@@ -351,6 +405,16 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                         Unsave
                       </button>
                     </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                    <span className="text-xs font-medium text-gray-600">Outreach stage</span>
+                    <ResearchPlanStageControl
+                      stage={stage}
+                      onChange={(nextStage) => void changeStage(entity._id, nextStage)}
+                      controlLabel={`Outreach stage for ${entityDisplayName(entity)}`}
+                      status={stageStatuses[entity._id]}
+                    />
                   </div>
 
                   {!isEditing && note && (
