@@ -19,6 +19,7 @@ import { normalizedProgramTitleKey } from '../utils/programTitle';
 import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { STUDENT_VISIBILITY_VERSION } from './studentVisibilityTier';
+import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 
 export interface FellowshipProjectionInput {
   sourceKey?: string;
@@ -198,7 +199,9 @@ function buildShortDescription(fullDescription: string): string {
  * Fails closed: only `student_ready`, research-related programs with a usable
  * public source URL are projected, and all served copy is contact-redacted and
  * run through the research-entity description sanitizer at write time (the same
- * copy is re-sanitized at serve time by the shared serve-time sanitizer).
+ * copy is re-sanitized at serve time by the shared serve-time sanitizer). The
+ * projected entity's tier is re-derived from the #233 public-description
+ * invariant rather than copied from the Fellowship's own tier (issue #1433).
  */
 export function buildFellowshipResearchEntityProjection(
   fellowship: FellowshipProjectionInput,
@@ -225,6 +228,18 @@ export function buildFellowshipResearchEntityProjection(
   );
   const shortDescription = buildShortDescription(fullDescription);
 
+  // The Fellowship's own tier is checked against its pre-sanitization text, so
+  // it is a precondition, not a guarantee: re-check the #233 invariant against
+  // this entity's own post-sanitization copy before trusting it (issue #1433).
+  const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
+    entity: { entityType, fullDescription, shortDescription, sourceUrls, websiteUrl: sourceUrls[0] },
+  });
+  const reachedStudentReady = publicDescription.invariant.pass;
+  const studentVisibilityTier = reachedStudentReady ? 'student_ready' : 'operator_review';
+  const studentVisibilityReasons = reachedStudentReady
+    ? ['projected_from_student_ready_fellowship']
+    : ['projected_from_student_ready_fellowship', 'public_description_invariant_failed'];
+
   const set: Record<string, unknown> = {
     name: title,
     displayName: title,
@@ -237,10 +252,10 @@ export function buildFellowshipResearchEntityProjection(
     activeAtYaleCache: true,
     yaleStatusCache: 'active',
     archived: false,
-    studentVisibilityTier: 'student_ready',
-    studentVisibilityComputedTier: 'student_ready',
-    studentVisibilityOverrideTier: 'student_ready',
-    studentVisibilityReasons: ['projected_from_student_ready_fellowship'],
+    studentVisibilityTier,
+    studentVisibilityComputedTier: studentVisibilityTier,
+    studentVisibilityOverrideTier: studentVisibilityTier,
+    studentVisibilityReasons,
     studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
   };
 

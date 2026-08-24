@@ -158,4 +158,21 @@ describe('buildFellowshipResearchEntityProjection', () => {
     });
     expect('skip' in projection && projection.skip).toBe('no-public-source-url');
   });
+
+  it('fails closed to operator_review when the Fellowship is student_ready but its description sanitizes to nothing (#1433)', () => {
+    const projection = buildFellowshipResearchEntityProjection({
+      ...baseStudentReadyProgram,
+      summary: 'Email director@example.edu or call 203-432-1234 to learn more.',
+      description: 'Email director@example.edu or call 203-432-1234 to learn more.',
+    });
+    if ('skip' in projection) throw new Error(`expected projection, got skip ${projection.skip}`);
+
+    expect(projection.set.studentVisibilityTier).toBe('operator_review');
+    expect(projection.set.studentVisibilityComputedTier).toBe('operator_review');
+    expect(projection.set.studentVisibilityOverrideTier).toBe('operator_review');
+    expect(projection.set.studentVisibilityReasons).toEqual([
+      'projected_from_student_ready_fellowship',
+      'public_description_invariant_failed',
+    ]);
+  });
 });
