@@ -33,7 +33,11 @@ const ROLLBACK_REASON =
 // written before the observation pipeline existed for this record, which a
 // stranded-field sweep can never reach because it has no observation history
 // to key off of.
-const UNBACKED_EXTRA_SLUGS = ['leaderer-lab-bpl2'];
+// - leaderer-lab-bpl2 (CPPEE): unrelated Lymphoma/Noise chips, #1580's own example.
+// - faculty-research-area-godfrey-pearlson (Olin Research Center): a single PI's
+//   grant-derived "Mental Health" chip standing in for the center's actual
+//   multi-PI neuropsychiatry scope (#1584 delta 1).
+const UNBACKED_EXTRA_SLUGS = ['leaderer-lab-bpl2', 'faculty-research-area-godfrey-pearlson'];
 
 export interface Fix1580Args {
   apply: boolean;
