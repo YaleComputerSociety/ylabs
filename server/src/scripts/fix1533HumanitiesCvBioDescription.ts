@@ -5,8 +5,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import {
+  hasLeadingDegreeListSignal,
   repairPersonBiographyLeakedDescription,
-  stripLeadingDegreeListPrefix,
 } from '../utils/researchEntityBiographyDescriptionRepair';
 import { describesResearchFocus } from '../utils/researchEntityDescriptionQuality';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
@@ -33,7 +33,7 @@ function isHumanitiesCvBioCandidate(entity: {
 }): boolean {
   const full = typeof entity.fullDescription === 'string' ? entity.fullDescription : '';
   if (!full) return false;
-  if (stripLeadingDegreeListPrefix(full) !== full) return true;
+  if (hasLeadingDegreeListSignal(full)) return true;
 
   const isIndividualOrLab =
     entity.kind === 'individual' || INDIVIDUAL_OR_LAB_ENTITY_TYPES.has(String(entity.entityType || ''));

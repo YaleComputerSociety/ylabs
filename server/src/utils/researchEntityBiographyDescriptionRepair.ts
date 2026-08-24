@@ -161,6 +161,23 @@ function remainderStillLooksLikeDegreeListResidue(remainder: string): boolean {
   return mentionCount >= 2;
 }
 
+/**
+ * A looser candidacy signal than stripLeadingDegreeListPrefix succeeding:
+ * two or more degree/institution mentions in the opening stretch means the
+ * description opens with a degree-list dump, even on a shape
+ * stripLeadingDegreeListPrefix can't cleanly resolve on its own (#1533:
+ * dept-history-art-mimi-yiengpruksawan's "A.B., Occidental College M.A.,
+ * UCLA Ph.D., UCLA..." lead never fully strips - UCLA isn't a recognized
+ * institution keyword - but the downstream CV/career-timeline sentence
+ * patterns still clean up the rest once this signals the row as a
+ * candidate).
+ */
+export function hasLeadingDegreeListSignal(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return remainderStillLooksLikeDegreeListResidue(text);
+}
+
 export function stripLeadingDegreeListPrefix(value: unknown): string {
   const text = textValue(value);
   if (!text) return '';
