@@ -51,6 +51,8 @@ export const RESEARCH_AREA_ALIASES: Record<string, string[]> = {
   'Planetary Science': ['Planetary Sciences'],
   'Materials Science': ['Materials Sciences'],
   'Reproductive Medicine': ['Reproductive Sciences'],
+  Literature: ['English Language and Literature'],
+  'Gender Studies': ["Women's, Gender, and Sexuality Studies"],
 };
 
 function researchAreaLeakageKey(raw: unknown): string {
