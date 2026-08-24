@@ -296,6 +296,18 @@ const stripCvFalsePositiveContext = (text: string): string => {
   return cleaned;
 };
 
+// An endowed-chair or rank title ("Sterling Professor of Political Science",
+// "William K. Townsend Professor of Law", "Assistant Professor of Chemistry")
+// is boilerplate that a literal search term can collide with (e.g. "townsend",
+// "sterling") even though the entity has no real connection to that term - the
+// department/field named after "of" is already indexed separately, so the
+// whole phrase carries no unique search signal. See #1286.
+const ENDOWED_CHAIR_TITLE_PATTERN =
+  /\b(?:the\s+)?(?:[A-Z][A-Za-z.'-]+\s+){1,4}Professor(?:\s+Emerit(?:us|a))?\s+of\s+[A-Z][A-Za-z]+(?:\s+(?:and|of|the)\s+[A-Z][A-Za-z]+|\s+[A-Z][A-Za-z]+){0,3}/g;
+
+const stripEndowedChairTitles = (text: string): string =>
+  text.replace(ENDOWED_CHAIR_TITLE_PATTERN, ' ').replace(/[ \t]+/g, ' ').trim();
+
 export function buildStudentSearchTerms(doc: any): string[] {
   const textFields = [
     doc?.name,
@@ -392,10 +404,14 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 
   if (typeof out.fullDescription === 'string') {
-    out.fullDescription = sanitizeResearchEntityDescription(out.fullDescription);
+    out.fullDescription = stripEndowedChairTitles(
+      sanitizeResearchEntityDescription(out.fullDescription),
+    );
   }
   if (typeof out.shortDescription === 'string') {
-    out.shortDescription = sanitizeResearchEntityShortDescription(out.shortDescription);
+    out.shortDescription = stripEndowedChairTitles(
+      sanitizeResearchEntityShortDescription(out.shortDescription),
+    );
   }
 
   for (const field of SEARCH_INDEX_PERSON_NAME_FIELDS) {
