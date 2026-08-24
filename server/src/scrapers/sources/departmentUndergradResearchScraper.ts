@@ -19,6 +19,7 @@ import {
   stripLeadingSectionHeadingChrome,
 } from '../../utils/descriptionHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -562,7 +563,7 @@ export function departmentUndergradResearchRecordsToObservations(
       { ...base, field: 'acceptingUndergrads', value: true, confidenceOverride: 0.75 },
     ];
 
-    if (record.evidenceQuote) {
+    if (record.evidenceQuote && isPlausibleUndergradEvidenceQuote(record.evidenceQuote)) {
       observations.push({
         ...base,
         field: 'undergradEvidenceQuote',

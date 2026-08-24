@@ -896,7 +896,7 @@ describe('extractionToObservations', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
-      evidenceQuote: 'q'.repeat(2000),
+      evidenceQuote: `Undergraduates ${'q'.repeat(2000)}`,
       evidenceSource: 'explicit_text',
       joinPageUrl: null,
     };

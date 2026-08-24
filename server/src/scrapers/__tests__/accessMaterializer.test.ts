@@ -191,7 +191,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
   });
 
-  it('derives reach-out-plausible when a bare accepting boolean carries an undergrad-access quote (#696)', () => {
+  it('does not derive reach-out-plausible from a bare accepting boolean plus an unvalidated quote alone (#1387)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'acceptingUndergrads',
@@ -207,10 +207,69 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
+  });
+
+  it('derives reach-out-plausible from structured undergradAccessEvidence, using a companion quote only as the excerpt (#1387)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'explicit_text',
+          evidenceQuote: 'Undergraduates are welcome to join the lab.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'Undergraduates are welcome to join the lab.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
     expect(result.accessSignals).toMatchObject([
       {
         type: 'REACH_OUT_PLAUSIBLE',
         excerpt: 'Undergraduates are welcome to join the lab.',
+      },
+    ]);
+  });
+
+  it('drops a wrong-entity/mission-blurb quote from the excerpt even when structured evidence corroborates access (#1387)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'yes', evidenceSource: 'members_section' },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'The Department of Chemistry maintains a glassblowing facility to benefit the research community.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals).toMatchObject([
+      {
+        type: 'REACH_OUT_PLAUSIBLE',
+        excerpt: undefined,
       },
     ]);
   });
@@ -772,6 +831,7 @@ describe('isExplicitUndergradUnavailabilityPhrase (#1304)', () => {
       'No undergraduate positions are available at this time.',
       'We are not accepting applications right now.',
       'Prof. Doe is unable to take on new undergraduate students.',
+      'I do not have bandwidth to respond to inquiries about undergraduate positions.',
     ];
     for (const quote of unavailable) {
       expect(isExplicitUndergradUnavailabilityPhrase(quote)).toBe(true);

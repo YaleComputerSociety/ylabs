@@ -559,6 +559,23 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(false);
   });
 
+  it('ignores implausible undergradEvidenceQuote observations at field-resolution time (#1387)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'undergradEvidenceQuote',
+        value: 'The Department of Chemistry maintains a glassblowing facility.',
+        sourceName: 'lab-microsite-undergrad-llm',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'undergradEvidenceQuote',
+        value: 'Undergraduates are welcome to join the lab.',
+        sourceName: 'lab-microsite-undergrad-llm',
+      }),
+    ).toBe(false);
+  });
+
   it('redacts direct contact details consistently for materialized public excerpts', () => {
     expect(redactDirectContactInfo('Email ada@yale.edu or call 203-432-1234.')).toBe(
       'Email [email redacted] or call [phone redacted].',
