@@ -128,6 +128,14 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     detailPagesCrawled?: number;
     detailPagesCapped?: number;
   };
+  reuPrograms?: {
+    seeded: number;
+    nsfDirectoryDiscovered: number;
+    fetched: number;
+    emitted: number;
+    deadlineParsed: number;
+    deadlineMissing: number;
+  };
   evidenceCoverageImpact?: {
     assessed: number;
     improved: number;

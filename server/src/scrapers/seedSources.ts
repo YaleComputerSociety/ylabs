@@ -313,6 +313,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'daily-during-cycle',
   },
   {
+    name: 'yale-reu-programs',
+    displayName: 'Yale REU & Summer Research Programs',
+    description:
+      'Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Cites each program\'s own official Yale page; the NSF REU Sites directory is a non-Yale crawl seed only and is never cited. Emits SUMMER_RESEARCH_PROGRAM records; fails closed on contact and on non-Yale source URLs.',
+    baseUrl: 'https://www.nsf.gov/crssprgm/reu/reu_search.jsp',
+    defaultWeight: 0.9,
+    cadence: 'daily-during-cycle',
+  },
+  {
     name: 'student-grants-database',
     displayName: 'Yale Student Grants Database (CommunityForce)',
     description:
