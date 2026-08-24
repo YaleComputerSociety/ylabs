@@ -9,6 +9,7 @@ import {
   isExplicitUndergradUnavailabilityPhrase,
   normalizeAccessMaterializerObjectId,
   officialNonGrantSourceUrl,
+  parsePostedOpening,
   type AccessObservation,
 } from '../accessMaterializer';
 import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../../services/accessAcceptanceLevel';
@@ -666,6 +667,19 @@ describe('deriveAccessArtifactsFromObservations', () => {
           confidence: 0.5,
         }),
       ],
+      [
+        obs({
+          field: 'postedOpening',
+          value: {
+            title: 'Summer RA - Smith Lab',
+            applyUrl: 'https://apply.example.test/smith-lab-ra',
+            deadline: '2026-12-01T00:00:00.000Z',
+            hiringHome: 'Smith Lab',
+          },
+          sourceName: 'undergrad-research-posting',
+          confidence: 0.85,
+        }),
+      ],
     ];
 
     const emitted = new Set(
@@ -833,6 +847,62 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     });
     expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
     expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
+  });
+});
+
+describe('POSTED_OPENING materialization (#1568)', () => {
+  const validPosting = {
+    title: 'Summer RA - Smith Lab',
+    applyUrl: 'https://apply.example.test/smith-lab-ra',
+    deadline: '2026-12-01T00:00:00.000Z',
+    hiringHome: 'Smith Lab',
+    evidenceQuote: 'The Smith Lab seeks an undergraduate research assistant for summer 2026.',
+  };
+
+  it('lists POSTED_OPENING in the materializer producer contract', () => {
+    expect(MATERIALIZED_ACCESS_SIGNAL_TYPES).toContain('POSTED_OPENING');
+  });
+
+  it('emits a POSTED_OPENING signal with the apply route and deadline expiry', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({ field: 'postedOpening', value: validPosting, confidence: 0.85 }),
+    ]);
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['POSTED_OPENING']);
+    const signal = result.accessSignals[0];
+    expect(signal.sourceUrl).toBe(validPosting.applyUrl);
+    expect(signal.expiresAt?.toISOString()).toBe('2026-12-01T00:00:00.000Z');
+    expect(signal.confidence).toBe('HIGH');
+    expect(signal.excerpt).toMatch(/Apply by 2026-12-01/);
+  });
+
+  it('fails closed when a posting is missing an apply route, deadline, or title', () => {
+    const missing = [
+      { ...validPosting, applyUrl: '' },
+      { ...validPosting, applyUrl: 'mailto:pi@example.test' },
+      { ...validPosting, deadline: '' },
+      { ...validPosting, deadline: 'not a date' },
+      { ...validPosting, title: '' },
+    ];
+    for (const value of missing) {
+      const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+        obs({ field: 'postedOpening', value }),
+      ]);
+      expect(result.accessSignals).toEqual([]);
+    }
+  });
+
+  it('deduplicates postings that share an apply route', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({ field: 'postedOpening', value: validPosting, _id: 'obs-a' }),
+      obs({ field: 'postedOpening', value: { ...validPosting, title: 'Alias' }, _id: 'obs-b' }),
+    ]);
+    expect(result.accessSignals).toHaveLength(1);
+  });
+
+  it('parsePostedOpening rejects incomplete payloads', () => {
+    expect(parsePostedOpening(null)).toBeNull();
+    expect(parsePostedOpening({ title: 'X', applyUrl: 'https://a.test' })).toBeNull();
+    expect(parsePostedOpening(validPosting)).not.toBeNull();
   });
 });
 

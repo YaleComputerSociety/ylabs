@@ -191,6 +191,16 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'undergrad-research-posting',
+    displayName: 'Undergraduate research postings',
+    description:
+      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting (title, resolvable hiring research home, apply route, and future-dated deadline), carrying the deadline as an expiry so the top-tier "Apply" state degrades once the window closes. Disabled by default until an operator confirms each page is reliably public on Development.',
+    baseUrl: 'https://science.yalecollege.yale.edu/research-opportunities',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+    enabled: false,
+  },
+  {
     name: 'yale-directory',
     displayName: 'Yale Directory',
     description: 'Yale-wide faculty roster and appointment metadata.',

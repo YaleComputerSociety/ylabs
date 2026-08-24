@@ -410,4 +410,70 @@ describe('accessSummaryService', () => {
       expect(summary?.bestNextStep).toBe('Reach out to ask about opportunities');
     },
   );
+
+  it('serves an active POSTED_OPENING as the top-tier posted-opening status (#1568)', async () => {
+    const entityId = new Types.ObjectId();
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'POSTED_OPENING',
+          confidence: 'HIGH',
+          confidenceScore: 0.85,
+          expiresAt: future,
+          source: {
+            excerpt: 'Summer RA - Smith Lab. Apply by 2026-12-01.',
+            url: 'https://apply.example.test/smith-lab-ra',
+          },
+        },
+      ]),
+    );
+
+    const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+      entityId.toString(),
+    );
+
+    expect(summary?.status).toBe('posted-opening');
+    expect(summary?.bestNextStep).toBe('Apply');
+    expect(summary?.evidence[0]).toMatchObject({
+      signalType: 'POSTED_OPENING',
+      sourceUrl: 'https://apply.example.test/smith-lab-ra',
+    });
+  });
+
+  it('degrades an expired POSTED_OPENING out of the active state (#1303/#1568)', async () => {
+    const entityId = new Types.ObjectId();
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'POSTED_OPENING',
+          confidence: 'HIGH',
+          confidenceScore: 0.85,
+          expiresAt: past,
+          source: {
+            excerpt: 'Summer RA - Smith Lab. Apply by 2024-12-01.',
+            url: 'https://apply.example.test/smith-lab-ra',
+          },
+        },
+        {
+          researchEntityId: entityId,
+          type: 'REACH_OUT_PLAUSIBLE',
+          confidence: 'MEDIUM',
+          source: { excerpt: 'Identified faculty lead with an official research page.' },
+        },
+      ]),
+    );
+
+    const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+      entityId.toString(),
+    );
+
+    expect(summary?.status).toBe('reach-out-plausible');
+    expect(summary?.bestNextStep).not.toBe('Apply');
+    expect(summary?.signalTypes).not.toContain('POSTED_OPENING');
+    expect(JSON.stringify(summary)).not.toContain('apply.example.test');
+  });
 });

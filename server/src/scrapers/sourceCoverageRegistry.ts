@@ -183,6 +183,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Official per-department directed-research / independent-study / senior-essay / senior-thesis course pages, minted as discovery-only COURSE_SEQUENCE research homes. Each department's own course page is the cited source; catalog and course-search index roots are never cited. Discovery-only: emits identity, official URL, and description; must not create undergraduate-access claims, posted openings, application links, or contact routes.",
   },
+  'undergrad-research-posting': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['AccessSignal', 'Observation'],
+    evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting: a title, a hiring research home resolvable to an existing ResearchEntity, an apply route, and a future-dated deadline (fail-closed on any missing field). Each signal carries the deadline as an expiry so it degrades out of the top-tier "Apply" state once the window closes. Must not ingest auth-gated aggregators or infer an opening from a generic lab website (#1303/#1332/#1568). Disabled by default until an operator confirms each page is reliably public on Development.',
+  },
   'official-profile-enrichment': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

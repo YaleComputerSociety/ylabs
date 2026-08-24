@@ -34,7 +34,12 @@ export type ResearchEntityType =
   | 'INDIVIDUAL_RESEARCH';
 
 export interface AccessSummary {
-  status: 'evidence-backed' | 'reach-out-plausible' | 'not-currently-available' | 'unknown';
+  status:
+    | 'posted-opening'
+    | 'evidence-backed'
+    | 'reach-out-plausible'
+    | 'not-currently-available'
+    | 'unknown';
   confidence: number;
   evidence: Array<{
     signalType: string;
