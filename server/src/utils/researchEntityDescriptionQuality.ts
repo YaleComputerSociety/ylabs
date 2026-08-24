@@ -44,6 +44,7 @@ export interface ResearchEntityDescriptionQualityInput {
   sourceUrls?: unknown;
   website?: unknown;
   websiteUrl?: unknown;
+  isProgramLike?: boolean;
 }
 
 export interface FieldQuality {
@@ -671,6 +672,74 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
   };
 }
 
+/**
+ * Program-typed research entities (fellowships, RA programs) describe what
+ * they offer and how to apply, not a lab-style "Studies X" research focus, so
+ * the lab-oriented same-as-full/copied-first-sentence/generic-lead checks in
+ * `shortDescriptionQuality` do not apply: a program's own concise, complete
+ * fullDescription sentence is a legitimate card short verbatim. This keeps
+ * every other safety check (blank, length, boilerplate, chrome, malformed
+ * text, appointment/role-only fragments).
+ */
+export function programCardShortDescriptionQuality(
+  value: unknown,
+  fullDescription: unknown,
+): FieldQuality {
+  const text = textValue(value);
+  const full = textValue(fullDescription);
+  const flags: DescriptionQualityFlag[] = [];
+
+  if (!text) flags.push('blank');
+  if (text && wordCount(text) < 6) flags.push('too-short');
+  if (text && (text.length > 280 || wordCount(text) > 44)) flags.push('too-long');
+  if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
+  if (text && hasBrokenTemplate(text)) flags.push('broken-template');
+  if (text && isResearchAreaTemplateLeakText(text)) flags.push('broken-template');
+  if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
+  if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
+  if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
+  if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
+  if (text && isStudiesTemplateGlueMalformed(text)) flags.push('malformed-generated-text');
+  if (text && (hasContactBlockResidue(text) || isCitationAuthorListDumpText(text))) {
+    flags.push('profile-chrome');
+  }
+  if (text && isResearchEntitySourceChromeText(text)) flags.push('profile-chrome');
+  if (text && isAppointmentOnly(text)) flags.push('appointment-only');
+  if (text && isRoleOnlyTitleFragment(text)) flags.push('role-only');
+  if (text && hasFirstPersonShortLead(text)) flags.push('first-person');
+  if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
+  if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
+  if (!full) flags.push('full-not-useful');
+
+  return {
+    text,
+    flags: uniqueFlags(flags),
+    isUseful: flags.length === 0,
+  };
+}
+
+/**
+ * Derives a program card short from the first self-contained sentence of its
+ * fullDescription (the whole description when it is already one sentence).
+ * Unlike `deriveShortDescriptionFromFullDescription`, this does not require a
+ * "Studies X" lab-research framing - programs are described by what they
+ * offer, not what they study (issue #1425).
+ */
+export function deriveProgramCardShortDescription(fullDescription: unknown): string {
+  const full = textValue(fullDescription);
+  if (!full) return '';
+  const sentences = sentenceList(full);
+  if (sentences.length === 0) return '';
+  if (sentences.length === 1) {
+    return programCardShortDescriptionQuality(full, full).isUseful ? full : '';
+  }
+  for (const sentence of sentences) {
+    const candidate = textValue(sentence);
+    if (programCardShortDescriptionQuality(candidate, full).isUseful) return candidate;
+  }
+  return '';
+}
+
 export function describesResearchFocus(value: unknown): boolean {
   return hasResearchFocusPhrase(textValue(value));
 }
@@ -725,13 +794,25 @@ export function assessResearchEntityDescriptionQuality(
   input: ResearchEntityDescriptionQualityInput,
 ): ResearchEntityDescriptionQuality {
   const full = fullDescriptionQuality(input.fullDescription);
-  const short = shortDescriptionQuality(input.shortDescription, input.fullDescription);
+  const short = input.isProgramLike
+    ? programCardShortDescriptionQuality(input.shortDescription, input.fullDescription)
+    : shortDescriptionQuality(input.shortDescription, input.fullDescription);
+  // A program-like home's card is a bonus, not a requirement (it is described by
+  // what it offers, not a lab-style research focus - see the invariant exemption
+  // in researchEntityPublicDescription.ts): a program with no short at all is
+  // still "complete" as long as its full description is useful, but a short that
+  // IS present must actually clear the program card bar rather than being empty
+  // template/boilerplate glue (issue #1425).
+  const hasShortText = Boolean(textValue(input.shortDescription));
+  const cardComplete = input.isProgramLike
+    ? full.isUseful && (!hasShortText || short.isUseful)
+    : full.isUseful && short.isUseful;
 
   return {
     full,
     short,
     sourceEligible: hasUsableSource(input),
-    cardState: full.isUseful && short.isUseful ? 'complete' : 'sparse',
+    cardState: cardComplete ? 'complete' : 'sparse',
   };
 }
 

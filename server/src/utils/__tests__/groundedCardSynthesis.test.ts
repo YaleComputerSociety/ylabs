@@ -196,6 +196,31 @@ describe('resolveGroundedCardDescription', () => {
   });
 });
 
+describe('resolveGroundedCardDescription program path (#1425)', () => {
+  const PROGRAM_FULL =
+    'Yale Economics summer research opportunities that match undergraduate students with faculty research projects.';
+
+  it('derives a program card from its own description without calling the lab-verb synthesizer', async () => {
+    const synthesize = vi.fn(async () => 'Studies something else entirely.');
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: PROGRAM_FULL,
+      isProgramLike: true,
+      synthesize,
+    });
+
+    expect(synthesize).not.toHaveBeenCalled();
+    expect(resolved).toBe(PROGRAM_FULL);
+  });
+
+  it('does not take the program-derive shortcut for a non-program entity', async () => {
+    expect(deriveShortDescriptionFromFullDescription(PROGRAM_FULL)).toBe('');
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: PROGRAM_FULL,
+    });
+    expect(resolved).toBe('');
+  });
+});
+
 const UNGROUNDABLE_FULL = 'Welcome to the lab website. Thank you for your interest in our group.';
 
 describe('resolveGroundedCardDescription research-areas fallback (#952)', () => {

@@ -1005,6 +1005,7 @@ interface CardSynthesisEntityDoc {
   name?: string;
   displayName?: string;
   entityType?: string;
+  kind?: string;
   shortDescription?: unknown;
   fullDescription?: unknown;
   studentVisibilityReasons?: string[];
@@ -1061,6 +1062,7 @@ export async function runCardSynthesisBackfill(options: {
       name: 1,
       displayName: 1,
       entityType: 1,
+      kind: 1,
       shortDescription: 1,
       fullDescription: 1,
       studentVisibilityReasons: 1,
@@ -1087,6 +1089,7 @@ export async function runCardSynthesisBackfill(options: {
       id,
       slug: doc.slug,
       entityType: doc.entityType,
+      kind: doc.kind,
       shortDescription: doc.shortDescription,
       fullDescription: doc.fullDescription,
       visibilityReasons: reasonsById.get(id) ?? doc.studentVisibilityReasons,

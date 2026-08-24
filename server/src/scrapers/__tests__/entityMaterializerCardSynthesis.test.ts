@@ -176,4 +176,34 @@ describe('resolveMaterializedShortDescription', () => {
     expect(result).toBeNull();
     expect(calls).toHaveLength(0);
   });
+
+  it('derives a program card from its own terse description without invoking the lab synthesizer (#1425)', async () => {
+    const programFull =
+      'Yale Economics summer research opportunities that match undergraduate students with faculty research projects.';
+    const calls: string[] = [];
+    const result = await resolveMaterializedShortDescription({
+      fullDescription: programFull,
+      currentShortDescription: undefined,
+      isProgramLike: true,
+      synthesize: (fullDescription) => {
+        calls.push(fullDescription);
+        return Promise.resolve('should not be used');
+      },
+    });
+
+    expect(result).toBe(programFull);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('does not take the program shortcut for a lab entity even with the same terse full text', async () => {
+    const terseFull = 'Yale Economics summer research opportunities.';
+    const result = await resolveMaterializedShortDescription({
+      fullDescription: terseFull,
+      currentShortDescription: undefined,
+      isProgramLike: false,
+      synthesize: unavailableLLM,
+    });
+
+    expect(result).toBeNull();
+  });
 });
