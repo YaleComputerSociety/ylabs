@@ -20,6 +20,7 @@ import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
+import LabScholarlyActivitySection from '../components/labs/LabScholarlyActivitySection';
 import LongText from '../components/shared/LongText';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import FavoriteButton from '../components/shared/FavoriteButton';
@@ -1027,6 +1028,8 @@ const LabDetail = () => {
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
     similarResearchEntities = [],
+    scholarlyLinks = [],
+    memberScholarlyLinks = [],
     undergraduateLogistics,
   } = payload;
   const group = legacyGroup ?? researchEntity;
@@ -1269,6 +1272,12 @@ const LabDetail = () => {
           )}
 
           <ResearchTeamSection members={members} roster={roster} />
+
+          <LabScholarlyActivitySection
+            scholarlyLinks={scholarlyLinks}
+            memberScholarlyLinks={memberScholarlyLinks}
+            members={members}
+          />
 
           {hasRelatedResearchEntities && (
             <RelatedResearchEntitiesSection
