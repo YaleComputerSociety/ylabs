@@ -168,6 +168,57 @@ const LINGUISTICS_HTML = `
 </main>
 `;
 
+const CS_RESEARCH_INTERNSHIP_HTML = `
+<html>
+  <header>
+    <nav>
+      <a href="https://admissions.yale.edu/apply">Apply</a>
+      <a href="https://engineering.yale.edu/">Yale School of Engineering</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Research Internship Program</h1>
+    <h2>Computer Science</h2>
+    <p>The Computer Science Research Internship Program at Yale provides applicants with a unique opportunity to conduct cutting-edge research with leading researchers in the field.</p>
+    <p>We welcome applications from all students that are currently pursuing a bachelor, master or PhD degree in Computer Science or related fields.</p>
+    <p><a href="https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform">Apply Now</a></p>
+    <h2>FAQs</h2>
+    <p>A committee of faculty and staff members review applications regularly and try to match applicants with faculty members.</p>
+  </main>
+</html>
+`;
+
+const SOCIOLOGY_HTML = `
+<main>
+  <h1>Senior Project</h1>
+  <p>The intensive major gives undergraduate students an opportunity to undertake a yearlong program of original research resulting in a contribution to sociological knowledge.</p>
+  <p>Students use research methods such as participant observation, in-depth interviewing, and secondary analysis of existing data under faculty guidance.</p>
+</main>
+`;
+
+const BIOMEDICAL_ENGINEERING_HTML = `
+<main>
+  <h1>Undergraduate Study</h1>
+  <h2>Biomedical Engineering</h2>
+  <p>Biomedical Engineering at Yale has exciting opportunities and advanced facilities for undergraduate student research projects.</p>
+  <p>Undergraduates have the opportunity to engage in practical, impactful research from day one alongside faculty mentors.</p>
+</main>
+`;
+
+const BACHELOR_ONLY_NO_RESEARCH_HTML = `
+<main>
+  <h1>Program Overview</h1>
+  <p>The program welcomes applicants pursuing a bachelor degree who are interested in coursework and professional development.</p>
+</main>
+`;
+
+const RESEARCH_WITHOUT_UNDERGRAD_SIGNAL_HTML = `
+<main>
+  <h1>Senior Essay</h1>
+  <p>The senior thesis is an opportunity to apply what you have learned to an independent research project under the mentorship of an advisor.</p>
+</main>
+`;
+
 function buildContext(
   scraper: DepartmentUndergradResearchScraper,
   emitted: ObservationInput[],
@@ -635,6 +686,108 @@ describe('departmentUndergradResearchScraper', () => {
     const observations = departmentUndergradResearchRecordsToObservations(records);
     expect(observations.map((observation) => observation.field)).not.toEqual(
       expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline']),
+    );
+  });
+
+  it('covers Computer Science research internship as an official application route (#1281)', () => {
+    const csConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'computer-science',
+    );
+
+    expect(csConfig).toMatchObject({
+      url: 'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      department: 'Computer Science',
+      school: 'Yale School of Engineering & Applied Science',
+      parser: 'structured-opportunity',
+    });
+
+    const records = parseStructuredOpportunityPage(CS_RESEARCH_INTERNSHIP_HTML, csConfig!);
+
+    expect(records).toMatchObject([
+      {
+        entityKey: 'department-undergrad-research-computer-science-research-internship-program',
+        name: 'Computer Science Research Internship Program',
+        kind: 'program',
+        entityType: 'PROGRAM',
+        department: 'Computer Science',
+        joinPageUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform',
+      },
+    ]);
+    expect(records[0].description).toMatch(/^Supports undergraduate research in Computer Science\./);
+
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+    expect(observations.map((observation) => observation.field)).not.toEqual(
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline']),
+    );
+  });
+
+  it('accepts bachelor-degree undergraduate signals so CS-style pages are not dropped (#1281)', () => {
+    const csConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'computer-science',
+    )!;
+
+    expect(parseStructuredOpportunityPage(BACHELOR_ONLY_NO_RESEARCH_HTML, csConfig)).toEqual([]);
+    expect(
+      parseGeneralDepartmentResearchPage(RESEARCH_WITHOUT_UNDERGRAD_SIGNAL_HTML, csConfig),
+    ).toEqual([]);
+  });
+
+  it('picks the in-content application form over a global navigation apply link (#1281)', () => {
+    const csConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'computer-science',
+    )!;
+
+    const [record] = parseStructuredOpportunityPage(CS_RESEARCH_INTERNSHIP_HTML, csConfig);
+
+    expect(record.joinPageUrl).toBe('https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform');
+    expect(record.joinPageUrl).not.toContain('admissions.yale.edu');
+  });
+
+  it('covers Sociology and Biomedical Engineering undergraduate research pages (#1281)', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+
+    expect(configsByKey.get('sociology')).toMatchObject({
+      url: 'https://sociology.yale.edu/undergraduate-program/senior-project',
+      parser: 'general-guidance',
+      department: 'Sociology',
+    });
+    expect(configsByKey.get('biomedical-engineering')).toMatchObject({
+      url: 'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/undergraduate-study',
+      school: 'Yale School of Engineering & Applied Science',
+      parser: 'general-guidance',
+      department: 'Biomedical Engineering',
+    });
+
+    const records = [
+      ...parseGeneralDepartmentResearchPage(SOCIOLOGY_HTML, configsByKey.get('sociology')!),
+      ...parseGeneralDepartmentResearchPage(
+        BIOMEDICAL_ENGINEERING_HTML,
+        configsByKey.get('biomedical-engineering')!,
+      ),
+    ];
+
+    expect(records).toMatchObject([
+      {
+        entityKey: 'department-undergrad-research-sociology',
+        name: 'Sociology Undergraduate Research',
+        entityType: 'PROGRAM',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('yearlong program of original research'),
+      },
+      {
+        entityKey: 'department-undergrad-research-biomedical-engineering',
+        name: 'Biomedical Engineering Undergraduate Research',
+        entityType: 'PROGRAM',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('undergraduate student research projects'),
+      },
+    ]);
+
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+    expect(observations.map((observation) => observation.field)).not.toEqual(
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),
     );
   });
 
