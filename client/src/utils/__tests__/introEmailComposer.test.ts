@@ -64,4 +64,60 @@ describe('composeStudentIntroEmailDraft', () => {
     expect(draft.body).not.toContain('  Example Lab  ');
     expect(draft.subject).toBe('Interest in undergraduate research with Example Lab');
   });
+
+  it('never emits placeholder-name tokens in the drafted body', () => {
+    const draft = composeStudentIntroEmailDraft({
+      entityName: 'Example Lab',
+      leadName: 'Jane Doe',
+      researchAreas: ['Machine Learning'],
+    });
+
+    expect(draft.body).not.toMatch(/\[[^\]]*\]/);
+    expect(draft.body).not.toContain('Your Name');
+    expect(draft.body).toContain('I am a Yale undergraduate');
+  });
+
+  it('drops fields carrying placeholder or redaction artifacts and fails closed when the entity name is one', () => {
+    const withPlaceholderLead = composeStudentIntroEmailDraft({
+      entityName: 'Example Lab',
+      leadName: '[redacted]',
+      researchAreas: ['<script>', '{{topic}}', 'Genomics'],
+    });
+
+    expect(withPlaceholderLead.generatedByPlatform).toBe(true);
+    expect(withPlaceholderLead.body).toContain('Hello,');
+    expect(withPlaceholderLead.body).toContain('in Genomics');
+    expect(withPlaceholderLead.body).not.toMatch(/\[[^\]]*\]|\{\{|<[^>]+>|redacted/i);
+
+    const withPlaceholderEntity = composeStudentIntroEmailDraft({ entityName: '[unknown]' });
+    expect(withPlaceholderEntity.generatedByPlatform).toBe(false);
+    expect(withPlaceholderEntity.subject).toBe(FALLBACK_INTRO_EMAIL_SUBJECT);
+  });
+
+  it('derives the closing ask from the best next step when present', () => {
+    const credit = composeStudentIntroEmailDraft({
+      entityName: 'Example Lab',
+      bestNextStep: 'Ask about credit or thesis expectations after finding a mentor',
+    });
+    expect(credit.body).toContain('research credit or a senior project');
+
+    const funding = composeStudentIntroEmailDraft({
+      entityName: 'Example Lab',
+      bestNextStep: 'Ask about funding after finding a mentor',
+    });
+    expect(funding.body).toContain('funded or fellowship-supported roles');
+
+    const availability = composeStudentIntroEmailDraft({
+      entityName: 'Example Lab',
+      bestNextStep: 'Reach out to confirm current availability',
+    });
+    expect(availability.body).toContain('currently taking on undergraduate researchers');
+
+    const generic = composeStudentIntroEmailDraft({
+      entityName: 'Example Lab',
+      bestNextStep: 'Reach out to ask about opportunities',
+    });
+    expect(generic.body).toContain('whether there might be a way for me to get involved.');
+    expect(generic.body).not.toContain('research credit');
+  });
 });

@@ -569,6 +569,7 @@ const DecisionSummary = ({
     entityName: researchEntityTitle(group),
     leadName: piName,
     researchAreas: topics,
+    bestNextStep: group.accessSummary?.bestNextStep,
   });
   const piMailtoHref = safeMailtoHref(piEmail, {
     subject: introEmailDraft.subject,
