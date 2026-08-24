@@ -1,4 +1,7 @@
-import { isStudiesTemplateGlueMalformed } from './descriptionHygiene';
+import {
+  isResearchAreaTemplateLeakText,
+  isStudiesTemplateGlueMalformed,
+} from './descriptionHygiene';
 import {
   isAcademicAppointmentDescription,
   isBrokenResearchEntityDescriptionFragment,
@@ -577,6 +580,7 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
   if (text && (text.length > 280 || wordCount(text) > 44)) flags.push('too-long');
   if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');
+  if (text && isResearchAreaTemplateLeakText(text)) flags.push('broken-template');
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
