@@ -79,6 +79,7 @@ import {
   personProfileSourceMatchesEntity,
   type ResearchEntityIdentity,
 } from './utils/personProfileEntityMatch';
+import { deriveResearchEntityYaleStatus } from '../utils/researchEntityYaleStatus';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -2376,6 +2377,26 @@ export async function materializeEntity(
           ]);
           fieldsWritten++;
         }
+      }
+    }
+    if (
+      !manuallyLockedFields.includes('activeAtYaleCache') &&
+      !manuallyLockedFields.includes('yaleStatusCache')
+    ) {
+      const yaleStatusSignal = deriveResearchEntityYaleStatus({
+        sourceUrls: set.sourceUrls ?? entityDoc?.sourceUrls,
+        websiteUrl: set.websiteUrl ?? entityDoc?.websiteUrl,
+        name: set.name ?? entityDoc?.name,
+        displayName: set.displayName ?? entityDoc?.displayName,
+        fullDescription: set.fullDescription ?? entityDoc?.fullDescription,
+        shortDescription: set.shortDescription ?? entityDoc?.shortDescription,
+        profileSynthesisDescription:
+          set.profileSynthesisDescription ?? entityDoc?.profileSynthesisDescription,
+      });
+      if (yaleStatusSignal) {
+        if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
+        set.yaleStatusCache = yaleStatusSignal.yaleStatusCache;
+        set.activeAtYaleCache = yaleStatusSignal.activeAtYaleCache;
       }
     }
   }
