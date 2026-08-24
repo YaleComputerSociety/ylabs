@@ -179,9 +179,9 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     status: 'covered',
     coveredBy: ['dept-faculty-roster'],
     studentImpactTier: 2,
-    approxFacultyCount: 38,
+    approxFacultyCount: 39,
     notes:
-      'Undergraduate-research page is covered by department-undergrad-research; the roster is not.',
+      'Covered via dept-faculty-roster (#1319): the /people/faculty roster renders server-side with the shared directory-listing-card Drupal theme, so it reuses directoryListingCardExtractor. Each card links the faculty member\'s own chem.yale.edu/profile/<slug> page, which is cited as the source; the roster root is only a crawl seed. The undergraduate-research page is separately covered by department-undergrad-research.',
   },
   {
     url: 'https://mbb.yale.edu/people/faculty',
