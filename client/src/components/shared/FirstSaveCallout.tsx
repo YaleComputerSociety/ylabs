@@ -32,14 +32,14 @@ const FirstSaveCallout = ({ kind, onDismiss }: FirstSaveCalloutProps) => {
         <div className="flex shrink-0 flex-wrap gap-2">
           <Link
             to="/account"
-            className="inline-flex min-h-[40px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
+            className="yr-focus-ring inline-flex min-h-[40px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy"
           >
             Open Dashboard
           </Link>
           <button
             type="button"
             onClick={onDismiss}
-            className="inline-flex min-h-[40px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="yr-focus-ring inline-flex min-h-[40px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-[var(--yr-blue-soft)]"
           >
             Dismiss
           </button>

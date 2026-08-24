@@ -12,7 +12,7 @@ const HasPrerequisitesIcon = ({ size = 16 }: HasPrerequisitesIconProps) => {
   const tipId = useId();
   return (
     <span
-      className="relative group/tip inline-flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+      className="yr-focus-ring relative group/tip inline-flex items-center rounded"
       tabIndex={0}
       role="img"
       aria-label="Has application details"
