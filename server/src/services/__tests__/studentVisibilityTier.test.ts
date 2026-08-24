@@ -640,6 +640,30 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('lab_name_org_type_mismatch');
   });
 
+  it('promotes a legitimately named laboratory center whose eponym appears in its own description', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-wright-laboratory-fixture',
+        name: 'Yale Wright Laboratory',
+        slug: 'center-wright-laboratory-fixture',
+        entityType: 'CENTER',
+        shortDescription:
+          'Wright Lab develops experiments to understand the Universe, focusing on nuclear, particle, and astro-physics.',
+        fullDescription:
+          'Wright Lab supports a broad research program in experimental nuclear, particle, and astro-physics, with an emphasis on instrumentation development and quantum sensing.',
+        fieldProvenance: { shortDescription: 'source', fullDescription: 'source' },
+        websiteUrl: 'https://wlab.yale.edu/',
+        sourceUrls: ['https://wlab.yale.edu/', 'https://wlab.yale.edu/opportunities'],
+      },
+      leadMembers: [],
+      accessSignalCount: 2,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('lab_name_org_type_mismatch');
+  });
+
   it('does not flag a genuinely org-named entity whose type matches its name', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
