@@ -10,6 +10,8 @@ type ProgramSummary = {
   count: number;
   nextDeadlineLabel?: string;
   nextDeadlineDate?: string;
+  closingWithin14DaysCount?: number;
+  hasNotStartedClosingSoon?: boolean;
 };
 
 let savedResearchCount = 2;
@@ -65,9 +67,9 @@ vi.mock('../../components/accounts/ResearchInterestsEditor', () => ({
   default: () => <section>Research interests editor</section>,
 }));
 
-const renderAccount = (userType: string) =>
+const renderAccount = (userType: string, initialEntries: string[] = ['/account']) =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -187,6 +189,43 @@ describe('Account page', () => {
     renderAccount('student');
 
     expect(screen.getByText('Summer Research Grant: Due Jun 30, 2099')).toBeTruthy();
+  });
+
+  it('surfaces the watched-program urgency aggregate on the dashboard', () => {
+    programSummary = { count: 2, closingWithin14DaysCount: 2 };
+
+    renderAccount('student');
+
+    expect(screen.getByText(/2 watched programs close within 2 weeks\./)).toBeTruthy();
+  });
+
+  it('stays silent about urgency when nothing is closing soon', () => {
+    programSummary = { count: 2, closingWithin14DaysCount: 0 };
+
+    renderAccount('student');
+
+    expect(screen.queryByText(/close within 2 weeks/)).toBeNull();
+  });
+
+  it('switches to the Program Watch tab when the urgency link is activated', () => {
+    programSummary = { count: 1, closingWithin14DaysCount: 1 };
+
+    renderAccount('student');
+
+    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    expect(programTab.getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Program Watch' }));
+    expect(programTab.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('deep-links directly to the Program Watch tab via a tab query param', () => {
+    renderAccount('student', ['/account?tab=programs']);
+
+    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
+    expect(programTab.getAttribute('aria-selected')).toBe('true');
+    expect(dashboardTab.getAttribute('aria-selected')).toBe('false');
   });
 
   it('shows every account the same read-only surfaces with no faculty edit surface', () => {
