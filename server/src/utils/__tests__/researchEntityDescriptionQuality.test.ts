@@ -83,6 +83,16 @@ describe('fullDescriptionQuality', () => {
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
+  it('does not split a decimal number into a fragment card', () => {
+    const fullDescription =
+      'Major surgery is a common event in the lives of community-living older persons, with a 5-year cumulative incidence of 13.8%, representing nearly 5 million persons aged 65 years or older in the US. This value will increase substantially in the coming years.';
+
+    const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
+
+    expect(shortDescription).not.toMatch(/^\d/);
+    expect(shortDescription).toContain('13.8%');
+  });
+
   it('accepts specific research-area series as source-backed cardable descriptions', () => {
     const fullDescription =
       'Research areas include Spectroscopy and Quantum Chemical Studies, Molecular spectroscopy and chirality, and Receptor Mechanisms and Signaling.';
