@@ -37,11 +37,11 @@ const baseGroup = (overrides: Partial<ResearchGroup> = {}): ResearchGroup => ({
 });
 
 describe('computeAcceptanceVerdict — access summary drives the verdict', () => {
-  it('uses posted-opening accessSummary as the primary access source', () => {
+  it('never upgrades a POSTED_OPENING chip to verified-accepting (#1303)', () => {
     const result = computeAcceptanceVerdict(
       baseGroup({
         accessSummary: {
-          status: 'posted-opening',
+          status: 'evidence-backed',
           confidence: 0.88,
           evidence: [
             {
@@ -51,12 +51,12 @@ describe('computeAcceptanceVerdict — access summary drives the verdict', () =>
             },
           ],
           signalTypes: ['POSTED_OPENING'],
-          bestNextStep: 'Apply',
+          bestNextStep: 'Save for later',
         },
       }),
     );
 
-    expect(result.verdict).toBe('verified-accepting');
+    expect(result.verdict).toBe('likely-accepting');
     expect(result.confidence).toBe(0.88);
     expect(result.evidence[0].kind).toBe('active-listing');
     expect(result.evidence[0].label).toBe('Posted opening');

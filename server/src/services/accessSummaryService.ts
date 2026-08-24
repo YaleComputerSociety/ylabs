@@ -7,7 +7,6 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export type AccessSummaryStatus =
-  | 'posted-opening'
   | 'evidence-backed'
   | 'reach-out-plausible'
   | 'not-currently-available'
@@ -86,7 +85,6 @@ function confidenceScore(signal: any): number {
 const HIGH_CONFIDENCE_SCORE = 0.75;
 
 const POSITIVE_ACCESS_SIGNAL_TYPES = new Set([
-  'POSTED_OPENING',
   'REACH_OUT_PLAUSIBLE',
   'CURRENT_UNDERGRADS',
   'PAST_UNDERGRADS',
@@ -101,13 +99,17 @@ const POSITIVE_ACCESS_SIGNAL_TYPES = new Set([
   'PROGRAM_MANAGER_LISTED',
 ]);
 
-function computeStatus(
+export const STATUS_DETERMINING_SIGNAL_TYPES = [
+  'NOT_CURRENTLY_AVAILABLE',
+  'REACH_OUT_PLAUSIBLE',
+  'CURRENT_UNDERGRADS',
+  'PAST_UNDERGRADS',
+] as const;
+
+export function computeStatus(
   signalTypes: Set<string>,
   maxScoreByType: Map<string, number>,
 ): AccessSummaryStatus {
-  if (signalTypes.has('POSTED_OPENING')) {
-    return 'posted-opening';
-  }
   if (signalTypes.has('NOT_CURRENTLY_AVAILABLE')) {
     const negativeScore = maxScoreByType.get('NOT_CURRENTLY_AVAILABLE') ?? 0;
     const positiveScores = Array.from(maxScoreByType.entries())
@@ -137,7 +139,6 @@ function computeStatus(
 }
 
 function bestNextStepFor(status: AccessSummaryStatus, signalTypes: Set<string>): string {
-  if (status === 'posted-opening') return 'Apply';
   if (status === 'not-currently-available') return 'Reach out to confirm current availability';
   if (
     signalTypes.has('CREDIT_FORMALIZATION_POSSIBLE') ||
