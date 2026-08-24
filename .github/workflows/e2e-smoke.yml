@@ -1,0 +1,110 @@
+name: E2E Smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+      - beta
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  student-journey-smoke:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' localhost:27017/test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+      meilisearch:
+        image: getmeili/meilisearch:v1.13
+        ports:
+          - 7700:7700
+        env:
+          MEILI_ENV: development
+          MEILI_MASTER_KEY: e2eSmokeMeiliMasterKey123
+          MEILI_NO_ANALYTICS: 'true'
+
+    env:
+      NODE_ENV: development
+      PORT: '4000'
+      SERVER_BASE_URL: http://localhost:4000
+      SESSION_SECRET: k7Qm2Xb9Rp4Zt6Vy1Nc3Hs5Jd8Lf0Wg2Ea
+      MONGODBURL: mongodb://localhost:27017/ylabs_e2e_smoke
+      MEILISEARCH_HOST: http://localhost:7700
+      MEILISEARCH_API_KEY: e2eSmokeMeiliMasterKey123
+      E2E_BASE_URL: http://localhost:4000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
+
+      - name: Build client
+        run: yarn build:client
+
+      - name: Wait for Meilisearch readiness
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -sf http://localhost:7700/health >/dev/null; then
+              echo "Meilisearch is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Meilisearch did not become ready in time"
+          exit 1
+
+      - name: Seed synthetic research entities
+        run: yarn --cwd server e2e:seed-smoke
+
+      - name: Rebuild Meilisearch index from seeded entities
+        run: yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild
+
+      - name: Start API and static client
+        run: |
+          nohup yarn --cwd server exec tsx src/index.ts > /tmp/e2e-server.log 2>&1 &
+          echo $! > /tmp/e2e-server.pid
+          for attempt in $(seq 1 40); do
+            if curl -sf http://localhost:4000/api/check >/dev/null; then
+              echo "Server is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become ready in time"
+          cat /tmp/e2e-server.log || true
+          exit 1
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run student-journey smoke
+        run: node scripts/e2e-student-journey-smoke.mjs
+
+      - name: Dump server log on failure
+        if: failure()
+        run: cat /tmp/e2e-server.log || true
