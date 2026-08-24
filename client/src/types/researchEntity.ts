@@ -199,5 +199,6 @@ export function normalizeResearchEntityDetailPayload(
     relatedResearchEntities: payload.relatedResearchEntities ?? [],
     affiliatedRelationships: payload.affiliatedRelationships ?? [],
     affiliatedResearchEntities: payload.affiliatedResearchEntities ?? [],
+    similarResearchEntities: payload.similarResearchEntities ?? [],
   };
 }

@@ -36,6 +36,7 @@ import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
 import {
   isResearchEntitySearchEmbedderConfigured,
+  RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -2054,6 +2055,14 @@ const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
 const PUBLIC_RELATED_ENTITY_PROJECTION =
   '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier descriptionSource sourceUrls website websiteUrl';
 
+const MAX_SIMILAR_RESEARCH_ENTITIES = 6;
+const SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL = 40;
+// searchSimilarDocuments returns the k nearest vectors regardless of how
+// dissimilar they are, so a niche entity with no real topical neighbor would
+// otherwise surface arbitrary homes. This pure-cosine cutoff drops those weak
+// neighbors so the section stays absent unless a genuinely similar home exists.
+const SIMILAR_RESEARCH_ENTITY_SIMILARITY_THRESHOLD = 0.35;
+
 export interface PublicRelationshipCollectionMeta {
   returned: number;
   truncated: boolean;
@@ -2216,6 +2225,93 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       truncated: affiliatedRelationshipsAll.length > affiliatedRelationships.length,
     },
   };
+}
+
+/**
+ * "More like this": up to N other student-visible research homes whose topical
+ * embedding is closest to the viewed entity, reusing the existing Meili semantic
+ * embedder via searchSimilarDocuments (no new index, embedder, or data). Results
+ * are projected through the same bounded summary allowlist as the structural
+ * relation sections, and exclude the entity itself, any caller-supplied
+ * structural relations, archived entities, and anything below the public tier.
+ */
+export async function listSimilarResearchEntities(
+  entity: Record<string, any>,
+  options: { excludeEntityKeys?: Iterable<unknown>; limit?: number } = {},
+): Promise<PublicResearchEntitySummaryDto[]> {
+  const entityId = researchGroupDocumentId(entity?._id ?? entity?.id);
+  if (!entityId) return [];
+
+  const requestedLimit = Math.floor(options.limit ?? MAX_SIMILAR_RESEARCH_ENTITIES);
+  const limit = Math.min(
+    MAX_SIMILAR_RESEARCH_ENTITIES,
+    Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : MAX_SIMILAR_RESEARCH_ENTITIES),
+  );
+
+  const index = await getMeiliIndex('researchentities');
+  if (!(await isResearchEntitySearchEmbedderConfigured(index))) return [];
+
+  const exclusionKeys = new Set<string>();
+  const addExclusion = (value: unknown): void => {
+    const key = String(value ?? '')
+      .trim()
+      .toLowerCase();
+    if (key) exclusionKeys.add(key);
+  };
+  addExclusion(entityId);
+  addExclusion(entity?.slug);
+  for (const key of options.excludeEntityKeys ?? []) addExclusion(key);
+
+  const visibilityFilter = [
+    'archived != true',
+    `studentVisibilityTier IN [${publicStudentVisibilityTiers.map((tier) => `"${tier}"`).join(', ')}]`,
+  ].join(' AND ');
+
+  let hits: any[];
+  try {
+    const result = await (index as any).searchSimilarDocuments({
+      id: entityId,
+      embedder: RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
+      limit: SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL,
+      filter: visibilityFilter,
+      showRankingScore: true,
+    });
+    hits = Array.isArray(result?.hits) ? result.hits : [];
+  } catch (error) {
+    // "More like this" is an additive discovery surface layered on the existing
+    // semantic index. If the running Meili index lacks the embedder or rejects
+    // the similar-documents request, hide the section rather than fail the page.
+    console.error('Similar research entities lookup failed:', sanitizeLogValue(error));
+    return [];
+  }
+
+  const seenCanonicalKeys = new Set<string>();
+  const similarResearchEntities: PublicResearchEntitySummaryDto[] = [];
+  for (const hit of hits) {
+    if (!hit || typeof hit !== 'object') continue;
+    if (
+      typeof hit._rankingScore === 'number' &&
+      hit._rankingScore < SIMILAR_RESEARCH_ENTITY_SIMILARITY_THRESHOLD
+    ) {
+      continue;
+    }
+    if (hit.archived === true) continue;
+    if (!publicStudentVisibilityTiers.includes(hit.studentVisibilityTier)) continue;
+    const hitId = String(hit.id ?? '')
+      .trim()
+      .toLowerCase();
+    const hitSlug = String(hit.slug ?? '')
+      .trim()
+      .toLowerCase();
+    if ((hitId && exclusionKeys.has(hitId)) || (hitSlug && exclusionKeys.has(hitSlug))) continue;
+    const dto = toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(hit));
+    const canonicalKey = (dto.slug || dto.id || '').toLowerCase();
+    if (!canonicalKey || seenCanonicalKeys.has(canonicalKey)) continue;
+    seenCanonicalKeys.add(canonicalKey);
+    similarResearchEntities.push(dto);
+    if (similarResearchEntities.length >= limit) break;
+  }
+  return similarResearchEntities;
 }
 
 function normalizedMemberName(member: { user?: any }): string {
@@ -2803,6 +2899,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   affiliatedRelationships: any[];
   affiliatedResearchEntities: PublicResearchEntitySummaryDto[];
   affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
+  similarResearchEntities: PublicResearchEntitySummaryDto[];
 } | null> {
   const normalizedSlug = normalizeResearchDetailSlug(slug);
   if (!normalizedSlug) return null;
@@ -3059,6 +3156,13 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
   const publicAccessSignals = (accessSignals as any[]).map(publicAccessSignalForResearchDetail);
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
+  const structuralRelationExclusionKeys = [
+    ...relationshipPayload.relatedResearchEntities,
+    ...relationshipPayload.affiliatedResearchEntities,
+  ].flatMap((related) => [related.slug, related.id]);
+  const similarResearchEntities = await listSimilarResearchEntities(group as Record<string, any>, {
+    excludeEntityKeys: structuralRelationExclusionKeys,
+  });
 
   return addResearchEntityDetailAlias({
     group: {
@@ -3074,5 +3178,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     accessSignals: publicAccessSignals,
     undergraduateLogistics,
     ...relationshipPayload,
+    similarResearchEntities,
   });
 }

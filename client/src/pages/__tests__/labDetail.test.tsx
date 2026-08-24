@@ -1613,6 +1613,81 @@ describe('LabDetail page', () => {
     expect(screen.getAllByRole('link', { name: /Example Physics Member/ })).toHaveLength(1);
   });
 
+  it('renders a "More like this" section linking each topically-similar research home', async () => {
+    renderLabDetail({
+      ...basePayload,
+      similarResearchEntities: [
+        {
+          id: 'entity-similar',
+          slug: 'lab-similar-topics',
+          name: 'Similar Topics Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          departments: ['Physics'],
+          blurb: 'Studies closely related molecular dynamics and protein folding.',
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('More like this')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Similar Topics Lab/ }).getAttribute('href')).toBe(
+      '/research/lab-similar-topics',
+    );
+    expect(
+      screen.getByText('Studies closely related molecular dynamics and protein folding.'),
+    ).toBeTruthy();
+  });
+
+  it('hides the "More like this" section when there are no similar research homes', async () => {
+    renderLabDetail({
+      ...basePayload,
+      similarResearchEntities: [],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('More like this')).toBeNull();
+  });
+
+  it('excludes similar homes already shown as structural related or affiliated entities', async () => {
+    const sharedEntity = {
+      id: 'entity-shared',
+      slug: 'lab-shared-structural',
+      name: 'Shared Structural Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Physics'],
+    };
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+      },
+      relatedResearchEntities: [sharedEntity],
+      similarResearchEntities: [
+        sharedEntity,
+        {
+          id: 'entity-only-similar',
+          slug: 'lab-only-similar',
+          name: 'Only Similar Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          departments: ['Physics'],
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('More like this')).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: /Shared Structural Lab/ })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: /Only Similar Lab/ })).toBeTruthy();
+  });
+
   it('does not render inferred student-fit preparation from topic metadata', async () => {
     renderLabDetail({
       ...basePayload,
