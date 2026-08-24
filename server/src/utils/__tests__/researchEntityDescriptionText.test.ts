@@ -650,6 +650,34 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     );
   });
 
+  it('strips a "Director of"/"senior lecturer" credential opener on a FACULTY_RESEARCH_AREA entity (#1793)', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'William Casey King is a senior lecturer at the Jackson School of Global Affairs. His research focuses on big data and data-driven policy analyses and solutions.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toBe(
+      'His research focuses on big data and data-driven policy analyses and solutions.',
+    );
+  });
+
+  it('strips a "Dr. X, a graduate of ..." credential opener behind a leading title fragment on a FACULTY_RESEARCH_AREA entity (#1793)', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'Senior Research Scientist in Medicine Dr. Wisnewski, a graduate of the University of California, is a widely experienced research scientist. Her research studies chemicals that cause asthma in the workplace.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toBe(
+      'Her research studies chemicals that cause asthma in the workplace.',
+    );
+  });
+
   it('does not treat a leading pronoun as a credential-opener name lead (#1638)', () => {
     const lab = {
       entityType: 'LAB',
