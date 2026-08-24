@@ -151,11 +151,18 @@ const ResearchPerson = () => {
           >
             Research homes at Yale
           </h2>
-          <div className="grid grid-cols-1 gap-4">
-            {clusters.map((cluster) => (
-              <ResearchHomeCard key={cluster.id} home={cluster} />
-            ))}
-          </div>
+          {clusters.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4">
+              {clusters.map((cluster) => (
+                <ResearchHomeCard key={cluster.id} home={cluster} />
+              ))}
+            </div>
+          ) : (
+            <p className="yr-panel rounded-md p-5 text-sm text-gray-600">
+              No public research homes are listed for this researcher yet. Use the official profile
+              above to learn more, or head back to Explore Research to keep looking.
+            </p>
+          )}
         </section>
       </div>
     </div>

@@ -160,6 +160,55 @@ describe('getResearcherProfileByPublicKey', () => {
     expect(profile).toBeNull();
   });
 
+  it('renders a home-less researcher that has a verified primary-identity link', async () => {
+    const person = await Researcher.create({
+      displayName: 'Dr Homeless Findable',
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: 'https://law.yale.edu/profile/homeless-findable',
+          verifiedAt: new Date('2025-01-01T00:00:00Z'),
+          healthStatus: 'HEALTHY',
+        },
+      ],
+      status: 'ACTIVE',
+      archived: false,
+    });
+
+    const profile = await getResearcherProfileByPublicKey(
+      `${(person._id as mongoose.Types.ObjectId).toHexString()}-pi`,
+    );
+    expect(profile).not.toBeNull();
+    expect(profile?.displayName).toBe('Dr Homeless Findable');
+    expect(profile?.homes).toEqual([]);
+    expect(profile?.officialProfileUrl).toBe('https://law.yale.edu/profile/homeless-findable');
+  });
+
+  it('fails closed for a DEPARTED researcher even with a student-visible home', async () => {
+    const person = await Researcher.create({
+      displayName: 'Dr Departed',
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: 'https://medicine.yale.edu/profile/departed',
+          verifiedAt: new Date('2025-01-01T00:00:00Z'),
+          healthStatus: 'HEALTHY',
+        },
+      ],
+      status: 'DEPARTED',
+      archived: false,
+    });
+    const entityId = await seedEntity('departed-lab');
+    await seedRoleAssignment(person._id as mongoose.Types.ObjectId, entityId);
+
+    const profile = await getResearcherProfileByPublicKey(
+      `${(person._id as mongoose.Types.ObjectId).toHexString()}-pi`,
+    );
+    expect(profile).toBeNull();
+  });
+
   it('fails closed for a valid-shaped key with no matching researcher', async () => {
     const orphanId = new mongoose.Types.ObjectId();
     const profile = await getResearcherProfileByPublicKey(`${orphanId.toHexString()}-pi`);

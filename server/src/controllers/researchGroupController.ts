@@ -17,6 +17,7 @@ import {
   type ResearchGroupSearchOptions,
 } from '../services/researchGroupService';
 import { getResearcherProfileByPublicKey } from '../services/researcherProfileService';
+import { searchResearchersViaMeili } from '../services/researcherSearchIndexService';
 import {
   getAreaResearchPage,
   getFieldResearchPage,
@@ -444,6 +445,36 @@ export const getResearcherProfile = async (request: Request, response: Response)
   } catch (error) {
     console.error('Researcher profile failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Failed to fetch researcher profile' });
+  }
+};
+
+const MAX_RESEARCHER_SEARCH_PAGE_SIZE = 25;
+const DEFAULT_RESEARCHER_SEARCH_PAGE_SIZE = 10;
+
+export const searchResearchers = async (request: Request, response: Response) => {
+  try {
+    const body = (request.body || {}) as { q?: string; page?: number; pageSize?: number };
+    const q = typeof body.q === 'string' ? body.q : '';
+    if (q.length > MAX_SEARCH_QUERY_LENGTH) {
+      return response.status(400).json({ error: 'Invalid search request' });
+    }
+
+    const requestedPage = parsePositiveIntegerParam(body.page, 1);
+    const page = Math.min(MAX_PAGE, Math.max(1, Math.floor(requestedPage) || 1));
+    const requestedPageSize = parsePositiveIntegerParam(
+      body.pageSize,
+      DEFAULT_RESEARCHER_SEARCH_PAGE_SIZE,
+    );
+    const pageSize = Math.min(
+      MAX_RESEARCHER_SEARCH_PAGE_SIZE,
+      Math.max(1, Math.floor(requestedPageSize) || 1),
+    );
+
+    const result = await searchResearchersViaMeili(q, { page, pageSize });
+    return response.json(result);
+  } catch (error) {
+    console.error('Researcher search failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Search failed' });
   }
 };
 

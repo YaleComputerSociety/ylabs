@@ -23,6 +23,8 @@ router.post('/search', asyncHandler(researchGroupController.searchResearchGroups
 
 router.post('/related-programs', asyncHandler(researchGroupController.searchRelatedPrograms));
 
+router.post('/people/search', asyncHandler(researchGroupController.searchResearchers));
+
 router.post(
   '/:slug/outreach',
   writeLimit,
