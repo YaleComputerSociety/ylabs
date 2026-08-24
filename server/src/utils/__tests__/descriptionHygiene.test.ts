@@ -1745,6 +1745,43 @@ describe('isNonSelfContainedShortDescription card-fragment guard (#1248)', () =>
   });
 });
 
+describe('isNonSelfContainedShortDescription pronoun/CV-opener guard (#1400)', () => {
+  const PRONOUN_OPENERS = [
+    'His research is particularly focused on developing novel therapeutic strategies for neurological diseases.',
+    'Her research over the past 20 years has focused on randomized trials of exercise interventions.',
+    'She is interested in understanding how the perturbation of basic biological processes leads to clinically significant brain pathology.',
+    'Their research focuses on big data and data-driven policy analyses and solutions.',
+  ];
+
+  const CV_HISTORY_OPENERS = [
+    'Following clinical training, she completed a Master of Science in Translational Research.',
+    'In addition, he earned an MS in Epidemiology in Montreal and then a Ph.D. in Clinical Research.',
+    'Prior to arriving at Yale, Dr. Ma was a Senior Fellow in Collaborative Health.',
+    'After establishing his research program at Emory University, Atlanta, he moved to Yale.',
+    'Dr. Seo received a Ph.D. in Clinical Psychology at the University of Minnesota, Twin Cities Campus in 2008.',
+  ];
+
+  it('fails a bare subject-pronoun opener closed', () => {
+    for (const text of PRONOUN_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('fails a CV/biography-history opener closed', () => {
+    for (const text of CV_HISTORY_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('keeps a research summary that merely names its subject', () => {
+    const named = "Dr. Ma's lab focuses on cardiovascular epidemiology in underserved populations.";
+    expect(isNonSelfContainedShortDescription(named)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(named)).toBe(named);
+  });
+});
+
 describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () => {
   it('flags a book-citation glued after the Studies template', () => {
     const text =
