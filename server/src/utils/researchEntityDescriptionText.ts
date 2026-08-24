@@ -72,6 +72,13 @@ function leadNamesMatchTextValue(
   });
 }
 
+// A card synthesized from research prose opens with a research-description verb
+// ("Studies Ménétrier's disease", "Studies Ivan Goncharov's travelogue"): here the
+// capitalized possessive is the eponymous object of study, not the entity's own
+// lead name, so the mismatched-person-name strip below must not fire and blank it.
+const RESEARCH_LEAD_VERB_PREFIX_TOKEN =
+  /^(?:studies|study|investigates|investigate|examines|examine|explores|explore|develops|develop|focuses|focus|focused|advances|advance|supports|support|fosters|foster|combines|combine|conducts|conduct|builds|build|designs|design|creates|create|analyzes|analyze|analyses|analyse|models|model|measures|measure|researches|research|seeks|seek|works|work|uses|use|employs|employ|innovates|innovate|enhances|enhance|improves|improve|unites|unite|provides|provide)$/i;
+
 function sanitizeLeadingMismatchedPersonNamePrefix(
   value: string,
   leadMemberNames: readonly string[] = [],
@@ -81,6 +88,7 @@ function sanitizeLeadingMismatchedPersonNamePrefix(
     /^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u,
   );
   if (!match) return value;
+  if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
   if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
   const remainder = value.slice(match[0].length);
   if (!NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(remainder)) return '';
