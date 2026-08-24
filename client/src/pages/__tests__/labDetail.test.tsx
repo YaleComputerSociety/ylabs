@@ -298,7 +298,9 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Visit official website' })).toBeNull();
     expect(screen.getByText(/does not have a direct link for this research home/)).toBeTruthy();
     const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
-    expect(directoryLink.getAttribute('href')).toBe('https://directory.yale.edu/');
+    expect(directoryLink.getAttribute('href')).toBe(
+      'https://directory.yale.edu/?query=Sample%20Research%20Profile',
+    );
   });
 
   it('emits the server-owned category for a matching qualified route without its URL', async () => {
@@ -436,12 +438,45 @@ describe('LabDetail page', () => {
     expect(screen.getByText(/does not have a direct link for Jordan Researcher/)).toBeTruthy();
     expect(screen.getByText(/Look them up in the Yale Directory/)).toBeTruthy();
     const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
-    expect(directoryLink.getAttribute('href')).toBe('https://directory.yale.edu/');
+    expect(directoryLink.getAttribute('href')).toBe(
+      'https://directory.yale.edu/?query=Jordan%20Researcher',
+    );
 
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Visit official website' })).toBeNull();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
     expect(screen.queryByText('Reach-out plausible')).toBeNull();
+  });
+
+  it('URL-encodes an accented PI name into the Yale Directory prefill deep link', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'José',
+            lname: 'García',
+            displayName: 'José García',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
+    expect(directoryLink.getAttribute('href')).toBe(
+      'https://directory.yale.edu/?query=Jos%C3%A9%20Garc%C3%ADa',
+    );
+    expect(directoryLink.getAttribute('href')).not.toBe('https://directory.yale.edu/');
   });
 
   it('keeps a raw HR org-code out of the no-direct-link outreach prose', async () => {
@@ -550,7 +585,9 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
-    expect(directoryLink.getAttribute('href')).toBe('https://directory.yale.edu/');
+    expect(directoryLink.getAttribute('href')).toBe(
+      'https://directory.yale.edu/?query=Jordan%20Researcher',
+    );
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
   });
 
@@ -580,7 +617,9 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
-    expect(directoryLink.getAttribute('href')).toBe('https://directory.yale.edu/');
+    expect(directoryLink.getAttribute('href')).toBe(
+      'https://directory.yale.edu/?query=Sample%20Research%20Profile',
+    );
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
