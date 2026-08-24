@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
@@ -29,6 +29,7 @@ import {
 } from '../types/researchEntity';
 import { getDepartmentSlug, getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { buildResearchFieldDirectory } from '../utils/researchFieldDirectory';
+import { researchAreaPath, researchFieldPath } from '../utils/researchAreaSlug';
 import {
   relaxResearchQuery,
   suggestCorpusResearchAreas,
@@ -388,6 +389,7 @@ const scrollResearchViewportToTop = () => {
 
 const Research = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useContext(UserContext);
   const { departments, researchAreas, researchFields, fieldOrder, getResearchAreaByName } =
@@ -1908,6 +1910,16 @@ const Research = () => {
     [isZeroResultSearch, researchAreas, activeSearchRequest, selectedResearchAreas],
   );
 
+  const navigateToResearchArea = (area: string) => {
+    const trimmed = area.trim();
+    if (trimmed) navigate(researchAreaPath(trimmed));
+  };
+
+  const navigateToResearchField = (field: string) => {
+    const trimmed = field.trim();
+    if (trimmed) navigate(researchFieldPath(trimmed));
+  };
+
   const pivotToResearchArea = (area: string) => {
     scrollResearchViewportToTop();
     setQuery('');
@@ -2026,7 +2038,8 @@ const Research = () => {
                 <ResearchFieldDirectory
                   domains={researchFieldDirectory}
                   selectedAreas={selectedResearchAreas}
-                  onSelectArea={pivotToResearchArea}
+                  onSelectArea={navigateToResearchArea}
+                  onSelectField={navigateToResearchField}
                 />
               </div>
             )}
@@ -2230,6 +2243,17 @@ const Research = () => {
                     />
                   </div>
                 </div>
+
+                {selectedResearchAreas.length === 1 && (
+                  <p className="mt-2 text-sm">
+                    <Link
+                      to={researchAreaPath(selectedResearchAreas[0])}
+                      className="yr-link yr-focus-ring rounded-sm font-semibold"
+                    >
+                      View the {selectedResearchAreas[0]} research area page →
+                    </Link>
+                  </p>
+                )}
 
                 {canSaveCurrentSearch && isSaveSearchPanelOpen && (
                   <div className="yr-card mt-3 rounded-md p-3">

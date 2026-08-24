@@ -51,6 +51,18 @@ router.get(
   asyncHandler(researchGroupController.getResearchDepartmentPage),
 );
 
+router.get(
+  '/area/:slug',
+  isAuthenticated,
+  asyncHandler(researchGroupController.getResearchAreaPage),
+);
+
+router.get(
+  '/field/:slug',
+  isAuthenticated,
+  asyncHandler(researchGroupController.getResearchFieldPage),
+);
+
 router.get('/:slug', asyncHandler(researchGroupController.getResearchGroupBySlug));
 
 export default router;

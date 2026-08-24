@@ -13,6 +13,7 @@ import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
 import ResearchPerson from './pages/researchPerson';
 import ResearchDepartment from './pages/researchDepartment';
+import { ResearchAreaPage, ResearchFieldPage } from './pages/researchArea';
 import Login from './pages/login';
 import About from './pages/about';
 import Account from './pages/account';
@@ -91,6 +92,14 @@ const App = () => {
                       element={
                         <PrivateRoute Component={ResearchDepartment} unknownBlocked={true} />
                       }
+                    />
+                    <Route
+                      path="/research/area/:slug"
+                      element={<PrivateRoute Component={ResearchAreaPage} unknownBlocked={true} />}
+                    />
+                    <Route
+                      path="/research/field/:slug"
+                      element={<PrivateRoute Component={ResearchFieldPage} unknownBlocked={true} />}
                     />
                     <Route
                       path="/research/:slug"

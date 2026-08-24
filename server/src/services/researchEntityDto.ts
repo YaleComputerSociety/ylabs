@@ -52,7 +52,7 @@ export interface PublicResearchEntitySummaryDto {
   blurb?: string;
 }
 
-function publicResearchEntityId(group: Record<string, any>): string {
+export function publicResearchEntityId(group: Record<string, any>): string {
   const slug = publicTextString(group.slug || '');
   if (slug) return slug;
   return publicTextString(group.name || group.displayName || '')

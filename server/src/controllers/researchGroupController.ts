@@ -16,6 +16,10 @@ import {
   ResearchGroupSearchSort,
 } from '../services/researchGroupService';
 import { getResearcherProfileByPublicKey } from '../services/researcherProfileService';
+import {
+  getAreaResearchPage,
+  getFieldResearchPage,
+} from '../services/areaResearchPageService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
 import { RELATED_PROGRAM_ENTITY_TYPES } from '../utils/researchEntityProgramLike';
 import {
@@ -356,6 +360,38 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     }
     console.error('ResearchEntity detail failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Failed to fetch research entity' });
+  }
+};
+
+export const getResearchAreaPage = async (request: Request, response: Response) => {
+  try {
+    const page = await getAreaResearchPage(request.params.slug);
+    if (!page) {
+      throw new NotFoundError(`No research area page for slug: ${request.params.slug}`);
+    }
+    return response.status(200).json(page);
+  } catch (error: any) {
+    if (error instanceof NotFoundError) {
+      return response.status(error.status).json({ error: 'Research area not found' });
+    }
+    console.error('Research area page failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Failed to fetch research area' });
+  }
+};
+
+export const getResearchFieldPage = async (request: Request, response: Response) => {
+  try {
+    const page = await getFieldResearchPage(request.params.slug);
+    if (!page) {
+      throw new NotFoundError(`No research field page for slug: ${request.params.slug}`);
+    }
+    return response.status(200).json(page);
+  } catch (error: any) {
+    if (error instanceof NotFoundError) {
+      return response.status(error.status).json({ error: 'Research field not found' });
+    }
+    console.error('Research field page failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Failed to fetch research field' });
   }
 };
 
