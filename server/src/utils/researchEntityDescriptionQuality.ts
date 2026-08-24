@@ -2,6 +2,7 @@ import {
   collapseDoubledSynthesisVerb,
   hasContactBlockResidue,
   isCitationAuthorListDumpText,
+  isNonSelfContainedShortDescription,
   isResearchAreaTemplateLeakText,
   isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
@@ -38,6 +39,7 @@ export type DescriptionQualityFlag =
   | 'first-person'
   | 'generic-lead'
   | 'malformed-generated-text'
+  | 'non-self-contained'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -657,6 +659,7 @@ export function shortDescriptionQuality(
   if (text && hasGenericMissionStatementLead(text)) flags.push('generic-lead');
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
+  if (text && isNonSelfContainedShortDescription(text)) flags.push('non-self-contained');
   if (
     text &&
     full &&
