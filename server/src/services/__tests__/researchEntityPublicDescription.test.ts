@@ -61,6 +61,41 @@ describe('researchEntityPublicDescription', () => {
     expect(representation.invariant.reasons).toEqual(['blank_served_public_description']);
   });
 
+  it('does not require a lab-style card for a program-like home with a useful full description (#1381)', () => {
+    const entity = {
+      kind: 'program',
+      entityType: 'FELLOWSHIP_PROGRAM',
+      shortDescription: '',
+      fullDescription:
+        'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work, or enrollment in a school. An internship is a valid use only if its primary component is study or research.',
+      sourceUrls: ['https://example.yale.edu/programs/richter'],
+    };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(representation.quality.full.isUseful).toBe(true);
+    expect(representation.quality.short.isUseful).toBe(false);
+    expect(representation.invariant.reasons).not.toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(true);
+    expect(researchEntityServesPublicDetail(entity)).toBe(true);
+  });
+
+  it('still requires a lab-style card for a non-program lab home (#1381)', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription: '',
+        fullDescription:
+          'The lab studies the molecular mechanisms of neurodegeneration using genetics, imaging, and biochemistry across model organisms.',
+        sourceUrls: ['https://example.yale.edu/labs/example'],
+      },
+      leadMemberNames: ['Example Lead'],
+    });
+
+    expect(representation.invariant.reasons).toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(false);
+  });
+
   it('uses the public detail lead-name contract when explicit names are supplied', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: {

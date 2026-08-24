@@ -89,6 +89,7 @@ const POSITIVE_ACCESS_SIGNAL_TYPES = new Set([
   'CURRENT_UNDERGRADS',
   'PAST_UNDERGRADS',
   'APPLICATION_FORM_EXISTS',
+  'APPLICATION_ONLY',
   'CONTACT_INSTRUCTIONS_EXIST',
   'CREDIT_FORMALIZATION_POSSIBLE',
   'COURSE_CREDIT_PATHWAY',
@@ -140,6 +141,9 @@ export function computeStatus(
 
 function bestNextStepFor(status: AccessSummaryStatus, signalTypes: Set<string>): string {
   if (status === 'not-currently-available') return 'Reach out to confirm current availability';
+  if (signalTypes.has('APPLICATION_ONLY')) {
+    return 'Apply to this program';
+  }
   if (
     signalTypes.has('CREDIT_FORMALIZATION_POSSIBLE') ||
     signalTypes.has('COURSE_CREDIT_PATHWAY') ||
