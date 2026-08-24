@@ -23,6 +23,7 @@ import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike'
 import {
   CARD_SYNTHESIS_MODEL,
   defaultCardSynthesisLLM,
+  isUngroundedSynthesizedCard,
   resolveGroundedCardDescription,
   synthesizeGroundedCardDescription,
 } from '../utils/groundedCardSynthesis';
@@ -173,6 +174,16 @@ export interface MaterializedShortDescriptionInput {
  * Rejecting here just skips the field for this pass - it does not clear an
  * existing value - so the dedicated re-derivation step below still runs
  * against whatever shortDescription is already on the entity.
+ *
+ * A candidate can also read as a perfectly fine sentence in isolation while
+ * naming a topic absent from the entity's own fullDescription - a live
+ * example is a named org's org-page microsite blurb that leads with one
+ * narrow featured study (Olin Research Center's "Examines the acute effects
+ * of...smoked marijuana...driving..." next to a fullDescription about general
+ * neuropsychiatric research). `isUngroundedSynthesizedCard` already guards
+ * this exact shape at serve time (`researchEntityDto.ts`); reusing it here
+ * stops the same ungrounded value from winning the write-time confidence tie
+ * over an already-corrected shortDescription in the first place.
  */
 function resolvedShortDescriptionCandidateIsUsable(
   candidate: unknown,
@@ -180,6 +191,7 @@ function resolvedShortDescriptionCandidateIsUsable(
   isProgramLike: boolean,
 ): boolean {
   if (typeof candidate !== 'string' || !candidate.trim()) return false;
+  if (isUngroundedSynthesizedCard(candidate, fullDescription)) return false;
   const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
   return shortQuality(candidate, fullDescription).isUseful;
 }
