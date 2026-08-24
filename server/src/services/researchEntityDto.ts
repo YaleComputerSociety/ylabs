@@ -6,6 +6,10 @@ import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
 import { isUngroundedSynthesizedCard } from '../utils/groundedCardSynthesis';
+import {
+  resolveResearchHomeCardSummary,
+  type ResearchHomeCardSummary,
+} from '../utils/researchHomeCardSummary';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -34,6 +38,7 @@ export interface PublicResearchEntityDto extends Record<string, unknown> {
   researchAreas: string[];
   sourceUrls: string[];
   sourceLinkHealth?: PublicResearchEntitySourceLinkHealth[];
+  cardDescription?: ResearchHomeCardSummary;
 }
 
 export interface PublicResearchEntitySummaryDto {
@@ -272,7 +277,10 @@ const OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS = ['qualitySummary', 'studentVisibi
 
 export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
+  forList?: boolean;
 }
+
+const LIST_TRIMMED_DESCRIPTION_FIELDS = new Set(['fullDescription', 'profileSynthesisDescription']);
 
 function publicTextValue(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -320,6 +328,7 @@ export function toPublicResearchEntityDto(
   };
 
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {
+    if (options.forList && LIST_TRIMMED_DESCRIPTION_FIELDS.has(field)) continue;
     if (group[field] !== undefined) {
       if (field === 'website' || field === 'websiteUrl') {
         const url = publicHttpUrl(group[field]);
@@ -340,6 +349,17 @@ export function toPublicResearchEntityDto(
       }
       dto[field] = publicTextValue(group[field]);
     }
+  }
+
+  if (options.forList) {
+    dto.cardDescription = resolveResearchHomeCardSummary({
+      shortDescription: served.shortDescription,
+      fullDescription: served.fullDescription,
+      profileSynthesisDescription: served.profileSynthesisDescription,
+      departments: group.departments,
+      sourceUrls: group.sourceUrls,
+      school: group.school,
+    });
   }
 
   if (group.sourceLinkHealth !== undefined) {
@@ -375,8 +395,9 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
 ): Omit<T, 'hits'> & {
   researchEntities: PublicResearchEntityDto[];
 } {
+  const listOptions: PublicResearchEntityDtoOptions = { ...options, forList: true };
   const researchEntities = disambiguateCollidingResearchEntityNames(
-    (result.hits || []).map((hit) => toPublicResearchEntityDto(hit, options)),
+    (result.hits || []).map((hit) => toPublicResearchEntityDto(hit, listOptions)),
   );
   const { hits: _hits, ...rest } = result;
   return {

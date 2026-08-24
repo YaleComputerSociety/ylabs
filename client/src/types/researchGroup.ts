@@ -124,6 +124,9 @@ export interface ResearchGroup {
   shortDescription?: string;
   fullDescription?: string;
   profileSynthesisDescription?: string;
+  // Present only on trimmed list/related responses that omit fullDescription;
+  // callers must use it directly rather than re-deriving from raw fields.
+  cardDescription?: { text: string; state: 'complete' | 'sparse'; label: string };
   descriptionSource?: 'ENTITY_SOURCE' | 'PI_PROFILE_SYNTHESIS' | 'NONE';
   websiteUrl: string;
   location: string;
