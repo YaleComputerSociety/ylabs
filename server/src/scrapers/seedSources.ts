@@ -319,6 +319,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'neh-funded-projects',
+    displayName: 'NEH funded projects',
+    description:
+      'Pulls Yale-awardee NEH funded projects from open-data bulk files; humanities/social-science analogue of the NIH/NSF grant lanes.',
+    baseUrl: 'https://apps.neh.gov/open/data',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
     name: 'official-research-home-roster',
     displayName: 'Official research-home current rosters',
     description:

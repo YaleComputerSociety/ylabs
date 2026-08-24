@@ -433,6 +433,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Funding activity enriches entity context but is not undergraduate-access evidence alone.',
   },
+  'neh-funded-projects': {
+    priority: 6,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'Humanities/social-science funding analogue of the NIH/NSF lanes; enriches entity context but is not undergraduate-access evidence alone.',
+  },
 } satisfies Record<string, SourceCoverageMetadata>;
 
 export type SourceCoverageName = keyof typeof sourceCoverageRegistry;
