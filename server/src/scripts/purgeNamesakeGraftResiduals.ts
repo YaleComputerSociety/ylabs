@@ -572,6 +572,37 @@ const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
     clearStudentDecisionExplanationIfExplanationEquals:
       'Consider reaching out for exploratory discussions regarding research opportunities in palliative care and telehealth.',
   },
+  {
+    // #1407 second mechanism, worst-case shape: the namesake graft here drove
+    // the ENTIRE `fullDescription`/`shortDescription`, not just a trailing
+    // clause (contrast Hinton above, where only a clause was grafted and the
+    // rest of her own description survived). The Yale Internal Medicine Li
+    // Wen lab is a type-1-diabetes/gut-microbiome immunology group -
+    // corroborated by the two native chips kept below - but a namesake
+    // herpetologist/ecologist Li Wen was fused into every other chip and the
+    // full description prose itself. Because the description is fluent,
+    // self-consistent, and 100% the wrong identity, the automated domain-
+    // coherence guard would keep the wrong-domain chips (they overlap the
+    // wrong-identity description) and could drop a real one (`Diabetes
+    // Mellitus, Type` shares no vocabulary with the wildlife-ecology prose) -
+    // this entity must stay on the manual drain list, not the automated
+    // guard. `fullDescription`/`shortDescription` are cleared outright
+    // (rather than left, as with Hinton) because unlike Hinton's case there
+    // is no surviving correct portion to preserve - the whole prose is the
+    // wrong person.
+    entityId: '6a057e0c13fc60d57ec2a9e3',
+    slug: 'nih-pi-li-wen',
+    removeAreas: [
+      'Wildlife Ecology and Conservation',
+      'Amphibian and Reptile Biology',
+      'Helminth infection and control',
+      'Animal Behavior and Reproduction',
+    ],
+    clearFullDescriptionIfEquals:
+      'Li Wen Lab focuses on wildlife ecology and conservation, specifically studying amphibian and reptile biology, helminth infection and control, and the relationship between gut microbiota and health. The lab investigates the ecological impacts of these factors on wildlife populations and their habitats.',
+    clearShortDescriptionIfEquals:
+      'Li Wen Lab studies wildlife ecology, amphibian and reptile biology, and gut microbiota health.',
+  },
 ];
 
 interface CliOptions {
