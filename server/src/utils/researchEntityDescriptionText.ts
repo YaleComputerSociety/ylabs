@@ -11,6 +11,7 @@ import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormali
 import { normalizeResearchAreaList } from './researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
+import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomainCoherence';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 
 const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
@@ -846,7 +847,11 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *  5. the name fail-safe (doubled research-home suffix collapse) and the
  *     research-area chip hygiene (split/relabel/fail-close/prose-drop), so a
  *     serve path that never touched the DTO's per-field helpers still emits the
- *     same names and chips as every other surface.
+ *     same names and chips as every other surface;
+ *  6. the unsourced research-area domain-coherence guard (#1407 second
+ *     mechanism): a `researchAreas` chip with no `fieldProvenance.researchAreas`
+ *     backing and zero vocabulary overlap with the entity's own sourced text is
+ *     dropped, since there is no provenance trail to reconcile it against.
  *
  * Every step is idempotent, so a description already cleaned upstream (the detail
  * path runs the text-transform layer before the DTO) is unchanged by a second
@@ -901,6 +906,24 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     const current = next[field] as unknown[];
     if (cleaned.length !== current.length || cleaned.some((value, index) => value !== current[index])) {
       next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  if (Array.isArray(next.researchAreas)) {
+    const coherent = dropDomainIncoherentUnsourcedResearchAreas(
+      next.researchAreas as string[],
+      next.fieldProvenance,
+      {
+        name: next.name,
+        displayName: next.displayName,
+        departments: next.departments,
+        shortDescription: next.shortDescription,
+        fullDescription: next.fullDescription,
+      },
+    );
+    if (coherent !== next.researchAreas) {
+      next.researchAreas = coherent;
       changed = true;
     }
   }

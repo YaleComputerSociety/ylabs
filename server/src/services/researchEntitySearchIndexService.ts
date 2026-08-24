@@ -9,6 +9,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
+import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
 import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
@@ -410,7 +411,18 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 
   if (Array.isArray(out.researchAreas)) {
-    const researchAreas = normalizeResearchAreaList(out.researchAreas);
+    const coherentAreas = dropDomainIncoherentUnsourcedResearchAreas(
+      out.researchAreas,
+      out.fieldProvenance,
+      {
+        name: out.name,
+        displayName: out.displayName,
+        departments: out.departments,
+        shortDescription: out.shortDescription,
+        fullDescription: out.fullDescription,
+      },
+    );
+    const researchAreas = normalizeResearchAreaList(coherentAreas);
     if (researchAreas.length > 0) out.researchAreas = researchAreas;
     else delete out.researchAreas;
   }

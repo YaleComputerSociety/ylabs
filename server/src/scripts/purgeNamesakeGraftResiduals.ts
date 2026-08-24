@@ -549,6 +549,29 @@ const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
     removeAreas: ['Clinical Psychiatry', 'Computational Psychiatry', 'Mood and Brain Development'],
     supersedeObservationIds: ['6a2a323896f26c9504b7d0e1'],
   },
+  {
+    // #1407 second mechanism (source-less synthesized cluster, no merged
+    // sourceUrl to blame): Elizabeth Hinton (History, policing/incarceration)
+    // carries five biomedical `researchAreas` with no backing observation.
+    // Left out of the automated domain-coherence guard's reach because her
+    // own `fullDescription`/`shortDescription` were independently corrupted
+    // by the same graft (a trailing "palliative care, telemedicine... COVID-19"
+    // clause), so the guard's own-text overlap check false-corroborates
+    // against the polluted description instead of catching it. That
+    // description contamination is #1394's territory (description text
+    // derived from polluted areas), not this issue's - left untouched here.
+    entityId: '6a058dfaba66f3c14bd86ccd',
+    slug: 'hinton-ekh38',
+    removeAreas: [
+      'Palliative Care and End-of-Life Issues',
+      'Telemedicine and Telehealth Implementation',
+      'COVID-19 and healthcare impacts',
+      'Palliative Care',
+      'Telemedicine',
+    ],
+    clearStudentDecisionExplanationIfExplanationEquals:
+      'Consider reaching out for exploratory discussions regarding research opportunities in palliative care and telehealth.',
+  },
 ];
 
 interface CliOptions {
