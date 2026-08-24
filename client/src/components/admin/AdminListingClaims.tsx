@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import axios from '../../utils/axios';
 
 type ReviewStatus = 'pending' | 'changes_requested' | 'approved' | 'rejected';
+type ApplyStatus = 'not_applicable' | 'applied' | 'failed';
 type Claim = {
   _id: string;
   requestType: 'claim' | 'correction';
@@ -12,7 +13,14 @@ type Claim = {
   listingSnapshot: { title: string };
   requester: { name: string; userType: string; userConfirmed: boolean; profileVerified: boolean };
   createdAt: string;
+  proposedChanges?: Record<string, unknown>;
+  applyStatus?: ApplyStatus;
+  appliedFields?: string[];
+  applyError?: string;
 };
+
+const formatProposedChangeValue = (value: unknown): string =>
+  Array.isArray(value) ? value.join(', ') : String(value);
 
 export default function AdminListingClaims() {
   const [status, setStatus] = useState<ReviewStatus>('pending');
@@ -21,6 +29,7 @@ export default function AdminListingClaims() {
   const [selected, setSelected] = useState<Claim | null>(null);
   const [rationale, setRationale] = useState('');
   const [error, setError] = useState('');
+  const [applying, setApplying] = useState(false);
   const load = useCallback(
     () =>
       axios.get(`/admin/listing-claims?status=${status}&pageSize=100`).then(({ data }) => {
@@ -38,16 +47,43 @@ export default function AdminListingClaims() {
       return;
     }
     try {
-      await axios.put(`/admin/listing-claims/${selected._id}`, {
+      const { data } = await axios.put(`/admin/listing-claims/${selected._id}`, {
         status: nextStatus,
         adminNotes: rationale.trim(),
       });
-      setSelected(null);
-      setRationale('');
+      if (nextStatus === 'approved') {
+        setSelected(data.request);
+      } else {
+        setSelected(null);
+        setRationale('');
+      }
       setError('');
       await load();
     } catch (reviewError: any) {
       setError(reviewError?.response?.data?.error || 'Review could not be saved.');
+    }
+  };
+  const applyToCanonicalData = async () => {
+    if (!selected) return;
+    if (
+      !window.confirm(
+        'Apply this correction to the canonical research entity? This writes a manual-admin-edit observation and re-syncs search.',
+      )
+    ) {
+      return;
+    }
+    setApplying(true);
+    try {
+      const { data } = await axios.put(`/admin/listing-claims/${selected._id}/apply`, {
+        confirmApply: true,
+      });
+      setSelected(data.request);
+      setError('');
+      await load();
+    } catch (applyError: any) {
+      setError(applyError?.response?.data?.error || 'Apply could not be completed.');
+    } finally {
+      setApplying(false);
     }
   };
   return (
@@ -131,46 +167,89 @@ export default function AdminListingClaims() {
                 ))}
               </ul>
             )}
+            {selected.proposedChanges && Object.keys(selected.proposedChanges).length > 0 && (
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-gray-900">Proposed changes</h3>
+                <ul className="mt-1 list-disc pl-5 text-sm text-gray-800">
+                  {Object.entries(selected.proposedChanges).map(([field, value]) => (
+                    <li key={field}>
+                      <span className="font-medium">{field}:</span>{' '}
+                      {formatProposedChangeValue(value)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
-              Approval records an administrative decision only. It does not change listing ownership
-              or content.
+              Approving records an administrative decision only; it does not by itself change
+              listing ownership or content. A separate, explicitly confirmed apply step is required
+              to write a proposed change to the canonical research entity.
             </p>
-            <label htmlFor="review-rationale" className="mt-4 block text-sm font-medium">
-              Reviewer rationale
-            </label>
-            <textarea
-              id="review-rationale"
-              rows={4}
-              maxLength={4000}
-              value={rationale}
-              onChange={(event) => setRationale(event.target.value)}
-              className="mt-1 w-full rounded-md border border-gray-400 p-3"
-            />
+            {selected.applyStatus === 'applied' && (
+              <p role="status" className="mt-3 rounded-md bg-green-50 p-3 text-sm text-green-900">
+                Applied to canonical data
+                {selected.appliedFields?.length ? `: ${selected.appliedFields.join(', ')}` : ''}.
+              </p>
+            )}
+            {selected.applyStatus === 'failed' && (
+              <p role="alert" className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-900">
+                Apply failed: {selected.applyError || 'Unknown error.'}
+              </p>
+            )}
+            {(selected.status === 'pending' || selected.status === 'changes_requested') && (
+              <>
+                <label htmlFor="review-rationale" className="mt-4 block text-sm font-medium">
+                  Reviewer rationale
+                </label>
+                <textarea
+                  id="review-rationale"
+                  rows={4}
+                  maxLength={4000}
+                  value={rationale}
+                  onChange={(event) => setRationale(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-gray-400 p-3"
+                />
+              </>
+            )}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button type="button" onClick={() => setSelected(null)} className="min-h-11 px-4">
                 Close
               </button>
-              <button
-                type="button"
-                onClick={() => review('changes_requested')}
-                className="min-h-11 rounded-md border border-amber-600 px-4 font-semibold text-amber-800"
-              >
-                Request changes
-              </button>
-              <button
-                type="button"
-                onClick={() => review('rejected')}
-                className="min-h-11 rounded-md border border-red-600 px-4 font-semibold text-red-700"
-              >
-                Reject
-              </button>
-              <button
-                type="button"
-                onClick={() => review('approved')}
-                className="min-h-11 rounded-md bg-green-700 px-4 font-semibold text-white"
-              >
-                Approve review
-              </button>
+              {(selected.status === 'pending' || selected.status === 'changes_requested') && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => review('changes_requested')}
+                    className="min-h-11 rounded-md border border-amber-600 px-4 font-semibold text-amber-800"
+                  >
+                    Request changes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => review('rejected')}
+                    className="min-h-11 rounded-md border border-red-600 px-4 font-semibold text-red-700"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => review('approved')}
+                    className="min-h-11 rounded-md bg-green-700 px-4 font-semibold text-white"
+                  >
+                    Approve review
+                  </button>
+                </>
+              )}
+              {selected.status === 'approved' && selected.applyStatus !== 'applied' && (
+                <button
+                  type="button"
+                  onClick={applyToCanonicalData}
+                  disabled={applying}
+                  className="min-h-11 rounded-md bg-green-700 px-4 font-semibold text-white disabled:opacity-60"
+                >
+                  {applying ? 'Applying...' : 'Apply to canonical data'}
+                </button>
+              )}
             </div>
           </div>
         </div>
