@@ -283,6 +283,12 @@ const GRANT_ABSTRACT_INLINE_MARKER =
   /^(?:.{0,130}?\b(?:abstract|project\s+summary)\b\s*[:.)-]+\s*)/i;
 const GRANT_ABSTRACT_UNAVAILABLE =
   /^\s*(?:no\s+abstract|abstract\s+not\s+available|n\/?a)\s*\.?\s*$/i;
+// A leading agency funding-disclaimer sentence ("This award is funded in whole
+// or in part under the American Rescue Plan Act ...") is administrative
+// boilerplate, not research, so drop it before taking the lead sentences
+// (issue #1418 follow-up).
+const GRANT_ABSTRACT_FUNDING_DISCLAIMER =
+  /^(?:this (?:award|project|research) (?:is|was) funded\b[^.]*\.\s+|funds? (?:are|is) provided\b[^.]*\.\s+)/i;
 
 const normalizeAbstractWhitespace = (value: string): string =>
   value.replace(/\s+/g, ' ').trim();
@@ -324,14 +330,40 @@ export function grantAbstractToDescription(abstract: string | undefined | null):
   if (!normalized || GRANT_ABSTRACT_UNAVAILABLE.test(normalized)) return '';
   const withoutInlineMarker = normalized.replace(GRANT_ABSTRACT_INLINE_MARKER, '');
   const withoutHeaders = stripGrantAbstractHeaders(withoutInlineMarker);
+  const withoutFundingDisclaimer = withoutHeaders.replace(GRANT_ABSTRACT_FUNDING_DISCLAIMER, '');
   return normalizeAbstractWhitespace(
-    firstSentencesWithinBudget(withoutHeaders, GRANT_DESCRIPTION_MAX_CHARS),
+    firstSentencesWithinBudget(withoutFundingDisclaimer, GRANT_DESCRIPTION_MAX_CHARS),
   );
 }
 
-/** Pick the newest grant with a usable abstract and reduce it to a description. */
+// Training, fellowship, career-development, commercialization, and conference/
+// travel grants describe a program, a trainee's career plan, or a meeting rather
+// than the lab's science, so their abstract is not a usable lab description
+// (issue #1418 follow-up). Detected by grant title, since RePORTER titles name
+// the mechanism explicitly.
+const NON_RESEARCH_GRANT_TITLE =
+  /\b(?:graduate research fellowship|grfp|i-?corps|training (?:program|grant)|training in|research training|(?:pre|post)doctoral training|annual meeting|student travel|travel grant|conference grant|symposium|workshop|fellowship)\b/i;
+// A mentored career-development award's abstract is a first-person career
+// statement ("Candidate: I aim to build an independent career ..."), not a lab
+// description, even when the project science is real.
+const CAREER_DEVELOPMENT_ABSTRACT_LEAD =
+  /^(?:candidate\b|.{0,80}?\bi (?:aim|seek|plan|propose) to (?:build|establish|pursue|develop) (?:an? )?(?:independent )?(?:research )?career\b|.{0,140}?\b(?:mentored )?(?:patient-oriented )?(?:research )?career[ -]development award\b|.{0,120}?\bthis (?:application|proposal) (?:is )?for an? (?:mentored )?k\d\d\b)/i;
+
+function grantAbstractDescribesLabResearch(record: RecentGrantRecord): boolean {
+  if (NON_RESEARCH_GRANT_TITLE.test(String(record.title || ''))) return false;
+  const normalized = normalizeAbstractWhitespace(String(record.abstract || ''));
+  return !CAREER_DEVELOPMENT_ABSTRACT_LEAD.test(normalized);
+}
+
+/**
+ * Pick the newest research grant with a usable abstract and reduce it to a
+ * description, skipping training/fellowship/career-development/commercialization/
+ * conference grants whose abstract does not describe the lab's science
+ * (issue #1418 follow-up).
+ */
 export function labDescriptionFromRecentGrants(records: RecentGrantRecord[]): string {
   for (const record of records) {
+    if (!grantAbstractDescribesLabResearch(record)) continue;
     const description = grantAbstractToDescription(record.abstract);
     if (description) return description;
   }

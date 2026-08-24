@@ -599,6 +599,81 @@ describe('grantAbstractToDescription', () => {
       ]),
     ).toBe('The circuit study is underway.');
   });
+
+  it('drops a leading agency funding-disclaimer sentence before taking the lead prose', () => {
+    const out = grantAbstractToDescription(
+      'PROJECT SUMMARY This award is funded in whole or in part under the American Rescue Plan Act of 2021. Plant-pathogenic microorganisms are ubiquitous in soils.',
+    );
+    expect(out).toBe('Plant-pathogenic microorganisms are ubiquitous in soils.');
+  });
+});
+
+describe('labDescriptionFromRecentGrants (non-research grant guard)', () => {
+  it('skips a training-grant abstract and falls through to a real research grant', () => {
+    const training = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Training in Investigative Infectious Diseases',
+      abstract_text:
+        'PROJECT SUMMARY This is a competing renewal of a postdoctoral training program. The program trains fellows across immunology, virology, and bacterial pathogenesis.',
+    });
+    const research = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Prefrontal cortex circuits in cognitive aging',
+      abstract_text:
+        'PROJECT SUMMARY The lab investigates prefrontal cortex circuit dynamics in aging primates.',
+    });
+    expect(labDescriptionFromRecentGrants([training, research])).toBe(
+      'The lab investigates prefrontal cortex circuit dynamics in aging primates.',
+    );
+  });
+
+  it('skips an NSF GRFP fellowship grant', () => {
+    const grfp = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Graduate Research Fellowship Program (GRFP)',
+      abstract_text:
+        'The National Science Foundation (NSF) Graduate Research Fellowship Program (GRFP) is a highly competitive, federal fellowship program.',
+    });
+    expect(labDescriptionFromRecentGrants([grfp])).toBe('');
+  });
+
+  it('skips an I-Corps commercialization grant', () => {
+    const iCorps = grantToRecord({
+      ...grantArnsten,
+      project_title: 'I-Corps: Translation potential of segmentation software',
+      abstract_text: 'The broader impact of this I-Corps project is the development of a novel analytic software tool.',
+    });
+    expect(labDescriptionFromRecentGrants([iCorps])).toBe('');
+  });
+
+  it('skips a conference / travel grant', () => {
+    const travel = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Travel: NSF Student Travel Grant for 2025 Symposium',
+      abstract_text: 'This grant supports student participation in the 4th Symposium on Computer Science and Law.',
+    });
+    expect(labDescriptionFromRecentGrants([travel])).toBe('');
+  });
+
+  it('skips a mentored career-development K-award personal statement', () => {
+    const k23 = grantToRecord({
+      ...grantArnsten,
+      project_title: 'The neural correlates of the effects of psilocybin in OCD',
+      abstract_text:
+        'This application for a K23 mentored patient-oriented research career development award will provide the applicant, a clinician-scientist, with training.',
+    });
+    expect(labDescriptionFromRecentGrants([k23])).toBe('');
+  });
+
+  it('skips a "Candidate: I aim to build an independent career" personal statement', () => {
+    const candidate = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Adrenergic Nerves in Idiopathic Pulmonary Fibrosis',
+      abstract_text:
+        'PROJECT SUMMARY Candidate: I aim to build an independent career as an R01-funded physician scientist investigating pulmonary fibrosis.',
+    });
+    expect(labDescriptionFromRecentGrants([candidate])).toBe('');
+  });
 });
 
 describe('piGrantsToObservations', () => {
