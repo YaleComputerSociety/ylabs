@@ -286,6 +286,22 @@ describe('LLM extraction contract', () => {
     expect(prompt).toContain('unsupported');
     expect(prompt).toContain('lab/faculty site research text');
   });
+
+  it("recognizes a faculty profile page's own prospective-students/opportunities section as affirmative evidence, not just a lab members/join section (#1326)", () => {
+    const prompt = LAB_UNDERGRAD_SYSTEM_PROMPT.toLowerCase();
+
+    expect(prompt).toContain('faculty member');
+    expect(prompt).toContain('profile');
+    expect(prompt).toContain('prospective students');
+    expect(prompt).toContain('opportunities for undergraduates');
+    expect(prompt).toContain('how to get involved');
+  });
+
+  it('defaults a bare faculty profile with no such section to unclear, not no (#1326)', () => {
+    const prompt = LAB_UNDERGRAD_SYSTEM_PROMPT.toLowerCase();
+
+    expect(prompt).toContain('a faculty profile with no such section is "unclear", not "no"');
+  });
 });
 
 describe('claim-specific undergraduate logistics extraction', () => {
@@ -468,7 +484,8 @@ describe('claim-specific undergraduate logistics extraction', () => {
 
   it('does not derive availability from a contact-only constraint quote', () => {
     const sourceUrl = 'https://smith.example.com/join';
-    const quote = 'I do not have bandwidth to respond to inquiries about undergraduate research opportunities.';
+    const quote =
+      'I do not have bandwidth to respond to inquiries about undergraduate research opportunities.';
     const observations = extractionToObservations(
       'smith-lab',
       sourceUrl,
