@@ -256,14 +256,14 @@ describe('resolveGroundedCardDescription rejects researcher-voice "Studies" on p
     expect(resolved).toBe('');
   });
 
-  it('fails closed instead of a "Studies" lead synthesized by the LLM fallback for a program-like entity', async () => {
+  it('fails closed without invoking the LLM fallback for a program-like entity', async () => {
     const synthesize = vi.fn(async () => 'Studies Slavery, Resistance, and Abolition at the Whitney.');
     const resolved = await resolveGroundedCardDescription({
       fullDescription: 'Gilder Lehrman fellowship.',
       isProgramLike: true,
       synthesize,
     });
-    expect(synthesize).toHaveBeenCalledOnce();
+    expect(synthesize).not.toHaveBeenCalled();
     expect(resolved).toBe('');
   });
 
