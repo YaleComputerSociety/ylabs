@@ -691,22 +691,39 @@ const SYNTHESIS_VERB_GERUNDS: Record<string, string> = {
 };
 
 /**
+ * Generic process/cognition gerunds that read as redundant filler immediately
+ * after ANY synthesis lead verb, regardless of root ("Examines studying the
+ * role of X", "Studies understanding how Y", #1725). Distinct from
+ * SYNTHESIS_VERB_GERUNDS (which pairs a verb with its own gerund) - this set
+ * is deliberately narrow so the same-root precedent for other verbs
+ * ("Studies exploring the role of X") stays untouched.
+ */
+const REDUNDANT_CROSS_VERB_GERUNDS = new Set(['studying', 'developing', 'using', 'understanding']);
+
+/**
  * Collapse a doubled leading synthesis verb that a stale materialization step
  * emitted by prepending its "Studies " template onto a value that already began
- * with the same verb. Two shapes are folded: an identical repeat ("Studies
- * Studies on ...", #975) and a verb followed by its own same-root gerund
+ * with the same verb. Three shapes are folded: an identical repeat ("Studies
+ * Studies on ...", #975), a verb followed by its own same-root gerund
  * ("Studies studying the mechanisms ...", #1248), where the template verb and
- * the source lead share a root so the `\1` backreference misses. Only the
- * immediately repeated/gerund-doubled leading verb is removed, and the gerund
- * arm is gated to the same-root pair so ordinary prose ("Studies exploring the
- * role of X") is untouched.
+ * the source lead share a root so the `\1` backreference misses, and a verb
+ * followed by an unrelated-root filler gerund from REDUNDANT_CROSS_VERB_GERUNDS
+ * ("Examines understanding how RNA splicing ...", #1725). Only the
+ * immediately repeated/gerund-doubled leading verb is removed; a gerund
+ * outside both sets is left as ordinary prose ("Studies exploring the role of
+ * X") is untouched.
  */
 export function collapseDoubledSynthesisVerb(text: string): string {
   const value = normalizeHygieneWhitespace(text);
   const collapsed = value.replace(doubledSynthesisVerbPattern, '$1');
   if (collapsed !== value) return collapsed;
   const gerundMatch = collapsed.match(/^([A-Za-z]+)\s+([a-z]+)\b/);
-  if (gerundMatch && SYNTHESIS_VERB_GERUNDS[gerundMatch[1].toLowerCase()] === gerundMatch[2]) {
+  if (!gerundMatch) return collapsed;
+  const leadGerund = SYNTHESIS_VERB_GERUNDS[gerundMatch[1].toLowerCase()];
+  if (
+    leadGerund !== undefined &&
+    (leadGerund === gerundMatch[2] || REDUNDANT_CROSS_VERB_GERUNDS.has(gerundMatch[2]))
+  ) {
     return normalizeHygieneWhitespace(gerundMatch[1] + collapsed.slice(gerundMatch[0].length));
   }
   return collapsed;

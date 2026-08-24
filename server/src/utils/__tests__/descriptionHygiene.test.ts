@@ -1823,6 +1823,45 @@ describe('collapseDoubledSynthesisVerb same-root gerund (#1248)', () => {
   });
 });
 
+describe('collapseDoubledSynthesisVerb cross-verb filler gerund (#1725)', () => {
+  it('collapses "Examines studying" onto a shared object', () => {
+    expect(
+      collapseDoubledSynthesisVerb(
+        'Examines studying the role of two transcriptional factors in tumorigenesis.',
+      ),
+    ).toBe('Examines the role of two transcriptional factors in tumorigenesis.');
+  });
+
+  it('collapses "Studies developing" onto its object', () => {
+    expect(
+      collapseDoubledSynthesisVerb(
+        'Studies developing microscopy methods that push the resolution of fluorescence microscopy.',
+      ),
+    ).toBe('Studies microscopy methods that push the resolution of fluorescence microscopy.');
+  });
+
+  it('collapses "Studies using" onto its object', () => {
+    expect(
+      collapseDoubledSynthesisVerb(
+        'Studies using genomics to understand the role of non-coding RNAs in disease.',
+      ),
+    ).toBe('Studies genomics to understand the role of non-coding RNAs in disease.');
+  });
+
+  it('collapses "Examines understanding" onto its object', () => {
+    expect(
+      collapseDoubledSynthesisVerb(
+        'Examines understanding how aberrant RNA splicing contributes to tumor immune response.',
+      ),
+    ).toBe('Examines how aberrant RNA splicing contributes to tumor immune response.');
+  });
+
+  it('leaves a filler gerund untouched when the lead word is not a known synthesis verb', () => {
+    const clean = 'Reviews understanding the mechanisms of therapy resistance.';
+    expect(collapseDoubledSynthesisVerb(clean)).toBe(clean);
+  });
+});
+
 describe('isNonSelfContainedShortDescription card-fragment guard (#1248)', () => {
   const NON_SELF_CONTAINED = [
     'Investigates processes that represent each of these major categories.',
