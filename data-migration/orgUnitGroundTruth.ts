@@ -133,7 +133,12 @@ const curatedSchools: CuratedSchool[] = [
     slug: 'jackson-school-of-global-affairs',
     name: 'Jackson School of Global Affairs',
     kind: 'SCHOOL',
-    aliases: ['Jackson School', 'Jackson Institute for Global Affairs', 'Jackson Institute'],
+    aliases: [
+      'Jackson School',
+      'Jackson Institute for Global Affairs',
+      'Jackson Institute',
+      'Yale Jackson School of Global Affairs',
+    ],
   },
 ];
 

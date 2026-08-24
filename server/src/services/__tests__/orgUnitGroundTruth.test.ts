@@ -75,6 +75,12 @@ describe('resolveOrgUnitCanonical over the full ground truth', () => {
     expect(resolveOrgUnitCanonical(index, 'YSM', ['SCHOOL', 'DIVISION'])?.slug).toBe(
       'yale-school-of-medicine',
     );
+    expect(
+      resolveOrgUnitCanonical(index, 'Yale Jackson School of Global Affairs', [
+        'SCHOOL',
+        'DIVISION',
+      ])?.name,
+    ).toBe('Jackson School of Global Affairs');
   });
 
   it('fails closed on an unknown unit', () => {

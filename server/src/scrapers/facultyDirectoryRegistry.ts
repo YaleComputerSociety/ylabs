@@ -794,7 +794,7 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
   // ---- Tier 6: professional / graduate schools ------------------------------------
   {
     url: 'https://jackson.yale.edu/faculty-research/professors-global-affairs',
-    school: 'Yale Jackson School of Global Affairs',
+    school: 'Jackson School of Global Affairs',
     department: 'Professors of Global Affairs',
     rendering: 'static',
     status: 'covered',
