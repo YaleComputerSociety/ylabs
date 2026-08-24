@@ -10,6 +10,12 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import {
+  RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
+  RESEARCH_ENTITY_MEILI_SYNONYMS,
+  STUDENT_TOPIC_TEXT_ALIAS_FREE_TEXT_GUARDED,
+  STUDENT_TOPIC_TEXT_ALIASES,
+} from './searchTopicAliases';
 
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
 export const RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY = 'id';
@@ -60,18 +66,9 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
       oneTypo: 5,
       twoTypos: 9,
     },
-    disableOnWords: ['ai', 'ml', 'nlp', 'cv'],
+    disableOnWords: RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
   },
-  synonyms: {
-    ai: ['artificial intelligence', 'machine learning', 'deep learning'],
-    ml: ['machine learning', 'artificial intelligence', 'deep learning'],
-    nlp: ['natural language processing', 'computational linguistics'],
-    cv: ['computer vision', 'medical imaging', 'image analysis'],
-    'computer vision': ['computational vision', 'cv'],
-    'computational vision': ['computer vision', 'cv'],
-    neuro: ['neuroscience', 'neurology', 'neural', 'brain'],
-    psych: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
-  },
+  synonyms: RESEARCH_ENTITY_MEILI_SYNONYMS,
   pagination: {
     maxTotalHits: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
   },
@@ -163,38 +160,6 @@ const RETIRED_ACCESS_INDEX_FIELDS = [
   'opennessComputedAt',
   'opennessLastSignalAt',
 ] as const;
-
-const STUDENT_TOPIC_ALIASES: Record<string, string[]> = {
-  ai: ['ai', 'artificial intelligence', 'machine learning', 'deep learning'],
-  'artificial intelligence': ['ai', 'artificial intelligence', 'machine learning', 'deep learning'],
-  ml: ['ml', 'machine learning', 'artificial intelligence', 'deep learning'],
-  'machine learning': ['ml', 'machine learning', 'artificial intelligence', 'deep learning'],
-  nlp: ['nlp', 'natural language processing', 'computational linguistics'],
-  'natural language processing': [
-    'nlp',
-    'natural language processing',
-    'computational linguistics',
-  ],
-  cv: ['cv', 'computer vision', 'computational vision', 'image analysis', 'visual recognition'],
-  'computer vision': [
-    'cv',
-    'computer vision',
-    'computational vision',
-    'image analysis',
-    'visual recognition',
-  ],
-  'computational vision': [
-    'cv',
-    'computer vision',
-    'computational vision',
-    'image analysis',
-    'visual recognition',
-  ],
-  neuro: ['neuro', 'neuroscience', 'neurology', 'neural', 'brain'],
-  neuroscience: ['neuro', 'neuroscience', 'neurology', 'neural', 'brain'],
-  psych: ['psych', 'psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
-  psychology: ['psych', 'psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
-};
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'pi',
@@ -333,9 +298,11 @@ export function buildStudentSearchTerms(doc: any): string[] {
 
   const terms: string[] = [];
   const seen = new Set<string>();
-  for (const [trigger, aliases] of Object.entries(STUDENT_TOPIC_ALIASES)) {
+  for (const [trigger, aliases] of Object.entries(STUDENT_TOPIC_TEXT_ALIASES)) {
     const triggerPattern = new RegExp(`(^|\\s)${trigger.replace(/\s+/g, '\\s+')}(\\s|$)`, 'i');
-    const haystackForTrigger = trigger === 'cv' ? cvGuardedHaystack : haystack;
+    const haystackForTrigger = STUDENT_TOPIC_TEXT_ALIAS_FREE_TEXT_GUARDED.has(trigger)
+      ? cvGuardedHaystack
+      : haystack;
     if (!triggerPattern.test(haystackForTrigger)) continue;
     for (const alias of aliases) {
       addUniqueSearchTerm(terms, seen, alias);

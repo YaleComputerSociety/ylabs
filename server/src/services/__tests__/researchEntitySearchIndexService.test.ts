@@ -210,6 +210,38 @@ describe('researchEntitySearchIndexService', () => {
     expect(synonyms['computational vision']).toEqual(expect.arrayContaining(['computer vision']));
   });
 
+  it('carries cross-domain topical synonyms so biomedical vernacular reaches canonical fields (#1463)', () => {
+    const { synonyms } = getResearchEntitySearchIndexSettings();
+
+    expect(synonyms.cancer).toEqual(expect.arrayContaining(['oncology']));
+    expect(synonyms.oncology).toEqual(expect.arrayContaining(['cancer']));
+    expect(synonyms.immune).toEqual(expect.arrayContaining(['immunology']));
+  });
+
+  it('enriches an oncology entity with the "cancer" vernacular search term (#1463)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-oncology',
+      name: 'Tumor Immunology Program',
+      researchAreas: ['Oncology'],
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms).toEqual(expect.arrayContaining(['cancer', 'oncology']));
+  });
+
+  it('does not enrich from metaphor-prone vernacular that stays query-only (#1463)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-metaphor',
+      name: 'Economic Policy Lab',
+      fullDescription: 'Studies the political climate at the heart of modern democracies.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['climate change', 'cardiology']),
+    );
+  });
+
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',
