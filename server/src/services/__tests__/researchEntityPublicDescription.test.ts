@@ -96,6 +96,26 @@ describe('researchEntityPublicDescription', () => {
     expect(representation.invariant.pass).toBe(false);
   });
 
+  it('fails the invariant when only the full description is a research-area echo the quality assessor still calls useful (#1417)', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Research connected to genetic neurodegenerative diseases and mitochondrial function.',
+        fullDescription:
+          'Janghoo Lim Research is connected to genetic neurodegenerative diseases, mitochondrial function and pathology, and ubiquitin and proteasome pathways.',
+        sourceUrls: ['https://example.yale.edu/labs/lim-lab'],
+      },
+    });
+
+    expect(representation.quality.full.isUseful).toBe(true);
+    expect(representation.quality.short.isUseful).toBe(true);
+    expect(representation.entity.fullDescription).not.toBe('');
+    expect(representation.invariant.pass).toBe(false);
+    expect(representation.invariant.reasons).toContain('research_area_echo_description');
+  });
+
   it('uses the public detail lead-name contract when explicit names are supplied', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: {
@@ -167,6 +187,20 @@ describe('researchEntityPublicDescription', () => {
           fullDescription:
             '68% of Americans say they support stronger public investment in the topic, according to our latest national survey of public opinion spanning every region of the country and many demographic groups.',
           sourceUrls: ['https://example.yale.edu/programs/communications'],
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects a lab whose fullDescription is a "is connected to" area echo, even though its shortDescription survives serve (#1417)', () => {
+      expect(
+        researchEntityServesPublicDetail({
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          shortDescription:
+            'Research connected to genetic neurodegenerative diseases and mitochondrial function.',
+          fullDescription:
+            'Janghoo Lim Research is connected to genetic neurodegenerative diseases, mitochondrial function and pathology, and ubiquitin and proteasome pathways.',
+          sourceUrls: ['https://example.yale.edu/labs/lim-lab'],
         }),
       ).toBe(false);
     });
