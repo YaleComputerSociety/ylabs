@@ -15,6 +15,7 @@ type ProgramSummary = {
 let savedResearchCount = 2;
 let programSummary: ProgramSummary = { count: 1 };
 let savedSearchCount = 3;
+let savedSearchNewMatchCount = 0;
 
 vi.mock('../../components/accounts/SavedResearchPlans', () => {
   const MockSavedResearchPlans = ({
@@ -49,12 +50,15 @@ vi.mock('../../components/accounts/ProgramWatch', () => {
 vi.mock('../../components/accounts/SavedSearches', () => {
   const MockSavedSearches = ({
     onCountChange,
+    onNewMatchCountChange,
   }: {
     onCountChange?: (count: number) => void;
+    onNewMatchCountChange?: (count: number) => void;
   }) => {
     useEffect(() => {
       onCountChange?.(savedSearchCount);
-    }, [onCountChange]);
+      onNewMatchCountChange?.(savedSearchNewMatchCount);
+    }, [onCountChange, onNewMatchCountChange]);
     return <section>Saved searches list</section>;
   };
 
@@ -65,9 +69,9 @@ vi.mock('../../components/accounts/ResearchInterestsEditor', () => ({
   default: () => <section>Research interests editor</section>,
 }));
 
-const renderAccount = (userType: string) =>
+const renderAccount = (userType: string, initialEntries: string[] = ['/account']) =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -91,6 +95,7 @@ afterEach(() => {
   savedResearchCount = 2;
   programSummary = { count: 1 };
   savedSearchCount = 3;
+  savedSearchNewMatchCount = 0;
 });
 
 describe('Account page', () => {
@@ -187,6 +192,33 @@ describe('Account page', () => {
     renderAccount('student');
 
     expect(screen.getByText('Summer Research Grant: Due Jun 30, 2099')).toBeTruthy();
+  });
+
+  it('surfaces the saved-search new-match count on the dashboard and routes to that tab', () => {
+    savedSearchNewMatchCount = 2;
+    renderAccount('student');
+
+    const cta = screen.getByRole('button', { name: '2 new matches for your saved searches' });
+    const searchesTab = screen.getByRole('tab', { name: 'Saved Searches (3)' });
+    expect(searchesTab.getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(cta);
+    expect(searchesTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(searchesTab);
+  });
+
+  it('stays silent on the dashboard when there are no new saved-search matches', () => {
+    renderAccount('student');
+
+    expect(screen.queryByText(/new matches for your saved searches/)).toBeNull();
+  });
+
+  it('deep-links to the Saved Searches tab via a tab query param', () => {
+    renderAccount('student', ['/account?tab=searches']);
+
+    expect(screen.getByRole('tab', { name: 'Saved Searches (3)' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
   });
 
   it('shows every account the same read-only surfaces with no faculty edit surface', () => {
