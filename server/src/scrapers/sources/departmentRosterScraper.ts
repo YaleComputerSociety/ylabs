@@ -59,6 +59,7 @@ import {
   sanitizeResearchEntityDescription,
 } from '../../utils/descriptionHygiene';
 import {
+  isFullProseParagraph,
   isProseNotTopicPhrase,
   isResearchSectionLabel,
   stripResearchSectionLabelPrefix,
@@ -1826,12 +1827,16 @@ function isGenericLabDirectoryUrl(value: string | undefined | null): boolean {
 }
 
 function elementTextWithChildSeparators($: cheerio.CheerioAPI, el: AnyNode): string {
-  const parts = $(el)
+  const rawParts = $(el)
     .contents()
     .map((_i, node) => cleanText($(node).text()))
     .get()
     .filter(Boolean);
-  return parts.length > 0 ? parts.join('; ') : cleanText($(el).text());
+  if (rawParts.length > 0) {
+    return rawParts.filter((part) => !isFullProseParagraph(part)).join('; ');
+  }
+  const whole = cleanText($(el).text());
+  return isFullProseParagraph(whole) ? '' : whole;
 }
 
 function stripTopicLabelPrefix(value: string): string {

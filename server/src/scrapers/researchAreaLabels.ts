@@ -41,3 +41,10 @@ export function isProseNotTopicPhrase(value: unknown): boolean {
   if (text.split(/\s+/).filter(Boolean).length > 8) return true;
   return /[.!?]\s+[A-Za-z]/.test(text);
 }
+
+export function isFullProseParagraph(value: unknown): boolean {
+  const text = normalizeLabelText(value);
+  if (!text) return false;
+  if (text.split(/\s+/).filter(Boolean).length > 20) return true;
+  return /[.!?]\s+[A-Za-z]/.test(text);
+}
