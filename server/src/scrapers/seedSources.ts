@@ -322,6 +322,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'daily-during-cycle',
   },
   {
+    name: 'yale-health-sciences-summer-programs',
+    displayName: 'Yale Health-Sciences Undergraduate Summer Research Programs',
+    description:
+      'Yale health-sciences undergraduate summer research programs hosted across the School of Medicine, Public Health, Nursing, and their institutes/centers - the biomedical analogue of yale-reu-programs on distinct host domains. Cites each program\'s own official Yale page; Yale-owned health-sciences listing pages are crawl seeds only and are never cited. The two already-covered WHR/YCMD seed URLs owned by yale-college-fellowships-office are excluded so a program is never minted twice. Emits SUMMER_RESEARCH_PROGRAM records; fails closed on contact and on non-Yale source URLs.',
+    baseUrl: 'https://medicine.yale.edu',
+    defaultWeight: 0.9,
+    cadence: 'daily-during-cycle',
+  },
+  {
     name: 'student-grants-database',
     displayName: 'Yale Student Grants Database (CommunityForce)',
     description:
