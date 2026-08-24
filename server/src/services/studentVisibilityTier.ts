@@ -191,7 +191,7 @@ const organizationalEngagementUrlPathPatterns = [
   // /undergraduate-program/undergraduate-research-in-x, /research-internship-program,
   // /research/undergraduate-research-opportunities). The segment-anchored patterns above
   // miss these even though the page itself is the student's way in.
-  /(?:^|[/-])(?:undergraduate-research|undergraduate-study|undergraduate-program|research-internship|research-opportunit(?:y|ies)|research-experience|for-undergraduates?)(?:[/-]|$)/i,
+  /(?:^|[/-])(?:undergraduate-research|undergraduate-study|undergraduate-program|undergraduate|undergrad|research-internship|research-opportunit(?:y|ies)|research-assistantships?|research-experience|for-undergraduates?)(?:[/-]|$)/i,
 ];
 
 function isOrganizationalEngagementUrl(value: string): boolean {

@@ -173,6 +173,8 @@ describe('computeResearchEntityStudentVisibility', () => {
     'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
     'https://mbb.yale.edu/introduction-undergraduate-program',
     'https://college.yale.edu/life-at-yale/student-faculty-awards/nsf-research-experience-for-undergraduates-reu-computational',
+    'https://economics.yale.edu/undergraduate/tobin-ra/tobin-research-assistantship-application',
+    'https://engineering.yale.edu/academic-study/undergraduate/research',
   ])(
     'recognizes a student-research engagement page as an alternate access path: %s',
     (sourceUrl) => {
@@ -221,6 +223,29 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+  });
+
+  it('still holds a program whose only source url is a generic resources page', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'program-generic-resources',
+        name: 'Earth and Planetary Sciences Research Opportunities',
+        slug: 'earth-planetary-sciences-research-opportunities',
+        entityType: 'PROGRAM',
+        kind: 'program',
+        shortDescription:
+          'Points undergraduates toward research openings across Earth and Planetary Sciences faculty labs.',
+        fullDescription:
+          'Lists research openings across Earth and Planetary Sciences faculty labs. Students should contact faculty directly to arrange a project.',
+        sourceUrls: ['https://earth.yale.edu/resources'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
     expect(result.reasons).toContain('missing_alternate_access_path');
   });
 
