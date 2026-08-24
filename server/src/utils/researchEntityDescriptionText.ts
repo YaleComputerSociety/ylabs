@@ -1,10 +1,16 @@
-import { isInstitutionalCenterBlurbText } from './descriptionHygiene';
+import {
+  isInstitutionalCenterBlurbText,
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from './descriptionHygiene';
 
 const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
 const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
   ...DESCRIPTION_FIELDS,
   'profileSynthesisDescription',
 ] as const;
+
+const HYGIENE_FULL_DESCRIPTION_FIELDS = ['fullDescription', 'profileSynthesisDescription'] as const;
 const NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT =
   /\b(?:research|lab|laboratory|study|studies|studying|investigate|investigates|investigated|explore|explores|focus|focuses|focusing|works?\s+on|conducts|uses|develops|examines|examining|analysis|method|methods|model|models|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
 
@@ -548,6 +554,61 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
     const cleaned = sanitizeFacultyResearchEntityText(withLeadNameCorrectionIfResearch, next);
     if (cleaned !== next[field]) {
       next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  return changed ? (next as T) : entity;
+}
+
+/**
+ * The single canonical serve-time sanitizer for research-entity copy: the one
+ * "clean this entity's descriptions before serving" entry point that every
+ * public serve path (detail, browse/search cards, embedded summaries) must run,
+ * so a guard added to any underlying layer takes effect on every surface at once
+ * rather than only on whichever serve path happened to run its subset (#1269).
+ *
+ * It composes the full guard union in a fixed order:
+ *  1. the text-transform layer (researchEntityDescriptionText) - subjectless-lead
+ *     repair, first-person re-voicing, mismatched-name-prefix correction, the
+ *     non-person-org biography guard, and the publicResearchEntityDescriptionText
+ *     fail-closed gate (appointment-only, role-only, chrome, synthetic, contact
+ *     route, directory-index, broken fragment);
+ *  2. the faculty relabel pass ("the Lab" -> "this research profile");
+ *  3. the research-home self-reference pass ("the lab" -> "the center");
+ *  4. the descriptionHygiene layer (chrome/dump strip, contact-block/publications/
+ *     center-blurb/html fail-close, and length clamp) that the DTO already ran
+ *     but the text/quality serve path did not.
+ *
+ * Every step is idempotent, so a description already cleaned upstream (the detail
+ * path runs the text-transform layer before the DTO) is unchanged by a second
+ * pass. Returns the input entity unchanged when nothing needed cleaning.
+ */
+export function sanitizeServedResearchEntityCopyFields<T extends Record<string, any>>(
+  entity: T,
+  leadMemberNames: readonly string[] = [],
+): T {
+  const withTextGuards = sanitizeResearchHomeSelfReferenceCopyFields(
+    sanitizeFacultyResearchEntityCopyFields(
+      sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
+      leadMemberNames,
+    ),
+  );
+  let changed = withTextGuards !== entity;
+  const next: Record<string, any> = { ...withTextGuards };
+
+  for (const field of HYGIENE_FULL_DESCRIPTION_FIELDS) {
+    if (typeof next[field] !== 'string') continue;
+    const cleaned = sanitizeResearchEntityDescription(next[field]);
+    if (cleaned !== next[field]) {
+      next[field] = cleaned;
+      changed = true;
+    }
+  }
+  if (typeof next.shortDescription === 'string') {
+    const cleaned = sanitizeResearchEntityShortDescription(next.shortDescription);
+    if (cleaned !== next.shortDescription) {
+      next.shortDescription = cleaned;
       changed = true;
     }
   }
