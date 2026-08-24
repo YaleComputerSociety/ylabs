@@ -786,6 +786,16 @@ describe('descriptionHygiene bare office/street address residue detection (#798)
     expect(hasContactBlockResidue(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(false);
   });
 
+  it('does not flag research prose where a street-suffix word runs on into lowercase prose (#1516)', () => {
+    const astronomyProse =
+      'We are focused on understanding low mass galaxies around the Milky Way. The survey measures the distribution of satellite galaxies around 100 Milky Way analogs well below the luminosity where predictions and observations diverge.';
+    const streetWordProse =
+      'The project traces how commerce reshaped daily life along 40 Prospect Street galaxies of activity in nineteenth-century New Haven.';
+    expect(hasContactBlockResidue(astronomyProse)).toBe(false);
+    expect(hasContactBlockResidue(streetWordProse)).toBe(false);
+    expect(sanitizeResearchEntityDescription(astronomyProse)).toBe(astronomyProse);
+  });
+
   it('fails a served description closed to empty on a non-trailing glued office address', () => {
     expect(
       sanitizeResearchEntityDescription(

@@ -1085,12 +1085,18 @@ const OFFICE_UNIT_LABEL = 'Floor|Fl|Room|Rm|Suite|Ste';
  * a floor/room/suite unit (`, Fl 2, Rm 234`), with no `office:`/`address:` label
  * of its own. Faculty-bio scrapes sometimes merge a page's office-location line
  * straight into the bio prose with no separating punctuation, so this must be
- * detected on shape alone (#798).
+ * detected on shape alone (#798). The trailing `(?!\s+[a-z])` guard stops the
+ * match from firing when the street-suffix word runs on into lowercase prose
+ * ("100 Milky Way analogs", "40 Prospect Street galaxies"): a real glued
+ * address ends at a boundary, a comma/unit, or a capitalized city, never a
+ * lowercase common noun, so genuine research prose that merely reads like an
+ * address is no longer blanked.
  */
 const bareStreetAddressPattern = new RegExp(
   `\\b\\d{1,5}\\s+[A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3}\\s+` +
     `(?:(?:${STREET_SUFFIX_WORD})\\b|(?:${STREET_SUFFIX_ABBREVIATION})\\.)` +
-    `(?:[.,]?\\s*(?:${OFFICE_UNIT_LABEL})\\.?\\s*\\d+[A-Za-z]?)*`,
+    `(?:[.,]?\\s*(?:${OFFICE_UNIT_LABEL})\\.?\\s*\\d+[A-Za-z]?)*` +
+    `(?!\\s+[a-z])`,
 );
 
 /**
