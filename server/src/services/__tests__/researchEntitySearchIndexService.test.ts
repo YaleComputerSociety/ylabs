@@ -75,6 +75,20 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
+  it('blanks the synthetic research-home metadata blurb + hedge in the indexed description fields (#1466)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-research-home-hedge',
+      name: 'Synthetic Home Lab',
+      archived: false,
+      fullDescription:
+        'Synthetic Home Lab is a Yale research home. This context is synthesized from indexed Yale metadata and should be checked against official sources before outreach.',
+      shortDescription: 'Research home connected to .',
+    });
+
+    expect(doc?.fullDescription).toBe('');
+    expect(doc?.shortDescription).toBe('');
+  });
+
   it('strips retired legacy access fields while preserving the graded access signal', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-access',

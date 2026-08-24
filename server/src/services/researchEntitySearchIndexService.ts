@@ -9,6 +9,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
+import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
@@ -408,11 +409,13 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   if (typeof out.fullDescription === 'string') {
     let cleaned = sanitizeResearchEntityDescription(out.fullDescription);
     if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.fullDescription = stripEndowedChairTitles(cleaned);
   }
   if (typeof out.shortDescription === 'string') {
     let cleaned = sanitizeResearchEntityShortDescription(out.shortDescription);
     if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.shortDescription = stripEndowedChairTitles(cleaned);
   }
 
