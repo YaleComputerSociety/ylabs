@@ -11,6 +11,7 @@ import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormali
 import { normalizeResearchAreaList } from './researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
+import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 
 const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
 const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
@@ -304,6 +305,18 @@ export function isNonPersonOrgEntityType(entity?: FacultyResearchTextEntity | nu
   return NON_PERSON_ORG_ENTITY_TYPES.has(String(entity.entityType || '').toUpperCase());
 }
 
+const RESEARCHER_VOICE_STUDIES_LEAD_PATTERN = /^Studies\b/i;
+
+export function isResearcherVoiceStudiesLeadOnFundingProgram(
+  value: unknown,
+  entity?: FacultyResearchTextEntity | null,
+): boolean {
+  return (
+    isProgramLikeResearchEntity(entity as Record<string, unknown> | null | undefined) &&
+    RESEARCHER_VOICE_STUDIES_LEAD_PATTERN.test(textValue(value))
+  );
+}
+
 const ADVISING_MENTEE_NOUN =
   '(?:students?|undergraduates?|undergrads?|grad(?:uate)?\\s+students?|mentees?|advisees?|research\\s+assistants?|trainees?|postdocs?|postdoctoral\\s+(?:fellows?|researchers?)|applicants?)';
 
@@ -523,7 +536,12 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         !isLikelyResearchFocusedText(withLeadNameCorrection)
           ? ''
           : withLeadNameCorrection;
-      const cleaned = publicResearchEntityDescriptionText(withLeadNameCorrectionIfResearch);
+      const withFundingProgramStudiesGuard =
+        field === 'shortDescription' &&
+        isResearcherVoiceStudiesLeadOnFundingProgram(withLeadNameCorrectionIfResearch, next)
+          ? ''
+          : withLeadNameCorrectionIfResearch;
+      const cleaned = publicResearchEntityDescriptionText(withFundingProgramStudiesGuard);
       if (cleaned !== next[field]) {
         next[field] = cleaned;
         changed = true;

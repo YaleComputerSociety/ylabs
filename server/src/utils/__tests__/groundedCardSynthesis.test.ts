@@ -243,3 +243,38 @@ describe('resolveGroundedCardDescription research-areas fallback (#952)', () => 
     expect(resolved).toBe('');
   });
 });
+
+describe('resolveGroundedCardDescription rejects researcher-voice "Studies" on program-like entities (#1555)', () => {
+  const NO_CARDABLE_SENTENCE_FULL = 'No description available yet.';
+
+  it('fails closed instead of the research-areas "Studies" fallback for a program-like entity', async () => {
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: NO_CARDABLE_SENTENCE_FULL,
+      researchAreas: ['Biostatistics', 'Public Health', 'Cancer Research', 'Clinical Trials'],
+      isProgramLike: true,
+    });
+    expect(resolved).toBe('');
+  });
+
+  it('fails closed instead of a "Studies" lead synthesized by the LLM fallback for a program-like entity', async () => {
+    const synthesize = vi.fn(async () => 'Studies Slavery, Resistance, and Abolition at the Whitney.');
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: 'Gilder Lehrman fellowship.',
+      isProgramLike: true,
+      synthesize,
+    });
+    expect(synthesize).toHaveBeenCalledOnce();
+    expect(resolved).toBe('');
+  });
+
+  it('still allows a "Studies" lead for a non-program (lab/faculty) entity', async () => {
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: UNGROUNDABLE_FULL,
+      researchAreas: ['Biostatistics', 'Public Health', 'Cancer Research', 'Clinical Trials'],
+      isProgramLike: false,
+    });
+    expect(resolved).toBe(
+      'Studies Biostatistics, Public Health, Cancer Research, and Clinical Trials.',
+    );
+  });
+});

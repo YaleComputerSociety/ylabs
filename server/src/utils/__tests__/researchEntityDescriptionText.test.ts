@@ -369,6 +369,30 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     );
   });
 
+  it('blanks a researcher-voice "Studies <topic>" shortDescription on a funding-program entity (#1555)', () => {
+    const raProgram = {
+      entityType: 'RA_PROGRAM',
+      fullDescription:
+        'The Impulsivity and Impulse Control Disorder Research Program funds undergraduate research assistantships in psychiatry, neuroscience, psychology, and developmental biology.',
+      shortDescription: 'Studies Psychiatry, Neuroscience, Psychology, and Developmental Biology.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(raProgram);
+
+    expect(sanitized.shortDescription).toBe('');
+  });
+
+  it('keeps a "Studies <topic>" shortDescription on a lab/faculty entity (#1555 scope)', () => {
+    const lab = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription: 'Studies coral reef resilience under ocean acidification.',
+      shortDescription: 'Studies coral reef resilience under ocean acidification.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.shortDescription).toBe('Studies coral reef resilience under ocean acidification.');
+  });
+
   it('applies the biography/advising guard to faculty-research entities too (#1526)', () => {
     const facultyResearch = {
       entityType: 'FACULTY_RESEARCH_AREA',
