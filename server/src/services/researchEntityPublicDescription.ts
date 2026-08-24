@@ -9,6 +9,7 @@ import {
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   isResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
@@ -80,6 +81,18 @@ export function buildResearchEntityPublicDescriptionRepresentation({
       resolvedLeadMemberNames,
     ),
   );
+  // A document persisted via a raw $set (the common scraper/materializer write
+  // path) can carry `kind` without the `entityType` the schema only backfills
+  // as a Mongoose default on document creation, so a plain object or a `.lean()`
+  // read here can arrive with `entityType` undefined even for a LAB/
+  // FACULTY_RESEARCH_AREA record. Falling back to the same kind-derived mapping
+  // the DTO layer uses keeps the entityType-gated guards below (the topic-label-
+  // list chip-echo check) from silently never firing on such a record (#1732).
+  const resolvedEntityType =
+    sanitizedSourceEntity.entityType ||
+    (sanitizedSourceEntity.kind
+      ? mapResearchGroupKindToEntityType(sanitizedSourceEntity.kind)
+      : undefined);
   // A shortDescription synthesized independently of fullDescription can fail
   // hygiene (a dangling pronoun opener, an artwork-commentary chrome prefix)
   // or reduce to empty on a par with fullDescription's own richer content
@@ -92,11 +105,12 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // caller's stored entity (e.g. the repair queue's own backfill diagnosis).
   const sanitizedEntity: Record<string, any> = {
     ...sanitizedSourceEntity,
+    entityType: resolvedEntityType,
     shortDescription: resolveServedShortDescription({
       shortDescription: sanitizedSourceEntity.shortDescription,
       fullDescription: sanitizedSourceEntity.fullDescription,
       researchAreas: sanitizedSourceEntity.researchAreas,
-      entityType: sanitizedSourceEntity.entityType,
+      entityType: resolvedEntityType,
     }),
   };
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
