@@ -5,14 +5,16 @@ import {
   Researcher,
   type ResearcherDisplayProfile,
   type ResearcherProfileLink,
+  type ResearcherStatus,
 } from '../models/researcher';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { toPublicResearchEntityDto, type PublicResearchEntityDto } from './researchEntityDto';
 import { researchEntityServesPublicDetail } from './researchEntityPublicDescription';
 import {
-  personNameCarriesLifespan,
-  stripTrailingPersonNameLifespan,
-} from '../utils/researchEntityDeceasedLead';
+  publiclyFindableResearcherDisplayName,
+  researcherHasPrimaryIdentityLink,
+  researcherIsPubliclyFindable,
+} from './researcherFindability';
 
 export interface PublicResearcherProfile {
   publicKey: string;
@@ -93,17 +95,22 @@ export async function getResearcherProfileByPublicKey(
   const personId = personIdFromPublicKey(publicKey);
   if (!personId) return null;
 
-  const researcher = (await Researcher.findOne({ _id: personId, archived: { $ne: true } })
-    .select('_id displayName profile profileLinks')
+  const researcher = (await Researcher.findOne({
+    _id: personId,
+    archived: { $ne: true },
+    status: { $ne: 'DEPARTED' },
+  })
+    .select('_id displayName status profile profileLinks')
     .lean()) as {
     displayName?: string;
+    status?: ResearcherStatus;
     profile?: ResearcherDisplayProfile;
     profileLinks?: ResearcherProfileLink[];
   } | null;
   if (!researcher) return null;
 
-  const displayName = stripTrailingPersonNameLifespan(researcher.displayName || '').trim();
-  if (!displayName || personNameCarriesLifespan(researcher.displayName || '')) return null;
+  const displayName = publiclyFindableResearcherDisplayName(researcher.displayName);
+  if (!displayName) return null;
 
   const assignments = await RoleAssignment.find({
     personId,
@@ -122,24 +129,37 @@ export async function getResearcherProfileByPublicKey(
         .map((id: mongoose.Types.ObjectId) => id.toString()),
     ),
   ).map((id) => new mongoose.Types.ObjectId(id));
-  if (entityIds.length === 0) return null;
 
-  const entities = await ResearchEntity.find({
-    _id: { $in: entityIds },
-    archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-  }).lean();
+  let homes: PublicResearchEntityDto[] = [];
+  if (entityIds.length > 0) {
+    const entities = await ResearchEntity.find({
+      _id: { $in: entityIds },
+      archived: { $ne: true },
+      studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    }).lean();
 
-  const servableEntities = (entities as Record<string, any>[])
-    .filter((entity) => publicStudentVisibilityTiers.includes(entity.studentVisibilityTier))
-    .filter(researchEntityServesPublicDetail);
+    const servableEntities = (entities as Record<string, any>[])
+      .filter((entity) => publicStudentVisibilityTiers.includes(entity.studentVisibilityTier))
+      .filter(researchEntityServesPublicDetail);
 
-  const homes = servableEntities
-    .slice(0, MAX_AGGREGATED_HOMES)
-    .map((entity) => toPublicResearchEntityDto(entity, { forList: true }));
-  if (homes.length === 0) return null;
+    homes = servableEntities
+      .slice(0, MAX_AGGREGATED_HOMES)
+      .map((entity) => toPublicResearchEntityDto(entity, { forList: true }));
+  }
 
   const profileLinks = researcher.profileLinks as ResearcherProfileLink[] | undefined;
+
+  if (
+    !researcherIsPubliclyFindable({
+      status: researcher.status,
+      displayName: researcher.displayName,
+      servableHomeCount: homes.length,
+      hasPrimaryIdentityLink: researcherHasPrimaryIdentityLink(profileLinks),
+    })
+  ) {
+    return null;
+  }
+
   const officialProfileUrl = profileLinkUrl(profileLinks, [
     'YALE_OFFICIAL',
     'LAB_ABOUT',

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   recordResearchEntityOutreach: vi.fn(),
   getStudentResearchInterests: vi.fn(),
   getResearcherProfileByPublicKey: vi.fn(),
+  searchResearchersViaMeili: vi.fn(),
   getDepartmentResearchPage: vi.fn(),
   getAreaResearchPage: vi.fn(),
   getFieldResearchPage: vi.fn(),
@@ -28,6 +29,10 @@ vi.mock('../../services/researchGroupService', () => ({
 
 vi.mock('../../services/researcherProfileService', () => ({
   getResearcherProfileByPublicKey: mocks.getResearcherProfileByPublicKey,
+}));
+
+vi.mock('../../services/researcherSearchIndexService', () => ({
+  searchResearchersViaMeili: mocks.searchResearchersViaMeili,
 }));
 
 vi.mock('../../services/areaResearchPageService', () => ({
@@ -61,6 +66,7 @@ import {
   recordResearchOutreach,
   searchRelatedPrograms,
   searchResearchGroups,
+  searchResearchers,
 } from '../researchGroupController';
 
 describe('researchGroupController', () => {
@@ -623,6 +629,48 @@ describe('researchGroupController', () => {
       const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
 
       await getResearcherProfile(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
+    });
+  });
+
+  describe('searchResearchers', () => {
+    it('returns researcher search hits for a name query', async () => {
+      const payload = {
+        hits: [{ id: 'a1b2c3d4e5f6a1b2c3d4e5f6', publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6', displayName: 'Dr X', homeCount: 2 }],
+        estimatedTotalHits: 1,
+        page: 1,
+        pageSize: 10,
+      };
+      mocks.searchResearchersViaMeili.mockResolvedValue(payload);
+      const req = { body: { q: 'dr x' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await searchResearchers(req, res);
+
+      expect(mocks.searchResearchersViaMeili).toHaveBeenCalledWith('dr x', { page: 1, pageSize: 10 });
+      expect(res.json).toHaveBeenCalledWith(payload);
+    });
+
+    it('rejects an oversized query before service work', async () => {
+      const req = { body: { q: 'x'.repeat(600) } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await searchResearchers(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mocks.searchResearchersViaMeili).not.toHaveBeenCalled();
+    });
+
+    it('does not leak internal service errors', async () => {
+      mocks.searchResearchersViaMeili.mockRejectedValue(
+        new Error('mongodb://user:pass@example.invalid researcher search failed'),
+      );
+      const req = { body: { q: 'dr x' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await searchResearchers(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');

@@ -53,7 +53,10 @@ const researchSearchResponse = (
   },
 });
 
-const unexpectedSearchEndpoint = (url: string): never => {
+const unexpectedSearchEndpoint = (url: string): unknown => {
+  if (url === '/research/people/search') {
+    return { data: { hits: [], estimatedTotalHits: 0, page: 1, pageSize: 6 } };
+  }
   throw new Error(`Unexpected retired or unknown search endpoint: ${url}`);
 };
 

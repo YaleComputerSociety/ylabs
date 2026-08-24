@@ -3,6 +3,7 @@ import { isCancel } from 'axios';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
+import PeopleResults from '../components/research/PeopleResults';
 import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchFieldDirectory from '../components/research/ResearchFieldDirectory';
@@ -2394,6 +2395,8 @@ const Research = () => {
                     {searchError}
                   </div>
                 )}
+
+                <PeopleResults query={submittedQuery} />
 
                 <section className="mt-5">
                   <SectionHeading>Research profiles</SectionHeading>
