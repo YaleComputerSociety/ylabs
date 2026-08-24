@@ -2068,9 +2068,9 @@ describe('DepartmentRosterScraper.run', () => {
   it('drops a page section heading ("Selected Presentations and Articles for a General Audience") from roster topics instead of treating it as a research area (#1678)', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
-        name: 'Paul Tipton',
-        email: 'paul.tipton@yale.edu',
-        labUrl: 'https://hep.yale.edu/people/faculty/paul-l-tipton/research',
+        name: 'Avery Faculty',
+        email: 'avery.faculty@yale.edu',
+        labUrl: 'https://hep.yale.edu/people/faculty/avery-faculty/research',
         topics: [
           'Particle Physics',
           'ATLAS',
