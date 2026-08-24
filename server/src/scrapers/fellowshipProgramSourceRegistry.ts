@@ -104,11 +104,12 @@ export const FELLOWSHIP_PROGRAM_SOURCE_REGISTRY: FellowshipProgramEntry[] = [
     url: 'https://college.yale.edu/life-at-yale/student-faculty-awards',
     catalogName: 'Yale College student-faculty awards index',
     owningOffice: "Yale College Dean's Office",
-    status: 'gap',
+    status: 'covered',
     impactTier: 2,
+    coveredBy: ['yale-college-fellowships-office'],
     approxProgramCount: 40,
     notes:
-      'Only the Mellon Mays Undergraduate Fellowship child page is currently seeded (via college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program). The full student-faculty awards index enumerates many more research-relevant awards/prizes; its index root is a crawl seed only, each award page the citable source.',
+      'Wired as a crawl seed in yaleCollegeFellowshipsOfficeScraper DEFAULT_PAGE_URLS via STUDENT_FACULTY_AWARDS_INDEX_URL. The index root is fetched only to discover the individual award/prize pages linked from its primary content (extractIndexSeedChildDetailUrls); the root itself is never parsed into a candidate and never cited as a source. Each discovered child page (e.g. the Yale College Deans Research Fellowship humanities/social-sciences track, Edward A. Bouchet Undergraduate Fellows Program, Nakanishi Prize, Tetelman and Robert C. Bates fellowships) is fetched separately and cites its own page as the per-program source; a child that fails to fetch is dropped rather than cited via the index (fail closed). The Mellon Mays Undergraduate Fellowship child remains individually seeded as a Tier-4 detail page. CommunityForce and studentgrants.yale.edu links surfaced by any child stay applicationLink evidence and are never fetch targets.',
   },
 
   // ---- Tier 3: center / institute / department program catalogs --------------------
