@@ -733,7 +733,8 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of Music',
     department: 'Faculty',
     rendering: 'static',
-    status: 'gap',
+    status: 'covered',
+    coveredBy: ['dept-faculty-roster'],
     studentImpactTier: 6,
     approxFacultyCount: 50,
     notes:

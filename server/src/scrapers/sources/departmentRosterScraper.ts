@@ -908,6 +908,40 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+/**
+ * Yale School of Music Drupal `node--type-person` cards. The listing hydrates
+ * client-side, so this runs against rendered HTML (renderedExtractor). Each
+ * card carries the person on the article's `about` attribute and the name on
+ * the profile image's alt text.
+ *   <article about="/people/<slug>" class="node node--type-person node--view-mode-card">
+ *     <img alt="Name" src="...">
+ */
+export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('article.node--type-person').each((_i, el) => {
+    const card = $(el);
+    const name = normalizeName(cleanText(card.find('img[alt]').first().attr('alt') || ''));
+    if (!name) return;
+
+    const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
+    const profileUrl = about ? absolutize(about, ctx.pageUrl) : undefined;
+    const title =
+      cleanText(
+        card
+          .find('.paragraph--type--title-affiliation, [class*="title-affiliation"], .field--name-field-title')
+          .first()
+          .text(),
+      ) || undefined;
+    const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -1419,6 +1453,17 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://westcampus.yale.edu/about-us/faculty',
     paginated: false,
     extractor: referenceCardExtractor,
+  },
+  {
+    deptKey: 'school-of-music',
+    deptName: 'Music',
+    schoolName: 'Yale School of Music',
+    url: 'https://music.yale.edu/meet-our-faculty',
+    paginated: false,
+    extractor: nodePersonCardExtractor,
+    renderedExtractor: nodePersonCardExtractor,
+    renderWaitSelector: 'article.node--type-person',
+    jsRenderedSkip: true,
   },
 ];
 
