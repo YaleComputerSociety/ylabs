@@ -138,7 +138,7 @@ export async function runRoleHeaderShortRepair(options: {
 }): Promise<RoleHeaderShortRepairResult> {
   const query = ResearchEntity.find({
     archived: { $ne: true },
-    kind: 'FACULTY_RESEARCH_AREA',
+    entityType: 'FACULTY_RESEARCH_AREA',
     studentVisibilityTier: 'student_ready',
     shortDescription: { $type: 'string' },
     sourceUrls: MEDICINE_PROFILE_SOURCE_URL_PATTERN,
