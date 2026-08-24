@@ -113,6 +113,27 @@ describe('fullDescriptionQuality', () => {
     expect(deriveShortDescriptionFromFullDescription(fullDescription)).toBe('');
   });
 
+  it('rejects a "Studies <areas>" fullDescription that is a bare echo of the entity\'s own researchAreas (#1532)', () => {
+    const fullDescription = 'Studies extragalactic astronomy.';
+    const researchAreas = ['Extragalactic Astronomy'];
+
+    expect(fullDescriptionQuality(fullDescription, researchAreas).flags).toContain(
+      'research-area-echo',
+    );
+    expect(fullDescriptionQuality(fullDescription, researchAreas).isUseful).toBe(false);
+  });
+
+  it('keeps a "Studies <areas>" fullDescription that carries prose beyond the researchAreas chips', () => {
+    const fullDescription =
+      'Studies extragalactic astronomy, focusing on how dwarf galaxies form and evolve within larger clusters over cosmic time.';
+    const researchAreas = ['Extragalactic Astronomy'];
+
+    expect(fullDescriptionQuality(fullDescription, researchAreas).flags).not.toContain(
+      'research-area-echo',
+    );
+    expect(fullDescriptionQuality(fullDescription, researchAreas).isUseful).toBe(true);
+  });
+
   it('derives card copy from later research activity when profile biographies start with appointments', () => {
     const fullDescription =
       'Dr Roberts has worked at the University of Vermont, Virginia Commonwealth University, and Yale University. He is board certified in internal medicine, pediatrics, medical oncology, and hospice and palliative care. Current activities are clinical research and consulting for non-governmental organizations and the pharmaceutical and pharmacy industries.';

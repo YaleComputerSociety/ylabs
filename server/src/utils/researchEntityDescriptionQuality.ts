@@ -3,6 +3,7 @@ import {
   hasContactBlockResidue,
   isCitationAuthorListDumpText,
   isResearchAreaTemplateLeakText,
+  isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
 } from './descriptionHygiene';
 import {
@@ -23,6 +24,7 @@ export type DescriptionQualityFlag =
   | 'broken-template'
   | 'profile-chrome'
   | 'research-area-placeholder'
+  | 'research-area-echo'
   | 'appointment-only'
   | 'role-only'
   | 'incomplete-sentence'
@@ -41,6 +43,7 @@ export type DescriptionQualityFlag =
 export interface ResearchEntityDescriptionQualityInput {
   fullDescription?: unknown;
   shortDescription?: unknown;
+  researchAreas?: unknown;
   sourceUrls?: unknown;
   website?: unknown;
   websiteUrl?: unknown;
@@ -485,13 +488,22 @@ const isAppointmentOnly = (value: string): boolean => {
   );
 };
 
-export function fullDescriptionQuality(value: unknown): FieldQuality {
+export function fullDescriptionQuality(
+  value: unknown,
+  researchAreas?: unknown,
+): FieldQuality {
   const text = textValue(value);
   const flags: DescriptionQualityFlag[] = [];
 
   if (!text) flags.push('blank');
   if (text && wordCount(text) < 12 && !isConciseSpecificResearchDescription(text)) {
     flags.push('too-short');
+  }
+  if (
+    text &&
+    isStudiesResearchAreaEchoDescription(text, Array.isArray(researchAreas) ? researchAreas : null)
+  ) {
+    flags.push('research-area-echo');
   }
   if (
     text &&
@@ -574,10 +586,14 @@ export function fullDescriptionQuality(value: unknown): FieldQuality {
   };
 }
 
-export function shortDescriptionQuality(value: unknown, fullDescription: unknown): FieldQuality {
+export function shortDescriptionQuality(
+  value: unknown,
+  fullDescription: unknown,
+  researchAreas?: unknown,
+): FieldQuality {
   const text = textValue(value);
   const full = textValue(fullDescription);
-  const fullQuality = fullDescriptionQuality(full);
+  const fullQuality = fullDescriptionQuality(full, researchAreas);
   const firstFullSentence = textValue(sentenceList(full)[0]);
   const flags: DescriptionQualityFlag[] = [];
 
@@ -794,10 +810,10 @@ export function buildResearchAreasCardSummary(researchAreas: unknown): string {
 export function assessResearchEntityDescriptionQuality(
   input: ResearchEntityDescriptionQualityInput,
 ): ResearchEntityDescriptionQuality {
-  const full = fullDescriptionQuality(input.fullDescription);
+  const full = fullDescriptionQuality(input.fullDescription, input.researchAreas);
   const short = input.isProgramLike
     ? programCardShortDescriptionQuality(input.shortDescription, input.fullDescription)
-    : shortDescriptionQuality(input.shortDescription, input.fullDescription);
+    : shortDescriptionQuality(input.shortDescription, input.fullDescription, input.researchAreas);
   // A program-like home's card is a bonus, not a requirement (it is described by
   // what it offers, not a lab-style research focus - see the invariant exemption
   // in researchEntityPublicDescription.ts): a program with no short at all is
