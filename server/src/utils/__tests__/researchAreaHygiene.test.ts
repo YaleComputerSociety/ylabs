@@ -45,6 +45,15 @@ describe('splitDelimitedResearchArea', () => {
   it('returns nothing for blank input', () => {
     expect(splitDelimitedResearchArea('   ')).toEqual([]);
   });
+
+  it('preserves a colon-led label with a comma-delimited elaboration', () => {
+    expect(splitDelimitedResearchArea('Literature: history, themes, analysis')).toEqual([
+      'Literature: history, themes, analysis',
+    ]);
+    expect(splitDelimitedResearchArea('Ukraine: War, Education, Health')).toEqual([
+      'Ukraine: War, Education, Health',
+    ]);
+  });
 });
 
 describe('normalizeResearchAreaList', () => {
