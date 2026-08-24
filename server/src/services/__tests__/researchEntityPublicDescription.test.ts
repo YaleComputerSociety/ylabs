@@ -42,6 +42,29 @@ describe('researchEntityPublicDescription', () => {
     });
   });
 
+  it('replaces a researchArea chip-echo short even when entityType is not explicitly stored (#1732)', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        kind: 'lab',
+        shortDescription:
+          'Studies Cardiovascular Diseases, Stem Cells, Tissue Engineering, and Regenerative Medicine.',
+        fullDescription:
+          'The Qyang Lab focuses on cardiovascular regeneration using induced pluripotent stem cell technology to model disease and engineer replacement tissue for heart repair. The lab develops novel differentiation protocols to generate cardiovascular cell types from patient-derived stem cells, and applies tissue engineering approaches to build vascularized cardiac constructs for disease modeling and eventual therapeutic transplantation.',
+        researchAreas: [
+          'Cardiovascular Diseases',
+          'Stem Cells',
+          'Tissue Engineering',
+          'Regenerative Medicine',
+        ],
+        sourceUrls: ['https://example.yale.edu/labs/qyang'],
+      },
+    });
+
+    expect(representation.entity.shortDescription).toBe(
+      'Focuses on cardiovascular regeneration using induced pluripotent stem cell technology to model disease and engineer replacement tissue for heart repair.',
+    );
+  });
+
   it('fails closed when the served read-time hygiene empties both descriptions (#1202)', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: {
