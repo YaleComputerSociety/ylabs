@@ -1119,7 +1119,11 @@ export function selectLabsToProcess(
   return out;
 }
 
-export function logisticsAcquisitionAllowed(options: { only?: string[] }): boolean {
+export function logisticsAcquisitionAllowed(options: {
+  only?: string[];
+  logisticsProductionMode?: boolean;
+}): boolean {
+  if (options.logisticsProductionMode) return true;
   const allowlist = new Set(
     (options.only || []).map((slug) => slug.trim().toLowerCase()).filter(Boolean),
   );
@@ -1238,6 +1242,7 @@ export interface LabMicrositeUndergradLLMExtractorDeps {
   labFinder?: () => Promise<CandidateLab[]>;
   model?: string;
   apiKey?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 async function defaultWorkPlanLoader(
@@ -1292,6 +1297,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
   private readonly labFinder: () => Promise<CandidateLab[]>;
   private readonly model: string;
   private readonly apiKey: string | undefined;
+  private readonly env: NodeJS.ProcessEnv;
 
   constructor(deps: LabMicrositeUndergradLLMExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage ?? defaultFetchPage;
@@ -1301,6 +1307,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     this.labFinder = deps.labFinder ?? defaultLabFinder;
     this.model = deps.model ?? DEFAULT_MODEL;
     this.apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY;
+    this.env = deps.env ?? process.env;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -1326,13 +1333,24 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       limit: limitOption,
       exhaustive: ctx.options.exhaustive,
     });
-    const emitLogistics = logisticsAcquisitionAllowed(ctx.options);
+    const logisticsProductionModeRequested = !!ctx.options.logisticsProductionMode;
+    const logisticsProductionModeConfirmed =
+      logisticsProductionModeRequested && this.env.CONFIRM_LOGISTICS_ACQUISITION === 'true';
+    if (logisticsProductionModeRequested && !logisticsProductionModeConfirmed) {
+      ctx.log(
+        '--logistics-production requires CONFIRM_LOGISTICS_ACQUISITION=true in the environment; falling back to the staging allowlist guard.',
+      );
+    }
+    const emitLogistics = logisticsAcquisitionAllowed({
+      only: ctx.options.only,
+      logisticsProductionMode: logisticsProductionModeConfirmed,
+    });
     ctx.log(
       `Processing ${labs.length} labs (limit=${ctx.options.exhaustive && limitOption === undefined ? 'all' : (limitOption ?? DEFAULT_LIMIT)}, only=${(ctx.options.only || []).join(',') || 'none'})`,
     );
     if (!emitLogistics) {
       ctx.log(
-        `Undergraduate logistics observations disabled: staging requires an explicit allowlist of at most ${MAX_STAGING_LOGISTICS_LABS} labs.`,
+        `Undergraduate logistics observations disabled: staging requires an explicit allowlist of at most ${MAX_STAGING_LOGISTICS_LABS} labs, or --logistics-production with CONFIRM_LOGISTICS_ACQUISITION=true.`,
       );
     }
 
@@ -1342,8 +1360,13 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let fetchFailed = 0;
     let llmFailed = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
+    // Staging curation (a manually-named <=25-lab --only allowlist) always force-fetches so an
+    // operator iterating on a specific lab sees the LLM's latest read. Confirmed production mode
+    // covers the full corpus instead, so it keeps WorkPlanner's freshness skip for LLM cost control
+    // and to make repeated corpus runs resumable without needing an --offset.
+    const stagingLogisticsBypass = emitLogistics && !logisticsProductionModeConfirmed;
     const workPlannerPolicy =
-      ctx.options.ignoreWorkPlanner || emitLogistics
+      ctx.options.ignoreWorkPlanner || stagingLogisticsBypass
         ? undefined
         : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
