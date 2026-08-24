@@ -1096,7 +1096,7 @@ export function fullDescriptionQuality(
 }
 
 const FULL_DESCRIPTION_LEAD_CLAUSE_RE =
-  /^(?:(?:the|in\s+the)\s+(?:[\p{L}][\p{L}\s.'’-]{0,60}?\s+)?(?:lab|laboratory|group)\b[,:]?\s*(?:we\s+)?|our\s+(?:research|lab|laboratory|group)\s+|we\s+)/iu;
+  /^(?:(?:the|this|in\s+the)\s+(?:[\p{L}][\p{L}\s.'’-]{0,60}?\s+)?(?:lab|laboratory|group|program|fellowship|research)\b[,:]?\s*(?:we\s+)?|(?:our|my)\s+(?:research|lab|laboratory|group|program|fellowship)\s+|[\p{L}][\p{L}.'’-]*(?:\s+[\p{L}][\p{L}.'’-]*){0,3}'s\s+(?:research|lab|laboratory|work|group)\s+|we\s+)/iu;
 
 const stripFullDescriptionLeadClause = (value: string): string =>
   value.replace(FULL_DESCRIPTION_LEAD_CLAUSE_RE, '');

@@ -2735,6 +2735,10 @@ export async function materializeEntity(
     const entityName = textValue(
       set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
     );
+    const isProgramLikeEntity = isProgramLikeResearchEntity({
+      kind: set.kind ?? entityDoc?.kind,
+      entityType: set.entityType ?? entityDoc?.entityType,
+    });
     const groundedShortDescription = await resolveMaterializedShortDescription({
       fullDescription,
       // When the single-PI-shell guard just rejected fullDescription in favor
@@ -2746,10 +2750,7 @@ export async function materializeEntity(
         ? undefined
         : set.shortDescription ?? entityDoc?.shortDescription,
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
-      isProgramLike: isProgramLikeResearchEntity({
-        kind: set.kind ?? entityDoc?.kind,
-        entityType: set.entityType ?? entityDoc?.entityType,
-      }),
+      isProgramLike: isProgramLikeEntity,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
       synthesize:
         options.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
@@ -2769,6 +2770,18 @@ export async function materializeEntity(
         : undefined;
       if (provenance) set['fieldProvenance.shortDescription'] = provenance;
       fieldsWritten++;
+    }
+    if (isProgramLikeEntity && !manuallyLockedFields.includes('fullDescription')) {
+      const finalShortText = textValue(set.shortDescription ?? entityDoc?.shortDescription);
+      const finalFullText = textValue(set.fullDescription ?? entityDoc?.fullDescription);
+      if (
+        finalFullText &&
+        finalShortText &&
+        isFullDescriptionRestatementOfShortDescription(finalFullText, finalShortText)
+      ) {
+        set.fullDescription = '';
+        fieldsWritten++;
+      }
     }
   }
   if (isResearchEntityObservationType(entityType)) {

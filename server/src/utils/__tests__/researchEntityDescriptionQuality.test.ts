@@ -1766,4 +1766,39 @@ describe('isFullDescriptionRestatementOfShortDescription (#1721)', () => {
     expect(isFullDescriptionRestatementOfShortDescription('', 'Studies X.')).toBe(false);
     expect(isFullDescriptionRestatementOfShortDescription('Studies X.', '')).toBe(false);
   });
+
+  it('flags a "<Name>\'s research focuses on" possessive clause paraphrasing the short (#1773)', () => {
+    const short =
+      'Focuses on economic theory, including financial equilibrium, macroeconomic policy, and game theory.';
+    const full =
+      "John Geanakoplos's research focuses on economic theory, including financial equilibrium, macroeconomic policy, and game theory.";
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(true);
+  });
+
+  it('flags a "We study" clause paraphrasing a "Studies" short (#1773)', () => {
+    const short =
+      'Studies quantum materials using scanning tunneling microscopy and spectroscopy (STM/S) and resonant inelastic X-ray scattering (RIXS).';
+    const full =
+      'We study quantum materials using scanning tunneling microscopy and spectroscopy (STM/S) and resonant inelastic X-ray scattering (RIXS).';
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(true);
+  });
+
+  it('flags a bare "This program" clause byte-identical restatement (#1773)', () => {
+    const text =
+      'Fosters research and teaching across disciplines, including computer science, data science, economics, engineering, international relations, law, physics, and political science.';
+    expect(isFullDescriptionRestatementOfShortDescription(text, text)).toBe(true);
+  });
+
+  it('flags a "My lab" clause prepended onto the identical short sentence (#1773)', () => {
+    const short = 'Studies plant genomics and abiotic stress responses in cereal crops.';
+    const full = 'My lab studies plant genomics and abiotic stress responses in cereal crops.';
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(true);
+  });
+
+  it('flags a bare "The research" clause prepended onto the identical short sentence (#1773)', () => {
+    const short = 'Investigates atmospheric chemistry and aerosol formation in urban environments.';
+    const full =
+      'The research investigates atmospheric chemistry and aerosol formation in urban environments.';
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(true);
+  });
 });
