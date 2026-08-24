@@ -29,6 +29,10 @@ const CREDENTIAL_NAME_VERB_BIO =
   'Sam Ortega, MD, PhD, is a cardio-oncologist and associate professor of medicine. ' +
   "Ortega's research focuses on the structure of skin proteins and how inherited mutations drive inflammatory skin disease across patient populations.";
 
+const MIDDLE_INITIAL_CREDENTIAL_BIO =
+  'Carrie A. Redlich, MD, is an occupational and environmental medicine specialist who focuses on ' +
+  'diagnosing and treating lung diseases related to environmental and workplace exposures.';
+
 const BIOGRAPHICAL_VERB_BIO =
   'Jordan Ellis obtained a medical degree abroad and now investigates how blood flow in the brain changes during stroke recovery and rehabilitation across a range of patient populations.';
 
@@ -141,6 +145,90 @@ describe('selectResearchHomeDescription', () => {
     ).toBeNull();
     expect(
       selectResearchHomeDescription([CREDENTIAL_NAME_VERB_BIO], { kind: 'organization' }),
+    ).toBeNull();
+  });
+
+  it('rejects a credential-name lead with a middle initial in favor of the lab research block (#1040)', () => {
+    expect(
+      selectResearchHomeDescription([MIDDLE_INITIAL_CREDENTIAL_BIO, LAB_DNA_REPAIR_BLOCK], {
+        kind: 'organization',
+      }),
+    ).toBe(LAB_DNA_REPAIR_BLOCK);
+    expect(
+      selectResearchHomeDescription([MIDDLE_INITIAL_CREDENTIAL_BIO], { kind: 'organization' }),
+    ).toBeNull();
+  });
+
+  it('rejects a possessive-pronoun lead in favor of the lab research block (#1040)', () => {
+    const POSSESSIVE_PRONOUN_LEAD_BIO =
+      'His surgical practice focuses on the treatment of benign and malignant tumors of the head and ' +
+      'neck. He was an early adopter of trans-oral robotic surgery.';
+    expect(
+      selectResearchHomeDescription([POSSESSIVE_PRONOUN_LEAD_BIO, LAB_DNA_REPAIR_BLOCK], {
+        kind: 'organization',
+      }),
+    ).toBe(LAB_DNA_REPAIR_BLOCK);
+    expect(
+      selectResearchHomeDescription([POSSESSIVE_PRONOUN_LEAD_BIO], { kind: 'organization' }),
+    ).toBeNull();
+  });
+
+  it('rejects a single first-name degree-earned narrative in favor of the lab research block (#1040)', () => {
+    const DEGREE_EARNED_NARRATIVE_BIO =
+      'Jamie received a B.S.E. in Electrical Engineering from a state university and a Ph.D. in ' +
+      'Computational Neuroscience from another university. As a graduate student, Jamie studied ' +
+      'sensory processing in insects.';
+    expect(
+      selectResearchHomeDescription([DEGREE_EARNED_NARRATIVE_BIO, LAB_DNA_REPAIR_BLOCK], {
+        kind: 'organization',
+      }),
+    ).toBe(LAB_DNA_REPAIR_BLOCK);
+    expect(
+      selectResearchHomeDescription([DEGREE_EARNED_NARRATIVE_BIO], { kind: 'organization' }),
+    ).toBeNull();
+  });
+
+  it('rejects a high-confidence bio buried after an organization-voice lead word (#1040)', () => {
+    const PI_LABEL_BIO_WITH_ORG_VOICE_LEAD =
+      'The PI, Dr. Jun Deng is a Professor at the Department of Therapeutic Radiology of Yale ' +
+      'University School of Medicine. Dr. Deng obtained his PhD from a state university in 1998 ' +
+      'and finished his postdoctoral fellowship at another university in 2001.';
+    expect(
+      selectResearchHomeDescription([PI_LABEL_BIO_WITH_ORG_VOICE_LEAD, LAB_DNA_REPAIR_BLOCK], {
+        kind: 'organization',
+      }),
+    ).toBe(LAB_DNA_REPAIR_BLOCK);
+    expect(
+      selectResearchHomeDescription([PI_LABEL_BIO_WITH_ORG_VOICE_LEAD], { kind: 'organization' }),
+    ).toBeNull();
+  });
+
+  it('rejects a title-clause lead into a Dr./Prof. name in favor of the lab research block (#1040)', () => {
+    const TITLE_CLAUSE_THEN_NAME_BIO =
+      "As an associate professor of pediatrics at Yale School of Medicine, Dr. Bakshi's research " +
+      'focuses on understanding chronic pain in sickle cell disease.';
+    expect(
+      selectResearchHomeDescription([TITLE_CLAUSE_THEN_NAME_BIO, LAB_DNA_REPAIR_BLOCK], {
+        kind: 'organization',
+      }),
+    ).toBe(LAB_DNA_REPAIR_BLOCK);
+    expect(
+      selectResearchHomeDescription([TITLE_CLAUSE_THEN_NAME_BIO], { kind: 'organization' }),
+    ).toBeNull();
+  });
+
+  it('rejects a first-person experience/background CV lead in favor of the lab research block (#1040)', () => {
+    const FIRST_PERSON_EXPERIENCE_BIO =
+      'I have a broad background in signal processing, psychophysics, and computational modeling ' +
+      'from pre-doctoral and doctoral work. My doctoral research resulted in the first ' +
+      'comprehensive model of visual crowding.';
+    expect(
+      selectResearchHomeDescription([FIRST_PERSON_EXPERIENCE_BIO, LAB_DNA_REPAIR_BLOCK], {
+        kind: 'organization',
+      }),
+    ).toBe(LAB_DNA_REPAIR_BLOCK);
+    expect(
+      selectResearchHomeDescription([FIRST_PERSON_EXPERIENCE_BIO], { kind: 'organization' }),
     ).toBeNull();
   });
 
