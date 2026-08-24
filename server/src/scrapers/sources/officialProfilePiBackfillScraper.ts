@@ -27,6 +27,10 @@ import {
   deriveShortDescriptionFromFullDescription,
 } from '../../utils/researchEntityDescriptionQuality';
 import {
+  startsWithRoleTitleHeaderSentence,
+  stripLeadingRoleTitleHeaderSentences,
+} from '../../utils/descriptionHygiene';
+import {
   cleanPublicProfileBio,
   isLikelyPersonUrl,
   isLikelySameNameContaminatedProfile,
@@ -2135,8 +2139,10 @@ function shortOfficialProfileBio(value: string): string {
 
   const derived = deriveShortDescriptionFromFullDescription(text);
   if (derived) return derived;
-  if (text.length <= 220) return text;
-  const prefix = text.slice(0, 220).trim();
+  const researchOnlyText = stripLeadingRoleTitleHeaderSentences(text);
+  if (researchOnlyText === text && startsWithRoleTitleHeaderSentence(text)) return '';
+  if (researchOnlyText.length <= 220) return researchOnlyText;
+  const prefix = researchOnlyText.slice(0, 220).trim();
   const sentenceEnds = Array.from(prefix.matchAll(/[.!?](?=\s|$)/g));
   const lastSentenceEnd = sentenceEnds.at(-1);
   if (lastSentenceEnd && typeof lastSentenceEnd.index === 'number' && lastSentenceEnd.index >= 80) {

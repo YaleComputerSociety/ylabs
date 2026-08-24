@@ -512,6 +512,31 @@ describe('fullDescriptionQuality', () => {
     );
   });
 
+  it('skips a leading role/title-header sentence rather than deriving from it (#1761)', () => {
+    const fullDescription =
+      'Dr. Krop serves as Associate Cancer Center Director for Clinical Research at Yale Cancer Center. His research focuses on novel therapeutic combinations for HER2-positive breast cancer.';
+
+    const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
+    expect(shortDescription).not.toMatch(/serves as/i);
+    expect(shortDescription).not.toMatch(/Associate Cancer Center Director/i);
+  });
+
+  it('derives nothing from a bio that is purely a role/title/appointment header with no research sentence (#1761)', () => {
+    const fullDescription =
+      'Dr. Xiao Wang is an Instructor of Medicine (Medical Oncology) at Yale School of Medicine and a member of the Center for Gastrointestinal Cancers at Yale Cancer Center.';
+
+    expect(deriveShortDescriptionFromFullDescription(fullDescription)).toBe('');
+  });
+
+  it('surfaces the research sentence that survives the role-header strip, not a blank (#1761)', () => {
+    const fullDescription =
+      'Dr. Krop serves as Associate Cancer Center Director for Clinical Research at Yale Cancer Center. An international leader in breast cancer research, he studies novel therapeutic combinations for HER2-positive disease.';
+
+    expect(deriveShortDescriptionFromFullDescription(fullDescription)).toBe(
+      'An international leader in breast cancer research, he studies novel therapeutic combinations for HER2-positive disease.',
+    );
+  });
+
   it('derives card copy from singular later research-interest phrasing', () => {
     const fullDescription =
       'Prof. Michael A. Boozer graduated from MIT with a bachelor’s degree in Physics before starting graduate school at Princeton where he obtained his PhD in Economics. His research interest is in Education and Labour policy where he studied consequences of class size on student achievement, looked at the relationship between human development and economic growth and the link between school quality and race.';

@@ -8,6 +8,7 @@ import {
   isResearchAreaTemplateLeakText,
   isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
+  stripLeadingRoleTitleHeaderSentences,
 } from './descriptionHygiene';
 import {
   isAcademicAppointmentDescription,
@@ -2417,11 +2418,12 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
 }
 
 export function deriveShortDescriptionFromFullDescription(fullDescription: unknown): string {
-  const full = textValue(fullDescription);
-  const fullQuality = fullDescriptionQuality(full);
+  const rawFull = textValue(fullDescription);
+  const fullQuality = fullDescriptionQuality(rawFull);
   const onlyFirstPersonFull =
     fullQuality.flags.length === 1 && fullQuality.flags.includes('first-person');
   if (!fullQuality.isUseful && !onlyFirstPersonFull) return '';
+  const full = stripLeadingRoleTitleHeaderSentences(rawFull);
   if (isConciseSpecificResearchDescription(full)) return full;
   const sentences = sentenceList(full);
   if (sentences.length === 0) return '';
@@ -2451,7 +2453,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     /\b(?:screenplays?|teleplays?|pilots?)\b/i.test(full)
   ) {
     const candidate = 'Creative work spans playwriting, theater, screenwriting, and dramatic storytelling.';
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
   const laterActivitySummary = laterResearchActivitySummary(sentences, full);
@@ -2465,7 +2467,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   );
   if (researchStreamsMatch) {
     const candidate = `${researchStreamsMatch[1].replace(/[.!?]+$/g, '').trim()}.`;
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
   const fieldsAndInterestsMatch = combinedFull.match(
@@ -2475,7 +2477,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     const fields = fieldsAndInterestsMatch[1].replace(/[.!?]+$/g, '').trim();
     const interests = fieldsAndInterestsMatch[2].replace(/[.!?]+$/g, '').trim();
     const candidate = `Studies ${fields}, including ${interests}.`;
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
   const fieldsAndIssueStudiesMatch = combinedFull.match(
@@ -2483,7 +2485,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   );
   if (fieldsAndIssueStudiesMatch) {
     const candidate = `${fieldsAndIssueStudiesMatch[2].replace(/[.!?]+$/g, '').trim()}.`;
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
   const humanitiesCenterMatch = combinedFull.match(
@@ -2492,7 +2494,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   if (humanitiesCenterMatch) {
     const focus = humanitiesCenterMatch[1].replace(/[.!?]+$/g, '').trim();
     const candidate = `Supports ${focus} in the humanities at Yale University.`;
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
   const combinesToUnderstandMatch = combinedFull.match(
@@ -2502,7 +2504,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     const method = combinesToUnderstandMatch[1].replace(/[.!?]+$/g, '').trim();
     const focus = combinesToUnderstandMatch[2].replace(/[.!?]+$/g, '').trim();
     const candidate = `Studies ${focus} by combining ${method}.`;
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
   const socialGroupsAcquiredMatch = combinedFull.match(
@@ -2510,7 +2512,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   );
   if (socialGroupsAcquiredMatch) {
     const candidate = 'Studies how knowledge of social groups is acquired in adults and children.';
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
   const dedicatedAdvancingMatch = combinedFull.match(
@@ -2520,7 +2522,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     const focus = dedicatedAdvancingMatch[1].replace(/[.!?]+$/g, '').trim();
     const outputs = dedicatedAdvancingMatch[2].replace(/[.!?]+$/g, '').trim();
     const candidate = `Develops ${outputs} for ${focus}.`;
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
   const leadSentence = isIdentityOnlyLabLead(sentences[0])
@@ -2544,9 +2546,9 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   const method = methodPhrase(sentences.filter((sentence) => sentence !== researchFocusSentence).join(' '));
   if (method && !new RegExp(method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(lead)) {
     const candidate = `${lead.replace(/[.!?]+$/g, '')}, using ${method}.`;
-    if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
+    if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
-  if (shortDescriptionQuality(lead, full).isUseful) return lead;
+  if (shortDescriptionQuality(lead, rawFull).isUseful) return lead;
   // The chosen research-focus sentence can be a later sentence in the bio
   // (the lead/name sentence itself carried no research-focus phrase), which
   // leaves a bare pronoun subject with no antecedent in the derived short on
@@ -2556,5 +2558,5 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   // make, not a new synthesis (#1533 reopen: schmidt-camacho-ask8's "Her
   // scholarship examines..." only needs "Her" grounded to her own name).
   const namedLead = restoreDanglingPronounSubject(lead, sentences[0]);
-  return namedLead !== lead && shortDescriptionQuality(namedLead, full).isUseful ? namedLead : '';
+  return namedLead !== lead && shortDescriptionQuality(namedLead, rawFull).isUseful ? namedLead : '';
 }
