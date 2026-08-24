@@ -738,7 +738,7 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
     ).toBe(true);
   });
 
-  it('promotes a lead-attached, source-backed home whose only blocker is missing_action_evidence', () => {
+  it('credits action evidence via a REACH_OUT_PLAUSIBLE signal, recorded as a soft signal that never gates student_ready (issue #1802)', () => {
     const entity = {
       entityType: 'LAB',
       name: 'Doe Lab',
@@ -752,13 +752,12 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
       { role: 'pi', userId: '64f000000000000000000010', user: { fname: 'Jane', lname: 'Doe' } },
     ];
 
-    const blocked = computeResearchEntityStudentVisibility({
+    const withoutSignal = computeResearchEntityStudentVisibility({
       entity,
       leadMembers,
       accessSignalCount: 0,
     });
-    expect(blocked.reasons).toContain('missing_action_evidence');
-    expect(blocked.tier).not.toBe('student_ready');
+    expect(withoutSignal.reasons).toContain('missing_action_evidence');
 
     const credited = reachOutPlausibleSignalCreditsActionEvidence({
       signal: validReachOutSignal,
@@ -766,14 +765,17 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
     })
       ? 1
       : 0;
-    const promoted = computeResearchEntityStudentVisibility({
+    const withSignal = computeResearchEntityStudentVisibility({
       entity,
       leadMembers,
       accessSignalCount: credited,
     });
     expect(credited).toBe(1);
-    expect(promoted.reasons).not.toContain('missing_action_evidence');
-    expect(promoted.reasons).toContain('concrete_next_step');
+    expect(withSignal.reasons).not.toContain('missing_action_evidence');
+    expect(withSignal.reasons).toContain('concrete_next_step');
+    // Crediting evidence never changes the tier by itself (issue #1802):
+    // both computations land on the same tier here regardless of the signal.
+    expect(withSignal.tier).toBe(withoutSignal.tier);
   });
 
   it('keeps weaker or unbacked signals blocked (fail-safe)', () => {

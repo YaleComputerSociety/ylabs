@@ -426,7 +426,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('student_ready');
   });
 
-  it('holds an organizational home with a real access path but no action evidence yet as limited_but_safe, not missing_lead', () => {
+  it('publishes an organizational home with a real access path as student_ready even with no action evidence yet (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'center-no-action',
@@ -446,7 +446,8 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.reasons).not.toContain('missing_lead');
     expect(result.reasons).not.toContain('missing_alternate_access_path');
-    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.tier).toBe('student_ready');
   });
 
   it('holds a dead-end organizational home (no lead, no related entity, no engagement page) for review', () => {
@@ -579,7 +580,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('operator_review');
   });
 
-  it('publishes a lead-less COURSE_SEQUENCE as limited_but_safe once it has a reachable access path', () => {
+  it('publishes a lead-less COURSE_SEQUENCE as student_ready once it has a reachable access path, even with no action evidence yet (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'course-based-research-psychology-directed-research-path',
@@ -602,7 +603,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.reasons).not.toContain('missing_lead');
     expect(result.reasons).not.toContain('missing_alternate_access_path');
-    expect(result.tier).toBe('limited_but_safe');
+    expect(result.tier).toBe('student_ready');
   });
 
   it('suppresses generic directory-only faculty-area shells', () => {
@@ -885,7 +886,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('concrete_next_step');
   });
 
-  it('holds a faculty-research-area entity with no department or research area for review, even though its description and lead are otherwise solid', () => {
+  it('publishes a faculty-research-area entity with no department or research area, since missing_facet_signal is a soft signal only (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         entityType: 'FACULTY_RESEARCH_AREA',
@@ -904,8 +905,8 @@ describe('computeResearchEntityStudentVisibility', () => {
       openPostedOpportunityCount: 0,
     });
 
-    expect(result.tier).toBe('operator_review');
-    expect(result.computedTier).toBe('operator_review');
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
     expect(result.reasons).toContain('missing_facet_signal');
   });
 
@@ -932,7 +933,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('missing_facet_signal');
   });
 
-  it('holds a faculty-research-area entity with a department but no research area for review (issue #1717)', () => {
+  it('publishes a faculty-research-area entity with a department but no research area, since missing_facet_signal is a soft signal only (issue #1802, formerly #1717)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         entityType: 'FACULTY_RESEARCH_AREA',
@@ -951,12 +952,12 @@ describe('computeResearchEntityStudentVisibility', () => {
       openPostedOpportunityCount: 0,
     });
 
-    expect(result.tier).toBe('operator_review');
-    expect(result.computedTier).toBe('operator_review');
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
     expect(result.reasons).toContain('missing_facet_signal');
   });
 
-  it('holds a lab entity with a department but no research area for review (issue #1717)', () => {
+  it('publishes a lab entity with a department but no research area, since missing_facet_signal is a soft signal only (issue #1802, formerly #1717)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         entityType: 'LAB',
@@ -975,8 +976,8 @@ describe('computeResearchEntityStudentVisibility', () => {
       openPostedOpportunityCount: 0,
     });
 
-    expect(result.tier).toBe('operator_review');
-    expect(result.computedTier).toBe('operator_review');
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
     expect(result.reasons).toContain('missing_facet_signal');
   });
 
@@ -1003,7 +1004,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('missing_facet_signal');
   });
 
-  it('keeps a strong profile without action evidence limited rather than ready', () => {
+  it('promotes a good, coherent, source-backed description to student_ready even with unknown access evidence (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         shortDescription:
@@ -1019,8 +1020,42 @@ describe('computeResearchEntityStudentVisibility', () => {
       openPostedOpportunityCount: 0,
     });
 
-    expect(result.tier).toBe('limited_but_safe');
+    expect(result.tier).toBe('student_ready');
     expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.reasons).toContain('source_backed_description');
+  });
+
+  it('does not promote a genuinely thin or missing description even with unknown access evidence (issue #1802)', () => {
+    const thin = computeResearchEntityStudentVisibility({
+      entity: {
+        shortDescription: 'Short profile.',
+        fullDescription: 'Short profile.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(thin.tier).not.toBe('student_ready');
+
+    const missing = computeResearchEntityStudentVisibility({
+      entity: {
+        shortDescription: '',
+        fullDescription: '',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(missing.tier).not.toBe('student_ready');
+    expect(missing.reasons).toContain('missing_description');
   });
 
   it('keeps source-backed records in operator review until the student-facing card description is usable', () => {
