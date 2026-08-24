@@ -365,19 +365,30 @@ const predicateGovernedByUndergraduateSubject = (
     });
 };
 
-const undergraduateClaimClauses = (quote: string): string[] =>
+const undergraduateClaimClauses = (
+  quote: string,
+  hasPopulation: (clause: string) => boolean = quoteHasUndergraduatePopulation,
+): string[] =>
   quote
     .split(
       /(?:[!?;]+|(?<!\d)\.(?!\d)|(?:,\s*|\s+)(?:and|but|while|whereas)\s+(?=(?:undergrads?|undergraduates?|undergraduate\s+students?|college\s+students?|yale\s+college\s+students?|students?|first[- ]years?|freshm(?:an|en)|sophomores?|juniors?|seniors?|graduate\s+(?:students?|assistants?)|doctoral\s+(?:students?|fellows?)|postdoctoral\s+fellows?|postdocs?|staff)\b)|,\s*(?=(?:undergrads?|undergraduates?|undergraduate\s+students?|college\s+students?|yale\s+college\s+students?|students?|first[- ]years?|freshm(?:an|en)|sophomores?|juniors?|seniors?|graduate\s+(?:students?|assistants?)|doctoral\s+(?:students?|fellows?)|postdoctoral\s+fellows?|postdocs?|staff)\b)|,\s*(?=(?:but|while|whereas)\b))/i,
     )
     .map((clause) => clause.trim())
-    .filter((clause) => clause.length > 0 && quoteHasUndergraduatePopulation(clause));
+    .filter((clause) => clause.length > 0 && hasPopulation(clause));
 
-const DIRECT_UNDERGRADUATE_NON_ACCEPTANCE_POLICY =
-  /\b(?:not\s+(?:currently\s+|now\s+)?accepting|(?:currently|now)\s+not\s+accepting)\b[^.!?;]{0,80}\b(?:undergrads?|undergraduates?|undergraduate\s+(?:students?|researchers?)|research\s+assistants?)\b/i;
+const UNDERGRADUATE_RESEARCH_ROLE_TITLE = String.raw`(?:research\s+assistants?|research\s+aides?|lab\s+assistants?|laboratory\s+assistants?)`;
+
+const quoteHasUndergraduateDeclinePopulation = (quote: string): boolean =>
+  quoteHasUndergraduatePopulation(quote) ||
+  new RegExp(`\\b${UNDERGRADUATE_RESEARCH_ROLE_TITLE}\\b`, 'i').test(quote);
+
+const DIRECT_UNDERGRADUATE_NON_ACCEPTANCE_POLICY = new RegExp(
+  `\\b(?:not\\s+(?:currently\\s+|now\\s+)?accepting|(?:currently|now)\\s+not\\s+accepting)\\b[^.!?;]{0,80}\\b(?:undergrads?|undergraduates?|undergraduate\\s+(?:students?|researchers?)|${UNDERGRADUATE_RESEARCH_ROLE_TITLE})\\b`,
+  'i',
+);
 
 export function quoteExplicitlyDeclinesUndergraduates(quote: string): boolean {
-  return undergraduateClaimClauses(quote).some(
+  return undergraduateClaimClauses(quote, quoteHasUndergraduateDeclinePopulation).some(
     (clause) =>
       clauseIsDeclarative(clause) &&
       !clauseHasExclusionOrConditionalScope(clause) &&
@@ -496,7 +507,7 @@ function quoteSupportsClaim(
   quote: string,
 ): boolean {
   const clauses = undergraduateClaimClauses(quote);
-  if (clauses.length === 0) return false;
+  if (clauses.length === 0 && !quoteExplicitlyDeclinesUndergraduates(quote)) return false;
   if (claimType === 'STUDENT_LEVEL') {
     const levels = (value as { levels: string[] }).levels;
     const patterns: Record<string, RegExp> = {
@@ -652,15 +663,14 @@ function quoteSupportsClaim(
   if (status === 'NOT_CURRENTLY_AVAILABLE') {
     const unavailablePolicy =
       /\b(not currently (?:accepting|taking|hiring)|not accepting|no (?:current )?(?:openings|positions)|positions? (?:are|is) filled|unable to accept)\b/i;
-    return clauses.some(
-      (clause) =>
-        (clauseHasUndergraduateAvailabilitySubject(clause) &&
+    return (
+      clauses.some(
+        (clause) =>
+          clauseHasUndergraduateAvailabilitySubject(clause) &&
           clauseIsDeclarative(clause) &&
           unavailablePolicy.test(clause) &&
-          predicateGovernedByUndergraduateSubject(clause, unavailablePolicy)) ||
-        (clauseIsDeclarative(clause) &&
-          !clauseHasExclusionOrConditionalScope(clause) &&
-          DIRECT_UNDERGRADUATE_NON_ACCEPTANCE_POLICY.test(clause)),
+          predicateGovernedByUndergraduateSubject(clause, unavailablePolicy),
+      ) || quoteExplicitlyDeclinesUndergraduates(quote)
     );
   }
   const negatedAvailability =
