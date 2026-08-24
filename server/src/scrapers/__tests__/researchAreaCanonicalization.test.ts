@@ -21,6 +21,8 @@ const rows = [
   { name: 'Public Health' },
   { name: 'Climate Change' },
   { name: 'Economics' },
+  { name: 'Literature' },
+  { name: 'Gender Studies' },
 ];
 
 const index = buildResearchAreaResolverIndex(rows);
@@ -247,6 +249,15 @@ describe('matchCanonicalResearchAreas', () => {
       canonicalizer.matchCanonicalResearchAreas(['Research Areas:', 'Economics', 'Theorist']),
     ).toEqual(['Economics']);
   });
+
+  it('resolves humanities department-name naming variants to their approved counterpart', () => {
+    expect(canonicalizer.matchCanonicalResearchAreas(['English Language and Literature'])).toEqual([
+      'Literature',
+    ]);
+    expect(
+      canonicalizer.matchCanonicalResearchAreas(["Women's, Gender, and Sexuality Studies"]),
+    ).toEqual(['Gender Studies']);
+  });
 });
 
 describe('isResearchAreaLabelLeakage', () => {
@@ -410,6 +421,12 @@ describe('deriveResearchAreasFromText', () => {
     expect(
       canonicalizer.deriveResearchAreasFromText('work on human computer interaction methods'),
     ).toEqual(['Human-Computer Interaction']);
+  });
+
+  it('matches a humanities department-name alias mentioned in bio prose, not just departments[]', () => {
+    const text =
+      'She teaches in the Programs of American Studies and Women, Gender, and Sexuality Studies.';
+    expect(canonicalizer.deriveResearchAreasFromText(text)).toEqual(['Gender Studies']);
   });
 });
 
