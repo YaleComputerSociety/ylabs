@@ -47,6 +47,7 @@ export type DescriptionQualityFlag =
   | 'administrative-chrome'
   | 'topic-label-list'
   | 'ungrounded-topic-short'
+  | 'grant-significance-boilerplate'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -273,6 +274,21 @@ const isLocationOnlyLabDescription = (value: string): boolean =>
     `\\b(?:${LOCATION_ONLY_LAB_SUBJECT_SOURCE})\\b.{0,200}\\b(?:studies|investigates|examines|explores|focuses on|works on|develops|uses|employs|researches|analyzes|models|measures|conducts research)\\b`,
     'i',
   ).test(value);
+
+// A grant-abstract closer that states the study's broad significance/impact
+// rather than what it actually does: "This research has significant potential
+// to inform about the pathophysiology of addictive disorders...", "Our
+// objective is to identify...". The subject ("This research"/"The study") has
+// no antecedent when served standalone as a card short, and the clause itself
+// names no concrete topic or method - it is the same single-PI grant-shell
+// prose the location-only guard above targets, just its significance sentence
+// rather than its location sentence (issue #1595).
+const GRANT_SIGNIFICANCE_BOILERPLATE_RE =
+  /^(?:this|the)\s+(?:research|study|work|project|grant)\s+(?:has\s+(?:significant|substantial|considerable|great)\s+potential\b|(?:could|will|would|may)\s+(?:help\s+)?(?:inform|advance|improve)\b|aims?\s+to\b|seeks?\s+to\b)/i;
+
+const isGrantSignificanceBoilerplateShort = (value: string): boolean =>
+  GRANT_SIGNIFICANCE_BOILERPLATE_RE.test(value) ||
+  /^Our\s+(?:objective|goal|aim)\s+is\b/i.test(value);
 
 const hasSpecificResearchSeries = (value: string): boolean => {
   const text = textValue(value);
@@ -1064,6 +1080,7 @@ export function shortDescriptionQuality(
   if (text && isAffiliationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && isLocationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && hasGenericMissionStatementLead(text)) flags.push('generic-lead');
+  if (text && isGrantSignificanceBoilerplateShort(text)) flags.push('grant-significance-boilerplate');
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isNonSelfContainedShortDescription(text)) flags.push('non-self-contained');
@@ -1198,6 +1215,7 @@ export function programCardShortDescriptionQuality(
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isNonOfferProgramCardClause(text)) flags.push('non-offer-clause');
   if (text && isProgramCardAdministrativeAnnouncementChrome(text)) flags.push('administrative-chrome');
+  if (text && isGrantSignificanceBoilerplateShort(text)) flags.push('grant-significance-boilerplate');
   if (!full) flags.push('full-not-useful');
 
   return {

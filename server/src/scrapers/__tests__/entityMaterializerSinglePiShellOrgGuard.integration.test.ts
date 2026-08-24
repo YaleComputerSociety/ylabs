@@ -19,6 +19,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
+import { synthesizeGroundedCardDescription } from '../../utils/groundedCardSynthesis';
 
 const ORG_CENTER_MISSION =
   'The Riverbend Neuropsychiatry Research Center conducts neuroscience research on psychiatric illnesses and aims to translate findings into effective treatments.';
@@ -28,6 +29,7 @@ const PI_STUDY_ABSTRACT =
 
 type PersistedEntity = {
   fullDescription?: string;
+  shortDescription?: string;
   researchAreas?: string[];
   confidenceByField?: Record<string, number>;
 };
@@ -126,6 +128,54 @@ describe('materializeEntity guards named multi-PI orgs from a single-PI/grant sh
     }).lean<PersistedEntity>();
 
     expect(persisted?.fullDescription).toBe(ORG_CENTER_MISSION);
+  });
+
+  it('re-derives a stale single-PI-shell shortDescription alongside the guarded fullDescription (#1595 short/full contradiction)', async () => {
+    const STALE_PI_SHORT =
+      'Examines the acute effects of an inhaled compound on simulated driving performance.';
+    const GROUNDED_ORG_SHORT =
+      'The Riverbend Neuropsychiatry Research Center conducts neuroscience research on psychiatric illnesses.';
+    await ResearchEntity.create({
+      slug: 'faculty-research-area-morgan-ellery',
+      name: 'Riverbend Research Center',
+      kind: 'center',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      fullDescription: ORG_CENTER_MISSION,
+      // Left over from before the org-scoped fullDescription won the
+      // confidence tie: on its own this reads as a perfectly fine, specific
+      // short - it only becomes wrong once read next to the corrected full.
+      shortDescription: STALE_PI_SHORT,
+      confidenceByField: { fullDescription: 1, shortDescription: 1 },
+    });
+    await seedObservation({
+      field: 'fullDescription',
+      value: PI_STUDY_ABSTRACT,
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://medicine.yale.edu/profile/morgan-ellery/',
+      observedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+
+    await materializeEntity(
+      'researchEntity',
+      { entityKey: 'faculty-research-area-morgan-ellery' },
+      {
+        synthesizeCardDescription: (fullDescription: string) =>
+          synthesizeGroundedCardDescription({
+            fullDescription,
+            entityName: 'Riverbend Research Center',
+            callLLM: async () => GROUNDED_ORG_SHORT,
+          }),
+      },
+    );
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'faculty-research-area-morgan-ellery',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.fullDescription).toBe(ORG_CENTER_MISSION);
+    expect(persisted?.shortDescription).toBe(GROUNDED_ORG_SHORT);
+    expect(persisted?.shortDescription).not.toBe(STALE_PI_SHORT);
   });
 
   it('materializes the description normally once a genuine org-page observation contributes', async () => {

@@ -2521,6 +2521,7 @@ export async function materializeEntity(
       resolved.fundingAgencies.value = grantEvidence.fundingAgencies;
     }
   }
+  let fullDescriptionShellGated = false;
   if (isResearchEntityObservationType(entityType)) {
     const orgKind = textValue(resolved.kind?.value ?? entityDoc?.kind).toLowerCase();
     const slugForShellCheck = entityDoc?.slug ?? identifier.entityKey;
@@ -2532,6 +2533,7 @@ export async function materializeEntity(
           resolvedFieldSourcedOnlyFromPersonProfilePages(shellGatedField, candidate, materializationObs)
         ) {
           delete resolved[shellGatedField];
+          if (shellGatedField === 'fullDescription') fullDescriptionShellGated = true;
         }
       }
     }
@@ -2625,7 +2627,14 @@ export async function materializeEntity(
     );
     const groundedShortDescription = await resolveMaterializedShortDescription({
       fullDescription,
-      currentShortDescription: set.shortDescription ?? entityDoc?.shortDescription,
+      // When the single-PI-shell guard just rejected fullDescription in favor
+      // of the entity's existing org-level value, shortDescription must be
+      // re-derived from that corrected body rather than kept as-is: it may
+      // still be the seed PI's own grant sentence and now contradicts the
+      // fixed full (issue #1595).
+      currentShortDescription: fullDescriptionShellGated
+        ? undefined
+        : set.shortDescription ?? entityDoc?.shortDescription,
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeResearchEntity({
         kind: set.kind ?? entityDoc?.kind,

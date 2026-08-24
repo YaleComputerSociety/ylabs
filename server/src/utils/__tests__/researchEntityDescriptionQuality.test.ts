@@ -1323,6 +1323,33 @@ describe('shortDescriptionQuality location-only lab lead guard (#1595)', () => {
   });
 });
 
+describe('shortDescriptionQuality grant-significance boilerplate guard (#1595)', () => {
+  it('rejects a dangling grant-significance closer sentence as a card short', () => {
+    const full =
+      'The Impulsivity and Impulse Control Disorder Research Program studies compulsive behaviors and addictive disorders. Faculty use neuroimaging and behavioral methods to understand decision-making deficits. This research has significant potential to inform about the pathophysiology of addictive disorders and for the development of targeted therapies for specific psychiatric conditions.';
+    const quality = shortDescriptionQuality(
+      'This research has significant potential to inform about the pathophysiology of addictive disorders and for the development of targeted therapies for specific psychiatric conditions.',
+      full,
+    );
+    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).toContain('grant-significance-boilerplate');
+  });
+
+  it('rejects an "Our objective is" grant-abstract opener as a card short', () => {
+    const full =
+      'Our objective is to identify biomarkers of treatment response in major depressive disorder.';
+    const quality = shortDescriptionQuality(full, full);
+    expect(quality.flags).toContain('grant-significance-boilerplate');
+  });
+
+  it('keeps a genuine research-focus sentence that happens to mention potential downstream impact', () => {
+    const full =
+      'The lab studies protein misfolding in neurodegenerative disease using cryo-EM, with potential implications for future drug design.';
+    const quality = shortDescriptionQuality(full, full);
+    expect(quality.flags).not.toContain('grant-significance-boilerplate');
+  });
+});
+
 describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH_AREA (#1616)', () => {
   const labOptions = { entityType: 'LAB' };
   const fraOptions = { entityType: 'FACULTY_RESEARCH_AREA' };
@@ -1479,6 +1506,16 @@ describe('programCardShortDescriptionQuality (#1425)', () => {
     const full = 'Contact the program office for more information about eligibility and deadlines.';
     expect(programCardShortDescriptionQuality('', full).isUseful).toBe(false);
     expect(programCardShortDescriptionQuality('', full).flags).toContain('blank');
+  });
+
+  it('rejects a dangling grant-significance closer sentence on a program candidate (#1595)', () => {
+    const full =
+      'The Impulsivity and Impulse Control Disorder Research Program studies compulsive behaviors and addictive disorders. This research has significant potential to inform about the pathophysiology of addictive disorders and for the development of targeted therapies for specific psychiatric conditions.';
+    const candidate =
+      'This research has significant potential to inform about the pathophysiology of addictive disorders and for the development of targeted therapies for specific psychiatric conditions.';
+    const quality = programCardShortDescriptionQuality(candidate, full);
+    expect(quality.isUseful).toBe(false);
+    expect(quality.flags).toContain('grant-significance-boilerplate');
   });
 });
 
