@@ -896,6 +896,35 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('missing_lead');
     expect(result.reasons).toContain('operator_override');
   });
+
+  it('holds an organizational home with no link-out target for review even under a student-ready override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'institute-no-linkout',
+        name: 'Yale Quantum Institute',
+        slug: 'center-yale-quantum-institute',
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+        websiteUrl: '',
+        website: '',
+        sourceUrls: [],
+        shortDescription:
+          'Advances quantum science and engineering across Yale, connecting physics, applied physics, and computer science research groups.',
+        fullDescription:
+          'The institute advances quantum science and engineering across Yale. It connects physics, applied physics, electrical engineering, and computer science groups working on superconducting qubits, quantum error correction, and quantum materials.',
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('missing_source_url');
+    expect(result.reasons).toContain('operator_override');
+  });
 });
 
 describe('computeProgramStudentVisibility', () => {

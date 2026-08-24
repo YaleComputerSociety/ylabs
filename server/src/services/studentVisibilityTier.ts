@@ -445,6 +445,21 @@ export function computeResearchEntityStudentVisibility({
       reasons: Array.from(new Set([...result.reasons, 'profile_identity_risk'])),
     };
   }
+  // An entity with no usable link-out target (no website, official page, or
+  // source URL) gives students no way to reach the lab: both cold-email-the-lab
+  // and visit-the-official-page depend on a URL. Such a record can never be
+  // published to students, even by an explicit operator override, so it is held
+  // for review until it acquires a reachable target (issue #348).
+  if (
+    quality.repairFlags.includes('missing_source_url') &&
+    (result.tier === 'student_ready' || result.tier === 'limited_but_safe')
+  ) {
+    return {
+      tier: 'operator_review',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, 'missing_source_url'])),
+    };
+  }
   return result;
 }
 
