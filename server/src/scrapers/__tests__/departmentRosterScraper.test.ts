@@ -1912,6 +1912,117 @@ describe('DepartmentRosterScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('rejects a grounded short description that is only an appointment, not research', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Reagan Statute',
+        email: 'reagan.roster@yale.edu',
+        labUrl: 'http://www.reaganstatute.example/',
+        researchHomeDescription:
+          'Reagan Statute is the Example Distinguished Professor at Yale Law School. Reagan holds a secondary appointment as Professor, Yale Child Study Center.',
+        researchHomeShortDescription:
+          'Reagan holds a secondary appointment as Professor, Yale Child Study Center.',
+      },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'law',
+        deptName: 'Law',
+        schoolName: 'Yale Law School',
+        url: 'https://example.invalid/law',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+
+    getSpy.mockRestore();
+  });
+
+  it('rejects a grounded full description that is entirely a CV of prior degrees', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Gary Roster',
+        email: 'gary.roster@yale.edu',
+        labUrl: 'http://www.garyroster.example/',
+        researchHomeDescription:
+          "In the field of economics, he received master's degrees at the University of Rochester and Cleveland State University before completing his PhD.",
+        researchHomeShortDescription:
+          "In the field of economics, he received master's degrees at the University of Rochester and Cleveland State University before completing his PhD.",
+      },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'som',
+        deptName: 'Management',
+        schoolName: 'Yale School of Management',
+        url: 'https://example.invalid/som',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'fullDescription')).toBeUndefined();
+    expect(entityObs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+
+    getSpy.mockRestore();
+  });
+
+  it('keeps a grounded description that describes actual research, not just an appointment', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        email: 'robin.roster@yale.edu',
+        labUrl: 'https://roster-lab.example.org',
+        researchHomeDescription:
+          'Robin Roster studies contract theory and the economics of regulation, with a focus on how information asymmetries shape financial-market design.',
+        researchHomeShortDescription:
+          'Studies contract theory and the economics of regulation, with a focus on information asymmetries in financial-market design.',
+      },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/econ',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'fullDescription')?.value).toBe(
+      'Robin Roster studies contract theory and the economics of regulation, with a focus on how information asymmetries shape financial-market design.',
+    );
+    expect(entityObs.find((o) => o.field === 'shortDescription')?.value).toBe(
+      'Studies contract theory and the economics of regulation, with a focus on information asymmetries in financial-market design.',
+    );
+
+    getSpy.mockRestore();
+  });
+
   it('drops section-header chrome from roster topics and ranks the one-liner below extracted descriptions', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {

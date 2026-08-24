@@ -146,6 +146,20 @@ function hasUsefulResearchAreas(entity: Record<string, any>): boolean {
   );
 }
 
+function hasUsefulDepartments(entity: Record<string, any>): boolean {
+  return (
+    Array.isArray(entity.departments) && entity.departments.some((department) => textValue(department))
+  );
+}
+
+function missingFacultyResearchAreaFacetSignal(entity: Record<string, any>): boolean {
+  return (
+    entity.entityType === 'FACULTY_RESEARCH_AREA' &&
+    !hasUsefulResearchAreas(entity) &&
+    !hasUsefulDepartments(entity)
+  );
+}
+
 const ORGANIZATIONAL_ENTITY_TYPES = new Set([
   'CENTER',
   'INSTITUTE',
@@ -448,6 +462,7 @@ export function computeResearchEntityStudentVisibility({
   });
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
   const labNameOrgTypeMismatch = isLabNameOrgTypeMismatch(entity);
+  const missingFacetSignal = missingFacultyResearchAreaFacetSignal(entity);
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
   const outsideResearchScope = !researchScope.researchHomeEligible;
@@ -477,6 +492,7 @@ export function computeResearchEntityStudentVisibility({
   if (profileBiographyShell) reasons.push('profile_biography_shell');
   if (nonOwnerGrantShell) reasons.push('non_owner_grant_shell');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
+  if (missingFacetSignal) reasons.push('missing_facet_signal');
 
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
@@ -504,7 +520,8 @@ export function computeResearchEntityStudentVisibility({
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
     hasActionEvidence &&
-    !duplicateRisk
+    !duplicateRisk &&
+    !missingFacetSignal
   ) {
     computedTier = 'student_ready';
   } else if (
@@ -516,7 +533,8 @@ export function computeResearchEntityStudentVisibility({
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
-    !duplicateRisk
+    !duplicateRisk &&
+    !missingFacetSignal
   ) {
     computedTier = 'limited_but_safe';
   }

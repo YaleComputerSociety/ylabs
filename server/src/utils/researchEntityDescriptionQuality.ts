@@ -151,6 +151,9 @@ const hasSourceNewsFragment = (value: string): boolean =>
   /\bjoined (?:the\s+)?Yale\b.{0,80}\bfaculty in\b/i.test(value) ||
   /\breceived (?:his|her|their)\s+(?:undergraduate|graduate|medical|doctoral)?\s*degree\b/i.test(value) ||
   /\bearned (?:his|her|their)\s+(?:undergraduate|graduate|medical|doctoral)?\s*degree\b/i.test(value) ||
+  /\breceived\s+(?:[a-z'’]+\s+){0,4}degrees?\s+(?:at|from)\b/i.test(value) ||
+  /\bearned\s+(?:[a-z'’]+\s+){0,4}degrees?\s+(?:at|from)\b/i.test(value) ||
+  /\b(?:before\s+)?completing\s+(?:his|her|their|a|an)\s*(?:ph\.?d|doctorate|degree)\b/i.test(value) ||
   /\bpreviously,\s+(?:i|he|she|they)\s+was\b/i.test(value) ||
   /\b(?:i|he|she|they)\s+(?:received|earned|completed)\s+(?:my|his|her|their)?\s*(?:ph\.?d|doctorate|degree|sc\.?m|m\.?s|b\.?s|b\.?a)\b/i.test(value) ||
   /\bholds?\s+(?:an?\s+)?(?:[a-z'’-]+\s+){0,8}(?:degree|doctorate)\b/i.test(value) ||
@@ -165,7 +168,8 @@ const hasSourceNewsFragment = (value: string): boolean =>
   /\bpost-?doc(?:toral)? (?:work|training|fellowship)\b/i.test(value) ||
   /\bestablished (?:his|her|their)\s+laboratory at Yale in\b/i.test(value) ||
   /\bserved as (?:Senior|Associate|Assistant|Director|Dean)\b/i.test(value) ||
-  /\b(?:Ph\.?D|M\.?D|D\.?)\s+from\b/i.test(value);
+  /\b(?:Ph\.?D|M\.?D|D\.?)\s+from\b/i.test(value) ||
+  /\bholds?\s+(?:an?\s+)?(?:secondary|joint|dual)\s+appointment\s+as\b/i.test(value);
 
 const hasPaperFragment = (value: string): boolean =>
   /^(?:this|the)\s+(?:paper|article|chapter|book|review|preprint)\b/i.test(value) ||

@@ -190,6 +190,7 @@ export function isAcademicAppointmentDescription(value: unknown): boolean {
     /^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)+\s+is\s+(?:an?\s+)?(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i,
     /\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b.*\bPrincipal Investigator\b/i,
     /\bPrincipal Investigator\b.*\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i,
+    /\bholds?\s+(?:an?\s+)?(?:secondary|joint|dual)\s+appointment\s+as\b/i,
   ].some((pattern) => pattern.test(cleaned));
 }
 
