@@ -34,6 +34,7 @@ import { getScrapeRunReport } from './runReport';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { resolveScraperEnvironment, summarizeMongoUrl } from './scraperEnvironment';
 import { createCronRunnerDependencies, runScraperCron } from './cronRunner';
+import { markSourceCrawled } from './sourceCrawlStamp';
 import { pruneSupersededObservations } from './observationRetention';
 import { writeOptionalJsonOutput } from './scraperCliOutput';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -161,6 +162,10 @@ Environment guardrails:
       const { runId, result } = await orchestrator.run(sourceName, guard.options);
       console.log(`\nScrapeRun ${runId} finished:`);
       console.log(JSON.stringify(result, null, 2));
+
+      if (!guard.options.dryRun) {
+        await markSourceCrawled(sourceName, new Date());
+      }
 
       if (guard.autoMaterialize && !guard.options.dryRun) {
         console.log(`\nMaterializing observations from run ${runId}...`);

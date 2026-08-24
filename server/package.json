@@ -83,6 +83,7 @@
     "programs:accept-formalization-exceptions": "tsx src/scripts/acceptFormalizationReviewExceptions.ts",
     "programs:audit-research-relevance": "tsx src/scripts/auditProgramResearchRelevance.ts",
     "programs:audit-freshness": "tsx src/scripts/auditProgramCatalogFreshness.ts",
+    "scrapers:audit-freshness": "tsx src/scripts/auditSourceFreshness.ts",
     "programs:backfill-accepting-applications-invariant": "tsx src/scripts/backfillFellowshipAcceptingApplicationsInvariant.ts",
     "fellowships:refresh": "tsx src/scripts/fellowshipRefresh.ts",
     "student-visibility:backfill": "tsx src/scripts/backfillStudentVisibilityTiers.ts",

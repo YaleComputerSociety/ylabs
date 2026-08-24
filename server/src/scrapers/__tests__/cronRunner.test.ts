@@ -43,6 +43,7 @@ function makeDeps(overrides: Partial<CronRunnerDependencies> = {}): CronRunnerDe
     }),
     heartbeatScrapeJobLock: vi.fn().mockResolvedValue({ heartbeated: true }),
     releaseScrapeJobLock: vi.fn().mockResolvedValue({ released: true }),
+    markSourceCrawled: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -125,6 +126,7 @@ describe('runScraperCron', () => {
     });
     expect(deps.orchestrator.run).not.toHaveBeenCalled();
     expect(deps.releaseScrapeJobLock).not.toHaveBeenCalled();
+    expect(deps.markSourceCrawled).not.toHaveBeenCalled();
   });
 
   it('runs, materializes, reports, and marks cron metadata under a lock', async () => {
@@ -164,6 +166,7 @@ describe('runScraperCron', () => {
       inferredPiLeadReclaimResult: { tally: { 'materialized-lead': 1 } },
     });
     expect(deps.getScrapeRunReport).toHaveBeenCalledWith('run-1');
+    expect(deps.markSourceCrawled).toHaveBeenCalledWith('openalex', NOW);
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
       expect.objectContaining({
         environment: 'production',
@@ -208,6 +211,7 @@ describe('runScraperCron', () => {
     expect(result.exitCode).toBe(1);
     expect(deps.reclaimInferredPiLeads).not.toHaveBeenCalled();
     expect(deps.runStudentVisibilityGate).not.toHaveBeenCalled();
+    expect(deps.markSourceCrawled).not.toHaveBeenCalled();
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
       expect.objectContaining({
         releaseReason: 'failure',
@@ -239,6 +243,7 @@ describe('runScraperCron', () => {
       inferredPiLeadReclaimResult: undefined,
     });
     expect(deps.runStudentVisibilityGate).toHaveBeenCalledOnce();
+    expect(deps.markSourceCrawled).toHaveBeenCalledWith('openalex', NOW);
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
       expect.objectContaining({ releaseReason: 'success', lastRunId: 'run-1' }),
     );
