@@ -58,3 +58,27 @@ describe('PlanningOverview Next up card', () => {
     expect(screen.getByText('Save a research home to start planning')).toBeTruthy();
   });
 });
+
+describe('PlanningOverview open-homes rollup', () => {
+  it('summarizes how many saved homes are currently open to undergraduates', () => {
+    renderOverview({ savedResearchCount: 3, savedOpenCount: 2, savedFellowshipCount: 0 });
+
+    expect(
+      screen.getByText('2 of your saved homes are currently open to undergraduates.'),
+    ).toBeTruthy();
+  });
+
+  it('uses singular phrasing for a single open home', () => {
+    renderOverview({ savedResearchCount: 3, savedOpenCount: 1, savedFellowshipCount: 0 });
+
+    expect(
+      screen.getByText('1 of your saved home is currently open to undergraduates.'),
+    ).toBeTruthy();
+  });
+
+  it('stays silent when no saved home is currently open', () => {
+    renderOverview({ savedResearchCount: 3, savedOpenCount: 0, savedFellowshipCount: 0 });
+
+    expect(screen.queryByText(/currently open to undergraduates/)).toBeNull();
+  });
+});
