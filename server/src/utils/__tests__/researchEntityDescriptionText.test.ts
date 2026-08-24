@@ -301,6 +301,46 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     );
   });
 
+  it('keeps a research-verb-led card whose eponymous object mismatches the lead name', () => {
+    const medical = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription:
+          "Studies Ménétrier's disease, cell plasticity, and sex-differential expression of the epidermal growth factor receptor to understand signaling networks and inform therapeutic development.",
+      },
+      ['Won Jae Huh'],
+    );
+    expect(medical.shortDescription).toBe(
+      "Studies Ménétrier's disease, cell plasticity, and sex-differential expression of the epidermal growth factor receptor to understand signaling networks and inform therapeutic development.",
+    );
+
+    const scholarly = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription:
+          'Studies Ivan Goncharov’s travelogue about Africa and Asia, The Frigate Pallada (1858) in the context of global imperial history.',
+      },
+      ['Edyta Bojanowska'],
+    );
+    expect(scholarly.shortDescription).toBe(
+      'Studies Ivan Goncharov’s travelogue about Africa and Asia, The Frigate Pallada (1858) in the context of global imperial history.',
+    );
+  });
+
+  it('still strips a genuine mismatched person-name possessive prefix', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: "Jane Smith's research examines coral reef resilience.",
+      },
+      ['Won Jae Huh'],
+    );
+    expect(sanitized.shortDescription).toBe('This research examines coral reef resilience.');
+  });
+
   it('drops a director biography served as a non-person entity description (#806)', () => {
     const program = {
       entityType: 'PROGRAM',
