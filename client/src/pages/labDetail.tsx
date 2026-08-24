@@ -43,7 +43,8 @@ import {
   ResearchDetailSource,
   sourceLedgerKey,
 } from '../utils/researchDetailSources';
-import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
+import { composeStudentIntroEmailDraft } from '../utils/introEmailComposer';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
 import { formatTitleCaseLabel } from '../utils/displayText';
 import {
@@ -541,8 +542,27 @@ const DecisionSummary = ({
   const piAffiliation = [(canonicalPiDepartment || '').trim(), (group.school || '').trim()]
     .filter(Boolean)
     .join(' · ');
+  const introEmailDraft = composeStudentIntroEmailDraft({
+    entityName: researchEntityTitle(group),
+    leadName: piName,
+    researchAreas: topics,
+  });
+  const piMailtoHref = safeMailtoHref(piEmail, {
+    subject: introEmailDraft.subject,
+    body: introEmailDraft.body,
+  });
+  const handlePiMailtoClick = () => {
+    if (!group.slug) return;
+    void axios
+      .post(`/research/${group.slug}/outreach`, {
+        deliveryMethod: 'mailto',
+        emailGeneratedByPlatform: introEmailDraft.generatedByPlatform,
+        templateVersion: introEmailDraft.templateVersion,
+      })
+      .catch(() => {});
+  };
   const hasActionablePath =
-    Boolean(piEmail) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
+    Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
   const visibleEvidence = hasActionablePath
     ? evidence
     : evidence.filter((item) => item.label !== REACH_OUT_PLAUSIBLE_LABEL);
@@ -552,7 +572,7 @@ const DecisionSummary = ({
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const showsWebsiteCta = decisionSummaryShowsWebsiteCta({
     websiteUrl,
-    piEmail,
+    piEmail: piMailtoHref,
     profileNeedsOwnButton,
     preferOrgEngagementOutreach,
     officialSource,
@@ -560,7 +580,7 @@ const DecisionSummary = ({
   const leadCardProfileUrl = preferOrgEngagementOutreach ? undefined : profileUrl;
   const showGetInvolvedBlock =
     (preferOrgEngagementOutreach && Boolean(officialSource)) ||
-    Boolean(piEmail) ||
+    Boolean(piMailtoHref) ||
     profileNeedsOwnButton ||
     Boolean(websiteUrl) ||
     Boolean(officialSource) ||
@@ -667,11 +687,10 @@ const DecisionSummary = ({
                     >
                       See how to get involved
                     </a>
-                    {piEmail ? (
+                    {piMailtoHref ? (
                       <a
-                        href={`mailto:${piEmail}?subject=${encodeURIComponent(
-                          'Interest in undergraduate research',
-                        )}`}
+                        href={piMailtoHref}
+                        onClick={handlePiMailtoClick}
                         className="inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
                       >
                         {piName ? `Email ${piName}` : 'Email the director'}
@@ -688,12 +707,11 @@ const DecisionSummary = ({
                     ) : null}
                   </div>
                 </>
-              ) : piEmail ? (
+              ) : piMailtoHref ? (
                 <div className="mt-3 flex flex-col gap-2">
                   <a
-                    href={`mailto:${piEmail}?subject=${encodeURIComponent(
-                      'Interest in undergraduate research',
-                    )}`}
+                    href={piMailtoHref}
+                    onClick={handlePiMailtoClick}
                     className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                   >
                     {piName ? `Email ${piName}` : 'Email the PI'}

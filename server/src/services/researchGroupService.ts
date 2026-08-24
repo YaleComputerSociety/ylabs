@@ -2824,10 +2824,19 @@ export const normalizeResearchDetailSlug = (value: unknown): string | undefined 
  * disclosure distinguishes current, partial, withheld, no-verified-data, and
  * optional-source-failure states so absence never implies an empty team.
  */
+export type ResearchEntityOutreachDeliveryMethod = 'official-route' | 'mailto';
+
+export interface RecordResearchEntityOutreachContext {
+  deliveryMethod?: ResearchEntityOutreachDeliveryMethod;
+  emailGeneratedByPlatform?: boolean;
+  templateVersion?: string;
+}
+
 export async function recordResearchEntityOutreach(
   slug: string,
   studentProfileId: unknown,
-): Promise<{ recorded: true; routeUrl: string }> {
+  context: RecordResearchEntityOutreachContext = {},
+): Promise<{ recorded: true; routeUrl?: string }> {
   const normalizedSlug = normalizeResearchDetailSlug(slug);
   if (!normalizedSlug || !mongoose.isValidObjectId(studentProfileId)) {
     throw new Error('INVALID_OUTREACH_REQUEST');
@@ -2842,8 +2851,11 @@ export async function recordResearchEntityOutreach(
     .lean()) as { _id: mongoose.Types.ObjectId; websiteUrl?: string } | null;
   if (!entity) throw new Error('OUTREACH_ENTITY_NOT_FOUND');
 
+  const deliveryMethod = context.deliveryMethod === 'mailto' ? 'mailto' : 'official-route';
   const routeUrl = publicHttpUrl(entity.websiteUrl);
-  if (!routeUrl) throw new Error('NO_APPROVED_OUTREACH_ROUTE');
+  if (deliveryMethod === 'official-route' && !routeUrl) {
+    throw new Error('NO_APPROVED_OUTREACH_ROUTE');
+  }
 
   const now = new Date();
   const tracking = await StudentTracking.findOneAndUpdate(
@@ -2861,12 +2873,14 @@ export async function recordResearchEntityOutreach(
     researchEntityId: entity._id,
     trackingId: tracking._id,
     reachedOutAt: now,
-    deliveryMethod: 'official-route',
-    emailGeneratedByPlatform: false,
-    templateVersion: 'official-route-v1',
+    deliveryMethod,
+    emailGeneratedByPlatform:
+      deliveryMethod === 'mailto' ? context.emailGeneratedByPlatform === true : false,
+    templateVersion:
+      deliveryMethod === 'mailto' ? context.templateVersion || '' : 'official-route-v1',
   });
 
-  return { recorded: true, routeUrl };
+  return { recorded: true, ...(routeUrl ? { routeUrl } : {}) };
 }
 
 const MAX_CANONICAL_REDIRECT_HOPS = 10;
