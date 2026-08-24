@@ -1029,8 +1029,7 @@ function isPersonNameShaped(name: string): boolean {
   const tokens = name.trim().split(/\s+/).filter(Boolean);
   if (tokens.length < 2 || tokens.length > 4) return false;
   return tokens.every(
-    (token) =>
-      /^\p{Lu}/u.test(token) && !GENERIC_DIRECTORY_NAME_TOKENS.has(token.toLowerCase()),
+    (token) => /^\p{Lu}/u.test(token) && !GENERIC_DIRECTORY_NAME_TOKENS.has(token.toLowerCase()),
   );
 }
 

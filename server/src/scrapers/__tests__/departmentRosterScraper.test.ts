@@ -920,7 +920,9 @@ describe('facultyThumbnailExtractor', () => {
       <div class="faculty-member-thumbnail">
         <a class="blank-link" href="/about/leadership">Not a faculty link</a>
       </div>`;
-    expect(facultyThumbnailExtractor(html, { pageUrl: 'https://www.architecture.yale.edu/faculty' })).toEqual([
+    expect(
+      facultyThumbnailExtractor(html, { pageUrl: 'https://www.architecture.yale.edu/faculty' }),
+    ).toEqual([
       {
         name: 'Robin Fixture',
         namePlaceholder: true,
