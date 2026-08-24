@@ -104,7 +104,7 @@ export default function EntityCorrectionReportPanel({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-3 min-h-11 rounded-md border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        className="yr-focus-ring mt-3 min-h-11 rounded-md border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-700"
       >
         Report an issue with this page
       </button>

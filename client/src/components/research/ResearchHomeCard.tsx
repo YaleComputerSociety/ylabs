@@ -374,7 +374,7 @@ const ResearchHomeCard = ({
                 <Link
                   key={entity.slug}
                   to={`/research/${safeRouteSegment(entity.slug)}`}
-                  className="yr-link inline-flex min-h-[44px] items-center text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="yr-focus-ring yr-link inline-flex min-h-[44px] items-center text-sm font-medium"
                   onClick={(event) => event.stopPropagation()}
                 >
                   {entity.label}
@@ -397,7 +397,7 @@ const ResearchHomeCard = ({
                 href={primaryEvidenceUrl}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="yr-link inline-flex min-h-[44px] items-center text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="yr-focus-ring yr-link inline-flex min-h-[44px] items-center text-xs font-semibold"
                 onClick={(event) => event.stopPropagation()}
               >
                 Open source

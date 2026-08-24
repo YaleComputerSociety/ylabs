@@ -21,10 +21,10 @@ interface ResearchZeroResultRecoveryProps {
 }
 
 const chipClassName =
-  'inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+  'yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700';
 
 const actionClassName =
-  'yr-pill yr-pill-blue inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+  'yr-focus-ring yr-pill yr-pill-blue inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)]';
 
 const ResearchZeroResultRecovery = ({
   isDepartmentSearch,
@@ -138,7 +138,7 @@ const ResearchZeroResultRecovery = ({
         <button
           type="button"
           onClick={onClearAllFilters}
-          className="mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="yr-focus-ring mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)]"
         >
           Clear all filters
         </button>
@@ -175,7 +175,7 @@ const ResearchZeroResultRecovery = ({
       <button
         type="button"
         onClick={onBrowseAll}
-        className="inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        className="yr-focus-ring inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)]"
       >
         Browse all research homes
       </button>

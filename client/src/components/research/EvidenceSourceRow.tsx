@@ -102,7 +102,7 @@ const EvidenceSourceRow = ({
                 href={sourceUrl}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="mt-1 inline-flex min-h-[44px] items-center text-xs font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="yr-focus-ring mt-1 inline-flex min-h-[44px] items-center text-xs font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900"
               >
                 Open source
               </a>
