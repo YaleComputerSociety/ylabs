@@ -61,7 +61,11 @@ describe('ResearchInterestsEditor', () => {
       data: { researchInterests: ['Machine Learning'], graduationYear: 2027 },
     });
     mockedAxios.put.mockResolvedValue({
-      data: { researchInterests: ['Machine Learning', 'Statistics'], graduationYear: 2027 },
+      data: {
+        researchInterests: ['Machine Learning', 'Statistics'],
+        graduationYear: 2027,
+        lookingFor: 'ra-position',
+      },
     });
     renderEditor();
 
@@ -69,14 +73,38 @@ describe('ResearchInterestsEditor', () => {
     fireEvent.click(screen.getByText('add-statistics'));
     expect(await screen.findByText('Statistics')).toBeTruthy();
 
+    fireEvent.change(screen.getByLabelText('What kind of research are you looking for?'), {
+      target: { value: 'ra-position' },
+    });
+
     fireEvent.click(screen.getByRole('button', { name: 'Save interests' }));
 
     await waitFor(() =>
       expect(mockedAxios.put).toHaveBeenCalledWith('/users/researchInterests', {
-        data: { researchInterests: ['Machine Learning', 'Statistics'], graduationYear: 2027 },
+        data: {
+          researchInterests: ['Machine Learning', 'Statistics'],
+          graduationYear: 2027,
+          lookingFor: 'ra-position',
+        },
       }),
     );
     expect(await screen.findByText('Interests saved.')).toBeTruthy();
+  });
+
+  it('loads the saved engagement intent into the control', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        researchInterests: [],
+        graduationYear: null,
+        lookingFor: 'thesis-advisor',
+      },
+    });
+    renderEditor();
+
+    const select = (await screen.findByLabelText(
+      'What kind of research are you looking for?',
+    )) as HTMLSelectElement;
+    expect(select.value).toBe('thesis-advisor');
   });
 
   it('removes an interest', async () => {

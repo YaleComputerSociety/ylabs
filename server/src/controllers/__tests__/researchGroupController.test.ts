@@ -56,6 +56,7 @@ describe('researchGroupController', () => {
     mocks.getStudentResearchInterests.mockResolvedValue({
       researchInterests: [],
       graduationYear: null,
+      lookingFor: 'exploring',
     });
   });
 
@@ -223,6 +224,54 @@ describe('researchGroupController', () => {
       page: 1000,
       pageSize: 100,
     });
+  });
+
+  it('personalizes the default browse from a viewer engagement intent even without interests (#1655)', async () => {
+    mocks.getStudentResearchInterests.mockResolvedValue({
+      researchInterests: [],
+      graduationYear: null,
+      lookingFor: 'ra-position',
+    });
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    const req = {
+      user: { netId: 'student123', userType: 'student' },
+      body: { q: '' },
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(req, res);
+
+    const options = mocks.searchResearchGroupsViaMeili.mock.calls[0][5];
+    expect(options.personalization).toEqual({ interests: [], lookingFor: 'ra-position' });
+  });
+
+  it('does not personalize the default browse for the exploring intent (#1655)', async () => {
+    mocks.getStudentResearchInterests.mockResolvedValue({
+      researchInterests: [],
+      graduationYear: null,
+      lookingFor: 'exploring',
+    });
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    const req = {
+      user: { netId: 'student123', userType: 'student' },
+      body: { q: '' },
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(req, res);
+
+    const options = mocks.searchResearchGroupsViaMeili.mock.calls[0][5];
+    expect(options.personalization).toBeUndefined();
   });
 
   it('does not expose nonpublic research results to legacy admin sessions without active authority', async () => {

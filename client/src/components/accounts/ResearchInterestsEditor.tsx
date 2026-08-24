@@ -17,11 +17,27 @@ const MAX_INTERESTS = 15;
 const CURRENT_CLASS_YEAR = 2026;
 const GRADUATION_YEAR_OPTIONS = Array.from({ length: 8 }, (_, index) => CURRENT_CLASS_YEAR + index);
 
+const ENGAGEMENT_INTENT_OPTIONS = [
+  { value: 'exploring', label: 'Just exploring for now' },
+  { value: 'ra-position', label: 'A research assistant position' },
+  { value: 'thesis-advisor', label: 'A thesis or research advisor' },
+  { value: 'independent-study', label: 'An independent or directed study' },
+] as const;
+
+type EngagementIntent = (typeof ENGAGEMENT_INTENT_OPTIONS)[number]['value'];
+
+const DEFAULT_ENGAGEMENT_INTENT: EngagementIntent = 'exploring';
+
+const isEngagementIntent = (value: unknown): value is EngagementIntent =>
+  typeof value === 'string' &&
+  ENGAGEMENT_INTENT_OPTIONS.some((option) => option.value === value);
+
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 interface StudentResearchInterests {
   researchInterests: string[];
   graduationYear: number | null;
+  lookingFor: EngagementIntent;
 }
 
 const arraysEqual = (a: string[], b: string[]): boolean =>
@@ -33,9 +49,11 @@ const ResearchInterestsEditor = () => {
   const [loadError, setLoadError] = useState(false);
   const [interests, setInterests] = useState<string[]>([]);
   const [graduationYear, setGraduationYear] = useState<number | null>(null);
+  const [lookingFor, setLookingFor] = useState<EngagementIntent>(DEFAULT_ENGAGEMENT_INTENT);
   const [savedState, setSavedState] = useState<StudentResearchInterests>({
     researchInterests: [],
     graduationYear: null,
+    lookingFor: DEFAULT_ENGAGEMENT_INTENT,
   });
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
@@ -55,9 +73,13 @@ const ResearchInterestsEditor = () => {
             typeof response.data?.graduationYear === 'number'
               ? response.data.graduationYear
               : null,
+          lookingFor: isEngagementIntent(response.data?.lookingFor)
+            ? response.data.lookingFor
+            : DEFAULT_ENGAGEMENT_INTENT,
         };
         setInterests(loaded.researchInterests);
         setGraduationYear(loaded.graduationYear);
+        setLookingFor(loaded.lookingFor);
         setSavedState(loaded);
       })
       .catch(() => {
@@ -109,13 +131,14 @@ const ResearchInterestsEditor = () => {
 
   const isDirty =
     !arraysEqual(interests, savedState.researchInterests) ||
-    graduationYear !== savedState.graduationYear;
+    graduationYear !== savedState.graduationYear ||
+    lookingFor !== savedState.lookingFor;
 
   const onSave = async () => {
     setSaveStatus('saving');
     try {
       const response = await axios.put<StudentResearchInterests>('/users/researchInterests', {
-        data: { researchInterests: interests, graduationYear },
+        data: { researchInterests: interests, graduationYear, lookingFor },
       });
       const saved = {
         researchInterests: Array.isArray(response.data?.researchInterests)
@@ -123,9 +146,13 @@ const ResearchInterestsEditor = () => {
           : [],
         graduationYear:
           typeof response.data?.graduationYear === 'number' ? response.data.graduationYear : null,
+        lookingFor: isEngagementIntent(response.data?.lookingFor)
+          ? response.data.lookingFor
+          : DEFAULT_ENGAGEMENT_INTENT,
       };
       setInterests(saved.researchInterests);
       setGraduationYear(saved.graduationYear);
+      setLookingFor(saved.lookingFor);
       setSavedState(saved);
       setSaveStatus('saved');
     } catch {
@@ -224,6 +251,31 @@ const ResearchInterestsEditor = () => {
             ))}
           </select>
         </label>
+      </div>
+
+      <div className="mt-4">
+        <label className="block min-w-0 text-sm font-medium text-slate-800">
+          What kind of research are you looking for?
+          <select
+            value={lookingFor}
+            onChange={(event) => {
+              setSaveStatus('idle');
+              const value = event.target.value;
+              setLookingFor(isEngagementIntent(value) ? value : DEFAULT_ENGAGEMENT_INTENT);
+            }}
+            className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:max-w-sm"
+          >
+            {ENGAGEMENT_INTENT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="mt-1 text-sm text-slate-500">
+          We use this only to float homes with a matching way in higher. Homes without one keep
+          their place and are never hidden.
+        </p>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">

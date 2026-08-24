@@ -154,6 +154,8 @@ interface ResearchEntitySearchPage {
   pageSize: number;
   facetDistribution: Record<string, Record<string, number>>;
   personalized: boolean;
+  personalizedByInterests: boolean;
+  personalizedByIntent: boolean;
 }
 
 interface ActiveResearchSearchRequest {
@@ -207,6 +209,8 @@ interface ResearchPageSnapshot {
   defaultSearchTotal: number;
   defaultSearchExhausted: boolean;
   browsePersonalized: boolean;
+  browsePersonalizedByInterests: boolean;
+  browsePersonalizedByIntent: boolean;
   browseStandardOrder: boolean;
   searchError: string;
   hasFacetError: boolean;
@@ -266,6 +270,8 @@ const searchResearchEntities = async (
     pageSize: normalized.pageSize || pageSize,
     facetDistribution: normalized.facetDistribution || {},
     personalized: normalized.personalized === true,
+    personalizedByInterests: normalized.personalizedByInterests === true,
+    personalizedByIntent: normalized.personalizedByIntent === true,
   };
 };
 
@@ -529,6 +535,12 @@ const Research = () => {
   const [browsePersonalized, setBrowsePersonalized] = useState(
     () => restoredSnapshotRef.current?.browsePersonalized ?? false,
   );
+  const [browsePersonalizedByInterests, setBrowsePersonalizedByInterests] = useState(
+    () => restoredSnapshotRef.current?.browsePersonalizedByInterests ?? false,
+  );
+  const [browsePersonalizedByIntent, setBrowsePersonalizedByIntent] = useState(
+    () => restoredSnapshotRef.current?.browsePersonalizedByIntent ?? false,
+  );
   const [browseStandardOrder, setBrowseStandardOrder] = useState(
     () => restoredSnapshotRef.current?.browseStandardOrder ?? false,
   );
@@ -779,6 +791,8 @@ const Research = () => {
       if (page === 1) {
         setBrowseFacetDistribution(researchEntitiesPage.facetDistribution);
         setBrowsePersonalized(researchEntitiesPage.personalized);
+        setBrowsePersonalizedByInterests(researchEntitiesPage.personalizedByInterests);
+        setBrowsePersonalizedByIntent(researchEntitiesPage.personalizedByIntent);
       }
       setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
@@ -1443,6 +1457,8 @@ const Research = () => {
       defaultSearchTotal,
       defaultSearchExhausted,
       browsePersonalized,
+      browsePersonalizedByInterests,
+      browsePersonalizedByIntent,
       browseStandardOrder,
       searchError,
       hasFacetError,
@@ -1480,6 +1496,8 @@ const Research = () => {
     defaultSearchTotal,
     defaultSearchExhausted,
     browsePersonalized,
+    browsePersonalizedByInterests,
+    browsePersonalizedByIntent,
     browseStandardOrder,
     searchError,
     hasFacetError,
@@ -2065,7 +2083,11 @@ const Research = () => {
                     role="status"
                   >
                     <p className="text-sm font-medium text-slate-800">
-                      Recommended for your interests
+                      {browsePersonalizedByInterests && browsePersonalizedByIntent
+                        ? 'Recommended for your interests and goals'
+                        : browsePersonalizedByIntent
+                          ? 'Recommended for your goals'
+                          : 'Recommended for your interests'}
                     </p>
                     <button
                       type="button"
