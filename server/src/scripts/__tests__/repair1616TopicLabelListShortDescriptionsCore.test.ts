@@ -59,10 +59,36 @@ describe('planTopicLabelListRepairRow', () => {
     expect(row.action).toBe('unchanged');
     expect(row.changed).toBe(false);
   });
+
+  it('persists a sanitized short when a trailing affiliation clause is stripped and the rest stays useful (#1616)', () => {
+    const row = planTopicLabelListRepairRow({
+      id: '5',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      shortDescription: 'Studies American Politics at Yale University.',
+      fullDescription:
+        'Her research centers on the U.S. Congress, money in politics, and electoral campaigns, investigating the strategic choices of candidates and how financial constraints shape legislative behavior and representation in American democracy.',
+    });
+    expect(row.action).toBe('sanitized');
+    expect(row.after).toBe('Studies American Politics.');
+    expect(row.changed).toBe(true);
+  });
+
+  it('clears an ungrounded single-clause cherry-pick whose topic is absent from the full (#1616)', () => {
+    const row = planTopicLabelListRepairRow({
+      id: '6',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      shortDescription: 'Studies Texas from the first.',
+      fullDescription:
+        'The analysis in Making Morocco focuses on interactions between state and society during the Protectorate period, and how they politicized religion, ethnicity, territory, and the role of the Alawid monarchy.',
+    });
+    expect(row.action).toBe('cleared');
+    expect(row.after).toBe('');
+    expect(row.changed).toBe(true);
+  });
 });
 
 describe('summarizeTopicLabelListRepair', () => {
-  it('counts considered, flagged, derived, and cleared rows', () => {
+  it('counts considered, changed, sanitized, derived, and cleared rows', () => {
     const text = 'Studies Condensed Matter Physics, Theorist, and Stochastic processes.';
     const rows = [
       planTopicLabelListRepairRow({
@@ -78,10 +104,18 @@ describe('summarizeTopicLabelListRepair', () => {
         shortDescription: text,
         fullDescription: text,
       }),
+      planTopicLabelListRepairRow({
+        id: '3',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription: 'Studies American Politics at Yale University.',
+        fullDescription:
+          'Her research centers on the U.S. Congress, money in politics, and electoral campaigns, investigating the strategic choices of candidates and how financial constraints shape legislative behavior and representation in American democracy.',
+      }),
     ];
     expect(summarizeTopicLabelListRepair(rows)).toEqual({
-      considered: 2,
-      flagged: 1,
+      considered: 3,
+      changed: 2,
+      sanitized: 1,
       derivedFromFull: 0,
       cleared: 1,
     });

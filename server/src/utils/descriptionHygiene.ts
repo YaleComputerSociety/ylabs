@@ -791,6 +791,29 @@ export function stripLeadingArtCommentaryPrefix(text: string): string {
   return stripped.charAt(0).toUpperCase() + stripped.slice(1);
 }
 
+const trailingAffiliationClausePattern =
+  /^((?:Studies|Investigates|Examines|Explores|Develops|Researches|Analyzes|Focuses on)\s+.+?)\s+at\s+(?:the\s+)?(?:[A-Z][\p{L}.'’-]+\s+)*(?:University|College|Institute|Center|Centre|School|Department|Hospital|Foundation)(?:\s+(?:of|and|the|for)\s+[A-Z][\p{L}.'’-]*|\s+[A-Z][\p{L}.'’-]*)*\.?$/u;
+
+/**
+ * Strip a trailing institution-affiliation clause ("Studies American Politics
+ * at Yale University." -> "Studies American Politics.", #1616) that a
+ * researcher-voice short generator glued onto the research focus. Every Yale
+ * research home is at Yale, so "at <Institution>" adds nothing to a card and
+ * sometimes states a prior/wrong affiliation ("Studies Art at the University
+ * of California Berkeley." on a now-Yale professor). Gated so it only fires
+ * when the affiliation is the terminal clause of a synthesis-verb-lead short:
+ * the tail after the institution keyword may only continue with capitalized
+ * proper-noun words or name connectors (of/and/the/for), never a lowercased
+ * clause, so a mid-sentence "...at Yale University focuses on X" is never
+ * truncated to just its lead.
+ */
+export function stripTrailingResearchHomeAffiliationClause(text: string): string {
+  const value = normalizeHygieneWhitespace(String(text || ''));
+  const match = value.match(trailingAffiliationClausePattern);
+  if (!match) return value;
+  return normalizeHygieneWhitespace(`${match[1].replace(/[.,;:\s]+$/g, '')}.`);
+}
+
 const firstPersonPronounVoicePattern =
   /\bI['’](?:m|ve|d|ll)\b|\bI\s+(?:am|have|had|study|studies|studied|investigate|examine|explore|use|focus|focused|work|research|develop|lead|direct|analyze|apply|combine|seek|aim|began|started|joined|received|earned|hold|teach|remain|became)\b/;
 
@@ -970,19 +993,21 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
   const cleaned = stripUrlTopicsFromCardSummary(
-    collapseDoubledSynthesisVerb(
-      stripTrailingSourceLayoutLabelSection(
-        stripGluedProfileSectionLabel(
-          stripGluedResearchRoleTrackToken(
-            stripDirectoryResearcherNavChrome(
-              stripGluedProfileRoleLabel(
-                stripLeadingArtCommentaryPrefix(
-                  stripLeadingPageChrome(
-                    stripTrailingContactAddress(
-                      stripBibliographicReferenceArtifacts(
-                        stripInternalConfidenceHedge(
-                          stripCatalogChrome(
-                            evergreenizeStaleCycleDatePhrase(redactDirectContactInfo(String(text || ''))),
+    stripTrailingResearchHomeAffiliationClause(
+      collapseDoubledSynthesisVerb(
+        stripTrailingSourceLayoutLabelSection(
+          stripGluedProfileSectionLabel(
+            stripGluedResearchRoleTrackToken(
+              stripDirectoryResearcherNavChrome(
+                stripGluedProfileRoleLabel(
+                  stripLeadingArtCommentaryPrefix(
+                    stripLeadingPageChrome(
+                      stripTrailingContactAddress(
+                        stripBibliographicReferenceArtifacts(
+                          stripInternalConfidenceHedge(
+                            stripCatalogChrome(
+                              evergreenizeStaleCycleDatePhrase(redactDirectContactInfo(String(text || ''))),
+                            ),
                           ),
                         ),
                       ),

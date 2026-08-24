@@ -19,12 +19,14 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const apply = process.argv.includes('--apply');
 const confirmed = process.argv.includes('--confirm-fix-1616');
 
-// The 9 LAB/FACULTY_RESEARCH_AREA entities whose bare topic-label-list
-// shortDescription (#1616) was cleared by
-// repair1616TopicLabelListShortDescriptions.ts. Re-runs the live visibility
-// gate for exactly these ids so their stored studentVisibilityTier matches
-// the now-corrected serve-time gate rather than staying stale until a
-// broader re-tier sweep runs.
+// The LAB/FACULTY_RESEARCH_AREA entities whose bare topic-label-list,
+// affiliation-leak, or ungrounded single-clause shortDescription (#1616) was
+// repaired by repair1616TopicLabelListShortDescriptions.ts. Re-runs the live
+// visibility gate for exactly these ids so their stored studentVisibilityTier
+// matches the now-corrected serve-time gate rather than staying stale until a
+// broader re-tier sweep runs. The first nine are the original topic-label-list
+// cohort; the last four are the extension cohort (single-clause cherry-pick +
+// terminal-affiliation strip).
 const AFFECTED_IDS = [
   '6a056cac14107ca43f8a7957',
   '6a058cdfba66f3c14bd84f11',
@@ -35,6 +37,10 @@ const AFFECTED_IDS = [
   '6a0fa53336027326ae9c0633',
   '6a0fa56f36027326ae9c0c5d',
   '6a8b74549318b407cb6d9371',
+  '6a058cd3ba66f3c14bd84e0b',
+  '6a058dcfba66f3c14bd8607a',
+  '6a058e31ba66f3c14bd870b9',
+  '6a22d4dacc8d8ec7dea212d4',
 ];
 
 function logPlanChange(plan: StudentVisibilityGatePlan): void {
