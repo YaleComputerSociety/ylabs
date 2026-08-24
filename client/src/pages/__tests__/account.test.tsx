@@ -15,6 +15,7 @@ type ProgramSummary = {
 let savedResearchCount = 2;
 let programSummary: ProgramSummary = { count: 1 };
 let savedSearchCount = 3;
+let savedSearchNewMatchCount = 0;
 
 vi.mock('../../components/accounts/SavedResearchPlans', () => {
   const MockSavedResearchPlans = ({
@@ -49,12 +50,15 @@ vi.mock('../../components/accounts/ProgramWatch', () => {
 vi.mock('../../components/accounts/SavedSearches', () => {
   const MockSavedSearches = ({
     onCountChange,
+    onNewMatchCountChange,
   }: {
     onCountChange?: (count: number) => void;
+    onNewMatchCountChange?: (count: number) => void;
   }) => {
     useEffect(() => {
       onCountChange?.(savedSearchCount);
-    }, [onCountChange]);
+      onNewMatchCountChange?.(savedSearchNewMatchCount);
+    }, [onCountChange, onNewMatchCountChange]);
     return <section>Saved searches list</section>;
   };
 
@@ -65,9 +69,12 @@ vi.mock('../../components/accounts/ResearchInterestsEditor', () => ({
   default: () => <section>Research interests editor</section>,
 }));
 
-const renderAccount = (userType: string) =>
+const renderAccount = (
+  userType: string,
+  initialEntries: Array<string | { pathname: string; state?: unknown }> = ['/account'],
+) =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -91,6 +98,7 @@ afterEach(() => {
   savedResearchCount = 2;
   programSummary = { count: 1 };
   savedSearchCount = 3;
+  savedSearchNewMatchCount = 0;
 });
 
 describe('Account page', () => {
@@ -187,6 +195,26 @@ describe('Account page', () => {
     renderAccount('student');
 
     expect(screen.getByText('Summer Research Grant: Due Jun 30, 2099')).toBeTruthy();
+  });
+
+  it('clicking the Dashboard new-match callout jumps to the Saved Searches tab', () => {
+    savedSearchNewMatchCount = 2;
+    renderAccount('student');
+
+    const callout = screen.getByRole('button', {
+      name: /2 new matches for your saved searches/i,
+    });
+    fireEvent.click(callout);
+
+    const searchesTab = screen.getByRole('tab', { name: 'Saved Searches (3)' });
+    expect(searchesTab.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('opens directly on the Saved Searches tab when navigated with a searches surface state', () => {
+    renderAccount('student', [{ pathname: '/account', state: { surface: 'searches' } }]);
+
+    const searchesTab = screen.getByRole('tab', { name: 'Saved Searches (3)' });
+    expect(searchesTab.getAttribute('aria-selected')).toBe('true');
   });
 
   it('shows every account the same read-only surfaces with no faculty edit surface', () => {

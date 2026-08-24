@@ -43,10 +43,10 @@ const withSearches = (searches: SavedSearchView[]) => {
   mockedAxios.get.mockResolvedValue({ data: { savedSearches: searches } });
 };
 
-const renderComponent = (onCountChange = vi.fn()) =>
+const renderComponent = (onCountChange = vi.fn(), onNewMatchCountChange = vi.fn()) =>
   render(
     <MemoryRouter>
-      <SavedSearches onCountChange={onCountChange} />
+      <SavedSearches onCountChange={onCountChange} onNewMatchCountChange={onNewMatchCountChange} />
     </MemoryRouter>,
   );
 
@@ -143,5 +143,13 @@ describe('SavedSearches', () => {
     await screen.findByText('CS labs in ML');
     const row = screen.getByText('CS labs in ML').closest('li') as HTMLElement;
     expect(within(row).queryByText(/new/)).not.toBeInTheDocument();
+  });
+
+  it('reports the aggregate unseen new-match count to the caller', async () => {
+    withSearches([baseSearch({ newMatchCount: 3 }), baseSearch({ _id: 's2', newMatchCount: 1 })]);
+    const onNewMatchCountChange = vi.fn();
+    renderComponent(vi.fn(), onNewMatchCountChange);
+
+    await waitFor(() => expect(onNewMatchCountChange).toHaveBeenCalledWith(4));
   });
 });
