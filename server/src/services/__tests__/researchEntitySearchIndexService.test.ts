@@ -242,6 +242,47 @@ describe('researchEntitySearchIndexService', () => {
     expect(synonyms['computational vision']).toEqual(expect.arrayContaining(['computer vision']));
   });
 
+  it('carries cross-domain topical synonyms so biomedical vernacular reaches canonical fields (#1463)', () => {
+    const { synonyms } = getResearchEntitySearchIndexSettings();
+
+    expect(synonyms.cancer).toEqual(expect.arrayContaining(['oncology']));
+    expect(synonyms.oncology).toEqual(expect.arrayContaining(['cancer']));
+    expect(synonyms.immune).toEqual(expect.arrayContaining(['immunology']));
+  });
+
+  it('keeps new cross-domain coverage on the query side and out of free-text enrichment to avoid false positives (#1463)', () => {
+    const oncologyDoc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-oncology',
+      name: 'Tumor Immunology Program',
+      researchAreas: ['Oncology'],
+      archived: false,
+    });
+    expect(oncologyDoc?.studentSearchTerms ?? []).not.toEqual(expect.arrayContaining(['cancer']));
+
+    const mlDoc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-neural-network',
+      name: 'Deep Learning Lab',
+      fullDescription: 'Builds neural network architectures for image recognition.',
+      archived: false,
+    });
+    expect(mlDoc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['neuroscience', 'neurology', 'brain']),
+    );
+  });
+
+  it('does not enrich from metaphor-prone vernacular that stays query-only (#1463)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-metaphor',
+      name: 'Economic Policy Lab',
+      fullDescription: 'Studies the political climate at the heart of modern democracies.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['climate change', 'cardiology']),
+    );
+  });
+
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',

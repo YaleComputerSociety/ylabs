@@ -103,6 +103,7 @@ import {
   unavailablePublicUndergraduateLogistics,
   type PublicUndergraduateLogistics,
 } from './undergraduateLogisticsService';
+import { QUERY_TOPIC_ALIASES, STUDENT_QUERY_ALIASES } from './searchTopicAliases';
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
@@ -463,57 +464,6 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
   'some',
   'any',
 ]);
-
-const STUDENT_QUERY_ALIASES: Record<string, string[]> = {
-  ai: ['artificial intelligence', 'machine learning', 'deep learning', 'ai'],
-  ml: ['machine learning', 'artificial intelligence', 'deep learning', 'ml'],
-  nlp: ['natural language processing', 'computational linguistics', 'nlp'],
-  cv: ['computer vision', 'image analysis', 'visual recognition', 'cv'],
-  neuro: ['neuroscience', 'neurology', 'neural', 'brain', 'neuro'],
-  psych: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science', 'psych'],
-};
-
-const DEPARTMENT_SHORTHAND_ALIASES: Record<string, string[]> = {
-  cs: ['computer science'],
-  compsci: ['computer science'],
-  'comp sci': ['computer science'],
-  econ: ['economics'],
-  poli: ['political science'],
-  polisci: ['political science'],
-  'poli sci': ['political science'],
-  'pol sci': ['political science'],
-  bio: ['biology'],
-  biol: ['biology'],
-  chem: ['chemistry'],
-  math: ['mathematics'],
-  stat: ['statistics'],
-  stats: ['statistics'],
-  socio: ['sociology'],
-  anthro: ['anthropology'],
-  phil: ['philosophy'],
-  philo: ['philosophy'],
-  ling: ['linguistics'],
-  astro: ['astronomy', 'astrophysics'],
-  hist: ['history'],
-  lit: ['literature'],
-  ee: ['electrical engineering'],
-  'elec eng': ['electrical engineering'],
-  meche: ['mechanical engineering'],
-  'mech eng': ['mechanical engineering'],
-  bme: ['biomedical engineering'],
-  biomed: ['biomedical engineering'],
-  eeb: ['ecology and evolutionary biology'],
-  mcdb: ['molecular cellular and developmental biology'],
-  mbb: ['molecular biophysics and biochemistry'],
-  eall: ['east asian languages and literatures'],
-  nelc: ['near eastern languages and civilizations'],
-  wgss: ['women gender and sexuality studies'],
-};
-
-const QUERY_TOPIC_ALIASES: Record<string, string[]> = {
-  ...STUDENT_QUERY_ALIASES,
-  ...DEPARTMENT_SHORTHAND_ALIASES,
-};
 
 const resolveTopicAliasExpansion = (queryTokens: string[]): string[] | null => {
   if (queryTokens.length === 0) return null;

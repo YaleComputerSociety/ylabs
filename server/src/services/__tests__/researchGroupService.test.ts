@@ -357,6 +357,36 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('expands cross-domain biomedical, environmental, and social-science vernacular to canonical terms (#1463)', () => {
+    expect(normalizeResearchSearchQuery('cancer')).toMatchObject({
+      query: 'oncology cancer biology tumor biology cancer',
+      isTopicAliasQuery: true,
+      aliasTerms: ['oncology', 'cancer biology', 'tumor biology', 'cancer'],
+    });
+    expect(normalizeResearchSearchQuery('climate')).toMatchObject({
+      isTopicAliasQuery: true,
+      aliasTerms: expect.arrayContaining(['climate change', 'environmental science']),
+    });
+    expect(normalizeResearchSearchQuery('mental health')).toMatchObject({
+      isTopicAliasQuery: true,
+      aliasTerms: expect.arrayContaining(['psychiatry']),
+    });
+    expect(normalizeResearchSearchQuery('infectious disease')).toMatchObject({
+      isTopicAliasQuery: true,
+      aliasTerms: expect.arrayContaining(['epidemiology', 'microbiology']),
+    });
+  });
+
+  it('leaves a canonical field term as a literal, non-alias query (#1463)', () => {
+    expect(normalizeResearchSearchQuery('oncology')).toMatchObject({
+      query: 'oncology',
+      tokens: ['oncology'],
+      isTopicAliasQuery: false,
+      isAliasExpanded: false,
+      aliasTerms: null,
+    });
+  });
+
   it('marks literal phrases as not alias-expanded and OR-expanded queries as alias-expanded (#1255)', () => {
     expect(normalizeResearchSearchQuery('black hole')).toMatchObject({
       tokens: ['black', 'hole'],
@@ -1507,7 +1537,7 @@ describe('searchResearchGroupsViaMeili', () => {
         },
       });
 
-    const result = await searchResearchGroupsViaMeili('cancer', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('oncology', {}, 1, 24);
 
     expect(mocks.search.mock.calls[1][1]).toMatchObject({
       rankingScoreThreshold: 0.15,
@@ -1541,7 +1571,7 @@ describe('searchResearchGroupsViaMeili', () => {
       })
       .mockResolvedValueOnce({ hits: [], totalHits: 313 });
 
-    const result = await searchResearchGroupsViaMeili('cancer', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('oncology', {}, 1, 24);
 
     expect(result.estimatedTotalHits).toBe(313);
     expect(result.facetDistribution).toEqual({ school: { 'School of Medicine': 768 } });
