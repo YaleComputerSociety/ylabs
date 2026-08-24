@@ -782,12 +782,6 @@ function conjugateFirstPersonVerbToThirdPersonSingular(verb: string): string {
   return THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[verb.toLowerCase()] || verb;
 }
 
-const SINGULAR_NOUN_S_ENDING_EXCEPTIONS = /(?:ss|us|is|ics)$/i;
-
-function pluralAwareDemonstrative(noun: string): string {
-  return /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun) ? 'These' : 'This';
-}
-
 /**
  * True when `offset` in `full` sits at the very start of the string or right
  * after a sentence-ending punctuation mark, vs. mid-sentence (e.g. after a
@@ -843,19 +837,53 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string | 
       return `${lead}${pluralAwareDemonstrative(headNoun)} ${phrase}`;
     },
   ],
-  [
-    /(^|[.!?]\s+)(?:My|Our)\s+(\w+)\b/g,
-    (_match: string, lead: string, noun: string) => `${lead}${pluralAwareDemonstrative(noun)} ${noun}`,
-  ],
 ];
 
-export function revoiceFirstPersonResearchLead(value: unknown): string {
+const ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN =
+  /(^|[.!?]\s+)(?:My|Our)\s+((?:\w+\s+)?(?:goal|mission|focus|vision|approach))\b/gi;
+
+/**
+ * A bare demonstrative ("This goal is...", "This mission is...") dangles for
+ * these abstract singular nouns: there is no preceding antecedent sentence
+ * for "this" to point back to, so the student reads a non-sequitur. An
+ * entity-possessive subject ("The Foxman Lab's goal is...") reads correctly
+ * with no antecedent required.
+ */
+function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): string {
+  const baseName = entity ? facultyResearchLabelBase(entity) : '';
+  if (baseName) return possessiveName(baseName);
+  if (isLabResearchTextEntity(entity)) return "This lab's";
+  if (isFacultyResearchTextEntity(entity)) return "This researcher's";
+  return "This research group's";
+}
+
+const SINGULAR_NOUN_S_ENDING_EXCEPTIONS = /(?:ss|us|is|ics)$/i;
+
+function pluralAwareDemonstrative(noun: string): string {
+  return /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun) ? 'These' : 'This';
+}
+
+const GENERIC_POSSESSIVE_LEAD_PATTERN = /(^|[.!?]\s+)(?:My|Our)\s+(\w+)\b/g;
+
+export function revoiceFirstPersonResearchLead(
+  value: unknown,
+  entity?: FacultyResearchTextEntity | null,
+): string {
   const text = typeof value === 'string' ? value : '';
   if (!text) return text;
   let next = stripLeadingPersonalGreeting(text);
+  const possessiveSubject = possessiveLeadSubject(entity);
+  next = next.replace(
+    ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN,
+    (_match: string, lead: string, nounPhrase: string) => `${lead}${possessiveSubject} ${nounPhrase}`,
+  );
   for (const [pattern, replacement] of FIRST_PERSON_LEAD_REVOICE_RULES) {
     next = next.replace(pattern, replacement as any);
   }
+  next = next.replace(
+    GENERIC_POSSESSIVE_LEAD_PATTERN,
+    (_match: string, lead: string, noun: string) => `${lead}${pluralAwareDemonstrative(noun)} ${noun}`,
+  );
   return next;
 }
 
@@ -928,7 +956,7 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       const withFirstPersonReVoice =
         field === 'shortDescription'
           ? withResearchLeadRepair
-          : revoiceFirstPersonResearchLead(withResearchLeadRepair);
+          : revoiceFirstPersonResearchLead(withResearchLeadRepair, next);
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
         withFirstPersonReVoice,
         leadMemberNames,
