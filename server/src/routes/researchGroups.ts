@@ -22,6 +22,12 @@ router.post(
   asyncHandler(researchGroupController.searchRelatedPrograms),
 );
 
+router.get(
+  '/department/:slug',
+  isAuthenticated,
+  asyncHandler(researchGroupController.getResearchDepartmentPage),
+);
+
 router.post(
   '/:slug/outreach',
   writeLimit,

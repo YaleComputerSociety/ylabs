@@ -16,6 +16,7 @@ import {
   ResearchGroupSearchSort,
 } from '../services/researchGroupService';
 import { getResearcherProfileByPublicKey } from '../services/researcherProfileService';
+import { getDepartmentResearchPage } from '../services/researchDepartmentPageService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
 import { RELATED_PROGRAM_ENTITY_TYPES } from '../utils/researchEntityProgramLike';
 import {
@@ -366,6 +367,25 @@ export const getResearcherProfile = async (request: Request, response: Response)
   } catch (error) {
     console.error('Researcher profile failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Failed to fetch researcher profile' });
+  }
+};
+
+export const getResearchDepartmentPage = async (request: Request, response: Response) => {
+  try {
+    const rawSlug = request.params.slug;
+    if (!rawSlug || typeof rawSlug !== 'string' || rawSlug.trim().length === 0) {
+      return response.status(400).json({ error: 'Missing department slug' });
+    }
+
+    const page = await getDepartmentResearchPage(rawSlug);
+    if (!page) {
+      return response.status(404).json({ error: 'Department not found' });
+    }
+
+    return response.status(200).json(page);
+  } catch (error) {
+    console.error('Department research page failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Failed to fetch department research page' });
   }
 };
 

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   recordResearchEntityOutreach: vi.fn(),
   getStudentResearchInterests: vi.fn(),
   getResearcherProfileByPublicKey: vi.fn(),
+  getDepartmentResearchPage: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -26,6 +27,10 @@ vi.mock('../../services/researcherProfileService', () => ({
   getResearcherProfileByPublicKey: mocks.getResearcherProfileByPublicKey,
 }));
 
+vi.mock('../../services/researchDepartmentPageService', () => ({
+  getDepartmentResearchPage: mocks.getDepartmentResearchPage,
+}));
+
 vi.mock('../../services/adminGrantService', () => ({
   hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
@@ -35,6 +40,7 @@ vi.mock('../../services/studentInterestProfileService', () => ({
 }));
 
 import {
+  getResearchDepartmentPage,
   getResearchGroupBySlug,
   getResearcherProfile,
   recordResearchOutreach,
@@ -518,5 +524,59 @@ describe('researchGroupController', () => {
       expect(res.status).toHaveBeenCalledWith(500);
       expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
     });
+  });
+
+  it('returns a department research page for a known slug', async () => {
+    const page = {
+      department: 'Chemistry',
+      slug: 'chemistry',
+      entities: [{ slug: 'some-lab', name: 'Some Lab' }],
+      estimatedTotalHits: 1,
+    };
+    mocks.getDepartmentResearchPage.mockResolvedValue(page);
+    const req = { params: { slug: 'chemistry' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchDepartmentPage(req, res);
+
+    expect(mocks.getDepartmentResearchPage).toHaveBeenCalledWith('chemistry');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(page);
+  });
+
+  it('404s a department research page for an unknown slug', async () => {
+    mocks.getDepartmentResearchPage.mockResolvedValue(null);
+    const req = { params: { slug: 'not-a-real-department' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchDepartmentPage(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Department not found' });
+  });
+
+  it('400s a department research page request with a missing slug', async () => {
+    const req = { params: {} } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchDepartmentPage(req, res);
+
+    expect(mocks.getDepartmentResearchPage).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Missing department slug' });
+  });
+
+  it('does not leak internal errors when the department research page lookup fails', async () => {
+    mocks.getDepartmentResearchPage.mockRejectedValue(
+      new Error('mongodb://user:pass@example.invalid department lookup failed'),
+    );
+    const req = { params: { slug: 'chemistry' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchDepartmentPage(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch department research page' });
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
   });
 });
