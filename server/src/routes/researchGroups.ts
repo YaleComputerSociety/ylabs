@@ -8,6 +8,7 @@
  */
 import { Router } from 'express';
 import * as researchGroupController from '../controllers/researchGroupController';
+import * as entityCorrectionReportController from '../controllers/entityCorrectionReportController';
 import { asyncHandler, isAuthenticated } from '../middleware/index';
 import { writeLimit } from '../middleware/rateLimiters';
 
@@ -26,6 +27,19 @@ router.post(
   writeLimit,
   isAuthenticated,
   asyncHandler(researchGroupController.recordResearchOutreach),
+);
+
+router.post(
+  '/:slug/report',
+  writeLimit,
+  isAuthenticated,
+  entityCorrectionReportController.submitEntityCorrectionReport,
+);
+
+router.get(
+  '/:slug/reports/mine',
+  isAuthenticated,
+  entityCorrectionReportController.listMyEntityCorrectionReports,
 );
 
 router.get(
