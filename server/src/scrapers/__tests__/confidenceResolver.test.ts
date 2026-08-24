@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveField, resolveAllFields } from '../confidenceResolver';
+import { resolveField, resolveAllFields, resolveFieldRanked } from '../confidenceResolver';
 
 const D = (s: string) => new Date(s);
 
@@ -658,5 +658,99 @@ describe('resolveAllFields', () => {
     expect(Object.keys(out).sort()).toEqual(['title', 'year']);
     expect(out.title.value).toBe('Smith Lab');
     expect(out.year.value).toBe(2024);
+  });
+});
+
+describe('resolveFieldRanked', () => {
+  it('returns an empty array when no observations exist for the field', () => {
+    expect(resolveFieldRanked('fullDescription', [])).toEqual([]);
+  });
+
+  it('returns every distinct value in weight-descending order with the winner first', () => {
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        {
+          field: 'fullDescription',
+          value: 'lower',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.7,
+          observedAt: D('2026-01-01'),
+        },
+        {
+          field: 'fullDescription',
+          value: 'winner',
+          sourceName: 'ysm-atoz-index',
+          confidence: 0.95,
+          observedAt: D('2026-02-01'),
+        },
+      ],
+      { now: D('2026-02-10') },
+    );
+    expect(ranked.map((r) => r.value)).toEqual(['winner', 'lower']);
+    expect(ranked[0].value).toBe(resolveField(
+      'fullDescription',
+      [
+        {
+          field: 'fullDescription',
+          value: 'lower',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.7,
+          observedAt: D('2026-01-01'),
+        },
+        {
+          field: 'fullDescription',
+          value: 'winner',
+          sourceName: 'ysm-atoz-index',
+          confidence: 0.95,
+          observedAt: D('2026-02-01'),
+        },
+      ],
+      { now: D('2026-02-10') },
+    )?.value);
+  });
+
+  it('collapses duplicate values across sources into a single ranked entry', () => {
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        {
+          field: 'fullDescription',
+          value: 'same prose',
+          sourceName: 'source-a',
+          confidence: 0.8,
+          observedAt: D('2026-01-01'),
+        },
+        {
+          field: 'fullDescription',
+          value: 'same prose',
+          sourceName: 'source-b',
+          confidence: 0.8,
+          observedAt: D('2026-01-01'),
+        },
+      ],
+      { now: D('2026-01-10') },
+    );
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].contributingSources.sort()).toEqual(['source-a', 'source-b']);
+  });
+
+  it('returns only the locked value for a manually locked field', () => {
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        {
+          field: 'fullDescription',
+          value: 'observed',
+          sourceName: 'ysm-atoz-index',
+          confidence: 0.95,
+          observedAt: D('2026-02-01'),
+        },
+      ],
+      { manuallyLockedFields: ['fullDescription'], manualValues: { fullDescription: 'locked value' } },
+    );
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].value).toBe('locked value');
+    expect(ranked[0].contributingSources).toEqual(['manual']);
   });
 });
