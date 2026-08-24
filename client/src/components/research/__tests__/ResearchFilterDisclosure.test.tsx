@@ -24,6 +24,7 @@ const renderFilters = (
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
+    currentAvailabilityLabel: (value) => value,
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
     onResearchAreasChange: vi.fn(),
@@ -161,6 +162,7 @@ describe('ResearchFilterDisclosure', () => {
       variant: 'sidebar',
       currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 5 }],
       selectedCurrentAvailability: ['OPEN'],
+      currentAvailabilityLabel: (value) => ({ OPEN: 'Open now', ROLLING: 'Rolling' }[value] ?? value),
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Open now' }));
     expect(selectedProps.onCurrentAvailabilityChange).toHaveBeenCalledWith([]);
@@ -220,6 +222,7 @@ describe('ResearchFilterDisclosure', () => {
         isApplying: false,
         hasFacetError: false,
         departmentLabel: (value) => value,
+        currentAvailabilityLabel: (value) => value,
         onSchoolChange: vi.fn(),
         onDepartmentChange: vi.fn(),
         onResearchAreasChange: () => setHasSubmittedSearch(true),

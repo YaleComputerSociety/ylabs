@@ -21,6 +21,7 @@ interface ResearchFilterDisclosureProps {
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
+  currentAvailabilityLabel: (value: string) => string;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onResearchAreasChange: (value: string[]) => void;
@@ -55,6 +56,7 @@ const ResearchFilterDisclosure = ({
   isApplying,
   hasFacetError,
   departmentLabel,
+  currentAvailabilityLabel,
   onSchoolChange,
   onDepartmentChange,
   onResearchAreasChange,
@@ -375,8 +377,7 @@ const ResearchFilterDisclosure = ({
         </button>
       )}
       {selectedCurrentAvailability.map((value) => {
-        const label =
-          currentAvailabilityOptions.find((option) => option.value === value)?.label ?? value;
+        const label = currentAvailabilityLabel(value);
         return (
           <button
             key={value}

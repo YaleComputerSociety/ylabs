@@ -1416,6 +1416,8 @@ const Research = () => {
       : 'Enter a topic or name to enable Search.';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
+  const currentAvailabilityFilterLabel = (value: string) =>
+    CURRENT_AVAILABILITY_FILTER_LABELS[value as CurrentAvailabilityFilterValue] ?? value;
   const applyStudentFilters = (next: {
     school?: string;
     department?: string;
@@ -1607,6 +1609,7 @@ const Research = () => {
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
+    currentAvailabilityLabel: currentAvailabilityFilterLabel,
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
     onResearchAreasChange: (areas: string[]) => applyStudentFilters({ researchAreas: areas }),
