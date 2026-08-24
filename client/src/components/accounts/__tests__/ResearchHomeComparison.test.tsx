@@ -166,8 +166,10 @@ describe('ResearchHomeComparison', () => {
       </MemoryRouter>,
     );
 
-    const wayInRow = (await screen.findByText('Documented way in')).closest('tr') as HTMLElement;
-    expect(within(wayInRow).getByText('Some evidence')).toBeTruthy();
-    expect(within(wayInRow).getByText('Unknown')).toBeTruthy();
+    await waitFor(() => {
+      const wayInRow = screen.getByText('Documented way in').closest('tr') as HTMLElement;
+      expect(within(wayInRow).getByText('Some evidence')).toBeTruthy();
+      expect(within(wayInRow).getByText('Unknown')).toBeTruthy();
+    });
   });
 });
