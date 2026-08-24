@@ -896,6 +896,28 @@ export function isFirstPersonResearchVoiceText(text: string): boolean {
   );
 }
 
+/**
+ * A card blurb that enumerates a faculty member's administrative/leadership
+ * titles ("Among his leadership roles at Yale Cancer Center, Dr. Krop serves
+ * as Associate Cancer Center Director for Clinical Research, Director of the
+ * Yale Cancer Center Clinical Trials Office, and Chief Clinical Research
+ * Officer.") rather than describing their research (#1745 round 4). Distinct
+ * from `isNonSelfContainedShortDescription`'s pronoun/demonstrative guards -
+ * the name here IS established, so it reads as a complete sentence; the
+ * defect is that the sentence is a title list, not research content. Scoped
+ * to the "Among ... leadership/administrative roles ..., <name> serves as"
+ * shape specifically so a genuine "Among his research interests are ..."
+ * opener is left alone.
+ */
+const administrativeTitleEnumerationOpenerPattern =
+  /^Among\s+(?:his|her|their)\s+(?:leadership|administrative|administration)\s+roles\b[^.!?]*?,\s*(?:he|she|they|dr\.\s+[A-Z][a-z]+)\s+serves?\s+as\b/i;
+
+export function isAdministrativeTitleEnumerationText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  return administrativeTitleEnumerationOpenerPattern.test(normalized);
+}
+
 const cardSummaryVerbLeadPattern =
   /^(?:Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds)\b/i;
 
@@ -1133,6 +1155,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (isCtaNewsTickerDumpText(cleaned)) return '';
   if (isStudiesTemplateGlueMalformed(cleaned)) return '';
   if (isFirstPersonResearchVoiceText(cleaned)) return '';
+  if (isAdministrativeTitleEnumerationText(cleaned)) return '';
   if (isNonSelfContainedShortDescription(cleaned)) return '';
   if (containsHtmlTagMarkup(cleaned)) return '';
   if (isCitationAuthorListDumpText(cleaned)) return '';

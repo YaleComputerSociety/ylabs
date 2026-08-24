@@ -779,6 +779,20 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       'How do people learn language in the face of its vast complexity? This research shows how domain-general cognitive mechanisms can explain sophisticated linguistic behaviors. This NSF GRFP-funded dissertation work at Fixture University focused on how individual differences in statistical learning predict spoken language skills in adults. This work was awarded the Cognitive Science Society’s Glushko Dissertation Prize in 2023. This work as a Postdoctoral Research Fellow expanded these findings, investigating how statistical learning shapes reading development in children.',
     );
   });
+
+  it('strips a bare leading degree list, source-chrome fragment, and name-lead professor sentence run together with no delimiting punctuation, keeping the surviving publication/fieldwork/teaching content, on a FACULTY_RESEARCH_AREA entity (#1745)', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'B.A., Wesleyan University M.Arch., Graduate School of Fine Arts, University of Pennsylvania Ph.D., Massachusetts Institute of Technology Yale MacMillan Center Council on Middle East Studies “Islamic Art at the Yale University Art Gallery” Robin Fixture is the Robert Lehman Professor in the History of Art at Yale University. Her recent publications include The Transnational Mosque (University of North Carolina Press, 2015). Her fieldwork includes research in several parts of the Middle East. Fixture teaches undergraduate introductory surveys on Islamic art and architecture.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toBe(
+      'Her recent publications include The Transnational Mosque (University of North Carolina Press, 2015). Her fieldwork includes research in several parts of the Middle East. Fixture teaches undergraduate introductory surveys on Islamic art and architecture.',
+    );
+  });
 });
 
 describe('isDeceasedOrEmeritusLeadBiography', () => {
