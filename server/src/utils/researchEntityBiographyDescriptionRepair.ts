@@ -214,6 +214,11 @@ function isSalvageableShortDescription(candidate: string, contextFullDescription
   // specializes...") - a short this function would otherwise treat as
   // salvageable-as-is.
   if (DEGREE_LIST_FRAGMENT_SEARCH_PATTERN.test(candidate)) return false;
+  // A stray comma right after "Studies" is never valid prose - it's what's
+  // left when an institution/year fragment survived a previous, incomplete
+  // strip of a degree-list lead (#1533: lawler-tl4's stored short is
+  // "Studies , Holy Cross, 1958 Middle English especially Chaucer...").
+  if (/^Studies\s*,/i.test(candidate)) return false;
   // Exclude 'full-not-useful': it reflects fullDescriptionQuality's whole-text
   // verdict on contextFullDescription, which can false-flag a rebuilt full
   // that opens with a legitimate appointment sentence (see
