@@ -54,6 +54,34 @@ describe('planOrgUnitBackfillRow', () => {
     expect(row.changed).toBe(false);
     expect(row.update).toEqual({});
   });
+
+  it('fills a placeable professional-school entity with no department taxonomy so it survives the department facet (#1316)', async () => {
+    const rowsWithLawSchool = [
+      ...rows,
+      { slug: 'law-school', name: 'Law School', kind: 'SCHOOL' as const },
+    ];
+    useOrgUnitCanonicalizerForBackfill(
+      createOrgUnitCanonicalizer(buildOrgUnitResolverIndex(rowsWithLawSchool), deptToSchool),
+    );
+    const row = await planOrgUnitBackfillRow({
+      id: 'c',
+      slug: 'moyn-sam249',
+      school: 'Law School',
+      departments: [],
+      schools: ['Law School'],
+    });
+    expect(row.changed).toBe(true);
+    expect(row.update.departments).toEqual(['Law School']);
+
+    const rescan = await planOrgUnitBackfillRow({
+      id: 'c',
+      slug: 'moyn-sam249',
+      school: row.afterSchool,
+      departments: row.afterDepartments,
+      schools: row.afterSchools,
+    });
+    expect(rescan.changed).toBe(false);
+  });
 });
 
 describe('summarizeOrgUnitBackfill', () => {
