@@ -13,10 +13,11 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
+import ResearchInterestsEditor from '../components/accounts/ResearchInterestsEditor';
 import SavedResearchPlans from '../components/accounts/SavedResearchPlans';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 
-type AccountSurface = 'dashboard' | 'programs';
+type AccountSurface = 'dashboard' | 'programs' | 'interests';
 
 type ProgramSummary = {
   count: number;
@@ -24,7 +25,7 @@ type ProgramSummary = {
   nextDeadlineDate?: string;
 };
 
-const SURFACES: AccountSurface[] = ['dashboard', 'programs'];
+const SURFACES: AccountSurface[] = ['dashboard', 'programs', 'interests'];
 
 const Account = () => {
   useDocumentTitle('Dashboard');
@@ -35,6 +36,7 @@ const Account = () => {
   const tabRefs = useRef<Record<AccountSurface, HTMLButtonElement | null>>({
     dashboard: null,
     programs: null,
+    interests: null,
   });
 
   const activateSurface = (next: AccountSurface, focusTab = false) => {
@@ -120,6 +122,22 @@ const Account = () => {
             >
               Program Watch ({programSummary.count})
             </button>
+            <button
+              type="button"
+              role="tab"
+              id="account-interests-tab"
+              aria-controls="account-interests-panel"
+              aria-selected={surface === 'interests'}
+              tabIndex={surface === 'interests' ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current.interests = el;
+              }}
+              onClick={() => activateSurface('interests')}
+              onKeyDown={handleTabKeyDown}
+              className={tabClass(surface === 'interests')}
+            >
+              Interests
+            </button>
           </div>
         </div>
 
@@ -143,6 +161,15 @@ const Account = () => {
           className={surface === 'programs' ? '' : 'hidden'}
         >
           <ProgramWatch onSummaryChange={setProgramSummary} />
+        </div>
+        <div
+          id="account-interests-panel"
+          role="tabpanel"
+          aria-labelledby="account-interests-tab"
+          tabIndex={0}
+          className={surface === 'interests' ? '' : 'hidden'}
+        >
+          {surface === 'interests' && <ResearchInterestsEditor />}
         </div>
       </div>
     </div>

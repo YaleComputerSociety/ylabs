@@ -34,6 +34,10 @@ import {
   updateWatchedProgramPlan as updateWatchedProgramPlanService,
   deleteWatchedProgramPlan as deleteWatchedProgramPlanService,
 } from '../services/researchPlanService';
+import {
+  getStudentResearchInterests as getStudentResearchInterestsService,
+  setStudentResearchInterests as setStudentResearchInterestsService,
+} from '../services/studentInterestProfileService';
 import { publicProgramForReader } from './programPayload';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -613,6 +617,35 @@ export const updateSavedProgramTracking = async (request: Request, response: Res
       return;
     }
     sendPrivateAccountError(response, error, 'Failed to update saved program tracking');
+  }
+};
+
+export const getResearchInterests = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    response.status(200).json(await getStudentResearchInterestsService(currentUser.netId));
+  } catch (error) {
+    console.error('Research interest fetch failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to fetch research interests');
+  }
+};
+
+export const updateResearchInterests = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const payload = (request.body?.data ?? request.body ?? {}) as {
+      researchInterests?: unknown;
+      graduationYear?: unknown;
+    };
+    response.status(200).json(
+      await setStudentResearchInterestsService(currentUser.netId, {
+        researchInterests: payload.researchInterests,
+        graduationYear: payload.graduationYear,
+      }),
+    );
+  } catch (error) {
+    console.error('Research interest update failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to update research interests');
   }
 };
 
