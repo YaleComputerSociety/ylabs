@@ -344,6 +344,21 @@ const ResearchPlanSaveButton = ({
   </FavoriteButton>
 );
 
+const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
+  <Link
+    to="/login"
+    state={{ from: returnPath }}
+    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:w-auto sm:min-w-[13rem]"
+  >
+    <span className="min-w-0 flex-1">
+      <span className="block text-sm font-semibold text-gray-900">Log in with Yale to save</span>
+      <span className="mt-0.5 block text-xs leading-relaxed text-gray-600">
+        Save this research home, keep private notes, and reach out
+      </span>
+    </span>
+  </Link>
+);
+
 const memberDisplayName = (member: LabMember): string =>
   member.user.displayName ||
   [member.user.fname, member.user.lname].filter(Boolean).join(' ') ||
@@ -516,6 +531,7 @@ const DecisionSummary = ({
   preferOrgEngagementOutreach = false,
   principalInvestigator,
   leadProfilesLinkedInline = false,
+  canRecordOutreach = false,
 }: {
   group: any;
   profileUrl?: string;
@@ -524,6 +540,7 @@ const DecisionSummary = ({
   preferOrgEngagementOutreach?: boolean;
   principalInvestigator?: LabMember;
   leadProfilesLinkedInline?: boolean;
+  canRecordOutreach?: boolean;
 }) => {
   const { departments } = useConfig();
   const topics = detailTopics(group, 5);
@@ -577,7 +594,7 @@ const DecisionSummary = ({
     body: introEmailDraft.body,
   });
   const handlePiMailtoClick = () => {
-    if (!group.slug) return;
+    if (!group.slug || !canRecordOutreach) return;
     void axios
       .post(`/research/${group.slug}/outreach`, {
         deliveryMethod: 'mailto',
@@ -902,7 +919,7 @@ const LabDetail = () => {
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } =
-    useFavorites('researchPlans');
+    useFavorites('researchPlans', { enabled: isAuthenticated });
   const documentTitleGroup = payload ? (payload.group ?? payload.researchEntity) : null;
   const isNotFound = error === RESEARCH_PROFILE_NOT_FOUND_ERROR && !payload;
   useDocumentTitle(
@@ -1199,13 +1216,17 @@ const LabDetail = () => {
             group={group}
             dedupeWebsiteUrls={headerWebsiteDedupeUrls}
             actions={
-              <ResearchPlanSaveButton
-                isSaved={isResearchEntitySaved}
-                onToggle={(e) => {
-                  e.stopPropagation();
-                  void handleToggleSavedResearchPlan(group._id, !isResearchEntitySaved);
-                }}
-              />
+              isAuthenticated ? (
+                <ResearchPlanSaveButton
+                  isSaved={isResearchEntitySaved}
+                  onToggle={(e) => {
+                    e.stopPropagation();
+                    void handleToggleSavedResearchPlan(group._id, !isResearchEntitySaved);
+                  }}
+                />
+              ) : (
+                <GuestSaveCta returnPath={`${location.pathname}${location.search}`} />
+              )
             }
           />
 
@@ -1217,6 +1238,7 @@ const LabDetail = () => {
             preferOrgEngagementOutreach={preferOrgEngagementOutreach}
             principalInvestigator={singlePrincipalInvestigator}
             leadProfilesLinkedInline={leadProfilesLinkedInline}
+            canRecordOutreach={isAuthenticated}
           />
 
           <UndergraduateLogisticsSection logistics={undergraduateLogistics} />

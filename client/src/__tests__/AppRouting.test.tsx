@@ -8,6 +8,10 @@ vi.mock('../components/PrivateRoute', () => ({
   default: ({ Component }: { Component: FunctionComponent }) => <Component />,
 }));
 
+vi.mock('../components/PublicRoute', () => ({
+  default: ({ Component }: { Component: FunctionComponent }) => <Component />,
+}));
+
 vi.mock('../components/AdminRoute', () => ({
   default: ({ Component }: { Component: FunctionComponent }) => <Component />,
 }));

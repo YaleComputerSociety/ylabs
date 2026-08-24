@@ -1957,6 +1957,20 @@ const Research = () => {
               strong enough.
             </p>
 
+            {!isAuthenticated && (
+              <div className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-3 py-2 text-sm leading-relaxed text-blue-900">
+                You&apos;re browsing as a guest.{' '}
+                <Link
+                  to="/login"
+                  state={{ from: `${location.pathname}${location.search}` }}
+                  className="font-semibold underline underline-offset-2 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  Log in with Yale CAS
+                </Link>{' '}
+                to save research homes and reach out.
+              </div>
+            )}
+
             <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
               <label
                 htmlFor="research-search"

@@ -48,11 +48,15 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
   },
 };
 
-export const useFavorites = (kind: FavoritesKind) => {
+export const useFavorites = (kind: FavoritesKind, { enabled = true }: { enabled?: boolean } = {}) => {
   const config = ENDPOINTS[kind];
   const [favIds, setFavIds] = useState<string[]>([]);
 
   const reload = useCallback(async () => {
+    if (!enabled) {
+      setFavIds([]);
+      return;
+    }
     try {
       const res = await axios.get(config.load, { withCredentials: true });
       setFavIds(res.data[config.responseKey] || []);
@@ -63,7 +67,7 @@ export const useFavorites = (kind: FavoritesKind) => {
         swal({ text: `Could not load your favorite ${kind}`, icon: 'warning' });
       }
     }
-  }, [kind, config.load, config.responseKey, config.warnOnLoadError]);
+  }, [enabled, kind, config.load, config.responseKey, config.warnOnLoadError]);
 
   useEffect(() => {
     reload();

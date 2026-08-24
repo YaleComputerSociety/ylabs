@@ -53,6 +53,15 @@ export default function Navbar() {
   const isAdmin = user?.userType === 'admin';
   const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
+  const guestNavLinks = [
+    {
+      label: 'Yale Research',
+      to: '/research',
+      active: (pathname: string) => pathname === '/research' || pathname.startsWith('/research/'),
+    },
+    { label: 'About', to: '/about', active: (pathname: string) => pathname === '/about' },
+  ];
+
   const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
     if (
       event.type === 'keydown' &&
@@ -164,9 +173,52 @@ export default function Navbar() {
               </ListItem>
             </>
           ) : (
-            <ListItem sx={listItemStyle}>
-              <YURAButton />
-            </ListItem>
+            <>
+              {guestNavLinks.map((link) => {
+                const active = link.active(location.pathname);
+                return (
+                  <ListItem key={link.to} sx={listItemStyle}>
+                    <Button
+                      component={Link}
+                      to={link.to}
+                      onClick={toggleDrawer(false)}
+                      sx={{
+                        textTransform: 'none',
+                        color: active ? 'var(--yr-blue)' : 'var(--yr-text)',
+                        fontWeight: active ? 600 : 400,
+                        justifyContent: 'flex-start',
+                        minHeight: 44,
+                        width: '100%',
+                        pl: 1,
+                        ...navFocusRingSx,
+                      }}
+                    >
+                      {link.label}
+                    </Button>
+                  </ListItem>
+                );
+              })}
+              <ListItem sx={listItemStyle}>
+                <Button
+                  component={Link}
+                  to="/login"
+                  state={{ from: `${location.pathname}${location.search}` }}
+                  onClick={toggleDrawer(false)}
+                  sx={{
+                    textTransform: 'none',
+                    color: 'var(--yr-blue)',
+                    fontWeight: 600,
+                    justifyContent: 'flex-start',
+                    minHeight: 44,
+                    width: '100%',
+                    pl: 1,
+                    ...navFocusRingSx,
+                  }}
+                >
+                  Sign in
+                </Button>
+              </ListItem>
+            </>
           )}
         </List>
       </Box>
@@ -241,6 +293,98 @@ export default function Navbar() {
                       </Box>
                       {isAdmin && <AnalyticsButton />}
                       <UserButton />
+                    </>
+                  )}
+                  {isMobile && (
+                    <IconButton
+                      size="large"
+                      edge="end"
+                      color="inherit"
+                      aria-label="Open menu"
+                      aria-expanded={drawerOpen}
+                      aria-controls="primary-mobile-menu"
+                      onClick={toggleDrawer(true)}
+                      sx={{
+                        borderRadius: '4px',
+                        height: 44,
+                        width: 44,
+                        padding: '8px',
+                        '&:hover': { backgroundColor: 'transparent' },
+                        ...navFocusRingSx,
+                      }}
+                    >
+                      <HamburgerIcon />
+                    </IconButton>
+                  )}
+                </Box>
+                <Drawer
+                  anchor="right"
+                  open={drawerOpen}
+                  onClose={toggleDrawer(false)}
+                  slotProps={{ paper: { id: 'primary-mobile-menu' } }}
+                >
+                  {mobileMenu()}
+                </Drawer>
+              </>
+            )}
+
+            {!isAuthenticated && (
+              <>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    gap: { xs: '8px', lg: '14px' },
+                    alignItems: 'center',
+                    ml: 'auto',
+                    flexShrink: 0,
+                  }}
+                >
+                  {!isMobile && (
+                    <>
+                      <Box
+                        component="nav"
+                        aria-label="Primary navigation"
+                        sx={{ display: 'flex', gap: 0, alignItems: 'center', flexShrink: 0 }}
+                      >
+                        {guestNavLinks.map((link) => {
+                          const active = link.active(location.pathname);
+                          return (
+                            <Button
+                              key={link.to}
+                              component={Link}
+                              to={link.to}
+                              disableRipple
+                              className={`!normal-case !text-sm !min-w-0 !min-h-[44px] !px-3 !py-0 !inline-flex !items-center !rounded-none !border-b-2 hover:!bg-transparent ${active ? '!font-semibold !text-[var(--yr-blue)] !border-[var(--yr-blue)] hover:!text-[var(--yr-blue)]' : '!font-normal !text-[var(--yr-muted)] !border-transparent hover:!text-[var(--yr-blue)]'}`}
+                              sx={{
+                                borderRadius: '6px 6px 0 0',
+                                transition:
+                                  'background-color 150ms ease, color 150ms ease, border-color 150ms ease',
+                                '&:hover': {
+                                  backgroundColor: 'rgba(24, 74, 155, 0.05) !important',
+                                },
+                                ...navFocusRingSx,
+                              }}
+                            >
+                              {link.label}
+                            </Button>
+                          );
+                        })}
+                      </Box>
+                      <Button
+                        component={Link}
+                        to="/login"
+                        state={{ from: `${location.pathname}${location.search}` }}
+                        disableRipple
+                        className="!normal-case !text-sm !min-h-[44px] !px-4 !font-semibold !text-white"
+                        sx={{
+                          backgroundColor: 'var(--yr-blue)',
+                          borderRadius: '6px',
+                          '&:hover': { backgroundColor: 'var(--yr-blue)' },
+                          ...navFocusRingSx,
+                        }}
+                      >
+                        Sign in
+                      </Button>
                     </>
                   )}
                   {isMobile && (
