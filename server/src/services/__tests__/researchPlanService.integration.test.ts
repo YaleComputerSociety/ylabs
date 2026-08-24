@@ -248,4 +248,51 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     expect(savedPlans[ENTITY_ID.toHexString()].privateNotes).toBe('healthy save');
     expect(savedPlans[hollowId.toHexString()]).toBeUndefined();
   });
+
+  it('serves undergraduate-access fields on saved entities, omitting neutral defaults (#1382)', async () => {
+    const openId = new mongoose.Types.ObjectId('64a0000000000000000000f1');
+    const db = mongoose.connection.db!;
+    await db.collection('research_entities').updateOne(
+      { _id: ENTITY_ID },
+      {
+        $set: {
+          undergraduateCurrentAvailability: 'UNKNOWN',
+          accessAcceptanceLevel: 'none',
+          hasUndergradHostingEvidence: false,
+        },
+      },
+    );
+    await db.collection('research_entities').insertOne({
+      _id: openId,
+      slug: 'open-lab',
+      name: 'Open Lab',
+      kind: 'group',
+      departments: ['Computer Science'],
+      studentVisibilityTier: 'student_ready',
+      shortDescription:
+        'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+      fullDescription:
+        'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+      sourceUrls: ['https://example.yale.edu/labs/open-lab'],
+      undergraduateCurrentAvailability: 'OPEN',
+      accessAcceptanceLevel: 'verified',
+      hasUndergradHostingEvidence: true,
+      archived: false,
+    });
+
+    await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString(), openId.toHexString()]);
+    const savedEntities = await getSavedResearchEntities(NETID);
+    const byId = new Map(savedEntities.map((entity) => [entity._id, entity]));
+
+    const open = byId.get(openId.toHexString());
+    expect(open?.undergraduateCurrentAvailability).toBe('OPEN');
+    expect(open?.accessAcceptanceLevel).toBe('verified');
+    expect(open?.hasUndergradHostingEvidence).toBe(true);
+
+    const neutral = byId.get(ENTITY_ID.toHexString());
+    expect(neutral).toBeDefined();
+    expect(neutral).not.toHaveProperty('undergraduateCurrentAvailability');
+    expect(neutral).not.toHaveProperty('accessAcceptanceLevel');
+    expect(neutral).not.toHaveProperty('hasUndergradHostingEvidence');
+  });
 });

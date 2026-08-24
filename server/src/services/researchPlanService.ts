@@ -58,6 +58,9 @@ export interface SavedResearchEntitySummary {
   school?: string;
   shortDescription?: string;
   description?: string;
+  undergraduateCurrentAvailability?: string;
+  accessAcceptanceLevel?: string;
+  hasUndergradHostingEvidence?: boolean;
 }
 
 export interface ResearchPlanChecklistItem {
@@ -109,7 +112,7 @@ export const boundSavedResearchEntitySummaryText = (
 };
 
 const savedResearchEntityProjection =
-  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl';
+  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl undergraduateCurrentAvailability accessAcceptanceLevel hasUndergradHostingEvidence';
 
 const exportTextWithoutDirectContact = (value: unknown): string =>
   safeSpreadsheetCell(redactDirectContactInfo(String(value || '')));
@@ -301,6 +304,38 @@ export const normalizeResearchPlanUpdate = (plan: ResearchPlanInput): Record<str
   return update;
 };
 
+const SERVED_UNDERGRADUATE_AVAILABILITY_VALUES: ReadonlySet<string> = new Set([
+  'OPEN',
+  'ROLLING',
+  'NOT_CURRENTLY_AVAILABLE',
+]);
+
+const SERVED_ACCESS_ACCEPTANCE_LEVELS: ReadonlySet<string> = new Set(['verified', 'likely']);
+
+const servedUndergraduateAccessFields = (
+  entity: any,
+): Pick<
+  SavedResearchEntitySummary,
+  'undergraduateCurrentAvailability' | 'accessAcceptanceLevel' | 'hasUndergradHostingEvidence'
+> => {
+  const fields: Pick<
+    SavedResearchEntitySummary,
+    'undergraduateCurrentAvailability' | 'accessAcceptanceLevel' | 'hasUndergradHostingEvidence'
+  > = {};
+  const availability = String(entity.undergraduateCurrentAvailability || '');
+  if (SERVED_UNDERGRADUATE_AVAILABILITY_VALUES.has(availability)) {
+    fields.undergraduateCurrentAvailability = availability;
+  }
+  const acceptance = String(entity.accessAcceptanceLevel || '');
+  if (SERVED_ACCESS_ACCEPTANCE_LEVELS.has(acceptance)) {
+    fields.accessAcceptanceLevel = acceptance;
+  }
+  if (entity.hasUndergradHostingEvidence === true) {
+    fields.hasUndergradHostingEvidence = true;
+  }
+  return fields;
+};
+
 const visibleSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,
 ): Promise<SavedResearchEntitySummary[]> => {
@@ -334,6 +369,7 @@ const visibleSavedResearchEntities = async (
           : [],
         ...(entity.school ? { school: String(entity.school) } : {}),
         ...(shortDescription ? { shortDescription } : {}),
+        ...servedUndergraduateAccessFields(entity),
       },
     ];
   });

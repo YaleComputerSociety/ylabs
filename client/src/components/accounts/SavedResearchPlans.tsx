@@ -11,10 +11,16 @@ import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import { safeRouteSegment } from '../../utils/url';
+import {
+  deriveUndergraduateAccessStatus,
+  undergraduateAccessSortRank,
+  type UndergraduateAccessStatus,
+} from '../../utils/undergraduateAccessStatus';
 import ResearchHomeComparison from './ResearchHomeComparison';
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number) => void;
+  onOpenCountChange?: (count: number) => void;
 }
 
 interface SavedResearchEntity {
@@ -26,6 +32,9 @@ interface SavedResearchEntity {
   departments?: string[];
   school?: string;
   shortDescription?: string;
+  undergraduateCurrentAvailability?: string;
+  accessAcceptanceLevel?: string;
+  hasUndergradHostingEvidence?: boolean;
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -54,7 +63,18 @@ const entitySubtitle = (entity: SavedResearchEntity): string => {
   return parts.join(' · ');
 };
 
-const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
+const accessBadgeClass = (tone: UndergraduateAccessStatus['tone']): string => {
+  switch (tone) {
+    case 'open':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+    case 'evidence':
+      return 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]';
+    default:
+      return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-500';
+  }
+};
+
+const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchPlansProps) => {
   const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -143,6 +163,35 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     [entities, savedSlugs],
   );
 
+  const accessStatuses = useMemo(() => {
+    const statuses = new Map<string, UndergraduateAccessStatus>();
+    for (const entity of visibleEntities) {
+      const status = deriveUndergraduateAccessStatus(entity);
+      if (status) statuses.set(entity._id, status);
+    }
+    return statuses;
+  }, [visibleEntities]);
+
+  const orderedEntities = useMemo(
+    () =>
+      [...visibleEntities].sort(
+        (a, b) =>
+          undergraduateAccessSortRank(accessStatuses.get(a._id) || null) -
+          undergraduateAccessSortRank(accessStatuses.get(b._id) || null),
+      ),
+    [visibleEntities, accessStatuses],
+  );
+
+  const currentlyOpenCount = useMemo(
+    () =>
+      visibleEntities.filter((entity) => accessStatuses.get(entity._id)?.isCurrentlyOpen).length,
+    [visibleEntities, accessStatuses],
+  );
+
+  useEffect(() => {
+    onOpenCountChange?.(currentlyOpenCount);
+  }, [currentlyOpenCount, onOpenCountChange]);
+
   const selectableIds = useMemo(
     () => new Set(visibleEntities.map((entity) => entity._id)),
     [visibleEntities],
@@ -219,8 +268,9 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
 
       {visibleEntities.length > 0 ? (
         <ul>
-          {visibleEntities.map((entity) => {
+          {orderedEntities.map((entity) => {
             const status = saveStatuses[entity._id];
+            const accessStatus = accessStatuses.get(entity._id) || null;
             const isEditing = editingId === entity._id;
             const note = notes[entity._id] || '';
             return (
@@ -254,6 +304,20 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         </h3>
                         {entitySubtitle(entity) && (
                           <p className="truncate text-xs text-gray-500">{entitySubtitle(entity)}</p>
+                        )}
+                        {accessStatus && (
+                          <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-semibold ${accessBadgeClass(
+                                accessStatus.tone,
+                              )}`}
+                            >
+                              {accessStatus.label}
+                            </span>
+                            {accessStatus.tone === 'muted' && accessStatus.detail && (
+                              <span className="text-xs text-gray-500">{accessStatus.detail}</span>
+                            )}
+                          </p>
                         )}
                       </div>
                     </div>
