@@ -284,13 +284,13 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
   return value;
 };
 
-const toValidDate = (value: unknown): Date | undefined => {
+export const toValidDate = (value: unknown): Date | undefined => {
   if (!value) return undefined;
   const date = value instanceof Date ? value : new Date(String(value));
   return Number.isNaN(date.getTime()) ? undefined : date;
 };
 
-const deadlineIsPast = (value: unknown, now: Date): boolean => {
+export const deadlineIsPast = (value: unknown, now: Date): boolean => {
   const date = toValidDate(value);
   return date !== undefined && date.getTime() < now.getTime();
 };
