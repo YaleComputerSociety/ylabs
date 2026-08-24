@@ -136,6 +136,14 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     deadlineParsed: number;
     deadlineMissing: number;
   };
+  healthSciencesSummerPrograms?: {
+    seeded: number;
+    directoryDiscovered: number;
+    fetched: number;
+    emitted: number;
+    deadlineParsed: number;
+    deadlineMissing: number;
+  };
   evidenceCoverageImpact?: {
     assessed: number;
     improved: number;

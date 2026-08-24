@@ -162,6 +162,24 @@ export const FELLOWSHIP_PROGRAM_SOURCE_REGISTRY: FellowshipProgramEntry[] = [
     coveredBy: ['yale-college-fellowships-office'],
     notes: 'Seeded in DEFAULT_PAGE_URLS; parsed by the generic public-page detail/catalog extractor.',
   },
+  {
+    url: 'https://ysph.yale.edu/school-of-public-health/special-programs/',
+    catalogName: 'Yale health-sciences undergraduate summer research programs (YSM / YSPH / Nursing)',
+    owningOffice: 'Yale School of Medicine, Public Health, and Nursing (institutes/centers)',
+    status: 'covered',
+    impactTier: 3,
+    coveredBy: ['yale-health-sciences-summer-programs'],
+    approxProgramCount: 6,
+    seedUrls: [
+      'https://medicine.yale.edu/biomedsurf/',
+      'https://medicine.yale.edu/center-clinical-investigation/for-students-and-interns/summer-enrichment-research-experience/',
+      'https://medicine.yale.edu/labmed/ycceh/enrichment/summer-scholars-program/',
+      'https://ysph.yale.edu/school-of-public-health/special-programs/big-data-summer-immersion-at-yale/',
+      'https://ysph.yale.edu/school-of-public-health/special-programs/summer-research-experience-environmental-health/',
+    ],
+    notes:
+      'Biomedical/health-sciences analogue of the NSF-REU lane, covered by the dedicated yale-health-sciences-summer-programs source. It carries the individual program pages as curated seeds (see seedUrls) and discovers more from the Yale-owned YSPH special-programs listing (crawl seed only, never cited; #516/#549), citing each program\'s own official page. The two already-covered WHR training and YCMD summer-internships URLs stay owned by yale-college-fellowships-office and are explicitly excluded here so a program is never minted twice (#1712).',
+  },
 
   // ---- Tier 4: single named programs / awards / department pathways ----------------
   {
