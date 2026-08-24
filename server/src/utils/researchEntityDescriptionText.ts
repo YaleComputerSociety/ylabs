@@ -824,6 +824,25 @@ const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string | 
       return `${demonstrative} ${noun} ${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`;
     },
   ],
+  /**
+   * A possessive lead whose noun phrase is more than one word and is
+   * immediately followed by a copula/auxiliary ("My research interests
+   * are...", "Our career goals have been...") needs the demonstrative's
+   * number to agree with the phrase's actual head noun (its LAST word,
+   * matching the copula that already follows it), not the single word the
+   * generic catch-all below would grab first (#1806: "My research
+   * interests are" was becoming "This research interests are" - "This"
+   * agreeing with "research", a word the sentence's own verb never agreed
+   * with in the first place).
+   */
+  [
+    /(^|[.!?]\s+)(?:My|Our)\s+((?:[A-Za-z]+\s+){0,4}?[A-Za-z]+)(?=\s+(?:is|are|was|were|has|have)\b)/g,
+    (_match: string, lead: string, phrase: string) => {
+      const words = phrase.trim().split(/\s+/);
+      const headNoun = words[words.length - 1];
+      return `${lead}${pluralAwareDemonstrative(headNoun)} ${phrase}`;
+    },
+  ],
   [
     /(^|[.!?]\s+)(?:My|Our)\s+(\w+)\b/g,
     (_match: string, lead: string, noun: string) => `${lead}${pluralAwareDemonstrative(noun)} ${noun}`,

@@ -1070,6 +1070,25 @@ describe('revoiceFirstPersonResearchLead', () => {
     expect(revoiceFirstPersonResearchLead('')).toBe('');
     expect(revoiceFirstPersonResearchLead(undefined)).toBe('');
   });
+
+  it('agrees the demonstrative with the noun phrase\'s actual head noun before a copula, not the first captured word (#1806)', () => {
+    expect(revoiceFirstPersonResearchLead('Our goal is to understand disease mechanisms.')).toBe(
+      'This goal is to understand disease mechanisms.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead('My research interests are broad and span several disciplines.'),
+    ).toBe('These research interests are broad and span several disciplines.');
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Studies coral reefs. Our lab goals are to translate findings into therapies.',
+      ),
+    ).toBe('Studies coral reefs. These lab goals are to translate findings into therapies.');
+    expect(
+      revoiceFirstPersonResearchLead(
+        'My primary research focus is mechanisms of endothelial dysfunction in preeclampsia.',
+      ),
+    ).toBe('This primary research focus is mechanisms of endothelial dysfunction in preeclampsia.');
+  });
 });
 
 describe('repairSubjectlessResearchLead', () => {
