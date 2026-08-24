@@ -474,8 +474,15 @@ export function deriveAccessArtifactsFromObservations(
     );
   }
 
+  // A microsite that explicitly states it does not take undergraduates still
+  // usually lists generic contact instructions (e.g. "email the PI") aimed at
+  // prospective postdocs/graduate students. Those instructions must not be
+  // minted into undergraduate action evidence: an explicit negative verdict
+  // vetoes the credit, matching the join-page path's positive-evidence guard
+  // above so an "open to undergrads: no" lab is never surfaced as reach-out.
   const contactInstructionObservations = byField.get('contactInstructionsQuote') || [];
-  if (contactInstructionObservations.length > 0) {
+  const hasExplicitUndergradExclusion = negativeAccessEvidence.length > 0;
+  if (contactInstructionObservations.length > 0 && !hasExplicitUndergradExclusion) {
     const score = maxConfidence(contactInstructionObservations);
     accessSignals.push(
       makeSignal({
