@@ -642,7 +642,9 @@ export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
  *     a positive integer. Open prose ("we have many undergrads") is too
  *     unreliable to write a count from, and alumni / non-Yale visiting undergrads
  *     never count toward it. Confidence 0.5.
- *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty.
+ *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty, plausible,
+ *     and passes the same recency/institution gate as currentUndergradCount, so
+ *     a historical or non-Yale snippet never gets displayed as current evidence.
  *     Confidence 0.5.
  *   - lastObservedAt: always emitted (to refresh the freshness clock).
  */
@@ -813,7 +815,7 @@ export function extractionToObservations(
   }
 
   const quote = (extraction.evidenceQuote || '').trim();
-  if (quote && isPlausibleUndergradEvidenceQuote(quote)) {
+  if (quote && isPlausibleUndergradEvidenceQuote(quote) && isCurrentYaleUndergradEvidence(quote)) {
     out.push({
       ...base,
       sourceUrl: quoteSourceUrl,

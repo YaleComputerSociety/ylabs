@@ -56,6 +56,10 @@ import {
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
 } from './undergraduateLogisticsMaterializer';
 import { isPlausibleUndergradEvidenceQuote } from './undergradEvidenceQuoteValidation';
+import {
+  isHistoricalUndergradEvidence,
+  namesNonYaleInstitution,
+} from './sources/labMicrositeUndergradLLMExtractor';
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
 import { applyResearchEntityResearchAreaCanonicalization } from './researchAreaCanonicalization';
@@ -314,7 +318,9 @@ export function shouldIgnoreObservationForEntityMaterialization(
     isResearchEntityObservationType(entityType) &&
     observation.field === 'undergradEvidenceQuote' &&
     typeof observation.value === 'string' &&
-    !isPlausibleUndergradEvidenceQuote(observation.value)
+    (!isPlausibleUndergradEvidenceQuote(observation.value) ||
+      isHistoricalUndergradEvidence(observation.value) ||
+      namesNonYaleInstitution(observation.value))
   ) {
     return true;
   }

@@ -879,6 +879,28 @@ describe('extractionToObservations', () => {
     expect(countObservationValue(visiting)).toBe(0);
   });
 
+  it('does not emit undergradEvidenceQuote from a historical or non-Yale evidenceQuote (#1372)', () => {
+    const historical: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 40,
+      evidenceQuote: 'Matthew Barber (Physics, Yale College, 2009); Associate at Flexpoint Ford',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    const historicalObs = extractionToObservations('lab-historical', 'https://x/', historical, fixedDate);
+    expect(historicalObs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
+
+    const visiting: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 5,
+      evidenceQuote: 'Young Lin, undergraduate, Emory University',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    const visitingObs = extractionToObservations('lab-visiting', 'https://x/', visiting, fixedDate);
+    expect(visitingObs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
+  });
+
   it('recency and institution gates classify roster snippets correctly (#1314)', () => {
     expect(isHistoricalUndergradEvidence('Former undergraduate, alumni network')).toBe(true);
     expect(isHistoricalUndergradEvidence('Jane Doe (2008-2010)')).toBe(true);
