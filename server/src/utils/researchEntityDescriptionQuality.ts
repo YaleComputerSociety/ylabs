@@ -8,6 +8,7 @@ import {
   isResearchAreaTemplateLeakText,
   isStudiesResearchAreaEchoDescription,
   isStudiesTemplateGlueMalformed,
+  stripLeadingRoleTitleHeaderSentences,
 } from './descriptionHygiene';
 import {
   isAcademicAppointmentDescription,
@@ -2417,11 +2418,12 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
 }
 
 export function deriveShortDescriptionFromFullDescription(fullDescription: unknown): string {
-  const full = textValue(fullDescription);
-  const fullQuality = fullDescriptionQuality(full);
+  const rawFull = textValue(fullDescription);
+  const fullQuality = fullDescriptionQuality(rawFull);
   const onlyFirstPersonFull =
     fullQuality.flags.length === 1 && fullQuality.flags.includes('first-person');
   if (!fullQuality.isUseful && !onlyFirstPersonFull) return '';
+  const full = stripLeadingRoleTitleHeaderSentences(rawFull);
   if (isConciseSpecificResearchDescription(full)) return full;
   const sentences = sentenceList(full);
   if (sentences.length === 0) return '';
