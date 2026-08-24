@@ -91,6 +91,15 @@ export interface CenterConfig {
    * group + member + relationship observations then all attach to that entity.
    */
   entityKey?: string;
+  /**
+   * Identity/home URL emitted as the entity `websiteUrl` when the crawl `url` is
+   * a member-roster subpage distinct from the entity's own landing page (e.g. a
+   * West Campus institute whose members live under `/institutes/<slug>/<slug>-labs`
+   * while its identity page is `/institutes/<slug>`). Also added to `sourceUrls`.
+   * Defaults to `url` when unset. Ignored in `entityKey` enrichment mode, where the
+   * owning source keeps the identity website.
+   */
+  homeUrl?: string;
   /** Set when the page is JS-rendered or behind auth — runner logs and skips. */
   jsRenderedSkip?: boolean;
   /** Reason string used in the log line when jsRenderedSkip is true. */
@@ -304,7 +313,7 @@ export const ycgaExtractor: CenterExtractor = (html, ctx) => {
 interface PeopleCardSelectors {
   card: string;
   headingLink: string;
-  subheading: string;
+  subheading?: string;
   snippet?: string;
 }
 
@@ -338,7 +347,9 @@ function collectPeopleCards(
     if (!dedupeKey || seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
-    const subheading = card.find(selectors.subheading).first().text().replace(/\s+/g, ' ').trim();
+    const subheading = selectors.subheading
+      ? card.find(selectors.subheading).first().text().replace(/\s+/g, ' ').trim()
+      : '';
     const snippet = selectors.snippet
       ? card.find(selectors.snippet).first().text().replace(/\s+/g, ' ').trim()
       : '';
@@ -442,6 +453,59 @@ export const naturalCarbonCaptureExtractor: CenterExtractor = (html, ctx) =>
     root: '.component-wrapper',
     keepHeading: (headingText) => FACULTY_ROSTER_SECTION_HEADING.test(headingText),
   });
+
+const CUSTOM_CARD_SELECTORS: PeopleCardSelectors = {
+  card: '.custom-card',
+  headingLink: '.custom-card__heading-link',
+  snippet: '.custom-card__snippet',
+};
+
+const LABS_COLLECTION_HEADING = /\blabs?\b/i;
+
+/**
+ * YaleSites "custom-card" collection used by the Yale Cancer Biology Institute
+ * landing page (`westcampus.yale.edu/institutes/yale-cancer-biology-institute`),
+ * whose "Meet the labs of the Yale Cancer Biology Institute" block is the member
+ * roster. Unlike the other West Campus institutes, membership is listed by lab
+ * name rather than PI name, and each card links to the lab's own home:
+ *   <div class="custom-card-collection">
+ *     <h2 class="custom-card-collection__heading">Meet the labs …</h2>
+ *     <li class="custom-card">
+ *       <a class="custom-card__heading-link" href="/alarcon-lab">Alarcón Lab</a>
+ *     </li>
+ *   </div>
+ * The heading gate scopes extraction to the labs collection so sibling
+ * custom-card collections (news, events) are dropped.
+ */
+export const customCardLabsExtractor: CenterExtractor = (html, ctx) =>
+  extractPeopleCardsInSections(html, ctx, CUSTOM_CARD_SELECTORS, {
+    heading: '.custom-card-collection__heading',
+    root: '.custom-card-collection',
+    keepHeading: (headingText) => LABS_COLLECTION_HEADING.test(headingText),
+  });
+
+const CONTENT_SPOTLIGHT_SELECTORS: PeopleCardSelectors = {
+  card: '.content-spotlight-portrait',
+  headingLink: '.content-spotlight-portrait__ctas a',
+};
+
+/**
+ * YaleSites "content-spotlight-portrait" block used by the Yale Microbial
+ * Sciences Institute faculty-research page (`microbialsciences.yale.edu/faculty-research`).
+ * Each faculty is one block whose CTA list carries the PI profile link first and
+ * the lab link second, alongside a research blurb:
+ *   <div class="content-spotlight-portrait">
+ *     <div class="content-spotlight-portrait__text">…blurb…</div>
+ *     <div class="content-spotlight-portrait__ctas">
+ *       <a href="…/profile/andrew-goodman">Andrew Goodman</a>
+ *       <a href="…/lab/goodman">Goodman Lab</a>
+ *     </div>
+ *   </div>
+ * Only the first CTA (the PI profile) is read so the member resolves to a Yale
+ * researcher; blocks without a CTA link are skipped.
+ */
+export const contentSpotlightFacultyExtractor: CenterExtractor = (html, ctx) =>
+  extractPeopleCards(html, ctx, CONTENT_SPOTLIGHT_SELECTORS);
 
 /**
  * Yale FDS (Institute for Foundations of Data Science) people page
@@ -651,6 +715,65 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     entityKey: 'yse-natural-carbon-capture',
   },
   {
+    centerKey: 'wc-nanobiology',
+    centerName: 'Yale Nanobiology Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://westcampus.yale.edu/institutes/yale-nanobiology-institute/yale-nanobiology-institute-research-labs',
+    homeUrl: 'https://westcampus.yale.edu/institutes/yale-nanobiology-institute',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    centerKey: 'wc-biomolecular-design',
+    centerName: 'Yale Institute of Biomolecular Design & Discovery',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://westcampus.yale.edu/institutes/yale-institute-of-biomolecular-design-and-discovery/yale-institute-of-biomolecular',
+    homeUrl: 'https://westcampus.yale.edu/institutes/yale-institute-of-biomolecular-design-and-discovery',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    centerKey: 'wc-energy-sciences',
+    centerName: 'Yale Energy Sciences Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://westcampus.yale.edu/institutes/yale-energy-sciences-institute/yale-energy-sciences-institute-labs',
+    homeUrl: 'https://westcampus.yale.edu/institutes/yale-energy-sciences-institute',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    centerKey: 'wc-systems-biology',
+    centerName: 'Yale Systems Biology Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://westcampus.yale.edu/institutes/yale-systems-biology-institute/yale-systems-biology-institute-labs',
+    homeUrl: 'https://westcampus.yale.edu/institutes/yale-systems-biology-institute',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    centerKey: 'wc-microbial-sciences',
+    centerName: 'Yale Microbial Sciences Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://microbialsciences.yale.edu/faculty-research',
+    homeUrl: 'https://microbialsciences.yale.edu/',
+    paginated: false,
+    extractor: contentSpotlightFacultyExtractor,
+  },
+  {
+    centerKey: 'wc-cancer-biology',
+    centerName: 'Yale Cancer Biology Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
+    paginated: false,
+    extractor: customCardLabsExtractor,
+  },
+  {
     centerKey: 'jackson-centers',
     centerName: 'Jackson School of Global Affairs (centers index)',
     schoolName: 'Jackson School of Global Affairs',
@@ -716,11 +839,14 @@ export function centerToGroupObservations(
   const declaredDepts =
     config.departments && config.departments.length > 0 ? config.departments : [];
 
+  const homeUrl = config.homeUrl ?? config.url;
+  const sourceUrls =
+    config.homeUrl && config.homeUrl !== sourceUrl ? [sourceUrl, config.homeUrl] : [sourceUrl];
   const obs: ObservationInput[] = [
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: config.centerName },
     { ...base, field: 'kind', value: config.kind },
-    { ...base, field: 'sourceUrls', value: [sourceUrl] },
+    { ...base, field: 'sourceUrls', value: sourceUrls },
   ];
   // In enrichment mode (`entityKey` overrides to an entity another source
   // already minted) the crawl entry point is a `/people` roster page, not a
@@ -728,7 +854,7 @@ export function centerToGroupObservations(
   // target's canonical website, so the roster only adds members and provenance
   // and leaves the identity website to the owning source.
   if (!config.entityKey) {
-    obs.push({ ...base, field: 'websiteUrl', value: config.url });
+    obs.push({ ...base, field: 'websiteUrl', value: homeUrl });
   }
   if (config.schoolName) {
     obs.push({ ...base, field: 'school', value: config.schoolName });

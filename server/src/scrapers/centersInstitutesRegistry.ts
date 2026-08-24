@@ -109,7 +109,79 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     studentImpactTier: 1,
     approxMemberCount: 55,
     notes:
-      'Evaluated in #1295 (COMPLETED). One shared faculty directory spans the West Campus science institutes named on the Provost list - Institute of Biomolecular Design & Discovery (IBDD), Cancer Biology Institute (YCBI), Microbial Sciences Institute, Energy Sciences Institute, Nanobiology Institute, Systems Biology Institute. The static HTML does not partition faculty by institute (only directors are labeled), so it cannot yield per-institute rosters; not wired to avoid minting a single campus-wide umbrella entity that misrepresents six distinct institutes. A bespoke per-institute crawl (or an LLM affiliation split) is the only path and is out of scope for the mechanism-grouped burn-down (#1376), so this row is skipped rather than left as a live gap.',
+      'Evaluated in #1295 (COMPLETED). One shared faculty directory spans the six West Campus science institutes. The static HTML does not partition faculty by institute (only directors are labeled), so this shared page cannot yield per-institute rosters and stays skipped to avoid minting a single campus-wide umbrella entity that misrepresents six distinct institutes. The per-institute split #1295/#1376 deferred is now delivered in #1448: each institute exposes its own member-labs subpage that DOES partition membership, so the six institutes are wired as first-class covered rows below (wc-nanobiology, wc-biomolecular-design, wc-energy-sciences, wc-systems-biology, wc-microbial-sciences, wc-cancer-biology) rather than off this shared directory.',
+  },
+  {
+    url: 'https://westcampus.yale.edu/institutes/yale-nanobiology-institute/yale-nanobiology-institute-research-labs',
+    centerName: 'Yale Nanobiology Institute',
+    school: '',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 1,
+    coveredByCenterKey: 'wc-nanobiology',
+    approxMemberCount: 9,
+    notes:
+      "Wired in #1448 via the shared YaleSites directory-listing-card extractor pointed at the institute's own member-labs subpage (crawl entry point); the entity websiteUrl is the /institutes/yale-nanobiology-institute landing page via the config homeUrl override. Each card links to the member lab's own home (medicine.yale.edu/lab/..., campuspress.yale.edu/...), never the westcampus institutes index. Members span Cell Biology, MB&B, and Biomedical Engineering; heavy home-department overlap is expected and deduped by the materializer resolve-or-skip gate.",
+  },
+  {
+    url: 'https://westcampus.yale.edu/institutes/yale-institute-of-biomolecular-design-and-discovery/yale-institute-of-biomolecular',
+    centerName: 'Yale Institute of Biomolecular Design & Discovery',
+    school: '',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 1,
+    coveredByCenterKey: 'wc-biomolecular-design',
+    approxMemberCount: 7,
+    notes:
+      'Wired in #1448 via the directory-listing-card extractor on the institute member-labs subpage; entity websiteUrl is the /institutes/yale-institute-of-biomolecular-design-and-discovery landing page via homeUrl. Members span Chemistry and MB&B (Strobel, Crawford, Slavoff, Simon); each card cites the lab/faculty profile home.',
+  },
+  {
+    url: 'https://westcampus.yale.edu/institutes/yale-energy-sciences-institute/yale-energy-sciences-institute-labs',
+    centerName: 'Yale Energy Sciences Institute',
+    school: '',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 1,
+    coveredByCenterKey: 'wc-energy-sciences',
+    approxMemberCount: 15,
+    notes:
+      'Wired in #1448 via the directory-listing-card extractor on the institute member-labs subpage; entity websiteUrl is the /institutes/yale-energy-sciences-institute landing page via homeUrl. Members span Chemistry, Applied Physics, and Engineering (Batista, Brudvig, Ozolins, Qiu); each card cites the lab/faculty profile home.',
+  },
+  {
+    url: 'https://westcampus.yale.edu/institutes/yale-systems-biology-institute/yale-systems-biology-institute-labs',
+    centerName: 'Yale Systems Biology Institute',
+    school: '',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 1,
+    coveredByCenterKey: 'wc-systems-biology',
+    approxMemberCount: 11,
+    notes:
+      'Wired in #1448 via the directory-listing-card extractor on the institute member-labs subpage (Faculty & Researchers plus Affiliated Faculty sections); entity websiteUrl is the /institutes/yale-systems-biology-institute landing page via homeUrl. Members span MCDB, Cell Biology, Biomedical Engineering, and MB&B (Levchenko, Isaacs, MacMicking, Gerstein); each card cites the lab/faculty profile home.',
+  },
+  {
+    url: 'https://microbialsciences.yale.edu/faculty-research',
+    centerName: 'Yale Microbial Sciences Institute',
+    school: '',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 1,
+    coveredByCenterKey: 'wc-microbial-sciences',
+    approxMemberCount: 7,
+    notes:
+      "Wired in #1448 via the contentSpotlightFacultyExtractor: the institute has its own subdomain and its faculty-research page renders one content-spotlight-portrait block per faculty, whose first CTA is the PI profile (the second is the lab). Entity websiteUrl is the microbialsciences.yale.edu home via homeUrl. Members span Microbial Pathogenesis, MCDB, and EEB (Goodman, Mougous, Hatzios, Dal Bello); the /labmembers page (trainees, not PI-led labs) is deliberately not crawled.",
+  },
+  {
+    url: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
+    centerName: 'Yale Cancer Biology Institute',
+    school: '',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 1,
+    coveredByCenterKey: 'wc-cancer-biology',
+    approxMemberCount: 9,
+    notes:
+      'Wired in #1448 via the customCardLabsExtractor, section-scoped to the "Meet the labs of the Yale Cancer Biology Institute" custom-card collection on the institute landing page (which doubles as its identity website and member roster). Unlike the other five institutes this page lists membership by lab name (Alarcón Lab, Muzumdar Lab, Schlessinger Lab) rather than PI name, so member observations cite each lab home and enrich via the resolve-or-skip gate; the institute entity itself is the primary net-new research home. Sibling news/event custom-card collections are dropped by the heading gate.',
   },
 
   // ---- Tier 2: university-wide cross-cutting institutes / centers ------------------
