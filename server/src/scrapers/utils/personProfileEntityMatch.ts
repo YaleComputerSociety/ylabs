@@ -268,6 +268,16 @@ function yaleSchoolTokensFromEntity(entity: ResearchEntityIdentity): Set<string>
   return tokens;
 }
 
+// Yale Law School and the School of Management routinely cross-appoint the same
+// faculty (law-and-economics, corporate governance, financial regulation), so a
+// School of Management entity's own bio living at law.yale.edu (or vice versa) is
+// not a homonym collision - it is the entity's own page. Unlike the
+// TOLERANT_DIVERGENT_SCHOOL_SUBDOMAINS hosts, which stay soft-only pending an
+// independent-page check (issue #1413's same-name-different-person risk), this
+// specific pair carries no such name-collision precedent, so it is exempted from
+// the hard contradiction outright rather than merely downgraded to a soft signal.
+const CROSS_APPOINTMENT_COMPATIBLE_SCHOOL_PAIRS = new Set(['law:management', 'management:law']);
+
 /**
  * Whether a source URL's Yale school subdomain affirmatively contradicts the
  * school the entity itself records. Two people who share an exact full name but
@@ -276,7 +286,8 @@ function yaleSchoolTokensFromEntity(entity: ResearchEntityIdentity): Set<string>
  * check; only their schools disagree. A contradiction fires only when both the
  * URL host and the entity resolve to known-but-different schools, so a
  * discipline-neutral host or an entity with no recorded school never gates
- * (issue #1045, generalizing the medicine-host guard behind #585).
+ * (issue #1045, generalizing the medicine-host guard behind #585). A known
+ * cross-appointment-compatible pair (Law/Management) is never a contradiction.
  */
 export function sourceUrlSchoolContradictsEntity(
   value: unknown,
@@ -286,7 +297,11 @@ export function sourceUrlSchoolContradictsEntity(
   if (!urlSchool) return false;
   const entitySchools = yaleSchoolTokensFromEntity(entity);
   if (entitySchools.size === 0) return false;
-  return !entitySchools.has(urlSchool);
+  if (entitySchools.has(urlSchool)) return false;
+  for (const entitySchool of entitySchools) {
+    if (CROSS_APPOINTMENT_COMPATIBLE_SCHOOL_PAIRS.has(`${urlSchool}:${entitySchool}`)) return false;
+  }
+  return true;
 }
 
 // medicine.yale.edu, ysph.yale.edu, and seas.yale.edu are excluded from
