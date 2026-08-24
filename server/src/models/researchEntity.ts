@@ -342,6 +342,20 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       default: false,
     },
     /**
+     * True when the entity carries at least one allowlisted, evidence-backed
+     * documented-way-in access signal (a posted/recurring opening, application
+     * form, explicit contact route, undergraduate participation, or
+     * faculty-supervised student projects), excluding the REACH_OUT_PLAUSIBLE
+     * fallback and negative signals. Derived from Signal alongside
+     * accessAcceptanceLevel by researchEntityBrowseRankService and mirrored to
+     * the Meilisearch index as a filterable attribute so the "documented way
+     * in" browse filter is truthful. See #1519.
+     */
+    hasDocumentedWayIn: {
+      type: Boolean,
+      default: false,
+    },
+    /**
      * Current undergraduate-availability status ('OPEN' / 'ROLLING' /
      * 'NOT_CURRENTLY_AVAILABLE' / 'UNKNOWN'), re-derived from the
      * CURRENT_AVAILABILITY Signal by researchEntityBrowseRankService with its
@@ -397,6 +411,7 @@ researchEntitySchema.index({ lastObservedAt: 1 });
 researchEntitySchema.index({ archived: 1, browseRankScore: -1 });
 researchEntitySchema.index({ archived: 1, accessAcceptanceLevel: 1 });
 researchEntitySchema.index({ archived: 1, hasUndergradHostingEvidence: 1 });
+researchEntitySchema.index({ archived: 1, hasDocumentedWayIn: 1 });
 researchEntitySchema.index({ archived: 1, undergraduateCurrentAvailability: 1 });
 researchEntitySchema.index({ recentGrantCount: -1 });
 researchEntitySchema.index({ fundingAgencies: 1 });

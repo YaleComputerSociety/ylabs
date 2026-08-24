@@ -17,6 +17,7 @@ export interface ResearchGroupFilterInput {
   researchAreas?: string[];
   acceptanceLevel?: AcceptanceLevelInput;
   hostsUndergrads?: boolean;
+  hasDocumentedWayIn?: boolean;
   currentAvailability?: CurrentAvailabilityFilterInput[];
   studentVisibilityTier?: string[];
 }
@@ -96,6 +97,10 @@ export function buildResearchGroupFilterString(
 
   if (effectiveFilters.hostsUndergrads === true) {
     parts.push('hasUndergradHostingEvidence = true');
+  }
+
+  if (effectiveFilters.hasDocumentedWayIn === true) {
+    parts.push('hasDocumentedWayIn = true');
   }
 
   const currentAvailabilityClause = effectiveFilters.currentAvailability

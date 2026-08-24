@@ -69,6 +69,7 @@ type ResearchSearchFilters = PathwaySearchFilters & {
   entityType?: string[];
   school?: string[];
   hostsUndergrads?: boolean;
+  hasDocumentedWayIn?: boolean;
   currentAvailability?: CurrentAvailabilityFilterValue[];
 };
 
@@ -172,6 +173,7 @@ interface ResearchPageSnapshot {
   selectedResearchAreas: string[];
   selectedTypeBuckets: string[];
   hostsUndergrads: boolean;
+  documentedWayIn: boolean;
   selectedCurrentAvailability: CurrentAvailabilityFilterValue[];
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
@@ -430,6 +432,9 @@ const Research = () => {
   const [hostsUndergrads, setHostsUndergrads] = useState(
     () => restoredSnapshotRef.current?.hostsUndergrads ?? searchParams.get('undergrad') === '1',
   );
+  const [documentedWayIn, setDocumentedWayIn] = useState(
+    () => restoredSnapshotRef.current?.documentedWayIn ?? searchParams.get('documented') === '1',
+  );
   const [selectedCurrentAvailability, setSelectedCurrentAvailability] = useState<
     CurrentAvailabilityFilterValue[]
   >(
@@ -603,6 +608,7 @@ const Research = () => {
       researchAreas?: string[];
       types?: string[];
       hostsUndergrads?: boolean;
+      documentedWayIn?: boolean;
       currentAvailability?: CurrentAvailabilityFilterValue[];
     },
     options: { replace?: boolean; markPending?: boolean } = {},
@@ -619,6 +625,7 @@ const Research = () => {
     }
     if (nextState.types?.length) params.set('type', nextState.types.join(','));
     if (nextState.hostsUndergrads) params.set('undergrad', '1');
+    if (nextState.documentedWayIn) params.set('documented', '1');
     if (nextState.currentAvailability?.length) {
       params.set('availability', nextState.currentAvailability.join(','));
     }
@@ -827,6 +834,7 @@ const Research = () => {
           researchAreas: filters.researchAreas,
           types: researchTypeBucketKeysForEntityTypes(filters.entityType),
           hostsUndergrads: filters.hostsUndergrads === true,
+          documentedWayIn: filters.hasDocumentedWayIn === true,
           currentAvailability: filters.currentAvailability,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
@@ -1006,6 +1014,7 @@ const Research = () => {
     undergrads = hostsUndergrads,
     typeBuckets = selectedTypeBuckets,
     availability = selectedCurrentAvailability,
+    documented = documentedWayIn,
   ): ResearchSearchFilters => ({
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
@@ -1014,6 +1023,7 @@ const Research = () => {
       ? { entityType: entityTypesForResearchTypeBuckets(typeBuckets) }
       : {}),
     ...(undergrads ? { hostsUndergrads: true } : {}),
+    ...(documented ? { hasDocumentedWayIn: true } : {}),
     ...(availability.length ? { currentAvailability: availability } : {}),
   });
 
@@ -1103,6 +1113,7 @@ const Research = () => {
     const urlResearchAreas = readSearchParamCsv(searchParams, 'researchAreas');
     const urlTypeBuckets = readResearchTypeBucketKeys(readSearchParamCsv(searchParams, 'type'));
     const urlHostsUndergrads = searchParams.get('undergrad') === '1';
+    const urlDocumentedWayIn = searchParams.get('documented') === '1';
     const urlCurrentAvailability = readSearchParamList(
       searchParams,
       'availability',
@@ -1162,6 +1173,10 @@ const Research = () => {
       setHostsUndergrads(urlHostsUndergrads);
       return;
     }
+    if (documentedWayIn !== urlDocumentedWayIn) {
+      setDocumentedWayIn(urlDocumentedWayIn);
+      return;
+    }
     if (selectedCurrentAvailability.join(',') !== urlCurrentAvailability.join(',')) {
       setSelectedCurrentAvailability(urlCurrentAvailability);
       return;
@@ -1174,6 +1189,7 @@ const Research = () => {
         ? { entityType: entityTypesForResearchTypeBuckets(urlTypeBuckets) }
         : {}),
       ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
+      ...(urlDocumentedWayIn ? { hasDocumentedWayIn: true } : {}),
       ...(urlCurrentAvailability.length ? { currentAvailability: urlCurrentAvailability } : {}),
     };
 
@@ -1271,6 +1287,7 @@ const Research = () => {
     selectedResearchAreas,
     selectedTypeBuckets,
     hostsUndergrads,
+    documentedWayIn,
     selectedCurrentAvailability,
     departmentSearchTargetByLabel,
     departmentSearch,
@@ -1294,6 +1311,7 @@ const Research = () => {
       selectedResearchAreas,
       selectedTypeBuckets,
       hostsUndergrads,
+      documentedWayIn,
       selectedCurrentAvailability,
       sortBy,
       sortOrder,
@@ -1327,6 +1345,7 @@ const Research = () => {
     selectedResearchAreas,
     selectedTypeBuckets,
     hostsUndergrads,
+    documentedWayIn,
     selectedCurrentAvailability,
     sortBy,
     sortOrder,
@@ -1474,6 +1493,7 @@ const Research = () => {
     researchAreas?: string[];
     typeBuckets?: string[];
     hostsUndergrads?: boolean;
+    documentedWayIn?: boolean;
     currentAvailability?: CurrentAvailabilityFilterValue[];
   }) => {
     const school = next.school ?? selectedSchool;
@@ -1481,6 +1501,7 @@ const Research = () => {
     const areas = next.researchAreas ?? selectedResearchAreas;
     const typeBuckets = next.typeBuckets ?? selectedTypeBuckets;
     const undergrads = next.hostsUndergrads ?? hostsUndergrads;
+    const documented = next.documentedWayIn ?? documentedWayIn;
     const availability = next.currentAvailability ?? selectedCurrentAvailability;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (school !== selectedSchool) {
@@ -1507,6 +1528,12 @@ const Research = () => {
         filter: 'hosts_undergrads',
       });
     }
+    if (documented !== documentedWayIn) {
+      filterChanges.push({
+        operation: documented ? 'apply' : 'remove',
+        filter: 'documented_way_in',
+      });
+    }
     if (availability.join(',') !== selectedCurrentAvailability.join(',')) {
       filterChanges.push({
         operation: availability.length > selectedCurrentAvailability.length ? 'apply' : 'remove',
@@ -1518,6 +1545,7 @@ const Research = () => {
     setSelectedResearchAreas(areas);
     setSelectedTypeBuckets(typeBuckets);
     setHostsUndergrads(undergrads);
+    setDocumentedWayIn(documented);
     setSelectedCurrentAvailability(availability);
     const filters = studentSearchFilters(
       school,
@@ -1526,6 +1554,7 @@ const Research = () => {
       undergrads,
       typeBuckets,
       availability,
+      documented,
     );
     if (!query.trim() && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
@@ -1672,6 +1701,7 @@ const Research = () => {
     typeBucketOptions,
     selectedTypeBuckets,
     hostsUndergrads,
+    documentedWayIn,
     currentAvailabilityOptions,
     selectedCurrentAvailability,
     isApplying: searchLoading,
@@ -1683,6 +1713,7 @@ const Research = () => {
     onResearchAreasChange: (areas: string[]) => applyStudentFilters({ researchAreas: areas }),
     onTypeBucketsChange: (buckets: string[]) => applyStudentFilters({ typeBuckets: buckets }),
     onHostsUndergradsChange: (value: boolean) => applyStudentFilters({ hostsUndergrads: value }),
+    onDocumentedWayInChange: (value: boolean) => applyStudentFilters({ documentedWayIn: value }),
     onCurrentAvailabilityChange: (values: string[]) =>
       applyStudentFilters({ currentAvailability: values as CurrentAvailabilityFilterValue[] }),
     onClearAll: () =>
@@ -1692,6 +1723,7 @@ const Research = () => {
         researchAreas: [],
         typeBuckets: [],
         hostsUndergrads: false,
+        documentedWayIn: false,
         currentAvailability: [],
       }),
   };
@@ -1710,7 +1742,8 @@ const Research = () => {
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
     selectedResearchAreas.length +
-    Number(hostsUndergrads);
+    Number(hostsUndergrads) +
+    Number(documentedWayIn);
   const researchAreaSuggestions = useMemo(
     () =>
       isZeroResultSearch
@@ -1731,6 +1764,7 @@ const Research = () => {
     setSelectedDepartment('');
     setSelectedResearchAreas([area]);
     setHostsUndergrads(false);
+    setDocumentedWayIn(false);
     void runSearchRef.current('', {
       filters: { researchAreas: [area] },
       hasFilterSelections: true,
@@ -2050,6 +2084,7 @@ const Research = () => {
                       selectedDepartment={selectedDepartment}
                       selectedResearchAreas={selectedResearchAreas}
                       hostsUndergrads={hostsUndergrads}
+                      documentedWayIn={documentedWayIn}
                       departmentLabel={departmentFacetLabel}
                       onRemoveSchool={() => applyStudentFilters({ school: '' })}
                       onRemoveDepartment={() => applyStudentFilters({ department: '' })}
@@ -2060,6 +2095,9 @@ const Research = () => {
                       }
                       onRemoveHostsUndergrads={() =>
                         applyStudentFilters({ hostsUndergrads: false })
+                      }
+                      onRemoveDocumentedWayIn={() =>
+                        applyStudentFilters({ documentedWayIn: false })
                       }
                       onClearAllFilters={researchFilterProps.onClearAll}
                       relaxedQuery={relaxedQuerySuggestion}

@@ -6,6 +6,7 @@ import {
   ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
   canonicalAcceptanceLevelFromSignals,
   hasUndergradHostingEvidenceFromSignals,
+  hasDocumentedWayInFromSignals,
 } from '../accessAcceptanceLevel';
 
 describe('accessAcceptanceLevel', () => {
@@ -123,5 +124,60 @@ describe('hasUndergradHostingEvidenceFromSignals (#1054)', () => {
         { type: 'NOT_CURRENTLY_AVAILABLE' },
       ]),
     ).toBe(false);
+  });
+});
+
+describe('hasDocumentedWayInFromSignals (#1519)', () => {
+  it('is true for a posted or recurring opening', () => {
+    expect(hasDocumentedWayInFromSignals([{ type: 'POSTED_OPENING' }])).toBe(true);
+    expect(hasDocumentedWayInFromSignals([{ type: 'RECURRING_PROGRAM' }])).toBe(true);
+    expect(hasDocumentedWayInFromSignals([{ type: 'APPLICATION_FORM_EXISTS' }])).toBe(true);
+    expect(hasDocumentedWayInFromSignals([{ type: 'APPLICATION_ONLY' }])).toBe(true);
+  });
+
+  it('is true for an explicit contact route', () => {
+    expect(hasDocumentedWayInFromSignals([{ type: 'CONTACT_INSTRUCTIONS_EXIST' }])).toBe(true);
+    expect(hasDocumentedWayInFromSignals([{ type: 'LAB_MANAGER_LISTED' }])).toBe(true);
+    expect(hasDocumentedWayInFromSignals([{ type: 'PROGRAM_MANAGER_LISTED' }])).toBe(true);
+  });
+
+  it('is true for undergraduate participation or supervised student projects', () => {
+    expect(hasDocumentedWayInFromSignals([{ type: 'PAST_UNDERGRADS' }])).toBe(true);
+    expect(hasDocumentedWayInFromSignals([{ type: 'CURRENT_UNDERGRADS' }])).toBe(true);
+    expect(
+      hasDocumentedWayInFromSignals([{ type: 'FACULTY_SUPERVISES_STUDENT_PROJECTS' }]),
+    ).toBe(true);
+  });
+
+  it('does not count the REACH_OUT_PLAUSIBLE fallback, even excerpt-backed (#696)', () => {
+    expect(hasDocumentedWayInFromSignals([{ type: 'REACH_OUT_PLAUSIBLE' }])).toBe(false);
+    expect(
+      hasDocumentedWayInFromSignals([
+        {
+          type: 'REACH_OUT_PLAUSIBLE',
+          excerpt: 'Interested undergraduates should reach out by email.',
+        },
+      ]),
+    ).toBe(false);
+  });
+
+  it('does not count negative signals or an empty signal set', () => {
+    expect(hasDocumentedWayInFromSignals([])).toBe(false);
+    expect(
+      hasDocumentedWayInFromSignals([
+        { type: 'NOT_CURRENTLY_AVAILABLE' },
+        { type: 'NO_EVIDENCE' },
+      ]),
+    ).toBe(false);
+  });
+
+  it('is true when at least one allowlisted signal is present alongside excluded ones', () => {
+    expect(
+      hasDocumentedWayInFromSignals([
+        { type: 'REACH_OUT_PLAUSIBLE' },
+        { type: 'NOT_CURRENTLY_AVAILABLE' },
+        { type: 'CURRENT_UNDERGRADS' },
+      ]),
+    ).toBe(true);
   });
 });

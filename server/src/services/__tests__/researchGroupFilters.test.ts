@@ -187,6 +187,30 @@ describe('buildResearchGroupFilterString', () => {
     });
   });
 
+  describe('hasDocumentedWayIn filter', () => {
+    it('true → filters on the documented-way-in projection', () => {
+      const filter = buildResearchGroupFilterString({ hasDocumentedWayIn: true });
+      expect(filter).toBe('archived = false AND hasDocumentedWayIn = true');
+    });
+
+    it('false or unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({ hasDocumentedWayIn: false })).toBe(
+        'archived = false',
+      );
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('is independent of the hosts-undergrads filter and combines via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        hostsUndergrads: true,
+        hasDocumentedWayIn: true,
+      });
+      expect(filter).toBe(
+        'archived = false AND hasUndergradHostingEvidence = true AND hasDocumentedWayIn = true',
+      );
+    });
+  });
+
   describe('currentAvailability filter', () => {
     it('single value → filters the current-availability field', () => {
       const filter = buildResearchGroupFilterString({ currentAvailability: ['OPEN'] });

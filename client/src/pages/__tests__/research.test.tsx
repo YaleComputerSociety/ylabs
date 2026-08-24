@@ -1073,6 +1073,87 @@ describe('Research page', () => {
     expect(screen.getByRole('button', { name: 'Remove Open now' })).toBeTruthy();
   });
 
+  it('round-trips the documented-way-in filter from the URL (#1519)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        estimatedTotalHits: 7,
+        facetDistribution: { hasDocumentedWayIn: { true: 7, false: 9 } },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&documented=1']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+    const researchSearchCall = mockedAxios.post.mock.calls.find(
+      ([url]) => url === '/research/search',
+    );
+    expect(researchSearchCall?.[1]).toEqual(
+      expect.objectContaining({
+        filters: { hasDocumentedWayIn: true },
+      }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Remove Has a documented way in' }),
+    ).toBeTruthy();
+  });
+
+  it('fires the reserved documented_way_in analytics op on apply and remove (#1519)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        estimatedTotalHits: 6,
+        facetDistribution: { hasDocumentedWayIn: { true: 6, false: 8 } },
+      });
+    });
+
+    renderResearch(departments, ['/research?q=machine+learning']);
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+
+    const documentedFilterEvents = () =>
+      mockedAxios.post.mock.calls
+        .filter(([url]) => url === '/analytics/research' || url === '/analytics/research/batch')
+        .flatMap(([, body]) => (body as { events?: unknown[] }).events ?? [body])
+        .filter(
+          (event): event is { eventType: string; payload: { operation: string; filter: string } } =>
+            (event as { eventType?: string }).eventType === 'research_filter_change' &&
+            (event as { payload?: { filter?: string } }).payload?.filter === 'documented_way_in',
+        );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByLabelText('Has a documented way in'));
+
+    await waitFor(async () => {
+      await flushResearchAnalytics();
+      expect(documentedFilterEvents().some((event) => event.payload.operation === 'apply')).toBe(
+        true,
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Has a documented way in' }));
+
+    await waitFor(async () => {
+      await flushResearchAnalytics();
+      expect(documentedFilterEvents().some((event) => event.payload.operation === 'remove')).toBe(
+        true,
+      );
+    });
+  });
+
   it('keeps visible results in place when a filter is toggled via URL on the same query', async () => {
     const filteredResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
     mockedAxios.post.mockImplementation(

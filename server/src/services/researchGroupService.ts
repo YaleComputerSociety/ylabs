@@ -573,6 +573,7 @@ const sanitizeResearchGroupSearchFilters = (
     ? filters.acceptanceLevel
     : undefined,
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
+  hasDocumentedWayIn: filters.hasDocumentedWayIn === true ? true : undefined,
   currentAvailability: boundedResearchFilterValues(filters.currentAvailability).filter(
     isCurrentAvailabilityFilterInput,
   ),
@@ -646,6 +647,9 @@ const mongoFilterFromResearchFilters = (
   }
   if (filters.hostsUndergrads === true) {
     mongoFilter.hasUndergradHostingEvidence = true;
+  }
+  if (filters.hasDocumentedWayIn === true) {
+    mongoFilter.hasDocumentedWayIn = true;
   }
   if (filters.currentAvailability?.length) {
     mongoFilter.undergraduateCurrentAvailability = { $in: filters.currentAvailability };
@@ -1073,6 +1077,7 @@ export async function searchResearchGroupsViaMeili(
       'researchAreas',
       'entityType',
       'undergraduateCurrentAvailability',
+      'hasDocumentedWayIn',
     ],
   };
   if (sortConfig.length > 0) {
@@ -1246,6 +1251,7 @@ export async function searchResearchGroupsViaMeili(
           'researchAreas',
           'entityType',
           'undergraduateCurrentAvailability',
+          'hasDocumentedWayIn',
         ],
       });
       if (typeof exhaustiveCountResult?.totalHits === 'number') {
@@ -1340,11 +1346,49 @@ export async function searchResearchGroupsViaMeili(
     return merged;
   })();
 
+  // The documented-way-in filter is a boolean toggle rather than a multi-valued
+  // facet, so it is recomputed here instead of via DISJUNCTIVE_RESEARCH_FACETS:
+  // when it is active, drop only its own clause so the `hasDocumentedWayIn`
+  // distribution still reports both the documented (`true`) and undocumented
+  // (`false`) buckets. Without this the conjunctive distribution collapses to
+  // `{ true: n }`, and the client can no longer tell the split is material. See
+  // issue #1519.
+  const withDocumentedWayInDisjunctiveFacet = await (async (): Promise<
+    Record<string, Record<string, number>> | undefined
+  > => {
+    if (!disjunctiveRawFacetDistribution || safeFilters.hasDocumentedWayIn !== true) {
+      return disjunctiveRawFacetDistribution;
+    }
+    try {
+      const omittedFilterString = buildResearchGroupFilterString(
+        applyVisibilityScopeToFilters(
+          { ...safeFilters, hasDocumentedWayIn: undefined },
+          safeOptions.includeNonPublic,
+        ),
+      );
+      const distribution = await searchFacetDistributionForFilter(omittedFilterString, [
+        'hasDocumentedWayIn',
+      ]);
+      if (distribution?.hasDocumentedWayIn) {
+        return {
+          ...disjunctiveRawFacetDistribution,
+          hasDocumentedWayIn: distribution.hasDocumentedWayIn,
+        };
+      }
+    } catch (error) {
+      console.error(
+        'Disjunctive facet computation for hasDocumentedWayIn failed; keeping conjunctive counts:',
+        sanitizeLogValue(error),
+      );
+    }
+    return disjunctiveRawFacetDistribution;
+  })();
+
   // The School filter now facets on the multi-valued `schools` field; expose it
   // to clients under the existing `school` key so the API contract is unchanged.
   const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
-    if (!disjunctiveRawFacetDistribution) return disjunctiveRawFacetDistribution;
-    const { schools, researchAreas, ...rest } = disjunctiveRawFacetDistribution;
+    if (!withDocumentedWayInDisjunctiveFacet) return withDocumentedWayInDisjunctiveFacet;
+    const { schools, researchAreas, ...rest } = withDocumentedWayInDisjunctiveFacet;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
     return {
       ...rest,
@@ -1496,6 +1540,19 @@ const facetCounts = (entities: any[], field: string): Record<string, number> => 
   return counts;
 };
 
+// Mirror Meilisearch's boolean facet distribution shape (`{ true: n, false: m }`
+// with string keys) so the Mongo fallback and the primary path present the same
+// contract to the client's documented-way-in gate.
+const booleanFacetCounts = (entities: any[], field: string): Record<string, number> => {
+  let trueCount = 0;
+  let falseCount = 0;
+  for (const entity of entities) {
+    if (entity?.[field] === true) trueCount += 1;
+    else falseCount += 1;
+  }
+  return { true: trueCount, false: falseCount };
+};
+
 const sortResearchEntitiesForMongoFallback = (
   entities: any[],
   query: string,
@@ -1575,18 +1632,37 @@ const searchResearchGroupsViaMongoFallback = async (
     );
     return facetCounts(omittedVisible, field);
   };
+  // The documented-way-in toggle is boolean, so its disjunctive recompute drops
+  // its own clause and counts both buckets over the remaining candidates.
+  const documentedWayInFacetCounts = async (): Promise<Record<string, number>> => {
+    if (filters.hasDocumentedWayIn !== true) {
+      return booleanFacetCounts(visibleCandidates, 'hasDocumentedWayIn');
+    }
+    const omittedFilters = { ...filters, hasDocumentedWayIn: undefined };
+    const omittedCandidates = (await ResearchEntity.find(
+      mongoFilterFromResearchFilters(omittedFilters, options.includeNonPublic),
+    ).lean()) as any[];
+    const omittedVisible = withServablePublicResearchEntities(
+      omittedCandidates.filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
+      omittedFilters,
+      options.includeNonPublic,
+    );
+    return booleanFacetCounts(omittedVisible, 'hasDocumentedWayIn');
+  };
   const [
     schoolFacetCounts,
     departmentFacetCounts,
     researchAreaFacetCounts,
     entityTypeFacetCounts,
     currentAvailabilityFacetCounts,
+    documentedWayInCounts,
   ] = await Promise.all([
     disjunctiveMongoFacetCounts('school', 'schools'),
     disjunctiveMongoFacetCounts('departments', 'departments'),
     disjunctiveMongoFacetCounts('researchAreas', 'researchAreas'),
     disjunctiveMongoFacetCounts('entityType', 'entityType'),
     disjunctiveMongoFacetCounts('currentAvailability', 'undergraduateCurrentAvailability'),
+    documentedWayInFacetCounts(),
   ]);
   const facetDistribution = {
     school: schoolFacetCounts,
@@ -1594,6 +1670,7 @@ const searchResearchGroupsViaMongoFallback = async (
     researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {},
     entityType: entityTypeFacetCounts,
     undergraduateCurrentAvailability: currentAvailabilityFacetCounts,
+    hasDocumentedWayIn: documentedWayInCounts,
   };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
     visibleCandidates,

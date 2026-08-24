@@ -16,6 +16,7 @@ import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
 import {
   canonicalAcceptanceLevelFromSignals,
   hasUndergradHostingEvidenceFromSignals,
+  hasDocumentedWayInFromSignals,
   type AccessAcceptanceLevel,
   type AccessSignalConfidenceInput,
 } from './accessAcceptanceLevel';
@@ -171,6 +172,7 @@ export async function recomputeBrowseRankForEntities(
     const acceptanceLevel = canonicalAcceptanceLevelFromSignals(entitySignals);
     acceptanceLevelsByEntityId.set(id, acceptanceLevel);
     const undergradHostingEvidence = hasUndergradHostingEvidenceFromSignals(entitySignals);
+    const documentedWayIn = hasDocumentedWayInFromSignals(entitySignals);
     const currentAvailability = currentUndergradAvailabilityFromSignals(
       currentAvailabilitySignals.get(id) || [],
       now,
@@ -180,9 +182,18 @@ export async function recomputeBrowseRankForEntities(
     const levelUnchanged = (entity.accessAcceptanceLevel ?? 'none') === acceptanceLevel;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
+    const documentedWayInUnchanged =
+      (entity.hasDocumentedWayIn ?? false) === documentedWayIn;
     const availabilityUnchanged =
       (entity.undergraduateCurrentAvailability ?? 'UNKNOWN') === currentAvailability;
-    if (scoreUnchanged && levelUnchanged && hostingUnchanged && availabilityUnchanged) continue;
+    if (
+      scoreUnchanged &&
+      levelUnchanged &&
+      hostingUnchanged &&
+      documentedWayInUnchanged &&
+      availabilityUnchanged
+    )
+      continue;
     updated += 1;
     if (options.dryRun) continue;
 
@@ -193,6 +204,7 @@ export async function recomputeBrowseRankForEntities(
           browseRankScore: score,
           accessAcceptanceLevel: acceptanceLevel,
           hasUndergradHostingEvidence: undergradHostingEvidence,
+          hasDocumentedWayIn: documentedWayIn,
           undergraduateCurrentAvailability: currentAvailability,
         },
       },

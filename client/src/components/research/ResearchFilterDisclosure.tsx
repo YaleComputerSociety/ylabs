@@ -29,6 +29,7 @@ interface ResearchFilterDisclosureProps {
   typeBucketOptions: ResearchTypeBucketOption[];
   selectedTypeBuckets: string[];
   hostsUndergrads: boolean;
+  documentedWayIn: boolean;
   currentAvailabilityOptions: FacetOption[];
   selectedCurrentAvailability: string[];
   isApplying: boolean;
@@ -40,6 +41,7 @@ interface ResearchFilterDisclosureProps {
   onResearchAreasChange: (value: string[]) => void;
   onTypeBucketsChange: (value: string[]) => void;
   onHostsUndergradsChange: (value: boolean) => void;
+  onDocumentedWayInChange: (value: boolean) => void;
   onCurrentAvailabilityChange: (value: string[]) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
@@ -88,6 +90,7 @@ const ResearchFilterDisclosure = ({
   typeBucketOptions,
   selectedTypeBuckets,
   hostsUndergrads,
+  documentedWayIn,
   currentAvailabilityOptions,
   selectedCurrentAvailability,
   isApplying,
@@ -99,6 +102,7 @@ const ResearchFilterDisclosure = ({
   onResearchAreasChange,
   onTypeBucketsChange,
   onHostsUndergradsChange,
+  onDocumentedWayInChange,
   onCurrentAvailabilityChange,
   onClearAll,
   variant = 'popover',
@@ -166,12 +170,23 @@ const ResearchFilterDisclosure = ({
   const showCurrentAvailability =
     sumOptionCounts(currentAvailabilityOptions) >= MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT ||
     selectedCurrentAvailability.length > 0;
+  // EF-03: the documented-way-in toggle is facet-gated, not always-on. It only
+  // appears when the current result set actually splits into homes that carry a
+  // documented way in and homes that do not, so filtering can narrow. A
+  // degenerate distribution (all-or-nothing) hides it. It stays visible while
+  // selected so it remains clearable. See #1519.
+  const documentedWayInCounts = facetDistribution.hasDocumentedWayIn;
+  const documentedWayInPositiveCount = documentedWayInCounts?.true ?? 0;
+  const documentedWayInNegativeCount = documentedWayInCounts?.false ?? 0;
+  const showDocumentedWayIn =
+    (documentedWayInPositiveCount > 0 && documentedWayInNegativeCount > 0) || documentedWayIn;
   const activeCount =
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
     selectedResearchAreas.length +
     selectedTypeBuckets.length +
     Number(hostsUndergrads) +
+    Number(documentedWayIn) +
     selectedCurrentAvailability.length;
   const visibleFacetKey = `${String(showSchool)}:${String(showDepartment)}`;
   const toggleCurrentAvailability = (value: string, checked: boolean) => {
@@ -282,6 +297,17 @@ const ResearchFilterDisclosure = ({
         />
         <span>Has hosted undergrads before</span>
       </label>
+      {showDocumentedWayIn && (
+        <label className="flex min-w-0 items-start gap-2 text-sm font-medium text-slate-800">
+          <input
+            type="checkbox"
+            checked={documentedWayIn}
+            onChange={(event) => onDocumentedWayInChange(event.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+          />
+          <span>Has a documented way in</span>
+        </label>
+      )}
       {showCurrentAvailability && (
         <fieldset className="min-w-0 space-y-2 border-0 p-0">
           <legend className="text-sm font-medium text-slate-800">
@@ -382,7 +408,8 @@ const ResearchFilterDisclosure = ({
         !showDepartment &&
         !showResearchAreas &&
         !showType &&
-        !showCurrentAvailability && (
+        !showCurrentAvailability &&
+        !showDocumentedWayIn && (
           <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
         )}
     </fieldset>
@@ -467,6 +494,19 @@ const ResearchFilterDisclosure = ({
           className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
         >
           <span className="min-w-0 truncate">Has hosted undergrads before</span>
+          <span aria-hidden="true" className="shrink-0">
+            ×
+          </span>
+        </button>
+      )}
+      {documentedWayIn && (
+        <button
+          type="button"
+          onClick={() => onDocumentedWayInChange(false)}
+          aria-label="Remove Has a documented way in"
+          className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
+          <span className="min-w-0 truncate">Has a documented way in</span>
           <span aria-hidden="true" className="shrink-0">
             ×
           </span>
