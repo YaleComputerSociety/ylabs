@@ -44,6 +44,20 @@ describe('resolveResearchHomeCardSummary', () => {
     });
   });
 
+  it('falls back to a usable shortDescription when the fullDescription trips the unusable-content guard', () => {
+    const summary = resolveResearchHomeCardSummary({
+      shortDescription:
+        'Studies the molecular basis of neurotransmitter signaling in C. elegans.',
+      fullDescription: 'Course Director ENGL 1020, Introduction to Literary Study.',
+    });
+
+    expect(summary).toEqual({
+      text: 'Studies the molecular basis of neurotransmitter signaling in C. elegans.',
+      state: 'complete',
+      label: 'Research description',
+    });
+  });
+
   it('returns a sparse department-aware fallback when no description survives', () => {
     const summary = resolveResearchHomeCardSummary({
       departments: ['Astronomy'],
