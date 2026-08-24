@@ -145,6 +145,8 @@ const RESEARCH_AREA_FIRST_PERSON_RE = /^(?:I|We|My|Our)\s+\S/;
 const RESEARCH_AREA_LAB_BLURB_RE =
   /\b(?:is|are|has|have|been)\s+(?:currently\s+)?(?:focused|interested|working|studying|investigating)\b|\b(?:the|our|my)\s+(?:group|lab|laboratory)\b/i;
 const RESEARCH_AREA_NON_TOPIC_WORD_CEILING = 10;
+const RESEARCH_AREA_ROLE_TRACK_ONLY_RE =
+  /^(?:theorist|experimentalist|observational|observer)(?:\s*(?:&|\/|,|and)\s*(?:theorist|experimentalist|observational|observer))+$/i;
 
 function researchAreaWordCount(value: string): number {
   return value.split(/\s+/).filter(Boolean).length;
@@ -160,6 +162,7 @@ function isNonTopicResearchAreaChip(raw: unknown): boolean {
   if (RESEARCH_AREA_PERSON_AWARD_RE.test(value)) return true;
   if (RESEARCH_AREA_AWARD_RE.test(value) && /\d/.test(value)) return true;
   if (RESEARCH_AREA_LABEL_PREFIX_RE.test(value)) return true;
+  if (RESEARCH_AREA_ROLE_TRACK_ONLY_RE.test(value)) return true;
   const wordCount = researchAreaWordCount(value);
   if (RESEARCH_AREA_FIRST_PERSON_RE.test(value) && wordCount >= 4) return true;
   if (RESEARCH_AREA_LAB_BLURB_RE.test(value)) return true;

@@ -313,6 +313,18 @@ describe('isResearchAreaLabelLeakage', () => {
     }
   });
 
+  it('rejects a whitespace-delimited combined role-track label (#1613)', () => {
+    for (const junk of [
+      'Theorist & Experimentalist',
+      'Theorist and Experimentalist',
+      'Experimentalist/Theorist',
+      'Observer, Observational',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+    expect(isResearchAreaLabelLeakage('Theorist & Experimentalist Cosmology')).toBe(false);
+  });
+
   it('flags first-person prose, lab-blurb sentences, and run-on concatenations (#948)', () => {
     for (const junk of [
       'I have been applying techniques drawn from probability theory and statistics',
