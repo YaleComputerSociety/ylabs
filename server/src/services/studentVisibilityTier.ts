@@ -197,9 +197,11 @@ const organizationalEngagementUrlPathPatterns = [
   /\/(?:programs?|education|academics|training|courses?|fellowships?|internships?|research-opportunities|for-students|students)(?:\/|$)/i,
   // Student-research engagement tokens carried mid-segment (e.g.
   // /undergraduate-program/undergraduate-research-in-x, /research-internship-program,
-  // /research/undergraduate-research-opportunities). The segment-anchored patterns above
-  // miss these even though the page itself is the student's way in.
-  /(?:^|[/-])(?:undergraduate-research|undergraduate-study|undergraduate-program|undergraduate|undergrad|research-internship|research-opportunit(?:y|ies)|research-assistantships?|research-experience|for-undergraduates?)(?:[/-]|$)/i,
+  // /research/undergraduate-research-opportunities, /undergraduates/senior-essay,
+  // /what-directed-research-course). The segment-anchored patterns above miss these
+  // even though the page itself is the student's way in. Directed/independent-research
+  // and independent-study pages are the for-credit course pathway's own way in.
+  /(?:^|[/-])(?:undergraduate-research|undergraduate-study|undergraduate-program|undergraduates|undergraduate|undergrad|directed-research|independent-research|independent-study|research-internship|research-opportunit(?:y|ies)|research-assistantships?|research-experience|for-undergraduates?)(?:[/-]|$)/i,
 ];
 
 function isOrganizationalEngagementUrl(value: string): boolean {

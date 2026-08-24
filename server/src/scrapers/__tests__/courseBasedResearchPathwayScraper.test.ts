@@ -164,7 +164,7 @@ describe('courseBasedResearchPathwayScraper', () => {
     expect(records[0].fullDescription).toMatch(/senior essay|research and writing project/i);
   });
 
-  it('emits discovery-only observations with no access, opening, or contact evidence', () => {
+  it('emits the for-credit access fact but no opening, application, or contact evidence', () => {
     const [record] = parseCourseBasedResearchPathwayPage(PSYCHOLOGY_HTML, psychologyConfig);
     const observations = courseBasedResearchPathwayRecordsToObservations([record]);
     const fields = observations.map((observation) => observation.field);
@@ -181,22 +181,16 @@ describe('courseBasedResearchPathwayScraper', () => {
         'sourceUrls',
         'fullDescription',
         'shortDescription',
+        'offersIndependentStudy',
       ]),
     );
-    expect(fields).not.toEqual(
-      expect.arrayContaining([
-        'undergradAccessEvidence',
-        'acceptingUndergrads',
-        'undergradEvidenceQuote',
-        'contactName',
-        'contactEmail',
-        'contactRole',
-        'joinPageUrl',
-        'postedOpportunityTitle',
-        'applicationUrl',
-        'deadline',
-      ]),
+    expect(fields).not.toEqual(expect.arrayContaining(FABRICATED_EVIDENCE_FIELDS));
+
+    const offersObs = observations.find(
+      (observation) => observation.field === 'offersIndependentStudy',
     );
+    expect(offersObs?.value).toBe(true);
+    expect(offersObs?.sourceUrl).toBe(psychologyConfig.url);
 
     const entityTypeObs = observations.find((observation) => observation.field === 'entityType');
     expect(entityTypeObs?.value).toBe('COURSE_SEQUENCE');

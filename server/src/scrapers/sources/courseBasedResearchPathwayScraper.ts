@@ -7,11 +7,15 @@
  * directed-research / senior-thesis course page is the cited source; catalog
  * and course-search index roots are never cited.
  *
- * This source is discovery-only. It emits identity (course-sequence name +
- * owning department), the official course page URL, and a source-backed
- * description. It fails closed on contact data and never manufactures
- * undergraduate-access claims, posted openings, application links, or contact
- * routes.
+ * It emits identity (course-sequence name + owning department), the official
+ * course page URL, a source-backed description, and the for-credit access fact
+ * the cited page establishes: `offersIndependentStudy`, which the access
+ * materializer derives into a `CREDIT_FORMALIZATION_POSSIBLE` ways-in so a
+ * well-described pathway (enroll in the for-credit course, contact the
+ * DUS/instructor) can reach `student_ready`. The page is only minted as a
+ * pathway when it already evidences for-credit course-based research, so this
+ * fact is never manufactured. It still fails closed on contact data and never
+ * emits posted openings, application links, or contact routes.
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -307,6 +311,7 @@ export function courseBasedResearchPathwayRecordsToObservations(
         { ...base, field: 'sourceUrls', value: [record.sourceUrl] },
         { ...base, field: 'fullDescription', value: record.fullDescription },
         { ...base, field: 'shortDescription', value: record.shortDescription },
+        { ...base, field: 'offersIndependentStudy', value: true },
       ];
     });
 }
