@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isPersonOrGrantShellSlug,
   personProfileNameTokensFromUrl,
   personProfileSourceMatchesEntity,
   researchEntityIdentityTokens,
@@ -409,5 +410,30 @@ describe('sourceUrlSchoolContradictsEntity', () => {
         departments: ['Biomedical Engineering'],
       }),
     ).toBe(false);
+  });
+});
+
+describe('isPersonOrGrantShellSlug (#1595)', () => {
+  it('flags NIH/NSF/DOE PI-derived and faculty-research-area slugs', () => {
+    expect(isPersonOrGrantShellSlug('nih-pi-quinn-harlow')).toBe(true);
+    expect(isPersonOrGrantShellSlug('nsf-pi-casey-lindqvist')).toBe(true);
+    expect(isPersonOrGrantShellSlug('doe-pi-jordan-avery')).toBe(true);
+    expect(isPersonOrGrantShellSlug('faculty-research-area-morgan-ellery')).toBe(true);
+  });
+
+  it('flags a generated <surname>-lab-<code> lab-shell key', () => {
+    expect(isPersonOrGrantShellSlug('zephyr-lab-ab12')).toBe(true);
+    expect(isPersonOrGrantShellSlug('quill-lab-cd34')).toBe(true);
+  });
+
+  it('does not flag a genuine organizational slug', () => {
+    expect(isPersonOrGrantShellSlug('harbor-brain-institute')).toBe(false);
+    expect(isPersonOrGrantShellSlug('epidemic-modeling-center')).toBe(false);
+    expect(isPersonOrGrantShellSlug('yale-coastal-research-hub')).toBe(false);
+  });
+
+  it('handles empty/missing input', () => {
+    expect(isPersonOrGrantShellSlug(undefined)).toBe(false);
+    expect(isPersonOrGrantShellSlug('')).toBe(false);
   });
 });

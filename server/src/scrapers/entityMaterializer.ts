@@ -87,6 +87,8 @@ import {
 } from '../services/researchEntityMembershipAccessor';
 import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
 import {
+  isPersonOrGrantShellSlug,
+  personProfileNameTokensFromUrl,
   personProfileSourceMatchesEntity,
   type ResearchEntityIdentity,
 } from './utils/personProfileEntityMatch';
@@ -642,6 +644,47 @@ function fieldProvenanceForResolvedObservation(
     observedAt: match.observedAt || new Date(),
     confidence: match.confidence ?? resolved.confidence,
   };
+}
+
+// A named org kind that implies multiple PIs/researchers, as opposed to a
+// single-person 'lab'/'individual'/'solo' entity. Gates the single-PI/grant
+// shell description guard below (issue #1595).
+const MULTI_PI_ORG_KINDS = new Set(['center', 'institute', 'program']);
+
+// Fields whose winning value is rejected when it is sourced entirely from a
+// Yale person-profile page and the entity is a named multi-PI org materialized
+// from a single-PI/grant shell (issue #1595): the org's description or
+// research areas must never resolve to one PI's own bio/study content just
+// because no broader source exists yet. Rejecting drops the field from
+// `resolved` for this pass, so the entity keeps whatever value it already had
+// (or stays unset if it never had one) rather than regressing to a
+// misleadingly narrow scope.
+const SINGLE_PI_SHELL_GATED_FIELDS = ['fullDescription', 'researchAreas'] as const;
+
+/**
+ * Whether every observation backing a resolved field's winning value is a
+ * Yale person-profile page (`/people/<name>` or `/profile/<name>`). A named
+ * multi-PI org whose only evidence for a field is one individual's own profile
+ * page has no organizational source for that field at all - the content is
+ * that person's, not the organization's - regardless of whether the person is
+ * a genuine affiliate.
+ */
+function resolvedFieldSourcedOnlyFromPersonProfilePages(
+  field: string,
+  resolved: ResolvedField,
+  observations: MaterializerObservationLike[],
+): boolean {
+  const resolvedValue = comparableObservationValue(resolved.value);
+  const contributingSources = new Set(resolved.contributingSources);
+  const matches = observations.filter(
+    (obs) =>
+      obs.field === field &&
+      obs.sourceName &&
+      contributingSources.has(obs.sourceName) &&
+      comparableObservationValue(obs.value) === resolvedValue,
+  );
+  if (matches.length === 0) return false;
+  return matches.every((obs) => personProfileNameTokensFromUrl(obs.sourceUrl) !== null);
 }
 
 export function buildInferredPiMemberUpsert(
@@ -2470,6 +2513,21 @@ export async function materializeEntity(
     }
     if (grantEvidence.fundingAgencies && resolved.fundingAgencies) {
       resolved.fundingAgencies.value = grantEvidence.fundingAgencies;
+    }
+  }
+  if (isResearchEntityObservationType(entityType)) {
+    const orgKind = textValue(resolved.kind?.value ?? entityDoc?.kind).toLowerCase();
+    const slugForShellCheck = entityDoc?.slug ?? identifier.entityKey;
+    if (MULTI_PI_ORG_KINDS.has(orgKind) && isPersonOrGrantShellSlug(slugForShellCheck)) {
+      for (const shellGatedField of SINGLE_PI_SHELL_GATED_FIELDS) {
+        const candidate = resolved[shellGatedField];
+        if (
+          candidate &&
+          resolvedFieldSourcedOnlyFromPersonProfilePages(shellGatedField, candidate, materializationObs)
+        ) {
+          delete resolved[shellGatedField];
+        }
+      }
     }
   }
 
