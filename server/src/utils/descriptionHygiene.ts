@@ -728,6 +728,14 @@ const synthesisBlurbLeadPattern =
 const relativeOrPrepAfterDemonstrativePattern =
   /^(?:who|whom|whose|which|that|with|of|from|in|to|at|by|as)\b/i;
 
+const leadingBareSubjectPronounPattern = /^(?:He|She|Him|Her|His|Their)\b/;
+
+const leadingCareerHistoryOpenerPattern =
+  /^(?:Prior to|Following|After|In addition)\b[^.]*?,\s*(?:he|she|him|her|his|their|dr\.\s+[A-Z])/i;
+
+const leadingDoctorDegreeOpenerPattern =
+  /^Dr\.\s+[A-Z][a-z]+\s+(?:received|earned|completed|obtained|graduated)\b/;
+
 function startsMidSentenceLowercase(text: string): boolean {
   const firstToken = text.split(/\s+/)[0] || '';
   if (!/^[a-z]/.test(firstToken)) return false;
@@ -767,17 +775,26 @@ function synthesisBlurbHasDanglingDemonstrative(text: string): boolean {
  * it begins mid-clause with a lowercase word (a truncated lead such as the
  * dropped "C." of "C. elegans", leaving "elegans for these studies ..."), opens
  * with an unresolved leading demonstrative ("These process are ...", "This is
- * particularly important ..."), or is a synthesis blurb whose `these/those`
- * demonstrative has no antecedent in the blurb (#1248). Rendered verbatim on the
- * student browse card, such a summary references something never introduced, so
- * it is failed closed rather than shown. A leading lowercase token that carries
- * an internal capital (a scientific token like "mRNA"/"iPSC") is exempt.
+ * particularly important ..."), is a synthesis blurb whose `these/those`
+ * demonstrative has no antecedent in the blurb (#1248), opens with a bare
+ * third-person subject pronoun whose antecedent is never named ("His research
+ * is ...", "She is interested in ..." - the card title is often a lab name, so
+ * the pronoun has nothing to resolve to), or opens with a CV/biography-history
+ * clause lifted from a faculty bio rather than a research summary ("Prior to
+ * arriving at Yale, Dr. Ma was ...", "Dr. Seo received a Ph.D. ...") (#1400).
+ * Rendered verbatim on the student browse card, such a summary references
+ * something never introduced, so it is failed closed rather than shown. A
+ * leading lowercase token that carries an internal capital (a scientific token
+ * like "mRNA"/"iPSC") is exempt.
  */
 export function isNonSelfContainedShortDescription(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (startsMidSentenceLowercase(normalized)) return true;
   if (leadingDanglingDemonstrativePattern.test(normalized)) return true;
+  if (leadingBareSubjectPronounPattern.test(normalized)) return true;
+  if (leadingCareerHistoryOpenerPattern.test(normalized)) return true;
+  if (leadingDoctorDegreeOpenerPattern.test(normalized)) return true;
   return synthesisBlurbHasDanglingDemonstrative(normalized);
 }
 
