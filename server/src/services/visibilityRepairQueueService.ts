@@ -447,7 +447,8 @@ const profileUserDescriptionCandidates = (
     : null;
   const preferResearchSummary =
     !!researchSummaryCandidate &&
-    (/\b(?:received|earned|completed)\b.{0,140}\b(?:ph\.?\s*d|doctorate|degree)\b/i.test(bio) ||
+    (/^Creative work\b/i.test(researchBioSummary) ||
+      /\b(?:received|earned|completed)\b.{0,140}\b(?:ph\.?\s*d|doctorate|degree)\b/i.test(bio) ||
       /\bis\s+(?:an?\s+)?(?:assistant|associate|full|adjunct|clinical|visiting)?\s*professor\b/i.test(
         bio,
       ) ||

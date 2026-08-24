@@ -119,6 +119,35 @@ describe('publicResearchEntityDescriptionText', () => {
       'Studies neural circuits underlying decision-making, in collaboration with the campus imaging center.';
     expect(publicResearchEntityDescriptionText(description)).toBe(description);
   });
+
+  it('keeps concise research-series cards whose final topic is a single capitalized word (#1414)', () => {
+    const cards = [
+      'Studies Microbiology and Pathology.',
+      'Studies poetry, primarily but not only American and British.',
+      'Studies Islamic Law and Civilization.',
+      'Studies Gene Expression, Public Health, Genomics, and Proteomics.',
+      'Research focuses on the evolution and maintenance of social monogamy, pair bonding, and paternal care in primates, with projects in Argentina and Ecuador.',
+    ];
+    for (const card of cards) {
+      expect(publicResearchEntityDescriptionText(card)).toBe(card);
+    }
+  });
+
+  it('still suppresses genuine author-list and collaboration truncations (#1414)', () => {
+    expect(
+      publicResearchEntityDescriptionText(
+        'A Comment on descriptive statistics by Isaiah Andrews, Matthew Gentzkow, and Jesse M.',
+      ),
+    ).toBe('');
+    expect(
+      publicResearchEntityDescriptionText(
+        'Two primary projects use MRI images in collaboration with Dr.',
+      ),
+    ).toBe('');
+    expect(
+      publicResearchEntityDescriptionText('This work was done in collaboration with Smith.'),
+    ).toBe('');
+  });
 });
 
 describe('sanitizeFacultyResearchEntityText', () => {
