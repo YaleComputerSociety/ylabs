@@ -14,6 +14,8 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
   assertPublicHttpUrl: vi.fn(async (rawUrl: string) => new URL(rawUrl)),
 }));
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   CentersInstitutesScraper,
   nodeTeaserPersonExtractor,
@@ -22,6 +24,8 @@ import {
   viewsFieldNameExtractor,
   ispsExtractor,
   ycgaExtractor,
+  directoryListingCardExtractor,
+  referenceCardPeopleExtractor,
   jacksonCentersExtractor,
   jsRenderedStub,
   centerToGroupObservations,
@@ -344,6 +348,61 @@ describe('jacksonCentersExtractor', () => {
 describe('jsRenderedStub', () => {
   it('throws to signal the page needs a headless browser', () => {
     expect(() => jsRenderedStub('<html></html>', { pageUrl: 'x' })).toThrow(/JS-rendered|gated/);
+  });
+});
+
+const QBIO_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'qbioMembers.html'), 'utf8');
+const DISSC_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'disscFaculty.html'), 'utf8');
+
+describe('directoryListingCardExtractor', () => {
+  it('extracts QBio members from the saved live-HTML fixture, keeping each member profile link', () => {
+    const out = directoryListingCardExtractor(QBIO_FIXTURE, {
+      pageUrl: 'https://qbio.yale.edu/members',
+    });
+    expect(out.members.length).toBe(6);
+    const berro = out.members.find((m) => m.name === 'Julien Berro');
+    expect(berro).toMatchObject({
+      title: 'Associate Professor of Molecular Biophysics & Biochemistry, and of Cell Biology',
+      profileUrl: 'https://campuspress.yale.edu/berrolab/',
+      role: 'core-faculty',
+    });
+    const dalBello = out.members.find((m) => m.name === 'Martina Dal Bello');
+    expect(dalBello?.profileUrl).toBe('https://www.dalbellolab.com/');
+  });
+
+  it('infers the director role from the snippet, not just the academic subheading', () => {
+    const out = directoryListingCardExtractor(QBIO_FIXTURE, {
+      pageUrl: 'https://qbio.yale.edu/members',
+    });
+    const clark = out.members.find((m) => m.name === 'Damon Clark');
+    expect(clark?.role).toBe('director');
+    expect(clark?.title).toContain('Professor of Molecular, Cellular');
+  });
+});
+
+describe('referenceCardPeopleExtractor', () => {
+  it('extracts DISSC people from the saved live-HTML fixture and classifies faculty directors', () => {
+    const out = referenceCardPeopleExtractor(DISSC_FIXTURE, {
+      pageUrl: 'https://dissc.yale.edu/about/dissc-faculty-and-staff',
+    });
+    expect(out.members.length).toBeGreaterThanOrEqual(6);
+    const borzekowski = out.members.find((m) => m.name === 'Ron Borzekowski');
+    expect(borzekowski).toMatchObject({
+      title: 'Executive Director',
+      profileUrl: 'https://dissc.yale.edu/profile/ron-borzekowski',
+      role: 'director',
+    });
+    expect(out.members.some((m) => m.role === 'director' && m.title === 'Faculty Director')).toBe(
+      true,
+    );
+  });
+
+  it('reads only the heading link, never the aria-hidden image link, so members are not doubled', () => {
+    const out = referenceCardPeopleExtractor(DISSC_FIXTURE, {
+      pageUrl: 'https://dissc.yale.edu/about/dissc-faculty-and-staff',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 });
 
