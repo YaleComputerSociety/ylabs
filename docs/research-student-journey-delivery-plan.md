@@ -280,12 +280,15 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 
 #### QA-03 - Cross-Surface Accessibility Hygiene - FR-41
 
-- **Status:** Active.
+- **Status:** Complete.
 - **Depends on:** route-by-route keyboard, focus, error-association, landmark, and responsive validation.
 - **Acceptance criteria:** canonical student flows have labelled controls, programmatically associated errors, announced async states, logical focus movement, unique landmarks/headings, 44-pixel primary targets, and no 320/375-pixel overflow; fixes use shared primitives where behavior is shared.
 - **Validation evidence:** PRs `#154` and `#169` completed major Programs and onboarding slices, and `#171` simplified Research.
-  The cross-surface audit remains incomplete.
-- **PRs:** [#154](https://github.com/YaleComputerSociety/ylabs/pull/154), [#169](https://github.com/YaleComputerSociety/ylabs/pull/169), [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
+  A reusable automated accessibility harness (`client/src/testUtils/axe.ts`, backed by `axe-core`) now runs inside the existing Vitest suite and asserts zero serious or critical WCAG 2.1 AA violations; the helper is self-tested against known-bad markup so the enforcement itself cannot silently regress.
+  Rendered-surface a11y suites cover the previously unaudited canonical surfaces in loaded, empty, and error states: the research-home detail page (`/research/:slug`, including related and "More like this" regions), the faculty profile tabs (`bio`/`research`/`courses`), the fellowships list and its detail modal, and the account dashboard (saved research plans, the comparison dialog, and the watched-program export surface).
+  Burndown from that harness added an accessible name to the research-home loading state; the remaining surfaces already met the DOM and ARIA bar.
+  Layout-dependent checks that a JSDOM test environment cannot evaluate (color contrast, rendered 44-pixel target size, and 320/375-pixel overflow) remain a manual visual-review responsibility per `client/DESIGN.md` and `skills/frontend-polish/SKILL.md`.
+- **PRs:** [#154](https://github.com/YaleComputerSociety/ylabs/pull/154), [#169](https://github.com/YaleComputerSociety/ylabs/pull/169), [#171](https://github.com/YaleComputerSociety/ylabs/pull/171); automated harness and cross-surface coverage tracked in [#1574](https://github.com/YaleComputerSociety/ylabs/issues/1574).
 
 ### Supply And Moderation
 

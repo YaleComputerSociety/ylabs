@@ -116,3 +116,6 @@ Never write a raw hex value or a Tailwind generic `blue-*` class for brand color
 3. Primary action is `bg-brand` with `hover:bg-brand-navy`; navigation active state is `brand`, inactive is `ink`.
 4. Every interactive element needs a visible `focus-visible` ring and a 44px minimum target.
 5. When a needed value has no token, add the token to `src/index.css` and this document rather than hardcoding it.
+6. The accessibility bar is enforced automatically: `expectNoAxeViolations` from `src/testUtils/axe.ts` asserts zero serious or critical WCAG 2.1 AA violations, and canonical student surfaces have rendered-surface a11y suites (`*.a11y.test.tsx`).
+Add a surface to that harness when you build a new student-facing surface.
+Layout-only checks that JSDOM cannot evaluate (color contrast, rendered target size, and 320/375px overflow) still need a manual visual pass.

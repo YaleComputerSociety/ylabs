@@ -56,11 +56,18 @@ When something clearly looks or feels off, fix it, do not ship around it.
 - Keep interaction latency low; defer non-critical work.
 - Size and lazy-load images; avoid layout shift from late-loading media.
 
+## Accessibility harness
+
+- The accessibility bar is enforced in the test suite, not just by review: `expectNoAxeViolations` from `client/src/testUtils/axe.ts` (backed by `axe-core`) asserts zero serious or critical WCAG 2.1 AA violations.
+- Canonical student surfaces have rendered-surface a11y suites named `*.a11y.test.tsx` that assert conformance in loaded, empty, and error states. Add your new student-facing surface to that harness.
+- The harness runs in JSDOM, so it catches DOM and ARIA defects (missing names, unassociated errors, invalid ARIA, bad landmark or heading semantics) but cannot evaluate color contrast, rendered 44px target size, or 320/375px overflow. Those stay a manual visual pass.
+
 ## Verify before finishing
 
 - Render the change in the running app and check it at desktop and mobile widths.
 - Check the console for errors and warnings.
 - Confirm keyboard navigation and focus order.
+- Add or extend a `*.a11y.test.tsx` suite for any new or changed student surface, and run it.
 - Re-read `client/DESIGN.md` do's and don'ts against the diff.
 
 Reference: the Vercel Web Interface Guidelines (`vercel.com/design/guidelines`) are the upstream source for this bar.

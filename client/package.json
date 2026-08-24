@@ -59,6 +59,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "agentation": "^3.0.2",
     "autoprefixer": "^10.4.21",
+    "axe-core": "^4.10.3",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.15",
     "tailwindcss": "3",
