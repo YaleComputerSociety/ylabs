@@ -2275,6 +2275,44 @@ export async function entityIdAnchoredObservationsExcludedByEntityKeyScope(
   );
 }
 
+/**
+ * The symmetric case of #1131: an entityId-scoped materialize misses any
+ * entityKey-only observation for the same entity - e.g. a source-backed
+ * fullDescription emitted with entityKey=slug and no entityId - so a later
+ * entityId-scoped run silently blanks a genuine description that the resolver
+ * would have kept given the full set (see #1485). The graft direction #1131
+ * warned about is guarded here by dropping any observation anchored to a
+ * different entity's id under a shared or reassigned key.
+ */
+export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
+  entityType: ObservedEntityType,
+  entityId: string,
+  entityKey: string | undefined,
+  entityIdScopedObservations: MaterializerObservationLike[],
+): Promise<any[]> {
+  if (!entityKey) return [];
+  const entityIdObjectId = toMaterializerObjectId(entityId);
+  const alreadyIncluded = new Set(
+    entityIdScopedObservations.map((observation) => String(observation._id)),
+  );
+  const entityKeyMatches = await Observation.find({
+    entityType,
+    superseded: false,
+    entityKey,
+  }).lean();
+  return entityKeyMatches.filter((observation: any) => {
+    if (alreadyIncluded.has(String(observation._id))) return false;
+    if (
+      observation.entityId &&
+      entityIdObjectId &&
+      String(observation.entityId) !== String(entityIdObjectId)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
 export async function materializeEntity(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
@@ -2330,6 +2368,20 @@ export async function materializeEntity(
       obs,
     );
     if (excludedObs.length > 0) obs = [...obs, ...excludedObs];
+  }
+
+  if (identifier.entityId && entityIdString) {
+    const entityKeyForScope =
+      identifier.entityKey ||
+      (isResearchEntityObservationType(entityType) ? textValue(entityDoc?.slug) : '') ||
+      undefined;
+    const excludedByKeyScope = await entityKeyAnchoredObservationsExcludedByEntityIdScope(
+      entityType,
+      entityIdString,
+      entityKeyForScope,
+      obs,
+    );
+    if (excludedByKeyScope.length > 0) obs = [...obs, ...excludedByKeyScope];
   }
 
   const manuallyLockedFields: string[] = (entityDoc && entityDoc.manuallyLockedFields) || [];
