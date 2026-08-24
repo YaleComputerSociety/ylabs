@@ -196,6 +196,34 @@ export function buildRematerializeFieldChanges(
   return changes;
 }
 
+export const REMATERIALIZE_VISIBILITY_GATE_INPUT_FIELDS = REMATERIALIZE_TRACKED_FIELDS.filter(
+  (field) => field !== 'studentVisibilityTier',
+);
+
+export function rematerializeChangeAffectsVisibilityGate(
+  changes: RematerializeFieldChange[],
+): boolean {
+  return changes.some((change) => change.field !== 'studentVisibilityTier');
+}
+
+export interface RematerializeRegateCandidate {
+  entityId?: string;
+  found: boolean;
+  skipped?: string;
+  changes: RematerializeFieldChange[];
+}
+
+export function selectRematerializeRegateEntityIds(
+  reports: RematerializeRegateCandidate[],
+): string[] {
+  const entityIds = new Set<string>();
+  for (const report of reports) {
+    if (!report.found || report.skipped || !report.entityId) continue;
+    if (rematerializeChangeAffectsVisibilityGate(report.changes)) entityIds.add(report.entityId);
+  }
+  return Array.from(entityIds);
+}
+
 export function researchEntityFieldIsStranded(value: unknown): boolean {
   if (value === undefined || value === null) return true;
   if (Array.isArray(value)) return value.length === 0;

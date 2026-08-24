@@ -4,7 +4,9 @@ import {
   buildRematerializeFieldChanges,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  rematerializeChangeAffectsVisibilityGate,
   researchEntityFieldIsStranded,
+  selectRematerializeRegateEntityIds,
 } from '../rematerializeResearchEntitiesCore';
 
 describe('parseRematerializeResearchEntitiesArgs', () => {
@@ -148,6 +150,62 @@ describe('assertRematerializeApplyAllowed', () => {
 
   it('allows apply against Development', () => {
     expect(() => assertRematerializeApplyAllowed(base, 'cluster/Development')).not.toThrow();
+  });
+});
+
+describe('rematerializeChangeAffectsVisibilityGate', () => {
+  it('is false when nothing changed', () => {
+    expect(rematerializeChangeAffectsVisibilityGate([])).toBe(false);
+  });
+
+  it('is false when only the tier itself changed', () => {
+    expect(
+      rematerializeChangeAffectsVisibilityGate([
+        { field: 'studentVisibilityTier', before: 'operator_review', after: 'student_ready' },
+      ]),
+    ).toBe(false);
+  });
+
+  it('is true when a gate-input content field changed', () => {
+    expect(
+      rematerializeChangeAffectsVisibilityGate([
+        { field: 'fullDescription', before: '', after: 'Studies X' },
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe('selectRematerializeRegateEntityIds', () => {
+  const change = { field: 'fullDescription', before: '', after: 'Studies X' };
+
+  it('selects only found, non-skipped entities whose gate inputs changed', () => {
+    const ids = selectRematerializeRegateEntityIds([
+      { entityId: 'a1', found: true, changes: [change] },
+      { entityId: 'b2', found: true, changes: [] },
+      { entityId: 'c3', found: false, changes: [change] },
+      { entityId: 'd4', found: true, skipped: 'missing-required-fields', changes: [change] },
+      { found: true, changes: [change] },
+    ]);
+    expect(ids).toEqual(['a1']);
+  });
+
+  it('ignores entities whose only change was the tier field', () => {
+    const ids = selectRematerializeRegateEntityIds([
+      {
+        entityId: 'a1',
+        found: true,
+        changes: [{ field: 'studentVisibilityTier', before: 'x', after: 'y' }],
+      },
+    ]);
+    expect(ids).toEqual([]);
+  });
+
+  it('dedupes repeated entity ids', () => {
+    const ids = selectRematerializeRegateEntityIds([
+      { entityId: 'a1', found: true, changes: [change] },
+      { entityId: 'a1', found: true, changes: [change] },
+    ]);
+    expect(ids).toEqual(['a1']);
   });
 });
 

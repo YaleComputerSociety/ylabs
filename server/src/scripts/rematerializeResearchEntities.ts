@@ -7,6 +7,12 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import {
+  applyStudentVisibilityGatePlans,
+  planStudentVisibilityGate,
+  runStudentVisibilityGateForPlans,
+} from '../services/studentVisibilityGateService';
+import { syncEntities } from '../services/meiliSyncService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -16,6 +22,7 @@ import {
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
   researchEntityFieldIsStranded,
+  selectRematerializeRegateEntityIds,
   type RematerializeFieldChange,
 } from './rematerializeResearchEntitiesCore';
 
@@ -127,6 +134,59 @@ function writeReport(report: Record<string, unknown>, output?: string): void {
   fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
+interface RematerializeRegateSummary {
+  scopedEntities: number;
+  tierChanged: number;
+  tierTransitions: Array<{ recordId: string; label: string; from: string | null; to: string }>;
+  counts: Record<string, number>;
+}
+
+async function regateRematerializedEntities(
+  entityIds: string[],
+): Promise<RematerializeRegateSummary> {
+  const plans = await planStudentVisibilityGate({
+    collection: 'research',
+    mode: 'apply',
+    recordIds: entityIds,
+  });
+  const gateReport = await runStudentVisibilityGateForPlans(plans, {
+    mode: 'dry-run',
+    collection: 'research',
+  });
+  await applyStudentVisibilityGatePlans(plans);
+
+  const objectIds = entityIds
+    .filter((id) => mongoose.isValidObjectId(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  if (objectIds.length > 0) {
+    const docs = await ResearchEntity.find({ _id: { $in: objectIds } }).lean();
+    try {
+      await syncEntities('researchEntity', docs as unknown[]);
+    } catch (error) {
+      console.error(
+        '[research-entity:rematerialize] Meili resync after re-gate failed:',
+        sanitizeLogValue(error),
+      );
+    }
+  }
+
+  const tierTransitions = plans
+    .filter((plan) => plan.currentTier !== plan.tier)
+    .map((plan) => ({
+      recordId: plan.recordId,
+      label: plan.label,
+      from: plan.currentTier ?? null,
+      to: plan.tier,
+    }));
+
+  return {
+    scopedEntities: entityIds.length,
+    tierChanged: tierTransitions.length,
+    tierTransitions,
+    counts: gateReport.counts as unknown as Record<string, number>,
+  };
+}
+
 async function main() {
   const args = parseRematerializeResearchEntitiesArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
@@ -150,6 +210,14 @@ async function main() {
     entities.push(await processSlug(slug, args.apply, args.onlyFields));
   }
 
+  let regate: RematerializeRegateSummary | undefined;
+  if (args.apply) {
+    const regateEntityIds = selectRematerializeRegateEntityIds(entities);
+    if (regateEntityIds.length > 0) {
+      regate = await regateRematerializedEntities(regateEntityIds);
+    }
+  }
+
   const report = {
     generatedAt: new Date().toISOString(),
     environment: guard.environment,
@@ -162,6 +230,7 @@ async function main() {
     entitiesFound: entities.filter((entity) => entity.found).length,
     entitiesMissing: entities.filter((entity) => !entity.found).map((entity) => entity.slug),
     entitiesChanged: entities.filter((entity) => entity.changes.length > 0).length,
+    regate,
     entities,
   };
   console.log(JSON.stringify(report, null, 2));
