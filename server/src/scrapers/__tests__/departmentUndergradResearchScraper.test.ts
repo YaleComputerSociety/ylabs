@@ -214,8 +214,25 @@ const BACHELOR_ONLY_NO_RESEARCH_HTML = `
 
 const RESEARCH_WITHOUT_UNDERGRAD_SIGNAL_HTML = `
 <main>
+  <h1>Faculty Research</h1>
+  <p>Our faculty lead an active portfolio of research projects across the discipline.</p>
+</main>
+`;
+
+const HUMANITIES_SENIOR_ESSAY_HTML = `
+<main>
   <h1>Senior Essay</h1>
-  <p>The senior thesis is an opportunity to apply what you have learned to an independent research project under the mentorship of an advisor.</p>
+  <p>Home Academics Calendar.</p>
+  <p>In this department, as in others, the Senior Essay consists of an extended research and writing project undertaken with the guidance of a faculty advisor.</p>
+  <p>Interested juniors submit a prospectus to the director of undergraduate studies before beginning the senior essay.</p>
+</main>
+`;
+
+const QUANT_SENIOR_PROJECT_HTML = `
+<main>
+  <h1>Senior Project</h1>
+  <p>The senior project is an opportunity to apply what you have learned to an independent research project, under the mentorship of a faculty advisor, on a topic of mutual interest.</p>
+  <p>Students in the major complete the project during their final year of undergraduate study.</p>
 </main>
 `;
 
@@ -789,6 +806,122 @@ describe('departmentUndergradResearchScraper', () => {
     expect(observations.map((observation) => observation.field)).not.toEqual(
       expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),
     );
+  });
+
+  it('configures Statistics and Data Science and humanities senior-essay departments (#1460)', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+
+    expect(configsByKey.get('statistics-and-data-science')).toMatchObject({
+      url: 'https://statistics.yale.edu/undergraduates/the-major/49104920-senior-essay',
+      parser: 'general-guidance',
+      department: 'Statistics and Data Science',
+    });
+    expect(configsByKey.get('english')).toMatchObject({
+      url: 'https://english.yale.edu/undergraduate/senior-essay',
+      parser: 'general-guidance',
+      department: 'English',
+    });
+    expect(configsByKey.get('comparative-literature')).toMatchObject({
+      parser: 'general-guidance',
+      department: 'Comparative Literature',
+    });
+    expect(configsByKey.get('religious-studies')).toMatchObject({
+      parser: 'general-guidance',
+      department: 'Religious Studies',
+    });
+    expect(configsByKey.get('american-studies')).toMatchObject({
+      parser: 'general-guidance',
+      department: 'American Studies',
+    });
+    expect(configsByKey.get('womens-gender-sexuality-studies')).toMatchObject({
+      parser: 'general-guidance',
+      department: "Women's, Gender, and Sexuality Studies",
+    });
+
+    for (const config of DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES) {
+      expect(new URL(config.url).protocol).toBe('https:');
+    }
+  });
+
+  it('tolerates humanities senior-essay prose and emits source-backed access evidence (#1460)', () => {
+    const englishConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'english',
+    )!;
+
+    const [record] = parseGeneralDepartmentResearchPage(HUMANITIES_SENIOR_ESSAY_HTML, englishConfig);
+
+    expect(record).toMatchObject({
+      entityKey: 'department-undergrad-research-english',
+      kind: 'program',
+      entityType: 'PROGRAM',
+      department: 'English',
+      undergradAccessEvidence: true,
+    });
+    expect(record.description).toMatch(/^Supports undergraduate research in English\./);
+    expect(record.description).toContain('extended research and writing project');
+    expect(record.description).toContain('prospectus to the director of undergraduate studies');
+    expect(record.description).not.toMatch(/Home Academics Calendar/);
+    expect(record.evidenceQuote).toContain('faculty advisor');
+    expect(record.contactEmail).toBeUndefined();
+    expect(record.joinPageUrl).toBeUndefined();
+
+    const fields = departmentUndergradResearchRecordsToObservations([record]).map(
+      (observation) => observation.field,
+    );
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        'undergradAccessEvidence',
+        'acceptingUndergrads',
+        'undergradEvidenceQuote',
+      ]),
+    );
+    expect(fields).not.toEqual(
+      expect.arrayContaining([
+        'postedOpportunityTitle',
+        'opportunityTitle',
+        'applicationUrl',
+        'deadline',
+        'contactEmail',
+        'joinPageUrl',
+      ]),
+    );
+  });
+
+  it('tolerates a quantitative senior-project pathway without fabricating openings (#1460)', () => {
+    const sdsConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'statistics-and-data-science',
+    )!;
+
+    const [record] = parseGeneralDepartmentResearchPage(QUANT_SENIOR_PROJECT_HTML, sdsConfig);
+
+    expect(record).toMatchObject({
+      entityKey: 'department-undergrad-research-statistics-and-data-science',
+      entityType: 'PROGRAM',
+      department: 'Statistics and Data Science',
+      undergradAccessEvidence: true,
+    });
+    expect(record.description).toContain('independent research project');
+    expect(record.evidenceQuote).toContain('senior project');
+
+    const fields = departmentUndergradResearchRecordsToObservations([record]).map(
+      (observation) => observation.field,
+    );
+    expect(fields).toContain('undergradEvidenceQuote');
+    expect(fields).not.toEqual(
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),
+    );
+  });
+
+  it('still drops research pages that carry neither an undergraduate nor a senior-essay signal (#1460)', () => {
+    const englishConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'english',
+    )!;
+
+    expect(
+      parseGeneralDepartmentResearchPage(RESEARCH_WITHOUT_UNDERGRAD_SIGNAL_HTML, englishConfig),
+    ).toEqual([]);
   });
 
   it('runs selected configured pages and honors only filters', async () => {
