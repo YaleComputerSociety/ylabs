@@ -12,6 +12,7 @@ import { YaleResearchOfficialScraper } from './sources/yaleResearchOfficialScrap
 import { YaleDirectoryScraper } from './sources/yaleDirectoryScraper';
 import { DepartmentRosterScraper } from './sources/departmentRosterScraper';
 import { DepartmentUndergradResearchScraper } from './sources/departmentUndergradResearchScraper';
+import { CourseBasedResearchPathwayScraper } from './sources/courseBasedResearchPathwayScraper';
 import { NihReporterScraper } from './sources/nihReporterScraper';
 import { NsfAwardScraper } from './sources/nsfAwardScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
@@ -43,6 +44,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new YaleDirectoryScraper());
   o.register(new DepartmentRosterScraper());
   o.register(new DepartmentUndergradResearchScraper());
+  o.register(new CourseBasedResearchPathwayScraper());
   o.register(new NihReporterScraper());
   o.register(new NsfAwardScraper());
   o.register(new CentersInstitutesScraper());

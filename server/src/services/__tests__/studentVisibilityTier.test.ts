@@ -311,6 +311,58 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('operator_override');
   });
 
+  it('treats a lead-less COURSE_SEQUENCE as lead-exempt: held via missing_alternate_access_path, never missing_lead', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'course-based-research-psychology-directed-research',
+        name: 'Psychology Directed Research Courses',
+        slug: 'course-based-research-psychology-directed-research',
+        kind: 'group',
+        entityType: 'COURSE_SEQUENCE',
+        shortDescription:
+          'A for-credit Psychology research pathway through directed research, independent study, and senior-essay or senior-thesis courses.',
+        fullDescription:
+          'A for-credit, course-based research pathway in Psychology. The department offers directed research and senior essay courses for credit under faculty supervision.',
+        websiteUrl: 'https://psychology.yale.edu/what-directed-research-course',
+        sourceUrls: ['https://psychology.yale.edu/what-directed-research-course'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('publishes a lead-less COURSE_SEQUENCE as limited_but_safe once it has a reachable access path', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'course-based-research-psychology-directed-research-path',
+        name: 'Psychology Directed Research Courses',
+        slug: 'course-based-research-psychology-directed-research-path',
+        kind: 'group',
+        entityType: 'COURSE_SEQUENCE',
+        shortDescription:
+          'A for-credit Psychology research pathway through directed research, independent study, and senior-essay or senior-thesis courses.',
+        fullDescription:
+          'A for-credit, course-based research pathway in Psychology. The department offers directed research and senior essay courses for credit under faculty supervision.',
+        websiteUrl: 'https://psychology.yale.edu/what-directed-research-course',
+        sourceUrls: ['https://psychology.yale.edu/what-directed-research-course'],
+      },
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+    expect(result.tier).toBe('limited_but_safe');
+  });
+
   it('suppresses generic directory-only faculty-area shells', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {

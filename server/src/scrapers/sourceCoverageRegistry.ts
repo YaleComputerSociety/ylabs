@@ -174,6 +174,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Official department undergraduate research pages; can support source-backed research homes and access/action evidence, but generic guidance must not create posted opportunities.',
   },
+  'course-based-research-pathways': {
+    priority: 3,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'TOPICS', 'COURSE_CREDIT', 'SENIOR_THESIS'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Official per-department directed-research / independent-study / senior-essay / senior-thesis course pages, minted as discovery-only COURSE_SEQUENCE research homes. Each department's own course page is the cited source; catalog and course-search index roots are never cited. Discovery-only: emits identity, official URL, and description; must not create undergraduate-access claims, posted openings, application links, or contact routes.",
+  },
   'official-profile-enrichment': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
