@@ -1769,6 +1769,36 @@ describe('LabDetail page', () => {
     expect(screen.getAllByText('Public Health Research').length).toBeGreaterThan(0);
   });
 
+  it('renders a Methods and techniques section when the entity has methods', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        methods: ['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('Methods and techniques')).toBeTruthy();
+    expect(screen.getByText('CRISPR-Cas9 Gene Editing')).toBeTruthy();
+    expect(screen.getByText('Single-cell RNA sequencing')).toBeTruthy();
+  });
+
+  it('omits the Methods and techniques section when the entity has no methods', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        methods: [],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('Methods and techniques')).toBeNull();
+  });
+
   it('does not render internal profile completeness copy', async () => {
     renderLabDetail();
 

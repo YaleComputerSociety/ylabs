@@ -142,6 +142,24 @@ describe('researchEntitySearchIndexService', () => {
     ]);
   });
 
+  it('includes clean methods in the search document and drops empty methods lists', () => {
+    const withMethods = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-methods',
+      name: 'Methods Lab',
+      archived: false,
+      methods: ['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
+    });
+    expect(withMethods?.methods).toEqual(['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing']);
+
+    const withoutMethods = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-no-methods',
+      name: 'No Methods Lab',
+      archived: false,
+      methods: [],
+    });
+    expect(withoutMethods).not.toHaveProperty('methods');
+  });
+
   it('adds curated student topic aliases to searchable index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-ai',
@@ -315,8 +333,10 @@ describe('researchEntitySearchIndexService', () => {
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain(
       'acceptingUndergrads',
     );
+    expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('methods');
     const searchable = getResearchEntitySearchIndexSettings().searchableAttributes;
     expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
+    expect(searchable).toEqual(expect.arrayContaining(['methods']));
     expect(searchable).toEqual(expect.arrayContaining(['shortDescription', 'fullDescription']));
     expect(searchable).not.toContain('keywords');
     expect(searchable).not.toContain('summary');
@@ -441,6 +461,7 @@ describe('researchEntitySearchIndexService', () => {
       'professorNames',
       'departments',
       'researchAreas',
+      'methods',
       'shortDescription',
       'fullDescription',
     ]) {

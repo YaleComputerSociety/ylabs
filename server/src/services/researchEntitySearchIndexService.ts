@@ -26,6 +26,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'leadProfessorNames',
     'professorNames',
     'researchAreas',
+    'methods',
     'studentSearchTerms',
     'departments',
     'shortDescription',
@@ -444,6 +445,12 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     if (researchAreas.length > 0) out.researchAreas = researchAreas;
     else delete out.researchAreas;
   }
+
+  if (Array.isArray(out.methods)) {
+    const methods = normalizeResearchAreaList(out.methods);
+    if (methods.length > 0) out.methods = methods;
+    else delete out.methods;
+  }
 };
 
 export function buildResearchEntitySearchIndexDocument(
@@ -531,6 +538,7 @@ export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
       '{% if doc.professorNames %}Professors: {{doc.professorNames}}\n{% endif %}' +
       '{% if doc.departments %}Departments: {{doc.departments}}\n{% endif %}' +
       '{% if doc.researchAreas %}Research areas: {{doc.researchAreas}}\n{% endif %}' +
+      '{% if doc.methods %}Methods: {{doc.methods}}\n{% endif %}' +
       '{% if doc.shortDescription %}Description: {{doc.shortDescription}} {% endif %}' +
       '{% if doc.fullDescription %}{{doc.fullDescription}}{% endif %}',
   },
