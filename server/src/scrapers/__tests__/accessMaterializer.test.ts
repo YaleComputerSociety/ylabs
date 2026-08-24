@@ -457,6 +457,31 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
   });
 
+  it('does not mint microsite contact-instructions access evidence when undergrad access is explicitly no', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'no',
+          evidenceSource: 'explicit_text',
+          evidenceQuote: 'We are looking for postdocs and graduate students to work with us.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      }),
+      obs({
+        field: 'contactInstructionsQuote',
+        value: 'Please contact the PI by email to inquire.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
+      'CONTACT_INSTRUCTIONS_EXIST',
+    );
+  });
+
   it('treats department undergraduate research pages as access evidence, not posted openings', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
