@@ -517,6 +517,18 @@ describe('sanitizeResearchHomeSelfReferenceText', () => {
         entityType: 'CORE_FACILITY',
       }),
     ).toBe('The core facility runs shared instruments.');
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The lab digitizes manuscripts.', {
+        name: 'A DH Project',
+        entityType: 'DIGITAL_HUMANITIES_PROJECT',
+      }),
+    ).toBe('The project digitizes manuscripts.');
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The lab catalogs the archive.', {
+        name: 'A Museum Project',
+        entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+      }),
+    ).toBe('The project catalogs the archive.');
   });
 
   it('leaves LAB and faculty-research entities untouched', () => {

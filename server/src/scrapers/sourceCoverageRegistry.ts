@@ -252,6 +252,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Yale School of the Environment faculty directory and individual profile pages for faculty identity, research homes, research areas, and official profile prose. Each faculty individual profile is the cited source; the directory root is a crawl seed only and is never recorded as a source. Discovery-only; must not imply undergraduate access without a more explicit source.',
   },
+  'dh-lab-projects': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE', 'TOPICS'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale Digital Humanities Lab projects catalog; mints DIGITAL_HUMANITIES_PROJECT research homes for discovery. Each individual project page is the cited source; the projects-index root is a crawl seed only and is never recorded as a source. Discovery-only (identity, topics, official project URL); must not manufacture undergraduate access, posted openings, or contact routes.',
+  },
   'centers-institutes-index': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
