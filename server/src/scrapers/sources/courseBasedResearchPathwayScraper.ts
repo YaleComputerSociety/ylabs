@@ -57,27 +57,99 @@ export interface CourseBasedResearchPathwayScraperDeps {
   fetchHtml?: FetchHtml;
 }
 
+const FAS = 'Yale Faculty of Arts and Sciences';
+
 export const DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES: CourseBasedResearchPathwayPageConfig[] = [
   {
     key: 'psychology-directed-research',
     url: 'https://psychology.yale.edu/what-directed-research-course',
     name: 'Psychology Directed Research Courses',
     department: 'Psychology',
-    school: 'Yale Faculty of Arts and Sciences',
+    school: FAS,
   },
   {
     key: 'history-senior-essay',
     url: 'https://history.yale.edu/undergraduate/senior-essay',
     name: 'History Senior Essay',
     department: 'History',
-    school: 'Yale Faculty of Arts and Sciences',
+    school: FAS,
   },
   {
     key: 'english-senior-essay',
     url: 'https://english.yale.edu/undergraduate/senior-essay',
     name: 'English Senior Essay',
     department: 'English',
-    school: 'Yale Faculty of Arts and Sciences',
+    school: FAS,
+  },
+  {
+    key: 'mcdb-senior-research',
+    url: 'https://mcdb.yale.edu/undergraduate/undergrad-degree-programs',
+    name: 'Molecular, Cellular, and Developmental Biology Senior Research',
+    department: 'Molecular, Cellular, and Developmental Biology',
+    school: FAS,
+  },
+  {
+    key: 'mbb-senior-requirement',
+    url: 'https://mbb.yale.edu/undergraduate-education/programs-study-requirements',
+    name: 'Molecular Biophysics and Biochemistry Senior Research Requirement',
+    department: 'Molecular Biophysics and Biochemistry',
+    school: FAS,
+  },
+  {
+    key: 'chemistry-independent-research',
+    url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/independent-research-opportunities',
+    name: 'Chemistry Independent Research Courses',
+    department: 'Chemistry',
+    school: FAS,
+  },
+  {
+    key: 'astronomy-senior-project',
+    url: 'https://astronomy.yale.edu/undergraduate-program/guidelines-senior-projects-astronomy-ba-and-astrophysics-bs-majors',
+    name: 'Astronomy Senior Project',
+    department: 'Astronomy',
+    school: FAS,
+  },
+  {
+    key: 'economics-senior-essay',
+    url: 'https://economics.yale.edu/undergraduate/senior-essay',
+    name: 'Economics Senior Essay',
+    department: 'Economics',
+    school: FAS,
+  },
+  {
+    key: 'american-studies-senior-essay',
+    url: 'https://americanstudies.yale.edu/undergraduate-program/senior-year/senior-essay-course-requirements',
+    name: 'American Studies Senior Essay',
+    department: 'American Studies',
+    school: FAS,
+  },
+  {
+    key: 'wgss-senior-essay',
+    url: 'https://wgss.yale.edu/undergraduate-program/requirements-wgss-major',
+    name: "Women's, Gender, and Sexuality Studies Senior Essay",
+    department: "Women's, Gender, and Sexuality Studies",
+    school: FAS,
+  },
+  {
+    key: 'linguistics-senior-essay',
+    url: 'https://ling.yale.edu/undergraduate-studies/program-requirements',
+    name: 'Linguistics Senior Essay',
+    department: 'Linguistics',
+    school: FAS,
+  },
+  {
+    key: 'hshm-senior-project',
+    url: 'https://hshm.yale.edu/undergraduate-major/senior-project',
+    name: 'History of Science and Medicine Senior Project',
+    department: 'History of Science and Medicine',
+    school: FAS,
+  },
+  {
+    key: 'statistics-data-science-senior-essay',
+    url: 'https://statistics.yale.edu/undergraduates/the-major/49104920-senior-essay',
+    name: 'Statistics and Data Science Senior Essay',
+    department: 'Statistics and Data Science',
+    school: FAS,
   },
 ];
 
