@@ -603,6 +603,42 @@ const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
     clearShortDescriptionIfEquals:
       'Li Wen Lab studies wildlife ecology, amphibian and reptile biology, and gut microbiota health.',
   },
+  {
+    // #1407 second mechanism, same worst-case shape as Li Wen above: the
+    // namesake fusion drove the ENTIRE `fullDescription`/`shortDescription`.
+    // The Yale Pharmacology Leonard Kaczmarek lab is an ion-channel
+    // neurophysiologist (Slack/Slick K+ channels), corroborated by the one
+    // native chip kept below, but a namesake parasitologist/entomologist was
+    // fused into the other five chips and the full description prose. Both
+    // description fields are cleared outright - the whole prose is the wrong
+    // person, no correct portion to preserve.
+    entityId: '6a057e1813fc60d57ec2ac71',
+    slug: 'nih-pi-leonard-kaczmarek',
+    removeAreas: [
+      'Parasite Biology and Host Interactions',
+      'Photoreceptor and optogenetics research',
+      'Neuroscience and Neuropharmacology Research',
+      'Mosquito-borne diseases and control',
+      'Neurobiology and Insect Physiology Research',
+    ],
+    clearFullDescriptionIfEquals:
+      'The Leonard Kaczmarek Lab focuses on parasite biology and host interactions, exploring the mechanisms of photoreception and the applications of optogenetics. Additionally, the lab investigates neuroscience, neuropharmacology, and the dynamics of mosquito-borne diseases and their control strategies.',
+    clearShortDescriptionIfEquals:
+      'The Leonard Kaczmarek Lab studies parasite biology, host interactions, and mosquito-borne diseases.',
+  },
+  {
+    // #1407 second mechanism, weaker/partial variant (contrast Kaczmarek/Li
+    // Wen above): the Yale Internal Medicine Kei-Hoi Cheung lab is a
+    // biomedical-informatics/bioinformatics group - corroborated by 5 of 6
+    // chips and most of the description - but one namesake (a psychosomatic-
+    // medicine specialist) chip was fused in, and it also seeped into a
+    // single trailing description sentence (same shape as Hinton). Only the
+    // chip is removed; the description's mostly-correct prose is left as-is
+    // since a partial-clause repair is #1394's territory, not this issue's.
+    entityId: '6a057e2113fc60d57ec2aeb3',
+    slug: 'nih-pi-kei-hoi-cheung',
+    removeAreas: ['Psychosomatic Disorders and Their Treatments'],
+  },
 ];
 
 interface CliOptions {
