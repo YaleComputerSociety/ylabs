@@ -104,3 +104,39 @@ export function hasUndergradHostingEvidenceFromSignals(
       typeof signal.type === 'string' && UNDERGRAD_HOSTING_SIGNAL_TYPES.has(signal.type),
   );
 }
+
+// Signals that evidence a currently documented pathway a student could take to
+// join a research home: a posted or recurring opening, an application form, an
+// explicit contact route (lab/program manager or contact instructions), prior
+// or current undergraduate participation, or faculty-supervised student
+// projects. These back the "Posted route" / "Contact route" / "Undergrad
+// evidence" / "Student project evidence" discovery badges and the
+// documented-way-in browse filter.
+//
+// The near-uninformative identified-lead fallback (REACH_OUT_PLAUSIBLE) and the
+// negative signals (NOT_CURRENTLY_AVAILABLE, NO_EVIDENCE) are intentionally
+// excluded so the filter stays evidence-backed rather than counting a bare
+// "there is a PI you could email" hint as a documented way in. See #696, #1519.
+// This is deliberately stricter than the client "Contact route" badge, which
+// also surfaces on the plan-outreach fallback.
+export const DOCUMENTED_WAY_IN_SIGNAL_TYPES: ReadonlySet<string> = new Set([
+  'POSTED_OPENING',
+  'RECURRING_PROGRAM',
+  'APPLICATION_FORM_EXISTS',
+  'APPLICATION_ONLY',
+  'CONTACT_INSTRUCTIONS_EXIST',
+  'LAB_MANAGER_LISTED',
+  'PROGRAM_MANAGER_LISTED',
+  'PAST_UNDERGRADS',
+  'CURRENT_UNDERGRADS',
+  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+]);
+
+export function hasDocumentedWayInFromSignals(
+  signals: AccessSignalConfidenceInput[],
+): boolean {
+  return signals.some(
+    (signal) =>
+      typeof signal.type === 'string' && DOCUMENTED_WAY_IN_SIGNAL_TYPES.has(signal.type),
+  );
+}

@@ -99,6 +99,10 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
     filters.hostsUndergrads = true;
   }
 
+  if (r.hasDocumentedWayIn === true) {
+    filters.hasDocumentedWayIn = true;
+  }
+
   const currentAvailability = toStringArray(r.currentAvailability)?.filter((value) =>
     CURRENT_AVAILABILITY_FILTER_VALUES.has(value),
   ) as ResearchGroupFilterInput['currentAvailability'];

@@ -126,6 +126,33 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await evidenceOf(notAvailableWithOutreach._id)).toBe(false);
   });
 
+  it('persists hasDocumentedWayIn for allowlisted evidence but not the outreach fallback (#1519)', async () => {
+    const postedRoute = await createEntity('lab-posted', 'LAB');
+    const contactRoute = await createEntity('lab-contact', 'LAB');
+    const outreachOnly = await createEntity('lab-outreach', 'LAB');
+    const noEvidence = await createEntity('lab-none', 'LAB');
+
+    await Signal.create({ researchEntityId: postedRoute._id, type: 'POSTED_OPENING' });
+    await Signal.create({ researchEntityId: contactRoute._id, type: 'LAB_MANAGER_LISTED' });
+    await Signal.create({ researchEntityId: outreachOnly._id, type: 'REACH_OUT_PLAUSIBLE' });
+    await Signal.create({ researchEntityId: noEvidence._id, type: 'NO_EVIDENCE' });
+
+    await recomputeBrowseRankForEntities(
+      [postedRoute._id, contactRoute._id, outreachOnly._id, noEvidence._id],
+      { sync: false },
+    );
+
+    const documentedOf = async (id: mongoose.Types.ObjectId): Promise<boolean> => {
+      const doc = await ResearchEntity.findById(id).lean<{ hasDocumentedWayIn?: boolean }>();
+      return doc?.hasDocumentedWayIn ?? false;
+    };
+
+    expect(await documentedOf(postedRoute._id)).toBe(true);
+    expect(await documentedOf(contactRoute._id)).toBe(true);
+    expect(await documentedOf(outreachOnly._id)).toBe(false);
+    expect(await documentedOf(noEvidence._id)).toBe(false);
+  });
+
   it('only lifts accessAcceptanceLevel for a bare-key REACH_OUT_PLAUSIBLE with a real excerpt (#1343)', async () => {
     const bareKeyNoExcerpt = await createEntity('lab-bare-key-no-excerpt', 'LAB');
     const bareKeyWithExcerpt = await createEntity('lab-bare-key-with-excerpt', 'LAB');

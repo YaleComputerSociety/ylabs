@@ -53,6 +53,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'researchAreas',
     'accessAcceptanceLevel',
     'hasUndergradHostingEvidence',
+    'hasDocumentedWayIn',
     'undergraduateCurrentAvailability',
     'studentVisibilityTier',
   ],

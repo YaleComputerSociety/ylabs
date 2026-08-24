@@ -5,11 +5,13 @@ interface ResearchZeroResultRecoveryProps {
   selectedDepartment: string;
   selectedResearchAreas: string[];
   hostsUndergrads: boolean;
+  documentedWayIn: boolean;
   departmentLabel: (value: string) => string;
   onRemoveSchool: () => void;
   onRemoveDepartment: () => void;
   onRemoveResearchArea: (value: string) => void;
   onRemoveHostsUndergrads: () => void;
+  onRemoveDocumentedWayIn: () => void;
   onClearAllFilters: () => void;
   relaxedQuery: string | null;
   onRelaxQuery: () => void;
@@ -31,11 +33,13 @@ const ResearchZeroResultRecovery = ({
   selectedDepartment,
   selectedResearchAreas,
   hostsUndergrads,
+  documentedWayIn,
   departmentLabel,
   onRemoveSchool,
   onRemoveDepartment,
   onRemoveResearchArea,
   onRemoveHostsUndergrads,
+  onRemoveDocumentedWayIn,
   onClearAllFilters,
   relaxedQuery,
   onRelaxQuery,
@@ -112,6 +116,19 @@ const ResearchZeroResultRecovery = ({
               className={chipClassName}
             >
               <span className="min-w-0 truncate">Has hosted undergrads before</span>
+              <span aria-hidden="true" className="shrink-0">
+                ×
+              </span>
+            </button>
+          )}
+          {documentedWayIn && (
+            <button
+              type="button"
+              onClick={onRemoveDocumentedWayIn}
+              aria-label="Remove Has a documented way in"
+              className={chipClassName}
+            >
+              <span className="min-w-0 truncate">Has a documented way in</span>
               <span aria-hidden="true" className="shrink-0">
                 ×
               </span>

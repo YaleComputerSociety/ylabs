@@ -21,6 +21,7 @@ const renderFilters = (
     typeBucketOptions: [],
     selectedTypeBuckets: [],
     hostsUndergrads: false,
+    documentedWayIn: false,
     currentAvailabilityOptions: [],
     selectedCurrentAvailability: [],
     isApplying: false,
@@ -32,6 +33,7 @@ const renderFilters = (
     onResearchAreasChange: vi.fn(),
     onTypeBucketsChange: vi.fn(),
     onHostsUndergradsChange: vi.fn(),
+    onDocumentedWayInChange: vi.fn(),
     onCurrentAvailabilityChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
@@ -148,6 +150,57 @@ describe('ResearchFilterDisclosure', () => {
     expect(selectedProps.onHostsUndergradsChange).toHaveBeenCalledWith(false);
   });
 
+  it('shows the documented-way-in toggle only when the query splits documented and undocumented homes (#1519)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: { hasDocumentedWayIn: { true: 6, false: 9 } },
+    });
+
+    fireEvent.click(screen.getByLabelText('Has a documented way in'));
+    expect(props.onDocumentedWayInChange).toHaveBeenCalledWith(true);
+
+    const { props: selectedProps } = renderFilters({
+      variant: 'sidebar',
+      documentedWayIn: true,
+      facetDistribution: { hasDocumentedWayIn: { true: 6, false: 9 } },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Has a documented way in' }));
+    expect(selectedProps.onDocumentedWayInChange).toHaveBeenCalledWith(false);
+  });
+
+  it('hides the documented-way-in toggle for a degenerate all-or-nothing distribution (#1519)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    const { container: allDocumented } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: { hasDocumentedWayIn: { true: 12, false: 0 } },
+    });
+    expect(within(allDocumented).queryByLabelText('Has a documented way in')).toBeNull();
+
+    const { container: noneDocumented } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: { hasDocumentedWayIn: { true: 0, false: 12 } },
+    });
+    expect(within(noneDocumented).queryByLabelText('Has a documented way in')).toBeNull();
+
+    const { container: missingFacet } = renderFilters({ variant: 'sidebar' });
+    expect(within(missingFacet).queryByLabelText('Has a documented way in')).toBeNull();
+  });
+
+  it('keeps an already-selected documented-way-in filter visible even when the split is degenerate (#1519)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    renderFilters({
+      variant: 'sidebar',
+      documentedWayIn: true,
+      facetDistribution: { hasDocumentedWayIn: { true: 12, false: 0 } },
+    });
+
+    expect(screen.getByLabelText('Has a documented way in')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Has a documented way in' })).toBeTruthy();
+  });
+
   it('toggles the current-availability filter and exposes a removable chip once coverage clears the minimum', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props } = renderFilters({
@@ -251,6 +304,7 @@ describe('ResearchFilterDisclosure', () => {
         typeBucketOptions: [],
         selectedTypeBuckets: [],
         hostsUndergrads: false,
+        documentedWayIn: false,
         currentAvailabilityOptions: [],
         selectedCurrentAvailability: [],
         isApplying: false,
@@ -262,6 +316,7 @@ describe('ResearchFilterDisclosure', () => {
         onResearchAreasChange: () => setHasSubmittedSearch(true),
         onTypeBucketsChange: vi.fn(),
         onHostsUndergradsChange: vi.fn(),
+        onDocumentedWayInChange: vi.fn(),
         onCurrentAvailabilityChange: vi.fn(),
         onClearAll: vi.fn(),
         isOpen,
