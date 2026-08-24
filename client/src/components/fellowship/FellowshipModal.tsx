@@ -801,7 +801,7 @@ const FellowshipModal = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                          className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+                          className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
                         >
                           Open official application
                         </a>
@@ -920,7 +920,7 @@ const FellowshipModal = ({
                       onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
                       className={`inline-flex min-h-[44px] items-center rounded-md px-6 py-2.5 text-sm font-medium text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
                         applicationStatus.isApplicationWindowOpen
-                          ? 'bg-blue-600 hover:bg-blue-700'
+                          ? 'bg-brand hover:bg-brand-navy'
                           : 'bg-gray-600 hover:bg-gray-700'
                       }`}
                     >

@@ -926,7 +926,7 @@ const AnalyticsSupportingDetail = ({
             <button
               type="button"
               onClick={fetchUserActivity}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:cursor-not-allowed disabled:bg-slate-300"
               disabled={isUserActivityLoading}
             >
               {isUserActivityLoading ? 'Refreshing...' : 'Refresh Users'}

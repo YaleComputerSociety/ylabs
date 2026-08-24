@@ -452,7 +452,7 @@ const Analytics = () => {
           <button
             type="button"
             onClick={fetchAnalytics}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
           >
             Retry Analytics
           </button>
@@ -569,7 +569,7 @@ const Analytics = () => {
                   fetchImpactAnalytics();
                   fetchAdminAccess();
                 }}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
               >
                 Refresh Data
               </button>
@@ -708,7 +708,7 @@ const Analytics = () => {
             </label>
             <button
               ref={grantReviewButtonRef}
-              className="inline-flex min-h-[44px] items-center justify-center self-end rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-900 disabled:cursor-not-allowed disabled:bg-blue-300"
+              className="inline-flex min-h-[44px] items-center justify-center self-end rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy disabled:cursor-not-allowed disabled:bg-slate-300"
               type="submit"
               disabled={adminAccessActionNetid !== null}
             >
@@ -954,7 +954,7 @@ const Analytics = () => {
             <button
               type="button"
               onClick={fetchAuditEvents}
-              className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 md:self-auto"
+              className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:cursor-not-allowed disabled:bg-slate-300 md:self-auto"
               disabled={isAuditLoading}
             >
               {isAuditLoading ? 'Refreshing...' : 'Refresh Log'}

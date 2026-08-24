@@ -384,7 +384,7 @@ const AdminDepartments = () => {
                           <>
                             <button
                               onClick={() => startEdit(dept)}
-                              className="min-h-[44px] text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                              className="min-h-[44px] text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy"
                             >
                               Edit
                             </button>

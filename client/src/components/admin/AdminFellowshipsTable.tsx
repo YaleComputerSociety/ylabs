@@ -451,7 +451,7 @@ const ArrayFieldEditor = ({
         <button
           type="button"
           onClick={handleAdd}
-          className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy"
         >
           Add
         </button>
@@ -531,7 +531,7 @@ const LinksEditor = ({
         <button
           type="button"
           onClick={handleAdd}
-          className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy"
         >
           Add
         </button>
@@ -949,7 +949,7 @@ const FellowshipEditModal = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-navy"
             >
               Save Changes
             </button>
