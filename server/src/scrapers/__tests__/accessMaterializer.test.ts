@@ -820,6 +820,20 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
     expect(result.accessSignals[0].derivationKey).toBe(ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY);
   });
+
+  it('gives a lead-less collections initiative an organizational ways-in from its official page (#1360)', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      researchEntityId: '64f000000000000000000012',
+      entity: {
+        entityType: 'COLLECTIONS_INITIATIVE',
+        name: 'Prospects of Empire',
+      },
+      officialUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
+      supportingObservations: [supporting],
+    });
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
+  });
 });
 
 describe('isExplicitUndergradUnavailabilityPhrase (#1304)', () => {

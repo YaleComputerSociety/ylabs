@@ -210,6 +210,54 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('missing_alternate_access_path');
   });
 
+  it('treats a collections initiative as an organizational home needing no named lead (#1360)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'yul-exhibit-prospectsofempire',
+        name: 'Prospects of Empire: Slavery and Ecology in Eighteenth-Century Atlantic Britain',
+        slug: 'yul-exhibit-prospectsofempire',
+        entityType: 'COLLECTIONS_INITIATIVE',
+        shortDescription:
+          'A Yale University Library exhibition on the ecologies and economies of eighteenth-century Atlantic empire.',
+        fullDescription:
+          'Prospects of Empire is a Yale University Library online exhibition drawing on collections across Yale to examine slavery, ecology, and the economies of empire in the eighteenth-century Atlantic world.',
+        websiteUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 0,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('publishes a collections initiative that surfaces a get-involved / people access path (#1360)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'yul-exhibit-with-path',
+        name: 'Prospects of Empire: Slavery and Ecology in Eighteenth-Century Atlantic Britain',
+        slug: 'yul-exhibit-with-path',
+        entityType: 'COLLECTIONS_INITIATIVE',
+        shortDescription:
+          'A Yale University Library exhibition on the ecologies and economies of eighteenth-century Atlantic empire.',
+        fullDescription:
+          'Prospects of Empire is a Yale University Library online exhibition drawing on collections across Yale to examine slavery, ecology, and the economies of empire in the eighteenth-century Atlantic world.',
+        websiteUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
+        sourceUrls: [
+          'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
+          'https://onlineexhibits.library.yale.edu/s/prospectsofempire/page/people',
+        ],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+
   it('holds an organizational home with a real access path but no action evidence yet as limited_but_safe, not missing_lead', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {

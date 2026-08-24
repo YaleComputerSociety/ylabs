@@ -146,16 +146,24 @@ function hasUsefulResearchAreas(entity: Record<string, any>): boolean {
   );
 }
 
-const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
+const ORGANIZATIONAL_ENTITY_TYPES = new Set([
+  'CENTER',
+  'INSTITUTE',
+  'INITIATIVE',
+  'CORE_FACILITY',
+  'COLLECTIONS_INITIATIVE',
+]);
 
 /**
  * Organizational research homes (centers, institutes, initiatives, core
- * facilities) are institutionally contactable: the entity itself — via its
- * official page and programs — is the way in, so a single named individual lead
- * is NOT required for student visibility. (Many real Yale centers are dean- or
- * committee-led and never publish a single "director".) A named director is
- * still surfaced when known, but its absence should not hide a well-described,
- * source-backed center from students.
+ * facilities, and library collections initiatives) are institutionally
+ * contactable: the entity itself — via its official page and programs — is the
+ * way in, so a single named individual lead is NOT required for student
+ * visibility. (Many real Yale centers are dean- or committee-led and never
+ * publish a single "director"; library collections initiatives are curated by
+ * the library and contactable via their official exhibition page.) A named
+ * director is still surfaced when known, but its absence should not hide a
+ * well-described, source-backed organizational home from students.
  */
 function isOrganizationalResearchEntity(entity: Record<string, any>): boolean {
   return ORGANIZATIONAL_ENTITY_TYPES.has(textValue(entity.entityType).toUpperCase());

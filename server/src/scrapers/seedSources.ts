@@ -338,6 +338,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'library-collections-as-data',
+    displayName: 'Yale University Library online exhibitions',
+    description:
+      'Yale University Library online exhibitions catalog (Omeka); pilot producer for COLLECTIONS_INITIATIVE collections-as-data / digital-scholarship research homes. Cites each individual exhibition page (never the sites index) and emits discovery-only identity, an official-page summary description, and any published "curated by" curator as an inferred-director lead. Fails closed on contact data.',
+    baseUrl: 'https://onlineexhibits.library.yale.edu',
+    defaultWeight: 0.85,
+    cadence: 'monthly',
+  },
+  {
     name: 'undergrad-fellowships-recipients',
     displayName: 'Yale undergrad fellowship recipient lists',
     description:
