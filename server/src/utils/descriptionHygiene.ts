@@ -184,6 +184,114 @@ export function stripInlineUrls(text: string): string {
     .replace(/\b[a-z0-9][a-z0-9-]*\.(?:gle|com|edu|org|gov|io|net|us)\b\S*/gi, ' ');
 }
 
+const bibliographicArtifactStripPattern =
+  /https?:\/\/\S+|\bwww\.\S+|(?<!@)\b(?:[a-z0-9][a-z0-9-]*\.)+(?:gov|edu|org|com|io|net|us)\b\S*|\bPMCID\s*:?\s*(?:PMC)?\d+|\bPMC\d+\b|\bPMID\s*:?\s*\d+|\bdoi\s*:\s*\S+/gi;
+
+const bibliographicArtifactDetectPattern =
+  /https?:\/\/\S+|\bwww\.\S+|(?<!@)\b(?:[a-z0-9][a-z0-9-]*\.)+(?:gov|edu|org|com|io|net|us)\b\S*|\bPMCID\s*:?\s*(?:PMC)?\d+|\bPMC\d+\b|\bPMID\s*:?\s*\d+|\bdoi\s*:\s*\S+/i;
+
+const REFERENCE_SCAFFOLD_WORDS = new Set([
+  'see',
+  'also',
+  'for',
+  'more',
+  'further',
+  'detail',
+  'details',
+  'information',
+  'info',
+  'reference',
+  'references',
+  'visit',
+  'full',
+  'text',
+  'available',
+  'online',
+  'here',
+  'read',
+  'learn',
+  'about',
+  'paper',
+  'papers',
+  'publication',
+  'publications',
+  'article',
+  'articles',
+  'website',
+  'link',
+  'links',
+  'via',
+  'from',
+  'and',
+  'the',
+  'please',
+  'find',
+  'below',
+  'above',
+]);
+
+const ARTIFACT_TOKEN_MASK = '';
+
+const referenceLeadInPattern = new RegExp(
+  '\\b(?:full\\s+text\\s+)?(?:is\\s+)?available\\s+(?:online\\s+)?(?:at|from)\\s+' +
+    ARTIFACT_TOKEN_MASK +
+    '|\\b(?:see|read|learn)(?:\\s+more)?(?:\\s+(?:at|on|about))?\\s+' +
+    ARTIFACT_TOKEN_MASK +
+    '|\\bmore\\s+(?:at|on|information\\s+at)\\s+' +
+    ARTIFACT_TOKEN_MASK +
+    '|\\b(?:visit|at|from|via)\\s+' +
+    ARTIFACT_TOKEN_MASK,
+  'gi',
+);
+
+const trailingReferenceScaffoldPattern =
+  /\bfor\s+(?:more\s+)?(?:details?|information|reference)\b\s*(?=[.,;:!?]|$)/gi;
+
+const maskGlobalPattern = new RegExp(ARTIFACT_TOKEN_MASK, 'g');
+
+function finalizeMaskedReferenceSentence(sentence: string): string {
+  if (!sentence.includes(ARTIFACT_TOKEN_MASK)) return sentence;
+  const residual = sentence
+    .replace(referenceLeadInPattern, ' ')
+    .replace(maskGlobalPattern, ' ')
+    .replace(trailingReferenceScaffoldPattern, ' ')
+    .replace(/\(\s*\)/g, ' ')
+    .replace(/\s+([.,;:!?])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const meaningfulWords = (residual.match(/[A-Za-z]{2,}/g) || []).filter(
+    (word) => !REFERENCE_SCAFFOLD_WORDS.has(word.toLowerCase()),
+  ).length;
+  return meaningfulWords >= 3 ? residual : '';
+}
+
+/**
+ * Strip embedded bibliographic-reference artifacts - a bare http/www/domain URL,
+ * or a raw PubMed/PMC/PMCID/PMID/DOI identifier - that a profile or publications
+ * scrape left inside a description ("... available at
+ * https://www.ncbi.nlm.nih.gov/.../PMC1234567/", "See PMC7654321 and PMID:
+ * 33456789 for details"). These pointer tokens are indexed into
+ * shortDescription/fullDescription and shown to students but describe no research
+ * (#415). Tokens are masked before sentence tiling (a URL's internal dots would
+ * otherwise shred the tiling into fragments), so a sentence whose research
+ * substance survives token removal is kept with its "available at"/"see"/"more
+ * at" lead-in and trailing "for details" scaffold repaired, while a sentence that
+ * is nothing but a reference pointer collapses to empty and is dropped - mirroring
+ * stripRedactionPlaceholders rather than emitting mangled copy. The domain arm is
+ * guarded against `@` so a redacted-later email address is not clipped, and the
+ * whole pass is a no-op when no artifact token is present so genuine prose is
+ * untouched.
+ */
+export function stripBibliographicReferenceArtifacts(text: string): string {
+  const value = String(text || '');
+  if (!bibliographicArtifactDetectPattern.test(value)) return normalizeHygieneWhitespace(value);
+  const masked = value.replace(bibliographicArtifactStripPattern, ARTIFACT_TOKEN_MASK);
+  const kept = partitionSentencesForFiltering(masked)
+    .map((sentence) => finalizeMaskedReferenceSentence(sentence.trim()))
+    .filter((sentence) => sentence.length > 0);
+  return normalizeHygieneWhitespace(kept.join(' '));
+}
+
 export function stripLeadingSectionHeadingChrome(sentence: string): string {
   return normalizeHygieneWhitespace(sentence.replace(leadingSectionHeadingPattern, ''));
 }
@@ -614,7 +722,9 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
         stripGluedProfileRoleLabel(
           stripLeadingPageChrome(
             stripTrailingContactAddress(
-              stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+              stripBibliographicReferenceArtifacts(
+                stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+              ),
             ),
           ),
         ),
@@ -1081,7 +1191,9 @@ export function sanitizeCatalogDescription(text: string): string {
     collapseRepeatedSentences(
       collapseDuplicatedProseBlock(
         stripPageLayoutReferentialSentences(
-          stripDeadAnchorCtaSentences(stripCatalogChrome(text)),
+          stripDeadAnchorCtaSentences(
+            stripBibliographicReferenceArtifacts(stripCatalogChrome(text)),
+          ),
         ),
       ),
     ),
