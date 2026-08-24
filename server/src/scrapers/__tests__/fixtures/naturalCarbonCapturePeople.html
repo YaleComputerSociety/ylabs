@@ -1,82 +1,170 @@
-<!-- Structurally faithful fixture for the Yale Center for Natural Carbon Capture people page (YaleSites reference-card theme). Person-only listing across leadership/affiliate sections; each card links to the member's own departmental/profile page. Synthetic/redacted names only - no real Yale identifiers (CI gate). Verifies referenceCardPeopleExtractor scoping. -->
-<h2 class="wp-block-heading">Directors</h2>
-<ul class="card-collection__cards">
-<li data-component-has-image="true" class="reference-card">
-  <div class="reference-card__content">
-    <h3 class="reference-card__heading">
-      <a data-link-type="external" class="reference-card__heading-link reference-card__heading-link--with-icon" href="https://earth.example-university.edu/profile/sample-director">
-        Sample Director
-      </a>
-    </h3>
-    <div class="reference-card__subheading"><div>Professor of Earth &amp; Planetary Sciences</div></div>
-    <div class="reference-card__snippet"><div>Director</div></div>
-  </div>
-</li>
-</ul>
+<!--
+  Structurally-faithful fixture for the Yale Center for Natural Carbon Capture
+  people page (YaleSites reference-card theme). Each roster section is a
+  `component-wrapper` with its own `component-wrapper__heading` and
+  `card-collection`; faculty sections (Directors, Scientific Leadership Team,
+  Faculty Affiliates) are interleaved with non-faculty sections (Managing
+  Director, Research Scientists, Postdoctoral Associates) so the section-scoping
+  gate can be exercised. The whole people region is wrapped in a heading-less
+  `component-wrapper` to prove the ancestor wrapper is not double-counted.
+  Synthetic/redacted names only - no real Yale identifiers (CI gate).
+-->
+<html>
+  <body>
+    <div class="ys-view">
+      <div class="component-wrapper">
+        <div class="component-wrapper__inner">
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Directors</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://earth.example-university.edu/profile/alpha-director">Alpha Director</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Professor of Earth &amp; Planetary Sciences</div></div>
+                          <div class="reference-card__snippet"><div>Director</div></div>
+                        </div>
+                        <a class="reference-card__image-link" aria-hidden="true" tabindex="-1" href="https://earth.example-university.edu/profile/alpha-director"><img alt="" /></a>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
 
-<h2 class="wp-block-heading">Managing Director</h2>
-<ul class="card-collection__cards">
-<li data-component-has-image="true" class="reference-card">
-  <div class="reference-card__content">
-    <h3 class="reference-card__heading">
-      <a class="reference-card__heading-link" href="/profile/redacted-staff">
-        Redacted Staff
-      </a>
-    </h3>
-    <div class="reference-card__subheading"><div>Managing Director</div></div>
-    <div class="reference-card__snippet"></div>
-  </div>
-</li>
-</ul>
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Managing Director</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="/profile/beta-manager">Beta Manager</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Managing Director</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
 
-<h2 class="wp-block-heading">Faculty Affiliates</h2>
-<ul class="card-collection__cards">
-<li data-component-has-image="true" class="reference-card">
-  <div class="reference-card__content">
-    <h3 class="reference-card__heading">
-      <a data-link-type="external" class="reference-card__heading-link reference-card__heading-link--with-icon" href="https://environment.example-university.edu/directory/faculty/first-affiliate">
-        First Affiliate
-      </a>
-    </h3>
-    <div class="reference-card__subheading"><div>Professor of Ecosystem Ecology</div></div>
-    <div class="reference-card__snippet"></div>
-  </div>
-</li>
-<li data-component-has-image="true" class="reference-card">
-  <div class="reference-card__content">
-    <h3 class="reference-card__heading">
-      <a data-link-type="external" class="reference-card__heading-link reference-card__heading-link--with-icon" href="https://chem.example-university.edu/profile/second-affiliate">
-        Second Affiliate
-      </a>
-    </h3>
-    <div class="reference-card__subheading"><div>Assistant Professor of Chemistry</div></div>
-    <div class="reference-card__snippet"></div>
-  </div>
-</li>
-<li data-component-has-image="true" class="reference-card">
-  <div class="reference-card__content">
-    <h3 class="reference-card__heading">
-      <a data-link-type="external" class="reference-card__heading-link reference-card__heading-link--with-icon" href="https://engineering.example-university.edu/research-and-faculty/faculty-directory/third-affiliate">
-        Third Affiliate
-      </a>
-    </h3>
-    <div class="reference-card__subheading"><div>Associate Professor of Chemical &amp; Environmental Engineering</div></div>
-    <div class="reference-card__snippet"></div>
-  </div>
-</li>
-</ul>
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Scientific Leadership Team</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://environment.example-university.edu/directory/faculty/gamma-scientist">Gamma Scientist</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Professor of Ecosystem Ecology</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
 
-<h2 class="wp-block-heading">Postdoctoral Associates</h2>
-<ul class="card-collection__cards">
-<li data-component-has-image="true" class="reference-card">
-  <div class="reference-card__content">
-    <h3 class="reference-card__heading">
-      <a class="reference-card__heading-link" href="/profile/sample-postdoc">
-        Sample Postdoc
-      </a>
-    </h3>
-    <div class="reference-card__subheading"><div>Postdoctoral Associate</div></div>
-    <div class="reference-card__snippet"></div>
-  </div>
-</li>
-</ul>
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Faculty Affiliates</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://chem.example-university.edu/profile/delta-affiliate">Delta Affiliate</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Professor of Chemistry</div></div>
+                        </div>
+                      </li>
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://earth.example-university.edu/profile/epsilon-affiliate">Epsilon Affiliate</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Senior Research Scientist</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Research Scientists</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://earth.example-university.edu/profile/zeta-researcher">Zeta Researcher</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Associate Research Scientist</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Postdoctoral Associates</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="/profile/eta-postdoc">Eta Postdoc</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Postdoctoral Fellow</div></div>
+                        </div>
+                      </li>
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="/profile/theta-admin">Theta Admin</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Senior Administrative Assistant</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
