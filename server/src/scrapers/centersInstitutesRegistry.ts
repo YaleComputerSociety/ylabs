@@ -365,7 +365,7 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     studentImpactTier: 4,
     coveredByCenterKey: 'jackson-centers',
     notes:
-      'A meta-index page: each child center becomes its own ResearchGroup, not a member roster.',
+      'A meta-index page: each child center becomes its own ResearchGroup. Since #1670 the `crawlChildCenters` pass fetches each child site to discover its engagement subpage (people/get-involved/fellowships) and Jackson profile-card roster, so children carry a real student-facing way-in URL and members rather than only a homepage. Children with no discoverable engagement subpage or roster (e.g. Leitner Program, verified in #1660) correctly remain held per #1359.',
   },
   {
     url: 'https://macmillan.yale.edu/middleeast/people',

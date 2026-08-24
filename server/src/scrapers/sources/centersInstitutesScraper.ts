@@ -132,6 +132,15 @@ export interface CenterConfig {
   jsRenderedSkip?: boolean;
   /** Reason string used in the log line when jsRenderedSkip is true and skipped. */
   skipReason?: string;
+  /**
+   * For meta-index configs (Jackson School): crawl each discovered child
+   * center's own site to find its engagement subpage (people/get-involved/
+   * programs...) and roster, so the child ResearchGroup carries a real
+   * student-facing way-in URL rather than only its homepage. Without it,
+   * organizational children are held out of student_ready as an
+   * `organizationalDeadEnd` (#1359).
+   */
+  crawlChildCenters?: boolean;
 }
 
 export function centerEntityKey(config: CenterConfig): string {
@@ -605,39 +614,144 @@ export const fdsUsersGridExtractor: CenterExtractor = (html, ctx) => {
   return { members };
 };
 
+function classifyChildCenterKind(title: string): CenterKind {
+  const lower = title.toLowerCase();
+  if (/\binitiatives?\b/.test(lower)) return 'initiative';
+  if (/\bprograms?\b/.test(lower)) return 'program';
+  if (/\binstitute\b/.test(lower)) return 'institute';
+  return 'center';
+}
+
 /**
  * Jackson School centers/initiatives index page is a META index — it lists
  * child centers, not people. Each child center becomes its own ResearchGroup.
- *   <div class="jordan_item">
- *     <div class="cta_box">
- *       <a href="https://jackson.yale.edu/<slug>/">…</a>
- *       <h3 class="cta_title">Center Name</h3>
- *       <div class="content">Description</div>
- *     </div>
+ * The page's Drupal "child menu" block lists exactly the child centers, scoped
+ * away from the site-wide navigation:
+ *   <div class="child-menu__wrapper">
+ *     <ul class="menu">
+ *       <li class="menu-item"><a href="/blue-center">Blue Center …</a></li>
+ *     </ul>
  *   </div>
+ * Kind is classified from the title alone since every child lives under the
+ * jackson.yale.edu root without a per-kind path segment.
  */
 export const jacksonCentersExtractor: CenterExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const childCenters: ChildCenter[] = [];
-  $('.jordan_item .cta_box').each((_i, el) => {
-    const box = $(el);
-    const title = box.find('.cta_title').first().text().trim();
-    const link = box.find('a').first().attr('href') || '';
-    if (!title || !link) return;
-    const url = absolutize(link, ctx.pageUrl);
-    const description = box.find('.content').first().text().trim() || undefined;
-    // Classify from the title only — Jackson's URLs all live under
-    // `/centers-initiatives/`, which would otherwise force every entry to
-    // 'initiative'.
-    const lower = title.toLowerCase();
-    let kind: CenterKind = 'center';
-    if (/\binitiatives?\b/.test(lower)) kind = 'initiative';
-    else if (/\bprograms?\b/.test(lower)) kind = 'program';
-    else if (/\binstitute\b/.test(lower)) kind = 'institute';
-    childCenters.push({ name: title, url, kind, description });
+  const seen = new Set<string>();
+  $('.child-menu__wrapper a[href]').each((_i, el) => {
+    const link = $(el);
+    const title = link.text().replace(/\s+/g, ' ').trim();
+    const href = link.attr('href') || '';
+    if (!title || !href) return;
+    const url = absolutize(href, ctx.pageUrl);
+    if (seen.has(url)) return;
+    seen.add(url);
+    childCenters.push({ name: title, url, kind: classifyChildCenterKind(title) });
   });
   return { members: [], childCenters };
 };
+
+/**
+ * Jackson School person-card theme, shared across every jackson.yale.edu center
+ * homepage and its `/people` roster:
+ *   <article class="profile profile--component profile__item …">
+ *     <div class="profile__content">
+ *       <h3><a href="/directory/<slug>">Name</a></h3>
+ *       <ul class="profile-positions …"><li>Title</li></ul>
+ *     </div>
+ *   </article>
+ * Only `.profile__item` cards are read, so shared site navigation and footer
+ * `/directory/` links (which are not wrapped in a profile card) are never
+ * mistaken for center members.
+ */
+export const jacksonProfileItemExtractor: CenterExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const members: CenterMember[] = [];
+  const seen = new Set<string>();
+  $('.profile__item').each((_i, el) => {
+    const card = $(el);
+    const link = card
+      .find('.profile__content h3 a, .profile__content a[href*="/directory/"], a[href*="/directory/"]')
+      .first();
+    const name = link.text().replace(/\s+/g, ' ').trim();
+    if (!name) return;
+    const href = link.attr('href') || '';
+    const dedupeKey = href || slugify(name);
+    if (!dedupeKey || seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
+    const title =
+      card.find('.profile-positions').first().text().replace(/\s+/g, ' ').trim() || undefined;
+    members.push({ name, profileUrl, title, role: inferRole(title) });
+  });
+  return { members };
+};
+
+/**
+ * Path tokens, highest-value first, that mark an organizational engagement
+ * subpage. Mirrors the accepted path patterns in `studentVisibilityTier.ts`
+ * (#1359): a child center URL carrying one of these clears the
+ * `organizationalDeadEnd` gate.
+ */
+const CHILD_ENGAGEMENT_TOKEN_TIERS: readonly (readonly string[])[] = [
+  ['people', 'staff', 'team', 'members', 'member', 'membership', 'our-people', 'who-we-are', 'leadership'],
+  ['get-involved', 'getinvolved', 'join', 'join-us', 'participate', 'volunteer', 'opportunities', 'apply', 'how-to-apply', 'admissions'],
+  ['programs', 'program', 'education', 'academics', 'training', 'courses', 'course', 'fellowships', 'internships', 'research-opportunities', 'for-students', 'students'],
+];
+
+function pathSegmentCarriesToken(lastSegment: string, token: string): boolean {
+  return `-${lastSegment}-`.includes(`-${token}-`);
+}
+
+/**
+ * Given a child center's homepage HTML and URL, return ranked, deduplicated
+ * engagement-subpage URLs to try. A link is a candidate when it is same-host,
+ * lives under the child's own path prefix, and its last path segment carries an
+ * engagement token. The emitted candidate is canonicalized to
+ * `<origin>/<child-prefix>/<token>` so it satisfies the gate's path patterns
+ * even when the linked slug embeds the token (e.g. `blue-center-people` ->
+ * `/blue-center/people`). Candidates are HTTP-verified by the caller.
+ */
+export function deriveChildEngagementCandidates(html: string, childHomepageUrl: string): string[] {
+  let home: URL;
+  try {
+    home = new URL(childHomepageUrl);
+  } catch {
+    return [];
+  }
+  const firstSegment = home.pathname.split('/').filter(Boolean)[0];
+  if (!firstSegment) return [];
+  const prefix = `/${firstSegment}`;
+  const homePath = home.pathname.replace(/\/+$/g, '');
+  const $ = cheerio.load(html);
+  const bestTierByUrl = new Map<string, number>();
+  $('a[href]').each((_i, el) => {
+    const href = $(el).attr('href') || '';
+    let target: URL;
+    try {
+      target = new URL(href, home);
+    } catch {
+      return;
+    }
+    if (target.hostname !== home.hostname) return;
+    const path = target.pathname.replace(/\/+$/g, '');
+    if (path === prefix || path === homePath) return;
+    if (!path.startsWith(`${prefix}/`)) return;
+    const lastSegment = path.split('/').filter(Boolean).pop() || '';
+    for (let tier = 0; tier < CHILD_ENGAGEMENT_TOKEN_TIERS.length; tier++) {
+      const token = CHILD_ENGAGEMENT_TOKEN_TIERS[tier].find((t) =>
+        pathSegmentCarriesToken(lastSegment, t),
+      );
+      if (!token) continue;
+      const candidate = `${home.origin}${prefix}/${token}`;
+      const existingTier = bestTierByUrl.get(candidate);
+      if (existingTier === undefined || tier < existingTier) bestTierByUrl.set(candidate, tier);
+      break;
+    }
+  });
+  return [...bestTierByUrl.entries()].sort((a, b) => a[1] - b[1]).map(([url]) => url);
+}
 
 /**
  * Stub extractor used for known-broken / gated / SPA pages so the runner
@@ -1005,6 +1119,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     url: 'https://jackson.yale.edu/centers-initiatives/',
     paginated: false,
     extractor: jacksonCentersExtractor,
+    crawlChildCenters: true,
   },
   {
     centerKey: 'yigh',
@@ -1215,24 +1330,39 @@ export function centerMemberRelationshipObservationsForEntityKey(
 }
 
 /**
+ * Deterministic entity key for a child ResearchGroup discovered on a meta-index
+ * page (Jackson School). Empty string when the child name does not slugify.
+ */
+export function childCenterEntityKey(parentConfig: CenterConfig, child: ChildCenter): string {
+  const childSlug = slugify(child.name);
+  if (!childSlug) return '';
+  return `center-${parentConfig.centerKey}-${childSlug}`.slice(0, 100);
+}
+
+/**
  * Emit a child ResearchGroup discovered on a meta-index page (Jackson School).
  * Each child becomes its own `center-jackson-<slug>` ResearchGroup.
+ *
+ * `extraSourceUrls` carries engagement subpages discovered by crawling the
+ * child's own site (see `crawlChildCenters`), giving the child a real
+ * student-facing way-in URL beyond its homepage.
  */
 export function childCenterToObservations(
   child: ChildCenter,
   parentConfig: CenterConfig,
   sourceUrl: string,
+  extraSourceUrls: string[] = [],
 ): ObservationInput[] {
-  const childSlug = slugify(child.name);
-  if (!childSlug) return [];
-  const entityKey = `center-${parentConfig.centerKey}-${childSlug}`.slice(0, 100);
+  const entityKey = childCenterEntityKey(parentConfig, child);
+  if (!entityKey) return [];
   const base = { entityType: 'researchEntity' as const, entityKey, sourceUrl };
+  const sourceUrls = [...new Set([sourceUrl, child.url, ...extraSourceUrls])];
   const obs: ObservationInput[] = [
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: child.name },
     { ...base, field: 'kind', value: child.kind },
     { ...base, field: 'websiteUrl', value: child.url },
-    { ...base, field: 'sourceUrls', value: [sourceUrl, child.url] },
+    { ...base, field: 'sourceUrls', value: sourceUrls },
   ];
   if (parentConfig.schoolName) {
     obs.push({ ...base, field: 'school', value: parentConfig.schoolName });
@@ -1312,11 +1442,50 @@ export class CentersInstitutesScraper implements IScraper {
       }
 
       for (const child of allChildCenters) {
-        const childObs = childCenterToObservations(child, config, sourceUrl);
+        let engagementUrl: string | undefined;
+        const childMembers: CenterMember[] = [];
+        if (config.crawlChildCenters) {
+          const crawled = await this.crawlChildCenter(child, ctx);
+          engagementUrl = crawled.engagementUrl;
+          childMembers.push(...crawled.members);
+        }
+
+        const childObs = childCenterToObservations(
+          child,
+          config,
+          sourceUrl,
+          engagementUrl ? [engagementUrl] : [],
+        );
         if (childObs.length > 0) {
           await ctx.emit(childObs);
           totalObs += childObs.length;
           totalChildCenters++;
+        }
+
+        if (childMembers.length > 0) {
+          const childKey = childCenterEntityKey(config, child);
+          const memberSourceUrl = engagementUrl || child.url;
+          const seenChildMemberSlugs = new Set<string>();
+          for (const member of childMembers) {
+            const slug = slugify(normalizeName(member.name));
+            if (!slug || seenChildMemberSlugs.has(slug)) continue;
+            seenChildMemberSlugs.add(slug);
+            const memberObs = memberObservationsForEntityKey(childKey, member, memberSourceUrl);
+            if (memberObs.length > 0) {
+              await ctx.emit(memberObs);
+              totalObs += memberObs.length;
+              totalMembers++;
+            }
+            const relationshipObs = centerMemberRelationshipObservationsForEntityKey(
+              childKey,
+              member,
+              memberSourceUrl,
+            );
+            if (relationshipObs.length > 0) {
+              await ctx.emit(relationshipObs);
+              totalObs += relationshipObs.length;
+            }
+          }
         }
       }
 
@@ -1459,6 +1628,46 @@ export class CentersInstitutesScraper implements IScraper {
       notes: `Centers: ${summary}`,
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
+  }
+
+  /**
+   * Crawl a child center's own site to discover a student-facing engagement
+   * subpage and roster. Fetches the child homepage, reads any Jackson
+   * profile-card members on it, then tries the ranked engagement candidates
+   * (HTTP-verified, fail closed on non-200) and reads the roster of the first
+   * that resolves. Returns no engagement URL when the child is a genuine dead
+   * end with no discoverable way-in.
+   */
+  private async crawlChildCenter(
+    child: ChildCenter,
+    ctx: ScraperContext,
+  ): Promise<{ engagementUrl?: string; members: CenterMember[] }> {
+    let homepageHtml: string;
+    try {
+      homepageHtml = await this.htmlFetcher(child.url, ctx.options.useCache, this.name);
+    } catch (err: any) {
+      ctx.log(`[child ${slugify(child.name)}] homepage fetch failed: ${sanitizeLogValue(err)}`);
+      return { members: [] };
+    }
+
+    const members: CenterMember[] = [
+      ...jacksonProfileItemExtractor(homepageHtml, { pageUrl: child.url }).members,
+    ];
+
+    let engagementUrl: string | undefined;
+    for (const candidate of deriveChildEngagementCandidates(homepageHtml, child.url)) {
+      let html: string;
+      try {
+        html = await this.htmlFetcher(candidate, ctx.options.useCache, this.name);
+      } catch {
+        continue;
+      }
+      engagementUrl = candidate;
+      members.push(...jacksonProfileItemExtractor(html, { pageUrl: candidate }).members);
+      break;
+    }
+
+    return { engagementUrl, members };
   }
 }
 
