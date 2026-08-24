@@ -655,6 +655,17 @@ const careerFactLeakPattern =
   /\bin\s+(?:19|20)\d{2}\b[^.!?]*\b(?:was\s+awarded|awarded|tenure|joined|appointed|promoted)\b|\bwas\s+awarded\b|\bawarded\s+tenure\b/i;
 
 /**
+ * A "Studies <text>." synthesis template glued onto an honor/award citation
+ * lifted from a CV bio ("Studies the Field Award" from the ASA Section on Asia
+ * and Asian America.") - the extractor mid-sentence-spliced an accolade
+ * mention into what reads as a research-topic clause (#1537). The quote mark
+ * around the award title is treated as optional because the splice itself
+ * frequently drops the opening quote, leaving only a stray closing one.
+ */
+const awardCitationLeakPattern =
+  /\b(?:Award|Prize|Medal|Fellowship|Honor|Honour)[”"']?\s+from\s+the\s+[A-Z][\p{L}\s]{2,60}\b(?:Section|Association|Society|Committee|Foundation|Institute|Academy|Council|University|Union)\b/u;
+
+/**
  * A "Studies <text>." synthesis template glued onto a fragment that is not a
  * coherent research-topic clause: a book citation or bibliography entry
  * ("Studies America, edited by ... (Harvard University Press, 2009)."), a
@@ -672,7 +683,8 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
   return (
     citationMarkerPattern.test(normalized) ||
     studiesSubjectVerbMismatchPattern.test(normalized) ||
-    careerFactLeakPattern.test(normalized)
+    careerFactLeakPattern.test(normalized) ||
+    awardCitationLeakPattern.test(normalized)
   );
 }
 
