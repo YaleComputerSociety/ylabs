@@ -41,6 +41,30 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toBe('This laboratory investigates vascular biology in human disease.');
   });
 
+  it('falls back a wholly-absent shortDescription field to fullDescription (#1719)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-program-no-short-field',
+      slug: 'program-no-short-field',
+      name: 'Global Health Awards Program',
+      kind: 'program',
+      entityType: 'RA_PROGRAM',
+      fullDescription: 'Funded by the Yale College Fellowships for Research in Global Health Studies.',
+    });
+    expect(dto.shortDescription).toBe(
+      'Funded by the Yale College Fellowships for Research in Global Health Studies.',
+    );
+  });
+
+  it('omits shortDescription entirely when neither short nor full is present', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-no-description-at-all',
+      slug: 'no-description-at-all',
+      name: 'No Description Lab',
+      kind: 'lab',
+    });
+    expect(dto).not.toHaveProperty('shortDescription');
+  });
+
   it('drops a first-person card blurb and falls back to fullDescription (#1077)', () => {
     const summary = toPublicResearchEntitySummaryDto({
       _id: { toString: () => 'entity-first-person-blurb' },

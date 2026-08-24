@@ -329,16 +329,18 @@ export function toPublicResearchEntityDto(
 
   for (const field of OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS) {
     if (options.forList && LIST_TRIMMED_DESCRIPTION_FIELDS.has(field)) continue;
+    if (field === 'shortDescription') {
+      if (group.shortDescription !== undefined || group.fullDescription !== undefined) {
+        dto.shortDescription =
+          groundedShortDescriptionString(served.shortDescription, served.fullDescription) ||
+          String(served.fullDescription || '');
+      }
+      continue;
+    }
     if (group[field] !== undefined) {
       if (field === 'website' || field === 'websiteUrl') {
         const url = publicHttpUrl(group[field]);
         if (url) dto[field] = url;
-        continue;
-      }
-      if (field === 'shortDescription' && typeof group[field] === 'string') {
-        dto[field] =
-          groundedShortDescriptionString(served.shortDescription, served.fullDescription) ||
-          String(served.fullDescription || '');
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
