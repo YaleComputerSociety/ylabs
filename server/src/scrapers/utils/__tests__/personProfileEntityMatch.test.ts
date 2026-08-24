@@ -155,7 +155,7 @@ describe('personProfileSourceMatchesEntity', () => {
     ).toBe(true);
   });
 
-  it('allows a surname-only match at a tolerant host when independently corroborated', () => {
+  it('allows a surname-only match at a tolerant host when independently corroborated by another page', () => {
     expect(
       personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/thomas-graham/', {
         slug: 'graham-lab-tg296',
@@ -168,6 +168,14 @@ describe('personProfileSourceMatchesEntity', () => {
         ],
       }),
     ).toBe(true);
+  });
+
+  it('is not corroborated by the entity own prose naming itself for a surname-only match (#1671)', () => {
+    // Unlike the #1110 topic-named-shell fallback, a surname-only entity's own
+    // fullDescription may itself have been populated from this same contested
+    // page, so it can never independently corroborate it - only an independent
+    // second page counts. This is the same reasoning #1413 already applies to a
+    // full-name match at a tolerant host that diverges from the entity's school.
     expect(
       personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/thomas-graham/', {
         slug: 'graham-lab-tg296',
@@ -175,7 +183,17 @@ describe('personProfileSourceMatchesEntity', () => {
         departments: ['Russian, East European, and Eurasian Studies'],
         fullDescription: "Thomas Graham's lab studies the immune system.",
       }),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/gregory-crewdson/', {
+        slug: 'crewdson-lab-gc58',
+        name: 'Crewdson Lab',
+        school: 'School of Art',
+        departments: ['Art'],
+        fullDescription:
+          'The Crewdson Lab, led by Professor Gregory Crewdson, focuses on the intersection of art and science, particularly in the realm of medical imaging and its implications for understanding health and disease.',
+      }),
+    ).toBe(false);
   });
 
   it('rejects a shared-first-name graft of a different person (#981)', () => {
