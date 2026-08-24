@@ -38,6 +38,7 @@ import {
   stripPageLayoutReferentialSentences,
   stripProvenanceHedge,
   stripRedactionPlaceholders,
+  stripSelfReferentialResearchCtaSentences,
   stripTrailingContactAddress,
   stripTrailingSourceLayoutLabelSection,
   stripUrlTopicsFromCardSummary,
@@ -317,6 +318,47 @@ describe('descriptionHygiene dead-anchor CTA fail-closed (#915)', () => {
     expect(stripDeadAnchorCtaSentences(text)).toBe(
       'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying.',
     );
+  });
+});
+
+describe('descriptionHygiene self-referential research CTA fail-closed (#1283)', () => {
+  it('drops a trailing "read more about our research" CTA glued onto the prior sentence', () => {
+    const text =
+      'The lab has identified specific inhibitors of these enzymes.To read more about our research, please see the Yan Lab Research page.';
+    expect(sanitizeCatalogDescription(text)).toBe(
+      'The lab has identified specific inhibitors of these enzymes.',
+    );
+  });
+
+  it('drops a leading "please see/visit our Research page to read more" CTA', () => {
+    const text =
+      'Please visit our Research page to read more about the research in our Lab. The lab studies the mechanisms of chronic kidney disease progression.';
+    expect(stripSelfReferentialResearchCtaSentences(text)).toBe(
+      'The lab studies the mechanisms of chronic kidney disease progression.',
+    );
+  });
+
+  it('drops a "read more in depth about the work we are doing" CTA', () => {
+    const text =
+      'The lab investigates targeted therapies in lung cancer. See the Politi Lab Research page to read more in depth about the work we are doing in our Lab.';
+    expect(sanitizeCatalogDescription(text)).toBe(
+      'The lab investigates targeted therapies in lung cancer.',
+    );
+  });
+
+  it('catches the space-dropped "ourResearch" scrape seam', () => {
+    const text =
+      'The lab studies vascular biology and tissue repair. Read more about ourResearch Projects in the Madri Lab.';
+    expect(sanitizeCatalogDescription(text)).toBe(
+      'The lab studies vascular biology and tissue repair.',
+    );
+  });
+
+  it('leaves ordinary prose containing "theory" or "ourselves" untouched', () => {
+    const prose =
+      'The lab develops a unifying theory of protein folding and asks how cells organize themselves under stress.';
+    expect(stripSelfReferentialResearchCtaSentences(prose)).toBe(prose);
+    expect(sanitizeCatalogDescription(prose)).toBe(prose);
   });
 });
 

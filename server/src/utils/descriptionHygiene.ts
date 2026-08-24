@@ -42,6 +42,9 @@ export const sourceChromeTextPattern =
 export const deadAnchorCtaSentencePattern =
   /\bclick\s+(?:here|below|(?:on\s+)?(?:this|the|the following)\s+link)\b/i;
 
+export const selfReferentialResearchCtaSentencePattern =
+  /\b(?:read|learn)\s+more\b(?:\s+in\s+depth)?\s+about\s+(?:the\s+|our\s*)?(?:research|work|collection)\b/i;
+
 /**
  * Partition text into sentence-ish segments that tile the input losslessly:
  * every character lands in exactly one segment, so `segments.join('')` always
@@ -77,6 +80,32 @@ export function stripDeadAnchorCtaSentences(text: string): string {
   if (!deadAnchorCtaSentencePattern.test(value)) return normalizeHygieneWhitespace(value);
   const sentences = partitionSentencesLossless(value);
   const kept = sentences.filter((sentence) => !deadAnchorCtaSentencePattern.test(sentence));
+  return normalizeHygieneWhitespace(kept.join(''));
+}
+
+/**
+ * Drop a self-referential "read/learn more about our/the research" call-to-action
+ * sentence that points back at the lab's own site or Research page ("To read more
+ * about our research, please see the Yan Lab Research page.", "See the Politi Lab
+ * Research page to read more in depth about the work we are doing in our Lab.").
+ * Unlike the "Learn more about <Name> >>" anchor shape stripped by
+ * CATALOG_CHROME_PATTERNS (#931/#953), the anchor href and label are gone here and
+ * only the generic invitation prose survives, riding into the served copy beside
+ * legitimate research prose (#1283). Sentence-scoped like stripDeadAnchorCtaSentences
+ * so prose before or after the CTA is preserved, and gated to a no-op when the
+ * phrase is absent so clean prose is untouched. The object is scoped to
+ * research/work/collection so a legitimate "learn more about our program" (#953)
+ * is left alone, and the `our\s*` seam also catches the space-dropped
+ * "ourResearch" scrape artifact.
+ */
+export function stripSelfReferentialResearchCtaSentences(text: string): string {
+  const value = String(text || '');
+  if (!selfReferentialResearchCtaSentencePattern.test(value)) {
+    return normalizeHygieneWhitespace(value);
+  }
+  const kept = partitionSentencesForFiltering(value).filter(
+    (sentence) => !selfReferentialResearchCtaSentencePattern.test(sentence),
+  );
   return normalizeHygieneWhitespace(kept.join(''));
 }
 
@@ -1191,8 +1220,10 @@ export function sanitizeCatalogDescription(text: string): string {
     collapseRepeatedSentences(
       collapseDuplicatedProseBlock(
         stripPageLayoutReferentialSentences(
-          stripDeadAnchorCtaSentences(
-            stripBibliographicReferenceArtifacts(stripCatalogChrome(text)),
+          stripSelfReferentialResearchCtaSentences(
+            stripDeadAnchorCtaSentences(
+              stripBibliographicReferenceArtifacts(stripCatalogChrome(text)),
+            ),
           ),
         ),
       ),
