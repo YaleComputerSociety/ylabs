@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isPageSectionHeadingPhrase,
   isProseNotTopicPhrase,
   isResearchSectionLabel,
   stripResearchSectionLabelPrefix,
@@ -53,5 +54,32 @@ describe('researchAreaLabels', () => {
     expect(stripResearchSectionLabelPrefix('Condensed Matter Physics')).toBe(
       'Condensed Matter Physics',
     );
+  });
+
+  it('flags a page section heading masquerading as a topic phrase (#1678)', () => {
+    for (const heading of [
+      'Selected Presentations and Articles for a General Audience',
+      'Selected Publications',
+      'In the News',
+      'News',
+      'Publications',
+      'Presentations',
+      'Media Coverage',
+      'Press',
+      'Awards & Honors',
+    ]) {
+      expect(isPageSectionHeadingPhrase(heading)).toBe(true);
+    }
+  });
+
+  it('does not flag a genuine topical noun phrase as a page section heading', () => {
+    for (const topic of [
+      'Condensed Matter Physics',
+      'Particle Physics',
+      'ATLAS',
+      'Market design',
+    ]) {
+      expect(isPageSectionHeadingPhrase(topic)).toBe(false);
+    }
   });
 });

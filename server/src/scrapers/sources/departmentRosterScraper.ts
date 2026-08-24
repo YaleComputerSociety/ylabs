@@ -60,6 +60,7 @@ import {
 } from '../../utils/descriptionHygiene';
 import {
   isFullProseParagraph,
+  isPageSectionHeadingPhrase,
   isProseNotTopicPhrase,
   isResearchSectionLabel,
   stripResearchSectionLabelPrefix,
@@ -1847,7 +1848,11 @@ function isTopicLabelChrome(value: string): boolean {
   const cleaned = cleanText(value);
   if (!cleaned) return true;
   if (/:$/.test(cleaned)) return true;
-  return isResearchSectionLabel(cleaned) || isProseNotTopicPhrase(cleaned);
+  return (
+    isResearchSectionLabel(cleaned) ||
+    isProseNotTopicPhrase(cleaned) ||
+    isPageSectionHeadingPhrase(cleaned)
+  );
 }
 
 function splitTopicText(value: string | undefined | null): string[] {

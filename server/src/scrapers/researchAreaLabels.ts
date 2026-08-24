@@ -48,3 +48,27 @@ export function isFullProseParagraph(value: unknown): boolean {
   if (text.split(/\s+/).filter(Boolean).length > 20) return true;
   return /[.!?]\s+[A-Za-z]/.test(text);
 }
+
+const PAGE_SECTION_HEADING_PATTERNS = [
+  /^selected\s+(?:presentations?|publications?|articles?|media|press|talks?)\b/i,
+  /^(?:in\s+the\s+)?news$/i,
+  /^publications?$/i,
+  /^presentations?$/i,
+  /^media(?:\s+coverage)?$/i,
+  /^press$/i,
+  /^events?$/i,
+  /^awards?(?:\s*(?:&|and)\s*honors?)?$/i,
+  /for\s+a\s+general\s+audience$/i,
+];
+
+/**
+ * A department-profile section heading ("Selected Presentations and Articles
+ * for a General Audience", "In the News") is short and phrase-shaped enough
+ * to slip past isProseNotTopicPhrase's word-count/punctuation heuristics, but
+ * it is page furniture, not a research topic (#1678).
+ */
+export function isPageSectionHeadingPhrase(value: unknown): boolean {
+  const text = normalizeLabelText(value);
+  if (!text) return false;
+  return PAGE_SECTION_HEADING_PATTERNS.some((pattern) => pattern.test(text));
+}
