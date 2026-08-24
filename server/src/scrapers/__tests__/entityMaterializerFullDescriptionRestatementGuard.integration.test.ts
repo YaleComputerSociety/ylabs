@@ -188,3 +188,82 @@ describe('materializeEntity blanks a program fullDescription that is byte-identi
     expect(persisted?.shortDescription).toBe(PROGRAM_SINGLE_SENTENCE_TEXT);
   });
 });
+
+const IDEMPOTENCE_CONCISE_FULL_DESCRIPTION =
+  'Studies climate adaptation, agricultural economics, and rural development policy.';
+
+describe('materializeEntity is idempotent across repeated runs on unchanged observations', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['observations', 'research_entities', 'role_assignments']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  /**
+   * Regression for a materializer non-idempotence bug: a concise, already
+   * card-shaped fullDescription is derived verbatim into shortDescription on
+   * the first materialize pass (deriveShortDescriptionFromFullDescription's
+   * "already concise" shortcut), which copies fullDescription's own
+   * fieldProvenance onto shortDescription's. A second pass, run against the
+   * exact same Observations with no new evidence, must not react to that
+   * self-derived shortDescription and blank fullDescription out from under
+   * itself - the fullDescription/shortDescription restatement guard
+   * (#1721/#1773) previously did exactly that, because it fell back to
+   * reading the just-written shortDescription off the entity document as if
+   * it were independent evidence.
+   */
+  it('produces identical fullDescription/shortDescription on a second run with no new observations', async () => {
+    await ResearchEntity.create({
+      slug: 'idempotence-fixture',
+      name: 'Rural Policy Lab',
+      kind: 'lab',
+      studentVisibilityTier: 'operator_review',
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: 'idempotence-fixture',
+      field: 'fullDescription',
+      value: IDEMPOTENCE_CONCISE_FULL_DESCRIPTION,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://example.edu/idempotence-fixture/',
+      confidence: 0.9,
+      observedAt: new Date('2026-01-01T00:00:00Z'),
+      superseded: false,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: 'idempotence-fixture' });
+    const firstRun = await ResearchEntity.findOne({
+      slug: 'idempotence-fixture',
+    }).lean<PersistedEntity>();
+    expect(firstRun?.fullDescription).toBe(IDEMPOTENCE_CONCISE_FULL_DESCRIPTION);
+    expect(firstRun?.shortDescription).toBe(IDEMPOTENCE_CONCISE_FULL_DESCRIPTION);
+
+    await materializeEntity('researchEntity', { entityKey: 'idempotence-fixture' });
+    const secondRun = await ResearchEntity.findOne({
+      slug: 'idempotence-fixture',
+    }).lean<PersistedEntity>();
+    expect(secondRun?.fullDescription).toBe(firstRun?.fullDescription);
+    expect(secondRun?.shortDescription).toBe(firstRun?.shortDescription);
+    expect(secondRun?.fullDescription).toBe(IDEMPOTENCE_CONCISE_FULL_DESCRIPTION);
+  });
+});
