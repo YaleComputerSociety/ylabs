@@ -11,7 +11,9 @@ import { User } from '../models/user';
 import {
   deriveAccessArtifactsForResearchGroup,
   materializeAccessForResearchGroup,
+  type DerivedAccessSignal,
 } from '../scrapers/accessMaterializer';
+import { accessSignalCreditsActionEvidence } from '../services/studentVisibilityGateService';
 import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { officialProfileUrlFromRosterEntry } from '../services/leadProfileIdentity';
 import { countResearchEntityAlternateAccessPaths } from '../services/researchEntityAlternateAccessPath';
@@ -223,12 +225,40 @@ async function buildLeadMembersByEntityId(
   return leadsByEntityId;
 }
 
-async function accessSignalCountForEntity(entityId: mongoose.Types.ObjectId): Promise<number> {
-  return Signal.countDocuments({
+type AccessSignalCreditEntity = { websiteUrl?: unknown; website?: unknown; sourceUrls?: unknown };
+
+export function derivedSignalCreditsActionEvidence(
+  signal: DerivedAccessSignal,
+  entity: AccessSignalCreditEntity,
+): boolean {
+  return accessSignalCreditsActionEvidence({
+    signal: {
+      type: signal.type,
+      archived: signal.archived,
+      derivationKey: signal.derivationKey,
+      source: {
+        url: signal.sourceUrl,
+        evidenceIds: signal.sourceEvidenceId ? [signal.sourceEvidenceId] : [],
+      },
+    },
+    entity,
+  });
+}
+
+async function creditedAccessSignalCountForEntity(
+  entityId: mongoose.Types.ObjectId,
+  entity: AccessSignalCreditEntity,
+): Promise<number> {
+  const signals = await Signal.find({
     researchEntityId: entityId,
     type: { $in: [...accessSignalTypes] },
     archived: false,
-  });
+  })
+    .select('type archived derivationKey source.url source.evidenceIds')
+    .lean();
+  return (signals as any[]).filter((signal) =>
+    accessSignalCreditsActionEvidence({ signal, entity }),
+  ).length;
 }
 
 interface PlannedEntity {
@@ -276,10 +306,10 @@ async function main(): Promise<void> {
     const id = serializedDocumentId(entity._id);
     if (!id) continue;
     const derivation = await deriveAccessArtifactsForResearchGroup({ researchEntityId: id });
-    const qualifying = derivation.artifacts.accessSignals.filter((signal) =>
-      /^https?:\/\//i.test(String(signal.sourceUrl || '')),
+    const crediting = derivation.artifacts.accessSignals.filter((signal) =>
+      derivedSignalCreditsActionEvidence(signal, entity),
     );
-    if (qualifying.length === 0) {
+    if (crediting.length === 0) {
       skippedNoEvidence.push(id);
       continue;
     }
@@ -287,7 +317,7 @@ async function main(): Promise<void> {
       id,
       label: entity.displayName || entity.name || entity.slug || id,
       entityType: entity.entityType,
-      derivedSignalTypes: Array.from(new Set(qualifying.map((signal) => signal.type))),
+      derivedSignalTypes: Array.from(new Set(crediting.map((signal) => signal.type))),
     });
   }
 
@@ -327,7 +357,7 @@ async function main(): Promise<void> {
     const projected = projectStudentReady(
       entityBefore,
       entry.id,
-      Math.max(1, await accessSignalCountForEntity(objectId)),
+      Math.max(1, await creditedAccessSignalCountForEntity(objectId, entityBefore)),
     );
 
     const outcome: PromotionOutcome = {
@@ -349,7 +379,7 @@ async function main(): Promise<void> {
       const result = projectStudentReady(
         entityAfter || entityBefore,
         entry.id,
-        await accessSignalCountForEntity(objectId),
+        await creditedAccessSignalCountForEntity(objectId, entityAfter || entityBefore),
       );
       outcome.toTier = result.tier;
       outcome.reasons = result.reasons;

@@ -426,6 +426,36 @@ export function reachOutPlausibleSignalCreditsActionEvidence(input: {
   return Boolean(officialNonGrantSourceUrl(entity));
 }
 
+// Single source of truth for "does this access Signal count as action evidence"
+// - the exact rule the gate applies when it decides student_ready. Both the gate
+// corpus recompute and any backfill/promotion script must credit signals through
+// this predicate so they cannot drift apart: an identified-lead fallback signal
+// (a discovery hint, not access evidence, see #1359/#1388) never credits, while a
+// non-fallback access signal credits when it carries an http source.url, and a
+// derived REACH_OUT_PLAUSIBLE without an http source.url credits only when it is
+// backed by a supporting observation and an official non-grant entity page.
+export function accessSignalCreditsActionEvidence(input: {
+  signal: ReachOutPlausibleGateSignal & { type?: unknown; source?: { url?: unknown } | null };
+  entity: { websiteUrl?: unknown; website?: unknown; sourceUrls?: unknown };
+}): boolean {
+  const { signal, entity } = input;
+  if (signal.archived === true) return false;
+  if (typeof signal.type !== 'string' || !(accessSignalTypes as readonly string[]).includes(signal.type)) {
+    return false;
+  }
+  if (
+    typeof signal.derivationKey === 'string' &&
+    IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS.has(signal.derivationKey)
+  ) {
+    return false;
+  }
+  if (hasHttpSourceUrl(signal.source?.url)) return true;
+  if (signal.type === REACH_OUT_PLAUSIBLE_SIGNAL_TYPE) {
+    return reachOutPlausibleSignalCreditsActionEvidence({ signal, entity });
+  }
+  return false;
+}
+
 const profileAreaDuplicateCounterpartEntityTypes = new Set([
   'LAB',
   'GROUP',
