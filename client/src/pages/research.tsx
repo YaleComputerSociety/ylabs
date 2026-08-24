@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import PeopleResults from '../components/research/PeopleResults';
 import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
+import SavedSearchNewMatchBanner from '../components/research/SavedSearchNewMatchBanner';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchFieldDirectory from '../components/research/ResearchFieldDirectory';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
@@ -2157,6 +2158,7 @@ const Research = () => {
           </header>
 
           <div className="min-w-0">
+            <SavedSearchNewMatchBanner enabled={isAuthenticated} />
             {!hasSubmittedSearch && researchFieldDirectory.length > 0 && (
               <div className="mb-6">
                 <ResearchFieldDirectory
