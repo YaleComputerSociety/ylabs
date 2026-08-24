@@ -369,15 +369,49 @@ export function stripGluedProfileRoleLabel(text: string): string {
 const doubledSynthesisVerbPattern =
   /^(Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds)\s+\1\b/i;
 
+const SYNTHESIS_VERB_GERUNDS: Record<string, string> = {
+  studies: 'studying',
+  investigates: 'investigating',
+  examines: 'examining',
+  explores: 'exploring',
+  develops: 'developing',
+  supports: 'supporting',
+  advances: 'advancing',
+  fosters: 'fostering',
+  uses: 'using',
+  employs: 'employing',
+  researches: 'researching',
+  analyzes: 'analyzing',
+  models: 'modeling',
+  measures: 'measuring',
+  conducts: 'conducting',
+  creates: 'creating',
+  enhances: 'enhancing',
+  improves: 'improving',
+  innovates: 'innovating',
+  builds: 'building',
+};
+
 /**
- * Collapse a doubled leading synthesis verb ("Studies Studies on ...") that a
- * stale materialization step emitted by prepending its "Studies " template onto
- * a value that already began with the verb (#975). Only the immediately repeated
- * leading verb is removed, so ordinary prose is untouched.
+ * Collapse a doubled leading synthesis verb that a stale materialization step
+ * emitted by prepending its "Studies " template onto a value that already began
+ * with the same verb. Two shapes are folded: an identical repeat ("Studies
+ * Studies on ...", #975) and a verb followed by its own same-root gerund
+ * ("Studies studying the mechanisms ...", #1248), where the template verb and
+ * the source lead share a root so the `\1` backreference misses. Only the
+ * immediately repeated/gerund-doubled leading verb is removed, and the gerund
+ * arm is gated to the same-root pair so ordinary prose ("Studies exploring the
+ * role of X") is untouched.
  */
 export function collapseDoubledSynthesisVerb(text: string): string {
   const value = normalizeHygieneWhitespace(text);
-  return value.replace(doubledSynthesisVerbPattern, '$1');
+  const collapsed = value.replace(doubledSynthesisVerbPattern, '$1');
+  if (collapsed !== value) return collapsed;
+  const gerundMatch = collapsed.match(/^([A-Za-z]+)\s+([a-z]+)\b/);
+  if (gerundMatch && SYNTHESIS_VERB_GERUNDS[gerundMatch[1].toLowerCase()] === gerundMatch[2]) {
+    return normalizeHygieneWhitespace(gerundMatch[1] + collapsed.slice(gerundMatch[0].length));
+  }
+  return collapsed;
 }
 
 const synthesisVerbLeadPattern =
@@ -495,6 +529,71 @@ export function stripUrlTopicsFromCardSummary(text: string): string {
   return repaired.replace(/[.\s]*$/, '.');
 }
 
+const leadingDanglingDemonstrativePattern =
+  /^(?:These|Those|Such)\s+[A-Za-z]|^This\s+(?:is|was|were|are|has|had|will|would|includes?|represents?|remains?|also|too|means?)\b/;
+
+const midDemonstrativePhrasePattern =
+  /\b(?:these|those)\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*)?)/gi;
+
+const synthesisBlurbLeadPattern =
+  /^(?:Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds)\s+(?!(?:in|of|on|for|to|with|from|at|by|about|have|has|had|are|were|is|was|and|or)\b)[a-z]/i;
+
+const relativeOrPrepAfterDemonstrativePattern =
+  /^(?:who|whom|whose|which|that|with|of|from|in|to|at|by|as)\b/i;
+
+function startsMidSentenceLowercase(text: string): boolean {
+  const firstToken = text.split(/\s+/)[0] || '';
+  if (!/^[a-z]/.test(firstToken)) return false;
+  return !/[A-Z]/.test(firstToken);
+}
+
+/**
+ * A synthesized "Studies ..." blurb (no explicit subject) that carries a
+ * `these`/`those <noun>` demonstrative whose referent noun is absent from the
+ * blurb itself: the synthesis lifted a source sentence that pointed back at a
+ * paragraph that never made it into the summary ("Investigates processes that
+ * represent each of these major categories.", "Studies these questions using
+ * ..."). Gated on a synthesis-verb lead whose verb takes a direct object (not a
+ * preposition/auxiliary, so a plural-noun lead such as "Advances in imaging
+ * have ..." or a full sentence with its own subject "Nisheeth Vishnoi's research
+ * focuses on ... how these systems ..." is never flagged), and a `these/those`
+ * followed by a relative/preposition ("those with", "those who") is skipped. A
+ * demonstrative whose noun-phrase shares a 4-char stem with earlier text is
+ * treated as resolved and kept.
+ */
+function synthesisBlurbHasDanglingDemonstrative(text: string): boolean {
+  if (!synthesisBlurbLeadPattern.test(text)) return false;
+  for (const match of text.matchAll(midDemonstrativePhrasePattern)) {
+    const phrase = match[1];
+    if (relativeOrPrepAfterDemonstrativePattern.test(phrase)) continue;
+    const contentWords = (phrase.match(/[a-z]{4,}/gi) || []).map((word) => word.toLowerCase());
+    if (contentWords.length === 0) continue;
+    const before = text.slice(0, match.index).toLowerCase();
+    const hasAntecedent = contentWords.some((word) => before.includes(word.slice(0, 4)));
+    if (!hasAntecedent) return true;
+  }
+  return false;
+}
+
+/**
+ * A card blurb / shortDescription that does not stand on its own as a sentence:
+ * it begins mid-clause with a lowercase word (a truncated lead such as the
+ * dropped "C." of "C. elegans", leaving "elegans for these studies ..."), opens
+ * with an unresolved leading demonstrative ("These process are ...", "This is
+ * particularly important ..."), or is a synthesis blurb whose `these/those`
+ * demonstrative has no antecedent in the blurb (#1248). Rendered verbatim on the
+ * student browse card, such a summary references something never introduced, so
+ * it is failed closed rather than shown. A leading lowercase token that carries
+ * an internal capital (a scientific token like "mRNA"/"iPSC") is exempt.
+ */
+export function isNonSelfContainedShortDescription(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (startsMidSentenceLowercase(normalized)) return true;
+  if (leadingDanglingDemonstrativePattern.test(normalized)) return true;
+  return synthesisBlurbHasDanglingDemonstrative(normalized);
+}
+
 /**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
@@ -527,6 +626,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (isCtaNewsTickerDumpText(cleaned)) return '';
   if (isStudiesTemplateGlueMalformed(cleaned)) return '';
   if (isFirstPersonResearchVoiceText(cleaned)) return '';
+  if (isNonSelfContainedShortDescription(cleaned)) return '';
   if (containsHtmlTagMarkup(cleaned)) return '';
   return cleaned;
 }

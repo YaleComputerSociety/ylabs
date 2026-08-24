@@ -430,7 +430,7 @@ describe('researchEntityDto', () => {
         id: 'entity-dto-bounds',
         slug: 'dto-bounds-lab',
         name: 'DTO Bounds Lab',
-        shortDescription: 'x'.repeat(6000),
+        shortDescription: 'X'.repeat(6000),
         researchAreas,
         sourceUrls,
         planningContext: { reasons },

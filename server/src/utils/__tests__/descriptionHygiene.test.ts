@@ -16,6 +16,7 @@ import {
   isFirstPersonResearchVoiceText,
   isFormFieldDumpText,
   isNavigationDumpText,
+  isNonSelfContainedShortDescription,
   isPublicationsListDumpText,
   isResearchAreaEchoDescription,
   isResearchAreaTemplateLeakText,
@@ -1333,6 +1334,75 @@ describe('stripGluedProfileRoleLabel + doubled-verb collapse (#975)', () => {
   it('leaves a spaced acronym in genuine prose untouched', () => {
     const clean = 'Studies how YSM researchers collaborate across departments.';
     expect(stripGluedProfileRoleLabel(clean)).toBe(clean);
+  });
+});
+
+describe('collapseDoubledSynthesisVerb same-root gerund (#1248)', () => {
+  it('collapses a verb followed by its own gerund', () => {
+    expect(collapseDoubledSynthesisVerb('Studies studying the mechanisms that matter.')).toBe(
+      'Studies the mechanisms that matter.',
+    );
+  });
+
+  it('still collapses an identical doubled verb (#975)', () => {
+    expect(collapseDoubledSynthesisVerb('Studies Studies on Chitinases.')).toBe(
+      'Studies on Chitinases.',
+    );
+  });
+
+  it('leaves a different-root gerund untouched', () => {
+    const clean = 'Studies exploring the role of X in Y.';
+    expect(collapseDoubledSynthesisVerb(clean)).toBe(clean);
+  });
+});
+
+describe('isNonSelfContainedShortDescription card-fragment guard (#1248)', () => {
+  const NON_SELF_CONTAINED = [
+    'Investigates processes that represent each of these major categories.',
+    'Studies two critical and related aspects of these problems.',
+    'Studies these questions using in vitro models of patient IPSC derived neurons.',
+    'These process are investigated at all levels of biological organization.',
+    'These include studies with four research groups in the Child Study Center.',
+    'This is particularly important right now, with new immunotherapies harnessing these cells.',
+    'elegans for these studies because of its transparent body and amenability to genetics.',
+    'degrees this was not yet my main interest; it became important later.',
+    'this research studies sensing and mobile technologies.',
+  ];
+
+  it('fails each non-self-contained card fragment closed', () => {
+    for (const text of NON_SELF_CONTAINED) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('fails a doubled-gerund blurb closed even after the verb collapse', () => {
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Studies studying the mechanisms that allow an optimal trade-off between these two conflicting goals.',
+      ),
+    ).toBe('');
+  });
+
+  const SELF_CONTAINED = [
+    "Nisheeth Vishnoi's research focuses on algorithms, optimization, and AI's societal impacts, studying how these systems affect human judgment and fairness.",
+    'The Jaimie Meyer Lab conducts research to improve HIV prevention for women, particularly those with substance use disorders.',
+    'Studies climate models and refines these models for regional prediction.',
+    'This lab investigates stellar formation across galaxies.',
+    'The lab studies airway disease and its treatment.',
+  ];
+
+  it('keeps a self-contained summary with a resolvable or subject-anchored demonstrative', () => {
+    for (const text of SELF_CONTAINED) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(false);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe(text);
+    }
+  });
+
+  it('exempts a lowercase scientific token with an internal capital', () => {
+    expect(isNonSelfContainedShortDescription('mRNA splicing regulates neuronal identity.')).toBe(
+      false,
+    );
   });
 });
 
