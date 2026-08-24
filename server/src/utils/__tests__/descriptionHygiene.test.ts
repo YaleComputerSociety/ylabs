@@ -1108,6 +1108,40 @@ describe('descriptionHygiene "Read More" text-anchored nav-teaser (#953)', () =>
   });
 });
 
+describe('descriptionHygiene image-credit chrome from lab microsites', () => {
+  it('strips a "Photo: <Name>" credit glued between caption fragments', () => {
+    const dirty =
+      'A female mosquito engorges on human blood. Photo: Alex Wild We use optogenetics and genomics to understand how blood feeding evolved.';
+    expect(stripCatalogChrome(dirty)).toBe(
+      'A female mosquito engorges on human blood. We use optogenetics and genomics to understand how blood feeding evolved.',
+    );
+  });
+
+  it('strips "Photograph by", "Photo credit:", and "Photograph:" credit variants', () => {
+    expect(stripCatalogChrome('The lab studies membranes. Photograph by Jane Doe')).toBe(
+      'The lab studies membranes.',
+    );
+    expect(stripCatalogChrome('The lab studies membranes. Photo credit: Jane Doe')).toBe(
+      'The lab studies membranes.',
+    );
+    expect(stripCatalogChrome('The lab studies membranes. Photograph: Jane Doe')).toBe(
+      'The lab studies membranes.',
+    );
+  });
+
+  it('removes the credit at the served description layer', () => {
+    const dirty = 'The lab studies disease vectors. Photo: Alex Wild';
+    expect(sanitizeResearchEntityDescription(dirty)).toBe('The lab studies disease vectors.');
+  });
+
+  it('leaves research prose that mentions photosynthesis or photo methods untouched', () => {
+    const prose =
+      'The lab studies photosynthesis and analyzes each photo using deep learning models.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
+});
+
 describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
   it('flags a bare "Research fields include <chips>." echo', () => {
     expect(
