@@ -1263,6 +1263,23 @@ export function extractOfficialProfileResearchHomes(
   );
 }
 
+// A grant-derived PI shell (`nih-pi-*`/`nsf-pi-*`) carries only that PI's own
+// funded-research identity. A profile-linked institutional home (a center,
+// institute, program, or initiative the PI directs alongside their own grants)
+// is a separate organization, not that PI's personal lab, so attaching its
+// kind/entityType/website/description here would mint the exact "<PI> Lab"
+// CENTER hybrid this guard exists to prevent (issue #1484). A home already
+// classified as a lab is the PI's own and is never blocked.
+const GRANT_DERIVED_PI_SHELL_SLUG_RE = /^(?:nih-pi-|nsf-pi-)/;
+
+export function isInstitutionalHomeMismatchedWithGrantDerivedPiShell(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome | undefined,
+): boolean {
+  if (!home || home.entityType === 'LAB') return false;
+  return GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug));
+}
+
 export function entityResearchHomeToObservations(
   entity: Record<string, any>,
   home: OfficialProfileResearchHome | undefined,
@@ -3255,6 +3272,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           if (!identity) continue;
           const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
           if (home && (await websiteUrlOwnedByAnotherEntity(home.url, entity))) continue;
+          if (isInstitutionalHomeMismatchedWithGrantDerivedPiShell(entity, home)) continue;
           observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
         }
 
