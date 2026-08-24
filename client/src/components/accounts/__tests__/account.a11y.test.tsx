@@ -6,6 +6,7 @@ import axios from '../../../utils/axios';
 import SavedResearchPlans from '../SavedResearchPlans';
 import ResearchHomeComparison from '../ResearchHomeComparison';
 import ProgramWatch from '../ProgramWatch';
+import PlanningOverview from '../PlanningOverview';
 import { expectNoAxeViolations } from '../../../testUtils/axe';
 
 vi.mock('../../../utils/axios', () => ({
@@ -190,6 +191,23 @@ describe('account dashboard accessibility', () => {
 
     await screen.findByText('Summer Research Grant');
     expect(screen.getByRole('button', { name: /Add all deadlines to calendar/i })).toBeTruthy();
+    await expectNoAxeViolations(container);
+  });
+
+  it('has no serious or critical axe violations for the dashboard watched-program urgency signal', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <PlanningOverview
+          savedResearchCount={2}
+          savedFellowshipCount={2}
+          closingWithin14DaysCount={2}
+          hasNotStartedClosingSoon
+          onViewProgramWatch={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'View Program Watch' })).toBeTruthy();
     await expectNoAxeViolations(container);
   });
 });
