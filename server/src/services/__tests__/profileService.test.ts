@@ -872,6 +872,7 @@ describe('profileService profile shaping', () => {
       'Yingzheng Fan, Yu Yan, Obinna Nwokonkwo, John Kim, Margaret Liu, Leo Chen, Lea R. Winter*. "Tuning membranes for selective separations." Nature Materials 2024.',
       'Julia Simon, Lea R. Winter*. "Plasma-activated co-conversion of N2 and C1 gases towards value-added products." Current Opinion in Green & Sustainable Chemistry 51: 100985 (2025).',
       "View this doctor's clinical profile on the Yale Medicine website for information about the services we offer and making an appointment.",
+      'Adjunct faculty typically have an academic or research appointment at another institution and contribute or collaborate with one or more School of Medicine faculty members or programs.',
       'Associate Professor of Public Health (Health Policy); Associate Professor in the History of Medicine, and Associate Professor in the Institution for Social and Policy Studies',
       'Senior Associate Dean of Research and Director of Doctoral Studies; Mary E. Pinchot Professor of Environmental Health',
       'NIH P01 DK57751 (PI: M.H. Nathanson) 04/01/01-04/30/21 Title: Regulation of liver by nuclear calcium signaling Goals: The major goals of this project are to determine the mechanisms by which calcium is regulated in the nucleus of hepatocytes.',
