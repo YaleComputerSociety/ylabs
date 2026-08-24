@@ -3,6 +3,7 @@ import {
   applyResearchEntityResearchAreaCanonicalization,
   buildResearchAreaResolverIndex,
   createResearchAreaCanonicalizer,
+  isDivisionLevelResearchAreaLabel,
   isResearchAreaLabelLeakage,
   researchAreaMatchKey,
   resetResearchAreaCanonicalizerCache,
@@ -600,5 +601,52 @@ describe('applyResearchEntityResearchAreaCanonicalization', () => {
     const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Psychiatry']);
     expect(set.researchAreas).toEqual(['Artificial Intelligence', 'Quilting']);
     expect(result.unmatchedResearchAreas).toEqual(['Quilting']);
+  });
+
+  it('rejects a bare division-level label even with empty departments (#1544)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = {
+      researchAreas: ['Genetics', 'Oncology', 'Hematology'],
+    };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, []);
+    expect(set.researchAreas).toEqual([]);
+    expect(result.droppedResearchAreas).toEqual(['Genetics', 'Oncology', 'Hematology']);
+  });
+
+  it('keeps a specific topic alongside a rejected division-level label (#1544)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['AI', 'Oncology'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence']);
+    expect(result.droppedResearchAreas).toEqual(['Oncology']);
+  });
+
+  it('rejects a division-level label regardless of the entity own departments (#1544)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['Genetics', 'AI'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Pathology']);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence']);
+    expect(result.droppedResearchAreas).toEqual(['Genetics']);
+  });
+});
+
+describe('isDivisionLevelResearchAreaLabel', () => {
+  it('flags coarse clinical-specialty and academic division labels', () => {
+    expect(isDivisionLevelResearchAreaLabel('Genetics')).toBe(true);
+    expect(isDivisionLevelResearchAreaLabel('oncology')).toBe(true);
+    expect(isDivisionLevelResearchAreaLabel('Hematology.')).toBe(true);
+    expect(isDivisionLevelResearchAreaLabel('Public Health')).toBe(true);
+  });
+
+  it('leaves a specific technical term alone even if Yale also has a department by that name', () => {
+    expect(isDivisionLevelResearchAreaLabel('Immunology')).toBe(false);
+    expect(isDivisionLevelResearchAreaLabel('Microbiology')).toBe(false);
+    expect(isDivisionLevelResearchAreaLabel('Cancer Genomics')).toBe(false);
+  });
+
+  it('fails closed for non-strings and empty values', () => {
+    expect(isDivisionLevelResearchAreaLabel(42)).toBe(false);
+    expect(isDivisionLevelResearchAreaLabel('')).toBe(false);
+    expect(isDivisionLevelResearchAreaLabel(null)).toBe(false);
   });
 });
