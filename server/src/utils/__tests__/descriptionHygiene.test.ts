@@ -34,6 +34,7 @@ import {
   MID_SENTENCE_TRUNCATION_MIN_LENGTH,
   partitionSentencesLossless,
   repairMidSentenceTruncation,
+  repairMissingSpaceAfterSentence,
   sanitizeCatalogDescription,
   sanitizeEvidenceExcerpt,
   sanitizeResearchEntityDescription,
@@ -1768,6 +1769,47 @@ describe('stripGluedProfileSectionLabel profile-chrome concatenation (#1481)', (
     ).toBe(
       'Associate Professor of Medicine (General Medicine)Yale Liaison. Her research focuses on ethics in medicine.',
     );
+  });
+});
+
+describe('repairMissingSpaceAfterSentence block-boundary glue (#1776)', () => {
+  it('inserts the missing space where two sentences were glued at a period', () => {
+    expect(
+      repairMissingSpaceAfterSentence(
+        'Discovery of genetic/epigenetic causes of brain tumors.Translational Research studies precision medicine.',
+      ),
+    ).toBe(
+      'Discovery of genetic/epigenetic causes of brain tumors. Translational Research studies precision medicine.',
+    );
+  });
+
+  it('inserts the missing space where a paragraph break was glued mid-bio', () => {
+    expect(
+      repairMissingSpaceAfterSentence(
+        'The membrane environment imposes distinct structural constraints.Our most recent work examines transmembrane domains.',
+      ),
+    ).toBe(
+      'The membrane environment imposes distinct structural constraints. Our most recent work examines transmembrane domains.',
+    );
+  });
+
+  it('leaves a short title/degree abbreviation followed by a capitalized name untouched', () => {
+    const clean = 'Dr.Ringel presented the findings.';
+    expect(repairMissingSpaceAfterSentence(clean)).toBe(clean);
+  });
+
+  it('leaves a properly spaced sentence boundary untouched', () => {
+    const clean = 'This system integrates several assays. Our approach differs from prior work.';
+    expect(repairMissingSpaceAfterSentence(clean)).toBe(clean);
+  });
+
+  it('is wired into the served fullDescription and shortDescription sanitizers', () => {
+    const raw =
+      'The group studies how membrane proteins fold.Their most recent work examines transmembrane domains and their signaling role in cells.';
+    const cleaned =
+      'The group studies how membrane proteins fold. Their most recent work examines transmembrane domains and their signaling role in cells.';
+    expect(sanitizeResearchEntityDescription(raw)).toBe(cleaned);
+    expect(sanitizeResearchEntityShortDescription(raw)).toBe(cleaned);
   });
 });
 

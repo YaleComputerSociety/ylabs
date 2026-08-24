@@ -650,6 +650,24 @@ export function stripGluedProfileSectionLabel(text: string): string {
   return normalizeHygieneWhitespace(stripped.replace(/\.\s*\./g, '.'));
 }
 
+const missingSpaceAfterSentencePattern = /([a-z]{3,}[.!?])(?=[A-Z][a-z]{2,})/g;
+
+/**
+ * Insert the missing space where a scraped-HTML flattening step joined two
+ * adjacent block elements with no separator, gluing the end of one sentence
+ * directly onto the start of the next ("...brain tumors.Translational
+ * Research...", "...membrane proteins.Our most recent work...") (#1776).
+ * Anchored on a 3+ lowercase-letter run immediately before the terminal
+ * punctuation so short title/degree abbreviations (Dr., Ph.D., i.e., e.g.)
+ * never match - real abbreviations that are 3+ letters (etc., Prof., Assoc.)
+ * still take a sentence break here, which is the correct rendering either way.
+ */
+export function repairMissingSpaceAfterSentence(text: string): string {
+  const value = String(text || '');
+  const repaired = value.replace(missingSpaceAfterSentencePattern, '$1 ');
+  return repaired === value ? value : repaired;
+}
+
 const citationAuthorInitialsListPattern = /(?:[A-Z][a-zA-Z'-]+\s+[A-Z]{1,3},\s*){3,}/;
 
 /**
@@ -1090,7 +1108,9 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
                             stripInternalConfidenceHedge(
                               stripCatalogChrome(
                                 evergreenizeStaleCycleDatePhrase(
-                                  redactDirectContactInfo(String(text || '')),
+                                  repairMissingSpaceAfterSentence(
+                                    redactDirectContactInfo(String(text || '')),
+                                  ),
                                 ),
                               ),
                             ),
@@ -1920,7 +1940,9 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
         stripGluedResearchRoleTrackToken(
           stripDirectoryResearcherNavChrome(
             stripGluedProfileRoleLabel(
-              stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+              stripTrailingContactAddress(
+                sanitizeCatalogDescription(repairMissingSpaceAfterSentence(redacted)),
+              ),
             ),
           ),
         ),
