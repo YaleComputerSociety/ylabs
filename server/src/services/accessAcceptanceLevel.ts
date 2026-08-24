@@ -38,6 +38,7 @@ export interface AccessSignalConfidenceInput {
   confidence?: string;
   confidenceScore?: number;
   derivationKey?: string;
+  excerpt?: string;
 }
 
 export function signalConfidenceScore(signal: AccessSignalConfidenceInput): number {
@@ -48,14 +49,30 @@ export function signalConfidenceScore(signal: AccessSignalConfidenceInput): numb
   return 0;
 }
 
+// REACH_OUT_PLAUSIBLE is a catch-all outreach-plausibility type: a bare
+// derivationKey (e.g. the legacy research-entity-cache-backfill provenance
+// recovery) carries no guarantee it is backed by real invitation language, so
+// it must not lift the acceptance tier just because it isn't on the
+// identified-lead-fallback denylist below. Fail closed: require a real,
+// source-backed excerpt. See #1343.
+function hasSourceBackedExcerpt(signal: AccessSignalConfidenceInput): boolean {
+  return typeof signal.excerpt === 'string' && signal.excerpt.trim().length > 0;
+}
+
 export function signalCountsTowardAcceptance(signal: AccessSignalConfidenceInput): boolean {
   if (typeof signal.type !== 'string' || !POSITIVE_ACCESS_SIGNAL_TYPES.has(signal.type)) {
     return false;
   }
-  return !(
+  if (
     typeof signal.derivationKey === 'string' &&
     IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS.has(signal.derivationKey)
-  );
+  ) {
+    return false;
+  }
+  if (signal.type === 'REACH_OUT_PLAUSIBLE') {
+    return hasSourceBackedExcerpt(signal);
+  }
+  return true;
 }
 
 export function canonicalAcceptanceLevelFromSignals(
