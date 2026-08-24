@@ -165,7 +165,7 @@ export default function ListingClaimRequestPanel({ listing }: { listing: Listing
               <button
                 type="submit"
                 disabled={submitting}
-                className="min-h-11 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {submitting ? 'Submitting...' : 'Submit request'}
               </button>

@@ -373,7 +373,7 @@ const AdminProfileEditModal = ({ profile, onClose, onSaved }: AdminProfileEditMo
           <button
             onClick={handleSave}
             disabled={saving || loading}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-navy disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </button>

@@ -190,7 +190,7 @@ const Unknown = () => {
           </div>
 
           <div className="flex justify-end">
-            <button type="submit" disabled={submissionStatus === 'submitting'} className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-2 text-sm font-semibold text-white hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-wait disabled:opacity-70 sm:w-auto">
+            <button type="submit" disabled={submissionStatus === 'submitting'} className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-wait disabled:opacity-70 sm:w-auto">
               {submissionStatus === 'submitting' ? 'Saving account setup...' : 'Save and continue'}
             </button>
           </div>

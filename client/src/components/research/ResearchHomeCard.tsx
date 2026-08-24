@@ -406,7 +406,7 @@ const ResearchHomeCard = ({
             to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
             className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
               isCompact
-                ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-blue-900'
+                ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-brand-navy'
                 : 'border border-blue-200 bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]'
             }`}
             onClick={(event) => event.stopPropagation()}
@@ -416,7 +416,7 @@ const ResearchHomeCard = ({
           {activePostedOpportunity?._id && (
             <Link
               to={`/opportunities/${safeRouteSegment(activePostedOpportunity._id)}`}
-              className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-900"
+              className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy"
               onClick={(event) => event.stopPropagation()}
             >
               View posted opportunity

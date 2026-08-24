@@ -460,7 +460,7 @@ const AdminListingsTable = () => {
                         <div className="flex gap-1 justify-center">
                           <button
                             onClick={() => dispatch({ type: 'OPEN_EDIT', item: listing })}
-                            className="text-[10px] bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors"
+                            className="text-[10px] bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy transition-colors"
                           >
                             Edit
                           </button>

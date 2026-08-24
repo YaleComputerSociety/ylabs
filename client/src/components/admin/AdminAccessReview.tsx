@@ -702,7 +702,7 @@ const AdminAccessReview = () => {
           </div>
           <button
             onClick={fetchEntities}
-            className="min-h-[44px] px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+            className="min-h-[44px] px-4 py-2 rounded-md bg-brand text-white text-sm font-semibold hover:bg-brand-navy"
           >
             Refresh
           </button>
@@ -876,7 +876,7 @@ const AdminAccessReview = () => {
                   <button
                     onClick={saveManualLocks}
                     disabled={isSavingLocks}
-                    className="min-h-[44px] px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                    className="min-h-[44px] px-4 py-2 bg-brand text-white rounded-md text-sm font-semibold hover:bg-brand-navy disabled:opacity-50"
                   >
                     {isSavingLocks ? 'Saving...' : 'Save Locks'}
                   </button>

@@ -195,7 +195,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             type="button"
             onClick={() => setIsComparing(true)}
             disabled={!canCompare}
-            className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Compare{selectedCount > 0 ? ` (${selectedCount})` : ''}
           </button>
