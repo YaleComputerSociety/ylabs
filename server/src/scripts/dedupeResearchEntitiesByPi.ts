@@ -672,6 +672,7 @@ function isReviewedProfileAreaGroup(
     !canonicalSlug.startsWith('faculty-research-area-') &&
     !canonicalSlug.startsWith('nih-pi-') &&
     !canonicalSlug.startsWith('nsf-pi-') &&
+    !canonicalSlug.startsWith('federal-pi-') &&
     group.duplicateSlugs.every((slug) => String(slug || '').startsWith('faculty-research-area-'))
   );
 }
@@ -688,7 +689,7 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
     canonicalWebsiteUrl?: string;
   }>,
 ) {
-  const fundingSlugPattern = /^(nih|nsf)-pi-/;
+  const fundingSlugPattern = /^(nih|nsf|federal)-pi-/;
   const uniqueCount = (values: unknown[] | undefined) =>
     new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean)).size;
   const reviewedProfileAreaGroups = groups.filter((group) =>

@@ -142,7 +142,11 @@ function isAreaShellSlug(slug: string | undefined): boolean {
 
 function isFundingShellSlug(slug: string | undefined): boolean {
   const value = (slug || '').toLowerCase();
-  return value.startsWith('nih-pi-') || value.startsWith('nsf-pi-');
+  return (
+    value.startsWith('nih-pi-') ||
+    value.startsWith('nsf-pi-') ||
+    value.startsWith('federal-pi-')
+  );
 }
 
 function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
@@ -167,7 +171,7 @@ function canonicalScore(entity: ResearchEntityPiDedupeRow['entities'][number]): 
     (slug.startsWith('dept-') ? 2 : 0) +
     (slug.startsWith('ysm-') ? 8 : 0) +
     (slug.startsWith('faculty-research-area-') ? 10 : 0) +
-    (slug.startsWith('nih-pi-') || slug.startsWith('nsf-pi-') ? -80 : 0)
+    (isFundingShellSlug(slug) ? -80 : 0)
   );
 }
 
@@ -181,7 +185,9 @@ function isFundingSourceUrl(value: string | undefined): boolean {
       host === 'nih.gov' ||
       host.endsWith('.nih.gov') ||
       host === 'nsf.gov' ||
-      host.endsWith('.nsf.gov')
+      host.endsWith('.nsf.gov') ||
+      host === 'usaspending.gov' ||
+      host.endsWith('.usaspending.gov')
     );
   } catch {
     return false;
@@ -205,7 +211,7 @@ function hasYaleEvidence(entity: ResearchEntityPiDedupeRow['entities'][number]):
 function isFundingOnlyEntity(entity: ResearchEntityPiDedupeRow['entities'][number]): boolean {
   const slug = (entity.slug || '').toLowerCase();
   const sourceUrls = entity.sourceUrls || [];
-  const hasFundingSlug = slug.startsWith('nih-pi-') || slug.startsWith('nsf-pi-');
+  const hasFundingSlug = isFundingShellSlug(slug);
   const hasFundingSource = sourceUrls.some(isFundingSourceUrl);
   const hasNonFundingSource = sourceUrls.some((url) => !isFundingSourceUrl(url));
 

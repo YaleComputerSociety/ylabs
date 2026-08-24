@@ -4,9 +4,9 @@ import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
 import { resolveResearcherIdForLegacyUser } from '../services/researchEntityMembershipAccessor';
 import mongoose from 'mongoose';
 
-const GRANT_SHELL_SLUG = /^(?:nih|nsf)-pi-/i;
+const GRANT_SHELL_SLUG = /^(?:nih|nsf|federal)-pi-/i;
 const GRANT_SOURCE_URL =
-  /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov)/i;
+  /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov|usaspending\.gov)/i;
 const LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
 const CANONICAL_LEAD_ROLES = LEAD_ROLES.map((role) => canonicalRoleForLegacy(role)).filter(
   (role): role is RoleAssignmentRole => Boolean(role),
