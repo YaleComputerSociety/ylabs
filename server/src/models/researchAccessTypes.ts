@@ -97,8 +97,8 @@ export const ResearchGroupKindToEntityType: Record<ResearchGroupKind, ResearchEn
   program: 'PROGRAM',
   initiative: 'INITIATIVE',
   group: 'GROUP',
-  individual: 'INDIVIDUAL_RESEARCH',
-  solo: 'INDIVIDUAL_RESEARCH',
+  individual: 'FACULTY_RESEARCH_AREA',
+  solo: 'FACULTY_RESEARCH_AREA',
 };
 
 export const mapResearchGroupKindToEntityType = (kind?: string): ResearchEntityType => {

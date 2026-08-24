@@ -636,7 +636,7 @@ describe('researchEntityDto', () => {
     });
 
     expect(detail).not.toHaveProperty('group');
-    expect(detail.researchEntity.entityType).toBe('INDIVIDUAL_RESEARCH');
+    expect(detail.researchEntity.entityType).toBe('FACULTY_RESEARCH_AREA');
     expect(detail.members).toEqual([]);
   });
 
