@@ -14,11 +14,15 @@ const FeedbackButton = () => {
       color="inherit"
       sx={{
         textTransform: 'none',
-        color: '#000000',
+        color: 'var(--yr-ink)',
         fontFamily: 'Inter',
         fontWeight: 450,
         fontSize: '14px',
         minHeight: '44px',
+        '&:hover': {
+          backgroundColor: 'transparent',
+          color: 'var(--yr-blue)',
+        },
         ...navFocusRingSx,
       }}
       disableRipple={true}
