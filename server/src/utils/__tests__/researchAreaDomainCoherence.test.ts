@@ -73,6 +73,38 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
     expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toBe(areas);
   });
 
+  it('drops a sole chip that duplicates the entity\'s own department name even though it self-corroborates (#1763)', () => {
+    const langstonContext = {
+      name: 'Langston Lab',
+      departments: ['Pathology'],
+      fullDescription:
+        'The Langston Lab studies exercise-induced inflammation and muscle healthspan across the lifespan.',
+    };
+    expect(dropDomainIncoherentUnsourcedResearchAreas(['Pathology'], undefined, langstonContext)).toEqual(
+      [],
+    );
+  });
+
+  it('drops only the department-duplicate chip and keeps a genuine topic chip alongside it', () => {
+    const context = {
+      name: 'Example Lab',
+      departments: ['Pathology'],
+      fullDescription:
+        'The Example Lab studies exercise-induced inflammation and muscle healthspan across the lifespan.',
+    };
+    const areas = ['Pathology', 'Muscle Healthspan'];
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, context)).toEqual([
+      'Muscle Healthspan',
+    ]);
+  });
+
+  it('leaves a department-name chip untouched when fieldProvenance.researchAreas is recorded', () => {
+    const context = { name: 'Langston Lab', departments: ['Pathology'], fullDescription: 'x'.repeat(50) };
+    const areas = ['Pathology'];
+    const provenance = { researchAreas: { sourceUrl: 'https://pathology.yale.edu/langston' } };
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, provenance, context)).toBe(areas);
+  });
+
   it('does not let generic RCT-methodology boilerplate false-corroborate an unrelated chip via the fuzzy prefix', () => {
     const rideshareContext = {
       name: 'A Lab',
