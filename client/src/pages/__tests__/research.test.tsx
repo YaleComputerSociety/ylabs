@@ -2899,6 +2899,7 @@ describe('Research page', () => {
 
 describe('Research landing saved-search new-match signal', () => {
   const mockSavedSearchNewMatches = (savedSearches: Array<{ newMatchCount: number | null }>) => {
+    mockedAxios.get.mockReset();
     mockedAxios.get.mockImplementation((url: string) =>
       url === '/users/savedSearches'
         ? Promise.resolve({ data: { savedSearches } })
