@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  deriveProgramCardShortDescription,
   describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
 
@@ -1118,5 +1120,54 @@ describe('shortDescriptionQuality Studies-template glue guard (#978)', () => {
       'The lab studies neuroimaging biomarkers across depression, anxiety, and aging using MRI.',
     );
     expect(quality.flags).not.toContain('malformed-generated-text');
+  });
+});
+
+describe('programCardShortDescriptionQuality (#1425)', () => {
+  it('accepts a program description verbatim even though it does not open with a research verb', () => {
+    const full =
+      'Yale Economics summer research opportunities that match undergraduate students with faculty research projects.';
+    const quality = programCardShortDescriptionQuality(full, full);
+    expect(quality.isUseful).toBe(true);
+  });
+
+  it('still rejects boilerplate and contact-info residue on a program candidate', () => {
+    const full = 'Contact the program office for more information about eligibility and deadlines.';
+    expect(programCardShortDescriptionQuality('', full).isUseful).toBe(false);
+    expect(programCardShortDescriptionQuality('', full).flags).toContain('blank');
+  });
+});
+
+describe('deriveProgramCardShortDescription (#1425)', () => {
+  it('uses the whole description verbatim when it is already one concise sentence', () => {
+    const full =
+      'The Department has funds available for sophomore and junior Political Science majors from the Frank M. Patterson fund to support summer research and Political Science-related internships.';
+    expect(deriveProgramCardShortDescription(full)).toBe(full);
+  });
+
+  it('takes the first self-contained sentence of a multi-sentence program description', () => {
+    const full =
+      'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work or enrollment in a school. Richter Fellowships are ordinarily awarded to juniors, but first years, sophomores and graduate affiliates are eligible.';
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work or enrollment in a school.',
+    );
+  });
+
+  it('falls through to a later sentence when the first is too short to stand alone as a card', () => {
+    const full =
+      "For Davenport first-years and sophomores. If you're planning a project or internship related to media, government, or public service, we encourage you to apply for the Class of 1982 Cowles Summer Fellowship.";
+    expect(deriveProgramCardShortDescription(full)).toBe(
+      "If you're planning a project or internship related to media, government, or public service, we encourage you to apply for the Class of 1982 Cowles Summer Fellowship.",
+    );
+  });
+
+  it('fails closed when no sentence in the description fits the card length bar', () => {
+    const full =
+      'The Latin American and Iberian Studies Summer Travel Awards at the MacMillan Center provide support for senior undergraduates and graduate students who plan to conduct research or study abroad (including language study) in Latin America, the Caribbean, Portugal or Spain during the summer.';
+    expect(deriveProgramCardShortDescription(full)).toBe('');
+  });
+
+  it('returns empty for a blank description', () => {
+    expect(deriveProgramCardShortDescription('')).toBe('');
   });
 });

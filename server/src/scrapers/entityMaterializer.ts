@@ -15,8 +15,10 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
 import {
   buildResearchAreasCardSummary,
+  programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
+import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import {
   CARD_SYNTHESIS_MODEL,
   defaultCardSynthesisLLM,
@@ -144,6 +146,7 @@ export interface MaterializedShortDescriptionInput {
   currentShortDescription?: unknown;
   researchAreas?: unknown;
   manuallyLocked?: boolean;
+  isProgramLike?: boolean;
   synthesize: (fullDescription: string) => Promise<string>;
 }
 
@@ -151,6 +154,7 @@ export async function resolveMaterializedShortDescription(
   input: MaterializedShortDescriptionInput,
 ): Promise<string | null> {
   if (input.manuallyLocked) return null;
+  const shortQuality = input.isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
   const current =
     typeof input.currentShortDescription === 'string' ? input.currentShortDescription.trim() : '';
   const isBareResearchAreasFallback =
@@ -158,19 +162,20 @@ export async function resolveMaterializedShortDescription(
     current.toLowerCase() === buildResearchAreasCardSummary(input.researchAreas).toLowerCase();
   if (
     !isBareResearchAreasFallback &&
-    shortDescriptionQuality(input.currentShortDescription, input.fullDescription).isUseful
+    shortQuality(input.currentShortDescription, input.fullDescription).isUseful
   ) {
     return null;
   }
   const grounded = await resolveGroundedCardDescription({
     fullDescription: input.fullDescription,
     researchAreas: input.researchAreas,
+    isProgramLike: input.isProgramLike,
     synthesize: input.synthesize,
   });
   if (
     grounded &&
     grounded.toLowerCase() !== current.toLowerCase() &&
-    shortDescriptionQuality(grounded, input.fullDescription).isUseful
+    shortQuality(grounded, input.fullDescription).isUseful
   ) {
     return grounded;
   }
@@ -2491,6 +2496,10 @@ export async function materializeEntity(
       fullDescription,
       currentShortDescription: set.shortDescription ?? entityDoc?.shortDescription,
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+      isProgramLike: isProgramLikeResearchEntity({
+        kind: set.kind ?? entityDoc?.kind,
+        entityType: set.entityType ?? entityDoc?.entityType,
+      }),
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
       synthesize:
         options.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),

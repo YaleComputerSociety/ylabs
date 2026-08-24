@@ -1,10 +1,13 @@
 import {
+  deriveProgramCardShortDescription,
   deriveShortDescriptionFromFullDescription,
+  programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { resolveGroundedCardDescription } from '../utils/groundedCardSynthesis';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 import { isBlockingVisibilityReason } from '../services/studentVisibilityGateService';
+import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 
 export const CARD_BLOCKER_REASON = 'missing_card_description';
 
@@ -12,6 +15,7 @@ export interface CardBackfillEntity {
   id: string;
   slug?: string;
   entityType?: string;
+  kind?: string;
   shortDescription?: unknown;
   fullDescription?: unknown;
   researchAreas?: unknown;
@@ -49,11 +53,20 @@ export async function planCardBackfillRow(
   const full = sanitizeDescriptionText(entity.fullDescription).text;
   const short = sanitizeDescriptionText(entity.shortDescription).text;
   const base = { id: entity.id, slug: entity.slug, entityType: entity.entityType };
+  const isProgramLike = isProgramLikeResearchEntity({
+    kind: entity.kind,
+    entityType: entity.entityType,
+  });
+  const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
 
-  if (short && shortDescriptionQuality(short, full).isUseful) {
+  if (short && shortQuality(short, full).isUseful) {
     return { ...base, action: 'short-ok', proposedShort: null, gainedCard: false, wouldPromote: false };
   }
-  if (classifyFullDescription(full) !== 'genuine') {
+  // classifyFullDescription's "genuine" bar (research-focus phrasing, a 120-char
+  // thin-full floor) is tuned for lab prose; a program's fullDescription is
+  // legitimately terse and describes what it offers rather than what it
+  // studies, so program-like entities skip straight to card resolution.
+  if (!isProgramLike && classifyFullDescription(full) !== 'genuine') {
     return {
       ...base,
       action: 'not-genuine-full',
@@ -66,14 +79,17 @@ export async function planCardBackfillRow(
   const card = await resolveGroundedCardDescription({
     fullDescription: full,
     researchAreas: entity.researchAreas,
+    isProgramLike,
     synthesize,
   });
-  if (!card || !shortDescriptionQuality(card, full).isUseful) {
+  if (!card || !shortQuality(card, full).isUseful) {
     return { ...base, action: 'no-card', proposedShort: null, gainedCard: false, wouldPromote: false };
   }
 
-  const action: CardBackfillAction =
-    card === deriveShortDescriptionFromFullDescription(full) ? 'card-derived' : 'card-synthesized';
+  const derived = isProgramLike
+    ? deriveProgramCardShortDescription(full)
+    : deriveShortDescriptionFromFullDescription(full);
+  const action: CardBackfillAction = card === derived ? 'card-derived' : 'card-synthesized';
   return {
     ...base,
     action,

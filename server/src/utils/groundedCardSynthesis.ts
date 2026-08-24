@@ -2,6 +2,7 @@ import axios from 'axios';
 import { redactDirectContactInfo } from './contactRedaction';
 import {
   buildResearchAreasCardSummary,
+  deriveProgramCardShortDescription,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
   isVacuousGenericFocusSummary,
@@ -253,12 +254,17 @@ export async function synthesizeGroundedCardDescription(
 export interface ResolveGroundedCardInput {
   fullDescription: unknown;
   researchAreas?: unknown;
+  isProgramLike?: boolean;
   synthesize?: (fullDescription: string) => Promise<string>;
 }
 
 export async function resolveGroundedCardDescription(
   input: ResolveGroundedCardInput,
 ): Promise<string> {
+  if (input.isProgramLike) {
+    const programDerived = deriveProgramCardShortDescription(input.fullDescription);
+    if (programDerived) return programDerived;
+  }
   const derived = deriveShortDescriptionFromFullDescription(input.fullDescription);
   if (derived && shortDescriptionQuality(derived, input.fullDescription).isUseful) {
     return derived;

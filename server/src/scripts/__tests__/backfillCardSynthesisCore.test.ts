@@ -119,6 +119,26 @@ describe('planCardBackfillRow', () => {
     expect(row.gainedCard).toBe(false);
     expect(row.proposedShort).toBeNull();
   });
+
+  it('derives a program card from its own terse description instead of rejecting it as not-genuine (#1425)', async () => {
+    const programFull =
+      'Yale Economics summer research opportunities that match undergraduate students with faculty research projects.';
+    const row = await planCardBackfillRow(
+      {
+        id: '000000000000000000000008',
+        entityType: 'RA_PROGRAM',
+        kind: 'program',
+        fullDescription: programFull,
+        visibilityReasons: ['missing_card_description'],
+      },
+      neverSynthesize,
+    );
+    expect(neverSynthesize).not.toHaveBeenCalled();
+    expect(row.action).toBe('card-derived');
+    expect(row.proposedShort).toBe(programFull);
+    expect(row.gainedCard).toBe(true);
+    expect(row.wouldPromote).toBe(true);
+  });
 });
 
 describe('summarizeCardBackfill', () => {

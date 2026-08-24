@@ -79,12 +79,14 @@ export function buildResearchEntityPublicDescriptionRepresentation({
       resolvedLeadMemberNames,
     ),
   );
+  const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,
     shortDescription: sanitizedEntity.shortDescription,
     sourceUrls: sanitizedEntity.sourceUrls,
     website: sanitizedEntity.website,
     websiteUrl: sanitizedEntity.websiteUrl,
+    isProgramLike: programLike,
   });
   // The public DTO runs a second read-time hygiene pass over the served copy
   // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
@@ -105,7 +107,6 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // a lab-style card. This mirrors the program-specific visibility path
   // (`computeProgramStudentVisibility`) and keeps projected RA_PROGRAM /
   // FELLOWSHIP_PROGRAM homes (#1381) servable on the detail page.
-  const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
   if (!quality.full.isUseful) reasons.push('missing_public_full_description');
   if (!quality.short.isUseful && !programLike) reasons.push('missing_public_card_description');
