@@ -164,7 +164,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
   },
   {
     key: 'earth-planetary-sciences',
-    url: 'https://earth.yale.edu/resources',
+    url: 'https://earth.yale.edu/undergraduate-program',
     department: 'Earth and Planetary Sciences',
     school: 'Yale Faculty of Arts and Sciences',
     parser: 'general-guidance',

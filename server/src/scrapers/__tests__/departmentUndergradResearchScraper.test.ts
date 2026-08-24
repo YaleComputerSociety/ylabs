@@ -587,7 +587,7 @@ describe('departmentUndergradResearchScraper', () => {
       department: 'Anthropology',
     });
     expect(configsByKey.get('earth-planetary-sciences')).toMatchObject({
-      url: 'https://earth.yale.edu/resources',
+      url: 'https://earth.yale.edu/undergraduate-program',
       parser: 'general-guidance',
       department: 'Earth and Planetary Sciences',
     });
@@ -620,7 +620,7 @@ describe('departmentUndergradResearchScraper', () => {
         expect.objectContaining({
           entityKey: 'department-undergrad-research-earth-and-planetary-sciences',
           name: 'Earth and Planetary Sciences Research Opportunities',
-          sourceUrl: 'https://earth.yale.edu/resources',
+          sourceUrl: 'https://earth.yale.edu/undergraduate-program',
         }),
         expect.objectContaining({
           entityKey: 'department-undergrad-research-political-science',
@@ -983,5 +983,16 @@ describe('departmentUndergradResearchScraper', () => {
       expect(fetchHtml).not.toHaveBeenCalled();
       expect(emitted).toEqual([]);
     }
+  });
+
+  it('points every configured page at a student-facing research engagement path so its sourceUrl clears the organizational access-path gate (#1359)', () => {
+    const engagementPath =
+      /(undergrad|research|opportunit|for-students|senior-essay|senior-project)/i;
+    const offenders = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.filter((page) => {
+      const path = new URL(page.url).pathname;
+      return !engagementPath.test(path);
+    }).map((page) => `${page.key} -> ${page.url}`);
+
+    expect(offenders).toEqual([]);
   });
 });
