@@ -889,9 +889,28 @@ const AREA_ECHO_FALLBACK_STOPWORDS = new Set([
   'other',
   'health',
   'both',
+  'policy',
+  'policies',
+  'complexity',
+  'complexities',
 ]);
 
 const AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS = 4;
+
+// A fluent area-echo fullDescription reliably opens by naming its own
+// subject ("The <PI name> Lab focuses on ..."), and that name contributes
+// nothing to whether the prose beyond it is substantive - it just inflates
+// the "extra" (non-chip) word count against every entity whose full
+// description names its own lab, which is nearly all of them. Stripping the
+// leading subject clause before counting keeps the comparison about content,
+// not identity (#1625 residual: this is why entities like "Graeme Mason Lab"
+// slipped past the original word-overlap check purely from the two-token
+// name).
+const AREA_ECHO_SUBJECT_CLAUSE_RE =
+  /^(?:the\s+)?[\p{L}][\p{L}.'’-]*(?:\s+[\p{L}][\p{L}.'’-]*){0,4}\s+(?:lab|laboratory|center|centre|program|initiative|group)\b\s*/iu;
+
+const stripAreaEchoSubjectClause = (value: string): string =>
+  value.replace(AREA_ECHO_SUBJECT_CLAUSE_RE, '');
 
 const areaEchoFallbackContentTokens = (value: string): Set<string> =>
   new Set(
@@ -901,19 +920,44 @@ const areaEchoFallbackContentTokens = (value: string): Set<string> =>
       .filter((word) => word.length >= 4 && !AREA_ECHO_FALLBACK_STOPWORDS.has(word)),
   );
 
+// The canonical two-sentence fallback pads a chip restatement with a closer
+// sentence naming no method, model system, or finding beyond the chips
+// ("The lab investigates the underlying mechanisms of these conditions.").
+// Measuring "extra" words across the whole text lets the first sentence's
+// dense chip overlap dilute a hollow closer below the flag threshold even
+// though the closer alone adds nothing. Checking the closer in isolation
+// catches that shape directly; a closer with real specifics (methods, model
+// systems, concrete findings) carries enough non-chip content on its own to
+// clear the same bar and stay unflagged.
+const AREA_ECHO_CLOSER_RE =
+  /[.!?]\s+(?:the\s+(?:lab|laboratory|center|centre|program|initiative|group)|it)\s+(?:also\s+|further\s+)?(?:investigates|explores|examines|studies)\s+([^.!?]+)[.!?]?\s*$/iu;
+
+const hasVacuousAreaEchoCloserSentence = (value: string, areaTokens: Set<string>): boolean => {
+  const match = value.match(AREA_ECHO_CLOSER_RE);
+  if (!match?.[1]) return false;
+  const closerTokens = areaEchoFallbackContentTokens(match[1]);
+  if (closerTokens.size === 0) return false;
+  let extra = 0;
+  for (const token of closerTokens) {
+    if (!areaTokens.has(token)) extra += 1;
+  }
+  return extra < AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS;
+};
+
 const isAreaEchoFallbackFullDescription = (value: string, researchAreas: unknown): boolean => {
   const areas = Array.isArray(researchAreas)
     ? researchAreas.filter((area): area is string => typeof area === 'string')
     : [];
   if (areas.length === 0) return false;
-  const textTokens = areaEchoFallbackContentTokens(value);
-  if (textTokens.size === 0) return false;
   const areaTokens = areaEchoFallbackContentTokens(areas.join(' '));
+  const textTokens = areaEchoFallbackContentTokens(stripAreaEchoSubjectClause(value));
+  if (textTokens.size === 0) return false;
   let extra = 0;
   for (const token of textTokens) {
     if (!areaTokens.has(token)) extra += 1;
   }
-  return extra < AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS;
+  if (extra < AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS) return true;
+  return hasVacuousAreaEchoCloserSentence(value, areaTokens);
 };
 
 const isAppointmentOnly = (value: string): boolean => {
