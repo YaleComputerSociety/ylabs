@@ -261,6 +261,54 @@ describe('fullDescriptionQuality', () => {
     expect(fullDescriptionQuality(fullDescription).flags).not.toContain('area-echo-fallback');
   });
 
+  it('rejects a fluent area-echo fullDescription padded with demographic-plural chip mismatches (#1699)', () => {
+    const fullDescription =
+      'The Priya Chandrasekaran Lab focuses on substance abuse and its outcomes, as well as the psychosocial and emotional development of children and adolescents. The lab investigates community health and development issues, including the impacts of child abuse and trauma.';
+    const researchAreas = [
+      'Substance Abuse Treatment and Outcomes',
+      'Child and Adolescent Psychosocial and Emotional Development',
+      'Community Health and Development',
+      'Child Abuse and Trauma',
+      'Behavioral Health and Interventions',
+    ];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects a fluent area-echo fullDescription padded with generic biology filler nouns (#1699)', () => {
+    const fullDescription =
+      'The Owen Marsh Lab focuses on genomics and chromatin dynamics, RNA research and splicing, as well as single-cell and spatial transcriptomics. The lab investigates the molecular mechanisms underlying gene regulation and expression at both the cellular and spatial levels.';
+    const researchAreas = [
+      'Genomics and Chromatin Dynamics',
+      'RNA Research and Splicing',
+      'Single-cell and spatial transcriptomics',
+      'Epigenetics and DNA Methylation',
+      'RNA modifications and cancer',
+    ];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects a fluent area-echo fullDescription closing on a generic "contribute to overall health" tail (#1699)', () => {
+    const fullDescription =
+      "The Renata Solis Lab studies the interconnections between sleep and various factors such as obesity, physical activity, diet, child abuse and trauma, as well as early childhood education and development. The lab focuses on understanding how these elements influence each other and contribute to overall health and well-being.";
+    const researchAreas = [
+      'Sleep and related disorders',
+      'Obesity, Physical Activity, Diet',
+      'Child Abuse and Trauma',
+      'Early Childhood Education and Development',
+      'Heart Rate Variability and Autonomic Control',
+    ];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(false);
+  });
+
   it('derives card copy from later research activity when profile biographies start with appointments', () => {
     const fullDescription =
       'Dr Roberts has worked at the University of Vermont, Virginia Commonwealth University, and Yale University. He is board certified in internal medicine, pediatrics, medical oncology, and hospice and palliative care. Current activities are clinical research and consulting for non-governmental organizations and the pharmaceutical and pharmacy industries.';
