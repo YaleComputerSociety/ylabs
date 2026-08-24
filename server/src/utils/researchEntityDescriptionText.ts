@@ -147,9 +147,8 @@ export function isBrokenResearchEntityDescriptionFragment(value: unknown): boole
   return (
     /^Dr[.,]\s+(?:using|with|in|and)\b/i.test(cleaned) ||
     /^(?:focuses\s+in|of\s+|is\s+in\s+)/i.test(cleaned) ||
-    /\b(?:and|with|by)\s+(?:[A-Z][a-z]+\s+[A-Z]\.|[A-Z][a-z]+\.|[A-Z]\.|Dr\.)$/.test(
-      cleaned,
-    )
+    /\b(?:and|with|by)\s+(?:[A-Z][a-z]+\s+[A-Z]\.|[A-Z]\.|Dr\.)$/.test(cleaned) ||
+    /\b(?:with|by)\s+[A-Z][a-z]+\.$/.test(cleaned)
   );
 }
 
