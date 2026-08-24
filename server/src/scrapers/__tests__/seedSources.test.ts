@@ -12,6 +12,7 @@ import {
   writeSeedSourcesOutput,
 } from '../seedSources';
 import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
+import { getSourceCoverage } from '../sourceCoverageRegistry';
 
 const productionEnv = {
   SCRAPER_ENV: 'production',
@@ -29,6 +30,16 @@ describe('seedSources CLI helpers', () => {
   it('retires the student-decision LLM source instead of seeding it as active', () => {
     expect(ACTIVE_SOURCE_NAMES).not.toContain('student-decision-llm');
     expect(RETIRED_SOURCE_NAMES).toContain('student-decision-llm');
+  });
+
+  it('retires the orphaned external-fellowship LLM seed instead of seeding it as active', () => {
+    expect(ACTIVE_SOURCE_NAMES).not.toContain('external-fellowship-llm-scraper');
+    expect(RETIRED_SOURCE_NAMES).toContain('external-fellowship-llm-scraper');
+  });
+
+  it('gives every active seeded source a coverage-registry entry', () => {
+    const orphaned = ACTIVE_SOURCE_NAMES.filter((name) => getSourceCoverage(name) === undefined);
+    expect(orphaned).toEqual([]);
   });
 
   it('parses reset, dry-run, and output flags', () => {
