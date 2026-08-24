@@ -126,7 +126,9 @@ export interface LabMicrositeDescriptionLLMExtractorDeps {
 }
 
 const textValue = (value: unknown): string =>
-  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  typeof value === 'string'
+    ? value.replace(/[\u200b\ufeff]/g, '').replace(/\s+/g, ' ').trim()
+    : '';
 
 const uniqueStrings = (values: unknown): string[] =>
   Array.from(
@@ -552,7 +554,7 @@ async function defaultLabFinder(
       status: 'open',
       repairStage: 'source_description',
       repairStatus: { $in: ['queued', 'blocked', 'attempted'] },
-    }).sort({ lastSeenAt: -1, _id: 1 });
+    }).sort({ lastSeenAt: 1, _id: 1 });
     if (!options.exhaustive) {
       queueQuery.limit(1000);
     }
