@@ -56,6 +56,10 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import {
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -468,11 +472,17 @@ export async function runResearchDescriptionBackfill(options: {
         });
         // Also apply to the entity now so the visibility gate sees it
         // immediately; the observations above are the durable provenance record
-        // that keeps the description on future re-materialization.
+        // that keeps the description on future re-materialization. Route through
+        // the same hygiene the materializer applies so this convenience write can
+        // never land raw LLM/source output (contact info, CV prose, publications
+        // dumps) straight on the student-facing entity ahead of materialization.
         await ResearchEntity.updateOne(
           { _id: entity._id },
           {
-            $set: { fullDescription: out.fullDescription, shortDescription: out.shortDescription },
+            $set: {
+              fullDescription: sanitizeResearchEntityDescription(out.fullDescription),
+              shortDescription: sanitizeResearchEntityShortDescription(out.shortDescription),
+            },
           },
         );
       }
