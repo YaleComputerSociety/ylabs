@@ -29,6 +29,18 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toBe('');
   });
 
+  it('falls back a raw-empty shortDescription to fullDescription on the primary DTO, mirroring the summary DTO blurb (#1692)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-raw-empty-short',
+      slug: 'raw-empty-short-lab',
+      name: 'Raw Empty Short Lab',
+      kind: 'lab',
+      shortDescription: '',
+      fullDescription: 'This laboratory investigates vascular biology in human disease.',
+    });
+    expect(dto.shortDescription).toBe('This laboratory investigates vascular biology in human disease.');
+  });
+
   it('drops a first-person card blurb and falls back to fullDescription (#1077)', () => {
     const summary = toPublicResearchEntitySummaryDto({
       _id: { toString: () => 'entity-first-person-blurb' },
@@ -41,7 +53,7 @@ describe('researchEntityDto', () => {
     expect(summary.blurb).toBe('This laboratory investigates vascular biology in human disease.');
   });
 
-  it('drops a synthesized shortDescription ungrounded in the fullDescription (#1212)', () => {
+  it('drops a synthesized shortDescription ungrounded in the fullDescription and falls back to fullDescription (#1212, #1692)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-ungrounded-card',
       slug: 'wyrtzen-jw678',
@@ -51,7 +63,9 @@ describe('researchEntityDto', () => {
       fullDescription:
         'Studies the making of the modern Moroccan state, colonial state formation across North Africa, and the social history of empire in the Maghreb.',
     });
-    expect(dto.shortDescription).toBe('');
+    expect(dto.shortDescription).toBe(
+      'Studies the making of the modern Moroccan state, colonial state formation across North Africa, and the social history of empire in the Maghreb.',
+    );
   });
 
   it('keeps a synthesized shortDescription grounded in the fullDescription (#1212)', () => {
@@ -359,7 +373,7 @@ describe('researchEntityDto', () => {
     expect(dto.fullDescription).toBe('');
   });
 
-  it('strips YSM profile chrome from served descriptions and blurbs (#808)', () => {
+  it('strips YSM profile chrome from served descriptions and falls back the card shortDescription to fullDescription (#808, #1692)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-ysm-chrome',
       slug: 'ysm-takyar',
@@ -369,7 +383,9 @@ describe('researchEntityDto', () => {
         'INFORMATION FOR The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
     });
 
-    expect(dto.shortDescription).toBe('');
+    expect(dto.shortDescription).toBe(
+      'The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
+    );
     expect(dto.fullDescription).toBe(
       'The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
     );
