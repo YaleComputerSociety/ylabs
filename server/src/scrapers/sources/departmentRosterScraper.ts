@@ -1334,7 +1334,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'Management',
     schoolName: 'Yale School of Management',
     url: 'https://som.yale.edu/faculty-research/faculty-directory',
-    paginated: false,
+    paginated: true,
     extractor: nodeTeaserFacultyExtractor,
   },
   {

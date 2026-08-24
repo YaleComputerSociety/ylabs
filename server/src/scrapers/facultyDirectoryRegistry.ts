@@ -616,7 +616,7 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     coveredBy: ['dept-faculty-roster', 'centers-institutes-index'],
     approxFacultyCount: 18,
     notes:
-      'dept-faculty-roster covers the lecturers page and centers-institutes-index covers Jackson centers; the core Professors of Global Affairs list and sibling category pages are not covered.',
+      'dept-faculty-roster now covers the core Professors of Global Affairs list via the jackson-global-affairs DeptConfig; centers-institutes-index covers Jackson centers.',
   },
   {
     url: 'https://som.yale.edu/faculty-research/faculty-directory',
