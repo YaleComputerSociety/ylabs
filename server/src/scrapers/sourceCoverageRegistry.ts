@@ -323,6 +323,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Yale University Library online exhibitions catalog (onlineexhibits.library.yale.edu); pilot producer for the COLLECTIONS_INITIATIVE collections-as-data / digital-scholarship research home. The Omeka sites API is a crawl seed only and is never recorded as a source; each individual exhibition page is the cited source. Discovery-only: emits identity, the official-page summary description, and, where an exhibition publishes a "curated by" credit, the named curator as an inferred-director lead (resolved to a Yale User before promotion, fails closed otherwise). Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
   },
+  'beinecke-collections-research': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale Beinecke Rare Book & Manuscript Library research fellowship programs; mints ARCHIVE_OR_MUSEUM_PROJECT museum/collections research homes, completing the humanities-collections coverage backlog alongside the Peabody (ARCHIVE_OR_MUSEUM_PROJECT) and Library (COLLECTIONS_INITIATIVE) producers. Each individual program page is the cited source; the fellowships index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity and an official-page description; fails closed on contact and access data and never captures the awarded-fellow roster. Must not imply undergraduate access, contact routes, or posted openings.',
+  },
   'undergrad-fellowships-recipients': {
     priority: 4,
     tier: 'DERIVED_OFFICIAL',

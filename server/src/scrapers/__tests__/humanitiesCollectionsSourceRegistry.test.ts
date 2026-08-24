@@ -31,15 +31,30 @@ describe('humanitiesCollectionsSourceRegistry', () => {
     }
   });
 
-  it('marks the DHLab pilot covered and the museum/library siblings as gaps', () => {
-    const byType = new Map(
-      HUMANITIES_COLLECTIONS_SOURCE_REGISTRY.map((entry) => [entry.entityType, entry]),
+  it('has the whole humanities-collections backlog covered with no remaining gaps', () => {
+    const dhLab = HUMANITIES_COLLECTIONS_SOURCE_REGISTRY.find(
+      (entry) => entry.entityType === 'DIGITAL_HUMANITIES_PROJECT',
     );
-    expect(byType.get('DIGITAL_HUMANITIES_PROJECT')?.status).toBe('covered');
-    expect(byType.get('DIGITAL_HUMANITIES_PROJECT')?.coveredBy).toContain('dh-lab-projects');
+    expect(dhLab?.status).toBe('covered');
+    expect(dhLab?.coveredBy).toContain('dh-lab-projects');
 
-    const gapTypes = new Set(getHumanitiesCollectionsGaps().map((entry) => entry.entityType));
-    expect(gapTypes.has('ARCHIVE_OR_MUSEUM_PROJECT')).toBe(true);
-    expect(gapTypes.has('COLLECTIONS_INITIATIVE')).toBe(true);
+    const archiveHomes = HUMANITIES_COLLECTIONS_SOURCE_REGISTRY.filter(
+      (entry) => entry.entityType === 'ARCHIVE_OR_MUSEUM_PROJECT',
+    );
+    expect(archiveHomes.length).toBeGreaterThanOrEqual(2);
+    for (const entry of archiveHomes) {
+      expect(entry.status, entry.name).toBe('covered');
+    }
+    expect(archiveHomes.flatMap((entry) => entry.coveredBy ?? [])).toEqual(
+      expect.arrayContaining(['peabody-collections-research', 'beinecke-collections-research']),
+    );
+
+    const library = HUMANITIES_COLLECTIONS_SOURCE_REGISTRY.find(
+      (entry) => entry.entityType === 'COLLECTIONS_INITIATIVE',
+    );
+    expect(library?.status).toBe('covered');
+    expect(library?.coveredBy).toContain('library-collections-as-data');
+
+    expect(getHumanitiesCollectionsGaps()).toEqual([]);
   });
 });
