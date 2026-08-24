@@ -159,6 +159,7 @@ export interface ResearchDescriptionBackfillOptions {
   confirmLlmSynthesis: boolean;
   confirmCardSynthesis: boolean;
   projectedEntities: number;
+  recordIds?: string[];
   output?: string;
 }
 
@@ -203,6 +204,9 @@ export function parseResearchDescriptionBackfillArgs(
       options.limit = parsePositiveInt(argv[i + 1]);
       options.explicitLimit = true;
       i += 1;
+    } else if (arg.startsWith('--record-id=')) {
+      const id = arg.slice('--record-id='.length).trim();
+      if (id) options.recordIds = [...(options.recordIds ?? []), id];
     } else if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
       i += 1;
@@ -1025,6 +1029,7 @@ export interface CardSynthesisBackfillResult {
 export async function runCardSynthesisBackfill(options: {
   dryRun: boolean;
   limit?: number;
+  recordIds?: string[];
   cardSynthesizer?: CardSynthesisLLMFn;
   cardModel?: string;
 }): Promise<CardSynthesisBackfillResult> {
@@ -1039,8 +1044,15 @@ export async function runCardSynthesisBackfill(options: {
         })
       : Promise.resolve('');
 
+  const scopedRecordIds = (options.recordIds ?? []).map((id) => id.trim()).filter(Boolean);
+  const cardMatch: Record<string, unknown> = {
+    archived: { $ne: true },
+    studentVisibilityReasons: CARD_BLOCKER_REASON,
+  };
+  if (scopedRecordIds.length > 0) cardMatch._id = { $in: scopedRecordIds };
+
   const docs = (await ResearchEntity.find(
-    { archived: { $ne: true }, studentVisibilityReasons: CARD_BLOCKER_REASON },
+    cardMatch,
     {
       _id: 1,
       slug: 1,
@@ -1159,6 +1171,7 @@ async function runCardSynthesisLane(options: ResearchDescriptionBackfillOptions)
     const result = await runCardSynthesisBackfill({
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
+      recordIds: options.recordIds,
     });
     writeBackfillReport(
       options,
