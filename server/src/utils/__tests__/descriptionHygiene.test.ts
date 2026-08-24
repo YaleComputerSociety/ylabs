@@ -2165,6 +2165,49 @@ describe('isNonSelfContainedShortDescription funding-program opener guard (#1821
   });
 });
 
+describe('isNonSelfContainedShortDescription enumerated-strand and welded-methods-splice guard (#1832)', () => {
+  const ENUMERATED_STRAND_OPENERS = [
+    'One line of investigation focuses on the fundamental issue of the regulation of cell proliferation and death.',
+    'One area of research examines the molecular basis of synaptic plasticity.',
+    'One of our main goals of investigation is to map neural circuits underlying decision-making.',
+  ];
+
+  const WELDED_METHODS_SPLICE_SHORTS = [
+    'Humans possess an extraordinary capacity for motor skills, using a range of methods, including behavioral experiments, computational modeling, neuroimaging, and neuropsychology.',
+    'Cancer remains a leading cause of death, employing a variety of techniques, including sequencing, imaging, and organoid assays.',
+  ];
+
+  it('fails an enumerated-research-strand mid-discourse opener closed', () => {
+    for (const text of ENUMERATED_STRAND_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('fails a world-claim opener welded to a misattributed research-methods list closed', () => {
+    for (const text of WELDED_METHODS_SPLICE_SHORTS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('keeps a research short whose own activity verb governs the methods clause', () => {
+    const kept = [
+      'Studies motor learning, using a range of methods, including behavioral experiments and computational modeling.',
+      'Investigates tumor evolution, employing a variety of techniques, including single-cell sequencing.',
+    ];
+    for (const text of kept) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(false);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe(text);
+    }
+  });
+
+  it('keeps a summary that mentions a single research line without the enumerating "One ... of" frame', () => {
+    const named = 'Investigates the regulation of cell proliferation and neuronal migration in the developing cortex.';
+    expect(isNonSelfContainedShortDescription(named)).toBe(false);
+  });
+});
+
 describe('isNonSelfContainedShortDescription role/title-header opener guard (#1761)', () => {
   const ROLE_HEADER_OPENERS = [
     'Dr. Xiao Wang is an Instructor of Medicine (Medical Oncology) at Yale School of Medicine and a member of the Center for Gastrointestinal Cancers at Yale Cancer Center.',

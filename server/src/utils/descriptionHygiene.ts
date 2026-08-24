@@ -1060,6 +1060,39 @@ const leadingCareerHistoryOpenerPattern =
 const leadingDoctorDegreeOpenerPattern =
   /^Dr\.\s+[A-Z][a-z]+\s+(?:received|earned|completed|obtained|graduated)\b/;
 
+/**
+ * A card blurb that opens mid-discourse by singling out "one line/area/strand
+ * of investigation/research" as if continuing an enumeration begun in a
+ * paragraph that never made it onto the standalone card ("One line of
+ * investigation focuses on the fundamental issue of ..."). The reader has no
+ * "other lines" on the card to anchor the "one", so it dangles the same way a
+ * leading demonstrative does (#1832).
+ */
+const leadingEnumeratedResearchStrandOpenerPattern =
+  /^One\s+(?:(?:of\s+)?(?:the|our|his|her|their|its)\s+)?(?:major\s+|main\s+|primary\s+|key\s+|central\s+|current\s+|other\s+)?(?:line|area|aspect|strand|thread|branch|avenue|direction|focus|theme|goal|objective|question|topic)s?\s+of\s+(?:investigation|research|inquiry|work|study|interest|focus|the\s+(?:lab|laboratory|group))\b/i;
+
+/**
+ * A synthesized card that welds a generic, non-research world-claim opener to a
+ * research-methods gerund list ("Humans possess an extraordinary capacity for
+ * motor skills, using a range of methods, including behavioral experiments,
+ * ..."): the "using a range of methods" attaches grammatically to the
+ * sentence's own subject ("Humans") rather than to the researcher it actually
+ * describes, a card-synthesis splice artifact rather than a self-contained
+ * summary. A genuine research short whose own research-activity verb governs
+ * the methods clause ("Studies X, using a range of methods, including Y") keeps
+ * the methods correctly attributed, so the exemption checks only the opener
+ * before the splice (a research verb inside the methods list itself, e.g.
+ * "computational modeling", must not exempt it) (#1832).
+ */
+const weldedMethodsListGerundSplicePattern =
+  /,\s+(?:using|employing|utilizing|applying|leveraging)\s+a\s+(?:wide\s+)?(?:range|variety|combination|number|set|suite|host|series|battery|array)\s+of\s+(?:methods|techniques|approaches|tools|methodologies|technologies)\s*,\s+including\b/i;
+
+function hasWeldedMethodsListGerundSplice(text: string): boolean {
+  const match = text.match(weldedMethodsListGerundSplicePattern);
+  if (!match || match.index === undefined) return false;
+  return !researchActivitySignalPattern.test(text.slice(0, match.index));
+}
+
 function startsMidSentenceLowercase(text: string): boolean {
   const firstToken = text.split(/\s+/)[0] || '';
   if (!/^[a-z]/.test(firstToken)) return false;
@@ -1142,7 +1175,10 @@ export function isRoleTitleHeaderOpenerShortDescription(text: string): boolean {
  * the reader directly as a CTA ("If you..."), opens mid-eligibility-fragment
  * ("Appropriate purposes for support include..."), or leads with
  * donor-genealogy trivia ("The Class of ... has established ... in memory
- * of...") likewise fails closed rather than serve verbatim (#1821).
+ * of...") likewise fails closed rather than serve verbatim (#1821). A blurb
+ * that opens mid-discourse on "one line/area of investigation" (implying other
+ * lines never shown), or that welds a generic world-claim opener to a
+ * misattributed research-methods gerund list, is also failed closed (#1832).
  */
 export function isNonSelfContainedShortDescription(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
@@ -1155,6 +1191,8 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
   if (leadingDoctorDegreeOpenerPattern.test(normalized)) return true;
   if (leadingDanglingPronounSubjectPattern.test(normalized)) return true;
   if (leadingTransitionalPronounSubjectPattern.test(normalized)) return true;
+  if (leadingEnumeratedResearchStrandOpenerPattern.test(normalized)) return true;
+  if (hasWeldedMethodsListGerundSplice(normalized)) return true;
   if (fundingProgramSecondPersonCtaOpenerPattern.test(normalized)) return true;
   if (fundingProgramEligibilityFragmentOpenerPattern.test(normalized)) return true;
   if (fundingProgramDonorProvenanceOpenerPattern.test(normalized)) return true;
