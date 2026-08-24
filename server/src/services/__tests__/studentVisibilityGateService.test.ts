@@ -91,6 +91,16 @@ describe('studentVisibilityGateService', () => {
     expect(researchEntityGateProjection.split(/\s+/)).not.toContain('description');
   });
 
+  it('loads the yale-status signal so a departed lead is not silently rescored as visible', () => {
+    // #1620 residual: computeResearchEntityStudentVisibility's inactive_at_yale
+    // branch reads entity.activeAtYaleCache, but this projection omitted the
+    // field, so every gate-rescored entity saw activeAtYaleCache===undefined
+    // and a departed/emeritus PI's row could flip back to student_ready.
+    expect(researchEntityGateProjection.split(/\s+/)).toEqual(
+      expect.arrayContaining(['activeAtYaleCache', 'yaleStatusCache']),
+    );
+  });
+
   it('caps release queue page before building Mongo skip and limit values', async () => {
     const chain = {
       sort: vi.fn().mockReturnThis(),
