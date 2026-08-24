@@ -117,6 +117,8 @@ const LEADING_DEGREE_LIST_PATTERN = new RegExp(
   'u',
 );
 
+const DEGREE_LIST_FRAGMENT_SEARCH_PATTERN = new RegExp(DEGREE_LIST_ENTRY_PATTERN.source, 'u');
+
 /**
  * A faculty-bio page's raw "B.A., Yale University, 2003 M.A., Harvard
  * University, 2006 Ph.D., Harvard University, 2011" degree timeline glued
@@ -205,6 +207,13 @@ function isSalvageableShortDescription(candidate: string, contextFullDescription
   if (!candidate) return false;
   if (isMidCvContinuationOpener(candidate)) return false;
   if (isEducationOrCareerTimelineSentence(candidate)) return false;
+  // A shortDescription copied straight from the same raw profile page carries
+  // the same degree-list defect as the full, sometimes glued mid-string
+  // rather than at the very start (#1533: raab-jcr42's stored short is
+  // "Studies, Stanford University Ph.D., Yale University Jennifer Raab
+  // specializes...") - a short this function would otherwise treat as
+  // salvageable-as-is.
+  if (DEGREE_LIST_FRAGMENT_SEARCH_PATTERN.test(candidate)) return false;
   // Exclude 'full-not-useful': it reflects fullDescriptionQuality's whole-text
   // verdict on contextFullDescription, which can false-flag a rebuilt full
   // that opens with a legitimate appointment sentence (see
