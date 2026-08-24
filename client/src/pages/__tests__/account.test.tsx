@@ -14,6 +14,7 @@ type ProgramSummary = {
 
 let savedResearchCount = 2;
 let programSummary: ProgramSummary = { count: 1 };
+let savedSearchCount = 3;
 
 vi.mock('../../components/accounts/SavedResearchPlans', () => {
   const MockSavedResearchPlans = ({
@@ -45,6 +46,21 @@ vi.mock('../../components/accounts/ProgramWatch', () => {
   return { default: MockProgramWatch };
 });
 
+vi.mock('../../components/accounts/SavedSearches', () => {
+  const MockSavedSearches = ({
+    onCountChange,
+  }: {
+    onCountChange?: (count: number) => void;
+  }) => {
+    useEffect(() => {
+      onCountChange?.(savedSearchCount);
+    }, [onCountChange]);
+    return <section>Saved searches list</section>;
+  };
+
+  return { default: MockSavedSearches };
+});
+
 vi.mock('../../components/accounts/ResearchInterestsEditor', () => ({
   default: () => <section>Research interests editor</section>,
 }));
@@ -74,6 +90,7 @@ afterEach(() => {
   vi.clearAllMocks();
   savedResearchCount = 2;
   programSummary = { count: 1 };
+  savedSearchCount = 3;
 });
 
 describe('Account page', () => {
@@ -127,6 +144,7 @@ describe('Account page', () => {
 
     const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
     const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const searchesTab = screen.getByRole('tab', { name: 'Saved Searches (3)' });
     const interestsTab = screen.getByRole('tab', { name: 'Interests' });
     dashboardTab.focus();
 
@@ -135,6 +153,10 @@ describe('Account page', () => {
     expect(document.activeElement).toBe(programTab);
 
     fireEvent.keyDown(programTab, { key: 'ArrowRight' });
+    expect(searchesTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(searchesTab);
+
+    fireEvent.keyDown(searchesTab, { key: 'ArrowRight' });
     expect(interestsTab.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(interestsTab);
 

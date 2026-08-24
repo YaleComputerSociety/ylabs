@@ -15,9 +15,10 @@ import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
 import ResearchInterestsEditor from '../components/accounts/ResearchInterestsEditor';
 import SavedResearchPlans from '../components/accounts/SavedResearchPlans';
+import SavedSearches from '../components/accounts/SavedSearches';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 
-type AccountSurface = 'dashboard' | 'programs' | 'interests';
+type AccountSurface = 'dashboard' | 'programs' | 'searches' | 'interests';
 
 type ProgramSummary = {
   count: number;
@@ -25,7 +26,7 @@ type ProgramSummary = {
   nextDeadlineDate?: string;
 };
 
-const SURFACES: AccountSurface[] = ['dashboard', 'programs', 'interests'];
+const SURFACES: AccountSurface[] = ['dashboard', 'programs', 'searches', 'interests'];
 
 const Account = () => {
   useDocumentTitle('Dashboard');
@@ -33,9 +34,11 @@ const Account = () => {
   const [savedResearchCount, setSavedResearchCount] = useState(0);
   const [savedOpenCount, setSavedOpenCount] = useState(0);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
+  const [savedSearchCount, setSavedSearchCount] = useState(0);
   const tabRefs = useRef<Record<AccountSurface, HTMLButtonElement | null>>({
     dashboard: null,
     programs: null,
+    searches: null,
     interests: null,
   });
 
@@ -125,6 +128,22 @@ const Account = () => {
             <button
               type="button"
               role="tab"
+              id="account-searches-tab"
+              aria-controls="account-searches-panel"
+              aria-selected={surface === 'searches'}
+              tabIndex={surface === 'searches' ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current.searches = el;
+              }}
+              onClick={() => activateSurface('searches')}
+              onKeyDown={handleTabKeyDown}
+              className={tabClass(surface === 'searches')}
+            >
+              Saved Searches ({savedSearchCount})
+            </button>
+            <button
+              type="button"
+              role="tab"
               id="account-interests-tab"
               aria-controls="account-interests-panel"
               aria-selected={surface === 'interests'}
@@ -161,6 +180,15 @@ const Account = () => {
           className={surface === 'programs' ? '' : 'hidden'}
         >
           <ProgramWatch onSummaryChange={setProgramSummary} />
+        </div>
+        <div
+          id="account-searches-panel"
+          role="tabpanel"
+          aria-labelledby="account-searches-tab"
+          tabIndex={0}
+          className={surface === 'searches' ? '' : 'hidden'}
+        >
+          <SavedSearches onCountChange={setSavedSearchCount} />
         </div>
         <div
           id="account-interests-panel"

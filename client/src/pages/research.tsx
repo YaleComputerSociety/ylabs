@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
@@ -388,7 +388,7 @@ const scrollResearchViewportToTop = () => {
 const Research = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useContext(UserContext);
+  const { user, isAuthenticated } = useContext(UserContext);
   const { departments, researchAreas, researchFields, fieldOrder, getResearchAreaByName } =
     useConfig();
   const isAdmin = user?.userType === 'admin';
@@ -508,6 +508,11 @@ const Research = () => {
     useState<ActiveResearchSearchRequest | null>(
       () => restoredSnapshotRef.current?.activeSearchRequest ?? null,
     );
+  const [isSaveSearchPanelOpen, setIsSaveSearchPanelOpen] = useState(false);
+  const [saveSearchLabel, setSaveSearchLabel] = useState('');
+  const [saveSearchStatus, setSaveSearchStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
   const [defaultResearchEntities, setDefaultResearchEntities] = useState<ResearchEntity[]>(
     () => restoredSnapshotRef.current?.defaultResearchEntities ?? [],
   );
@@ -1138,6 +1143,42 @@ const Research = () => {
   };
 
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
+
+  const canSaveCurrentSearch = isAuthenticated && Boolean(activeSearchRequest);
+
+  const closeSaveSearchPanel = () => {
+    setIsSaveSearchPanelOpen(false);
+    setSaveSearchLabel('');
+    setSaveSearchStatus('idle');
+  };
+
+  const saveCurrentSearch = async () => {
+    if (!activeSearchRequest) return;
+    setSaveSearchStatus('saving');
+    try {
+      await axios.post('/users/savedSearches', {
+        data: {
+          savedSearch: {
+            label: saveSearchLabel.trim(),
+            queryText: activeSearchRequest.searchQuery,
+            filters: activeSearchRequest.filters,
+            urlParams: searchParams.toString(),
+          },
+        },
+      });
+      setSaveSearchStatus('saved');
+      setSaveSearchLabel('');
+    } catch {
+      console.error('Error saving research search.');
+      setSaveSearchStatus('error');
+    }
+  };
+
+  useEffect(() => {
+    setIsSaveSearchPanelOpen(false);
+    setSaveSearchLabel('');
+    setSaveSearchStatus('idle');
+  }, [activeSearchRequest]);
 
   useEffect(() => {
     const observedSearchParams = searchParams.toString();
@@ -2153,7 +2194,19 @@ const Research = () => {
                       searchTotal,
                     )}
                   </p>
-                  <div className="shrink-0">
+                  <div className="flex shrink-0 items-center gap-2">
+                    {canSaveCurrentSearch && !isSaveSearchPanelOpen && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSaveSearchPanelOpen(true);
+                          setSaveSearchStatus('idle');
+                        }}
+                        className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      >
+                        {saveSearchStatus === 'saved' ? 'Saved' : 'Save this search'}
+                      </button>
+                    )}
                     <ResearchSortDropdown
                       sortBy={sortBy}
                       sortOrder={sortOrder}
@@ -2162,6 +2215,82 @@ const Research = () => {
                     />
                   </div>
                 </div>
+
+                {canSaveCurrentSearch && isSaveSearchPanelOpen && (
+                  <div className="yr-card mt-3 rounded-md p-3">
+                    {saveSearchStatus === 'saved' ? (
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm font-medium text-slate-800" role="status">
+                          Saved. Find it under Saved Searches on your dashboard.
+                        </p>
+                        <div className="flex gap-2">
+                          <Link
+                            to="/account"
+                            className="inline-flex min-h-11 items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
+                          >
+                            View saved searches
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={closeSaveSearchPanel}
+                            className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-slate-700 hover:border-[var(--yr-line-strong)] hover:text-slate-900"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <label
+                          htmlFor="save-search-label"
+                          className="text-sm font-semibold text-slate-800"
+                        >
+                          Name this search (optional)
+                        </label>
+                        <input
+                          id="save-search-label"
+                          type="text"
+                          value={saveSearchLabel}
+                          maxLength={120}
+                          placeholder="e.g. CS labs accepting undergrads in ML"
+                          onChange={(event) => setSaveSearchLabel(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              void saveCurrentSearch();
+                            } else if (event.key === 'Escape') {
+                              event.preventDefault();
+                              closeSaveSearchPanel();
+                            }
+                          }}
+                          className="w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void saveCurrentSearch()}
+                            disabled={saveSearchStatus === 'saving'}
+                            className="inline-flex min-h-11 items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft disabled:opacity-60"
+                          >
+                            {saveSearchStatus === 'saving' ? 'Saving...' : 'Save search'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={closeSaveSearchPanel}
+                            className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-slate-700 hover:border-[var(--yr-line-strong)] hover:text-slate-900"
+                          >
+                            Cancel
+                          </button>
+                          {saveSearchStatus === 'error' && (
+                            <span className="text-xs text-red-700" role="alert">
+                              Not saved. Check your connection or sign in again, then retry.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {!isWideFilterLayout && (
                   <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
