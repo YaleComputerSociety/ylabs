@@ -132,7 +132,7 @@ describe('planNamesakeGraftCleanup', () => {
       { fullDescription: 'The wrong-person text.' },
       {
         entityId: '000000000000000000000007',
-        slug: 'peters-jdp52',
+        slug: 'fixture-lab-abc12',
         clearFullDescriptionIfEquals: 'The wrong-person text.',
         supersedeObservationIds: ['aaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbb'],
       },
