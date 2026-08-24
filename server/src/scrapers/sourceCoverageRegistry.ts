@@ -262,6 +262,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Yale Combined Program in Biological and Biomedical Sciences (BBS) nine research-track directories (medicine.yale.edu/bbs/people/<track>) as curated topical evidence for biomedical PIs. Each track slug maps to a concise research-area label grafted onto the PI existing canonical research home; each PI own /bbs/profile/<slug> individual page is the cited source (its canonical YSM profile and lab links resolve the home), and the track listing roots are crawl seeds only, never recorded as a source. Grafts research-area topics onto existing homes and mints a conservative FACULTY_RESEARCH_AREA home only when none resolves (converging on the ysm-faculty-<slug> namespace, never a duplicate shell). Fail-closed on contact; must not imply undergraduate access without a more explicit source.',
   },
+  'department-research-areas': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['TOPICS'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale FAS science and quantitative department research-overview pages (physics.yale.edu/research, chem.yale.edu/research, mcdb.yale.edu/research, ...) as curated topical evidence for their faculty (the FAS analogue of bbs-research-track, #1703). Each curated research theme heading maps to a concise research-area label grafted onto the existing faculty/lab home of every faculty member listed under it, cited to that faculty member own profile URL; the research-overview page and the bare /people index are crawl seeds only, never recorded as a source. Grafts research-area topics only onto homes that uniquely resolve (fail-closed on ambiguous/unresolved names); never mints an entity, never emits contact, and must not imply undergraduate access without a more explicit source.',
+  },
   'yse-centers-index': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

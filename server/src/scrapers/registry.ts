@@ -12,6 +12,7 @@ import { YaleResearchOfficialScraper } from './sources/yaleResearchOfficialScrap
 import { YaleDirectoryScraper } from './sources/yaleDirectoryScraper';
 import { DepartmentRosterScraper } from './sources/departmentRosterScraper';
 import { BbsResearchTrackScraper } from './sources/bbsResearchTrackScraper';
+import { DepartmentResearchAreasScraper } from './sources/departmentResearchAreasScraper';
 import { DepartmentUndergradResearchScraper } from './sources/departmentUndergradResearchScraper';
 import { CourseBasedResearchPathwayScraper } from './sources/courseBasedResearchPathwayScraper';
 import { UndergradResearchPostingScraper } from './sources/undergradResearchPostingScraper';
@@ -56,6 +57,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new YaleDirectoryScraper());
   o.register(new DepartmentRosterScraper());
   o.register(new BbsResearchTrackScraper());
+  o.register(new DepartmentResearchAreasScraper());
   o.register(new DepartmentUndergradResearchScraper());
   o.register(new CourseBasedResearchPathwayScraper());
   o.register(new UndergradResearchPostingScraper());
