@@ -302,6 +302,12 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   // describing what is currently studied).
   /\bI\s+founded\s+the\s+field\s+of\b/i,
   /\bI\s+(?:previously\s+)?(?:chaired|co-chaired)\b/i,
+  // First-person appointment/degree openers (#1841: a personal-academic-
+  // homepage extraction whose whole fullDescription was "I am a professor in
+  // the philosophy department at Yale. I completed my PhD in philosophy at
+  // MIT in ...", a CV/bio opener rather than a research summary).
+  /\bI\s+am\s+(?:an?\s+|the\s+)?(?:assistant|associate|full|adjunct|clinical|visiting)?\s*(?:professor|lecturer|instructor|faculty\s+member)\b/i,
+  /\bI\s+completed\s+(?:my|a)\b[^.!?]{0,60}\b(?:Ph\.?D\.?|doctorate|M\.?D\.?|master'?s|bachelor'?s|degree)\b/i,
   /\b(?:resulted\s+in\s+me\s+being|I\s+was)\s+(?:an?\s+)?invited\s+speaker\b/i,
   /\bI\s+have\s+a\s+wealth\s+of\s+experience\b/i,
   /\bI\s+am\s+a\s+recognized\s+authority\s+on\b/i,

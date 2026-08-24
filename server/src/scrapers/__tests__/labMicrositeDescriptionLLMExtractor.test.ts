@@ -601,6 +601,45 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(observations).toEqual([]);
   });
 
+  it('fails closed on a CV/bio opener instead of serving it as a research description (#1841)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'I am a professor in the philosophy department at Yale. I completed my PhD in philosophy at MIT in 2005.',
+        shortDescription: 'I am a professor in the philosophy department at Yale.',
+        topics: [],
+        methods: [],
+      },
+      {
+        entityId: 'entity-dlgreco',
+        entityKey: 'dlgreco',
+        sourceUrl: 'https://sites.google.com/site/dlgreco/',
+      },
+    );
+
+    expect(observations).toEqual([]);
+  });
+
+  it('fails closed on a bibliography citation instead of serving it as a research description (#1841)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The Political Economy of Democratic Transitions, Cambridge Studies in Comparative Politics, Cambridge University Press, 2020.',
+        shortDescription:
+          'The Political Economy of Democratic Transitions, Cambridge Studies in Comparative Politics, Cambridge University Press, 2020.',
+        topics: [],
+        methods: [],
+      },
+      {
+        entityId: 'entity-mattingly',
+        entityKey: 'mattingly',
+        sourceUrl: 'https://campuspress.yale.edu/mattingly/',
+      },
+    );
+
+    expect(observations).toEqual([]);
+  });
+
   it('rejects a page section heading as a research topic (#1678)', () => {
     const observations = descriptionExtractionToObservations(
       {
