@@ -69,11 +69,13 @@ describe('centersInstitutesRegistry', () => {
     expect(byKey.get('qbio')?.status).toBe('covered');
     expect(byKey.get('dissc')?.status).toBe('covered');
     expect(byKey.get('wu-tsai')?.status).toBe('covered');
+    expect(byKey.get('fds')?.status).toBe('covered');
+    expect(byKey.get('natural-carbon-capture')?.status).toBe('covered');
 
     const byUrl = new Map(CENTERS_INSTITUTES_REGISTRY.map((e) => [e.url, e]));
     expect(byUrl.get('https://westcampus.yale.edu/about-us/faculty')?.status).toBe('gap');
     expect(byUrl.get('https://ipch.yale.edu/people')?.status).toBe('gap');
-    expect(byUrl.get('https://fds.yale.edu/people/')?.status).toBe('gap');
+    expect(byUrl.get('https://yibs.yale.edu/people/faculty-affiliates')?.status).toBe('gap');
   });
 
   it('ranks gaps by student impact tier then member count', () => {

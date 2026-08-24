@@ -177,22 +177,25 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     url: 'https://fds.yale.edu/people/',
     centerName: 'Yale Institute for Foundations of Data Science (FDS)',
     school: '',
-    rendering: 'js-rendered',
-    status: 'gap',
+    rendering: 'static',
+    status: 'covered',
     studentImpactTier: 2,
+    coveredByCenterKey: 'fds',
+    approxMemberCount: 121,
     notes:
-      'The people page is a WordPress "member filtering" block hydrated client-side; the static HTML carries no member cards. Needs a headless render (renderedFetch) before an extractor can read it.',
+      'Wired via the fdsUsersGridExtractor. Contrary to the earlier gap note, the WordPress ACF "ordered users grid" roster is server-rendered in the static HTML (a ~5-card leadership/admin grid plus a ~116-card cross-department member grid), so no headless render is needed; the client-side "member filtering" block only re-sorts the already-present cards. Each card links to the member\'s own fds.yale.edu/people/<netid>/ profile; members span Statistics & Data Science, Computer Science, Mathematics, Economics, Astronomy, and Medicine. Admin/staff rows (Executive/Senior Administrative) do not resolve to a research User and are dropped by the materializer resolve-or-skip gate.',
   },
   {
     url: 'https://naturalcarboncapture.yale.edu/people',
     centerName: 'Yale Center for Natural Carbon Capture',
     school: '',
     rendering: 'static',
-    status: 'gap',
+    status: 'covered',
     studentImpactTier: 2,
-    approxMemberCount: 40,
+    coveredByCenterKey: 'natural-carbon-capture',
+    approxMemberCount: 55,
     notes:
-      'Reference-card people page, but it mixes leadership + affiliated-faculty cards with non-person content cards; needs person-card scoping (subheading/role gate) before the shared reference-card extractor can be pointed at it safely.',
+      'Wired via the shared YaleSites referenceCardPeopleExtractor. Contrary to the earlier gap note, the live people page is person-only (Directors, Managing Director, Scientific Leadership Team, Faculty Affiliates, Research Scientists, Postdoctoral Associates, Steering Committee) - no non-person content cards - so no extra scoping is needed. Each card links to the member\'s own departmental/profile page (Earth & Planetary Sciences, YSE, Engineering, Chemistry, Economics, EEB); admin/managing-director/staff rows are dropped by the materializer resolve-or-skip gate.',
   },
 
   // ---- Tier 3: school-anchored research centers / institutes ----------------------

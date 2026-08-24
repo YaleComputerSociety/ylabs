@@ -367,6 +367,41 @@ export const referenceCardPeopleExtractor: CenterExtractor = (html, ctx) =>
   });
 
 /**
+ * Yale FDS (Institute for Foundations of Data Science) people page
+ * (`fds.yale.edu/people/`). A WordPress ACF "ordered users grid" theme; the
+ * roster is server-rendered in the static HTML (two grids: a leadership/admin
+ * block and the cross-department member block), so no headless render is
+ * needed. Each card links to the member's own `fds.yale.edu/people/<netid>/`
+ * profile page:
+ *   <div class="grid__user">
+ *     <a class="grid__user__link" href="https://fds.yale.edu/people/<netid>/">
+ *       <h3 class="grid__user__title">Name</h3>
+ *       <p  class="grid__user__job-title">Title</p>
+ *     </a>
+ *   </div>
+ */
+export const fdsUsersGridExtractor: CenterExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const members: CenterMember[] = [];
+  const seen = new Set<string>();
+  $('.grid__user').each((_i, el) => {
+    const card = $(el);
+    const link = card.find('a.grid__user__link').first();
+    const name = card.find('.grid__user__title').first().text().replace(/\s+/g, ' ').trim();
+    if (!name) return;
+    const href = link.attr('href') || '';
+    const dedupeKey = href || slugify(name);
+    if (!dedupeKey || seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
+    const title =
+      card.find('.grid__user__job-title').first().text().replace(/\s+/g, ' ').trim() || undefined;
+    members.push({ name, profileUrl, title, role: inferRole(title) });
+  });
+  return { members };
+};
+
+/**
  * Jackson School centers/initiatives index page is a META index — it lists
  * child centers, not people. Each child center becomes its own ResearchGroup.
  *   <div class="jordan_item">
@@ -516,6 +551,24 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'center',
     url: 'https://dissc.yale.edu/about/dissc-faculty-and-staff',
+    paginated: false,
+    extractor: referenceCardPeopleExtractor,
+  },
+  {
+    centerKey: 'fds',
+    centerName: 'Yale Institute for Foundations of Data Science',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://fds.yale.edu/people/',
+    paginated: false,
+    extractor: fdsUsersGridExtractor,
+  },
+  {
+    centerKey: 'natural-carbon-capture',
+    centerName: 'Yale Center for Natural Carbon Capture',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://naturalcarboncapture.yale.edu/people',
     paginated: false,
     extractor: referenceCardPeopleExtractor,
   },

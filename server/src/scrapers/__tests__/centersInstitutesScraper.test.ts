@@ -26,6 +26,7 @@ import {
   ycgaExtractor,
   directoryListingCardExtractor,
   referenceCardPeopleExtractor,
+  fdsUsersGridExtractor,
   jacksonCentersExtractor,
   jsRenderedStub,
   centerToGroupObservations,
@@ -353,6 +354,11 @@ describe('jsRenderedStub', () => {
 
 const QBIO_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'qbioMembers.html'), 'utf8');
 const DISSC_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'disscFaculty.html'), 'utf8');
+const FDS_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'fdsPeople.html'), 'utf8');
+const YCNCC_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures', 'naturalCarbonCapturePeople.html'),
+  'utf8',
+);
 
 describe('directoryListingCardExtractor', () => {
   it('extracts QBio members from the saved live-HTML fixture, keeping each member profile link', () => {
@@ -403,6 +409,75 @@ describe('referenceCardPeopleExtractor', () => {
     });
     const names = out.members.map((m) => m.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('fdsUsersGridExtractor', () => {
+  it('extracts FDS members across both ACF grids from the fixture, deduping and skipping empty headings', () => {
+    const out = fdsUsersGridExtractor(FDS_FIXTURE, { pageUrl: 'https://fds.yale.edu/people/' });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual([
+      'Alex Sample',
+      'Bailey Example',
+      'Casey Placeholder',
+      'Dana Testcase',
+      'Erin Synthetic',
+    ]);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('cites each member own fds profile page and never the roster root', () => {
+    const out = fdsUsersGridExtractor(FDS_FIXTURE, { pageUrl: 'https://fds.yale.edu/people/' });
+    for (const member of out.members) {
+      expect(member.profileUrl).toMatch(/^https:\/\/fds\.yale\.edu\/people\/[^/]+\/$/);
+      expect(member.profileUrl).not.toBe('https://fds.yale.edu/people/');
+    }
+    const casey = out.members.find((m) => m.name === 'Casey Placeholder');
+    expect(casey).toMatchObject({
+      profileUrl: 'https://fds.yale.edu/people/cc0003/',
+      role: 'co-director',
+    });
+    expect(casey?.title).toContain('Associate Professor of Statistics and Data Science');
+  });
+
+  it('classifies leadership titles from the job-title line', () => {
+    const out = fdsUsersGridExtractor(FDS_FIXTURE, { pageUrl: 'https://fds.yale.edu/people/' });
+    expect(out.members.find((m) => m.name === 'Alex Sample')?.role).toBe('director');
+    expect(out.members.find((m) => m.name === 'Bailey Example')?.role).toBe('director');
+    expect(out.members.find((m) => m.name === 'Dana Testcase')?.role).toBe('core-faculty');
+  });
+});
+
+describe('referenceCardPeopleExtractor (Natural Carbon Capture)', () => {
+  it('extracts the person-only YCNCC roster across leadership and affiliate sections', () => {
+    const out = referenceCardPeopleExtractor(YCNCC_FIXTURE, {
+      pageUrl: 'https://naturalcarboncapture.yale.edu/people',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual([
+      'Sample Director',
+      'Redacted Staff',
+      'First Affiliate',
+      'Second Affiliate',
+      'Third Affiliate',
+      'Sample Postdoc',
+    ]);
+    expect(out.members.find((m) => m.name === 'Sample Director')?.role).toBe('director');
+  });
+
+  it('cites each member own departmental/profile page, absolutizing center-hosted staff links', () => {
+    const out = referenceCardPeopleExtractor(YCNCC_FIXTURE, {
+      pageUrl: 'https://naturalcarboncapture.yale.edu/people',
+    });
+    expect(out.members.find((m) => m.name === 'First Affiliate')?.profileUrl).toBe(
+      'https://environment.example-university.edu/directory/faculty/first-affiliate',
+    );
+    expect(out.members.find((m) => m.name === 'Redacted Staff')?.profileUrl).toBe(
+      'https://naturalcarboncapture.yale.edu/profile/redacted-staff',
+    );
+    for (const member of out.members) {
+      expect(member.profileUrl).not.toBe('https://naturalcarboncapture.yale.edu/people');
+    }
   });
 });
 
