@@ -20,7 +20,23 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const apply = process.argv.includes('--apply');
 const confirmed = process.argv.includes('--confirm-fix-1758');
 
-const ORG_ENTITY_TYPES_WITHOUT_FACET_SIGNAL = ['CENTER', 'INSTITUTE', 'PROGRAM'];
+// The 6 CENTER/INSTITUTE/PROGRAM rows named in issue #1758 as the remainder of
+// the corpus-wide empty-researchAreas scan not covered by #1717 (LAB/FRA) or
+// #1700 (FELLOWSHIP_PROGRAM/RA_PROGRAM). Deliberately record-scoped rather than
+// a fresh entityType query: a broad CENTER/INSTITUTE/PROGRAM query also matches
+// ~20 shared core research facilities (electron microscopy, flow cytometry,
+// sequencing cores, ...) that are a distinct, already-settled correct-hold class
+// with no disciplinary research-area identity of their own; running the same
+// derivation over them produces vacuous chips (e.g. an EM core matching
+// "Public Health" from unrelated boilerplate).
+const IN_SCOPE_RECORD_IDS = [
+  '6a057e2213fc60d57ec2aee7', // Olin Neuropsychiatry Research Center (CENTER)
+  '6a058d97ba66f3c14bd85c76', // Yale CPPEE (CENTER)
+  '6a1385f0f601c74f4f7f98e4', // Yale Nanobiology Institute (INSTITUTE)
+  '6a057e0e13fc60d57ec2aa5d', // Yale Translational Brain Imaging Program (PROGRAM)
+  '6a0d17853fa399fefb6e5683', // Yale Program in Addiction Medicine (PROGRAM)
+  '6a8ba10afabb544dac7e61f8', // CS Research Internship Program (PROGRAM)
+];
 
 function logRow(row: ResearchAreaBackfillPlanRow): void {
   if (row.changed) {
@@ -47,16 +63,17 @@ async function main(): Promise<void> {
   await initializeConnections();
 
   const candidates = (await ResearchEntity.find({
+    _id: { $in: IN_SCOPE_RECORD_IDS.map((id) => new mongoose.Types.ObjectId(id)) },
     archived: { $ne: true },
     studentVisibilityTier: 'student_ready',
-    entityType: { $in: ORG_ENTITY_TYPES_WITHOUT_FACET_SIGNAL },
+    entityType: { $in: ['CENTER', 'INSTITUTE', 'PROGRAM'] },
     $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }],
   })
     .select('_id slug name entityType departments researchAreas shortDescription fullDescription')
     .lean()) as any[];
 
   console.error(
-    `Found ${candidates.length} student_ready CENTER/INSTITUTE/PROGRAM entities with empty researchAreas[] (issue #1758)`,
+    `Found ${candidates.length}/${IN_SCOPE_RECORD_IDS.length} in-scope CENTER/INSTITUTE/PROGRAM entities still student_ready with empty researchAreas[] (issue #1758)`,
   );
   if (candidates.length === 0) return;
 
