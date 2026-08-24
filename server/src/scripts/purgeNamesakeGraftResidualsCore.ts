@@ -65,6 +65,18 @@ export interface NamesakeGraftDirective {
    * re-synthesis rather than a partial edit.
    */
   clearStudentDecisionExplanationIfExplanationEquals?: string;
+  /**
+   * Observation `_id`s to mark `superseded: true` alongside the document
+   * clear. `materializeEntity` only ever reads `superseded: false`
+   * observations, so clearing the document field alone is not durable when an
+   * active observation for that field still exists: the next materialize
+   * pass re-derives the same wrong value from it (confirmed live regression
+   * on `peters-jdp52`, whose description round-tripped back to the wrong-
+   * person text after the document-only clear). Entities with no backing
+   * observation for the cleared field (the common case in this list) do not
+   * need this - there is nothing left to re-derive from.
+   */
+  supersedeObservationIds?: string[];
 }
 
 export interface NamesakeGraftEntityFacts {
@@ -87,6 +99,7 @@ export interface NamesakeGraftPlan {
   shortDescriptionBefore: string;
   studentDecisionExplanationCleared: boolean;
   studentDecisionExplanationBefore: string;
+  supersedeObservationIds: string[];
   changed: boolean;
 }
 
@@ -146,6 +159,7 @@ export function planNamesakeGraftCleanup(
     shortDescriptionBefore,
     studentDecisionExplanationCleared,
     studentDecisionExplanationBefore,
+    supersedeObservationIds: directive.supersedeObservationIds || [],
     changed:
       areaResult.changed ||
       fullDescriptionCleared ||
