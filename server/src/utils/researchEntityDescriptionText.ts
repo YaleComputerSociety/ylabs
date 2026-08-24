@@ -402,7 +402,18 @@ export function isCredentialOrTitleLeadBiography(value: unknown): boolean {
 }
 
 const DEGREE_ABBREVIATION_ALTERNATION =
-  '(?:Ph\\.?D\\.?|M\\.?D\\.?|B\\.?F\\.?A\\.?|M\\.?F\\.?A\\.?|B\\.?A\\.?|M\\.?A\\.?|B\\.?S\\.?|M\\.?S\\.?|M\\.?B\\.?A\\.?|Ed\\.?D\\.?|J\\.?D\\.?|degrees?)';
+  '(?:Ph\\.?D\\.?|M\\.?D\\.?|M\\.?Arch\\.?|B\\.?F\\.?A\\.?|M\\.?F\\.?A\\.?|B\\.?A\\.?|M\\.?A\\.?|B\\.?S\\.?|M\\.?S\\.?|M\\.?B\\.?A\\.?|Ed\\.?D\\.?|J\\.?D\\.?|degrees?)';
+
+/**
+ * A leading run of bare "DEGREE, Institution" fragments with no subject or
+ * verb at all - not even a "received" clause (#1745 round 4: Kishwar Rizvi's
+ * full opens "B.A., Wesleyan University M.Arch., Graduate School of Fine
+ * Arts, University of Pennsylvania Ph.D., Massachusetts Institute of
+ * Technology" before any prose). Anchored on the tell-tale "DEGREE," opener;
+ * the loop-strip's sentence-boundary scan (not this pattern) is responsible
+ * for finding where the run-on actually ends.
+ */
+const LEADING_BARE_DEGREE_LIST_PATTERN = new RegExp(`^${DEGREE_ABBREVIATION_ALTERNATION}\\s*,`, 'u');
 
 /**
  * A name-lead opener whose whole sentence is a degree-receipt CV line rather
@@ -509,7 +520,8 @@ export function isCredentialOrAwardLeadBiography(value: unknown): boolean {
     RECENT_PUBLICATIONS_INCLUDE_LEAD_PATTERN.test(cleaned) ||
     APPOINTED_TO_FACULTY_LEAD_PATTERN.test(cleaned) ||
     ARTIST_IN_RESIDENCE_LEAD_PATTERN.test(cleaned) ||
-    MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN.test(cleaned)
+    MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN.test(cleaned) ||
+    LEADING_BARE_DEGREE_LIST_PATTERN.test(cleaned)
   );
 }
 
@@ -552,7 +564,8 @@ function firstBiographyOpenerMatch(value: string, allowCredentialTitlePatterns: 
     value.match(RECENT_PUBLICATIONS_INCLUDE_LEAD_PATTERN) ||
     value.match(APPOINTED_TO_FACULTY_LEAD_PATTERN) ||
     value.match(ARTIST_IN_RESIDENCE_LEAD_PATTERN) ||
-    value.match(MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN)
+    value.match(MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN) ||
+    value.match(LEADING_BARE_DEGREE_LIST_PATTERN)
   );
 }
 
@@ -626,15 +639,15 @@ const GREETING_LEAD_PATTERN = /^welcome to\b/i;
 // only treats "." as a sentence end when it is not immediately preceded by
 // one of these; otherwise the greeting is left half-stripped.
 //
-// The bare single-capital-letter case is checked separately from the named
-// multi-char abbreviations and also allows a period (not just whitespace/
-// paren/start) immediately before the letter, so every period inside a
-// chained-initials or multi-letter degree abbreviation ("B.F.A.", "M.F.A.",
-// "Ralph J. Gleason") is recognized, not just its first letter (#1745/#1790:
-// only the first period of "B.F.A." was skipped, so the scan stopped and cut
-// the sentence mid-abbreviation).
+// Every alternative also allows a period (not just whitespace/paren/start)
+// immediately before it, so every period inside a chained-initials or
+// multi-segment degree abbreviation ("B.F.A.", "M.F.A.", "M.Arch.", "Ralph J.
+// Gleason") is recognized, not just its first segment (#1745/#1790: only the
+// first period of "B.F.A." was skipped, so the scan stopped and cut the
+// sentence mid-abbreviation; #1745 round 4: "M.Arch." needs the same
+// treatment for its second, named segment).
 const SENTENCE_BOUNDARY_ABBREVIATION_PATTERN =
-  /(?:^|[\s(.])[A-Z]\.$|(?:^|[\s(])(?:Prof|Dr|Mr|Mrs|Ms|Jr|Sr|St|Rev|Hon|Ph\.?D|M\.?D|B\.?S|M\.?S|M\.?A|D\.?Phil|Esq)\.$/;
+  /(?:^|[\s(.])(?:[A-Z]|Prof|Dr|Mr|Mrs|Ms|Jr|Sr|St|Rev|Hon|Arch|Ph|Ph\.?D|M\.?D|B\.?S|M\.?S|M\.?A|D\.?Phil|Esq)\.$/;
 
 function sentenceEndIndex(value: string, from: number): number {
   for (let index = from; index < value.length; index += 1) {

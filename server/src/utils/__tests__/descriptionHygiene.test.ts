@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clampDescriptionLength,
+  isAdministrativeTitleEnumerationText,
   collapseDoubledConjunction,
   collapseDoubledSynthesisVerb,
   collapseDuplicatedProseBlock,
@@ -2733,5 +2734,33 @@ describe('sanitizeResearchEntityShortDescription length cap (#1745)', () => {
   it('leaves an ordinary card blurb under the cap untouched', () => {
     const clean = 'Studies coral reef resilience under ocean acidification.';
     expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
+  });
+});
+
+describe('isAdministrativeTitleEnumerationText (#1745 round 4)', () => {
+  const ADMIN_TITLE_SHORT =
+    'Among his leadership roles at Yale Cancer Center, Dr. Fixture serves as Associate Cancer Center Director for Clinical Research, Director of the Clinical Trials Office, and Chief Clinical Research Officer.';
+
+  it('flags a leadership/administrative title-enumeration opener', () => {
+    expect(isAdministrativeTitleEnumerationText(ADMIN_TITLE_SHORT)).toBe(true);
+  });
+
+  it('does not flag a genuine "Among his research interests" opener', () => {
+    expect(
+      isAdministrativeTitleEnumerationText(
+        'Among his research interests are computational biology and genomics, Dr. Fixture focuses on gene regulation.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag ordinary research prose with no admin-title opener', () => {
+    expect(isAdministrativeTitleEnumerationText('Studies the mechanics of soft robotic materials.')).toBe(
+      false,
+    );
+    expect(isAdministrativeTitleEnumerationText('')).toBe(false);
+  });
+
+  it('fails the shortDescription closed on the admin-title-enumeration opener', () => {
+    expect(sanitizeResearchEntityShortDescription(ADMIN_TITLE_SHORT)).toBe('');
   });
 });
