@@ -56,7 +56,12 @@ describe('researchEntityPublicDescription', () => {
     });
 
     expect(representation.quality.full.isUseful).toBe(true);
-    expect(representation.quality.short.isUseful).toBe(true);
+    // The raw poll-stat short is not itself flagged by shortDescriptionQuality
+    // (the #1202 gap this test documents), but #1506's resolver now assesses
+    // quality against the resolved short, and no derivable replacement exists
+    // for a fullDescription that is itself poll-stat chrome - so this now
+    // correctly reads as not useful rather than surviving on the unresolved gap.
+    expect(representation.quality.short.isUseful).toBe(false);
     expect(representation.invariant.pass).toBe(false);
     expect(representation.invariant.reasons).toEqual(['blank_served_public_description']);
   });
@@ -73,20 +78,27 @@ describe('researchEntityPublicDescription', () => {
     const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
 
     expect(representation.quality.full.isUseful).toBe(true);
-    expect(representation.quality.short.isUseful).toBe(false);
+    // #1506's resolver derives a card from this clean fullDescription even
+    // though none was stored, so this program-like home now gets a real card
+    // too - the point under test is that it isn't *required* to, which the
+    // exemption assertions below still cover regardless of this value.
+    expect(representation.quality.short.isUseful).toBe(true);
     expect(representation.invariant.reasons).not.toContain('missing_public_card_description');
     expect(representation.invariant.pass).toBe(true);
     expect(researchEntityServesPublicDetail(entity)).toBe(true);
   });
 
   it('still requires a lab-style card for a non-program lab home (#1381)', () => {
+    // fullDescription is deliberately appointment-only (no research-focus
+    // sentence for #1506's resolver to derive a card from), and there are no
+    // researchAreas to fall back on either, so this still demonstrates a
+    // non-program home genuinely left without any derivable card.
     const representation = buildResearchEntityPublicDescriptionRepresentation({
       entity: {
         kind: 'lab',
         entityType: 'LAB',
         shortDescription: '',
-        fullDescription:
-          'The lab studies the molecular mechanisms of neurodegeneration using genetics, imaging, and biochemistry across model organisms.',
+        fullDescription: 'Dr. Example Lead is an Assistant Professor of Neuroscience at Yale University.',
         sourceUrls: ['https://example.yale.edu/labs/example'],
       },
       leadMemberNames: ['Example Lead'],

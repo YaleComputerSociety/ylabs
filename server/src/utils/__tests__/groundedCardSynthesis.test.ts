@@ -263,7 +263,7 @@ describe('resolveGroundedCardDescription rejects researcher-voice "Studies" on p
       isProgramLike: true,
       synthesize,
     });
-    expect(synthesize).toHaveBeenCalledOnce();
+    expect(synthesize).not.toHaveBeenCalled();
     expect(resolved).toBe('');
   });
 

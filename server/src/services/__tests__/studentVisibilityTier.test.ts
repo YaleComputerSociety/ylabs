@@ -825,7 +825,7 @@ describe('computeResearchEntityStudentVisibility', () => {
       entity: {
         shortDescription: '',
         fullDescription:
-          'The lab studies quantum simulation, ultracold atoms, optical lattices, and topology in many-body physics. Current projects examine how unusual lattice geometries shape quantum behavior.',
+          'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
         sourceUrls: ['https://physics.yale.edu/example-lab'],
         activeAtYaleCache: true,
       },

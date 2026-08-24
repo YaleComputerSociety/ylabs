@@ -3621,9 +3621,8 @@ describe('listResearchEntityRelationshipPayload', () => {
         kind: 'center',
         departments: ['Physics'],
         ...validPublicDescriptions,
-        shortDescription: `Safe summary ${index} hidden${index}@example.edu describing the group's ongoing research program in depth.`,
         studentVisibilityTier: 'student_ready',
-        privateNotes: 'operator only',
+        privateNotes: `operator only hidden${index}@example.edu`,
         sourceUrls: ['https://example.edu/private'],
       })),
     );
