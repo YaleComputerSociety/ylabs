@@ -22,7 +22,7 @@ const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
 
 const HYGIENE_FULL_DESCRIPTION_FIELDS = ['fullDescription', 'profileSynthesisDescription'] as const;
 const NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT =
-  /\b(?:research|lab|laboratory|study|studies|studying|investigate|investigates|investigated|explore|explores|focus|focuses|focusing|works?\s+on|conducts|uses|develops|examines|examining|analysis|method|methods|model|models|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
+  /\b(?:research|lab|laboratory|study|studies|studying|investigate|investigates|investigated|explore|explores|explored|exploring|focus|focuses|focusing|focused|works?\s+on|conducts|uses|using|develops|examine|examines|examined|examining|observe|observes|observed|observing|analysis|method|methods|model|models|modeled|modeling|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
 
 type FacultyResearchTextEntity = {
   displayName?: string | null;
