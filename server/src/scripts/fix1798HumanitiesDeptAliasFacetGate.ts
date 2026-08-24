@@ -75,8 +75,6 @@ async function main(): Promise<void> {
   console.error(`Found ${candidates.length}/${TARGET_SLUGS.length} targeted entities still empty`);
   if (candidates.length === 0) return;
 
-  const recordIds = candidates.map((doc) => serializedDocumentId(doc._id) || String(doc._id));
-
   const canonicalizer = await getResearchAreaCanonicalizer();
   const areaRows = candidates.map((doc) =>
     planResearchAreaBackfillRow(
