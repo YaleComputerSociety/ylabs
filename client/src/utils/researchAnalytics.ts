@@ -62,7 +62,8 @@ export type ResearchJourneyPayload =
         | 'research_type'
         | 'hosts_undergrads'
         | 'current_availability'
-        | 'compensation';
+        | 'compensation'
+        | 'eligible_student_levels';
     }
   | { operation: 'save' | 'remove'; surface: 'profile' | 'search' | 'saved_plans' }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }

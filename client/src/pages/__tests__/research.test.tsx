@@ -1077,6 +1077,43 @@ describe('Research page', () => {
     expect(screen.getByRole('button', { name: 'Remove Open now' })).toBeTruthy();
   });
 
+  it('round-trips the eligible-student-levels filter from the URL (#1733)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        estimatedTotalHits: 5,
+        facetDistribution: { undergraduateEligibleStudentLevels: { FIRST_YEAR: 5 } },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&eligibleYears=FIRST_YEAR']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+    const researchSearchCall = mockedAxios.post.mock.calls.find(
+      ([url]) => url === '/research/search',
+    );
+    expect(researchSearchCall?.[1]).toEqual(
+      expect.objectContaining({
+        filters: { eligibleStudentLevels: ['FIRST_YEAR'] },
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Remove Open to first-years' })).toBeTruthy();
+  });
+
   it('round-trips the documented-way-in filter from the URL (#1519)', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

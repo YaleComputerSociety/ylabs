@@ -75,6 +75,7 @@ describe('normalizeSavedSearchFilters', () => {
       entityType: ['lab'],
       currentAvailability: ['OPEN', 'NONSENSE'],
       compensation: ['COURSE_CREDIT'],
+      eligibleStudentLevels: ['FIRST_YEAR', 'NONSENSE', 'FIRST_YEAR'],
       hostsUndergrads: true,
       hasDocumentedWayIn: 'yes',
       injected: ['ignored'],
@@ -87,6 +88,7 @@ describe('normalizeSavedSearchFilters', () => {
       entityType: ['lab'],
       currentAvailability: ['OPEN'],
       compensation: ['COURSE_CREDIT'],
+      eligibleStudentLevels: ['FIRST_YEAR'],
       hostsUndergrads: true,
       hasDocumentedWayIn: false,
     });

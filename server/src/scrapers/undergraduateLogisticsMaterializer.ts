@@ -94,6 +94,44 @@ export function currentUndergradAvailabilityFromSignals(
     : 'UNKNOWN';
 }
 
+export const ELIGIBLE_STUDENT_LEVEL_VALUES = STUDENT_LEVELS;
+
+export type EligibleStudentLevel = (typeof STUDENT_LEVELS)[number];
+
+export interface StudentLevelSignalInput {
+  type?: unknown;
+  status?: unknown;
+  value?: unknown;
+  expiresAt?: Date | string | null;
+}
+
+/**
+ * Re-derives the browse-filterable set of explicitly-welcomed undergraduate
+ * class years from raw STUDENT_LEVEL Signal rows, independently re-applying the
+ * 365-day freshness window rather than trusting a status written by a
+ * possibly-stale materialize run. Any missing, non-KNOWN (including
+ * CONFLICTING_WITHHELD), or expired signal fails closed to [] - a sparse,
+ * conflicting, or stale signal must never surface a class year as welcome. The
+ * result preserves canonical STUDENT_LEVELS order and drops unknown tokens, so
+ * it never widens beyond the years the extractor explicitly recorded.
+ */
+export function eligibleStudentLevelsFromSignals(
+  signals: StudentLevelSignalInput[],
+  now: Date = new Date(),
+): EligibleStudentLevel[] {
+  const fresh = signals.find(
+    (signal) =>
+      signal.type === 'STUDENT_LEVEL' &&
+      signal.status === 'KNOWN' &&
+      signal.expiresAt != null &&
+      new Date(signal.expiresAt).getTime() > now.getTime(),
+  );
+  const levels = fresh ? (fresh.value as { levels?: unknown } | undefined)?.levels : undefined;
+  if (!Array.isArray(levels)) return [];
+  const present = new Set(levels.filter((level): level is string => typeof level === 'string'));
+  return STUDENT_LEVELS.filter((level) => present.has(level));
+}
+
 export const UNDERGRAD_COMPENSATION_MODEL_VALUES = [
   'PAID_OR_STIPEND',
   'COURSE_CREDIT',

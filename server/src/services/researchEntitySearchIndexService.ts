@@ -57,6 +57,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'hasDocumentedWayIn',
     'undergraduateCurrentAvailability',
     'undergraduateCompensationModel',
+    'undergraduateEligibleStudentLevels',
     'studentVisibilityTier',
   ],
   sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],

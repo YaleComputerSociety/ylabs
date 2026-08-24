@@ -10,8 +10,10 @@ import {
   MAX_SAVED_SEARCH_TRACKED_MATCH_IDS,
   savedSearchCurrentAvailabilityValues,
   savedSearchCompensationValues,
+  savedSearchEligibleStudentLevelValues,
   type SavedSearchCurrentAvailability,
   type SavedSearchCompensation,
+  type SavedSearchEligibleStudentLevel,
 } from '../models/savedSearch';
 import { searchResearchGroupsViaMeili } from './researchGroupService';
 import type { ResearchGroupFilterInput } from './researchGroupFilters';
@@ -29,6 +31,7 @@ export interface SavedSearchFilters {
   entityType: string[];
   currentAvailability: SavedSearchCurrentAvailability[];
   compensation: SavedSearchCompensation[];
+  eligibleStudentLevels: SavedSearchEligibleStudentLevel[];
   hostsUndergrads: boolean;
   hasDocumentedWayIn: boolean;
 }
@@ -109,6 +112,10 @@ export const normalizeSavedSearchFilters = (value: unknown): SavedSearchFilters 
       savedSearchCurrentAvailabilityValues,
     ),
     compensation: normalizeEnumArray(record.compensation, savedSearchCompensationValues),
+    eligibleStudentLevels: normalizeEnumArray(
+      record.eligibleStudentLevels,
+      savedSearchEligibleStudentLevelValues,
+    ),
     hostsUndergrads: record.hostsUndergrads === true,
     hasDocumentedWayIn: record.hasDocumentedWayIn === true,
   };
@@ -121,6 +128,7 @@ export const savedSearchFiltersAreEmpty = (filters: SavedSearchFilters): boolean
   filters.entityType.length === 0 &&
   filters.currentAvailability.length === 0 &&
   filters.compensation.length === 0 &&
+  filters.eligibleStudentLevels.length === 0 &&
   !filters.hostsUndergrads &&
   !filters.hasDocumentedWayIn;
 
@@ -176,6 +184,10 @@ const toResearchGroupFilterInput = (filters: SavedSearchFilters): ResearchGroupF
   }
   if (filters.compensation.length) {
     input.compensation = filters.compensation as ResearchGroupFilterInput['compensation'];
+  }
+  if (filters.eligibleStudentLevels.length) {
+    input.eligibleStudentLevels =
+      filters.eligibleStudentLevels as ResearchGroupFilterInput['eligibleStudentLevels'];
   }
   if (filters.hostsUndergrads) input.hostsUndergrads = true;
   if (filters.hasDocumentedWayIn) input.hasDocumentedWayIn = true;

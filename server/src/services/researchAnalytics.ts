@@ -101,6 +101,7 @@ export const RESEARCH_FILTER_KINDS = [
   'hosts_undergrads',
   'current_availability',
   'compensation',
+  'eligible_student_levels',
 ] as const;
 export const RESEARCH_SAVE_OPERATIONS = ['save', 'remove'] as const;
 export const RESEARCH_SAVE_SURFACES = ['profile', 'search', 'saved_plans'] as const;

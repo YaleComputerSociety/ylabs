@@ -5,6 +5,7 @@ export interface SavedSearchFilters {
   entityType: string[];
   currentAvailability: Array<'OPEN' | 'ROLLING'>;
   compensation: Array<'PAID_OR_STIPEND' | 'COURSE_CREDIT'>;
+  eligibleStudentLevels: Array<'FIRST_YEAR' | 'SOPHOMORE' | 'JUNIOR' | 'SENIOR'>;
   hostsUndergrads: boolean;
   hasDocumentedWayIn: boolean;
 }

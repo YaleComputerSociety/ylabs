@@ -15,6 +15,7 @@ const emptyFilters = (): SavedSearchFilters => ({
   entityType: [],
   currentAvailability: [],
   compensation: [],
+  eligibleStudentLevels: [],
   hostsUndergrads: false,
   hasDocumentedWayIn: false,
 });
