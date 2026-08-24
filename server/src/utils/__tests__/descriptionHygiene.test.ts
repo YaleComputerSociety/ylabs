@@ -45,7 +45,9 @@ import {
   stripCatalogChrome,
   stripDanglingSourceSiteReferenceSentences,
   stripDeadAnchorCtaSentences,
+  startsWithRoleTitleHeaderSentence,
   stripLeadingAdministrativeLocationSentences,
+  stripLeadingRoleTitleHeaderSentences,
   stripLeadingPageChrome,
   stripInternalConfidenceHedge,
   stripPageLayoutReferentialSentences,
@@ -2104,6 +2106,56 @@ describe('isNonSelfContainedShortDescription funding-program opener guard (#1821
   });
 });
 
+describe('isNonSelfContainedShortDescription role/title-header opener guard (#1761)', () => {
+  const ROLE_HEADER_OPENERS = [
+    'Dr. Xiao Wang is an Instructor of Medicine (Medical Oncology) at Yale School of Medicine and a member of the Center for Gastrointestinal Cancers at Yale Cancer Center.',
+    'Among his leadership roles at Yale Cancer Center, Dr. Krop serves as Associate Cancer Center Director for Clinical Research.',
+    'Dr. Blondin is the leader of the Neuro-Oncology Clinical Research Team, and serves as Principal Investigator of clinical trials at Yale and nationally.',
+    'She holds a joint appointment in the departments of History, and African American Studies.',
+  ];
+
+  it('fails a role/title/appointment header opener closed', () => {
+    for (const text of ROLE_HEADER_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('keeps a real research sentence that happens to use "serves as" as connective content', () => {
+    const text = 'Develops a computational model that serves as a testbed for new diagnostic algorithms.';
+    expect(isNonSelfContainedShortDescription(text)).toBe(false);
+  });
+
+  it('keeps a named research focus with no role-header marker', () => {
+    const named = 'Studies quantum error correction using superconducting qubit devices.';
+    expect(isNonSelfContainedShortDescription(named)).toBe(false);
+  });
+});
+
+describe('stripLeadingRoleTitleHeaderSentences (#1761)', () => {
+  it('strips a leading role-header sentence when a research sentence follows', () => {
+    const text =
+      'Dr. Krop serves as Associate Cancer Center Director for Clinical Research at Yale Cancer Center. An international leader in breast cancer research, he studies novel therapeutic combinations for HER2-positive disease.';
+    expect(startsWithRoleTitleHeaderSentence(text)).toBe(true);
+    const stripped = stripLeadingRoleTitleHeaderSentences(text);
+    expect(stripped).not.toMatch(/serves as/i);
+    expect(stripped).toMatch(/studies novel therapeutic/i);
+  });
+
+  it('fails closed to the original text when no research sentence survives the strip', () => {
+    const text =
+      'Dr. Xiao Wang is an Instructor of Medicine (Medical Oncology) at Yale School of Medicine and a member of the Center for Gastrointestinal Cancers at Yale Cancer Center.';
+    expect(startsWithRoleTitleHeaderSentence(text)).toBe(true);
+    expect(stripLeadingRoleTitleHeaderSentences(text)).toBe(text);
+  });
+
+  it('leaves text with no role-header sentence untouched', () => {
+    const text = 'Studies quantum error correction using superconducting qubit devices.';
+    expect(startsWithRoleTitleHeaderSentence(text)).toBe(false);
+    expect(stripLeadingRoleTitleHeaderSentences(text)).toBe(text);
+  });
+});
+
 describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () => {
   it('flags a book-citation glued after the Studies template', () => {
     const text =
@@ -2160,6 +2212,13 @@ describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () 
         'Investigates the "Distinguished Career Award" from the American Psychological Association.',
       ),
     ).toBe(true);
+  });
+
+  it('flags a media-credit fragment glued after the Studies template (#1761)', () => {
+    const text =
+      "Studies Chinese Exclusion Act directed by acclaimed filmmakers Ric Burns and Li-Shin Yu that aired on PBS's American Experience in May 2018.";
+    expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
+    expect(sanitizeResearchEntityShortDescription(text)).toBe('');
   });
 
   it('keeps a genuine research summary that happens to mention an award-type word', () => {
