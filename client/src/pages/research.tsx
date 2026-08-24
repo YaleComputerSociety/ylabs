@@ -4,6 +4,7 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
+import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchSortDropdown, {
   ResearchSortField,
 } from '../components/research/ResearchSortDropdown';
@@ -24,6 +25,10 @@ import {
   StudentVisibilityTier,
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import {
+  relaxResearchQuery,
+  suggestCorpusResearchAreas,
+} from '../utils/researchZeroResultRecovery';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
@@ -491,6 +496,9 @@ const Research = () => {
   const [defaultSearchError, setDefaultSearchError] = useState(
     () => restoredSnapshotRef.current?.defaultSearchError ?? '',
   );
+  const [relaxedQuerySuggestion, setRelaxedQuerySuggestion] = useState<string | null>(null);
+  const relaxProbeRequestIdRef = useRef(0);
+  const relaxProbeAbortRef = useRef<AbortController | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchRequestIdRef = useRef(0);
   const defaultSearchRequestIdRef = useRef(0);
@@ -1304,6 +1312,54 @@ const Research = () => {
     void runSearchResultsPageRef.current(searchPage);
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
+  const isZeroResultSearch =
+    hasSubmittedSearch &&
+    !searchLoading &&
+    !searchError &&
+    activeSearchRequest !== null &&
+    searchResultResearchEntities.length === 0;
+
+  useEffect(() => {
+    const relaxedQuery = isZeroResultSearch
+      ? relaxResearchQuery(activeSearchRequest?.searchQuery ?? '')
+      : null;
+    if (!relaxedQuery || !activeSearchRequest) {
+      relaxProbeRequestIdRef.current += 1;
+      setRelaxedQuerySuggestion(null);
+      return;
+    }
+
+    const requestId = ++relaxProbeRequestIdRef.current;
+    const controller = new AbortController();
+    relaxProbeAbortRef.current?.abort();
+    relaxProbeAbortRef.current = controller;
+
+    void (async () => {
+      try {
+        const probe = await searchResearchEntities(
+          relaxedQuery,
+          1,
+          controller.signal,
+          activeSearchRequest.filters,
+          1,
+          activeSearchRequest.options || {},
+        );
+        if (requestId !== relaxProbeRequestIdRef.current || controller.signal.aborted) return;
+        setRelaxedQuerySuggestion(probe.estimatedTotalHits > 0 ? relaxedQuery : null);
+      } catch (error) {
+        if (
+          requestId === relaxProbeRequestIdRef.current &&
+          !controller.signal.aborted &&
+          !isCancel(error)
+        ) {
+          setRelaxedQuerySuggestion(null);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [isZeroResultSearch, activeSearchRequest]);
+
   const activeResults = useMemo(() => groupedResults, [groupedResults]);
   const clusterByEntityRef = useRef(new WeakMap<ResearchEntity, ResearchCluster>());
   const clustersForEntities = useCallback((entities: ResearchEntity[]): ResearchCluster[] => {
@@ -1574,6 +1630,54 @@ const Research = () => {
     currentAvailabilityOptions: browseCurrentAvailabilityOptions,
     isApplying: false,
     hasFacetError: false,
+  };
+
+  const activeStudentFilterCount =
+    Number(Boolean(selectedSchool)) +
+    Number(Boolean(selectedDepartment)) +
+    selectedResearchAreas.length +
+    Number(hostsUndergrads);
+  const researchAreaSuggestions = useMemo(
+    () =>
+      isZeroResultSearch
+        ? suggestCorpusResearchAreas(
+            researchAreas,
+            activeSearchRequest?.searchQuery ?? '',
+            selectedResearchAreas,
+            6,
+          )
+        : [],
+    [isZeroResultSearch, researchAreas, activeSearchRequest, selectedResearchAreas],
+  );
+
+  const pivotToResearchArea = (area: string) => {
+    scrollResearchViewportToTop();
+    setQuery('');
+    setSelectedSchool('');
+    setSelectedDepartment('');
+    setSelectedResearchAreas([area]);
+    setHostsUndergrads(false);
+    void runSearchRef.current('', {
+      filters: { researchAreas: [area] },
+      hasFilterSelections: true,
+      filterChanges: [{ operation: 'apply', filter: 'research_area' }],
+    });
+  };
+
+  const retryRelaxedQuery = () => {
+    if (!relaxedQuerySuggestion) return;
+    scrollResearchViewportToTop();
+    setQuery(relaxedQuerySuggestion);
+    const filters = studentSearchFilters();
+    void runSearchRef.current(relaxedQuerySuggestion, {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+    });
+  };
+
+  const browseAllResearchHomes = () => {
+    scrollResearchViewportToTop();
+    resetSearch();
   };
 
   return (
@@ -1881,11 +1985,31 @@ const Research = () => {
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
                     </>
                   ) : (
-                    <EmptyGroup>
-                      {departmentSearch
-                        ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, professor, or adjacent department while this department is being seeded.'
-                        : 'No indexed research homes matched this search yet. Try a broader topic, professor, or adjacent department while coverage improves.'}
-                    </EmptyGroup>
+                    <ResearchZeroResultRecovery
+                      isDepartmentSearch={Boolean(departmentSearch)}
+                      activeFilterCount={activeStudentFilterCount}
+                      selectedSchool={selectedSchool}
+                      selectedDepartment={selectedDepartment}
+                      selectedResearchAreas={selectedResearchAreas}
+                      hostsUndergrads={hostsUndergrads}
+                      departmentLabel={departmentFacetLabel}
+                      onRemoveSchool={() => applyStudentFilters({ school: '' })}
+                      onRemoveDepartment={() => applyStudentFilters({ department: '' })}
+                      onRemoveResearchArea={(area) =>
+                        applyStudentFilters({
+                          researchAreas: selectedResearchAreas.filter((value) => value !== area),
+                        })
+                      }
+                      onRemoveHostsUndergrads={() =>
+                        applyStudentFilters({ hostsUndergrads: false })
+                      }
+                      onClearAllFilters={researchFilterProps.onClearAll}
+                      relaxedQuery={relaxedQuerySuggestion}
+                      onRelaxQuery={retryRelaxedQuery}
+                      researchAreaSuggestions={researchAreaSuggestions}
+                      onSelectResearchArea={pivotToResearchArea}
+                      onBrowseAll={browseAllResearchHomes}
+                    />
                   )}
                 </section>
               </section>

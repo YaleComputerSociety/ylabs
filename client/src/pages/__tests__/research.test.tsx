@@ -2658,3 +2658,160 @@ describe('Research page', () => {
     );
   });
 });
+
+describe('Research zero-result recovery', () => {
+  const recoveryResearchAreas = [
+    { name: 'Genomics', field: 'Life Sciences', colorKey: 'a', isDefault: false },
+    { name: 'Machine Learning', field: 'Computing & AI', colorKey: 'b', isDefault: false },
+    { name: 'Quantum Materials', field: 'Physical Sciences', colorKey: 'c', isDefault: false },
+    { name: 'Ancient DNA', field: 'Life Sciences', colorKey: 'd', isDefault: false },
+  ];
+
+  const renderRecovery = (initialEntries: string[]) =>
+    render(
+      <MemoryRouter initialEntries={initialEntries}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            researchAreas: recoveryResearchAreas,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+  it('offers only corpus-backed recovery on a query-driven zero result and re-runs the relaxed query', async () => {
+    const quantumEntity = {
+      ...researchEntity,
+      _id: 'quantum-1',
+      slug: 'quantum-materials-lab',
+      name: 'Quantum Materials Lab',
+      displayName: 'Quantum Materials Lab',
+    };
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      if (body.q === 'quantum materials physics') return researchSearchResponse([]);
+      if (body.q === 'quantum materials') {
+        return researchSearchResponse([quantumEntity], { estimatedTotalHits: 5 });
+      }
+      return researchSearchResponse([]);
+    });
+
+    renderRecovery(['/research?q=quantum+materials+physics']);
+
+    const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
+    expect(region.textContent).toContain('coverage gap');
+
+    const relatedGroup = await within(region).findByLabelText('Related research areas');
+    const suggestionButtons = within(relatedGroup).getAllByRole('button');
+    const corpusNames = new Set(recoveryResearchAreas.map((area) => area.name));
+    expect(suggestionButtons.length).toBeGreaterThan(0);
+    suggestionButtons.forEach((button) => {
+      expect(corpusNames.has(button.textContent?.trim() || '')).toBe(true);
+    });
+    expect(
+      within(relatedGroup).getByRole('button', { name: 'Quantum Materials' }),
+    ).toBeTruthy();
+
+    expect(within(region).getByRole('button', { name: 'Browse all research homes' })).toBeTruthy();
+
+    const relaxButton = await within(region).findByRole('button', {
+      name: /Search .*quantum materials.* instead/,
+    });
+    fireEvent.click(relaxButton);
+
+    expect(await screen.findByRole('heading', { name: 'Quantum Materials Lab' })).toBeTruthy();
+  });
+
+  it('hides the relaxed-query retry when the relaxed query would also return nothing', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search' ? researchSearchResponse([]) : unexpectedSearchEndpoint(url),
+    );
+
+    renderRecovery(['/research?q=quantum+materials+physics']);
+
+    const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
+    await within(region).findByLabelText('Related research areas');
+    await waitFor(() => {
+      expect(
+        within(region).queryByRole('button', { name: /Search .* instead/ }),
+      ).toBeNull();
+    });
+  });
+
+  it('surfaces an inline clear-all escape when active filters emptied the results', async () => {
+    const mlEntity = {
+      ...researchEntity,
+      _id: 'ml-1',
+      slug: 'ml-lab',
+      name: 'ML Lab',
+      displayName: 'ML Lab',
+    };
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      if (body.filters?.hostsUndergrads === true) return researchSearchResponse([]);
+      if (body.q === 'machine learning') return researchSearchResponse([mlEntity]);
+      return researchSearchResponse([]);
+    });
+
+    renderRecovery(['/research?q=machine+learning&undergrad=1']);
+
+    const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
+    expect(
+      within(region).getByRole('button', { name: 'Remove Has hosted undergrads before' }),
+    ).toBeTruthy();
+    const clearAll = within(region).getByRole('button', { name: 'Clear all filters' });
+
+    fireEvent.click(clearAll);
+
+    expect(await screen.findByRole('heading', { name: 'ML Lab' })).toBeTruthy();
+    expect(
+      screen.queryByRole('region', { name: 'Ways to recover this search' }),
+    ).toBeNull();
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/research/search',
+        expect.objectContaining({ q: 'machine learning', filters: {} }),
+        expect.any(Object),
+      );
+    });
+  });
+
+  it('pivots to a corpus research area as a fresh filtered search', async () => {
+    const genomicsEntity = {
+      ...researchEntity,
+      _id: 'genomics-1',
+      slug: 'genomics-lab',
+      name: 'Genomics Lab',
+      displayName: 'Genomics Lab',
+    };
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      if (Array.isArray(body.filters?.researchAreas)) {
+        return researchSearchResponse([genomicsEntity], { estimatedTotalHits: 3 });
+      }
+      return researchSearchResponse([]);
+    });
+
+    renderRecovery(['/research?q=underwater+basket+weaving']);
+
+    const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
+    const relatedGroup = await within(region).findByLabelText('Related research areas');
+    fireEvent.click(within(relatedGroup).getByRole('button', { name: 'Genomics' }));
+
+    expect(await screen.findByRole('heading', { name: 'Genomics Lab' })).toBeTruthy();
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/research/search',
+        expect.objectContaining({ filters: { researchAreas: ['Genomics'] } }),
+        expect.any(Object),
+      );
+    });
+  });
+});
