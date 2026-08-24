@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildResidentialCollegeGrantShortDescription,
+  buildRichterFellowshipShortDescription,
   deriveResidentialCollegeName,
+  deriveRichterFellowshipCollegeName,
   isResidentialCollegeGrantBoilerplateShortDescription,
+  isRichterFellowshipFamilyDisplayName,
 } from '../backfillResidentialCollegeGrantShortDescriptionsCore';
 
 describe('backfillResidentialCollegeGrantShortDescriptionsCore (#1557)', () => {
@@ -62,6 +65,48 @@ describe('backfillResidentialCollegeGrantShortDescriptionsCore (#1557)', () => {
   it('builds a distinguishing shortDescription naming the college', () => {
     expect(buildResidentialCollegeGrantShortDescription('Saybrook')).toBe(
       'Funds a senior research project or senior essay for Saybrook College students.',
+    );
+  });
+});
+
+describe('Richter Summer Fellowship family (#1557)', () => {
+  it('recognizes a displayName with the "College" token and "Summer"', () => {
+    expect(isRichterFellowshipFamilyDisplayName('Branford College Richter Summer Fellowship')).toBe(
+      true,
+    );
+  });
+
+  it('recognizes a displayName without the "College" token', () => {
+    expect(isRichterFellowshipFamilyDisplayName('Ezra Stiles Richter Summer Fellowship')).toBe(true);
+  });
+
+  it('recognizes a displayName without "Summer"', () => {
+    expect(isRichterFellowshipFamilyDisplayName('Benjamin Franklin College Richter Fellowship')).toBe(
+      true,
+    );
+  });
+
+  it('does not recognize an unrelated displayName', () => {
+    expect(isRichterFellowshipFamilyDisplayName('Grace Hopper Mellon Senior Research Grant')).toBe(
+      false,
+    );
+  });
+
+  it('derives the college name from a Richter family displayName', () => {
+    expect(deriveRichterFellowshipCollegeName('Berkeley College Richter Summer Fellowship')).toBe(
+      'Berkeley',
+    );
+    expect(deriveRichterFellowshipCollegeName('Ezra Stiles Richter Summer Fellowship')).toBe(
+      'Ezra Stiles',
+    );
+    expect(
+      deriveRichterFellowshipCollegeName('Benjamin Franklin College Richter Fellowship'),
+    ).toBe('Benjamin Franklin');
+  });
+
+  it('builds a distinguishing shortDescription naming the college', () => {
+    expect(buildRichterFellowshipShortDescription('Berkeley')).toBe(
+      'Funds a Richter Summer Fellowship for independent study and research by Berkeley College students.',
     );
   });
 });

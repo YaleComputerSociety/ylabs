@@ -2,14 +2,19 @@
  * Data repair for #1557: every Yale residential-college Mellon Senior Research
  * Grant entity shared one verbatim, non-distinguishing shortDescription ("To
  * provide funding to off-set the costs associated with a senior research
- * project or senior essay."), so a student browsing /research could not tell
- * one college's grant from another on the card. Scans for the boilerplate
- * signature (entityType-agnostic; not scoped to a hardcoded id list, so a
- * future re-scrape landing the same template on another entity is still
- * caught), derives each entity's own residential college from its
- * displayName, and writes a distinguishing shortDescription naming that
- * college. The applied field is locked via manuallyLockedFields so a future
- * scraper/backfill pass cannot silently revert it to the shared template.
+ * project or senior essay."), and every Richter Summer Fellowship entity but
+ * one shared a second boilerplate short verbatim, so a student browsing
+ * /research could not tell one college's grant/fellowship from another on the
+ * card. The Richter family's Berkeley outlier does not carry the shared text
+ * at all - a scrape-boundary artifact grabbed a mid-document section header
+ * ("Amounts and uses of grant funding: ...") instead of a real description -
+ * but still needs the same distinguishing per-college replacement, so it is
+ * matched by displayName shape rather than by its current text.
+ *
+ * Derives each entity's own residential college from its displayName and
+ * writes a distinguishing shortDescription naming that college. The applied
+ * field is locked via manuallyLockedFields so a future scraper/backfill pass
+ * cannot silently revert it to the shared template.
  *
  * Dry-run by default.
  *   yarn --cwd server tsx src/scripts/backfillResidentialCollegeGrantShortDescriptions.ts
@@ -31,8 +36,11 @@ import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   buildResidentialCollegeGrantShortDescription,
+  buildRichterFellowshipShortDescription,
   deriveResidentialCollegeName,
+  deriveRichterFellowshipCollegeName,
   isResidentialCollegeGrantBoilerplateShortDescription,
+  isRichterFellowshipFamilyDisplayName,
 } from './backfillResidentialCollegeGrantShortDescriptionsCore';
 
 dotenv.config();
@@ -67,8 +75,15 @@ async function main() {
   });
   await initializeConnections();
 
-  const candidates: any[] = await ResearchEntity.find({
+  const mellonCandidates: any[] = await ResearchEntity.find({
     shortDescription: { $regex: /off-?set the costs associated with a senior research project/i },
+  })
+    .select('_id entityType displayName shortDescription manuallyLockedFields')
+    .lean();
+
+  const richterCandidates: any[] = await ResearchEntity.find({
+    displayName: { $regex: /Richter/i },
+    entityType: 'FELLOWSHIP_PROGRAM',
   })
     .select('_id entityType displayName shortDescription manuallyLockedFields')
     .lean();
@@ -77,25 +92,33 @@ async function main() {
     [];
   const report: Array<Record<string, unknown>> = [];
 
-  for (const entity of candidates) {
+  const planned = new Set<string>();
+
+  const plan = (
+    entity: any,
+    matches: boolean,
+    unresolvedStatus: string,
+    collegeName: string,
+    shortDescription: string,
+  ): void => {
     const recordId = String(entity._id);
-    if (!isResidentialCollegeGrantBoilerplateShortDescription(entity.shortDescription)) {
-      report.push({ recordId, displayName: entity.displayName, status: 'not_boilerplate' });
-      continue;
+    if (planned.has(recordId)) return;
+    if (!matches) {
+      report.push({ recordId, displayName: entity.displayName, status: unresolvedStatus });
+      return;
     }
-    const collegeName = deriveResidentialCollegeName(entity.displayName);
     if (!collegeName) {
       report.push({ recordId, displayName: entity.displayName, status: 'unresolved_college_name' });
-      continue;
+      return;
     }
-    const shortDescription = buildResidentialCollegeGrantShortDescription(collegeName);
     if (shortDescription === entity.shortDescription) {
       report.push({ recordId, displayName: entity.displayName, status: 'noop' });
-      continue;
+      return;
     }
     const lockedFields = Array.from(
       new Set([...(Array.isArray(entity.manuallyLockedFields) ? entity.manuallyLockedFields : []), 'shortDescription']),
     );
+    planned.add(recordId);
     plannedUpdates.push({
       recordId,
       entityType: entity.entityType,
@@ -109,15 +132,33 @@ async function main() {
       from: entity.shortDescription,
       to: shortDescription,
     });
+  };
+
+  for (const entity of mellonCandidates) {
+    const matches = isResidentialCollegeGrantBoilerplateShortDescription(entity.shortDescription);
+    const collegeName = matches ? deriveResidentialCollegeName(entity.displayName) : '';
+    const shortDescription = collegeName
+      ? buildResidentialCollegeGrantShortDescription(collegeName)
+      : '';
+    plan(entity, matches, 'not_boilerplate', collegeName, shortDescription);
+  }
+
+  for (const entity of richterCandidates) {
+    const matches = isRichterFellowshipFamilyDisplayName(entity.displayName);
+    const collegeName = matches ? deriveRichterFellowshipCollegeName(entity.displayName) : '';
+    const shortDescription = collegeName ? buildRichterFellowshipShortDescription(collegeName) : '';
+    plan(entity, matches, 'not_richter_family', collegeName, shortDescription);
   }
 
   const summary = {
     mode: options.apply ? 'apply' : 'dry-run',
     environment: guard.environment,
     db: guard.dbLabel,
-    scanned: candidates.length,
+    scannedMellon: mellonCandidates.length,
+    scannedRichter: richterCandidates.length,
     plannedUpdates: plannedUpdates.length,
     notBoilerplate: report.filter((r) => r.status === 'not_boilerplate').length,
+    notRichterFamily: report.filter((r) => r.status === 'not_richter_family').length,
     unresolvedCollegeName: report.filter((r) => r.status === 'unresolved_college_name').length,
     noop: report.filter((r) => r.status === 'noop').length,
   };
