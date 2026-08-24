@@ -727,6 +727,32 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       'This researcher is a physician-scientist with specialized training in immunology, molecular biology, genetics, and clinical dermatology.',
     );
   });
+
+  it('blanks a named-chair opener (with embedded middle-initial/suffix periods) followed by a multi-sentence bibliography/awards run, on a FACULTY_RESEARCH_AREA entity with no research content (#1745)', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'Robin Fixture is William R. Kenan, Jr. Professor of Black Studies at Yale University. She is the author of Bodies in Motion: Spectacular Performances of Sound (Durham, NC: Duke UP, 2006), winner of the Errol Hill Award for Outstanding Scholarship from ASTR. Liner Notes for the Revolution is the winner of eleven book awards and prizes: the Museum of African American History (MAAH) 2021 Stone Book Award, the 2022 Rock and Roll Hall of Fame Ralph J. Gleason Music Book Award, and the 2022 Certificate of Merit for Historical Research on Recording Topics.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
+  it('strips a multi-sentence opener/award/fellowship CV run, keeping only the surviving research content, on a FACULTY_RESEARCH_AREA entity (#1745)', () => {
+    const fra = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'Robin Fixture is the Tuntex Professor of Economics at Yale University and a fellow of Pauli Murray College. He has received the Best Economics PhD Advisor Award at Yale University in 2022 and 2023. Fixture is a fellow of the Econometric Society and has received several prestigious awards, including the Yrjo Jahnsson medal. His research interests include family economics and the global economy. He has published extensively in leading economic journals.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(fra);
+
+    expect(sanitized.fullDescription).toBe(
+      'His research interests include family economics and the global economy. He has published extensively in leading economic journals.',
+    );
+  });
 });
 
 describe('isDeceasedOrEmeritusLeadBiography', () => {
