@@ -492,18 +492,25 @@ function entityCorroboratesPersonProfile(
  * disambiguating evidence at all - it is exactly the shape of a coincidental
  * homonym (issue #1537, e.g. a Russian and East European Studies "Graham Lab"
  * keyed onto a School of Medicine medicine.yale.edu/profile/thomas-graham
- * page) - so it requires the same corroboration as a no-token-match. An
- * entity with no recorded school/department at all is left alone here (it
- * carries no domain claim to check the URL against), so a legitimate
- * "<Surname> Lab" whose own recorded website names its own PI by full name
- * still passes unconditionally. A URL whose Yale school subdomain
- * contradicts the entity's own recorded school is always rejected first, so an
- * exact full-name homonym at a different Yale school (issue #1045) is ruled out
- * even when every name token matches. An exact full-name match (given name and
- * family name both overlap) at a cross-appointment-tolerant host (medicine,
- * public health, engineering) whose implied school diverges from the entity's own
- * recorded school still requires the same corroboration as a no-token-match, so
- * the same-name-different-person collision those tolerant hosts otherwise let
+ * page) - so it requires an independent corroborating page, same as a
+ * no-token-match; unlike a no-token-match it deliberately excludes prose
+ * corroboration, because a surname-only entity's own fullDescription - when
+ * populated from this very page, e.g. an LLM-confabulated medical reframe of a
+ * same-surname humanities professor - would trivially name whichever person the
+ * disputed page describes and so can never independently corroborate it (issue
+ * #1671, e.g. a School of Art "Crewdson Lab" keyed onto a different Gregory
+ * Crewdson's medicine.yale.edu profile). An entity with no recorded
+ * school/department at all is left alone here (it carries no domain claim to
+ * check the URL against), so a legitimate "<Surname> Lab" whose own recorded
+ * website names its own PI by full name still passes unconditionally. A URL
+ * whose Yale school subdomain contradicts the entity's own recorded school is
+ * always rejected first, so an exact full-name homonym at a different Yale
+ * school (issue #1045) is ruled out even when every name token matches. An
+ * exact full-name match (given name and family name both overlap) at a
+ * cross-appointment-tolerant host (medicine, public health, engineering) whose
+ * implied school diverges from the entity's own recorded school likewise
+ * requires an independent corroborating page rather than prose, so the
+ * same-name-different-person collision those tolerant hosts otherwise let
  * through (issue #1413) is caught symmetrically in either direction.
  */
 export function personProfileSourceMatchesEntity(
@@ -531,7 +538,11 @@ export function personProfileSourceMatchesEntity(
       hasAnyRecordedSchoolInfo(entity) &&
       !sourceUrlToleratedSchoolConfirmedForEntity(value, entity)
     ) {
-      return entityCorroboratesPersonProfile(urlTokens, value, entity);
+      // The entity records no given name to disambiguate against, so its own
+      // prose - if ever populated from this same contested page - would trivially
+      // name whichever person that page describes; only an independent second
+      // page (never this page's own confabulated description) counts (#1671).
+      return independentCorroboratingSourcePageCount(urlTokens, value, entity) >= 2;
     }
     if (givenNameAlsoMatches && sourceUrlToleratedSchoolDivergesFromEntity(value, entity)) {
       // The entity's own prose trivially names itself (it IS this person's page),
