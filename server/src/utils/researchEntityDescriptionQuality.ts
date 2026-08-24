@@ -325,6 +325,16 @@ const hasGenericMissionStatementLead = (value: string): boolean =>
   /^The Department (?:of [\p{L},& -]+ )?(?:also )?accomplishes its research mission\b/iu.test(value) ||
   /^The Department of Laboratory Medicine provides comprehensive\b/i.test(value);
 
+// A scraped undergraduate-research form template that names no actual research:
+// "I/We have N research projects that are focused on fabrication, measurement,
+// and/or theory, depending on student interest and experience." The clause is a
+// content-free recruitment placeholder shared verbatim across several physics-lab
+// profiles, so it must not count as a usable source-backed description.
+const isGenericStudentProjectRecruitmentTemplate = (value: string): boolean =>
+  /\bresearch projects?\b.{0,40}?\bfocused on fabrication,?\s*measurement,?\s*and\/or theory,?\s*depending on student interest and experience\b/i.test(
+    value,
+  );
+
 const hasFragmentaryCardCopy = (value: string): boolean =>
   /^[A-Z][a-z]+,\s+(?:the|and)\b/i.test(value) ||
   /^[\p{L}.'’-]+,\s*\d{4}\)/u.test(value) ||
@@ -570,6 +580,7 @@ export function fullDescriptionQuality(
   if (text && isAffiliationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && isLocationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && hasGenericMissionStatementLead(text)) flags.push('generic-lead');
+  if (text && isGenericStudentProjectRecruitmentTemplate(text)) flags.push('generic-lead');
   if (
     text &&
     !isConciseSpecificResearchDescription(text) &&

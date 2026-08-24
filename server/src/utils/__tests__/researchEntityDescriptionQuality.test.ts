@@ -28,6 +28,26 @@ describe('fullDescriptionQuality', () => {
     expect(quality.isUseful).toBe(false);
   });
 
+  it('rejects the generic student-project recruitment template that names no research', () => {
+    const firstPerson =
+      'I have 3 research projects that are focused on fabrication, measurement, and/or theory, depending on student interest and experience.';
+    const revoiced =
+      'This researcher has 3 research projects that are focused on fabrication, measurement, and/or theory, depending on student interest and experience.';
+
+    expect(fullDescriptionQuality(firstPerson).flags).toContain('generic-lead');
+    expect(fullDescriptionQuality(firstPerson).isUseful).toBe(false);
+    expect(fullDescriptionQuality(revoiced).flags).toContain('generic-lead');
+    expect(fullDescriptionQuality(revoiced).isUseful).toBe(false);
+  });
+
+  it('keeps genuine research prose that mentions fabrication and measurement of specific systems', () => {
+    const quality = fullDescriptionQuality(
+      'We fabricate superconducting qubit devices and measure their coherence to build circuit-QED architectures for quantum error correction.',
+    );
+    expect(quality.flags).not.toContain('generic-lead');
+    expect(quality.isUseful).toBe(true);
+  });
+
   it('rejects cookie-consent boilerplate while accepting genuine first-person research prose', () => {
     const cookieBanner =
       'We use cookies and similar technologies to improve your experience, analyze site traffic, and personalize content. By continuing to use this site, you consent to our use of cookies in accordance with our privacy policy.';
