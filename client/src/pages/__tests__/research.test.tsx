@@ -929,6 +929,43 @@ describe('Research page', () => {
     expect(screen.getByRole('button', { name: 'Remove Research area: Genomics' })).toBeTruthy();
   });
 
+  it('round-trips the current-availability filter from the URL (#1285)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        estimatedTotalHits: 5,
+        facetDistribution: { undergraduateCurrentAvailability: { OPEN: 5 } },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&availability=OPEN']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+    const researchSearchCall = mockedAxios.post.mock.calls.find(
+      ([url]) => url === '/research/search',
+    );
+    expect(researchSearchCall?.[1]).toEqual(
+      expect.objectContaining({
+        filters: { currentAvailability: ['OPEN'] },
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Remove Open now' })).toBeTruthy();
+  });
+
   it('keeps visible results in place when a filter is toggled via URL on the same query', async () => {
     const filteredResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
     mockedAxios.post.mockImplementation(

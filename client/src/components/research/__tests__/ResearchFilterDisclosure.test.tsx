@@ -19,6 +19,8 @@ const renderFilters = (
     selectedResearchAreas: [],
     researchAreaOptions: [],
     hostsUndergrads: false,
+    currentAvailabilityOptions: [],
+    selectedCurrentAvailability: [],
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
@@ -26,6 +28,7 @@ const renderFilters = (
     onDepartmentChange: vi.fn(),
     onResearchAreasChange: vi.fn(),
     onHostsUndergradsChange: vi.fn(),
+    onCurrentAvailabilityChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -141,6 +144,36 @@ describe('ResearchFilterDisclosure', () => {
     expect(selectedProps.onHostsUndergradsChange).toHaveBeenCalledWith(false);
   });
 
+  it('toggles the current-availability filter, exposes a removable chip, and stays hidden with no coverage', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      currentAvailabilityOptions: [
+        { value: 'OPEN', label: 'Open now', count: 5 },
+        { value: 'ROLLING', label: 'Rolling', count: 2 },
+      ],
+    });
+
+    fireEvent.click(screen.getByLabelText('Open now (5)'));
+    expect(props.onCurrentAvailabilityChange).toHaveBeenCalledWith(['OPEN']);
+
+    const { props: selectedProps } = renderFilters({
+      variant: 'sidebar',
+      currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 5 }],
+      selectedCurrentAvailability: ['OPEN'],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Open now' }));
+    expect(selectedProps.onCurrentAvailabilityChange).toHaveBeenCalledWith([]);
+
+    const { container: emptyContainer } = renderFilters({
+      variant: 'sidebar',
+      currentAvailabilityOptions: [],
+    });
+    expect(
+      within(emptyContainer).queryByText('Current undergraduate availability'),
+    ).toBeNull();
+  });
+
   it('adds a research area from the dropdown and removes it via its chip', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props } = renderFilters({
@@ -182,6 +215,8 @@ describe('ResearchFilterDisclosure', () => {
         selectedResearchAreas: [],
         researchAreaOptions: [{ value: 'Artificial Intelligence', count: 23 }],
         hostsUndergrads: false,
+        currentAvailabilityOptions: [],
+        selectedCurrentAvailability: [],
         isApplying: false,
         hasFacetError: false,
         departmentLabel: (value) => value,
@@ -189,6 +224,7 @@ describe('ResearchFilterDisclosure', () => {
         onDepartmentChange: vi.fn(),
         onResearchAreasChange: () => setHasSubmittedSearch(true),
         onHostsUndergradsChange: vi.fn(),
+        onCurrentAvailabilityChange: vi.fn(),
         onClearAll: vi.fn(),
         isOpen,
         onOpenChange: setIsOpen,

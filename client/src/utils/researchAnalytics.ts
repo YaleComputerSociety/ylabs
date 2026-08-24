@@ -59,7 +59,8 @@ export type ResearchJourneyPayload =
         | 'admin_quality'
         | 'admin_trust'
         | 'research_area'
-        | 'hosts_undergrads';
+        | 'hosts_undergrads'
+        | 'current_availability';
     }
   | { operation: 'save' | 'remove'; surface: 'profile' | 'search' | 'saved_plans' }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }

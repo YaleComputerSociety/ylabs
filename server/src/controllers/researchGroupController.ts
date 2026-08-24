@@ -37,9 +37,12 @@ const SEARCH_FILTER_KEYS = [
   'school',
   'departments',
   'researchAreas',
+  'currentAvailability',
   'studentVisibilityTier',
   'qualityFilters',
 ] as const;
+
+const CURRENT_AVAILABILITY_FILTER_VALUES = new Set(['OPEN', 'ROLLING']);
 
 const toStringArray = (value: unknown): string[] | undefined => {
   if (value === undefined || value === null) return undefined;
@@ -90,6 +93,11 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   if (r.hostsUndergrads === true) {
     filters.hostsUndergrads = true;
   }
+
+  const currentAvailability = toStringArray(r.currentAvailability)?.filter((value) =>
+    CURRENT_AVAILABILITY_FILTER_VALUES.has(value),
+  ) as ResearchGroupFilterInput['currentAvailability'];
+  if (currentAvailability?.length) filters.currentAvailability = currentAvailability;
 
   return filters;
 };
