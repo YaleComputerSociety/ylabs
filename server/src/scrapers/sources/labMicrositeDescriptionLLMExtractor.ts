@@ -389,7 +389,7 @@ function usefulShortDescription(value: unknown, fullDescription: string): string
   return shortDescriptionQuality(derived, fullDescription).isUseful ? derived : '';
 }
 
-function htmlToText(html: string): string {
+export function htmlToText(html: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
   $('script, style, noscript, svg, iframe, nav, footer').remove();
