@@ -150,6 +150,7 @@ function parseRuntimeIntegerOption(
 }
 
 const rejectedDescriptionSourcePatterns = [
+  /\/about\/a-to-z-index\/(?:atoz\/)?lab-websites$/i,
   /\/membership\/directory\/?$/i,
   /\/(?:people|faculty|directory|members)\/?$/i,
   /(?:^|\.)orcid\.org/i,
@@ -161,7 +162,7 @@ const rejectedDescriptionSourcePatterns = [
   /api\.nsf\.gov/i,
 ];
 
-function isRejectedDescriptionSourceUrl(value: unknown): boolean {
+export function isRejectedDescriptionSourceUrl(value: unknown): boolean {
   const urlText = textValue(value);
   if (!/^https?:\/\//i.test(urlText)) return true;
   try {
