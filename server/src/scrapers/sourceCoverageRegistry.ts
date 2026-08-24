@@ -253,6 +253,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Yale School of Medicine school-wide A-Z faculty directory and individual profile pages for researcher identity, lab-website discovery, governed research areas, and official profile prose. Each faculty individual profile is the cited source; the directory root is a crawl seed only (~14k entries, most non-research staff/trainees) and is never recorded as a source. Discovery-only; must not imply undergraduate access without a more explicit source.',
   },
+  'bbs-research-track': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'TOPICS'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale Combined Program in Biological and Biomedical Sciences (BBS) nine research-track directories (medicine.yale.edu/bbs/people/<track>) as curated topical evidence for biomedical PIs. Each track slug maps to a concise research-area label grafted onto the PI existing canonical research home; each PI own /bbs/profile/<slug> individual page is the cited source (its canonical YSM profile and lab links resolve the home), and the track listing roots are crawl seeds only, never recorded as a source. Grafts research-area topics onto existing homes and mints a conservative FACULTY_RESEARCH_AREA home only when none resolves (converging on the ysm-faculty-<slug> namespace, never a duplicate shell). Fail-closed on contact; must not imply undergraduate access without a more explicit source.',
+  },
   'yse-centers-index': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

@@ -40,6 +40,7 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'yuag-curatorial-areas', phase: 'discovery' },
   { name: 'ycba-collections-research', phase: 'discovery' },
   { name: 'dept-faculty-roster', phase: 'discovery' },
+  { name: 'bbs-research-track', phase: 'discovery' },
   { name: 'department-undergrad-research', phase: 'discovery' },
   { name: 'course-based-research-pathways', phase: 'discovery' },
   { name: 'yale-college-fellowships-office', phase: 'discovery' },
