@@ -34,6 +34,7 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'yale-research-official', phase: 'discovery' },
   { name: 'centers-institutes-index', phase: 'discovery' },
   { name: 'peabody-collections-research', phase: 'discovery' },
+  { name: 'beinecke-collections-research', phase: 'discovery' },
   { name: 'library-collections-as-data', phase: 'discovery' },
   { name: 'dept-faculty-roster', phase: 'discovery' },
   { name: 'department-undergrad-research', phase: 'discovery' },
