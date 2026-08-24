@@ -91,6 +91,7 @@
     "production:promote-beta-copy": "tsx src/scripts/promoteAcceptedBetaCopy.ts",
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "access-signals:repair-duplicates": "tsx src/scripts/repairDuplicateAccessSignals.ts",
+    "access-signals:reconcile-not-currently-available": "tsx src/scripts/reconcileNotCurrentlyAvailableAccessSignals.ts",
     "research:quality-search-review": "tsx src/scripts/researchQualitySearchReview.ts",
     "papers:quality-audit": "tsx src/scripts/paperQualityAudit.ts",
     "profiles:data-quality-audit": "tsx src/scripts/profileDataQualityAudit.ts",
