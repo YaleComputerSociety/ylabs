@@ -145,27 +145,42 @@ describe('ResearchFilterDisclosure', () => {
     expect(selectedProps.onHostsUndergradsChange).toHaveBeenCalledWith(false);
   });
 
-  it('toggles the current-availability filter, exposes a removable chip, and stays hidden with no coverage', () => {
+  it('toggles the current-availability filter and exposes a removable chip once coverage clears the minimum', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props } = renderFilters({
+      variant: 'sidebar',
+      currentAvailabilityOptions: [
+        { value: 'OPEN', label: 'Open now', count: 15 },
+        { value: 'ROLLING', label: 'Rolling', count: 10 },
+      ],
+    });
+
+    fireEvent.click(screen.getByLabelText('Open now (15)'));
+    expect(props.onCurrentAvailabilityChange).toHaveBeenCalledWith(['OPEN']);
+
+    const { props: selectedProps } = renderFilters({
+      variant: 'sidebar',
+      currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 25 }],
+      selectedCurrentAvailability: ['OPEN'],
+      currentAvailabilityLabel: (value) => ({ OPEN: 'Open now', ROLLING: 'Rolling' }[value] ?? value),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Open now' }));
+    expect(selectedProps.onCurrentAvailabilityChange).toHaveBeenCalledWith([]);
+  });
+
+  it('stays hidden when current-availability coverage is below the minimum servable threshold', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    const { container: sparseContainer } = renderFilters({
       variant: 'sidebar',
       currentAvailabilityOptions: [
         { value: 'OPEN', label: 'Open now', count: 5 },
         { value: 'ROLLING', label: 'Rolling', count: 2 },
       ],
     });
-
-    fireEvent.click(screen.getByLabelText('Open now (5)'));
-    expect(props.onCurrentAvailabilityChange).toHaveBeenCalledWith(['OPEN']);
-
-    const { props: selectedProps } = renderFilters({
-      variant: 'sidebar',
-      currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 5 }],
-      selectedCurrentAvailability: ['OPEN'],
-      currentAvailabilityLabel: (value) => ({ OPEN: 'Open now', ROLLING: 'Rolling' }[value] ?? value),
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Open now' }));
-    expect(selectedProps.onCurrentAvailabilityChange).toHaveBeenCalledWith([]);
+    expect(
+      within(sparseContainer).queryByText('Current undergraduate availability'),
+    ).toBeNull();
 
     const { container: emptyContainer } = renderFilters({
       variant: 'sidebar',
@@ -174,6 +189,20 @@ describe('ResearchFilterDisclosure', () => {
     expect(
       within(emptyContainer).queryByText('Current undergraduate availability'),
     ).toBeNull();
+  });
+
+  it('keeps an already-selected current-availability value visible even below the coverage minimum', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    renderFilters({
+      variant: 'sidebar',
+      currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 1 }],
+      selectedCurrentAvailability: ['OPEN'],
+      currentAvailabilityLabel: (value) => ({ OPEN: 'Open now', ROLLING: 'Rolling' }[value] ?? value),
+    });
+
+    expect(screen.getByText('Current undergraduate availability')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Open now' })).toBeTruthy();
   });
 
   it('adds a research area from the dropdown and removes it via its chip', () => {

@@ -44,6 +44,11 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
   return [{ value: selected }, ...options];
 };
 
+const MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT = 20;
+
+const sumOptionCounts = (options: FacetOption[]): number =>
+  options.reduce((total, option) => total + (option.count ?? 0), 0);
+
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedSchool,
@@ -113,7 +118,8 @@ const ResearchFilterDisclosure = ({
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
   const showResearchAreas = availableResearchAreas.length > 0 || selectedResearchAreas.length > 0;
   const showCurrentAvailability =
-    currentAvailabilityOptions.length > 0 || selectedCurrentAvailability.length > 0;
+    sumOptionCounts(currentAvailabilityOptions) >= MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT ||
+    selectedCurrentAvailability.length > 0;
   const activeCount =
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
