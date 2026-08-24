@@ -54,6 +54,14 @@ export interface NamesakeGraftDirective {
   entityId: string;
   slug: string;
   removeAreas?: string[];
+  /**
+   * Full replacement for `researchAreas`, used instead of `removeAreas` when
+   * the current array is entirely grafted and a corroborated correct value
+   * already exists (e.g. a still-active, differently-sourced observation), so
+   * the drain leaves the entity's real areas populated immediately rather
+   * than emptying the field until some later rematerialize pass.
+   */
+  setAreas?: string[];
   clearFullDescriptionIfEquals?: string;
   clearShortDescriptionIfEquals?: string;
   /**
@@ -119,13 +127,31 @@ export function planNamesakeGraftCleanup(
   directive: NamesakeGraftDirective,
 ): NamesakeGraftPlan {
   const areasBefore = stringList(facts.researchAreas);
-  const removeAreas = directive.removeAreas || [];
-  const areaResult = planAreaGraftRemoval({ current: areasBefore, removeAreas });
-  const removeKeys = new Set(removeAreas.map(normalizeGraftToken));
-  const presentKeys = new Set(areasBefore.map(normalizeGraftToken));
-  const missingRemoveAreas = removeAreas.filter(
-    (area) => !presentKeys.has(normalizeGraftToken(area)) || !removeKeys.has(normalizeGraftToken(area)),
-  );
+
+  let areasAfter: string[];
+  let removedAreas: string[];
+  let missingRemoveAreas: string[];
+  let areasChanged: boolean;
+  if (directive.setAreas) {
+    areasAfter = stringList(directive.setAreas);
+    const afterKeys = new Set(areasAfter.map(normalizeGraftToken));
+    removedAreas = areasBefore.filter((area) => !afterKeys.has(normalizeGraftToken(area)));
+    missingRemoveAreas = [];
+    areasChanged =
+      areasAfter.length !== areasBefore.length ||
+      areasAfter.some((area, index) => normalizeGraftToken(area) !== normalizeGraftToken(areasBefore[index]));
+  } else {
+    const removeAreas = directive.removeAreas || [];
+    const areaResult = planAreaGraftRemoval({ current: areasBefore, removeAreas });
+    areasAfter = areaResult.cleaned;
+    removedAreas = areaResult.removed;
+    areasChanged = areaResult.changed;
+    const removeKeys = new Set(removeAreas.map(normalizeGraftToken));
+    const presentKeys = new Set(areasBefore.map(normalizeGraftToken));
+    missingRemoveAreas = removeAreas.filter(
+      (area) => !presentKeys.has(normalizeGraftToken(area)) || !removeKeys.has(normalizeGraftToken(area)),
+    );
+  }
 
   const fullDescriptionBefore = stringValue(facts.fullDescription);
   const shortDescriptionBefore = stringValue(facts.shortDescription);
@@ -150,8 +176,8 @@ export function planNamesakeGraftCleanup(
     entityId: directive.entityId,
     slug: directive.slug,
     areasBefore,
-    areasAfter: areaResult.cleaned,
-    removedAreas: areaResult.removed,
+    areasAfter,
+    removedAreas,
     missingRemoveAreas,
     fullDescriptionCleared,
     fullDescriptionBefore,
@@ -160,11 +186,7 @@ export function planNamesakeGraftCleanup(
     studentDecisionExplanationCleared,
     studentDecisionExplanationBefore,
     supersedeObservationIds: directive.supersedeObservationIds || [],
-    changed:
-      areaResult.changed ||
-      fullDescriptionCleared ||
-      shortDescriptionCleared ||
-      studentDecisionExplanationCleared,
+    changed: areasChanged || fullDescriptionCleared || shortDescriptionCleared || studentDecisionExplanationCleared,
   };
 }
 

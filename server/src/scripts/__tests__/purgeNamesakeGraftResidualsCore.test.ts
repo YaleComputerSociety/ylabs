@@ -114,6 +114,34 @@ describe('planNamesakeGraftCleanup', () => {
     expect(plan.changed).toBe(false);
   });
 
+  it('replaces researchAreas wholesale when setAreas is directed, ignoring removeAreas', () => {
+    const plan = planNamesakeGraftCleanup(
+      { researchAreas: ['Genomics', 'Proteomics', 'Catalysis'] },
+      {
+        entityId: '000000000000000000000009',
+        slug: 'research-yale-magnetic-resonance-research-center-mrrc',
+        setAreas: ['Functional Magnetic Resonance Imaging', 'Cognitive Processes'],
+      },
+    );
+    expect(plan.areasAfter).toEqual(['Functional Magnetic Resonance Imaging', 'Cognitive Processes']);
+    expect(plan.removedAreas).toEqual(['Genomics', 'Proteomics', 'Catalysis']);
+    expect(plan.missingRemoveAreas).toEqual([]);
+    expect(plan.changed).toBe(true);
+  });
+
+  it('is a no-op when setAreas already matches the current researchAreas', () => {
+    const plan = planNamesakeGraftCleanup(
+      { researchAreas: ['Functional Magnetic Resonance Imaging', 'Cognitive Processes'] },
+      {
+        entityId: '000000000000000000000010',
+        slug: 'research-yale-magnetic-resonance-research-center-mrrc',
+        setAreas: ['Functional Magnetic Resonance Imaging', 'Cognitive Processes'],
+      },
+    );
+    expect(plan.changed).toBe(false);
+    expect(plan.removedAreas).toEqual([]);
+  });
+
   it('flags drift when a directive area is no longer present', () => {
     const plan = planNamesakeGraftCleanup(
       { researchAreas: ['Algebraic Geometry'] },
