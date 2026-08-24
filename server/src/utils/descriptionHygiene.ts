@@ -109,6 +109,29 @@ export function stripSelfReferentialResearchCtaSentences(text: string): string {
   return normalizeHygieneWhitespace(kept.join(''));
 }
 
+const danglingSourceSiteReferencePattern =
+  /\b(?:please\s+)?(?:visit|check|see|refer\s+to|look\s+at)\s+the\s+[A-Za-z][A-Za-z\s]{0,50}?\s+(?:section|page)\b|\bcan\s+be\s+found\s+here\b/i;
+
+/**
+ * Drop a sentence that points the reader at a named section/page on the
+ * *source* site ("please visit the Positions section for more information",
+ * "look at the Research section of the FAQ page") or ends in a bare,
+ * anchor-less "can be found here" (#1632). No such section exists in our
+ * product, so the reference is dead. Distinct from
+ * stripPageLayoutReferentialSentences (#994), which targets a visual page
+ * position ("on the right", "in the sidebar") rather than a named
+ * section/page. Requiring the "section"/"page" or "here" anchor keeps
+ * ordinary prose like "a great way to learn more about a subfield" untouched.
+ */
+export function stripDanglingSourceSiteReferenceSentences(text: string): string {
+  const value = String(text || '');
+  if (!danglingSourceSiteReferencePattern.test(value)) return normalizeHygieneWhitespace(value);
+  const kept = partitionSentencesForFiltering(value).filter(
+    (sentence) => !danglingSourceSiteReferencePattern.test(sentence),
+  );
+  return normalizeHygieneWhitespace(kept.join(''));
+}
+
 const PROTECTED_ABBREVIATION_TAIL =
   /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al)\.\s*$/i;
 
@@ -1616,10 +1639,12 @@ export function sanitizeCatalogDescription(text: string): string {
       collapseRepeatedSentences(
         collapseDuplicatedProseBlock(
           stripPageLayoutReferentialSentences(
-            stripSelfReferentialResearchCtaSentences(
-              stripDeadAnchorCtaSentences(
-                stripBibliographicReferenceArtifacts(
-                  stripCatalogChrome(evergreenizeStaleCycleDatePhrase(text)),
+            stripDanglingSourceSiteReferenceSentences(
+              stripSelfReferentialResearchCtaSentences(
+                stripDeadAnchorCtaSentences(
+                  stripBibliographicReferenceArtifacts(
+                    stripCatalogChrome(evergreenizeStaleCycleDatePhrase(text)),
+                  ),
                 ),
               ),
             ),
