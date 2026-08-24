@@ -663,6 +663,34 @@ describe('fullDescriptionQuality', () => {
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
+  it('rejects a card whose topic join leaked a bare research-areas section heading', () => {
+    const fullDescription =
+      'The lab studies the properties of the Universe and fundamental laws of physics using tabletop experiments, focusing on dark matter detection.';
+
+    expect(
+      shortDescriptionQuality(
+        'Studies AMO, including electric dipole moment, casimir effect, and research areas:.',
+        fullDescription,
+      ).flags,
+    ).toContain('broken-template');
+    expect(
+      shortDescriptionQuality(
+        'Studies AMO, including electric dipole moment, casimir effect, and research areas:.',
+        fullDescription,
+      ).isUseful,
+    ).toBe(false);
+    expect(
+      shortDescriptionQuality('Studies nuclear physics, including research areas:.', fullDescription)
+        .isUseful,
+    ).toBe(false);
+    expect(
+      shortDescriptionQuality(
+        'Studies galaxy formation, star clusters, and the interstellar medium.',
+        fullDescription,
+      ).isUseful,
+    ).toBe(true);
+  });
+
   it('rejects reputation-only and degree-only cards after finding better research prose', () => {
     const reputationFull =
       'Dr. Mario Sznol is a Professor of Medicine (Medical Oncology) with an international reputation in cancer drug development. His expertise lies in cancer immunotherapy, drug development for cancer, and the treatment of patients with melanoma and renal cell carcinoma.';
