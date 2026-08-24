@@ -22,6 +22,7 @@ import { DoeOstiGrantScraper } from './sources/doeOstiGrantScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
 import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowshipRecipientScraper';
 import { YaleCollegeFellowshipsOfficeScraper } from './sources/yaleCollegeFellowshipsOfficeScraper';
+import { YaleReuProgramsScraper } from './sources/yaleReuProgramsScraper';
 import { StudentGrantsDatabaseScraper } from './sources/studentGrantsDatabaseScraper';
 import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescriptionLLMExtractor';
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
@@ -64,6 +65,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CentersInstitutesScraper());
   o.register(new UndergradFellowshipRecipientScraper());
   o.register(new YaleCollegeFellowshipsOfficeScraper());
+  o.register(new YaleReuProgramsScraper());
   o.register(new StudentGrantsDatabaseScraper());
   o.register(new LabMicrositeDescriptionLLMExtractor());
   o.register(new LabMicrositeUndergradLLMExtractor());

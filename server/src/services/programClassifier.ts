@@ -289,6 +289,35 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     };
   }
 
+  const isReuOrSummerResearchProgram =
+    /research experiences? for undergraduates|\bnsf reu\b|\breu\b/.test(lower) ||
+    /\bsummer (?:undergraduate )?research (?:program|scholars?(?:hip)?)\b/.test(lower);
+  if (isReuOrSummerResearchProgram) {
+    const mentorFirst =
+      /(?:identify|secure|arrange|line up|obtain|find)[^.]{0,80}(?:faculty |research )?(?:mentor|adviser|advisor|sponsor)[^.]{0,80}(?:before|prior to|ahead of)\b/.test(
+        lower,
+      ) ||
+      /must (?:first )?(?:identify|secure|arrange|have|contact)[^.]{0,40}(?:faculty )?(?:mentor|adviser|advisor)\b/.test(
+        lower,
+      );
+    return structuredProgram({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programKind: mentorFirst ? 'STRUCTURED_PROGRAM' : 'MENTOR_MATCHING',
+      entryMode: mentorFirst ? 'SECURE_MENTOR_THEN_APPLY' : 'DIRECT_FACULTY_MATCHING',
+      studentFacingCategory: 'Summer research program (REU)',
+      requiresMentorBeforeApply: mentorFirst,
+      mentorMatching: !mentorFirst,
+      undergraduateOnly: true,
+      programDates: 'Summer',
+      bestNextStep: mentorFirst
+        ? 'Identify a Yale faculty mentor in the program area, then apply to the summer research program.'
+        : 'Apply to the summer research program; admitted students are matched with a Yale faculty mentor.',
+      prepSteps: mentorFirst
+        ? ['Faculty mentor', 'Research interests', 'Official application']
+        : ['Research interests', 'Official application'],
+    });
+  }
+
   const funding = baseFundingClassification();
   if (/not for undergraduates|graduate students only|doctoral dissertation/.test(lower)) {
     return archiveReviewClassification();

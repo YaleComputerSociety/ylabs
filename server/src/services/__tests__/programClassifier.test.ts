@@ -225,4 +225,37 @@ describe('classifyProgram', () => {
       entryMode: 'TRACK_NEXT_CYCLE',
     });
   });
+
+  it('classifies an NSF REU requiring a mentor first as SECURE_MENTOR_THEN_APPLY', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Astronomy Research Experiences for Undergraduates (REU)',
+        competitionType: 'NSF REU (Research Experiences for Undergraduates)',
+        description:
+          'A ten-week summer research program in astrophysics. Applicants must identify a Yale faculty mentor before applying.',
+      }),
+    ).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      requiresMentorBeforeApply: true,
+      studentFacingCategory: 'Summer research program (REU)',
+      programDates: 'Summer',
+    });
+  });
+
+  it('classifies a summer research program that matches mentors as DIRECT_FACULTY_MATCHING', () => {
+    expect(
+      classifyProgram({
+        title: 'Summer Undergraduate Math Research at Yale',
+        competitionType: 'Summer Undergraduate Research Program',
+        description:
+          'A nine-week summer program of original research; admitted students are matched with a faculty mentor.',
+      }),
+    ).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+      studentFacingCategory: 'Summer research program (REU)',
+    });
+  });
 });
