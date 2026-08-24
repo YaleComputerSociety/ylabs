@@ -7,6 +7,7 @@ import {
   listListingClaimRequests,
   readListingClaimRequest,
   reviewListingClaimRequest,
+  applyListingClaimRequestDecision,
 } from '../services/listingClaimRequestService';
 import { readUser } from '../services/userService';
 
@@ -99,6 +100,25 @@ export const reviewAdminListingClaimRequest = async (
   try {
     const currentUser = request.user as { netId?: string };
     const claimRequest = await reviewListingClaimRequest(
+      request.params.id,
+      currentUser.netId || '',
+      request.body,
+    );
+
+    response.json({ request: claimRequest });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const applyAdminListingClaimRequest = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const claimRequest = await applyListingClaimRequestDecision(
       request.params.id,
       currentUser.netId || '',
       request.body,

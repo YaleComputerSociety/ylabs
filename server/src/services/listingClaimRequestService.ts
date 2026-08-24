@@ -5,6 +5,14 @@ import mongoose from 'mongoose';
 import { ListingClaimRequest } from '../models/listingClaimRequest';
 import { getListingModel } from '../db/connections';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
+import { ResearchEntity } from '../models/researchEntity';
+import { ScrapeRun } from '../models/scrapeRun';
+import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import { materializeEntity } from '../scrapers/entityMaterializer';
+import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import { syncEntity } from './meiliSyncService';
+import { serializedDocumentId } from '../utils/idSerialization';
+import type { ObservationInput } from '../scrapers/types';
 
 const REQUEST_TYPES = new Set(['claim', 'correction']);
 const REQUEST_STATUSES = new Set(['pending', 'changes_requested', 'approved', 'rejected']);
@@ -42,6 +50,13 @@ const ARRAY_FIELDS = new Set([
 
 const MAX_STRING_LENGTH = 4000;
 const MAX_ARRAY_ITEMS = 25;
+
+const RESEARCH_ENTITY_FIELD_MAP: Record<string, string> = {
+  title: 'name',
+  description: 'fullDescription',
+  researchAreas: 'researchAreas',
+  departments: 'departments',
+};
 
 export type ListingClaimRequestUser = {
   netId?: string;
@@ -302,4 +317,136 @@ export const reviewListingClaimRequest = async (
   }
 
   return request;
+};
+
+export const applyListingClaimRequestDecision = async (
+  id: string,
+  adminNetId: string,
+  input: unknown,
+) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new ObjectIdError('Did not received expected id type ObjectId');
+  }
+
+  const body = normalizeRequestBody(input);
+  if (body.confirmApply !== true) {
+    throw new BadRequestError(
+      'Explicit confirmation is required to apply canonical data changes',
+    );
+  }
+
+  const request = await ListingClaimRequest.findById(id);
+  if (!request) {
+    throw new NotFoundError(`Listing claim request not found with ObjectId: ${id}`);
+  }
+
+  if (request.applyStatus === 'applied') {
+    return request.toObject();
+  }
+
+  if (request.status !== 'approved') {
+    throw new BadRequestError('Only approved requests can be applied to canonical data');
+  }
+
+  const mappedFields = Object.entries(
+    (request.proposedChanges as Record<string, unknown>) || {},
+  ).filter(([field]) => RESEARCH_ENTITY_FIELD_MAP[field]);
+
+  const markApplied = async (patch: Record<string, unknown>) => {
+    request.set({ appliedAt: new Date(), appliedBy: adminNetId, ...patch });
+    await request.save();
+    return request.toObject();
+  };
+
+  if (mappedFields.length === 0) {
+    return markApplied({ applyStatus: 'not_applicable', appliedFields: [], applyError: '' });
+  }
+
+  const listing = (await getListingModel()
+    .findById(request.listingId)
+    .select('researchEntityId')
+    .lean()) as { researchEntityId?: unknown } | null;
+  const researchEntityId = listing?.researchEntityId
+    ? serializedDocumentId(listing.researchEntityId)
+    : undefined;
+
+  if (!researchEntityId) {
+    return markApplied({
+      applyStatus: 'failed',
+      applyError: 'No linked canonical research entity to apply changes to.',
+    });
+  }
+
+  const source = await getSourceByName('manual-admin-edit');
+  if (!source) {
+    throw new Error('No Source row found for "manual-admin-edit". Run "yarn seed:sources" first.');
+  }
+
+  const run = await ScrapeRun.create({
+    sourceId: source._id,
+    sourceName: source.name,
+    triggeredBy: 'admin',
+    startedAt: new Date(),
+    status: 'running',
+    options: { listingClaimRequestId: String(request._id) },
+  });
+  const scrapeRunId = serializedDocumentId(run._id) || '';
+
+  const observationInputs: ObservationInput[] = mappedFields.map(([field, value]) => ({
+    entityType: 'researchEntity',
+    entityId: researchEntityId,
+    field: RESEARCH_ENTITY_FIELD_MAP[field],
+    value,
+  }));
+
+  try {
+    await appendObservations(observationInputs, {
+      scrapeRunId,
+      sourceId: source._id,
+      sourceName: source.name,
+      sourceWeight: source.defaultWeight,
+      dryRun: false,
+    });
+    await materializeEntity('researchEntity', { entityId: researchEntityId });
+    await runStudentVisibilityGate({
+      collection: 'research',
+      mode: 'apply',
+      recordIds: [researchEntityId],
+    });
+    const freshEntity = await ResearchEntity.findById(researchEntityId).lean();
+    if (freshEntity) await syncEntity('researchEntity', freshEntity);
+
+    await ScrapeRun.updateOne(
+      { _id: run._id },
+      {
+        $set: {
+          finishedAt: new Date(),
+          status: 'success',
+          observationCount: observationInputs.length,
+          entitiesObserved: 1,
+        },
+      },
+    );
+
+    return markApplied({
+      applyStatus: 'applied',
+      appliedFields: mappedFields.map(([field]) => field),
+      applyError: '',
+    });
+  } catch (error: any) {
+    await ScrapeRun.updateOne(
+      { _id: run._id },
+      {
+        $set: {
+          finishedAt: new Date(),
+          status: 'failure',
+          errors: [{ message: error?.message || 'Apply failed', at: new Date() }],
+        },
+      },
+    );
+    return markApplied({
+      applyStatus: 'failed',
+      applyError: error?.message || 'Failed to apply canonical data changes.',
+    });
+  }
 };

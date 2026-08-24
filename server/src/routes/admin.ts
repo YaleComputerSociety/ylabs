@@ -28,6 +28,7 @@ import {
   getAdminListingClaimRequest,
   listAdminListingClaimRequests,
   reviewAdminListingClaimRequest,
+  applyAdminListingClaimRequest,
 } from '../controllers/listingClaimRequestController';
 import {
   getAdminEntityCorrectionReport,
@@ -726,6 +727,12 @@ router.put(
   writeLimit,
   validateObjectId('id'),
   reviewAdminListingClaimRequest,
+);
+router.put(
+  '/listing-claims/:id/apply',
+  writeLimit,
+  validateObjectId('id'),
+  applyAdminListingClaimRequest,
 );
 
 router.get('/correction-reports', listAdminEntityCorrectionReports);

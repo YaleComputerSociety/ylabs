@@ -10,6 +10,7 @@ export const ListingClaimRequestStatus = [
   'approved',
   'rejected',
 ] as const;
+export const ListingClaimRequestApplyStatus = ['not_applicable', 'applied', 'failed'] as const;
 
 const requesterSnapshotSchema = new mongoose.Schema(
   {
@@ -98,6 +99,26 @@ const listingClaimRequestSchema = new mongoose.Schema(
         ),
       ],
       default: [],
+    },
+    applyStatus: {
+      type: String,
+      enum: ListingClaimRequestApplyStatus,
+      default: 'not_applicable',
+    },
+    appliedAt: {
+      type: Date,
+    },
+    appliedBy: {
+      type: String,
+      default: '',
+    },
+    appliedFields: {
+      type: [String],
+      default: [],
+    },
+    applyError: {
+      type: String,
+      default: '',
     },
   },
   {
