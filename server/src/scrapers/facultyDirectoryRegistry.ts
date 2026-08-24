@@ -287,6 +287,18 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     approxFacultyCount: 65,
     notes: 'Affiliate overlap; may also surface via yale-research-official discovery.',
   },
+  {
+    url: 'https://westcampus.yale.edu/about-us/faculty',
+    school: 'Yale West Campus',
+    department: 'West Campus Institutes (7 research institutes)',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 3,
+    coveredBy: ['dept-faculty-roster'],
+    approxFacultyCount: 55,
+    notes:
+      'School-wide West Campus faculty directory covered by the dept-faculty-roster "west-campus" config row (#1295) via the reference-card static-HTML extractor. ~55 STEM/life-science PIs across seven institutes (Biomolecular Design & Discovery, Cancer Biology, Energy Sciences, Microbial Sciences, Nanobiology, Systems Biology, Preservation of Cultural Heritage); each card cites the faculty member own /profile/<slug> or off-site lab home, never the directory root. The Microbial Sciences Institute subdomain roster (microbialsciences.yale.edu/faculty-research) was evaluated and is a strict subset of these PIs, so it is not separately wired. Expect meaningful dedup against YSM / FAS Chemistry / MB&B home-department appointments.',
+  },
 
   // ---- Tier 4: health schools and research-active social sciences -----------------
   {

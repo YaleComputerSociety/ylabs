@@ -52,6 +52,7 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
+import { isPersonProfileOrDirectoryUrl } from '../../utils/researchHomeWebsiteUrl';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
 import {
   clampDescriptionLength,
@@ -649,6 +650,49 @@ export const directoryListingCardExtractor: FacultyExtractor = (html, ctx) => {
       profileUrl,
       title,
       email,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  });
+
+  return out;
+};
+
+/**
+ * Yale West Campus "reference-card" component (westcampus.yale.edu). Each card's
+ * heading link is the faculty member's own destination — an on-site
+ * `/profile/<slug>` page or an off-directory lab/home — which is what gets cited,
+ * never the directory root.
+ *   <li class="reference-card">
+ *     <h3 class="reference-card__heading">
+ *       <a class="reference-card__heading-link" href="https://alexlab.yale.edu/">Alex Fixture, PhD</a>
+ *     </h3>
+ *     <div class="reference-card__subheading"><div>Director, …; Professor of …</div></div>
+ *     <div class="reference-card__image"><img src="…" srcset="…"></div>
+ */
+export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('.reference-card').each((_i, el) => {
+    const card = $(el);
+    const nameLink = card.find('.reference-card__heading-link').first();
+    const name = normalizeName(cleanText(nameLink.text()));
+    const href = nameLink.attr('href') || '';
+    if (!name || !href) return;
+
+    const destinationUrl = absolutize(href, ctx.pageUrl);
+    const title =
+      cleanText(card.find('.reference-card__subheading').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card.find('.reference-card__image').first(), ctx.pageUrl);
+    // Mint a research home only when the destination is a lab/home site; a profile
+    // page is cited as an official-profile source and left for enrichment/dedup.
+    const labUrl = isPersonProfileOrDirectoryUrl(destinationUrl) ? undefined : destinationUrl;
+
+    out.push({
+      name,
+      profileUrl: destinationUrl,
+      title,
+      labUrl,
       ...(imageUrl ? { imageUrl } : {}),
     });
   });
@@ -1367,6 +1411,14 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://law.yale.edu/faculty?type=faculty',
     paginated: false,
     extractor: lawPersonListingExtractor,
+  },
+  {
+    deptKey: 'west-campus',
+    deptName: 'West Campus Institutes',
+    schoolName: 'Yale West Campus',
+    url: 'https://westcampus.yale.edu/about-us/faculty',
+    paginated: false,
+    extractor: referenceCardExtractor,
   },
 ];
 

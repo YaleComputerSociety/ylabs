@@ -30,6 +30,7 @@ import {
   jacksonProfileComponentExtractor,
   lawPersonListingExtractor,
   nursingFacultyExtractor,
+  referenceCardExtractor,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -900,6 +901,88 @@ describe('directoryListingCardExtractor', () => {
         imageUrl: 'https://philosophy.yale.edu/sites/default/files/robin-fixture.jpg?itok=abc',
       },
     ]);
+  });
+});
+
+describe('referenceCardExtractor', () => {
+  const REFERENCE_CARD_HTML = `
+    <ul class="card-collection__cards">
+      <li class="reference-card">
+        <div class="reference-card__content">
+          <h3 class="reference-card__heading">
+            <a class="reference-card__heading-link reference-card__heading-link--with-icon" data-link-type="external" href="https://robinfixturelab.yale.edu/">Robin Fixture, PhD</a>
+          </h3>
+          <div class="reference-card__subheading"><div>Director, Yale Systems Biology Institute; Professor of Cell Biology</div></div>
+          <div class="reference-card__snippet"></div>
+        </div>
+        <div class="reference-card__image">
+          <a class="reference-card__image-link" href="https://robinfixturelab.yale.edu/">
+            <img src="/sites/default/files/styles/1_1_300_/public/robin-fixture.png?itok=def" srcset="/sites/default/files/styles/1_1_150/public/robin-fixture.png?itok=abc 150w" />
+          </a>
+        </div>
+      </li>
+      <li class="reference-card">
+        <div class="reference-card__content">
+          <h3 class="reference-card__heading">
+            <a class="reference-card__heading-link" href="/profile/jordan-fixture-phd">Jordan Fixture, PhD</a>
+          </h3>
+          <div class="reference-card__subheading"><div>Professor of Molecular Biophysics</div></div>
+        </div>
+      </li>
+      <li class="reference-card">
+        <div class="reference-card__content">
+          <h3 class="reference-card__heading">
+            <a class="reference-card__heading-link reference-card__heading-link--with-icon" data-link-type="external" href="https://medicine.yale.edu/profile/casey-fixture/">Casey Fixture, PhD</a>
+          </h3>
+          <div class="reference-card__subheading"><div>Professor of Immunobiology</div></div>
+        </div>
+      </li>
+    </ul>`;
+
+  it('extracts West Campus reference-card faculty, stripping credentials and citing the individual destination', () => {
+    const out = referenceCardExtractor(REFERENCE_CARD_HTML, {
+      pageUrl: 'https://westcampus.yale.edu/about-us/faculty',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://robinfixturelab.yale.edu/',
+        title: 'Director, Yale Systems Biology Institute; Professor of Cell Biology',
+        labUrl: 'https://robinfixturelab.yale.edu/',
+        imageUrl:
+          'https://westcampus.yale.edu/sites/default/files/styles/1_1_300_/public/robin-fixture.png?itok=def',
+      },
+      {
+        name: 'Jordan Fixture',
+        profileUrl: 'https://westcampus.yale.edu/profile/jordan-fixture-phd',
+        title: 'Professor of Molecular Biophysics',
+      },
+      {
+        name: 'Casey Fixture',
+        profileUrl: 'https://medicine.yale.edu/profile/casey-fixture/',
+        title: 'Professor of Immunobiology',
+      },
+    ]);
+  });
+
+  it('never treats an on-site or off-site profile page as a lab website', () => {
+    const out = referenceCardExtractor(REFERENCE_CARD_HTML, {
+      pageUrl: 'https://westcampus.yale.edu/about-us/faculty',
+    });
+
+    expect(out[0].labUrl).toBe('https://robinfixturelab.yale.edu/');
+    expect(out[1].labUrl).toBeUndefined();
+    expect(out[2].labUrl).toBeUndefined();
+  });
+
+  it('is wired to the West Campus school-wide directory', () => {
+    const westCampus = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'west-campus');
+    expect(westCampus).toBeDefined();
+    expect(westCampus?.url).toBe('https://westcampus.yale.edu/about-us/faculty');
+    expect(westCampus?.schoolName).toBe('Yale West Campus');
+    expect(westCampus?.extractor).toBe(referenceCardExtractor);
+    expect(westCampus?.paginated).toBeFalsy();
   });
 });
 
