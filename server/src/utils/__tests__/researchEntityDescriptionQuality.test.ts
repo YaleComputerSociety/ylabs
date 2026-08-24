@@ -1380,6 +1380,33 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
     expect(quality.flags).toContain('topic-label-list');
     expect(quality.isUseful).toBe(false);
   });
+
+  it('rejects a single-clause "Studies <topic>." short whose topic is entirely absent from the full (ungrounded cherry-pick)', () => {
+    const full =
+      'The analysis in Making Morocco focuses on interactions between state and society during the Protectorate period, and how they politicized religion, ethnicity, territory, and the role of the Alawid monarchy.';
+    const quality = shortDescriptionQuality('Studies Texas from the first.', full, undefined, fraOptions);
+    expect(quality.flags).toContain('ungrounded-topic-short');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('keeps a single-clause "Studies <topic>." short whose topic IS present in the full', () => {
+    const full =
+      'John E. Roemer is a Professor of Political Science and Economics. His research concerns political economy and distributive justice, including inter-generational equity in the presence of climate change.';
+    const quality = shortDescriptionQuality(
+      'Studies political economy and distributive justice.',
+      full,
+      undefined,
+      fraOptions,
+    );
+    expect(quality.flags).not.toContain('ungrounded-topic-short');
+  });
+
+  it('does not apply the ungrounded single-clause guard without an eligible entityType', () => {
+    const full =
+      'The analysis in Making Morocco focuses on interactions between state and society during the Protectorate period.';
+    const quality = shortDescriptionQuality('Studies Texas from the first.', full);
+    expect(quality.flags).not.toContain('ungrounded-topic-short');
+  });
 });
 
 describe('shortDescriptionQuality doubled-conjunction glue guard (#1616)', () => {

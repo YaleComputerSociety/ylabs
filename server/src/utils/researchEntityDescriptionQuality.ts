@@ -44,6 +44,7 @@ export type DescriptionQualityFlag =
   | 'non-self-contained'
   | 'non-offer-clause'
   | 'topic-label-list'
+  | 'ungrounded-topic-short'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -364,6 +365,65 @@ const TOPIC_LABEL_LIST_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
 
 const isTopicLabelListEligibleEntityType = (entityType: unknown): boolean =>
   typeof entityType === 'string' && TOPIC_LABEL_LIST_ENTITY_TYPES.has(entityType.toUpperCase());
+
+const SINGLE_CLAUSE_STUDIES_SHORT_PATTERN = /^Studies\s+[^.,]{3,70}\.$/i;
+
+const STUDIES_SHORT_STOPWORDS = new Set([
+  'studies',
+  'study',
+  'the',
+  'and',
+  'from',
+  'first',
+  'with',
+  'their',
+  'using',
+  'various',
+  'through',
+  'across',
+  'between',
+  'within',
+  'toward',
+  'towards',
+  'about',
+  'into',
+  'that',
+  'this',
+  'which',
+]);
+
+const distinctiveStudiesShortTokens = (value: string): string[] =>
+  Array.from(
+    new Set(
+      (value.toLowerCase().match(/[a-z][a-z-]{3,}/g) || [])
+        .map((token) => token.replace(/-/g, ''))
+        .filter((token) => token.length >= 4 && !STUDIES_SHORT_STOPWORDS.has(token)),
+    ),
+  );
+
+/**
+ * A single-clause "Studies <topic>." short (#1616) whose every distinctive
+ * topic token is absent from the entity's own fullDescription: the clause was
+ * grafted or mis-lifted from a different subject and now contradicts the real
+ * description (e.g. "Studies Texas from the first." on a scholar whose full is
+ * entirely about Morocco). Requires a non-empty full to contradict, requires
+ * at least one distinctive token to judge, and fires only on total (zero)
+ * overlap - a partial-overlap or paraphrase short is left alone, because an
+ * approximate-grounding threshold produces false positives on faithful shorts
+ * whose wording simply does not repeat the full verbatim (the same
+ * false-positive class documented against `resolveServedShortDescription`).
+ * A single-clause short that merely trivializes or cherry-picks a topic that
+ * IS present in the full is not caught here - that needs a semantic check, not
+ * token overlap.
+ */
+function isUngroundedSingleClauseStudiesShort(text: string, full: string): boolean {
+  if (!full) return false;
+  if (!SINGLE_CLAUSE_STUDIES_SHORT_PATTERN.test(text)) return false;
+  const tokens = distinctiveStudiesShortTokens(text.replace(/^Studies\s+/i, ''));
+  if (tokens.length === 0) return false;
+  const normalizedFull = full.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return tokens.every((token) => !normalizedFull.includes(token));
+}
 
 const VACUOUS_FOCUS_HEAD_NOUNS = [
   'field',
@@ -904,6 +964,13 @@ export function shortDescriptionQuality(
     isUngroundedTopicLabelListShort(text, full)
   ) {
     flags.push('topic-label-list');
+  }
+  if (
+    text &&
+    isTopicLabelListEligibleEntityType(options?.entityType) &&
+    isUngroundedSingleClauseStudiesShort(text, full)
+  ) {
+    flags.push('ungrounded-topic-short');
   }
   if (
     text &&

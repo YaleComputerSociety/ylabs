@@ -49,6 +49,7 @@ import {
   stripRedactionPlaceholders,
   stripSelfReferentialResearchCtaSentences,
   stripTrailingContactAddress,
+  stripTrailingResearchHomeAffiliationClause,
   stripTrailingSourceLayoutLabelSection,
   stripUrlTopicsFromCardSummary,
 } from '../descriptionHygiene';
@@ -961,6 +962,46 @@ describe('descriptionHygiene trailing office-address strip (#798)', () => {
         'Studies the neural basis of decision making. 2 Hillhouse Avenue, Fl 3',
       ),
     ).toBe('Studies the neural basis of decision making.');
+  });
+});
+
+describe('descriptionHygiene trailing research-home affiliation strip (#1616)', () => {
+  it('strips a terminal "at <University>" affiliation clause from a Studies-lead short', () => {
+    expect(
+      stripTrailingResearchHomeAffiliationClause('Studies American Politics at Yale University.'),
+    ).toBe('Studies American Politics.');
+  });
+
+  it('strips a multi-word institution name that continues past the keyword', () => {
+    expect(
+      stripTrailingResearchHomeAffiliationClause(
+        'Studies Art at the University of California Berkeley.',
+      ),
+    ).toBe('Studies Art.');
+  });
+
+  it('strips the affiliation but keeps a preceding topic list', () => {
+    expect(
+      stripTrailingResearchHomeAffiliationClause(
+        'Studies Art, Islamic Art and Architecture at Yale University.',
+      ),
+    ).toBe('Studies Art, Islamic Art and Architecture.');
+  });
+
+  it('never truncates a mid-sentence "at <University>" that a research clause follows', () => {
+    const prose = 'The Lin Lab at Yale University focuses on the biology of stem cells and RNA regulation.';
+    expect(stripTrailingResearchHomeAffiliationClause(prose)).toBe(prose);
+  });
+
+  it('leaves a non-institution "at <X>" tail intact', () => {
+    const prose = 'Studies protein folding at the single-molecule level.';
+    expect(stripTrailingResearchHomeAffiliationClause(prose)).toBe(prose);
+  });
+
+  it('served short-description path strips a terminal affiliation clause', () => {
+    expect(
+      sanitizeResearchEntityShortDescription('Studies American Politics at Yale University.'),
+    ).toBe('Studies American Politics.');
   });
 });
 
