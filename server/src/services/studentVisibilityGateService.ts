@@ -155,6 +155,7 @@ const sourceDescriptionRepairReasons = new Set([
   'missing_source_url',
   'missing_official_source',
   'application_source_only',
+  'blank_public_description',
 ]);
 const piRepairReasons = new Set([
   'missing_lead',
@@ -208,6 +209,7 @@ export function isBlockingVisibilityReason(reason: string): boolean {
     [
       'application_source_only',
       'archive_review',
+      'blank_public_description',
       'content_page_risk',
       'duplicate_name_risk',
       'duplicate_risk',

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BLANK_PUBLIC_DESCRIPTION_REASON,
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
+  enforceStudentReadyDescriptionInvariant,
   hasProfileAreaShellDuplicateRisk,
+  recordHasNoUsablePublicDescription,
 } from '../studentVisibilityTier';
 
 describe('computeResearchEntityStudentVisibility', () => {
@@ -1366,6 +1369,39 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.reasons).not.toContain('thin_description');
   });
 
+  it('blocks a blank-description program from student_ready even under an operator override (issue #1425)', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Research Internship Program',
+      studentFacingCategory: 'Structured summer program',
+      programKind: 'STRUCTURED_PROGRAM',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/research-internship',
+      applicationLink: 'https://apply.yale.edu/research-internship',
+      undergraduateOnly: true,
+      studentVisibilityOverrideTier: 'student_ready',
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('operator_override');
+    expect(result.reasons).toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('lets an operator override still publish a described program the operator vouches for', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Research Travel Grant',
+      studentFacingCategory: 'Research travel funding',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      description:
+        'Supports undergraduate travel for research, fieldwork, and archival study away from campus over the summer.',
+      sourceUrl: 'https://yalecollege.yale.edu/travel-research',
+      applicationLink: 'https://apply.yale.edu/travel-research',
+      undergraduateOnly: true,
+      studentVisibilityOverrideTier: 'student_ready',
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
   it('does not treat a contact-only summary as a student-facing description', () => {
     const result = computeProgramStudentVisibility({
       title: 'Robert C. Bates Summer Fellowship',
@@ -1442,5 +1478,76 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).not.toContain('missing_lead');
     expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+
+  it('blocks a blank-description research entity from student_ready even under an operator override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'blank-research-override',
+        name: 'Example Lab',
+        slug: 'example-lab-blank-override',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription: '',
+        fullDescription: '',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('operator_override');
+  });
+});
+
+describe('enforceStudentReadyDescriptionInvariant', () => {
+  const blankRecord = { fullDescription: '   ', shortDescription: '', description: '', summary: '' };
+  const describedRecord = {
+    fullDescription: 'The lab studies causal inference methods for public health research.',
+  };
+
+  it('downgrades a student_ready result with no usable description to operator_review', () => {
+    const result = enforceStudentReadyDescriptionInvariant(
+      { tier: 'student_ready', computedTier: 'student_ready', reasons: ['operator_override'] },
+      blankRecord,
+    );
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('student_ready');
+    expect(result.reasons).toContain('operator_override');
+    expect(result.reasons).toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('leaves a student_ready result with a usable description unchanged', () => {
+    const input = {
+      tier: 'student_ready' as const,
+      computedTier: 'student_ready' as const,
+      reasons: ['source_backed_description'],
+    };
+    const result = enforceStudentReadyDescriptionInvariant(input, describedRecord);
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('does not touch non-student_ready tiers even when the description is blank', () => {
+    for (const tier of ['limited_but_safe', 'operator_review', 'suppressed'] as const) {
+      const result = enforceStudentReadyDescriptionInvariant(
+        { tier, computedTier: tier, reasons: [] },
+        blankRecord,
+      );
+      expect(result.tier).toBe(tier);
+      expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+    }
+  });
+
+  it('treats a contact-only or boilerplate-only field as no usable description', () => {
+    expect(recordHasNoUsablePublicDescription(blankRecord)).toBe(true);
+    expect(recordHasNoUsablePublicDescription(describedRecord)).toBe(false);
   });
 });
