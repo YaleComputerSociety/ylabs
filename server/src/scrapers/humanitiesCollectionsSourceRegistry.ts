@@ -9,7 +9,12 @@
  * collections-as-data initiatives, and museum/archive research. It exists so the
  * reserved-but-under-produced entity types (`DIGITAL_HUMANITIES_PROJECT`,
  * `COLLECTIONS_INITIATIVE`, `ARCHIVE_OR_MUSEUM_PROJECT`) have a discoverable
- * follow-up backlog after the DHLab pilot (#1345).
+ * follow-up backlog after the DHLab pilot (#1345). Every entry has since
+ * landed: the DHLab (`DIGITAL_HUMANITIES_PROJECT`), both
+ * `ARCHIVE_OR_MUSEUM_PROJECT` homes (Peabody #1349, Beinecke #1455), and the
+ * Yale Library collections-as-data `COLLECTIONS_INITIATIVE` producer, so the
+ * backlog is fully covered. The map is retained for reporting and to record any
+ * future humanities/collections coverage gap.
  *
  * `url` values are crawl ENTRY POINTS (listing/index/landing pages). They must
  * never be persisted as an Observation/Source citation: every emitted artifact
@@ -49,25 +54,28 @@ export const HUMANITIES_COLLECTIONS_SOURCE_REGISTRY: HumanitiesCollectionsSource
     url: 'https://peabody.yale.edu/explore/collections',
     name: 'Yale Peabody Museum research and collections programs',
     entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
-    status: 'gap',
+    status: 'covered',
+    coveredBy: ['peabody-collections-research'],
     notes:
-      'Museum-run, undergraduate-facing research and collections programs. Its own follow-up once the DIGITAL_HUMANITIES_PROJECT path is proven; would mint ARCHIVE_OR_MUSEUM_PROJECT homes citing each program own page.',
+      'Museum-run, undergraduate-facing research and collections programs. peabody-collections-research walks the divisions index as a crawl seed and mints ARCHIVE_OR_MUSEUM_PROJECT homes citing each individual division own page (#1349 / PR #1367).',
   },
   {
-    url: 'https://beinecke.library.yale.edu/research-teaching',
+    url: 'https://beinecke.library.yale.edu/beinecke/researchers',
     name: 'Beinecke Rare Book & Manuscript Library research programs',
     entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
-    status: 'gap',
+    status: 'covered',
+    coveredBy: ['beinecke-collections-research'],
     notes:
-      'Beinecke runs undergraduate-facing research fellowships and collections research. Follow-up; would mint ARCHIVE_OR_MUSEUM_PROJECT homes citing each program own page.',
+      'Beinecke runs structured, undergraduate-relevant research fellowship programs. beinecke-collections-research walks the fellowships index as a crawl seed and mints ARCHIVE_OR_MUSEUM_PROJECT homes citing each individual program own page; discovery-only, fails closed on contact/access and never captures the awarded-fellow roster (#1455). Programs without a citable own-page description are skipped.',
   },
   {
     url: 'https://library.yale.edu/explore-collections#digital',
     name: 'Yale Library collections-as-data initiatives',
     entityType: 'COLLECTIONS_INITIATIVE',
-    status: 'gap',
+    status: 'covered',
+    coveredBy: ['library-collections-as-data'],
     notes:
-      'Yale Library collections-as-data / digital-collections initiatives. Follow-up; would mint COLLECTIONS_INITIATIVE homes citing each initiative own page.',
+      'Yale Library collections-as-data / digital-collections initiatives. library-collections-as-data walks the Yale University Library online exhibitions catalog as a crawl seed and mints COLLECTIONS_INITIATIVE homes citing each individual exhibition own page. This library-wide COLLECTIONS_INITIATIVE producer is the proper home for library-scale digital-collections platforms (Yale Library Digital Collections, Aviary audiovisual collections, the Yale Daily News Historical Archive, EliScholar) rather than the Beinecke ARCHIVE_OR_MUSEUM_PROJECT producer, to avoid misattributing them to Beinecke.',
   },
 ];
 

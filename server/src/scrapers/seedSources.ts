@@ -374,6 +374,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'beinecke-collections-research',
+    displayName: 'Yale Beinecke Library research fellowship programs',
+    description:
+      'Yale Beinecke Rare Book & Manuscript Library research fellowship programs; mints ARCHIVE_OR_MUSEUM_PROJECT museum/collections research homes, completing the humanities-collections coverage backlog. Cites each individual program page (never the fellowships index) and emits discovery-only identity and an official-page description. Fails closed on contact and access data and never captures the awarded-fellow roster.',
+    baseUrl: 'https://beinecke.library.yale.edu/beinecke/researchers/fellowships',
+    defaultWeight: 0.85,
+    cadence: 'monthly',
+  },
+  {
     name: 'research-area-source-extractor',
     displayName: 'Research-area source extractor',
     description:
