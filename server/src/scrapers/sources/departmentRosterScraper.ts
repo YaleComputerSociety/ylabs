@@ -978,8 +978,7 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
 
     const href = nameLink.attr('href') || '';
     const profileUrl = /^https?:\/\//i.test(href) ? href : undefined;
-    const title =
-      cleanText(desc.find('p em').first().text()).replace(/[,;]\s*$/, '') || undefined;
+    const title = cleanText(desc.find('p em').first().text()).replace(/[,;]\s*$/, '') || undefined;
     const imageUrl = imageUrlFromElement(
       card.find('.field-name-field-person-photo').first(),
       ctx.pageUrl,

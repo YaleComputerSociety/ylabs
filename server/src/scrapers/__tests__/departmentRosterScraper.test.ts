@@ -886,7 +886,11 @@ describe('fieldCollectionPersonExtractor', () => {
           <h3>Casey Fixture</h3><p><em>Lecturer</em></p>
         </div></div></div>
       </div>`;
-    expect(fieldCollectionPersonExtractor(html, { pageUrl: 'https://yibs.yale.edu/people/faculty-affiliates' })).toEqual([
+    expect(
+      fieldCollectionPersonExtractor(html, {
+        pageUrl: 'https://yibs.yale.edu/people/faculty-affiliates',
+      }),
+    ).toEqual([
       {
         name: 'Robin Fixture',
         profileUrl: 'https://environment.yale.edu/profile/robin-fixture',
