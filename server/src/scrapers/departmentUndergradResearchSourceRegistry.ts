@@ -303,16 +303,52 @@ export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE_REGISTRY: DepartmentUndergradR
     coveredBy: ['department-undergrad-research'],
   },
 
-  // ---- Gaps: verified live pathway pages not yet wired ----------------------------
+  {
+    url: 'https://evst.yale.edu/evst-senior-essay',
+    department: 'Environmental Studies',
+    school: 'Yale Faculty of Arts and Sciences',
+    status: 'covered',
+    impactTier: 2,
+    coveredByKey: 'environmental-studies',
+    coveredBy: ['department-undergrad-research'],
+    notes:
+      'Verified live: the EVST senior thesis is the culmination of the major for both BA and BS, an original research essay written in the EVST 4960 senior colloquium under a primary Yale faculty thesis advisor.',
+  },
   {
     url: 'https://arthistory.yale.edu/undergraduate/senior-essay',
     department: 'History of Art',
     school: 'Yale Faculty of Arts and Sciences',
-    status: 'gap',
+    status: 'covered',
     impactTier: 3,
+    coveredByKey: 'history-of-art',
+    coveredBy: ['department-undergrad-research'],
     notes:
-      'Verified live: a real, year-dated senior-essay page with proposal deadlines, a staged milestone timeline (proposal, outline, draft, final essay), and two Senior Essay Workshop/Colloquium sessions per term. No config entry yet.',
+      'Verified live: a real, year-dated senior-essay page with proposal deadlines, a staged milestone timeline (proposal, outline, draft, final essay), and two Senior Essay Workshop/Colloquium sessions per term.',
   },
+  {
+    url: 'https://filmstudies.yale.edu/undergraduate/senior-requirement',
+    department: 'Film and Media Studies',
+    school: 'Yale Faculty of Arts and Sciences',
+    status: 'covered',
+    impactTier: 3,
+    coveredByKey: 'film-and-media-studies',
+    coveredBy: ['department-undergrad-research'],
+    notes:
+      'Verified live: describes three senior-requirement tracks (two-seminar essay, independent research via FILM 491/492 with a faculty-approved prospectus, or a hybrid), plus a creative senior-project alternative and a production track.',
+  },
+  {
+    url: 'https://jackson.yale.edu/faculty-research/undergraduate-capstone-faculty',
+    department: 'Global Affairs',
+    school: 'Jackson School of Global Affairs',
+    status: 'covered',
+    impactTier: 2,
+    coveredByKey: 'global-affairs',
+    coveredBy: ['department-undergrad-research'],
+    notes:
+      'Verified live: lists named capstone faculty and describes the Global Affairs major senior capstone (a client-facing public-policy group project overseen by a faculty instructor, weekly team meetings) in place of an individual senior thesis.',
+  },
+
+  // ---- Gaps: verified live pathway pages not yet wired ----------------------------
   {
     url: 'https://erm.yale.edu/undergraduate/senior-requirement',
     department: 'Ethnicity, Race, and Migration',
@@ -320,25 +356,7 @@ export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE_REGISTRY: DepartmentUndergradR
     status: 'gap',
     impactTier: 3,
     notes:
-      'Verified live: describes two senior-requirement paths (year-long senior essay/project with a senior colloquium and project seminar, or a two-seminar path with a shorter essay), plus an independent-study request form and a senior-essay adviser form. No config entry yet.',
-  },
-  {
-    url: 'https://filmstudies.yale.edu/undergraduate/senior-requirement',
-    department: 'Film and Media Studies',
-    school: 'Yale Faculty of Arts and Sciences',
-    status: 'gap',
-    impactTier: 3,
-    notes:
-      'Verified live: describes three senior-requirement tracks (two-seminar essay, independent research via FILM 491/492 with a faculty-approved prospectus, or a hybrid), plus a creative senior-project alternative and a production track. No config entry yet.',
-  },
-  {
-    url: 'https://jackson.yale.edu/faculty-research/undergraduate-capstone-faculty',
-    department: 'Global Affairs',
-    school: 'Jackson School of Global Affairs',
-    status: 'gap',
-    impactTier: 2,
-    notes:
-      'Verified live: lists named capstone faculty and describes the Global Affairs major senior capstone (a client-facing public-policy group project overseen by a faculty instructor, weekly team meetings) in place of an individual senior thesis. No config entry yet.',
+      'Verified live but client-rendered: the senior-requirement content (two senior-requirement paths, independent-study request form, senior-essay adviser form) is loaded by JavaScript, so the static HTML the department-undergrad-research fetch retrieves carries only navigation and footer chrome. Blocked until the lane gains renderedFetch support; wiring it into the static config now would fail closed to a bare subject line.',
   },
 ];
 

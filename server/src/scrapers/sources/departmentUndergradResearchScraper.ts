@@ -282,6 +282,38 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
     parser: 'general-guidance',
     title: "Women's, Gender, and Sexuality Studies Senior Essay Research",
   },
+  {
+    key: 'environmental-studies',
+    url: 'https://evst.yale.edu/evst-senior-essay',
+    department: 'Environmental Studies',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Environmental Studies Senior Essay Research',
+  },
+  {
+    key: 'global-affairs',
+    url: 'https://jackson.yale.edu/faculty-research/undergraduate-capstone-faculty',
+    department: 'Global Affairs',
+    school: 'Jackson School of Global Affairs',
+    parser: 'general-guidance',
+    title: 'Global Affairs Undergraduate Capstone Research',
+  },
+  {
+    key: 'history-of-art',
+    url: 'https://arthistory.yale.edu/undergraduate/senior-essay',
+    department: 'History of Art',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'History of Art Senior Essay Research',
+  },
+  {
+    key: 'film-and-media-studies',
+    url: 'https://filmstudies.yale.edu/undergraduate/senior-requirement',
+    department: 'Film and Media Studies',
+    school: 'Yale Faculty of Arts and Sciences',
+    parser: 'general-guidance',
+    title: 'Film and Media Studies Senior Essay Research',
+  },
 ];
 
 function normalizeText(value: string): string {
@@ -335,7 +367,7 @@ const sentenceList = (text: string): string[] =>
     .filter(Boolean) || [];
 
 const undergradResearchGuidancePattern =
-  /\b(?:undergraduate students?|students?|majors?)\b.{0,180}\bresearch\b|\bresearch\b.{0,180}\b(?:undergraduate students?|students?|majors?|faculty|laborator(?:y|ies)|opportunit(?:y|ies)|assistantships?)\b|\bsenior\s+(?:essay|thesis|project)\b.{0,180}\b(?:research|writing|write|independent|faculty|advis(?:e|er|or)|prospectus|mentor|director of undergraduate studies)\b|\b(?:research|writing|independent research|faculty advis(?:e|er|or)|prospectus|director of undergraduate studies)\b.{0,180}\bsenior\s+(?:essay|thesis|project)\b/i;
+  /\b(?:undergraduate students?|students?|majors?)\b.{0,180}\bresearch\b|\bresearch\b.{0,180}\b(?:undergraduate students?|students?|majors?|faculty|laborator(?:y|ies)|opportunit(?:y|ies)|assistantships?)\b|\bsenior\s+(?:essay|thesis|project)\b.{0,180}\b(?:research|writing|write|independent|faculty|advis(?:e|er|or)|prospectus|mentor|director of undergraduate studies)\b|\b(?:research|writing|independent research|faculty advis(?:e|er|or)|prospectus|director of undergraduate studies)\b.{0,180}\bsenior\s+(?:essay|thesis|project)\b|\bcapstone\s+(?:project|research|essay|thesis)\b/i;
 
 function usefulUndergradResearchSentences(text: string): string[] {
   const seen = new Set<string>();
@@ -441,7 +473,7 @@ function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | un
 }
 
 const seniorPathwayPattern =
-  /\bsenior\s+(?:essay|thesis|project|research)\b|\bdirected\s+(?:reading|study|research)\b|\bindependent\s+(?:study|research)\b/i;
+  /\bsenior\s+(?:essay|thesis|project|research)\b|\bdirected\s+(?:reading|study|research)\b|\bindependent\s+(?:study|research)\b|\bcapstone\s+(?:project|research|essay|thesis)\b/i;
 
 const seniorPathwayResearchContextPattern =
   /\b(?:research|writing|write|independent|faculty|advis(?:e|er|or)|prospectus|mentor|director of undergraduate studies)\b/i;
