@@ -118,6 +118,24 @@ describe('buildObservationFingerprint', () => {
     expect(contaminated).toBe(corrected);
   });
 
+  it('makes undergradEvidenceQuote latest-wins so a corrected quote supersedes a stale historical one', () => {
+    const base = {
+      sourceName: 'lab-microsite-undergrad-llm',
+      entityType: 'researchEntity',
+      entityKey: 'smith-lab',
+      field: 'undergradEvidenceQuote',
+    };
+    const historical = buildObservationFingerprint({
+      ...base,
+      value: 'Matthew Barber (Physics, Yale College, 2009); Associate at Flexpoint Ford',
+    });
+    const corrected = buildObservationFingerprint({
+      ...base,
+      value: 'Jane Doe is a junior at Yale College majoring in Physics.',
+    });
+    expect(historical).toBe(corrected);
+  });
+
   it('makes every source-owned fellowship snapshot field latest-wins', () => {
     const base = {
       sourceName: 'yale-college-fellowships-office',

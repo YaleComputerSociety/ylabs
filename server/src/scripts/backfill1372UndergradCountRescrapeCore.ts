@@ -5,6 +5,11 @@
  * carrying pre-fix, ungated counts. These entities are identified by their
  * backing Observation predating the #1325 merge commit.
  */
+import {
+  isHistoricalUndergradEvidence,
+  namesNonYaleInstitution,
+} from '../scrapers/sources/labMicrositeUndergradLLMExtractor';
+
 export const PR_1325_MERGED_AT = new Date('2026-08-24T02:21:29.000Z');
 
 export const BACKFILL_1372_SOURCE_NAME = 'lab-microsite-undergrad-llm';
@@ -95,4 +100,29 @@ export function selectBackfillTargetSlugs(
     targets.push(slug);
   }
   return targets.sort();
+}
+
+/**
+ * currentUndergradCount's #1325 gate never applied to the sibling
+ * undergradEvidenceQuote field (#1372), so a historical/non-Yale quote can
+ * still be sitting in an active Observation from before the gate existed, or
+ * from a source (e.g. a one-time cache backfill) that never gated at all.
+ */
+export function isContaminatedUndergradEvidenceQuote(quote: unknown): boolean {
+  if (typeof quote !== 'string') return false;
+  const text = quote.trim();
+  if (!text) return false;
+  return isHistoricalUndergradEvidence(text) || namesNonYaleInstitution(text);
+}
+
+export interface EvidenceQuoteObservationSummary {
+  id: string;
+  entityKey: string;
+  value: unknown;
+}
+
+export function selectContaminatedEvidenceQuoteObservations(
+  observations: EvidenceQuoteObservationSummary[],
+): EvidenceQuoteObservationSummary[] {
+  return observations.filter((obs) => isContaminatedUndergradEvidenceQuote(obs.value));
 }

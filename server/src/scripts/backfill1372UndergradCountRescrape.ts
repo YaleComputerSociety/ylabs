@@ -29,7 +29,8 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
-import { materializeEntity } from '../scrapers/entityMaterializer';
+import { materializeEntity, shouldIgnoreObservationForEntityMaterialization } from '../scrapers/entityMaterializer';
+import { syncEntity } from '../services/meiliSyncService';
 import {
   LabMicrositeUndergradLLMExtractor,
   candidateLabFromResearchEntityDoc,
@@ -42,9 +43,11 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   BACKFILL_1372_SOURCE_NAME,
   BACKFILL_1372_WRITE_ONLY_FIELDS,
+  isContaminatedUndergradEvidenceQuote,
   isLegacyCurrentUndergradCountObservation,
   parseBackfill1372Args,
   selectBackfillTargetSlugs,
+  selectContaminatedEvidenceQuoteObservations,
   type CandidateEntitySummary,
 } from './backfill1372UndergradCountRescrapeCore';
 
@@ -200,6 +203,108 @@ async function runExtractionForSlugs(
   };
 }
 
+interface EvidenceQuoteSweepResult {
+  contaminatedCount: number;
+  affectedSlugs: string[];
+  rematerializedSlugs: string[];
+}
+
+/**
+ * undergradEvidenceQuote's #1325 gate gap (#1372) let historical/non-Yale
+ * quotes reach production from ANY source, not just entities discovered via
+ * the currentUndergradCount legacy-timestamp check. This sweeps every active
+ * undergradEvidenceQuote Observation corpus-wide and supersedes the
+ * contaminated ones so resolution falls back to a clean value (or clears the
+ * field when none remains) rather than continuing to surface a bad quote.
+ */
+async function sweepContaminatedEvidenceQuotes(apply: boolean): Promise<EvidenceQuoteSweepResult> {
+  const activeQuoteObservations = await Observation.find({
+    entityType: 'researchEntity',
+    field: 'undergradEvidenceQuote',
+    superseded: false,
+  })
+    .select('_id entityKey value')
+    .lean<Array<{ _id: unknown; entityKey?: string; value: unknown }>>();
+
+  const contaminatedObservations = selectContaminatedEvidenceQuoteObservations(
+    activeQuoteObservations.map((obs) => ({
+      id: String(obs._id),
+      entityKey: obs.entityKey || '',
+      value: obs.value,
+    })),
+  );
+
+  // The materialized ResearchEntity field is the ground truth for what's
+  // actually served, and can carry a contaminated value even when every
+  // backing Observation is already superseded (e.g. a prior run superseded
+  // the Observation but materializeEntity never $unsets a field down to
+  // nothing - see restrictMaterializerSetToFields). Check it directly rather
+  // than trusting Observation state alone.
+  const materializedEntities = await ResearchEntity.find({
+    undergradEvidenceQuote: { $exists: true, $ne: '' },
+  })
+    .select('slug undergradEvidenceQuote')
+    .lean<Array<{ slug: string; undergradEvidenceQuote?: string }>>();
+  const materializedContaminatedSlugs = materializedEntities
+    .filter((entity) => isContaminatedUndergradEvidenceQuote(entity.undergradEvidenceQuote))
+    .map((entity) => entity.slug);
+
+  const affectedSlugs = Array.from(
+    new Set([
+      ...contaminatedObservations.map((obs) => obs.entityKey).filter(Boolean),
+      ...materializedContaminatedSlugs,
+    ]),
+  ).sort();
+
+  const rematerializedSlugs: string[] = [];
+  if (apply && affectedSlugs.length > 0) {
+    if (contaminatedObservations.length > 0) {
+      await Observation.updateMany(
+        { _id: { $in: contaminatedObservations.map((obs) => obs.id) } },
+        { $set: { superseded: true } },
+      );
+    }
+
+    const stillActive = await Observation.find({
+      entityType: 'researchEntity',
+      field: 'undergradEvidenceQuote',
+      entityKey: { $in: affectedSlugs },
+      superseded: false,
+    })
+      .select('entityKey field value')
+      .lean<Array<{ entityKey?: string; field: string; value: unknown }>>();
+    // Mirror materializeEntity's own exclusion so "has a candidate" matches what
+    // it will actually resolve to, not just "an active Observation exists" -
+    // shouldIgnoreObservationForEntityMaterialization also drops implausible or
+    // recency/institution-gated quotes (see #1372).
+    const slugsWithRemainingObservation = new Set(
+      stillActive
+        .filter((obs) => !shouldIgnoreObservationForEntityMaterialization('researchEntity', obs))
+        .map((obs) => obs.entityKey)
+        .filter(Boolean),
+    );
+
+    for (const slug of affectedSlugs) {
+      if (slugsWithRemainingObservation.has(slug)) {
+        // materializeEntity never $unsets a field with zero active observations
+        // (see restrictMaterializerSetToFields), so it only suffices when a
+        // clean observation remains for the resolver to fall back to.
+        await materializeEntity('researchEntity', { entityKey: slug }, { dryRun: false, writeOnlyFields: ['undergradEvidenceQuote'] });
+      } else {
+        await ResearchEntity.updateOne(
+          { slug },
+          { $unset: { undergradEvidenceQuote: '', 'confidenceByField.undergradEvidenceQuote': '' } },
+        );
+        const fresh = await ResearchEntity.findOne({ slug }).lean();
+        if (fresh) await syncEntity('researchEntity', fresh);
+      }
+      rematerializedSlugs.push(slug);
+    }
+  }
+
+  return { contaminatedCount: contaminatedObservations.length, affectedSlugs, rematerializedSlugs };
+}
+
 function diffForSlug(
   slug: string,
   before: number | undefined,
@@ -276,6 +381,14 @@ async function main(): Promise<void> {
     );
   }
 
+  const evidenceQuoteSweep = await sweepContaminatedEvidenceQuotes(args.apply);
+  console.log(
+    `Evidence-quote sweep: ${evidenceQuoteSweep.contaminatedCount} contaminated observation(s) across ${evidenceQuoteSweep.affectedSlugs.length} entities.`,
+  );
+  if (evidenceQuoteSweep.affectedSlugs.length > 0) {
+    console.log(`  ${evidenceQuoteSweep.affectedSlugs.join(', ')}`);
+  }
+
   const report = {
     generatedAt: new Date().toISOString(),
     mode: args.apply ? 'apply' : 'dry-run',
@@ -285,6 +398,7 @@ async function main(): Promise<void> {
     entitiesWithChangedCount: changedCount,
     diffs,
     materializeReports,
+    evidenceQuoteSweep,
   };
   if (args.output) {
     const safeOutput = resolveSafeJsonReportOutputPath(args.output);
