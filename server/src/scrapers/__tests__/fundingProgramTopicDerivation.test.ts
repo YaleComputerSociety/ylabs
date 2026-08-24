@@ -36,6 +36,15 @@ describe('deriveFundingProgramTopic', () => {
     ).toEqual({ department: 'Classics', researchArea: undefined });
   });
 
+  it('derives a department from a description naming the field even when the title glues the acronym to another word', () => {
+    expect(
+      deriveFundingProgramTopic(
+        'REEESNe Student Internship and Research Grant',
+        'Supports eligible student internships or research connected to Russian, East European, and Eurasian studies.',
+      ),
+    ).toEqual({ department: 'Russian, East European, and Eurasian Studies', researchArea: undefined });
+  });
+
   it('does not guess a topic from a bare region or subject mention', () => {
     expect(
       deriveFundingProgramTopic(

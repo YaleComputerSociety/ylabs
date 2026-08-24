@@ -54,7 +54,7 @@ export const FUNDING_PROGRAM_TOPIC_RULES: readonly FundingProgramTopicRule[] = [
     department: 'Economics',
   },
   {
-    pattern: /\breees\b/i,
+    pattern: /russian,? east european,? and eurasian studies|\breees/i,
     department: 'Russian, East European, and Eurasian Studies',
   },
   {
