@@ -6,10 +6,17 @@
  * jest-dom matchers. We assert on text content / attributes directly.
  */
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { render as rtlRender } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement, ReactNode } from 'react';
 
 import LabHeader from '../LabHeader';
 import { ResearchGroup } from '../../../types/researchGroup';
+
+const render = (ui: ReactElement) =>
+  rtlRender(ui, {
+    wrapper: ({ children }: { children: ReactNode }) => <MemoryRouter>{children}</MemoryRouter>,
+  });
 
 const baseGroup: ResearchGroup = {
   _id: 'g1',

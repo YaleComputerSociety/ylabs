@@ -63,6 +63,12 @@ router.get(
   asyncHandler(researchGroupController.getResearchFieldPage),
 );
 
+router.get(
+  '/school/:slug',
+  isAuthenticated,
+  asyncHandler(researchGroupController.getResearchSchoolPage),
+);
+
 router.get('/:slug', asyncHandler(researchGroupController.getResearchGroupBySlug));
 
 export default router;
