@@ -404,6 +404,32 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.fullDescription).toBe('');
   });
 
+  it('strips only the appointment-opener sentence on a faculty entity, keeping the research content (#1586)', () => {
+    const facultyResearch = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'Elleza Kelley is an Assistant Professor of English and Black Studies, and affiliate faculty in American Studies. Kelley works on African American literature, print culture, and Black feminist theory in the twentieth century.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(facultyResearch);
+
+    expect(sanitized.fullDescription).toBe(
+      'Kelley works on African American literature, print culture, and Black feminist theory in the twentieth century.',
+    );
+  });
+
+  it('still blanks a faculty-entity biography opener with no surviving research content (#1586)', () => {
+    const facultyResearch = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription:
+        'Jane Doe is the Sterling Professor of Physics. She was born in Ohio and joined the Yale faculty in 2001.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(facultyResearch);
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
   it('repairs a subject-less "Research {verb}..." fullDescription on a LAB entity (#999)', () => {
     const lab = {
       entityType: 'LAB',
