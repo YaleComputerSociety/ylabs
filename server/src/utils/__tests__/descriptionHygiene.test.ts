@@ -1949,6 +1949,59 @@ describe('isNonSelfContainedShortDescription pronoun/CV-opener guard (#1400)', (
   });
 });
 
+describe('isNonSelfContainedShortDescription mid-discourse-opener guard (#1762)', () => {
+  const BARE_IT_OPENERS = [
+    'It seeks to enhance the frequency and quality of shared decision-making for patients.',
+    'It focuses on developing new therapeutics for age-related neurological disorders.',
+  ];
+
+  const DISCOURSE_CONNECTIVE_OPENERS = [
+    'Moreover, their laboratory is interested in developing therapeutics for brain disorders.',
+    'In addition to the development of new theoretical frameworks, Professor Moult is also interested in collider physics.',
+    'In addition, a broad area of research and technology development would also benefit from these advances in imaging.',
+    'Additionally, the group applies machine learning methods to genomic datasets.',
+    'For example, the lab has developed new assays for measuring synaptic activity.',
+  ];
+
+  const SUBJECTLESS_FIRST_PERSON_PLURAL_OPENERS = [
+    'Uses integrative tools that allow us to undertake a systems biology approach to disease.',
+    'Employs computational methods that help our team model protein folding.',
+  ];
+
+  it('fails a bare "It" subject-pronoun opener closed', () => {
+    for (const text of BARE_IT_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('fails a leading discourse-connective opener closed', () => {
+    for (const text of DISCOURSE_CONNECTIVE_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('fails a subjectless synthesis-verb lead that dangles an us/we/our reference', () => {
+    for (const text of SUBJECTLESS_FIRST_PERSON_PLURAL_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('does not treat "US" as a first-person-plural reference', () => {
+    const text = 'Studies the US Civil War and its legacy.';
+    expect(isNonSelfContainedShortDescription(text)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(text)).toBe(text);
+  });
+
+  it('keeps a synthesis-verb lead that names its own subject', () => {
+    const named = 'Studies quantum error correction using superconducting qubit devices.';
+    expect(isNonSelfContainedShortDescription(named)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(named)).toBe(named);
+  });
+});
+
 describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () => {
   it('flags a book-citation glued after the Studies template', () => {
     const text =
