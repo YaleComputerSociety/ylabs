@@ -192,7 +192,7 @@ function fieldLines($: cheerio.CheerioAPI, root: cheerio.Cheerio<any>): string[]
   return lines;
 }
 
-const LABEL_LINE_RE = /^[A-Za-z][A-Za-z '&/-]{1,40}\s*[:\-]\s/;
+const LABEL_LINE_RE = /^[A-Za-z][A-Za-z '&/-]{1,40}\s*[:-]\s/;
 
 function extractDescription($: cheerio.CheerioAPI, root: cheerio.Cheerio<any>): string | undefined {
   const paragraphs: string[] = [];

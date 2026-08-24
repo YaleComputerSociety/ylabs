@@ -21,6 +21,7 @@ import {
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
   hasProfileAreaShellDuplicateRisk,
+  isStudentReadySoftSignalReason,
   STUDENT_VISIBILITY_VERSION,
 } from './studentVisibilityTier';
 import {
@@ -203,6 +204,10 @@ const repairStageForReasons = (reasons: string[]) => {
 
 export function isBlockingVisibilityReason(reason: string): boolean {
   if (evidenceReasons.has(reason)) return false;
+  // SOFT enrichment signals (issue #1802) never gate student_ready, so they are
+  // never repair blockers either - even the `missing_*` ones that would trip the
+  // prefix rule below. Single source of truth: STUDENT_READY_SOFT_SIGNAL_REASONS.
+  if (isStudentReadySoftSignalReason(reason)) return false;
   return (
     reason.startsWith('missing_') ||
     reason.endsWith('_only') ||

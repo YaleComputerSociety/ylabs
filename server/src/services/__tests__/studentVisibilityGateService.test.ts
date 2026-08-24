@@ -355,6 +355,8 @@ describe('studentVisibilityGateService', () => {
     expect(isBlockingVisibilityReason('formalization_only')).toBe(true);
     expect(isBlockingVisibilityReason('source_backed_description')).toBe(false);
     expect(isBlockingVisibilityReason('concrete_next_step')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_action_evidence')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_facet_signal')).toBe(false);
   });
 
   it('treats visibility reason and computed tier drift as material changes', () => {
@@ -467,11 +469,11 @@ describe('studentVisibilityGateService', () => {
       expect.objectContaining({
         collection: 'research',
         recordId: 'entity-held',
-        blockerReasons: ['missing_description', 'missing_action_evidence'],
-        evidenceSignals: ['concrete_next_step'],
+        blockerReasons: ['missing_description'],
+        evidenceSignals: ['missing_action_evidence', 'concrete_next_step'],
         repairStage: 'source_description',
         repairStatus: 'queued',
-        remainingBlockers: ['missing_description', 'missing_action_evidence'],
+        remainingBlockers: ['missing_description'],
         status: 'open',
       }),
     );
@@ -651,7 +653,7 @@ describe('buildStudentVisibilityGateApplyOps', () => {
     expect(queueOps[0].updateOne.update.$set).toMatchObject({
       status: 'open',
       recordId: 'entity-held',
-      blockerReasons: ['missing_description', 'missing_action_evidence'],
+      blockerReasons: ['missing_description'],
     });
   });
 

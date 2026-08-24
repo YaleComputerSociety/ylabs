@@ -488,6 +488,68 @@ export function enforceStudentReadyDescriptionInvariant(
   };
 }
 
+// The SOFT enrichment signals (issue #1802). These enrich ranking, badges, and
+// the card's optional sub-payloads, but they NEVER gate `student_ready`: the
+// student can always reach out to the professor (the universal next step per
+// docs/product-context.md), so their absence makes a card less enriched, not
+// wrong. Recorded as reasons for transparency and ranking; excluded from every
+// hard gate. The human-readable source of truth is docs/student-ready-definition.md.
+export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
+  'source_backed_description',
+  'concrete_next_step',
+  'missing_action_evidence',
+  'missing_facet_signal',
+]);
+
+export const isStudentReadySoftSignalReason = (reason: string): boolean =>
+  STUDENT_READY_SOFT_SIGNAL_REASONS.has(reason);
+
+/**
+ * The correctness facts that decide `student_ready`. Each field is a HARD
+ * blocker category from the canonical definition (docs/student-ready-definition.md):
+ * every field must be `true` for a card to be `student_ready`. Enrichment
+ * signals are deliberately absent - they are soft and never appear here.
+ */
+export interface ResearchEntityStudentReadyCorrectness {
+  // (a) A real, coherent, non-boilerplate description that renders a complete,
+  // self-referential card (public-description invariant passes and the card is
+  // not sparse). Incoherent, boilerplate, or serve-time-blank copy fails here.
+  descriptionCoherent: boolean;
+  // (a') The card's title, type, and body describe THIS entity, not a different
+  // one (e.g. a "<Person> Lab" name typed as an org whose body is about a center).
+  entityContentMatchesCard: boolean;
+  // (b) The right person/lead is attached: a lead-requiring entity has a
+  // resolved lead, with no identity conflict or wrong-person mis-attribution.
+  rightLeadAttached: boolean;
+  // The student has a concrete way to reach the entity: a usable link-out target
+  // exists and an organizational home is not a lead-less dead end. Reach-out is
+  // the universal next step, but it presupposes a reachable target.
+  reachable: boolean;
+  // (c) Not a duplicate of an already-known entity. Suppressed shells (generic
+  // directory / biography / non-owner grant / off-scope) are removed one tier
+  // earlier, at `suppressed`.
+  notDuplicate: boolean;
+}
+
+/**
+ * THE definition of `student_ready`, in one place: an entity is `student_ready`
+ * IFF what we show is CORRECT and COHERENT. Enrichment (next step, action
+ * evidence, facet signal, source-backing) never gates this - see
+ * docs/student-ready-definition.md. Change the gate here, not in scattered
+ * conditionals.
+ */
+export function researchEntityMeetsStudentReadyDefinition(
+  correctness: ResearchEntityStudentReadyCorrectness,
+): boolean {
+  return (
+    correctness.descriptionCoherent &&
+    correctness.entityContentMatchesCard &&
+    correctness.rightLeadAttached &&
+    correctness.reachable &&
+    correctness.notDuplicate
+  );
+}
+
 export function computeResearchEntityStudentVisibility({
   entity,
   leadMembers = [],
@@ -571,6 +633,22 @@ export function computeResearchEntityStudentVisibility({
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
 
+  // The single source of truth for `student_ready` correctness (issue #1802).
+  // Every hard-blocker category is one field; enrichment signals never appear.
+  // Edit the definition in `researchEntityMeetsStudentReadyDefinition`.
+  // `descriptionCoherent` (invariant.pass + complete card) already implies a
+  // useful, source-backed description, so source-backing is not a separate gate.
+  const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
+    descriptionCoherent: publicDescription.invariant.pass && quality.cardState === 'complete',
+    entityContentMatchesCard: !labNameOrgTypeMismatch,
+    rightLeadAttached:
+      (!requiresLead || quality.leadState === 'lead_attached') &&
+      !quality.repairFlags.includes('pi_identity_conflict') &&
+      !profileIdentityRisk,
+    reachable: !quality.repairFlags.includes('missing_source_url') && !organizationalDeadEnd,
+    notDuplicate: !duplicateRisk,
+  };
+
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (
     entity.activeAtYaleCache === false ||
@@ -583,23 +661,7 @@ export function computeResearchEntityStudentVisibility({
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';
-  } else if (
-    publicDescription.invariant.pass &&
-    quality.descriptionState === 'source_backed' &&
-    quality.cardState === 'complete' &&
-    (!requiresLead || quality.leadState === 'lead_attached') &&
-    !organizationalDeadEnd &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
-    !profileIdentityRisk &&
-    !quality.repairFlags.includes('missing_source_url') &&
-    !labNameOrgTypeMismatch &&
-    !duplicateRisk
-  ) {
-    // Reaching out to the professor is always the default next step (see
-    // product-context.md), so concrete_next_step/missing_action_evidence and
-    // missing_facet_signal are soft enrichment signals only (issue #1802) - a
-    // record with a coherent, source-backed, complete card is student_ready
-    // regardless of whether either signal is present.
+  } else if (researchEntityMeetsStudentReadyDefinition(studentReadyCorrectness)) {
     computedTier = 'student_ready';
   } else if (
     quality.descriptionState === 'source_backed' &&

@@ -6,8 +6,65 @@ import {
   computeResearchEntityStudentVisibility,
   enforceStudentReadyDescriptionInvariant,
   hasProfileAreaShellDuplicateRisk,
+  isStudentReadySoftSignalReason,
   recordHasNoUsablePublicDescription,
+  researchEntityMeetsStudentReadyDefinition,
+  STUDENT_READY_SOFT_SIGNAL_REASONS,
+  type ResearchEntityStudentReadyCorrectness,
 } from '../studentVisibilityTier';
+
+describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)', () => {
+  const correct: ResearchEntityStudentReadyCorrectness = {
+    descriptionCoherent: true,
+    entityContentMatchesCard: true,
+    rightLeadAttached: true,
+    reachable: true,
+    notDuplicate: true,
+  };
+
+  it('is student_ready when every correctness field holds', () => {
+    expect(researchEntityMeetsStudentReadyDefinition(correct)).toBe(true);
+  });
+
+  it.each([
+    ['incoherent/boilerplate description', 'descriptionCoherent'],
+    ['content about a different entity', 'entityContentMatchesCard'],
+    ['wrong or missing lead', 'rightLeadAttached'],
+    ['no reachable target', 'reachable'],
+    ['duplicate/suppressed shell', 'notDuplicate'],
+  ] as const)('is blocked when %s (%s is false)', (_label, field) => {
+    expect(researchEntityMeetsStudentReadyDefinition({ ...correct, [field]: false })).toBe(false);
+  });
+
+  it('classifies exactly the four enrichment signals as soft, and no hard blocker as soft', () => {
+    expect([...STUDENT_READY_SOFT_SIGNAL_REASONS].sort()).toEqual(
+      [
+        'concrete_next_step',
+        'missing_action_evidence',
+        'missing_facet_signal',
+        'source_backed_description',
+      ].sort(),
+    );
+    for (const soft of [
+      'source_backed_description',
+      'concrete_next_step',
+      'missing_action_evidence',
+      'missing_facet_signal',
+    ]) {
+      expect(isStudentReadySoftSignalReason(soft)).toBe(true);
+    }
+    for (const hard of [
+      'missing_description',
+      'missing_lead',
+      'profile_identity_risk',
+      'duplicate_risk',
+      'missing_source_url',
+      'lab_name_org_type_mismatch',
+    ]) {
+      expect(isStudentReadySoftSignalReason(hard)).toBe(false);
+    }
+  });
+});
 
 describe('computeResearchEntityStudentVisibility', () => {
   it('blocks raw descriptions that become empty after lead-aware public sanitization', () => {

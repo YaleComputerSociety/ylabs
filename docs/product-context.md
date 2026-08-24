@@ -176,3 +176,9 @@ It should help a student discuss options with an advisor, not create mass-email 
 - Discipline-flexible: do not make STEM lab hierarchy the universal model.
 - Progressively disclosed: do not expose model complexity that does not improve a student decision.
 - Student-actionable: keep official-source navigation useful even when access evidence is unknown.
+
+## Student-Ready Visibility
+
+An entity is shown to students (`student_ready`) if, and only if, what we show is CORRECT and COHERENT: a real, coherent, non-boilerplate description that describes THIS entity, the right lead attached, and not a duplicate or suppressed shell.
+Because reaching out is the universal next step and is never gated, enrichment signals (source-backing, next step, action evidence, facet signals) make a card more specific but NEVER hide it.
+The canonical definition and the hard-vs-soft split live in [student-ready-definition.md](student-ready-definition.md).
