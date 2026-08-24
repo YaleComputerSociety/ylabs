@@ -249,6 +249,8 @@ const NON_PERSON_ORG_ENTITY_TYPES = new Set([
   'INSTITUTE',
   'INITIATIVE',
   'COLLECTIONS_INITIATIVE',
+  'DIGITAL_HUMANITIES_PROJECT',
+  'ARCHIVE_OR_MUSEUM_PROJECT',
   'GROUP',
   'CORE_FACILITY',
 ]);
@@ -469,6 +471,8 @@ const RESEARCH_HOME_SELF_NOUNS_BY_TYPE: Record<string, string> = {
   INSTITUTE: 'institute',
   INITIATIVE: 'initiative',
   COLLECTIONS_INITIATIVE: 'initiative',
+  DIGITAL_HUMANITIES_PROJECT: 'project',
+  ARCHIVE_OR_MUSEUM_PROJECT: 'project',
   GROUP: 'group',
   CORE_FACILITY: 'core facility',
   PROGRAM: 'program',

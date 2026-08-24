@@ -519,14 +519,19 @@ const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']
 
 /**
  * Organizational research homes (centers, institutes, initiatives, core
- * facilities) are institutionally contactable via their official page - so they
- * get a center-level ways-in even when no single named director is published.
+ * facilities, and the humanities/collections project homes - digital-humanities
+ * projects, collections initiatives, archive/museum projects) are
+ * institutionally contactable via their official page - so they get a
+ * center-level ways-in even when no single named director is published.
  */
 const ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES = new Set([
   'CENTER',
   'INSTITUTE',
   'INITIATIVE',
   'CORE_FACILITY',
+  'DIGITAL_HUMANITIES_PROJECT',
+  'COLLECTIONS_INITIATIVE',
+  'ARCHIVE_OR_MUSEUM_PROJECT',
 ]);
 
 const GRANT_OR_DIRECTORY_ONLY_HOST =

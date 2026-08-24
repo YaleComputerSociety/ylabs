@@ -72,6 +72,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 | `yaleResearchOfficialScraper.ts`         | Yale Research (provost/OVPR) official data                                                                                            |
 | `yaleCollegeFellowshipsOfficeScraper.ts` | Yale College Fellowships Office public catalog                                                                                        |
 | `yaleDirectoryScraper.ts`                | Faculty roster via Yalies API (live equivalent of the static bootstrap import)                                                        |
+| `dhLabProjectsScraper.ts`                | Yale Digital Humanities Lab projects catalog: mints `DIGITAL_HUMANITIES_PROJECT` homes from the curated `YaleDHLab/dhlab-site` `_projects` catalog (crawl seed), citing each project's own official URL; fails closed when a project has no citable own-page URL. The rendered dhlab.yale.edu catalog was retired in the library migration (#1345). Sibling humanities/collections gaps (Peabody, Beinecke, library collections-as-data) are tracked in `humanitiesCollectionsSourceRegistry.ts` |
 
 ## Deprecated: bibliographic paper pipeline
 

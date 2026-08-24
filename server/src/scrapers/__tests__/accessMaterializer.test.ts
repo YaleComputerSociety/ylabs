@@ -730,6 +730,17 @@ describe('deriveIdentifiedLeadWaysIn', () => {
         .accessSignals,
     ).toHaveLength(0);
   });
+
+  it('gives a lead-less digital-humanities project an organizational ways-in from its official page', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      researchEntityId: '64f000000000000000000011',
+      entity: { entityType: 'DIGITAL_HUMANITIES_PROJECT', name: 'Mapping Manuscript Migrations' },
+      officialUrl: 'https://library.yale.edu/dhlab/projects/mapping-manuscript-migrations',
+      supportingObservations: [supporting],
+    });
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
+  });
 });
 
 describe('isExplicitUndergradUnavailabilityPhrase (#1304)', () => {
