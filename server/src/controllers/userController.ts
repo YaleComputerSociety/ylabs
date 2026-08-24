@@ -38,6 +38,10 @@ import {
   getStudentResearchInterests as getStudentResearchInterestsService,
   setStudentResearchInterests as setStudentResearchInterestsService,
 } from '../services/studentInterestProfileService';
+import {
+  getSavedResearchFollowUps as getSavedResearchFollowUpsService,
+  dismissSavedResearchFollowUp as dismissSavedResearchFollowUpService,
+} from '../services/studentFollowUpService';
 import { publicProgramForReader } from './programPayload';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -754,6 +758,31 @@ export const deleteSavedResearchEntityPlan = async (request: Request, response: 
   } catch (error) {
     console.error('Saved research entity plan delete failed:', sanitizeLogValue(error));
     sendPrivateAccountError(response, error, 'Failed to delete saved research entity plan');
+  }
+};
+
+export const getSavedResearchFollowUps = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({
+      savedResearchFollowUps: await getSavedResearchFollowUpsService(currentUser.netId),
+    });
+  } catch (error) {
+    console.error('Saved research follow-up fetch failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to fetch saved research follow-ups');
+  }
+};
+
+export const dismissSavedResearchFollowUp = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    await dismissSavedResearchFollowUpService(currentUser.netId, request.params.entityId);
+    setPrivateAccountResponseHeaders(response);
+    response.status(204).send();
+  } catch (error) {
+    console.error('Saved research follow-up dismissal failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to dismiss saved research follow-up');
   }
 };
 

@@ -47,6 +47,10 @@ const studentTrackingSchema = new mongoose.Schema(
       type: [stageHistorySchema],
       default: [],
     },
+    followUpNudgeDismissedAt: {
+      type: Date,
+      required: false,
+    },
     privateNotes: {
       type: String,
       default: '',

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FALLBACK_FOLLOW_UP_EMAIL_SUBJECT,
   FALLBACK_INTRO_EMAIL_SUBJECT,
+  STUDENT_FOLLOW_UP_EMAIL_TEMPLATE_VERSION,
   STUDENT_INTRO_EMAIL_TEMPLATE_VERSION,
+  composeStudentFollowUpEmailDraft,
   composeStudentIntroEmailDraft,
 } from '../introEmailComposer';
 import { MAX_SAFE_MAILTO_BODY_LENGTH, MAX_SAFE_MAILTO_SUBJECT_LENGTH } from '../url';
@@ -119,5 +122,51 @@ describe('composeStudentIntroEmailDraft', () => {
     });
     expect(generic.body).toContain('whether there might be a way for me to get involved.');
     expect(generic.body).not.toContain('research credit');
+  });
+});
+
+describe('composeStudentFollowUpEmailDraft', () => {
+  it('composes an honest follow-up naming the lead and entity', () => {
+    const draft = composeStudentFollowUpEmailDraft({
+      entityName: 'Example Lab',
+      leadName: 'Jane Doe',
+    });
+
+    expect(draft.subject).toBe('Following up: interest in undergraduate research with Example Lab');
+    expect(draft.body).toContain('Dear Jane Doe,');
+    expect(draft.body).toContain('I recently reached out');
+    expect(draft.generatedByPlatform).toBe(true);
+    expect(draft.templateVersion).toBe(STUDENT_FOLLOW_UP_EMAIL_TEMPLATE_VERSION);
+  });
+
+  it('never implies the recipient did or did not read the first email', () => {
+    const draft = composeStudentFollowUpEmailDraft({ entityName: 'Example Lab' });
+    const body = draft.body.toLowerCase();
+
+    expect(body).not.toContain('read');
+    expect(body).not.toContain('ignore');
+    expect(body).not.toContain('no response');
+    expect(body).not.toContain("didn't");
+    expect(body).not.toContain('did not');
+    expect(draft.body).toContain('Hello,');
+  });
+
+  it('fails closed to the generic subject with no body when the entity name is missing', () => {
+    const draft = composeStudentFollowUpEmailDraft({ leadName: 'Jane Doe' });
+
+    expect(draft).toEqual({
+      subject: FALLBACK_FOLLOW_UP_EMAIL_SUBJECT,
+      body: '',
+      generatedByPlatform: false,
+      templateVersion: '',
+    });
+  });
+
+  it('fails closed when a composed field would exceed the safe mailto length caps', () => {
+    const draft = composeStudentFollowUpEmailDraft({ entityName: 'x'.repeat(1000) });
+
+    expect(draft.generatedByPlatform).toBe(false);
+    expect(draft.subject.length).toBeLessThanOrEqual(MAX_SAFE_MAILTO_SUBJECT_LENGTH);
+    expect(draft.body.length).toBeLessThanOrEqual(MAX_SAFE_MAILTO_BODY_LENGTH);
   });
 });
