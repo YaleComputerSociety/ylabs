@@ -144,6 +144,28 @@ describe('analytics routes', () => {
     );
   });
 
+  it('accepts an entity-free research comparison keyed only by its count bucket', async () => {
+    mocks.emitResearchEvent.mockResolvedValue(true);
+
+    const res = await invokeRouteHandler('/research', {
+      body: {
+        eventType: 'research_compare',
+        payload: { entityCountBucket: '3-4' },
+        dedupeKey: 'compare:fixture-1',
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(mocks.researchEntityExists).not.toHaveBeenCalled();
+    expect(mocks.emitResearchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'research_compare',
+        dedupeKey: 'compare:fixture-1',
+      }),
+    );
+  });
+
   it('requires a real canonical entity for entity-scoped journey events', async () => {
     mocks.researchEntityExists.mockResolvedValue(false);
 

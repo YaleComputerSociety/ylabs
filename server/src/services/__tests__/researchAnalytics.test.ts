@@ -203,6 +203,35 @@ describe('research analytics event emission', () => {
     expect(JSON.stringify(events)).not.toContain('searchId');
   });
 
+  it('records a compare as one set-level event with a count bucket and no entity', async () => {
+    const events: LogEventParams[] = [];
+
+    const emitted = await emitResearchEvent(
+      {
+        eventType: AnalyticsEventType.RESEARCH_COMPARE,
+        user,
+        entityType: undefined,
+        entityId: undefined,
+        dedupeKey: 'compare:fixture-1',
+        payload: { entityCountBucket: '3-4' },
+      },
+      async (event) => {
+        events.push(event);
+      },
+    );
+
+    expect(emitted).toBe(true);
+    expect(events).toEqual([
+      {
+        eventType: AnalyticsEventType.RESEARCH_COMPARE,
+        netid: 'abc123',
+        userType: 'undergraduate',
+        metadata: { entityCountBucket: '3-4' },
+        dedupeKey: 'compare:fixture-1',
+      },
+    ]);
+  });
+
   it.each([
     [AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION, { surface: 'search', positionBucket: '4-10' }],
     [AnalyticsEventType.RESEARCH_PROFILE_OPEN, { source: 'direct' }],
