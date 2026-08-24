@@ -724,6 +724,69 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
+ * Yale School of Art "faculty & staff" page (art.yale.edu) - a Yale-CMS
+ * "scrolling-list-module" component: several `<ul>` sections (Academic
+ * Leadership, program areas, interdepartmental, Undergraduate, faculty
+ * emeriti, Yale Norfolk School of Art, Administration and Staff, ...), each
+ * `<li>` an `<a href="/<Slug>">Name</a>, Title` entry (#1334 Tier C - the
+ * per-person links this issue originally reported missing are present on the
+ * current page). The same person appears in several sections (e.g. a dean is
+ * also on the Faculty Governing Board), so entries are deduped by destination
+ * URL, keeping the longest title seen. "Administration and Staff" lists
+ * non-research staff, not faculty, and is skipped.
+ *   <div class="scrolling-list-module">
+ *     <h4 class="scrolling-list-module__title">Academic Leadership</h4>
+ *     <ul class="scrolling-list-module__list">
+ *       <li class="scrolling-list-module__list-item">
+ *         <a href="/KymberlyPinder">Kymberly Pinder</a>, Stavros Niarchos Foundation Dean
+ *       </li>
+ */
+export const scrollingListModuleExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const byUrl = new Map<string, FacultyEntry>();
+  const pageHost = hostnameOf(ctx.pageUrl);
+
+  $('.scrolling-list-module').each((_i, section) => {
+    const heading = cleanText($(section).find('.scrolling-list-module__title').first().text());
+    if (/administration and staff/i.test(heading)) return;
+
+    $(section)
+      .find('.scrolling-list-module__list-item')
+      .each((_j, el) => {
+        const item = $(el);
+        const link = item.find('a').first();
+        const name = normalizeName(cleanText(link.text()));
+        const href = link.attr('href') || '';
+        if (!name || !href) return;
+
+        const destinationUrl = absolutize(href, ctx.pageUrl);
+        const fullText = cleanText(item.text());
+        const title =
+          (fullText.startsWith(name)
+            ? cleanText(fullText.slice(name.length).replace(/^[,;]\s*/, ''))
+            : '') || undefined;
+        // Mint a research home only when the destination is off-directory (a
+        // personal or lab site); the faculty member's own art.yale.edu bio page
+        // is cited as an official-profile source and left for enrichment/dedup.
+        const isOwnProfile =
+          hostnameOf(destinationUrl) === pageHost || isPersonProfileOrDirectoryUrl(destinationUrl);
+        const labUrl = isOwnProfile ? undefined : destinationUrl;
+
+        const existing = byUrl.get(destinationUrl);
+        if (existing) {
+          if (title && (!existing.title || title.length > existing.title.length)) {
+            existing.title = title;
+          }
+          return;
+        }
+        byUrl.set(destinationUrl, { name, profileUrl: destinationUrl, title, labUrl });
+      });
+  });
+
+  return Array.from(byUrl.values());
+};
+
+/**
  * Drupal Views rendered as an HTML table (as opposed to the `.views-row` div
  * grid handled by `viewsRowPersonExtractor`). Used by several FAS humanities
  * departments.
@@ -1647,6 +1710,14 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: referenceCardExtractor,
   },
   {
+    deptKey: 'art',
+    deptName: 'Art',
+    schoolName: 'Yale School of Art',
+    url: 'https://www.art.yale.edu/about/people/faculty-and-staff',
+    paginated: false,
+    extractor: scrollingListModuleExtractor,
+  },
+  {
     deptKey: 'school-of-music',
     deptName: 'Music',
     schoolName: 'Yale School of Music',
@@ -1792,6 +1863,14 @@ function cleanText(value: string | undefined | null): string {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
 }
 
 function firstImageUrlFromSrcset(value: string | undefined | null): string | undefined {

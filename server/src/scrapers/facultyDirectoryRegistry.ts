@@ -848,9 +848,12 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of Art',
     department: 'Faculty & staff',
     rendering: 'static',
-    status: 'gap',
+    status: 'covered',
+    coveredBy: ['dept-faculty-roster'],
     studentImpactTier: 6,
     approxFacultyCount: 90,
+    notes:
+      'The per-person profile links this issue originally reported missing (#1334 Tier C) are present on the current page (the site has since added an `/<Slug>` bio page per person). Covered via the dept-faculty-roster "art" config row using the `.scrolling-list-module` component shared by several sections (Academic Leadership, program areas, faculty emeriti, Yale Norfolk School of Art, ...); "Administration and Staff" lists non-research staff and is skipped. Each faculty member\'s own bio page is cited as the official-profile source, never the directory root.',
   },
   {
     url: 'https://divinity.yale.edu/about/faculty-directory',

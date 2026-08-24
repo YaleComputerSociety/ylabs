@@ -34,6 +34,7 @@ import {
   lawPersonListingExtractor,
   nursingFacultyExtractor,
   referenceCardExtractor,
+  scrollingListModuleExtractor,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -1130,6 +1131,70 @@ describe('referenceCardExtractor', () => {
     expect(westCampus?.schoolName).toBe('Yale West Campus');
     expect(westCampus?.extractor).toBe(referenceCardExtractor);
     expect(westCampus?.paginated).toBeFalsy();
+  });
+});
+
+describe('scrollingListModuleExtractor', () => {
+  const SCROLLING_LIST_MODULE_HTML = `
+    <div class="scrolling-list-module">
+      <h4 class="scrolling-list-module__title">Academic Leadership</h4>
+      <ul class="scrolling-list-module__list">
+        <li class="scrolling-list-module__list-item">
+          <a href="/RobinFixture">Robin Fixture</a>, Dean; Professor of Painting
+        </li>
+      </ul>
+    </div>
+    <div class="scrolling-list-module">
+      <h4 class="scrolling-list-module__title">painting / printmaking</h4>
+      <ul class="scrolling-list-module__list">
+        <li class="scrolling-list-module__list-item">
+          <strong>Full-Time Faculty</strong>
+        </li>
+        <li class="scrolling-list-module__list-item">
+          <a href="/RobinFixture">Robin Fixture</a>, Dean
+        </li>
+        <li class="scrolling-list-module__list-item">
+          <a href="https://jordanfixture.example/">Jordan Fixture</a>, Professor
+        </li>
+      </ul>
+    </div>
+    <div class="scrolling-list-module">
+      <h4 class="scrolling-list-module__title">Administration and Staff</h4>
+      <ul class="scrolling-list-module__list">
+        <li class="scrolling-list-module__list-item">
+          <a href="/CaseyFixture">Casey Fixture</a>, Office Manager
+        </li>
+      </ul>
+    </div>`;
+
+  it('extracts scrolling-list-module faculty, dedupes across sections, and skips Administration and Staff', () => {
+    const out = scrollingListModuleExtractor(SCROLLING_LIST_MODULE_HTML, {
+      pageUrl: 'https://art.example.invalid/about/people/faculty-and-staff',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://art.example.invalid/RobinFixture',
+        title: 'Dean; Professor of Painting',
+        labUrl: undefined,
+      },
+      {
+        name: 'Jordan Fixture',
+        profileUrl: 'https://jordanfixture.example/',
+        title: 'Professor',
+        labUrl: 'https://jordanfixture.example/',
+      },
+    ]);
+  });
+
+  it('is wired to the Yale School of Art directory', () => {
+    const art = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'art');
+    expect(art).toBeDefined();
+    expect(art?.url).toBe('https://www.art.yale.edu/about/people/faculty-and-staff');
+    expect(art?.schoolName).toBe('Yale School of Art');
+    expect(art?.extractor).toBe(scrollingListModuleExtractor);
+    expect(art?.paginated).toBeFalsy();
   });
 });
 
