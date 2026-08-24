@@ -51,7 +51,7 @@ const DepartmentEntityCard = ({ entity }: { entity: ResearchEntity }) => {
     <article className="yr-card rounded-md p-4">
       <h3 className="text-base font-semibold leading-tight text-gray-950">
         {slug ? (
-          <Link to={`/research/${slug}`} className="yr-link yr-focus-ring rounded-sm">
+          <Link to={`/research/${safeRouteSegment(entity.slug)}`} className="yr-link yr-focus-ring rounded-sm">
             {heading}
           </Link>
         ) : (

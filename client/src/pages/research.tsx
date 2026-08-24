@@ -15,6 +15,7 @@ import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import axios from '../utils/axios';
+import { safeRouteSegment } from '../utils/url';
 import {
   buildGroupedSearchResults,
   GroupedResearchResults,
@@ -2295,7 +2296,7 @@ const Research = () => {
                 {departmentSearch && getDepartmentSlug(departmentSearch.label) && (
                   <p className="mt-2 text-sm">
                     <Link
-                      to={`/research/department/${getDepartmentSlug(departmentSearch.label)}`}
+                      to={`/research/department/${safeRouteSegment(getDepartmentSlug(departmentSearch.label))}`}
                       className="yr-link yr-focus-ring rounded-sm font-semibold"
                     >
                       View the {departmentSearch.label} department page →
