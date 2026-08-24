@@ -376,9 +376,11 @@ function repairFacultyBiographyOpener(value: string): string {
 const SUBJECTLESS_RESEARCH_LEAD_REPAIRS: ReadonlyArray<readonly [RegExp, string]> = [
   [/^\s*Research\s+examines\b/i, 'Examines'],
   [/^\s*Research\s+investigates\b/i, 'Investigates'],
-  [/^\s*Research\s+focuses\s+on\b/i, 'Focuses on'],
+  [/^\s*Research\s+focuses\s+on\b/i, 'Studies'],
   [/^\s*Research\s+studies\b/i, 'Studies'],
   [/^\s*Research\s+explores\b/i, 'Explores'],
+  [/^\s*Focuses\s+on\b/i, 'Studies'],
+  [/^\s*Research\s+on\b/i, 'Studies'],
 ];
 
 export function repairSubjectlessResearchLead(value: unknown): string {

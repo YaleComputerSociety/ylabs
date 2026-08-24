@@ -78,7 +78,7 @@ describe('researchEntityDto', () => {
         'Focuses on Italian language pedagogy, literary translation, and medieval and Renaissance literature.',
     });
     expect(summary.blurb).toBe(
-      'Focuses on Italian language pedagogy, literary translation, and medieval and Renaissance literature.',
+      'Studies Italian language pedagogy, literary translation, and medieval and Renaissance literature.',
     );
   });
 
