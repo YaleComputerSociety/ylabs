@@ -2,6 +2,7 @@ import {
   collapseDoubledSynthesisVerb,
   hasContactBlockResidue,
   isCitationAuthorListDumpText,
+  isConnectedToKeywordListStub,
   isNonSelfContainedShortDescription,
   isResearchAreaTemplateLeakText,
   isStudiesResearchAreaEchoDescription,
@@ -507,6 +508,7 @@ export function fullDescriptionQuality(
   ) {
     flags.push('research-area-echo');
   }
+  if (text && isConnectedToKeywordListStub(text)) flags.push('research-area-echo');
   if (
     text &&
     (!/[.!?]$/.test(text) || /:\s*$/.test(text)) &&
