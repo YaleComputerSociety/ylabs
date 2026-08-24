@@ -77,6 +77,7 @@ import {
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
 import { applyResearchEntityResearchAreaCanonicalization } from './researchAreaCanonicalization';
+import { deriveFundingProgramTopic } from './fundingProgramTopicDerivation';
 import {
   resolveBackfillWebsiteUrl,
   type WebsiteUrlBackfillResolution,
@@ -357,6 +358,40 @@ function isOfficialProfileBioChromeObservation(observation: MaterializerObservat
 
 function isResearchEntityObservationType(entityType: ObservedEntityType): boolean {
   return entityType === 'researchEntity' || entityType === 'researchGroup';
+}
+
+const FUNDING_PROGRAM_TOPIC_DERIVATION_ENTITY_TYPES = new Set(['FELLOWSHIP_PROGRAM', 'RA_PROGRAM']);
+
+function hasNonEmptyStringArray(...values: unknown[]): boolean {
+  return values.some((value) => Array.isArray(value) && value.length > 0);
+}
+
+/**
+ * FELLOWSHIP_PROGRAM/RA_PROGRAM entities are almost never scraped with
+ * researchAreas/departments observations, so the generic resolver above never
+ * even puts those keys in `set` and the org-unit/research-area canonicalizers
+ * below never run for them (issue #1700). When both are still genuinely empty,
+ * this derives them from the entity's own name/description via the curated,
+ * evidence-grounded sponsor mapping and seeds `set` as if an observation had
+ * written them, so the normal canonicalization pipeline still owns dedup and
+ * school derivation.
+ */
+function applyFundingProgramTopicDerivation(
+  set: Record<string, unknown>,
+  entityDoc: Record<string, unknown> | null,
+): void {
+  const entityType = set.entityType ?? entityDoc?.entityType;
+  if (typeof entityType !== 'string' || !FUNDING_PROGRAM_TOPIC_DERIVATION_ENTITY_TYPES.has(entityType)) {
+    return;
+  }
+  if (hasNonEmptyStringArray(set.departments, entityDoc?.departments)) return;
+  if (hasNonEmptyStringArray(set.researchAreas, entityDoc?.researchAreas)) return;
+
+  const name = set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName;
+  const fullDescription = set.fullDescription ?? entityDoc?.fullDescription;
+  const topic = deriveFundingProgramTopic(name, fullDescription);
+  if (topic.department) set.departments = [topic.department];
+  if (topic.researchArea) set.researchAreas = [topic.researchArea];
 }
 
 const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set(['acceptingUndergrads', 'openness']);
@@ -2749,6 +2784,7 @@ export async function materializeEntity(
           ? entityDoc.sourceUrls
           : []),
     ].filter((url): url is string => typeof url === 'string');
+    applyFundingProgramTopicDerivation(set, entityDoc);
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc, orgUnitProfileUrls);
     await applyResearchEntityResearchAreaCanonicalization(set, set.departments ?? entityDoc?.departments);
     if (!manuallyLockedFields.includes('websiteUrl')) {
