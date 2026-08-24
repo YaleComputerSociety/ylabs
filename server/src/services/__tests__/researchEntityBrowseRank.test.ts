@@ -156,6 +156,54 @@ describe('computeResearchEntityBrowseRank', () => {
     expect(__testing.entityTypeRankAdjustment({ kind: 'lab' }, true)).toBe(0);
   });
 
+  it('does not cap a signal-structurally-limited entity at the flat REACH_OUT_PLAUSIBLE floor (#1326)', () => {
+    // A FACULTY_RESEARCH_AREA home has no lab microsite to extract a
+    // roster/join-page/contact-quote from, so REACH_OUT_PLAUSIBLE (the
+    // identified-lead fallback) is the strongest signal it can ever produce
+    // today. It should not be penalized to the same floor as a lab whose own
+    // microsite was actually checked and came back with nothing better.
+    const facultyResearchArea = computeResearchEntityBrowseRank({
+      entity: { ...completeEntity(), entityType: 'FACULTY_RESEARCH_AREA' },
+      leadMembers: attachedLead(),
+      accessSignalTypes: ['REACH_OUT_PLAUSIBLE'],
+    });
+    const lab = computeResearchEntityBrowseRank({
+      entity: { ...completeEntity(), entityType: 'LAB' },
+      leadMembers: attachedLead(),
+      accessSignalTypes: ['REACH_OUT_PLAUSIBLE'],
+    });
+    expect(facultyResearchArea).toBeGreaterThan(lab);
+    expect(facultyResearchArea - lab).toBe(
+      __testing.STRUCTURALLY_LIMITED_NEUTRAL_ACCESS_POINTS -
+        __testing.ACCESS_SIGNAL_POINTS.REACH_OUT_PLAUSIBLE,
+    );
+  });
+
+  it('applies the same neutral floor to an INDIVIDUAL_RESEARCH home (#1326)', () => {
+    expect(__testing.accessPoints(['REACH_OUT_PLAUSIBLE'], 'INDIVIDUAL_RESEARCH')).toBe(
+      __testing.STRUCTURALLY_LIMITED_NEUTRAL_ACCESS_POINTS,
+    );
+  });
+
+  it('does not cap a genuinely strong signal on a signal-limited entity type (#1326)', () => {
+    // If a real strong signal is ever produced for one of these entities (a
+    // non-lab access-signal producer, or a future scrape), it is not held
+    // back by the neutral floor - it scores exactly as it would for a lab.
+    expect(__testing.accessPoints(['CURRENT_UNDERGRADS'], 'FACULTY_RESEARCH_AREA')).toBe(
+      __testing.ACCESS_SIGNAL_POINTS.CURRENT_UNDERGRADS,
+    );
+  });
+
+  it('still lets an explicit NOT_CURRENTLY_AVAILABLE pull a signal-limited entity negative (#1326)', () => {
+    expect(__testing.accessPoints(['NOT_CURRENTLY_AVAILABLE'], 'FACULTY_RESEARCH_AREA')).toBe(
+      __testing.ACCESS_SIGNAL_POINTS.NOT_CURRENTLY_AVAILABLE,
+    );
+  });
+
+  it('leaves entities with zero access signals at zero regardless of entity type (#1326)', () => {
+    expect(__testing.accessPoints([], 'FACULTY_RESEARCH_AREA')).toBe(0);
+  });
+
   it('keeps a strong umbrella center above a bare lab despite the demotion', () => {
     const strongCenter = computeResearchEntityBrowseRank({
       entity: { ...completeEntity(), entityType: 'CENTER' },

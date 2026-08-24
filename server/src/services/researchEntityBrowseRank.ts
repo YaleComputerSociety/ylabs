@@ -78,13 +78,37 @@ const ACCESS_SIGNAL_POINTS: Record<string, number> = {
   NOT_CURRENTLY_AVAILABLE: -20,
 };
 
-const accessPoints = (accessSignalTypes: string[]): number => {
+/**
+ * Entity types for which every strong access signal (CURRENT_UNDERGRADS,
+ * PAST_UNDERGRADS, APPLICATION_FORM_EXISTS, CONTACT_INSTRUCTIONS_EXIST) is
+ * structurally unobservable today: they have no lab microsite to extract a
+ * roster/join-page/contact-quote from, so the pipeline can only ever produce
+ * the low-confidence REACH_OUT_PLAUSIBLE fallback (#1326). Absence of a
+ * lab-shaped signal here means "unobservable", not "weak", so it is not
+ * scored against the same floor as a lab whose own microsite was checked and
+ * came back thin.
+ */
+const SIGNAL_STRUCTURALLY_LIMITED_ENTITY_TYPES = new Set<ResearchEntityType>([
+  'FACULTY_RESEARCH_AREA',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+const STRUCTURALLY_LIMITED_NEUTRAL_ACCESS_POINTS = ACCESS_SIGNAL_POINTS.CONTACT_INSTRUCTIONS_EXIST;
+
+const accessPoints = (accessSignalTypes: string[], entityType?: ResearchEntityType): number => {
   if (accessSignalTypes.length === 0) return 0;
   const scored = accessSignalTypes.map((type) => ACCESS_SIGNAL_POINTS[type] ?? 0);
   const best = Math.max(...scored);
   // A "not available" signal still drags an otherwise-zero entity down.
   const worst = Math.min(...scored);
   if (best <= 0) return worst;
+  if (
+    entityType &&
+    SIGNAL_STRUCTURALLY_LIMITED_ENTITY_TYPES.has(entityType) &&
+    best <= ACCESS_SIGNAL_POINTS.REACH_OUT_PLAUSIBLE
+  ) {
+    return STRUCTURALLY_LIMITED_NEUTRAL_ACCESS_POINTS;
+  }
   return best;
 };
 
@@ -130,11 +154,13 @@ export function computeResearchEntityBrowseRank({
   hostsAffiliatedResearchHomes = false,
 }: ResearchEntityBrowseRankInput): number {
   const summary = buildResearchEntityQualitySummary({ entity, leadMembers });
+  const entityType = (entity.entityType ||
+    mapResearchGroupKindToEntityType(entity.kind)) as ResearchEntityType;
 
   let score = 0;
   score += descriptionPoints(summary);
   score += leadPoints(summary);
-  score += accessPoints(accessSignalTypes);
+  score += accessPoints(accessSignalTypes, entityType);
   if (summary.repairFlags.includes('missing_source_url')) {
     // Reward a real official source URL; its absence is already implied here.
   } else {
@@ -150,6 +176,8 @@ export const __testing = {
   ACCESS_SIGNAL_POINTS,
   ENTITY_TYPE_RANK_ADJUSTMENT,
   UMBRELLA_GATED_TYPES,
+  SIGNAL_STRUCTURALLY_LIMITED_ENTITY_TYPES,
+  STRUCTURALLY_LIMITED_NEUTRAL_ACCESS_POINTS,
   descriptionPoints,
   leadPoints,
   accessPoints,
