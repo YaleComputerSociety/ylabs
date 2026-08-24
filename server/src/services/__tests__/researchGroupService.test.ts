@@ -1015,6 +1015,108 @@ describe('searchResearchGroupsViaMeili', () => {
     ]);
   });
 
+  it('re-ranks the default browse toward a viewer\'s engagement intent, keeping unmatched homes visible (#1655)', async () => {
+    const centerId = '67d8928150621bcef4340021';
+    const labId = '67d8928150621bcef4340022';
+    const browsePool = [
+      {
+        id: centerId,
+        slug: 'broad-center',
+        name: 'Broad Center',
+        kind: 'center',
+        entityType: 'CENTER',
+        sourceUrls: [],
+      },
+      {
+        id: labId,
+        slug: 'faculty-lab',
+        name: 'Faculty Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        sourceUrls: [],
+      },
+    ];
+    mocks.search.mockResolvedValueOnce({ hits: browsePool, totalHits: 2 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: centerId,
+          slug: 'broad-center',
+          name: 'Broad Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          browseRankScore: 90,
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+        {
+          _id: labId,
+          slug: 'faculty-lab',
+          name: 'Faculty Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          browseRankScore: 80,
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24, {}, {
+      personalization: { interests: [], lookingFor: 'thesis-advisor' },
+    });
+
+    expect(result.personalized).toBe(true);
+    expect(result.personalizedByIntent).toBe(true);
+    expect(result.personalizedByInterests).toBe(false);
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'faculty-lab',
+      'broad-center',
+    ]);
+  });
+
+  it('leaves the default browse order untouched for the exploring intent (#1655)', async () => {
+    const centerId = '67d8928150621bcef4340031';
+    const labId = '67d8928150621bcef4340032';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        { id: centerId, slug: 'broad-center', name: 'Broad Center', kind: 'center', sourceUrls: [] },
+        { id: labId, slug: 'faculty-lab', name: 'Faculty Lab', kind: 'lab', sourceUrls: [] },
+      ],
+      estimatedTotalHits: 2,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: centerId,
+          slug: 'broad-center',
+          name: 'Broad Center',
+          kind: 'center',
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+        {
+          _id: labId,
+          slug: 'faculty-lab',
+          name: 'Faculty Lab',
+          kind: 'lab',
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24, {}, {
+      personalization: { interests: [], lookingFor: 'exploring' },
+    });
+
+    expect(result.personalized).toBe(false);
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'broad-center',
+      'faculty-lab',
+    ]);
+  });
+
   it('expands AI and restricts short alias searches to topic fields', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],

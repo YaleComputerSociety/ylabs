@@ -200,4 +200,6 @@ export interface ResearchGroupSearchResponse {
   pageSize: number;
   facetDistribution?: Record<string, Record<string, number>>;
   personalized?: boolean;
+  personalizedByInterests?: boolean;
+  personalizedByIntent?: boolean;
 }

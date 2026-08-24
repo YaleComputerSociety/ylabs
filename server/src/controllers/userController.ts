@@ -647,11 +647,13 @@ export const updateResearchInterests = async (request: Request, response: Respon
     const payload = (request.body?.data ?? request.body ?? {}) as {
       researchInterests?: unknown;
       graduationYear?: unknown;
+      lookingFor?: unknown;
     };
     response.status(200).json(
       await setStudentResearchInterestsService(currentUser.netId, {
         researchInterests: payload.researchInterests,
         graduationYear: payload.graduationYear,
+        lookingFor: payload.lookingFor,
       }),
     );
   } catch (error) {

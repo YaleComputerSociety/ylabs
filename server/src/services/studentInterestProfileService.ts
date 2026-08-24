@@ -11,7 +11,12 @@
  */
 import { StudentProfile } from '../models/studentProfile';
 import { ResearchArea } from '../models/researchArea';
-import { MAX_STUDENT_RESEARCH_INTERESTS } from './researchInterestPersonalization';
+import {
+  DEFAULT_STUDENT_ENGAGEMENT_INTENT,
+  isStudentEngagementIntent,
+  MAX_STUDENT_RESEARCH_INTERESTS,
+  type StudentEngagementIntent,
+} from './researchInterestPersonalization';
 
 const NETID_INPUT_RE = /^[A-Za-z0-9]{2,12}$/;
 const MIN_GRADUATION_YEAR = 1900;
@@ -20,6 +25,7 @@ const MAX_GRADUATION_YEAR = 2100;
 export interface StudentResearchInterests {
   researchInterests: string[];
   graduationYear: number | null;
+  lookingFor: StudentEngagementIntent;
 }
 
 const badRequest = (message: string): Error => {
@@ -87,11 +93,24 @@ const normalizeGraduationYear = (value: unknown): number | null => {
   return year;
 };
 
+const normalizeEngagementIntent = (value: unknown): StudentEngagementIntent => {
+  if (value === undefined || value === null || value === '') {
+    return DEFAULT_STUDENT_ENGAGEMENT_INTENT;
+  }
+  if (!isStudentEngagementIntent(value)) {
+    throw badRequest('Invalid engagement intent');
+  }
+  return value;
+};
+
 const toStudentResearchInterests = (profile: any): StudentResearchInterests => ({
   researchInterests: Array.isArray(profile?.researchInterests)
     ? profile.researchInterests.filter((value: unknown): value is string => typeof value === 'string')
     : [],
   graduationYear: typeof profile?.graduationYear === 'number' ? profile.graduationYear : null,
+  lookingFor: isStudentEngagementIntent(profile?.lookingFor)
+    ? profile.lookingFor
+    : DEFAULT_STUDENT_ENGAGEMENT_INTENT,
 });
 
 export const getStudentResearchInterests = async (
@@ -99,23 +118,24 @@ export const getStudentResearchInterests = async (
 ): Promise<StudentResearchInterests> => {
   const normalizedNetid = normalizeNetid(netid);
   const profile = await StudentProfile.findOne({ netid: normalizedNetid })
-    .select('researchInterests graduationYear -_id')
+    .select('researchInterests graduationYear lookingFor -_id')
     .lean();
   return toStudentResearchInterests(profile);
 };
 
 export const setStudentResearchInterests = async (
   netid: unknown,
-  input: { researchInterests?: unknown; graduationYear?: unknown },
+  input: { researchInterests?: unknown; graduationYear?: unknown; lookingFor?: unknown },
 ): Promise<StudentResearchInterests> => {
   const normalizedNetid = normalizeNetid(netid);
   const governedLabels = await governedResearchAreaLabels();
   const researchInterests = sanitizeSubmittedInterests(input.researchInterests, governedLabels);
   const graduationYear = normalizeGraduationYear(input.graduationYear);
+  const lookingFor = normalizeEngagementIntent(input.lookingFor);
 
   const profile = await StudentProfile.findOneAndUpdate(
     { netid: normalizedNetid },
-    { $set: { researchInterests, graduationYear } },
+    { $set: { researchInterests, graduationYear, lookingFor } },
     { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
   ).lean();
   return toStudentResearchInterests(profile);

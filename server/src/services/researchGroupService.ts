@@ -105,8 +105,10 @@ import {
 } from './undergraduateLogisticsService';
 import { QUERY_TOPIC_ALIASES, STUDENT_QUERY_ALIASES } from './searchTopicAliases';
 import {
+  isActiveEngagementIntent,
   personalizeBrowseHits,
   PERSONALIZED_BROWSE_POOL_SIZE,
+  type StudentEngagementIntent,
 } from './researchInterestPersonalization';
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
@@ -350,7 +352,7 @@ export interface ResearchGroupSearchOptions {
   includeNonPublic?: boolean;
   lowQualityFirst?: boolean;
   qualityFilters?: ResearchGroupQualityFilter[];
-  personalization?: { interests: string[] };
+  personalization?: { interests: string[]; lookingFor?: StudentEngagementIntent };
 }
 
 export interface ResearchGroupSearchResult {
@@ -361,6 +363,8 @@ export interface ResearchGroupSearchResult {
   facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
   personalized?: boolean;
+  personalizedByInterests?: boolean;
+  personalizedByIntent?: boolean;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -598,13 +602,19 @@ const sanitizeResearchGroupSearchOptions = (
   options: ResearchGroupSearchOptions = {},
 ): ResearchGroupSearchOptions => {
   const interests = boundedResearchFilterValues(options.personalization?.interests);
+  const lookingFor = isActiveEngagementIntent(options.personalization?.lookingFor)
+    ? options.personalization?.lookingFor
+    : undefined;
+  const hasPersonalizationSignal = interests.length > 0 || Boolean(lookingFor);
   return {
     includeNonPublic: options.includeNonPublic === true,
     lowQualityFirst: options.lowQualityFirst === true,
     qualityFilters: boundedResearchFilterValues(
       options.qualityFilters as string[] | undefined,
     ).filter(isResearchGroupQualityFilter),
-    ...(interests.length > 0 ? { personalization: { interests } } : {}),
+    ...(hasPersonalizationSignal
+      ? { personalization: { interests, ...(lookingFor ? { lookingFor } : {}) } }
+      : {}),
   };
 };
 
@@ -1104,7 +1114,8 @@ export async function searchResearchGroupsViaMeili(
     isBrowseAllQuery &&
     !safeOptions.lowQualityFirst &&
     !sort.sortBy &&
-    (safeOptions.personalization?.interests.length ?? 0) > 0;
+    ((safeOptions.personalization?.interests.length ?? 0) > 0 ||
+      isActiveEngagementIntent(safeOptions.personalization?.lookingFor));
 
   const searchParams: Record<string, any> = {
     filter: filterString,
@@ -1457,7 +1468,10 @@ export async function searchResearchGroupsViaMeili(
   const reorderedPool = personalizeBrowse
     ? personalizeBrowseHits(
         keywordFilteredHits,
-        safeOptions.personalization?.interests ?? [],
+        {
+          interests: safeOptions.personalization?.interests ?? [],
+          lookingFor: safeOptions.personalization?.lookingFor,
+        },
         PERSONALIZED_BROWSE_POOL_SIZE,
       )
     : promoteExactAliasFieldMatches(
@@ -1538,6 +1552,10 @@ export async function searchResearchGroupsViaMeili(
       facetDistribution,
       degraded: degraded || planningContextResult.degraded,
       personalized: personalizeBrowse,
+      personalizedByInterests:
+        personalizeBrowse && (safeOptions.personalization?.interests.length ?? 0) > 0,
+      personalizedByIntent:
+        personalizeBrowse && isActiveEngagementIntent(safeOptions.personalization?.lookingFor),
     },
     { includeOperatorFields: safeOptions.includeNonPublic },
   );

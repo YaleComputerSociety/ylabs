@@ -2,6 +2,10 @@
  * Mongoose schema and model for server-side student personalization.
  */
 import mongoose from 'mongoose';
+import {
+  DEFAULT_STUDENT_ENGAGEMENT_INTENT,
+  studentEngagementIntents,
+} from '../services/researchInterestPersonalization';
 
 const studentProfileSchema = new mongoose.Schema(
   {
@@ -37,8 +41,8 @@ const studentProfileSchema = new mongoose.Schema(
     },
     lookingFor: {
       type: String,
-      enum: ['exploring', 'ra-position', 'thesis-advisor', 'independent-study'],
-      default: 'exploring',
+      enum: [...studentEngagementIntents],
+      default: DEFAULT_STUDENT_ENGAGEMENT_INTENT,
     },
     onboardingCompletedAt: {
       type: Date,

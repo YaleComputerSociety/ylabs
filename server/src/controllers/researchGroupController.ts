@@ -14,6 +14,7 @@ import {
   searchResearchGroupsViaMeili,
   type ResearchGroupQualityFilter,
   ResearchGroupSearchSort,
+  type ResearchGroupSearchOptions,
 } from '../services/researchGroupService';
 import { getResearcherProfileByPublicKey } from '../services/researcherProfileService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
@@ -27,6 +28,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
 import { getStudentResearchInterests } from '../services/studentInterestProfileService';
 import { getDepartmentResearchPage } from '../services/departmentResearchPageService';
+import { isActiveEngagementIntent } from '../services/researchInterestPersonalization';
 
 const MAX_PAGE_SIZE = 100;
 const MAX_PAGE = 1000;
@@ -174,14 +176,20 @@ const parsePositiveIntegerParam = (value: unknown, fallback: number): number => 
   return Number.isSafeInteger(parsed) ? parsed : fallback;
 };
 
-const resolveViewerResearchInterests = async (
+const resolveViewerPersonalization = async (
   currentUser: { netId?: string; netid?: string } | undefined,
-): Promise<{ interests: string[] } | undefined> => {
+): Promise<ResearchGroupSearchOptions['personalization'] | undefined> => {
   const netid = currentUser?.netId || currentUser?.netid;
   if (!netid) return undefined;
   try {
-    const { researchInterests } = await getStudentResearchInterests(netid);
-    return researchInterests.length > 0 ? { interests: researchInterests } : undefined;
+    const { researchInterests, lookingFor } = await getStudentResearchInterests(netid);
+    const hasInterests = researchInterests.length > 0;
+    const hasIntent = isActiveEngagementIntent(lookingFor);
+    if (!hasInterests && !hasIntent) return undefined;
+    return {
+      interests: researchInterests,
+      ...(hasIntent ? { lookingFor } : {}),
+    };
   } catch (error) {
     console.error('Research interest personalization lookup failed:', sanitizeLogValue(error));
     return undefined;
@@ -243,7 +251,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
     const isDefaultRecommendedBrowse =
       q.trim().length === 0 && !sort.sortBy && !lowQualityFirst && body.standardOrder !== true;
     const personalization = isDefaultRecommendedBrowse
-      ? await resolveViewerResearchInterests(currentUser)
+      ? await resolveViewerPersonalization(currentUser)
       : undefined;
 
     const result = await searchResearchGroupsViaMeili(q, filters, page, pageSize, sort, {
