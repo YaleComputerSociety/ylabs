@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import axios from '../../utils/axios';
+import { safeRouteSegment } from '../../utils/url';
 
 type ReportStatus = 'unreviewed' | 'accepted' | 'dismissed';
 
@@ -142,7 +143,7 @@ export default function AdminCorrectionReports() {
               {selected.reporter.name || selected.reporter.netId} ({selected.reporter.role})
             </p>
             <a
-              href={`/research/${selected.entitySlug}`}
+              href={`/research/${safeRouteSegment(selected.entitySlug)}`}
               target="_blank"
               rel="noreferrer"
               className="mt-1 inline-block text-sm text-blue-700 underline"
