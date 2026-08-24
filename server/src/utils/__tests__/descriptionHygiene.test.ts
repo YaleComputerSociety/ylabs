@@ -2046,6 +2046,64 @@ describe('isNonSelfContainedShortDescription mid-discourse-opener guard (#1762)'
   });
 });
 
+describe('isNonSelfContainedShortDescription funding-program opener guard (#1821)', () => {
+  const BARE_IT_FUNDING_VERB_OPENERS = [
+    'It supports Yale College first-years, sophomores, and juniors pursuing summer independent research in England.',
+    'It helps defray short-term research or conference travel costs related to Europe, Russia, or Eurasia.',
+    'It funds up to eight weeks of summer research for undergraduates in the sciences.',
+    'It provides need-based grants to students pursuing unpaid summer internships in public service.',
+  ];
+
+  const SECOND_PERSON_CTA_OPENERS = [
+    "If you're planning a project or internship related to media, government, or public service, we encourage you to apply.",
+    'If you plan to conduct research abroad this summer, this fellowship can help cover your costs.',
+  ];
+
+  const ELIGIBILITY_FRAGMENT_OPENERS = [
+    'Appropriate purposes for support include (but are not limited to) language training, masters thesis summer research, and pre-dissertation research.',
+    'Research across all disciplines will be considered, provided that the focus is on Canada.',
+  ];
+
+  const DONOR_PROVENANCE_OPENERS = [
+    "The Class of 1960/86 has established several travel fellowships in memory of Albert St. Pergam '60, father of Lizzie BR '93 and Ilana BR '90.",
+  ];
+
+  it('fails a bare "It" funding-verb opener closed', () => {
+    for (const text of BARE_IT_FUNDING_VERB_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('fails a second-person CTA opener closed', () => {
+    for (const text of SECOND_PERSON_CTA_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('fails an eligibility-fragment opener closed', () => {
+    for (const text of ELIGIBILITY_FRAGMENT_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('fails a donor-provenance opener closed', () => {
+    for (const text of DONOR_PROVENANCE_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('keeps a funding-program summary that names the award as its own subject', () => {
+    const named =
+      'The Charles H. Siegel Traveling Fellowship supports summer research travel for Yale College students.';
+    expect(isNonSelfContainedShortDescription(named)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(named)).toBe(named);
+  });
+});
+
 describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () => {
   it('flags a book-citation glued after the Studies template', () => {
     const text =
