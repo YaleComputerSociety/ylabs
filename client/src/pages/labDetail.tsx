@@ -302,6 +302,9 @@ const detailTopics = (group: any, limit = 6): string[] =>
     .filter((value) => !isGenericTopic(value))
     .slice(0, limit);
 
+const detailMethods = (group: any, limit = 8): string[] =>
+  uniqueCompact([...(group.methods || [])], limit);
+
 const ResearchPlanSaveButton = ({
   isSaved,
   onToggle,
@@ -506,6 +509,7 @@ const DecisionSummary = ({
 }) => {
   const { departments } = useConfig();
   const topics = detailTopics(group, 5);
+  const methods = detailMethods(group);
   const usesProfileSynthesis = hasProfileSynthesisDescription(group) && !detailDescription(group);
   const usesFacultyResearchWording =
     isFacultyResearchEntity(group) || (usesProfileSynthesis && isFacultyResearchFallback(group));
@@ -622,6 +626,24 @@ const DecisionSummary = ({
                     className="rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 py-1 text-xs font-medium text-blue-800"
                   >
                     {formatTitleCaseLabel(topic)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {methods.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                Methods and techniques
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {methods.map((method) => (
+                  <span
+                    key={method}
+                    className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-1 text-xs font-medium text-gray-700"
+                  >
+                    {method}
                   </span>
                 ))}
               </div>

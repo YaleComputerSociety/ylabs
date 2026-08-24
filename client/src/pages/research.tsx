@@ -1660,8 +1660,8 @@ const Research = () => {
     return () => mediaQuery.removeEventListener?.('change', handleChange);
   }, []);
   const searchPlaceholder = isCompactViewport
-    ? 'Type a topic, professor, or lab'
-    : 'Type a topic, professor, lab, or research question';
+    ? 'Type a topic, professor, lab, or method'
+    : 'Type a topic, professor, lab, method, or research question';
 
   const researchFilterProps = {
     facetDistribution,
@@ -1767,7 +1767,7 @@ const Research = () => {
               id="research-search-context"
               className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base xl:hidden"
             >
-              Search by interest, professor, course topic, or question. We&apos;ll help you
+              Search by interest, professor, course topic, method, or question. We&apos;ll help you
               find relevant research profiles and verified ways in when the source evidence is
               strong enough.
             </p>
@@ -1958,7 +1958,7 @@ const Research = () => {
                 ) : (
                   <EmptyGroup>
                     No research homes match these filters. Try a broader topic, professor name, lab,
-                    or research question.
+                    method, or research question.
                   </EmptyGroup>
                 )}
               </section>

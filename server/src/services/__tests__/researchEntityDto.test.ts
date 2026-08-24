@@ -724,4 +724,25 @@ describe('researchEntityDto', () => {
     });
     expect(dto).not.toHaveProperty('qualitySummary');
   });
+
+  it('includes methods when present on the served entity', () => {
+    const dto = toPublicResearchEntityDto({
+      slug: 'methods-lab',
+      name: 'Methods Lab',
+      kind: 'lab',
+      methods: ['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
+    });
+
+    expect(dto.methods).toEqual(['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing']);
+  });
+
+  it('omits methods when the entity has none', () => {
+    const dto = toPublicResearchEntityDto({
+      slug: 'no-methods-lab',
+      name: 'No Methods Lab',
+      kind: 'lab',
+    });
+
+    expect(dto).not.toHaveProperty('methods');
+  });
 });
