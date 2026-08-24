@@ -273,18 +273,18 @@ const BrowseCard = React.memo(
           ) : (
             <>
               <div
-                className="mb-2 flex items-center justify-between gap-2"
+                className="mb-2 flex flex-col items-start gap-1"
                 style={{ paddingRight: iconClusterClearance }}
               >
                 {fellowshipCycleStatus && (
                   <span
-                    className={`flex-shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold ${fellowshipCycleStatus.className}`}
+                    className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold ${fellowshipCycleStatus.className}`}
                   >
                     {fellowshipCycleStatus.label}
                   </span>
                 )}
                 {subtitle && (
-                  <span className={`min-w-0 text-right text-sm font-semibold ${subtitleColor}`}>
+                  <span className={`text-sm font-semibold leading-snug ${subtitleColor}`}>
                     {subtitle}
                   </span>
                 )}
