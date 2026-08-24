@@ -52,6 +52,7 @@
     "research-entity:coverage-audit": "tsx src/scripts/researchEntityCoverageAudit.ts",
     "research-entity:audit-public-descriptions": "tsx src/scripts/publicResearchEntityDescriptionAudit.ts",
     "access:backfill-acceptance-level": "tsx src/scripts/backfillAccessAcceptanceLevel.ts",
+    "access-signals:backfill-fallback-ways-in": "tsx src/scripts/backfillFallbackWaysInAccessSignals.ts",
     "model-refactor:inventory": "tsx src/scripts/researchModelInventory.ts",
     "model-refactor:identity-collisions": "tsx src/scripts/phase0IdentityCollisionAudit.ts",
     "model-refactor:search-baseline": "tsx src/scripts/phase0ResearchSearchBaseline.ts",
