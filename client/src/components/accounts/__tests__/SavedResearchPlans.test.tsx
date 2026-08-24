@@ -165,7 +165,7 @@ describe('SavedResearchPlans', () => {
         data: { plan: { privateNotes: 'Email the PI in September' } },
       }),
     );
-    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
   });
 
   it('removes a saved plan when unsaved', async () => {
@@ -375,5 +375,109 @@ describe('SavedResearchPlans', () => {
     expect(screen.getByText('You can compare up to 4 at once.')).toBeTruthy();
     expect(screen.getByRole('checkbox', { name: 'Select Lab 4 to compare' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^Compare/ })).not.toBeDisabled();
+  });
+
+  const withStagedPlans = (
+    plans: Record<string, { privateNotes?: string; stage?: string }>,
+  ) => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: ['owner-lab', 'other-lab'] } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+              { _id: 'id2', slug: 'other-lab', name: 'Other Lab', kind: 'center', departments: [] },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: plans } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+  };
+
+  it('reads the persisted outreach stage for each saved home', async () => {
+    withStagedPlans({ id1: { stage: 'CONTACTED' }, id2: {} });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    const ownerStage = screen.getByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    }) as HTMLSelectElement;
+    const otherStage = screen.getByRole('combobox', {
+      name: 'Outreach stage for Other Lab',
+    }) as HTMLSelectElement;
+    expect(ownerStage.value).toBe('CONTACTED');
+    expect(otherStage.value).toBe('SAVED');
+  });
+
+  it('persists a stage change through the canonical plan and round-trips the value', async () => {
+    withStagedPlans({ id1: {}, id2: {} });
+    mockedAxios.put.mockResolvedValue({ data: { savedResearchEntityPlans: {} } });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    const stageSelect = screen.getByRole('combobox', {
+      name: 'Outreach stage for Other Lab',
+    });
+    fireEvent.change(stageSelect, { target: { value: 'APPLIED' } });
+
+    await waitFor(() =>
+      expect(mockedAxios.put).toHaveBeenCalledWith('/users/savedResearchEntityPlans/id2', {
+        data: { plan: { stage: 'APPLIED' } },
+      }),
+    );
+    expect((stageSelect as HTMLSelectElement).value).toBe('APPLIED');
+    expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
+  });
+
+  it('reverts the displayed stage and surfaces an error when a stage save fails', async () => {
+    withStagedPlans({ id1: {}, id2: {} });
+    mockedAxios.put.mockRejectedValue(new Error('network'));
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    const stageSelect = screen.getByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    }) as HTMLSelectElement;
+    fireEvent.change(stageSelect, { target: { value: 'CLOSED' } });
+
+    await screen.findByText(/Not saved/);
+    expect(stageSelect.value).toBe('SAVED');
+  });
+
+  it('orders closed homes after active ones so the pipeline reads at a glance', async () => {
+    withStagedPlans({ id1: { stage: 'CLOSED' }, id2: { stage: 'EXPLORING' } });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    const openLinks = screen.getAllByRole('link', { name: 'Open' });
+    expect(openLinks[0].getAttribute('href')).toBe('/research/other-lab');
+    expect(openLinks[1].getAttribute('href')).toBe('/research/owner-lab');
   });
 });
