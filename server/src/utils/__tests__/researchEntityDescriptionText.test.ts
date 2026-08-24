@@ -369,7 +369,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     );
   });
 
-  it('does not apply the non-person biography guard to faculty-research entities', () => {
+  it('applies the biography/advising guard to faculty-research entities too (#1526)', () => {
     const facultyResearch = {
       entityType: 'FACULTY_RESEARCH_AREA',
       kind: 'individual',
@@ -377,7 +377,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     };
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(facultyResearch);
 
-    expect(sanitized.fullDescription).toBe(PROGRAM_DIRECTOR_BIO);
+    expect(sanitized.fullDescription).toBe('');
   });
 
   it('repairs a subject-less "Research {verb}..." fullDescription on a LAB entity (#999)', () => {
@@ -422,7 +422,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     );
   });
 
-  it('does not re-voice first-person advising notes into third person (#964 stays scoped)', () => {
+  it('blanks a faculty-research entity whose description is a recruiting/advising note (#1526)', () => {
     const facultyResearch = {
       entityType: 'FACULTY_RESEARCH_AREA',
       kind: 'individual',
@@ -430,7 +430,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     };
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(facultyResearch);
 
-    expect(sanitized.fullDescription).toBe(PROGRAM_DIRECTOR_BIO);
+    expect(sanitized.fullDescription).toBe('');
   });
 
   it('repairs a subject-less "Research {verb}..." fullDescription on an individual-research entity (#999)', () => {
@@ -498,13 +498,19 @@ describe('revoiceFirstPersonResearchLead', () => {
     );
   });
 
-  it('leaves idiomatic first-person-plural phrasing and unconjugated subject clauses untouched', () => {
+  it('leaves unconjugated subject clauses that are not a sentence-initial pronoun untouched', () => {
     expect(
       revoiceFirstPersonResearchLead('This work advances our understanding of neurodegeneration.'),
     ).toBe('This work advances our understanding of neurodegeneration.');
+  });
+
+  it('re-voices a sentence-initial "We <verb>" opener to third person (#1526)', () => {
     expect(revoiceFirstPersonResearchLead('We study gene expression in lung disease.')).toBe(
-      'We study gene expression in lung disease.',
+      'This group studies gene expression in lung disease.',
     );
+    expect(
+      revoiceFirstPersonResearchLead('We investigate the brain changes in movement disorders.'),
+    ).toBe('This group investigates the brain changes in movement disorders.');
   });
 
   it('drops a leading personal-page greeting only when substantive copy remains', () => {

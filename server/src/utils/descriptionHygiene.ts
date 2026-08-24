@@ -1105,6 +1105,51 @@ const contactRedactionTokenPattern = /\[(?:email|phone) redacted\]/i;
 const contactBlockLabelPattern = /\b(?:email|phone|office|fax)\s*:/i;
 const bareLocalPhonePattern = /\b(?:\(?\d{3}\)?[\s.-]?)?\d{3}[\s.-]\d{4}\b/;
 
+const clinicalTrialHicOrProtocolIdPattern =
+  /\bHIC\b\s*:?\s*(?:\d{5,}|\[phone redacted\])|\bprotocol\s*(?:#|no\.?|number)?\s*:?\s*(?:\d{4,}|\[phone redacted\])/i;
+const clinicalTrialEligibilityCriteriaPattern =
+  /\beligib(?:le|ility)\b|\binclusion criteria\b|\bexclusion criteria\b|\bages?\s+\d{1,2}\s+to\s+\d{1,2}\b|\b\d{1,2}\s+to\s+\d{1,2}\s+years?\s+(?:of\s+)?(?:age|old)\b/i;
+
+/**
+ * A clinical-trial recruitment flyer (eligibility bullets plus an HIC/
+ * protocol ID) scraped into a lab's fullDescription instead of a description
+ * of the lab's own research (#1526). A flyer's phone number is redacted to
+ * `[phone redacted]` upstream of this check (and the bare HIC/protocol digits
+ * frequently get swept into the same redaction), so the HIC/protocol signal
+ * matches either the raw digits or that redacted token, not a bare phone
+ * pattern. Requires both signals together so ordinary research prose that
+ * merely mentions a study's age range is not blanked.
+ */
+export function isClinicalTrialRecruitmentFlyerText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  return (
+    clinicalTrialHicOrProtocolIdPattern.test(normalized) &&
+    clinicalTrialEligibilityCriteriaPattern.test(normalized)
+  );
+}
+
+const patientCareMarketingPhrasePattern =
+  /\bwellness journey\b|\bcompassionate,?\s+(?:science-driven,?\s+)?dedicated\s+lifelong\s+care\b|\bcompassionate care\b/i;
+const patientCareSecondPersonAddressPattern =
+  /\b(?:support and guide you|guide you (?:on|through)|for you and your family)\b/i;
+
+/**
+ * Patient-care marketing copy (a clinic's "your wellness journey" pitch to
+ * patients) scraped into a lab's fullDescription instead of a research
+ * description (#1526). Requires both the marketing phrase and a direct
+ * second-person address to a patient, a combination that does not occur in
+ * genuine research prose.
+ */
+export function isPatientCareMarketingCopyText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  return (
+    patientCareMarketingPhrasePattern.test(normalized) &&
+    patientCareSecondPersonAddressPattern.test(normalized)
+  );
+}
+
 const STREET_SUFFIX_WORD = 'Street|Avenue|Road|Boulevard|Drive|Way|Lane|Place|Court|Circle';
 const STREET_SUFFIX_ABBREVIATION = 'St|Ave|Rd|Blvd|Dr|Ln|Pl|Ct|Cir';
 const OFFICE_UNIT_LABEL = 'Floor|Fl|Room|Rm|Suite|Ste';
@@ -1580,7 +1625,9 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
     isCitationAuthorListDumpText(stripped) ||
     isResearchAreaEchoDescription(stripped) ||
     isInstitutionalCenterBlurbText(stripped) ||
-    containsHtmlTagMarkup(stripped)
+    containsHtmlTagMarkup(stripped) ||
+    isClinicalTrialRecruitmentFlyerText(stripped) ||
+    isPatientCareMarketingCopyText(stripped)
   ) {
     return '';
   }
