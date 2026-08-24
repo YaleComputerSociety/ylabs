@@ -4,10 +4,42 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { repairPersonBiographyLeakedDescription } from '../utils/researchEntityBiographyDescriptionRepair';
+import {
+  repairPersonBiographyLeakedDescription,
+  stripLeadingDegreeListPrefix,
+} from '../utils/researchEntityBiographyDescriptionRepair';
+import { describesResearchFocus } from '../utils/researchEntityDescriptionQuality';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { syncEntities } from '../services/meiliSyncService';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
+
+const INDIVIDUAL_OR_LAB_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'INDIVIDUAL_RESEARCH', 'LAB']);
+
+/**
+ * #1533's cohort: a raw faculty-bio degree-list lead, or an individual/lab
+ * description with zero research-topic signal (award/teaching-history/CV
+ * prose only). Scoped tighter than "every entity repairPersonBiography...
+ * changes" - that function's pre-existing #1456/#1791 sentence patterns also
+ * fire on unrelated STEM/medical individual rows never scanned by a prior
+ * backfill (#1456's script only covered kind:lab), and on those rows the
+ * fallback to a bare researchAreas summary can discard a good, specific
+ * description. Keeping this script's blast radius to the #1533 shape avoids
+ * touching entities this issue was never about.
+ */
+function isHumanitiesCvBioCandidate(entity: {
+  kind?: string | null;
+  entityType?: string | null;
+  fullDescription?: unknown;
+}): boolean {
+  const full = typeof entity.fullDescription === 'string' ? entity.fullDescription : '';
+  if (!full) return false;
+  if (stripLeadingDegreeListPrefix(full) !== full) return true;
+
+  const isIndividualOrLab =
+    entity.kind === 'individual' || INDIVIDUAL_OR_LAB_ENTITY_TYPES.has(String(entity.entityType || ''));
+  if (!isIndividualOrLab) return false;
+  return !describesResearchFocus(full);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,23 +82,22 @@ async function main(): Promise<void> {
 
   await initializeConnections();
 
-  // Scope: every live student_ready entity with a fullDescription, not just
-  // #1456's kind:lab cohort - the humanities residual (#1533) is on
-  // kind:individual / entityType:FACULTY_RESEARCH_AREA rows (a raw faculty-bio
-  // degree-list lead or an award/teaching-history CV with no research-topic
-  // sentence at all), which #1456's lab-only query never scanned.
-  // repairPersonBiographyLeakedDescription is a no-op ('unchanged') on any
-  // description that doesn't match a biography/CV/degree-list signature, so
-  // widening the scope here is safe.
-  const candidates = await ResearchEntity.find({
+  // Scope: live student_ready entities matching the #1533 humanities CV/bio
+  // shape specifically - not #1456's kind:lab cohort (already covered) and
+  // not a blanket re-run of the repair function over every entity (see
+  // isHumanitiesCvBioCandidate for why that's unsafe).
+  const scanned = await ResearchEntity.find({
     studentVisibilityTier: 'student_ready',
     archived: { $ne: true },
     fullDescription: { $type: 'string', $ne: '' },
   })
-    .select('_id slug shortDescription fullDescription researchAreas')
+    .select('_id slug kind entityType shortDescription fullDescription researchAreas')
     .lean();
+  const candidates = scanned.filter(isHumanitiesCvBioCandidate);
 
-  console.error(`Scanned ${candidates.length} student_ready entities with a fullDescription`);
+  console.error(
+    `Scanned ${scanned.length} student_ready entities with a fullDescription, ${candidates.length} match the #1533 humanities CV/bio candidate shape`,
+  );
 
   const repaired: RepairedRecord[] = [];
   for (const entity of candidates) {
