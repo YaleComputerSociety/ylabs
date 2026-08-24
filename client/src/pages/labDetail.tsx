@@ -466,6 +466,26 @@ const EvidenceChip = ({ item }: { item: EvidenceItem }) => {
   );
 };
 
+interface DecisionOutreachContext {
+  websiteUrl?: string;
+  piEmail?: string;
+  profileNeedsOwnButton: boolean;
+  preferOrgEngagementOutreach: boolean;
+  officialSource?: { url: string } | null;
+}
+
+const decisionSummaryShowsWebsiteCta = ({
+  websiteUrl,
+  piEmail,
+  profileNeedsOwnButton,
+  preferOrgEngagementOutreach,
+  officialSource,
+}: DecisionOutreachContext): boolean =>
+  Boolean(websiteUrl) &&
+  !(preferOrgEngagementOutreach && Boolean(officialSource)) &&
+  !piEmail &&
+  !profileNeedsOwnButton;
+
 const DecisionSummary = ({
   group,
   profileUrl,
@@ -530,6 +550,13 @@ const DecisionSummary = ({
     visibleEvidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
+  const showsWebsiteCta = decisionSummaryShowsWebsiteCta({
+    websiteUrl,
+    piEmail,
+    profileNeedsOwnButton,
+    preferOrgEngagementOutreach,
+    officialSource,
+  });
   const leadCardProfileUrl = preferOrgEngagementOutreach ? undefined : profileUrl;
   const showGetInvolvedBlock =
     (preferOrgEngagementOutreach && Boolean(officialSource)) ||
@@ -636,7 +663,7 @@ const DecisionSummary = ({
                       href={officialSource.url}
                       target="_blank"
                       rel={EXTERNAL_LINK_REL}
-                      className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                     >
                       See how to get involved
                     </a>
@@ -667,7 +694,7 @@ const DecisionSummary = ({
                     href={`mailto:${piEmail}?subject=${encodeURIComponent(
                       'Interest in undergraduate research',
                     )}`}
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                   >
                     {piName ? `Email ${piName}` : 'Email the PI'}
                   </a>
@@ -678,18 +705,18 @@ const DecisionSummary = ({
                     href={profileUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                   >
                     Open official profile
                   </a>
                 </div>
-              ) : websiteUrl ? (
+              ) : showsWebsiteCta ? (
                 <div className="mt-3 flex flex-col gap-2">
                   <a
                     href={websiteUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                   >
                     Visit official website
                   </a>
@@ -700,7 +727,7 @@ const DecisionSummary = ({
                     href={officialSource.url}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                   >
                     Open the official page
                   </a>
@@ -723,7 +750,7 @@ const DecisionSummary = ({
                     href={YALE_DIRECTORY_URL}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                   >
                     Search the Yale Directory
                   </a>
@@ -1003,6 +1030,17 @@ const LabDetail = () => {
     showDedicatedPrincipalInvestigatorSection &&
     !leadIdentityUnderReview &&
     principalInvestigators.some((member) => Boolean(resolveLeadOfficialProfileUrl(member)));
+  const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta({
+    websiteUrl: officialWebsiteUrl,
+    piEmail: singlePrincipalInvestigator?.user?.email?.trim(),
+    profileNeedsOwnButton:
+      Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
+    preferOrgEngagementOutreach,
+    officialSource: outreachOfficialSource,
+  });
+  const headerWebsiteDedupeUrls = decisionSummaryLinksWebsite
+    ? [decisionProfileUrl, officialWebsiteUrl]
+    : [decisionProfileUrl];
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
   const canRequestListingReview =
     Boolean(user?.userConfirmed) &&
@@ -1091,7 +1129,7 @@ const LabDetail = () => {
 
           <LabHeader
             group={group}
-            dedupeWebsiteUrls={[decisionProfileUrl]}
+            dedupeWebsiteUrls={headerWebsiteDedupeUrls}
             actions={
               <ResearchPlanSaveButton
                 isSaved={isResearchEntitySaved}

@@ -630,9 +630,10 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
       RESEARCH_WEBSITE_URL,
     );
+    expect(screen.queryByRole('link', { name: 'Visit lab website' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
@@ -653,9 +654,10 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
       RESEARCH_WEBSITE_URL,
     );
+    expect(screen.queryByRole('link', { name: 'Visit lab website' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(screen.queryByText(/does not have a direct link/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
@@ -767,7 +769,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText('Molecular Biophysics and Biochemistry Undergraduate Research');
 
-    expect(screen.getByRole('link', { name: 'Visit program website' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
       'https://mbb.yale.edu/introduction-undergraduate-program',
     );
     expect(screen.getByText('What this program focuses on')).toBeTruthy();
@@ -1457,9 +1459,10 @@ describe('LabDetail page', () => {
     await screen.findByText('Example Lab Homepage PI Route');
 
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
       RESEARCH_WEBSITE_URL,
     );
+    expect(screen.queryByRole('link', { name: 'Visit lab website' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
     expect(screen.getByText('Research website')).toBeTruthy();
   });

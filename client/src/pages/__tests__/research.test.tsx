@@ -381,14 +381,7 @@ describe('Research page', () => {
       true,
     );
     expect(container.textContent).toContain('Enter a topic or name to enable Search.');
-    expect(container.textContent).toContain('Try a starting point');
     expect(screen.queryByRole('button', { name: 'Explore research homes' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Machine learning' }).className).toContain(
-      'min-h-[44px]',
-    );
-    expect(screen.getByRole('button', { name: 'Neuroscience' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Climate change' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Ancient DNA' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Explore by department' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Look up a professor' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Open roles' })).toBeNull();
@@ -439,9 +432,6 @@ describe('Research page', () => {
     expect(screen.queryByLabelText('Department')).toBeNull();
     expect(screen.queryByLabelText('Method/topic')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Open roles' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Machine learning' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Digital archives' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Quantum materials' })).toBeTruthy();
     expect(container.textContent).not.toContain('mechanism design');
     expect(container.textContent).not.toContain('neuroscience');
     expect(container.textContent).not.toContain('protein folding');
@@ -510,8 +500,10 @@ describe('Research page', () => {
 
     renderResearch();
 
-    await screen.findByText('Try a starting point');
-    fireEvent.click(screen.getByRole('button', { name: 'Ancient DNA' }));
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'ancient DNA' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     await screen.findByRole('heading', { name: 'Ancient DNA Example' });
     expect(mockedAxios.post).toHaveBeenCalledWith(
@@ -595,8 +587,10 @@ describe('Research page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Try a starting point');
-    fireEvent.click(screen.getByRole('button', { name: 'Quantum materials' }));
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'quantum materials' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     await screen.findByRole('heading', { name: 'Quantum Materials Example' });
     expect(screen.getByTestId('location').textContent).toBe('/research?q=quantum+materials');
@@ -1181,7 +1175,10 @@ describe('Research page', () => {
     renderResearch();
 
     await screen.findByRole('heading', { name: 'Default Research Home' });
-    fireEvent.click(screen.getByRole('button', { name: 'Quantum materials' }));
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'quantum materials' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     await screen.findByText(/research homes? for 'quantum materials'/);
     expect(await screen.findByRole('heading', { name: 'Quantum Materials Example' })).toBeTruthy();
@@ -2086,8 +2083,7 @@ describe('Research page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('Try a starting point');
-    const input = screen.getByLabelText('Search Yale research');
+    const input = await screen.findByLabelText('Search Yale research');
 
     fireEvent.change(input, { target: { value: 'neuroscience' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));

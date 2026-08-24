@@ -68,10 +68,10 @@ const UserButton = () => {
     fontFamily: 'Inter',
     fontSize: '14px',
     fontWeight: 450,
-    color: '#000000',
+    color: 'var(--yr-ink)',
     '&:hover': {
       backgroundColor: 'transparent',
-      color: '#1876D1',
+      color: 'var(--yr-blue)',
     },
   };
 
@@ -87,17 +87,17 @@ const UserButton = () => {
           width: '44px',
           height: '44px',
           borderRadius: '50%',
-          backgroundColor: '#0055A4',
+          backgroundColor: 'var(--yr-blue)',
           color: '#FFFFFF',
           fontFamily: 'Inter',
           fontWeight: 600,
           fontSize: '14px',
           padding: 0,
           '&:hover': {
-            backgroundColor: '#004B93',
+            backgroundColor: 'var(--yr-navy)',
           },
           '&:focus-visible': {
-            outline: '2px solid #1876D1',
+            outline: '2px solid var(--yr-blue)',
             outlineOffset: '2px',
           },
         }}
@@ -143,7 +143,7 @@ const UserButton = () => {
           onClick={handleAboutClick}
           sx={{
             ...menuItemStyle,
-            color: isAboutActive ? '#1876D1' : '#000000',
+            color: isAboutActive ? 'var(--yr-blue)' : 'var(--yr-ink)',
           }}
           disableRipple
         >
