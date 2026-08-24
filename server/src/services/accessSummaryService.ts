@@ -21,6 +21,7 @@ export interface AccessSummary {
     confidence: string;
     excerpt?: string;
     sourceUrl?: string;
+    observedAt?: string;
   }>;
   signalTypes: string[];
   bestNextStep: string;
@@ -73,6 +74,11 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 const accessSummaryEntityId = (value: unknown): string | undefined => {
   const id = serializedDocumentId(value);
   return id && ACCESS_SUMMARY_OBJECT_ID_RE.test(id) ? id : undefined;
+};
+
+const observedAtIso = (value: unknown): string | undefined => {
+  const time = value instanceof Date ? value.getTime() : new Date(value as string).getTime();
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
 };
 
 function confidenceScore(signal: any): number {
@@ -256,6 +262,7 @@ export async function listAccessSummariesForResearchEntities(
         confidence: boundedString(signal.confidence, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
         excerpt: withoutRedactionMarkerSentences(publicText(signal.source?.excerpt)),
         sourceUrl: publicHttpUrl(signal.source?.url),
+        observedAt: observedAtIso(signal.observedAt),
       })),
       signalTypes: Array.from(signalTypes),
       bestNextStep: publicText(bestNextStepFor(status, signalTypes)) || EMPTY_SUMMARY.bestNextStep,

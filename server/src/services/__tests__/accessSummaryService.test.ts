@@ -476,4 +476,49 @@ describe('accessSummaryService', () => {
     expect(summary?.signalTypes).not.toContain('POSTED_OPENING');
     expect(JSON.stringify(summary)).not.toContain('apply.example.test');
   });
+
+  it('threads the newest observedAt into the served evidence copy (#1644)', async () => {
+    const entityId = new Types.ObjectId();
+    const observedAt = new Date('2026-03-01T00:00:00.000Z');
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'CURRENT_UNDERGRADS',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          observedAt,
+          source: { excerpt: 'Undergraduates are listed on the lab page.' },
+        },
+      ]),
+    );
+
+    const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+      entityId.toString(),
+    );
+
+    expect(summary?.evidence[0].observedAt).toBe('2026-03-01T00:00:00.000Z');
+  });
+
+  it('omits observedAt when the signal carries no usable timestamp (#1644)', async () => {
+    const entityId = new Types.ObjectId();
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'CURRENT_UNDERGRADS',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          observedAt: undefined,
+          source: { excerpt: 'Undergraduates are listed on the lab page.' },
+        },
+      ]),
+    );
+
+    const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+      entityId.toString(),
+    );
+
+    expect(summary?.evidence[0].observedAt).toBeUndefined();
+  });
 });

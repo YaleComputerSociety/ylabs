@@ -403,6 +403,77 @@ describe('LabDetail page', () => {
     );
   });
 
+  it('shows evidence freshness on the detail-page evidence chip when a timestamp is present', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        accessSummary: {
+          status: 'evidence-backed',
+          confidence: 0.6,
+          signalTypes: ['CURRENT_UNDERGRADS'],
+          bestNextStep: 'Reach out to ask about opportunities',
+          evidence: [
+            {
+              signalType: 'CURRENT_UNDERGRADS',
+              confidence: 'MEDIUM',
+              observedAt: new Date().toISOString(),
+            },
+          ],
+        },
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(container.textContent).toContain('Current undergrads');
+    expect(container.textContent).toContain('Confirmed today');
+  });
+
+  it('omits the freshness affordance on an evidence chip when no observedAt is known', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        accessSummary: {
+          status: 'evidence-backed',
+          confidence: 0.6,
+          signalTypes: ['CURRENT_UNDERGRADS'],
+          bestNextStep: 'Reach out to ask about opportunities',
+          evidence: [{ signalType: 'CURRENT_UNDERGRADS', confidence: 'MEDIUM' }],
+        },
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(container.textContent).toContain('Current undergrads');
+    expect(container.textContent).not.toContain('Confirmed');
+  });
+
+  it('marks stale evidence on a detail-page evidence chip as possibly out of date', async () => {
+    const staleObservedAt = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        accessSummary: {
+          status: 'evidence-backed',
+          confidence: 0.6,
+          signalTypes: ['CURRENT_UNDERGRADS'],
+          bestNextStep: 'Reach out to ask about opportunities',
+          evidence: [
+            { signalType: 'CURRENT_UNDERGRADS', confidence: 'MEDIUM', observedAt: staleObservedAt },
+          ],
+        },
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(container.textContent).toContain('may be out of date');
+  });
+
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,

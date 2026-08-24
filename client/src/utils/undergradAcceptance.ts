@@ -33,6 +33,46 @@ export interface EvidenceItem {
   detail?: string;
   /** strong vs moderate — used to compute the verdict and to order chips. */
   strength: 'strong' | 'moderate';
+  /** ISO timestamp of the newest supporting observation, when known. */
+  observedAt?: string;
+}
+
+export interface EvidenceFreshness {
+  label: string;
+  isStale: boolean;
+}
+
+const STALE_EVIDENCE_THRESHOLD_DAYS = 365;
+
+/**
+ * Pure so it can be unit-tested with an injected clock; the component caller
+ * defaults `now` to the real clock at render time.
+ */
+export function describeEvidenceFreshness(
+  observedAt: string | undefined,
+  now: number = Date.now(),
+): EvidenceFreshness | undefined {
+  if (!observedAt) return undefined;
+  const observedTime = new Date(observedAt).getTime();
+  if (!Number.isFinite(observedTime)) return undefined;
+
+  const ageDays = Math.max(0, Math.floor((now - observedTime) / (1000 * 60 * 60 * 24)));
+  const isStale = ageDays > STALE_EVIDENCE_THRESHOLD_DAYS;
+
+  let age: string;
+  if (ageDays < 1) {
+    age = 'today';
+  } else if (ageDays < 30) {
+    age = ageDays === 1 ? '1 day ago' : `${ageDays} days ago`;
+  } else if (ageDays < 365) {
+    const months = Math.max(1, Math.round(ageDays / 30));
+    age = months === 1 ? '~1 month ago' : `~${months} months ago`;
+  } else {
+    const years = Math.max(1, Math.round(ageDays / 365));
+    age = years === 1 ? '~1 year ago' : `~${years} years ago`;
+  }
+
+  return { label: `Confirmed ${age}`, isStale };
 }
 
 export interface AcceptanceVerdictResult {
@@ -142,6 +182,7 @@ function accessEvidenceChip(item: AccessSummaryEvidence, group: ResearchGroup): 
       label: REACH_OUT_TO_CONFIRM_LABEL,
       detail: item.excerpt || undefined,
       strength: 'moderate',
+      observedAt: item.observedAt,
     };
   }
   const historicalCurrentUndergrads =
@@ -153,6 +194,7 @@ function accessEvidenceChip(item: AccessSummaryEvidence, group: ResearchGroup): 
     label: accessSignalLabel(item.signalType),
     detail: item.excerpt || item.sourceUrl || undefined,
     strength: item.confidence === 'HIGH' && !historicalCurrentUndergrads ? 'strong' : 'moderate',
+    observedAt: item.observedAt,
   };
 }
 

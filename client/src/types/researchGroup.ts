@@ -46,6 +46,7 @@ export interface AccessSummary {
     confidence: string;
     excerpt?: string;
     sourceUrl?: string;
+    observedAt?: string;
   }>;
   signalTypes: string[];
   bestNextStep: string;
