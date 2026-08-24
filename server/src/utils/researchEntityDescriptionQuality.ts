@@ -40,6 +40,7 @@ export type DescriptionQualityFlag =
   | 'generic-lead'
   | 'malformed-generated-text'
   | 'non-self-contained'
+  | 'non-offer-clause'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -82,7 +83,7 @@ const sentenceList = (value: string): string[] => {
     );
   return (
     protectedText
-      .match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g)
+      .match(/[^.!?]+[.!?]+(?:\s|$|(?=[A-Z]))|[^.!?]+$/g)
       ?.map((sentence) => sentence.split(INITIAL_DOT_TOKEN).join('.').trim()) || []
   );
 };
@@ -330,7 +331,8 @@ const hasFragmentaryCardCopy = (value: string): boolean =>
   /^[\p{L}.'’-]+,\s*\d{4}\)/u.test(value) ||
   /\([^)]*$/.test(value) ||
   (/^[^()]*\)/.test(value) && !/\([^)]*\)/.test(value)) ||
-  /\b[A-Z]\.$/.test(value);
+  /\b[A-Z]\.$/.test(value) ||
+  /^[a-z]{2,10}\/\s/.test(value);
 
 const endsWithCardCompletionMarker = (value: string): boolean =>
   /(?:[.!?…]|\p{L}\))["'”’)\]]*$/u.test(value);
@@ -692,6 +694,20 @@ export function shortDescriptionQuality(
   };
 }
 
+const PROGRAM_CARD_EXCLUSION_CLAUSE_PATTERN =
+  /\b(?:will not be (?:considered|accepted|eligible)|(?:is|are) not (?:eligible|valid|permitted)|cannot be (?:for|used)|does not (?:support|cover|apply|fund))\b/i;
+
+const PROGRAM_CARD_ADMIN_REVIEW_CLAUSE_PATTERN =
+  /\b(?:applications?\s+will\s+be\s+reviewed|will\s+be\s+(?:reviewed\s+and\s+)?selected\s+by|reviewed\s+and\s+recipients\s+selected\s+by|review\s+committee\s+consisting\s+of|selected\s+by\s+(?:the|a)\s+[\p{L}\s]{0,60}\b(?:council|committee|office|board)\b)\b/iu;
+
+const PROGRAM_CARD_LOGISTICS_CLAUSE_PATTERN =
+  /\b(?:research\s+team\s+is\s+located|the\s+maximum\s+[\p{L}\s]{0,40}grant\s+is\s+\$|amounts\s+and\s+uses\s+of\s+grant|grant\s+criteria\s+and\s+guidelines|release\s+form\s+requirement|overlapping\s+grant\s+awards)\b/iu;
+
+const isNonOfferProgramCardClause = (value: string): boolean =>
+  PROGRAM_CARD_EXCLUSION_CLAUSE_PATTERN.test(value) ||
+  PROGRAM_CARD_ADMIN_REVIEW_CLAUSE_PATTERN.test(value) ||
+  PROGRAM_CARD_LOGISTICS_CLAUSE_PATTERN.test(value);
+
 /**
  * Program-typed research entities (fellowships, RA programs) describe what
  * they offer and how to apply, not a lab-style "Studies X" research focus, so
@@ -699,7 +715,10 @@ export function shortDescriptionQuality(
  * `shortDescriptionQuality` do not apply: a program's own concise, complete
  * fullDescription sentence is a legitimate card short verbatim. This keeps
  * every other safety check (blank, length, boilerplate, chrome, malformed
- * text, appointment/role-only fragments).
+ * text, appointment/role-only fragments), and adds one program-specific check:
+ * an exclusion clause, application-review line, or pure grant logistics
+ * sentence is well-formed but tells a student nothing about what the award
+ * offers, so it does not qualify as a card short either (issue #1596).
  */
 export function programCardShortDescriptionQuality(
   value: unknown,
@@ -729,6 +748,7 @@ export function programCardShortDescriptionQuality(
   if (text && hasFirstPersonShortLead(text)) flags.push('first-person');
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
+  if (text && isNonOfferProgramCardClause(text)) flags.push('non-offer-clause');
   if (!full) flags.push('full-not-useful');
 
   return {
