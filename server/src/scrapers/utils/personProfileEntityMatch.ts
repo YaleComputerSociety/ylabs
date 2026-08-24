@@ -309,6 +309,53 @@ export function sourceUrlToleratedSchoolDivergesFromEntity(
   return !entitySchools.has(urlSchool);
 }
 
+// medicine, public-health, environment, engineering, and nursing routinely
+// cross-appoint the same faculty across each other (a School of Public Health
+// biostatistician or a School of the Environment scientist commonly also
+// carries a medicine.yale.edu page) - this is the same rationale that already
+// excludes all five from CONTRADICTION_SOURCE_SUBDOMAINS above. Membership in
+// this cluster on the entity's side confirms a tolerant host's implied school
+// even when the two tokens are not identical.
+const SCIENCE_HEALTH_CROSS_APPOINTMENT_CLUSTER = new Set([
+  'medicine',
+  'public-health',
+  'environment',
+  'engineering',
+  'nursing',
+]);
+
+/**
+ * Whether a tolerant host's implied school is affirmatively CONFIRMED to match
+ * one of the entity's own recorded schools/departments, directly or via the
+ * mutual-cross-appointment cluster above. Unlike
+ * `sourceUrlToleratedSchoolDivergesFromEntity` (which fails open - "unknown
+ * school" is treated as "assume fine", so a full-name match at a tolerant host
+ * is never blocked outright when the entity's own school isn't recorded), this
+ * fails closed: an unmapped or unknown entity school - e.g. a Faculty of Arts
+ * and Sciences department like "Russian, East European, and Eurasian Studies"
+ * that never matches any `YALE_SCHOOL_TOKEN_KEYWORDS` pattern - counts as NOT
+ * confirmed. Used only for the weaker surname-only match (#1537), where there is
+ * no given-name evidence at all to fall back on, so the corroboration
+ * requirement must trigger by default rather than only on affirmative
+ * divergence - a genuinely medicine-department "<Surname> Lab" is spared
+ * (confirmed match), while a humanities-department "<Surname> Lab" is not
+ * spared just because its department happens to be unmapped.
+ */
+function sourceUrlToleratedSchoolConfirmedForEntity(
+  value: unknown,
+  entity: ResearchEntityIdentity,
+): boolean {
+  const urlSchool = toleratedSchoolTokenFromUrl(value);
+  if (!urlSchool) return false;
+  const entitySchools = yaleSchoolTokensFromEntity(entity);
+  if (entitySchools.has(urlSchool)) return true;
+  if (!SCIENCE_HEALTH_CROSS_APPOINTMENT_CLUSTER.has(urlSchool)) return false;
+  for (const entitySchool of entitySchools) {
+    if (SCIENCE_HEALTH_CROSS_APPOINTMENT_CLUSTER.has(entitySchool)) return true;
+  }
+  return false;
+}
+
 function normalizeUrlForCompare(value: string): string {
   return value.trim().toLowerCase().replace(/\/+$/, '');
 }
@@ -405,14 +452,24 @@ function entityCorroboratesPersonProfile(
  * the same full-person corroboration the no-token case uses and is rejected unless
  * the entity's own evidence independently names that person. A surname collision
  * (a shared family name with differing given names) stays allowed and is left to
- * identity/dedupe resolution. A URL whose Yale school subdomain contradicts the
- * entity's own recorded school is always rejected first, so an exact full-name
- * homonym at a different Yale school (issue #1045) is ruled out even when every
- * name token matches. An exact full-name match (given name and family name both
- * overlap) at a cross-appointment-tolerant host (medicine, public health,
- * engineering) whose implied school diverges from the entity's own recorded
- * school still requires the same corroboration as a no-token-match, so the
- * same-name-different-person collision those tolerant hosts otherwise let
+ * identity/dedupe resolution *when the entity's own identity carries a given name
+ * at all* (even one that disagrees with the URL's, e.g. "Perry" Lowell vs
+ * "Frances" Lowell) - that disagreement is itself evidence the entity already
+ * claims a specific person. When the entity's identity is a bare single surname
+ * token with no given name anywhere (a department-roster-derived "<Surname> Lab"
+ * whose real given name was never recorded), that same surname-only overlap at a
+ * cross-appointment-tolerant host carries no disambiguating evidence at all - it
+ * is exactly the shape of a coincidental homonym (issue #1537, e.g. a Russian and
+ * East European Studies "Graham Lab" keyed onto a School of Medicine
+ * medicine.yale.edu/profile/thomas-graham page) - so it requires the same
+ * corroboration as a no-token-match. A URL whose Yale school subdomain
+ * contradicts the entity's own recorded school is always rejected first, so an
+ * exact full-name homonym at a different Yale school (issue #1045) is ruled out
+ * even when every name token matches. An exact full-name match (given name and
+ * family name both overlap) at a cross-appointment-tolerant host (medicine,
+ * public health, engineering) whose implied school diverges from the entity's own
+ * recorded school still requires the same corroboration as a no-token-match, so
+ * the same-name-different-person collision those tolerant hosts otherwise let
  * through (issue #1413) is caught symmetrically in either direction.
  */
 export function personProfileSourceMatchesEntity(
@@ -433,6 +490,14 @@ export function personProfileSourceMatchesEntity(
     const givenNameAlsoMatches = identityTokens.some((identityToken) =>
       tokensOverlap(givenNameToken, identityToken),
     );
+    if (
+      !givenNameAlsoMatches &&
+      identityTokens.length === 1 &&
+      toleratedSchoolTokenFromUrl(value) !== null &&
+      !sourceUrlToleratedSchoolConfirmedForEntity(value, entity)
+    ) {
+      return entityCorroboratesPersonProfile(urlTokens, value, entity);
+    }
     if (givenNameAlsoMatches && sourceUrlToleratedSchoolDivergesFromEntity(value, entity)) {
       // The entity's own prose trivially names itself (it IS this person's page),
       // so prose can never distinguish this profile from a same-full-name
