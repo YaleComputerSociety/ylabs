@@ -19,6 +19,7 @@ import {
 } from '../services/studentVisibilityTier';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { officialProfileUrlFromRosterEntry } from '../services/leadProfileIdentity';
+import { countResearchEntityAlternateAccessPaths } from '../services/researchEntityAlternateAccessPath';
 import {
   selectSamePiDuplicateRiskEntityIds,
   type ResearchEntityPiDedupeRow,
@@ -293,7 +294,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   if (Number.isFinite(limit)) query.limit(limit);
   const entities = await query.lean();
   const entityIds = entities.map((entity: any) => entity._id);
-  const [rosterByEntityId, accessRows] = await Promise.all([
+  const [rosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -305,6 +306,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       },
       { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
     ]),
+    countResearchEntityAlternateAccessPaths(entityIds),
   ]);
 
   const leadRows: any[] = [];
@@ -404,6 +406,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
           leadMembers,
           concreteLeadEntityUserIds,
         }) || samePiDuplicateRiskEntityIds.has(id),
+      relatedEntityAccessPathCount: alternateAccessPathCounts.get(id) || 0,
     });
     return {
       id,

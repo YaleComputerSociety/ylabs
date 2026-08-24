@@ -28,6 +28,7 @@ export interface ResearchEntityStudentVisibilityInput {
   duplicateRisk?: boolean;
   exactUrlDuplicateRisk?: boolean;
   contentPageRisk?: boolean;
+  relatedEntityAccessPathCount?: number;
 }
 
 export function hasProfileAreaShellDuplicateRisk({
@@ -160,6 +161,38 @@ const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE'
  */
 function isOrganizationalResearchEntity(entity: Record<string, any>): boolean {
   return ORGANIZATIONAL_ENTITY_TYPES.has(textValue(entity.entityType).toUpperCase());
+}
+
+const organizationalEngagementUrlPathPatterns = [
+  /\/(?:people|staff|team|members?|membership|our-people|who-we-are|leadership)(?:\/|$)/i,
+  /\/(?:get-involved|getinvolved|join(?:-us)?|participate|volunteer|opportunities|apply|how-to-apply|admissions)(?:\/|$)/i,
+  /\/(?:programs?|education|academics|training|courses?|fellowships?|internships?|research-opportunities|for-students|students)(?:\/|$)/i,
+];
+
+function isOrganizationalEngagementUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/\/+$/g, '') || '/';
+    if (path === '/') return false;
+    return organizationalEngagementUrlPathPatterns.some((pattern) => pattern.test(path));
+  } catch {
+    return false;
+  }
+}
+
+function hasOrganizationalEngagementLink(entity: Record<string, any>): boolean {
+  return entityUrls(entity).some(isOrganizationalEngagementUrl);
+}
+
+function hasOrganizationalAlternateAccessPath({
+  entity,
+  relatedEntityAccessPathCount,
+}: {
+  entity: Record<string, any>;
+  relatedEntityAccessPathCount: number;
+}): boolean {
+  if (relatedEntityAccessPathCount > 0) return true;
+  return hasOrganizationalEngagementLink(entity);
 }
 
 function memberUserRecord(member: Record<string, any>): Record<string, any> {
@@ -316,6 +349,7 @@ export function computeResearchEntityStudentVisibility({
   duplicateRisk = false,
   exactUrlDuplicateRisk = false,
   contentPageRisk = false,
+  relatedEntityAccessPathCount = 0,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
     entity,
@@ -325,9 +359,21 @@ export function computeResearchEntityStudentVisibility({
   const reasons: string[] = [];
   const hasActionEvidence =
     openPostedOpportunityCount > 0 || accessSignalCount > 0 || actionablePathwayCount > 0;
-  const requiresLead =
-    !isProgramLikeResearchEntity(entity) && !isOrganizationalResearchEntity(entity);
+  const organizationalLeadExempt =
+    isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
+  const requiresLead = !organizationalLeadExempt;
   const missingRequiredLead = requiresLead && quality.leadState !== 'lead_attached';
+  // The org/program lead exemption assumes the entity itself is an alternate
+  // "way in" via its own page and programs. That premise only holds when the
+  // entity actually surfaces a reachable next step: a linked related/affiliated
+  // research entity, or a discovered people/staff/get-involved/programs page. An
+  // exempted entity with no lead and no such path is a dead end whose only
+  // access signal is a generic templated CTA, so it must not be auto-published
+  // to students (issue #1359).
+  const organizationalDeadEnd =
+    organizationalLeadExempt &&
+    quality.leadState !== 'lead_attached' &&
+    !hasOrganizationalAlternateAccessPath({ entity, relatedEntityAccessPathCount });
   const genericDirectoryShell =
     isGenericDirectoryOnlyProfileAreaShell(entity) &&
     quality.descriptionState === 'missing' &&
@@ -364,6 +410,7 @@ export function computeResearchEntityStudentVisibility({
   if (quality.repairFlags.includes('pi_identity_conflict')) reasons.push('pi_identity_conflict');
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
   if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
+  if (organizationalDeadEnd) reasons.push('missing_alternate_access_path');
   if (quality.repairFlags.includes('missing_source_url')) reasons.push('missing_source_url');
   if (genericDirectoryShell) reasons.push('generic_directory_shell');
   if (profileBiographyShell) reasons.push('profile_biography_shell');
@@ -389,6 +436,7 @@ export function computeResearchEntityStudentVisibility({
     quality.descriptionState === 'source_backed' &&
     quality.cardState === 'complete' &&
     (!requiresLead || quality.leadState === 'lead_attached') &&
+    !organizationalDeadEnd &&
     !quality.repairFlags.includes('pi_identity_conflict') &&
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
@@ -400,6 +448,7 @@ export function computeResearchEntityStudentVisibility({
     quality.descriptionState === 'source_backed' &&
     quality.cardState === 'complete' &&
     (!requiresLead || quality.leadState === 'lead_attached') &&
+    !organizationalDeadEnd &&
     !quality.repairFlags.includes('pi_identity_conflict') &&
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&

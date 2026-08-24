@@ -163,7 +163,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     );
   });
 
-  it('does not require a named director for source-backed organizational research homes (centers/institutes)', () => {
+  it('does not require a named director for a source-backed organizational research home with a linked related entity', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'center-industrial-ecology',
@@ -179,13 +179,38 @@ describe('computeResearchEntityStudentVisibility', () => {
       leadMembers: [],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
     });
 
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
   });
 
-  it('holds an organizational home that has no action evidence yet as limited_but_safe, not missing_lead', () => {
+  it('does not require a named director for an organizational research home that surfaces a get-involved page', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-get-involved',
+        name: 'Center for Industrial Ecology',
+        slug: 'yse-industrial-ecology-get-involved',
+        entityType: 'CENTER',
+        shortDescription:
+          'Advances the study of industrial ecology, material flows, and sustainable systems at Yale.',
+        fullDescription:
+          'The Center for Industrial Ecology advances research on material and energy flows, life-cycle assessment, and sustainable industrial systems through interdisciplinary collaboration.',
+        websiteUrl: 'https://environment.yale.edu/research/centers/industrial-ecology',
+        sourceUrls: ['https://environment.yale.edu/centers/industrial-ecology/get-involved'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+
+  it('holds an organizational home with a real access path but no action evidence yet as limited_but_safe, not missing_lead', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'center-no-action',
@@ -200,10 +225,90 @@ describe('computeResearchEntityStudentVisibility', () => {
       leadMembers: [],
       accessSignalCount: 0,
       actionablePathwayCount: 0,
+      relatedEntityAccessPathCount: 1,
     });
 
     expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
     expect(result.tier).toBe('limited_but_safe');
+  });
+
+  it('holds a dead-end organizational home (no lead, no related entity, no engagement page) for review', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-dead-end',
+        name: 'Yale Forests',
+        slug: 'yse-yale-forests',
+        entityType: 'CENTER',
+        shortDescription:
+          'Studies forest ecosystems, carbon dynamics, and sustainable land management across Yale-owned forests.',
+        fullDescription:
+          'Yale Forests supports research on forest ecosystems, carbon dynamics, and sustainable land management. Faculty and students conduct field studies across the school-owned forest properties.',
+        websiteUrl: 'https://environment.yale.edu/yale-forests',
+        sourceUrls: ['https://environment.yale.edu/yale-forests'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('holds a dead-end program entity (no lead, no related entity, no engagement page) for review', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'program-dead-end',
+        name: 'Example Research Program',
+        slug: 'example-research-program',
+        kind: 'program',
+        entityType: 'PROGRAM',
+        shortDescription:
+          'Coordinates undergraduate participation in faculty-led research across the division.',
+        fullDescription:
+          'The program coordinates undergraduate participation in faculty-led research across the division, connecting students with ongoing projects and mentors.',
+        sourceUrls: ['https://example.yale.edu/research-program'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('lets an operator override still publish a dead-end organizational home the operator vouches for', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-dead-end-override',
+        name: 'Yale Forests',
+        slug: 'yse-yale-forests-override',
+        entityType: 'CENTER',
+        shortDescription:
+          'Studies forest ecosystems, carbon dynamics, and sustainable land management across Yale-owned forests.',
+        fullDescription:
+          'Yale Forests supports research on forest ecosystems, carbon dynamics, and sustainable land management. Faculty and students conduct field studies across the school-owned forest properties.',
+        websiteUrl: 'https://environment.yale.edu/yale-forests',
+        sourceUrls: ['https://environment.yale.edu/yale-forests'],
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+    expect(result.reasons).toContain('operator_override');
   });
 
   it('suppresses generic directory-only faculty-area shells', () => {
@@ -629,6 +734,7 @@ describe('computeResearchEntityStudentVisibility', () => {
       },
       accessSignalCount: 1,
       actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
     });
 
     expect(result.tier).toBe('student_ready');
@@ -672,6 +778,7 @@ describe('computeResearchEntityStudentVisibility', () => {
       },
       accessSignalCount: 1,
       actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
     });
 
     expect(result.tier).toBe('student_ready');
@@ -1215,7 +1322,7 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.reasons).toContain('missing_lead');
   });
 
-  it('keeps the organizational-home exemption: a research center with no named lead can still be student-ready', () => {
+  it('keeps the organizational-home exemption: a research center with no named lead but a real access path can still be student-ready', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         name: 'Center for Research on Teaching and Learning',
@@ -1229,9 +1336,11 @@ describe('computeProgramStudentVisibility', () => {
       leadMembers: [],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
     });
 
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
   });
 });

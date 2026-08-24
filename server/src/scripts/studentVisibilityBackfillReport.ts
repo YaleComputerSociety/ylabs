@@ -93,6 +93,9 @@ export function nextRepairActionForReasons(reasons: string[]): string {
   if (reasons.includes('profile_identity_risk')) {
     return 'Resolve the person-derived identity: attach the lead whose official profile matches the entity, or suppress the contaminated shell.';
   }
+  if (reasons.includes('missing_alternate_access_path')) {
+    return 'Give this organizational/program entity a real way in: attach a related lab, faculty area, or hosted program, or a source-backed people/staff/get-involved/programs page.';
+  }
   if (reasons.includes('missing_lead')) return 'Attach a source-backed PI, director, or lead member.';
   if (reasons.includes('missing_card_description')) {
     return 'Backfill a student-facing short description from source-backed research text.';
