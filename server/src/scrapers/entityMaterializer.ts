@@ -27,7 +27,7 @@ import {
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
-import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
+import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -1332,19 +1332,15 @@ async function findUniqueUserIdByPersonName(personName: string): Promise<string 
   return user?._id ? materializerDocumentId(user._id) || null : null;
 }
 
-export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
-  Model: mongoose.Model<any>,
-  identity: { entityKey?: string; name?: unknown; entityType?: unknown },
-): Promise<any | null> {
-  const observedEntityType = textValue(identity.entityType);
-  const observedKey = textValue(identity.entityKey);
-  const isFacultyResearchArea =
-    observedEntityType === 'FACULTY_RESEARCH_AREA' || isFacultyResearchAreaKey(observedKey);
-  if (!isFacultyResearchArea) return null;
+function isGeneratedResearchEntitySlug(value: unknown): boolean {
+  const slug = textValue(value);
+  return slug.startsWith('faculty-research-area-') || slug.startsWith('dept-');
+}
 
-  const personName =
-    personNameFromFacultyResearchArea(identity.name) ||
-    personNameFromFacultyResearchArea(observedKey);
+async function resolveUniquePiLinkedResearchEntityByPersonName(
+  Model: mongoose.Model<any>,
+  personName: string,
+): Promise<any | null> {
   if (!personName) return null;
 
   const userId = await findUniqueUserIdByPersonName(personName);
@@ -1383,7 +1379,7 @@ export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
     .select('_id name slug')
     .lean();
   const nonGeneratedCandidates = candidates.filter(
-    (candidate: any) => !textValue(candidate.slug).startsWith('faculty-research-area-'),
+    (candidate: any) => !isGeneratedResearchEntitySlug(candidate.slug),
   );
   const compatibleCandidates = nonGeneratedCandidates.filter((candidate: any) =>
     compatibleNames.has(normalizeResearchEntityName(candidate.name)),
@@ -1393,6 +1389,110 @@ export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
   if (resolvedCandidates.length !== 1) return null;
 
   return Model.findById(resolvedCandidates[0]._id).lean();
+}
+
+export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
+  Model: mongoose.Model<any>,
+  identity: { entityKey?: string; name?: unknown; entityType?: unknown },
+): Promise<any | null> {
+  const observedEntityType = textValue(identity.entityType);
+  const observedKey = textValue(identity.entityKey);
+  const isFacultyResearchArea =
+    observedEntityType === 'FACULTY_RESEARCH_AREA' || isFacultyResearchAreaKey(observedKey);
+  if (!isFacultyResearchArea) return null;
+
+  const personName =
+    personNameFromFacultyResearchArea(identity.name) ||
+    personNameFromFacultyResearchArea(observedKey);
+  if (!personName) return null;
+
+  return resolveUniquePiLinkedResearchEntityByPersonName(Model, personName);
+}
+
+function isDeptRosterKey(value: unknown): boolean {
+  return textValue(value).toLowerCase().startsWith('dept-');
+}
+
+function personNameFromDeptRosterEntityName(value: unknown): string {
+  return textValue(value)
+    .replace(/\s+(lab|laboratory|faculty research)$/i, '')
+    .trim();
+}
+
+function uniqueStringArray(...groups: Array<unknown>): string[] {
+  const values = new Set<string>();
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    for (const value of group) {
+      const text = textValue(value).trim();
+      if (text) values.add(text);
+    }
+  }
+  return Array.from(values);
+}
+
+/**
+ * A department-roster observation mints a `dept-<dept>-<person>` shell per
+ * appointment. Left alone, these never enter the identity-keyed dedupe lane
+ * (#561) because they carry no PI RoleAssignment yet, and never get a
+ * canonicalGroupId tombstone or Meili cleanup (#584) because they never go
+ * through a dedupe merge - the exact gap in #1364. When the shell's inferred
+ * PI already has a real, non-generated research home, fold the shell into it
+ * immediately: merge the additive fields, archive the shell with a
+ * canonicalGroupId tombstone, and remove it from the search index, so no
+ * per-appointment orphan is ever left standing.
+ */
+export async function foldDeptRosterShellIntoCanonicalResearchEntity(
+  shellEntityId: string,
+): Promise<{ folded: boolean; canonicalEntityId?: string }> {
+  const shell = await ResearchEntity.findById(shellEntityId)
+    .select('_id slug name departments schools sourceUrls archived')
+    .lean<{
+      _id: unknown;
+      slug?: string;
+      name?: unknown;
+      departments?: unknown[];
+      schools?: unknown[];
+      sourceUrls?: unknown[];
+      archived?: boolean;
+    }>();
+  if (!shell || shell.archived || !isDeptRosterKey(shell.slug)) return { folded: false };
+
+  const personName = personNameFromDeptRosterEntityName(shell.name);
+  if (!personName) return { folded: false };
+
+  const canonical = await resolveUniquePiLinkedResearchEntityByPersonName(
+    ResearchEntity,
+    personName,
+  );
+  const canonicalId = normalizeMaterializerObjectId(canonical?._id);
+  if (!canonicalId || canonicalId === String(shell._id)) return { folded: false };
+
+  const now = new Date();
+  await ResearchEntity.updateOne(
+    { _id: canonicalId, archived: { $ne: true } },
+    {
+      $addToSet: {
+        departments: { $each: uniqueStringArray(shell.departments) },
+        schools: { $each: uniqueStringArray(shell.schools) },
+        sourceUrls: { $each: uniqueStringArray(shell.sourceUrls) },
+      },
+      $set: { lastObservedAt: now },
+    },
+  );
+  await ResearchEntity.updateOne(
+    { _id: shell._id, archived: { $ne: true } },
+    {
+      $set: {
+        archived: true,
+        canonicalGroupId: canonicalId,
+        lastObservedAt: now,
+      },
+    },
+  );
+  await deleteFromIndex('researchEntity', String(shell._id));
+
+  return { folded: true, canonicalEntityId: canonicalId };
 }
 
 export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
@@ -2536,6 +2636,15 @@ export async function materializeEntity(
         );
       }
     }
+  }
+
+  if (
+    !options.dryRun &&
+    isResearchEntityObservationType(entityType) &&
+    entityIdString &&
+    isDeptRosterKey(identifier.entityKey)
+  ) {
+    await foldDeptRosterShellIntoCanonicalResearchEntity(entityIdString);
   }
 
   return {

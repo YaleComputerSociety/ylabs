@@ -73,21 +73,29 @@ describe('assertPruneArchivedIndexApplyAllowed', () => {
 });
 
 describe('computeIndexDocIdsToPrune', () => {
-  it('returns only indexed docs whose entity is archived', () => {
-    const archived = ['a', 'b', 'c'];
-    const indexed = ['b', 'd', 'a', 'e'];
-    expect(computeIndexDocIdsToPrune(archived, indexed)).toEqual(['b', 'a']);
+  it('returns indexed docs that have no live entity counterpart', () => {
+    const live = ['x', 'y'];
+    const indexed = ['x', 'd', 'y', 'e'];
+    expect(computeIndexDocIdsToPrune(live, indexed)).toEqual(['d', 'e']);
   });
 
-  it('never returns an archived id that is absent from the index', () => {
-    expect(computeIndexDocIdsToPrune(['x', 'y'], ['z'])).toEqual([]);
+  it('prunes a doc whose entity was hard-deleted, not just archived-in-place (#1364)', () => {
+    // The entity behind "d" no longer exists in Mongo at all - it never
+    // appears in the live-id set - but its Meili doc still lingers.
+    const live = ['a', 'b'];
+    const indexed = ['a', 'b', 'd'];
+    expect(computeIndexDocIdsToPrune(live, indexed)).toEqual(['d']);
+  });
+
+  it('never prunes a live id that is absent from the index', () => {
+    expect(computeIndexDocIdsToPrune(['x', 'y'], ['x'])).toEqual([]);
   });
 
   it('dedupes repeated index doc ids', () => {
-    expect(computeIndexDocIdsToPrune(['a'], ['a', 'a', 'a'])).toEqual(['a']);
+    expect(computeIndexDocIdsToPrune(['a'], ['b', 'b', 'b'])).toEqual(['b']);
   });
 
   it('coerces mixed id types to strings before comparing', () => {
-    expect(computeIndexDocIdsToPrune([1 as unknown as string], ['1'])).toEqual(['1']);
+    expect(computeIndexDocIdsToPrune([1 as unknown as string], ['2'])).toEqual(['2']);
   });
 });
