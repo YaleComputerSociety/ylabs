@@ -1875,6 +1875,28 @@ describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () 
       expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
     }
   });
+
+  it('flags an award/honor citation mid-sentence-spliced into the Studies template (#1537)', () => {
+    const text = 'Studies the Field Award” from the ASA Section on Asia and Asian America.';
+    expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
+    expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+  });
+
+  it('flags a well-quoted award citation too', () => {
+    expect(
+      isStudiesTemplateGlueMalformed(
+        'Investigates the "Distinguished Career Award" from the American Psychological Association.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a genuine research summary that happens to mention an award-type word', () => {
+    expect(
+      isStudiesTemplateGlueMalformed(
+        'Studies reward and award-based decision-making in behavioral economics.',
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('stripDeadAnchorCtaSentences lossless sentence walk (#1020)', () => {
