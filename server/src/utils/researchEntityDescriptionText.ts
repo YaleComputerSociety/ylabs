@@ -957,6 +957,12 @@ function possessiveName(name: string): string {
   return name.endsWith('s') ? `${name}'` : `${name}'s`;
 }
 
+const DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN =
+  /\b([A-Z][\p{L}.'’]*(?:\s+[A-Z][\p{L}.'’]*){0,4})\s+(?:[-–—]\s+)?Research(['’]s)\s+research\b/gu;
+
+const SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN =
+  /\bresearch profile\b(?=\s+(?:has|have|had|seeks?|aims?|focuses?|investigates?|studies|studying|develops?|uses?|explores?|examines?|works?|is|are|employs?|applies?|analyzes?|combines?|integrates?|leverages?|draws?|centers?)\b)/gi;
+
 export function sanitizeFacultyResearchEntityText(
   value: string,
   entity?: FacultyResearchTextEntity | null,
@@ -966,6 +972,8 @@ export function sanitizeFacultyResearchEntityText(
   const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
 
   return value
+    .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
+    .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN, 'research')
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
       `${possessive} research focuses on`,
