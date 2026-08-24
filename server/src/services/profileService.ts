@@ -1189,6 +1189,9 @@ const isNonBiographicalPublicBio = (value: string): boolean => {
   if (/^background\s*:/i.test(text)) {
     return true;
   }
+  if (/^adjunct faculty typically (?:have|hold)\b/i.test(text)) {
+    return true;
+  }
   if (isSingleStudyClinicalTrialAbstract(text)) {
     return true;
   }
