@@ -682,6 +682,26 @@ export function isCitationAuthorListDumpText(text: unknown): boolean {
   return citationAuthorInitialsListPattern.test(normalizeHygieneWhitespace(String(text || '')));
 }
 
+const bibliographyCitationEntryPattern =
+  /,\s*[A-Z][\p{L}.&'\s-]*?\b(?:University\s+Press|Press|Publishers?|Books)\b,?\s*(?:19|20)\d{2}\.?$/u;
+const firstPersonOrResearchPronounPattern = /\b(?:I|we|my|our)\b/i;
+
+/**
+ * A raw book/bibliography citation ("Cambridge Studies in Comparative
+ * Politics, Cambridge University Press, 2020.") that a personal-homepage
+ * extraction mistook for "about me" prose (#1841). The tell is the trailing
+ * "<Title>, <Publisher>, <year>." citation shape with no research-activity
+ * verb and no first-person voice anywhere in the text - a genuine description
+ * that happens to mention a book still describes what the person studies, so
+ * both signals are required to keep from blanking real prose.
+ */
+export function isBibliographyCitationEntryText(text: unknown): boolean {
+  const normalized = normalizeHygieneWhitespace(String(text ?? ''));
+  if (!normalized || !bibliographyCitationEntryPattern.test(normalized)) return false;
+  if (researchActivitySignalPattern.test(normalized)) return false;
+  return !firstPersonOrResearchPronounPattern.test(normalized);
+}
+
 const doubledSynthesisVerbPattern =
   /^(Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds)\s+\1\b/i;
 

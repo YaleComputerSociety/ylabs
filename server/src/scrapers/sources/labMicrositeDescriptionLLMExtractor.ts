@@ -9,6 +9,8 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { isBibliographyCitationEntryText } from '../../utils/descriptionHygiene';
+import { hasMultipleCareerTimelineSentences } from '../../utils/researchEntityBiographyDescriptionRepair';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -438,7 +440,14 @@ export function descriptionExtractionToObservations(
   const fullDescription = normalizeKnownDescriptionAcronyms(
     usefulDescription(extraction.fullDescription),
   );
-  if (!fullDescription || isMultiPersonBioDirectoryDumpText(fullDescription)) return [];
+  if (
+    !fullDescription ||
+    isMultiPersonBioDirectoryDumpText(fullDescription) ||
+    hasMultipleCareerTimelineSentences(fullDescription) ||
+    isBibliographyCitationEntryText(fullDescription)
+  ) {
+    return [];
+  }
   const shortDescription = usefulShortDescription(extraction.shortDescription, fullDescription);
 
   const base = {
