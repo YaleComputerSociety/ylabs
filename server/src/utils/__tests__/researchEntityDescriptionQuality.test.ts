@@ -5,6 +5,7 @@ import {
   describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  isFullDescriptionRestatementOfShortDescription,
   isReplaceableResearchAreaChipEchoShort,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
@@ -1627,5 +1628,56 @@ describe('deriveProgramCardShortDescription administrative-copy fixes (#1653)', 
     expect(deriveProgramCardShortDescription(full)).toBe(
       "The Class of 1960/86 has established several Class of 1960 Travel/Study Fellowships in Branford College, one of which is in memory of Albert St. Pergam '60, father of Lizzie BR '93 and Ilana BR '90.",
     );
+  });
+});
+
+describe('isFullDescriptionRestatementOfShortDescription (#1721)', () => {
+  it('flags a "The lab" clause prepended onto the identical short sentence', () => {
+    const short =
+      'Focuses on single-molecule biophysics and biochemistry, particularly in protein folding and interactions.';
+    const full =
+      'The lab focuses on single-molecule biophysics and biochemistry, particularly in protein folding and interactions.';
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(true);
+  });
+
+  it('flags a "The <Name> Lab" clause prepended onto the identical short sentence', () => {
+    const short =
+      'Studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.';
+    const full =
+      'The Mu Lab studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.';
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(true);
+  });
+
+  it('flags an "In the <Name> lab, we" clause paraphrasing the short', () => {
+    const short =
+      'Uses modern techniques to study Cell Biology, Epithelial Cells, the Kidney, Polycystic Kidney Diseases, Physiology, and Ion Pumps.';
+    const full =
+      'In the Caplan lab we use a variety of modern techniques to study Cell Biology, Epithelial Cells, the Kidney, Polycystic Kidney Diseases, Physiology, and Ion Pumps.';
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(true);
+  });
+
+  it('flags a byte-identical short and full', () => {
+    const text =
+      'Studies biological physics, including statistical physics, immunology, protein science, and machine learning.';
+    expect(isFullDescriptionRestatementOfShortDescription(text, text)).toBe(true);
+  });
+
+  it('does not flag a full description that is genuinely richer than the short', () => {
+    const short = 'Studies immune regulation and cancer immunotherapy in the tumor microenvironment.';
+    const full =
+      'The Chen Lab investigates the molecular mechanisms of immune regulation and cancer immunotherapy, focusing on how T cells recognize and respond to the tumor microenvironment, and develops single-cell and spatial approaches to map the signaling circuits that shape durable anti-tumor responses in patients.';
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(false);
+  });
+
+  it('does not flag a full description on a different topic than the short', () => {
+    const short = 'Studies epithelial regeneration and organoid systems.';
+    const full =
+      'The lab develops computational models of climate variability, combining satellite observations with large-scale ocean-atmosphere simulations to forecast regional drought risk.';
+    expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(false);
+  });
+
+  it('returns false when either field is blank', () => {
+    expect(isFullDescriptionRestatementOfShortDescription('', 'Studies X.')).toBe(false);
+    expect(isFullDescriptionRestatementOfShortDescription('Studies X.', '')).toBe(false);
   });
 });
