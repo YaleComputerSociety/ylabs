@@ -54,6 +54,10 @@ Entity pages should answer:
 - Course credit is a formalization outcome after a student finds a research home.
   It is not access evidence by itself.
 - Fellowship funding usually behaves like formalization or funding, except when the fellowship is itself a structured discovery or mentor-matching program.
+- Programs and fellowships are first-class research homes in the primary `/research` corpus.
+  Each `student_ready` `Fellowship` record is projected into a `ResearchEntity` typed `RA_PROGRAM` (research-participation programs) or `FELLOWSHIP_PROGRAM` (pure funding), keyed on a stable `program-<sourceKey>` slug, so it is discoverable alongside labs and centers.
+  The projection is additive during the transition: the `Fellowship` collection and the `/programs` and `/fellowships` routes remain, and the projected homes carry distinct `entityType` values, so admin "by entity type" counts are not inflated.
+  Program-like homes are lead-optional and are not gated on a lab-style research-focus card; they surface an application access shape (`APPLICATION_ONLY`) and an "Apply to this program" next step rather than the generic email-a-PI default.
 - Directory inclusion does not require a `Signal` or other access evidence.
 - Scrapers emit append-only `Observation` rows.
   Materializers derive first-class access records.

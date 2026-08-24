@@ -8,6 +8,7 @@ import {
   sanitizeResearchHomeSelfReferenceCopyFields,
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
+import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
@@ -97,9 +98,17 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   const servedShortDescription = sanitizeResearchEntityShortDescription(
     textValue(sanitizedEntity.shortDescription),
   );
+  // A program-like home's student-facing copy describes what the program offers
+  // and how to apply, not a lab-style "Studies X" research focus, so the
+  // research-focus card invariant is the wrong bar for it: require a useful full
+  // description (and non-blank served copy below) but do not additionally demand
+  // a lab-style card. This mirrors the program-specific visibility path
+  // (`computeProgramStudentVisibility`) and keeps projected RA_PROGRAM /
+  // FELLOWSHIP_PROGRAM homes (#1381) servable on the detail page.
+  const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
   if (!quality.full.isUseful) reasons.push('missing_public_full_description');
-  if (!quality.short.isUseful) reasons.push('missing_public_card_description');
+  if (!quality.short.isUseful && !programLike) reasons.push('missing_public_card_description');
   if (!servedFullDescription && !servedShortDescription) {
     reasons.push('blank_served_public_description');
   }

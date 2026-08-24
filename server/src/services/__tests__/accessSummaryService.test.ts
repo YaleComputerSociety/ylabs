@@ -330,6 +330,35 @@ describe('accessSummaryService', () => {
     expect(summary?.bestNextStep).not.toBe('Check back later');
   });
 
+  it('surfaces an apply-to-program next step for a projected program access shape (#1381)', async () => {
+    const entityId = new Types.ObjectId();
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'APPLICATION_ONLY',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          source: { excerpt: 'Apply to this program through its official page.' },
+        },
+        {
+          researchEntityId: entityId,
+          type: 'RECURRING_PROGRAM',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          source: { excerpt: 'Runs as a recurring research program.' },
+        },
+      ]),
+    );
+
+    const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+      entityId.toString(),
+    );
+
+    expect(summary?.status).toBe('evidence-backed');
+    expect(summary?.bestNextStep).toBe('Apply to this program');
+  });
+
   it('surfaces not-currently-available for a negative-only entity but never dead-ends the CTA (#1304)', async () => {
     const entityId = new Types.ObjectId();
     mocks.accessSignalFind.mockReturnValue(

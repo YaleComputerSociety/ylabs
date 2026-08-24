@@ -10,6 +10,7 @@ import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
+import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 
 export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v2';
 
@@ -145,12 +146,6 @@ function hasUsefulResearchAreas(entity: Record<string, any>): boolean {
   );
 }
 
-function isProgramLikeResearchEntity(entity: Record<string, any>): boolean {
-  return (
-    textValue(entity.kind).toLowerCase() === 'program' ||
-    textValue(entity.entityType).toUpperCase() === 'PROGRAM'
-  );
-}
 
 const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
 

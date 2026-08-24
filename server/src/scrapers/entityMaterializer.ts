@@ -81,6 +81,8 @@ import {
   type ResearchEntityIdentity,
 } from './utils/personProfileEntityMatch';
 import { deriveResearchEntityYaleStatus } from '../utils/researchEntityYaleStatus';
+import { projectFellowshipToResearchEntity } from '../services/fellowshipResearchEntityProjectionService';
+import type { FellowshipProjectionInput } from '../services/fellowshipResearchEntityProjection';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -2603,6 +2605,20 @@ export async function materializeEntity(
   if (isSyncableEntityType(syncEntityType) && entityIdString) {
     const fresh = await Model.findById(entityIdString).lean();
     if (fresh) await syncEntity(syncEntityType, fresh);
+  }
+
+  if (entityType === 'fellowship' && entityIdString && !options.dryRun) {
+    try {
+      const freshFellowship = await Model.findById(entityIdString).lean();
+      if (freshFellowship) {
+        await projectFellowshipToResearchEntity(freshFellowship as FellowshipProjectionInput);
+      }
+    } catch (error) {
+      console.error(
+        'materializeEntity: fellowship research-entity projection failed:',
+        sanitizeLogValue({ entityId: entityIdString, error }),
+      );
+    }
   }
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
