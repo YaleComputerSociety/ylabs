@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { isListingOrIndexUrl } from '../../utils/researchHomeWebsiteUrl';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -110,6 +111,7 @@ const rejectedAreaSourcePatterns = [
 export function isRejectedAreaSourceUrl(value: unknown): boolean {
   const urlText = textValue(value);
   if (!/^https?:\/\//i.test(urlText)) return true;
+  if (isListingOrIndexUrl(urlText)) return true;
   try {
     const url = new URL(urlText);
     const hostPath = `${url.hostname}${url.pathname}`.replace(/\/+$/, '');
