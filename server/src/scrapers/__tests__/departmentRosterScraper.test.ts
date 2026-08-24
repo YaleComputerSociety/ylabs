@@ -2015,6 +2015,70 @@ describe('DepartmentRosterScraper.run', () => {
     expect(entityObs.find((o) => o.field === 'shortDescription')).toBeUndefined();
   });
 
+  it('keeps the slug placeholder name when the profile title is a generic section title', async () => {
+    const profileUrl = 'https://www.architecture.yale.edu/faculty/1001-robin-fixture-vane';
+    const profileHtml = `
+      <html><head>
+        <meta property="og:title" content="Faculty - Yale School of Architecture" />
+        <link rel="canonical" href="${profileUrl}" />
+      </head><body><main><p>Directory listing.</p></main></body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === profileUrl) return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'architecture',
+        deptName: 'Architecture',
+        schoolName: 'Yale School of Architecture',
+        url: 'https://www.architecture.yale.edu/faculty',
+        paginated: false,
+        extractor: () => [{ name: 'Robin Fixture Vane', namePlaceholder: true, profileUrl }],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Robin Fixture');
+    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Vane');
+  });
+
+  it('overwrites the slug placeholder with a person-shaped profile title, restoring hyphens', async () => {
+    const profileUrl = 'https://www.architecture.yale.edu/faculty/1001-robin-fixture-vane';
+    const profileHtml = `
+      <html><head>
+        <meta property="og:title" content="Robin Fixture-Vane - Yale School of Architecture" />
+        <link rel="canonical" href="${profileUrl}" />
+      </head><body><main><p>Bio.</p></main></body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === profileUrl) return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'architecture',
+        deptName: 'Architecture',
+        schoolName: 'Yale School of Architecture',
+        url: 'https://www.architecture.yale.edu/faculty',
+        paginated: false,
+        extractor: () => [{ name: 'Robin Fixture Vane', namePlaceholder: true, profileUrl }],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Robin');
+    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Fixture-Vane');
+  });
+
   it('honors the limit option across departments', async () => {
     const manyEntries = (count: number): FacultyEntry[] =>
       Array.from({ length: count }, (_v, i) => ({ name: `Person ${i}` }));

@@ -1011,15 +1011,41 @@ function nameFromFacultySlug(href: string): string {
     .trim();
 }
 
+const GENERIC_DIRECTORY_NAME_TOKENS = new Set([
+  'faculty',
+  'staff',
+  'people',
+  'directory',
+  'home',
+  'profile',
+  'members',
+  'affiliates',
+  'overview',
+  'index',
+  'and',
+]);
+
+function isPersonNameShaped(name: string): boolean {
+  const tokens = name.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2 || tokens.length > 4) return false;
+  return tokens.every(
+    (token) =>
+      /^\p{Lu}/u.test(token) && !GENERIC_DIRECTORY_NAME_TOKENS.has(token.toLowerCase()),
+  );
+}
+
 /**
  * Read a person's name from their official profile page's og:title / <title>,
  * dropping the trailing site-name segment (e.g. "Emily Abruzzo - Yale Architecture").
+ * Returns undefined when the leading segment does not look like a personal name so a
+ * generic listing/section title cannot overwrite a reliable slug-derived placeholder.
  */
 function personNameFromProfileHtml($: cheerio.CheerioAPI): string | undefined {
   const raw =
     $('meta[property="og:title"]').attr('content') || cleanText($('title').first().text());
   const leading = cleanText(raw).split(/\s+[|–—-]\s+/)[0];
-  return leading || undefined;
+  if (!leading || !isPersonNameShaped(leading)) return undefined;
+  return leading;
 }
 
 /**
