@@ -134,6 +134,22 @@ describe('fullDescriptionQuality', () => {
     expect(fullDescriptionQuality(fullDescription, researchAreas).isUseful).toBe(true);
   });
 
+  it('rejects an "<Entity> is connected to <areas>" fullDescription echo, even with noun-tail chip words (#1598)', () => {
+    const fullDescription =
+      'Coppola Lab is connected to pluripotent stem cells, fluid dynamics and turbulent flows, crispr and genetic engineering, and combustion and flame dynamics.';
+
+    expect(fullDescriptionQuality(fullDescription).flags).toContain('research-area-echo');
+    expect(fullDescriptionQuality(fullDescription).isUseful).toBe(false);
+  });
+
+  it('keeps a "Research areas include <areas>" fullDescription accepted, since only the "is connected to" echo is gated (#1598)', () => {
+    const fullDescription =
+      'Research areas include Spectroscopy and Quantum Chemical Studies, Molecular spectroscopy and chirality, and Receptor Mechanisms and Signaling.';
+
+    expect(fullDescriptionQuality(fullDescription).flags).not.toContain('research-area-echo');
+    expect(fullDescriptionQuality(fullDescription).isUseful).toBe(true);
+  });
+
   it('derives card copy from later research activity when profile biographies start with appointments', () => {
     const fullDescription =
       'Dr Roberts has worked at the University of Vermont, Virginia Commonwealth University, and Yale University. He is board certified in internal medicine, pediatrics, medical oncology, and hospice and palliative care. Current activities are clinical research and consulting for non-governmental organizations and the pharmaceutical and pharmacy industries.';
