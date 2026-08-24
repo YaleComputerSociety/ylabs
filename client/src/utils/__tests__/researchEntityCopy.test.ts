@@ -301,6 +301,21 @@ describe('neutralizeFirstPersonResearchCopy', () => {
     ).toBe('This research studies protein folding, and this research uses imaging.');
   });
 
+  it('conjugates every verb in a compound predicate, not just the first (#1292)', () => {
+    expect(
+      neutralizeFirstPersonResearchCopy('We develop and apply electronic structure methods.'),
+    ).toBe('This research develops and applies electronic structure methods.');
+    expect(neutralizeFirstPersonResearchCopy('We investigate and characterize novel materials.')).toBe(
+      'This research investigates and characterizes novel materials.',
+    );
+    expect(neutralizeFirstPersonResearchCopy('I design, build, and test robotic systems.')).toBe(
+      'This research designs, builds, and tests robotic systems.',
+    );
+    expect(neutralizeFirstPersonResearchCopy('We study and characterize protein structures.')).toBe(
+      'This research studies and characterizes protein structures.',
+    );
+  });
+
   it('leaves clean third-person copy untouched', () => {
     expect(neutralizeFirstPersonResearchCopy('Studies systems neuroscience.')).toBe(
       'Studies systems neuroscience.',
