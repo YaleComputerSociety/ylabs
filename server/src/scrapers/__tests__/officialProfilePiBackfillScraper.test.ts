@@ -4748,6 +4748,139 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(obs.map((item) => item.field)).not.toContain('name');
   });
 
+  it('drops a lead-direct custom-subdomain website candidate the lead does not own', async () => {
+    const emitted: ObservationInput[] = [];
+    const htmlFetcher = vi.fn(async () =>
+      '<body>News: Dr. Karen Seto awarded a prize. Yale Urban brings together scholars across the university.</body>',
+    );
+    const scraper = new OfficialProfilePiBackfillScraper(
+      htmlFetcher,
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      0,
+      vi.fn(async () => undefined),
+      vi.fn(async () => [
+        {
+          _id: 'entity-seto',
+          slug: 'seto-lab-ks53',
+          name: 'Seto Lab',
+          leadDirectWebsiteUrl: 'http://urban.yale.edu/',
+          leadDirectWebsiteLeadNames: ['Karen Seto'],
+        },
+      ]),
+      vi.fn(async () => []),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        only: ['lead-direct-website-backfill'],
+      },
+    });
+
+    expect(htmlFetcher).toHaveBeenCalledWith(
+      'http://urban.yale.edu/',
+      false,
+      'official-profile-pi-backfill',
+    );
+    expect(emitted).toEqual([]);
+    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
+  });
+
+  it('keeps a lead-direct custom-subdomain website candidate the target page credits to the lead', async () => {
+    const emitted: ObservationInput[] = [];
+    const htmlFetcher = vi.fn(async () => '<main>Director: Adalgisa Caccone</main>');
+    const scraper = new OfficialProfilePiBackfillScraper(
+      htmlFetcher,
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      0,
+      vi.fn(async () => undefined),
+      vi.fn(async () => [
+        {
+          _id: 'entity-caccone',
+          slug: 'caccone-lab-ac3',
+          name: 'Caccone Lab',
+          leadDirectWebsiteUrl: 'http://caccone.yale.edu/',
+          leadDirectWebsiteLeadNames: ['Adalgisa Caccone'],
+        },
+      ]),
+      vi.fn(async () => []),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        only: ['lead-direct-website-backfill'],
+      },
+    });
+
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'websiteUrl', value: 'http://caccone.yale.edu/' }),
+      ]),
+    );
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+  });
+
+  it('skips fetch-based verification for a source-url website candidate on a generic Yale subdomain', async () => {
+    const emitted: ObservationInput[] = [];
+    const htmlFetcher = vi.fn(async () => '');
+    const scraper = new OfficialProfilePiBackfillScraper(
+      htmlFetcher,
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      0,
+      vi.fn(async () => undefined),
+      vi.fn(async () => []),
+      vi.fn(async () => [
+        {
+          _id: 'entity-cancer-center',
+          slug: 'cancer-research-lab',
+          name: 'Cancer Research Lab',
+          sourceUrlWebsiteUrl: 'https://medicine.yale.edu/cancer/lab/',
+          sourceUrlWebsiteLeadNames: [],
+        },
+      ]),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        only: ['source-url-website-backfill'],
+      },
+    });
+
+    expect(htmlFetcher).not.toHaveBeenCalled();
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'websiteUrl',
+          value: 'https://medicine.yale.edu/cancer/lab/',
+        }),
+      ]),
+    );
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+  });
+
   it('emits guarded fallback identity observations when no existing user email bridge exists', async () => {
     const emitted: ObservationInput[] = [];
     const scraper = new OfficialProfilePiBackfillScraper(

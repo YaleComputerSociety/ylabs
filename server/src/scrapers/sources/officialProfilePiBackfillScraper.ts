@@ -996,6 +996,49 @@ function leadershipMentionsOrganization(text: string, name: string, rawName: str
   });
 }
 
+export function textEvidencesNamedLeadership(text: string, names: string[]): boolean {
+  const leadershipTitle =
+    '(?:co-director|associate\\s+director|principal\\s+investigator|director|pi|faculty\\s+lead|founder)';
+  return uniqueStrings(names)
+    .filter((name) => name.length > 2)
+    .some((name) => {
+      const pattern = escapeRegex(name).replace(/\s+/g, '\\s+');
+      return [
+        `\\b${leadershipTitle}\\b[^.;\\n]{0,60}?\\b${pattern}\\b`,
+        `\\b${pattern}\\b[^.;\\n]{0,60}?\\b${leadershipTitle}\\b`,
+      ].some((source) => new RegExp(source, 'i').test(text));
+    });
+}
+
+/**
+ * A custom Yale subdomain (`isCustomYaleResearchHomeSubdomain`) is accepted as a
+ * research-home candidate on hostname shape alone, with no signal that the lead
+ * this website is being attached to actually directs it - a university-wide
+ * platform a PI is merely affiliated with or cited on passes the same heuristic
+ * as that PI's own lab site (issue: Seto Lab / urban.yale.edu). Before such a
+ * candidate is written to `websiteUrl`, fetch the page itself and require it to
+ * credit one of the entity's leads by name in a director/PI-type role; fail
+ * closed on fetch failure or no match.
+ */
+export async function candidateWebsiteOwnedByLead(
+  url: string,
+  leadNames: string[],
+  htmlFetcher: (url: string, useCache: boolean, sourceName: string) => Promise<string>,
+  useCache: boolean,
+): Promise<boolean> {
+  if (leadNames.length === 0) return false;
+  let html = '';
+  try {
+    html = await htmlFetcher(url, useCache, SOURCE_NAME);
+  } catch {
+    return false;
+  }
+  if (!html) return false;
+  const $ = cheerio.load(html);
+  const text = uniqueStrings([$('main').text(), $('article').text(), $('body').text()]).join(' ');
+  return textEvidencesNamedLeadership(text, leadNames);
+}
+
 function affiliationValuesFromProfiles(profiles: Array<Record<string, any>>): unknown[] {
   const values: unknown[] = [];
   for (const profile of profiles) {
@@ -2255,7 +2298,11 @@ export function identityToResearchEntityPiKeyObservations(
   return [{ ...base, field: 'inferredPiUserKey', value: lookupKey }];
 }
 
-async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
+export async function fetchHtml(
+  url: string,
+  useCache: boolean,
+  sourceName: string,
+): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `official-profile-pi-backfill:${safeUrlText}`;
@@ -2803,6 +2850,7 @@ async function selectLeadDirectWebsiteTargets(
   const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
 
   const urlsByEntity = new Map<string, string[]>();
+  const leadNamesByEntity = new Map<string, string[]>();
   for (const entry of rosterEntries) {
     const user = usersByNetid.get(entry.netid);
     const urls = uniqueStrings([
@@ -2813,6 +2861,12 @@ async function selectLeadDirectWebsiteTargets(
     if (urls.length === 0) continue;
     const entityId = idValue(entry.researchEntityId);
     urlsByEntity.set(entityId, uniqueStrings([...(urlsByEntity.get(entityId) || []), ...urls]));
+    if (entry.name) {
+      leadNamesByEntity.set(
+        entityId,
+        uniqueStrings([...(leadNamesByEntity.get(entityId) || []), entry.name]),
+      );
+    }
   }
   const candidateUrls = uniqueStrings(Array.from(urlsByEntity.values()).flat());
   const candidateEntityIds = new Set(entities.map((entity) => idValue(entity._id)));
@@ -2843,6 +2897,7 @@ async function selectLeadDirectWebsiteTargets(
         urlsByEntity.get(idValue(entity._id)) || [],
         duplicateWebsiteUrls,
       ),
+      leadDirectWebsiteLeadNames: leadNamesByEntity.get(idValue(entity._id)) || [],
     }))
     .filter((entity) => textValue(entity.leadDirectWebsiteUrl))
     .slice(0, limit);
@@ -2890,6 +2945,16 @@ async function selectSourceUrlWebsiteTargets(
     urlsByEntity.set(idValue(entity._id), urls);
   }
 
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entities.map((entity) => entity._id),
+    VISIBLE_PROFILE_MEMBER_ROLES,
+  );
+  const leadNamesByEntity = new Map<string, string[]>();
+  for (const [entityId, entries] of leadRosterByEntity) {
+    const names = uniqueStrings(entries.map((entry) => entry.name));
+    if (names.length > 0) leadNamesByEntity.set(entityId, names);
+  }
+
   const candidateUrls = uniqueStrings(Array.from(urlsByEntity.values()).flat());
   const candidateEntityIds = new Set(entities.map((entity) => idValue(entity._id)));
   const duplicateWebsiteUrls = new Set<string>();
@@ -2919,6 +2984,7 @@ async function selectSourceUrlWebsiteTargets(
         urlsByEntity.get(idValue(entity._id)) || [],
         duplicateWebsiteUrls,
       ),
+      sourceUrlWebsiteLeadNames: leadNamesByEntity.get(idValue(entity._id)) || [],
     }))
     .filter((entity) => textValue(entity.sourceUrlWebsiteUrl))
     .slice(0, limit);
@@ -3126,10 +3192,37 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
 
     for (const entity of entities) {
       if (runOnlyWebsiteObservationBackfill) {
-        const observations = entityLeadDirectWebsiteToObservations(
-          entity,
-          textValue(entity.leadDirectWebsiteUrl || entity.sourceUrlWebsiteUrl),
-        );
+        const websiteUrl = textValue(entity.leadDirectWebsiteUrl || entity.sourceUrlWebsiteUrl);
+        if (!websiteUrl) continue;
+        let candidateHost: URL | null = null;
+        try {
+          candidateHost = new URL(websiteUrl);
+        } catch {
+          candidateHost = null;
+        }
+        if (candidateHost && isCustomYaleResearchHomeSubdomain(candidateHost)) {
+          const leadNames: string[] = entity.leadDirectWebsiteUrl
+            ? entity.leadDirectWebsiteLeadNames || []
+            : entity.sourceUrlWebsiteLeadNames || [];
+          if (fetchAttempts > 0 && this.profileFetchThrottleMs > 0) {
+            await this.delay(this.profileFetchThrottleMs);
+          }
+          fetchAttempts += 1;
+          const owned = await candidateWebsiteOwnedByLead(
+            websiteUrl,
+            leadNames,
+            this.htmlFetcher,
+            ctx.options.useCache,
+          );
+          if (!owned) {
+            ctx.log('Skipped unverified custom-subdomain website candidate', {
+              entityId: officialProfileDocumentId(entity._id),
+              websiteUrl,
+            });
+            continue;
+          }
+        }
+        const observations = entityLeadDirectWebsiteToObservations(entity, websiteUrl);
         if (observations.length === 0) continue;
         await ctx.emit(observations);
         emitted += observations.length;
