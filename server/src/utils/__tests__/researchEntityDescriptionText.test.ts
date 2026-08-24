@@ -483,6 +483,64 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.fullDescription).toBe('');
   });
 
+  it('strips a title/possessive "Welcome to Prof./Professor/Dr." greeting opener despite embedded abbreviation periods (#1667)', () => {
+    const cases: Array<[string, string]> = [
+      [
+        "Welcome to Prof. Fengnian Xia's research group. Our lab studies two-dimensional materials and their applications in nanoelectronics.",
+        'This lab studies two-dimensional materials and their applications in nanoelectronics.',
+      ],
+      [
+        "Welcome to Professor Scott A. Strobel's Laboratory at Yale University! We study RNA biology and its applications to synthetic biology and antibiotic discovery.",
+        'This group studies RNA biology and its applications to synthetic biology and antibiotic discovery.',
+      ],
+      [
+        'Welcome to Yale Smart Medicine Lab (YSML). We do research on healthcare technology and digital tools for patients.',
+        'We do research on healthcare technology and digital tools for patients.',
+      ],
+    ];
+    for (const [fullDescription, expected] of cases) {
+      const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+        entityType: 'LAB',
+        kind: 'lab',
+        fullDescription,
+      });
+      expect(sanitized.fullDescription).toBe(expected);
+    }
+  });
+
+  it('strips trailing website-navigation chrome from a lab fullDescription instead of blanking it (#1667)', () => {
+    const cases: Array<[string, string]> = [
+      [
+        'Studies molecular signaling pathways in cancer biology and drug resistance, please click on the links above.',
+        'Studies molecular signaling pathways in cancer biology and drug resistance',
+      ],
+      [
+        'Studies inflammatory bowel disease and mucosal immunology, please check the Research section.',
+        'Studies inflammatory bowel disease and mucosal immunology',
+      ],
+      [
+        'Studies transplant immunology and organ rejection, please visit the Positions section for more information, or contact Dr. Ke Xu, MD, PhD.',
+        'Studies transplant immunology and organ rejection',
+      ],
+      [
+        'Studies polymer physics and mechanics, please contact Michael Crowley, and include in the subject heading, your area of interest.',
+        'Studies polymer physics and mechanics',
+      ],
+      [
+        'Studies robotic grasping and prosthetics, more information can be found on the Research and Publications pages.',
+        'Studies robotic grasping and prosthetics',
+      ],
+    ];
+    for (const [fullDescription, expected] of cases) {
+      const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+        entityType: 'LAB',
+        kind: 'lab',
+        fullDescription,
+      });
+      expect(sanitized.fullDescription).toBe(expected);
+    }
+  });
+
   it('repairs a subject-less "Research {verb}..." fullDescription on an individual-research entity (#999)', () => {
     const individual = {
       entityType: 'INDIVIDUAL_RESEARCH',

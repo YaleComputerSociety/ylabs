@@ -390,18 +390,60 @@ export function repairSubjectlessResearchLead(value: unknown): string {
   return text;
 }
 
-const PERSONAL_PAGE_GREETING_PATTERN = /^(?:welcome to\b[^.!?]*[.!?]+\s*)+/i;
+const GREETING_LEAD_PATTERN = /^welcome to\b/i;
+
+// A period ending a greeting sentence can itself belong to a title
+// abbreviation or initial inside the opener ("Welcome to Prof. Xia's lab.",
+// "Welcome to Professor Scott A. Strobel's Laboratory."), so the scan below
+// only treats "." as a sentence end when it is not immediately preceded by
+// one of these; otherwise the greeting is left half-stripped.
+const SENTENCE_BOUNDARY_ABBREVIATION_PATTERN =
+  /(?:^|[\s(])(?:[A-Z]|Prof|Dr|Mr|Mrs|Ms|Jr|Sr|St|Rev|Hon|Ph\.?D|M\.?D|B\.?S|M\.?S|M\.?A|D\.?Phil|Esq)\.$/;
+
+function sentenceEndIndex(value: string, from: number): number {
+  for (let index = from; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === '!' || char === '?') return index + 1;
+    if (char === '.') {
+      const precedingText = value.slice(Math.max(0, index - 14), index + 1);
+      if (SENTENCE_BOUNDARY_ABBREVIATION_PATTERN.test(precedingText)) continue;
+      return index + 1;
+    }
+  }
+  return value.length;
+}
 
 function countWords(value: string): number {
   return value.split(/\s+/).filter(Boolean).length;
 }
 
 function stripLeadingPersonalGreeting(value: string): string {
-  const match = value.match(PERSONAL_PAGE_GREETING_PATTERN);
-  if (!match) return value;
-  const remainder = value.slice(match[0].length).trim();
+  if (!GREETING_LEAD_PATTERN.test(value)) return value;
+  let cursor = 0;
+  while (GREETING_LEAD_PATTERN.test(value.slice(cursor))) {
+    const sentenceEnd = sentenceEndIndex(value, cursor);
+    if (sentenceEnd <= cursor) break;
+    cursor = sentenceEnd;
+    while (cursor < value.length && /\s/.test(value[cursor])) cursor += 1;
+  }
+  const remainder = value.slice(cursor).trim();
   if (countWords(remainder) < 6) return value;
   return remainder;
+}
+
+const TRAILING_NAVIGATION_CHROME_PATTERNS: readonly RegExp[] = [
+  /[,;]?\s*please click on the links? (?:above|below)\.?\s*$/i,
+  /[,;]?\s*please (?:check|visit) the [A-Z][\w' &-]{0,60} section(?: for more information)?(?:,\s*(?:or\s+)?contact\b[^!?]*)?\.?\s*$/i,
+  /[,;]?\s*(?:(?:for\s+)?more information\s+)?(?:can be )?found on the [A-Z][\w' &-]{0,60} pages?\.?\s*$/i,
+  /[,;]?\s*please contact\b[^!?]*?,?\s*and include in the subject heading\b[^!?]*\.?\s*$/i,
+];
+
+function stripTrailingNavigationChromeClause(value: string): string {
+  let next = value;
+  for (const pattern of TRAILING_NAVIGATION_CHROME_PATTERNS) {
+    next = next.replace(pattern, '');
+  }
+  return next === value ? value : next.trim();
 }
 
 const THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS: Readonly<Record<string, string>> = {
@@ -551,7 +593,8 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         }
         continue;
       }
-      const withResearchLeadRepair = repairSubjectlessResearchLead(next[field]);
+      const withNavigationChromeStripped = stripTrailingNavigationChromeClause(next[field]);
+      const withResearchLeadRepair = repairSubjectlessResearchLead(withNavigationChromeStripped);
       const withFirstPersonReVoice =
         field === 'shortDescription'
           ? withResearchLeadRepair
