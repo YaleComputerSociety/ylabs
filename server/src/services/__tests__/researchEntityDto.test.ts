@@ -489,6 +489,27 @@ describe('researchEntityDto', () => {
     expect(dto).not.toHaveProperty('totalInquiriesCache');
   });
 
+  it('never serves the retired studentDecisionExplanation.why fabricated reason bullets (#1634)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-retired-decision-explanation',
+      slug: 'retired-decision-lab',
+      name: 'Retired Decision Lab',
+      kind: 'lab',
+      studentDecisionExplanation: {
+        headline: 'Retired Decision Lab',
+        explanation: 'Consider reaching out for potential research opportunities.',
+        why: [
+          'Research area aligns with your interests.',
+          'Research focus aligns with interests in a topic the lab does not study.',
+        ],
+        confidence: 0.5,
+        sourceUrls: [],
+      },
+    });
+
+    expect(dto).not.toHaveProperty('studentDecisionExplanation');
+  });
+
   it('returns canonical search entities without legacy hits', () => {
     const result = addResearchEntitySearchAliases({
       hits: [
