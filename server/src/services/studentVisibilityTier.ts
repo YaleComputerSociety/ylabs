@@ -272,6 +272,33 @@ function isLabNameOrgTypeMismatch(entity: Record<string, any>): boolean {
   return ORG_ENTITY_TYPES_INCOHERENT_WITH_LAB_NAME.has(textValue(entity.entityType).toUpperCase());
 }
 
+const DECEASED_LEAD_YEAR_RANGE_PATTERN = /\((?:1[6-9]|20)\d{2}\s*[-–—]\s*(?:1[6-9]|20)\d{2}\)/;
+const EMERITUS_LEAD_PATTERN = /\bProfessor\s+Emerit(?:us|a)\b/i;
+const LATE_LEAD_PATTERN = /\bthe\s+late\s+[A-Z]/;
+const DECEASED_OR_EMERITUS_LEAD_SIGNAL_WINDOW = 220;
+
+/**
+ * A lead-requiring entity whose own description opens as a memorial or
+ * emeritus biography of its PI (a death-year range, "Professor Emeritus/
+ * Emerita", or "the late <Name>") rather than an active-lab description
+ * (#1638). A student should never be routed to contact a lab whose PI is
+ * deceased or retired, even when the description otherwise reads as
+ * substantive research prose. Scoped to the opening of the text, matching
+ * where these biography leads actually occur, so an emeritus mention deep in
+ * an unrelated paragraph does not false-positive.
+ */
+function hasDeceasedOrEmeritusLeadSignal(entity: Record<string, any>): boolean {
+  const lead =
+    textValue(entity.fullDescription).slice(0, DECEASED_OR_EMERITUS_LEAD_SIGNAL_WINDOW) ||
+    textValue(entity.shortDescription).slice(0, DECEASED_OR_EMERITUS_LEAD_SIGNAL_WINDOW);
+  if (!lead) return false;
+  return (
+    DECEASED_LEAD_YEAR_RANGE_PATTERN.test(lead) ||
+    EMERITUS_LEAD_PATTERN.test(lead) ||
+    LATE_LEAD_PATTERN.test(lead)
+  );
+}
+
 function isNonOwnerGrantShell({
   entity,
   leadMembers,
@@ -493,6 +520,7 @@ export function computeResearchEntityStudentVisibility({
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
   const labNameOrgTypeMismatch = isLabNameOrgTypeMismatch(entity);
   const missingFacetSignal = missingFacultyResearchAreaFacetSignal(entity);
+  const deceasedOrEmeritusLead = requiresLead && hasDeceasedOrEmeritusLeadSignal(entity);
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
   const outsideResearchScope = !researchScope.researchHomeEligible;
