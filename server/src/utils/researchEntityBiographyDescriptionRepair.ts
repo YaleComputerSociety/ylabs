@@ -252,22 +252,24 @@ export function isEducationOrCareerTimelineSentence(sentence: string): boolean {
   return EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS.some((pattern) => pattern.test(sentence));
 }
 
+/**
+ * A hard defect: this text must never be served, regardless of whether a
+ * better alternative exists to replace it with (#1533: raab-jcr42's stored
+ * short "Studies, Stanford University Ph.D., Yale University Jennifer Raab
+ * specializes..." and lawler-tl4's "Studies , Holy Cross, 1958 Middle
+ * English..." both carry the same degree-list defect as their full).
+ */
+function isDefectiveShortDescription(candidate: string): boolean {
+  if (!candidate) return true;
+  if (isMidCvContinuationOpener(candidate)) return true;
+  if (isEducationOrCareerTimelineSentence(candidate)) return true;
+  if (DEGREE_LIST_FRAGMENT_SEARCH_PATTERN.test(candidate)) return true;
+  if (/^Studies\s*,/i.test(candidate)) return true;
+  return false;
+}
+
 function isSalvageableShortDescription(candidate: string, contextFullDescription: string): boolean {
-  if (!candidate) return false;
-  if (isMidCvContinuationOpener(candidate)) return false;
-  if (isEducationOrCareerTimelineSentence(candidate)) return false;
-  // A shortDescription copied straight from the same raw profile page carries
-  // the same degree-list defect as the full, sometimes glued mid-string
-  // rather than at the very start (#1533: raab-jcr42's stored short is
-  // "Studies, Stanford University Ph.D., Yale University Jennifer Raab
-  // specializes...") - a short this function would otherwise treat as
-  // salvageable-as-is.
-  if (DEGREE_LIST_FRAGMENT_SEARCH_PATTERN.test(candidate)) return false;
-  // A stray comma right after "Studies" is never valid prose - it's what's
-  // left when an institution/year fragment survived a previous, incomplete
-  // strip of a degree-list lead (#1533: lawler-tl4's stored short is
-  // "Studies , Holy Cross, 1958 Middle English especially Chaucer...").
-  if (/^Studies\s*,/i.test(candidate)) return false;
+  if (isDefectiveShortDescription(candidate)) return false;
   // Exclude 'full-not-useful': it reflects fullDescriptionQuality's whole-text
   // verdict on contextFullDescription, which can false-flag a rebuilt full
   // that opens with a legitimate appointment sentence (see
@@ -339,11 +341,18 @@ export function repairPersonBiographyLeakedDescription({
   const rebuiltFullIsUsable = rebuiltFullQuality.isUseful || describesResearchFocus(rebuiltFull);
 
   if (rebuiltFull && rebuiltFullIsUsable) {
+    // A short flagged only by shortDescriptionQuality's softer heuristics
+    // (e.g. 'copied-first-sentence') is worth trying to improve on, but
+    // never worth discarding outright if no improvement materializes - only
+    // a hard defect (isDefectiveShortDescription) should end up blank
+    // (#1533: wood-jpw54's stored short was a perfectly good, specific
+    // sentence that both derivation fallbacks failed to replace with
+    // anything, and the prior chain silently dropped it to '').
     const rebuiltShort = isSalvageableShortDescription(originalShort, rebuiltFull)
       ? originalShort
       : deriveShortDescriptionFromFullDescription(rebuiltFull) ||
         buildResearchAreasCardSummary(researchAreas) ||
-        '';
+        (isDefectiveShortDescription(originalShort) ? '' : originalShort);
     return {
       outcome: 'resynthesized',
       fullDescription: rebuiltFull,
