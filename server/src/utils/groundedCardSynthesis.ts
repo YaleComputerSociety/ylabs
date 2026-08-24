@@ -258,6 +258,20 @@ export interface ResolveGroundedCardInput {
   synthesize?: (fullDescription: string) => Promise<string>;
 }
 
+/**
+ * A program (fellowship/RA program) is a funding vehicle, not a researcher, so
+ * it cannot itself "Study" a topic - that framing only makes sense for a
+ * person or lab. The lab-oriented fallbacks below (`deriveShortDescriptionFromFullDescription`,
+ * LLM synthesis, `buildResearchAreasCardSummary`) all default to a "Studies X"
+ * lead when they run out of more specific patterns, so on a program-like entity
+ * that lead must be rejected rather than served (issue #1555).
+ */
+const RESEARCHER_VOICE_STUDIES_LEAD_PATTERN = /^Studies\b/i;
+
+function rejectStudiesLeadOnProgramLike(candidate: string, isProgramLike: boolean | undefined): string {
+  return isProgramLike && RESEARCHER_VOICE_STUDIES_LEAD_PATTERN.test(candidate) ? '' : candidate;
+}
+
 export async function resolveGroundedCardDescription(
   input: ResolveGroundedCardInput,
 ): Promise<string> {
@@ -265,16 +279,22 @@ export async function resolveGroundedCardDescription(
     const programDerived = deriveProgramCardShortDescription(input.fullDescription);
     if (programDerived) return programDerived;
   }
-  const derived = deriveShortDescriptionFromFullDescription(input.fullDescription);
+  const derived = rejectStudiesLeadOnProgramLike(
+    deriveShortDescriptionFromFullDescription(input.fullDescription),
+    input.isProgramLike,
+  );
   if (derived && shortDescriptionQuality(derived, input.fullDescription).isUseful) {
     return derived;
   }
   const full = textValue(input.fullDescription);
   if (input.synthesize && full) {
-    const synthesized = await input.synthesize(full);
+    const synthesized = rejectStudiesLeadOnProgramLike(await input.synthesize(full), input.isProgramLike);
     if (synthesized) return synthesized;
   }
-  const researchAreasSummary = buildResearchAreasCardSummary(input.researchAreas);
+  const researchAreasSummary = rejectStudiesLeadOnProgramLike(
+    buildResearchAreasCardSummary(input.researchAreas),
+    input.isProgramLike,
+  );
   if (researchAreasSummary) return researchAreasSummary;
   if (derived && isVacuousGenericFocusSummary(derived)) return '';
   return derived;
