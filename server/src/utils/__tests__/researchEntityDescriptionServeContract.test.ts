@@ -166,6 +166,69 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     expectContains: 'coral reef ecology',
     expectNotContains: 'right-hand column',
   },
+  {
+    id: 'we-verb-opener',
+    issues: '#1526',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab' },
+    disposition: 'transformed',
+    expectContains: 'This group investigates',
+    expectNotContains: 'We investigate',
+  },
+  {
+    id: 'our-other-noun-opener',
+    issues: '#1526',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab' },
+    disposition: 'transformed',
+    expectContains: 'This passion is to understand',
+    expectNotContains: 'Our passion',
+  },
+  {
+    id: 'i-verb-opener',
+    issues: '#1526',
+    field: 'fullDescription',
+    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    disposition: 'transformed',
+    expectContains: 'This researcher studies',
+    expectNotContains: 'I study',
+  },
+  {
+    id: 'non-my-our-the-greeting',
+    issues: '#1526',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab' },
+    disposition: 'transformed',
+    expectContains: 'This group studies',
+    expectNotContains: 'Welcome to',
+  },
+  {
+    id: 'individual-cv-bio-recruiting-note',
+    issues: '#1526',
+    field: 'fullDescription',
+    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    disposition: 'blank',
+    expectContains:
+      'I would be happy to meet regularly with an undergraduate or two to do some directed reading in theoretical physics.',
+  },
+  {
+    id: 'clinical-trial-recruitment-flyer',
+    issues: '#1526',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab' },
+    disposition: 'blank',
+    expectContains:
+      'Be ages 18 to 65 Smoking cigarettes every day Please contact 203-737-2827 for more information. HIC: 0808004163',
+  },
+  {
+    id: 'patient-care-marketing-copy',
+    issues: '#1526',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab' },
+    disposition: 'blank',
+    expectContains:
+      'Our team of specialists will support and guide you on your wellness journey through compassionate, science-driven, dedicated lifelong care.',
+  },
 ];
 
 describe('research-entity description serve contract (#1269)', () => {
@@ -206,6 +269,14 @@ const SEED_TEXT: Record<string, string> = {
     'The lab studies neural circuits underlying memory formation in mammals using electrophysiology.',
   'page-layout-referential-caveat':
     'Studies coral reef ecology across the Pacific basin. Application deadlines are listed in the right-hand column.',
+  'we-verb-opener':
+    'We investigate the brain changes in movement disorders, especially Parkinson’s disease, using imaging tools.',
+  'our-other-noun-opener':
+    'Our passion is to understand blood vessel dysfunction in the setting of critical illness.',
+  'i-verb-opener':
+    'I study the role of reporting regulation and transparency in the social and public sectors.',
+  'non-my-our-the-greeting':
+    'Welcome to Social Robotics at Yale! We study human behavior using computational and robotic models.',
 };
 
 describe('research-entity description serve contract - clean prose preserved', () => {

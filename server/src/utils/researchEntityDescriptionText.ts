@@ -291,14 +291,29 @@ export function isNonPersonOrgEntityType(entity?: FacultyResearchTextEntity | nu
   return NON_PERSON_ORG_ENTITY_TYPES.has(String(entity.entityType || '').toUpperCase());
 }
 
+const ADVISING_MENTEE_NOUN =
+  '(?:students?|undergraduates?|undergrads?|grad(?:uate)?\\s+students?|mentees?|advisees?|research\\s+assistants?|trainees?|postdocs?|postdoctoral\\s+(?:fellows?|researchers?)|applicants?)';
+
+const FIRST_PERSON_ADVISING_NOTE_PATTERN = new RegExp(
+  `\\bI\\s+(?:only\\s+)?(?:consider|advise|welcome|require|expect|prefer|recruit|mentor|supervise|am\\s+(?:currently\\s+)?(?:recruiting|looking(?:\\s+for)?|accepting|seeking|interested\\s+in))\\b[^.!?]{0,80}?\\b${ADVISING_MENTEE_NOUN}\\b`,
+  'i',
+);
+
+const FIRST_PERSON_ADVISING_INVITATION_PATTERN = new RegExp(
+  `\\bI\\s+would\\s+(?:be\\s+happy|love|be\\s+glad|welcome\\s+the\\s+opportunity)\\s+to\\s+(?:meet|advise|discuss|supervise|mentor|talk|chat|work\\s+with)\\b[^.!?]{0,80}?\\b(?:an?\\s+)?${ADVISING_MENTEE_NOUN}\\b`,
+  'i',
+);
+
 export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
 
+  // Requires a mentee-type noun near the advising verb, not just the verb alone: a bare
+  // "I am interested in <research topic>" is the ordinary way faculty state research
+  // interests, not a recruiting note, and must not be blanked as one.
   const hasFirstPersonAdvisingNote =
-    /\bI\s+(?:only\s+)?(?:consider|advise|welcome|require|expect|prefer|recruit|mentor|supervise|am\s+(?:currently\s+)?(?:recruiting|looking(?:\s+for)?|accepting|seeking|interested\s+in))\b/.test(
-      cleaned,
-    );
+    FIRST_PERSON_ADVISING_NOTE_PATTERN.test(cleaned) ||
+    FIRST_PERSON_ADVISING_INVITATION_PATTERN.test(cleaned);
   if (hasFirstPersonAdvisingNote) return true;
 
   return /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:the|an?)\s+(?:[\p{L}][\p{L}'’-]*[\s,/-]+){0,8}Professor\b/u.test(
@@ -323,7 +338,7 @@ export function repairSubjectlessResearchLead(value: unknown): string {
   return text;
 }
 
-const PERSONAL_PAGE_GREETING_PATTERN = /^(?:welcome to (?:my|our|the)\b[^.!?]*[.!?]+\s*)+/i;
+const PERSONAL_PAGE_GREETING_PATTERN = /^(?:welcome to\b[^.!?]*[.!?]+\s*)+/i;
 
 function countWords(value: string): number {
   return value.split(/\s+/).filter(Boolean).length;
@@ -337,11 +352,119 @@ function stripLeadingPersonalGreeting(value: string): string {
   return remainder;
 }
 
-const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+const THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS: Readonly<Record<string, string>> = {
+  am: 'is',
+  are: 'is',
+  have: 'has',
+  study: 'studies',
+  investigate: 'investigates',
+  examine: 'examines',
+  explore: 'explores',
+  use: 'uses',
+  focus: 'focuses',
+  develop: 'develops',
+  seek: 'seeks',
+  aim: 'aims',
+  ask: 'asks',
+  address: 'addresses',
+  analyze: 'analyzes',
+  apply: 'applies',
+  combine: 'combines',
+  build: 'builds',
+  model: 'models',
+  show: 'shows',
+  report: 'reports',
+  hypothesize: 'hypothesizes',
+  work: 'works',
+  research: 'researches',
+  lead: 'leads',
+  direct: 'directs',
+  hold: 'holds',
+  teach: 'teaches',
+  remain: 'remains',
+  run: 'runs',
+  serve: 'serves',
+  conduct: 'conducts',
+  believe: 'believes',
+  envision: 'envisions',
+  want: 'wants',
+};
+
+const FIRST_PERSON_PAST_OR_MODAL_VERBS = [
+  'had',
+  'was',
+  'would',
+  'studied',
+  'focused',
+  'began',
+  'started',
+  'joined',
+  'received',
+  'earned',
+  'became',
+  'worked',
+  'led',
+  'directed',
+  'held',
+  'taught',
+  'remained',
+  'ran',
+  'served',
+  'researched',
+  'analyzed',
+  'applied',
+  'combined',
+  'built',
+  'modeled',
+  'showed',
+  'reported',
+  'hypothesized',
+  'used',
+  'developed',
+  'sought',
+  'aimed',
+  'asked',
+  'addressed',
+  'examined',
+  'explored',
+  'investigated',
+];
+
+const FIRST_PERSON_VERB_ALTERNATION = [
+  ...Object.keys(THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS),
+  ...FIRST_PERSON_PAST_OR_MODAL_VERBS,
+].join('|');
+
+function conjugateFirstPersonVerbToThirdPersonSingular(verb: string): string {
+  return THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[verb.toLowerCase()] || verb;
+}
+
+const SINGULAR_NOUN_S_ENDING_EXCEPTIONS = /(?:ss|us|is|ics)$/i;
+
+function pluralAwareDemonstrative(noun: string): string {
+  return /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun) ? 'These' : 'This';
+}
+
+const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
+  readonly [RegExp, string | ((...groups: string[]) => string)]
+> = [
   [/(^|[.!?]\s+)(?:I\s+am|I['’]m)\s+(an?|the)\s+/gi, '$1This researcher is $2 '],
   [/(^|[.!?]\s+)(?:My|Our)\s+careers?\b/gi, "$1This researcher's career"],
   [/(^|[.!?]\s+)(?:My|Our)\s+group\b/gi, '$1This research group'],
-  [/(^|[.!?]\s+)(?:My|Our)\s+(research|laboratory|lab|team|work|mission|program)\b/gi, '$1This $2'],
+  [
+    new RegExp(`(^|[.!?]\\s+)We\\s+(${FIRST_PERSON_VERB_ALTERNATION})\\b`, 'g'),
+    (_match: string, lead: string, verb: string) =>
+      `${lead}This group ${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`,
+  ],
+  [
+    new RegExp(`(^|[.!?]\\s+)I\\s+(${FIRST_PERSON_VERB_ALTERNATION})\\b`, 'g'),
+    (_match: string, lead: string, verb: string) =>
+      `${lead}This researcher ${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`,
+  ],
+  [
+    /(^|[.!?]\s+)(?:My|Our)\s+(\w+)\b/g,
+    (_match: string, lead: string, noun: string) => `${lead}${pluralAwareDemonstrative(noun)} ${noun}`,
+  ],
 ];
 
 export function revoiceFirstPersonResearchLead(value: unknown): string {
@@ -349,7 +472,7 @@ export function revoiceFirstPersonResearchLead(value: unknown): string {
   if (!text) return text;
   let next = stripLeadingPersonalGreeting(text);
   for (const [pattern, replacement] of FIRST_PERSON_LEAD_REVOICE_RULES) {
-    next = next.replace(pattern, replacement);
+    next = next.replace(pattern, replacement as any);
   }
   return next;
 }
@@ -361,13 +484,21 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   let changed = false;
   const next: Record<string, any> = { ...entity };
   const rejectPersonBiography = isNonPersonOrgEntityType(next);
+  const shouldGuardPersonBiography = rejectPersonBiography || isFacultyResearchTextEntity(next);
 
   for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {
       if (typeof next[field] !== 'string') continue;
+      if (shouldGuardPersonBiography && isPersonBiographyOrAdvisingDescription(next[field])) {
+        if (next[field] !== '') {
+          next[field] = '';
+          changed = true;
+        }
+        continue;
+      }
       const withResearchLeadRepair = repairSubjectlessResearchLead(next[field]);
       const withFirstPersonReVoice =
-        rejectPersonBiography || field === 'shortDescription'
+        field === 'shortDescription'
           ? withResearchLeadRepair
           : revoiceFirstPersonResearchLead(withResearchLeadRepair);
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
@@ -379,12 +510,7 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         !isLikelyResearchFocusedText(withLeadNameCorrection)
           ? ''
           : withLeadNameCorrection;
-      const withNonPersonBiographyGuard =
-        rejectPersonBiography &&
-        isPersonBiographyOrAdvisingDescription(withLeadNameCorrectionIfResearch)
-          ? ''
-          : withLeadNameCorrectionIfResearch;
-      const cleaned = publicResearchEntityDescriptionText(withNonPersonBiographyGuard);
+      const cleaned = publicResearchEntityDescriptionText(withLeadNameCorrectionIfResearch);
       if (cleaned !== next[field]) {
         next[field] = cleaned;
         changed = true;
@@ -394,7 +520,7 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
 
   if ('summary' in next) {
     const guardedSummary =
-      rejectPersonBiography && isPersonBiographyOrAdvisingDescription(next.summary)
+      shouldGuardPersonBiography && isPersonBiographyOrAdvisingDescription(next.summary)
         ? ''
         : next.summary;
     const cleaned = publicResearchEntityDescriptionText(guardedSummary);
