@@ -46,6 +46,12 @@ describe('facultyDirectoryRegistry', () => {
     expect(byUrl.get('https://mcdb.yale.edu/people/faculty')?.status).toBe('covered');
     expect(byUrl.get('https://physics.yale.edu/people/faculty')?.status).toBe('covered');
     expect(byUrl.get('https://chem.yale.edu/people/faculty')?.status).toBe('covered');
+    expect(byUrl.get('https://chem.yale.edu/people/faculty')?.coveredBy).toEqual([
+      'dept-faculty-roster',
+    ]);
+    expect(byUrl.get('https://chem.yale.edu/people/faculty')?.notes).not.toMatch(
+      /roster is not/i,
+    );
     expect(byUrl.get('https://sociology.yale.edu/faculty')?.status).toBe('covered');
     expect(byUrl.get('https://english.yale.edu/people/ladder-faculty')?.status).toBe('covered');
     expect(
