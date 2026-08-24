@@ -11,7 +11,11 @@ import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
 
-export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v1';
+export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v2';
+
+export function isStudentVisibilityVersionCurrent(version: unknown): boolean {
+  return version === STUDENT_VISIBILITY_VERSION;
+}
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;

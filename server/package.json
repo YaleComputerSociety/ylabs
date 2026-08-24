@@ -85,6 +85,7 @@
     "student-visibility:backfill": "tsx src/scripts/backfillStudentVisibilityTiers.ts",
     "research:backfill-yale-status-cache": "tsx src/scripts/backfillYaleStatusCache.ts",
     "student-visibility:gate": "tsx src/scripts/studentVisibilityGate.ts",
+    "student-visibility:gate:stale": "tsx src/scripts/studentVisibilityGate.ts --stale-version",
     "launch:trust-contract": "tsx src/scripts/launchTrustContract.ts",
     "launch:acquisition-report": "tsx src/scripts/launchAcquisitionReport.ts",
     "launch:review-exceptions": "tsx src/scripts/launchReviewExceptions.ts",
