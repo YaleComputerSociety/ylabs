@@ -116,6 +116,7 @@ export type ExtractedCurrentAvailability =
 export interface LLMExtraction {
   openToUndergrads: OpenToUndergrads;
   currentUndergradCount: number;
+  currentUndergradEvidenceQuotes?: string[];
   evidenceQuote: string;
   evidenceSource: EvidenceSource;
   joinPageUrl: string | null;
@@ -154,6 +155,10 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
       properties: {
         openToUndergrads: { type: 'string', enum: ['yes', 'no', 'unclear'] },
         currentUndergradCount: { type: 'integer', minimum: 0 },
+        currentUndergradEvidenceQuotes: {
+          type: 'array',
+          items: { type: 'string' },
+        },
         evidenceQuote: { type: 'string' },
         evidenceSource: {
           type: 'string',
@@ -197,6 +202,7 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
       required: [
         'openToUndergrads',
         'currentUndergradCount',
+        'currentUndergradEvidenceQuotes',
         'evidenceQuote',
         'evidenceSource',
         'joinPageUrl',
@@ -234,6 +240,10 @@ export const LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT = {
       properties: {
         openToUndergrads: { type: 'string', enum: ['yes', 'no', 'unclear'] },
         currentUndergradCount: { type: 'integer', minimum: 0 },
+        currentUndergradEvidenceQuotes: {
+          type: 'array',
+          items: { type: 'string' },
+        },
         evidenceQuote: { type: 'string' },
         evidenceSource: {
           type: 'string',
@@ -250,6 +260,7 @@ export const LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT = {
       required: [
         'openToUndergrads',
         'currentUndergradCount',
+        'currentUndergradEvidenceQuotes',
         'evidenceQuote',
         'evidenceSource',
         'joinPageUrl',
@@ -270,7 +281,8 @@ export const LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT = `You are an expert classifier 
 Your job is to read text scraped from a lab's website (home page plus optionally a "members" or "join" sub-page) and return a JSON object with these fields:
 
 - openToUndergrads: "yes" if there is text that affirmatively states the lab welcomes / hires / mentors undergraduates, OR if the members section lists undergraduate students. "no" if the lab explicitly states they do NOT take undergraduates. "unclear" otherwise. Default to "unclear" - be conservative.
-- currentUndergradCount: integer count of currently-listed undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. Return 0 if no members section exists or no undergrads are listed there.
+- currentUndergradCount: integer count of CURRENT YALE undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. Count a person ONLY when they are a currently-active member who is a Yale undergraduate. EXCLUDE, and never count: (a) anyone listed as a former member, alumnus/alumna, past member, or "graduated"; (b) anyone with a past or closed date range (e.g. "2008-2010", "2009") or a "now a ... / now works at ..." career-status marker showing they have moved on; (c) any visiting undergraduate or any undergraduate whose listed institution is another school (e.g. Emory, Georgia Tech, UCLA, University of Connecticut, Johns Hopkins, Harvey Mudd, USC). When you cannot confirm that a listed undergraduate is both current AND at Yale, do not count them. Return 0 if no members section exists or no current Yale undergrads are listed there.
+- currentUndergradEvidenceQuotes: an array with one short verbatim roster snippet for EACH current Yale undergraduate you counted, so the count is auditable. currentUndergradCount MUST equal the length of this array. Return an empty array when currentUndergradCount is 0.
 - evidenceQuote: a verbatim quote from the page (at most 200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
 - evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates"), "members_section" if from a roster listing, "none" if no evidence.
 - joinPageUrl: the URL (absolute) of a "join the lab" or "opportunities" page, if mentioned. Otherwise null.
@@ -288,7 +300,8 @@ export const LAB_UNDERGRAD_SYSTEM_PROMPT = `You are an expert classifier evaluat
 Your job is to read text scraped from a lab's website (home page plus optionally a "members" or "join" sub-page) and return a JSON object with these fields:
 
 - openToUndergrads: "yes" if there is text that affirmatively states the lab welcomes / hires / mentors undergraduates, OR if the members section lists undergraduate students. "no" if the lab explicitly states they do NOT take undergraduates. "unclear" otherwise. Default to "unclear" — be conservative.
-- currentUndergradCount: integer count of currently-listed undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. Return 0 if no members section exists or no undergrads are listed there.
+- currentUndergradCount: integer count of CURRENT YALE undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. Count a person ONLY when they are a currently-active member who is a Yale undergraduate. EXCLUDE, and never count: (a) anyone listed as a former member, alumnus/alumna, past member, or "graduated"; (b) anyone with a past or closed date range (e.g. "2008-2010", "2009") or a "now a ... / now works at ..." career-status marker showing they have moved on; (c) any visiting undergraduate or any undergraduate whose listed institution is another school (e.g. Emory, Georgia Tech, UCLA, University of Connecticut, Johns Hopkins, Harvey Mudd, USC). When you cannot confirm that a listed undergraduate is both current AND at Yale, do not count them. Return 0 if no members section exists or no current Yale undergrads are listed there.
+- currentUndergradEvidenceQuotes: an array with one short verbatim roster snippet for EACH current Yale undergraduate you counted, so the count is auditable. currentUndergradCount MUST equal the length of this array. Return an empty array when currentUndergradCount is 0.
 - evidenceQuote: a verbatim quote from the page (≤200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
 - evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates"), "members_section" if from a roster listing, "none" if no evidence.
 - joinPageUrl: the URL (absolute) of a "join the lab" or "opportunities" page, if mentioned. Otherwise null.
@@ -542,6 +555,81 @@ export function sourceUrlForExtraction(
 }
 
 /**
+ * Recency gate. Lab "people" pages fold alumni / former members / past
+ * undergraduate researchers into one roster with no date scoping (#1209/#1314),
+ * so a stored count silently absorbs entries that are unambiguously historical.
+ * A backing snippet matching any of these markers is not a current researcher.
+ */
+const HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS: RegExp[] = [
+  /\bformer(ly)?\b/i,
+  /\balumn(i|us|ae|a)\b/i,
+  /\bgraduated\b/i,
+  /\bpast\s+(under)?grad/i,
+  /\bprevious(ly)?\b/i,
+  /\bvisiting\s+(under)?grad/i,
+  /\b(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)\d{2}\b/,
+  /\bnow\s+(?!accept|recruit|hir|seek|welcom|tak|open|avail|enroll|offer|host)(?:a\b|an\b|the\b|at\b|with\b|working|serv|senior|director|professor|assistant|associate|principal|chief|head|vp|ceo|cto|president|manager|scientist|research|postdoc|resident|fellow|md\b|phd\b|student|pursuing|completing|attend)/i,
+  /\b(?:associate|analyst|consultant|engineer|scientist|manager|director|officer|founder|president|attorney|physician)\s+at\s+(?!yale\b)/i,
+];
+
+/**
+ * Institution gate. Yale lab rosters also list visiting undergraduates from
+ * other schools (#1314). A Yale lab's default context is Yale, so an unqualified
+ * undergrad is presumed to be a Yale undergrad; we only exclude when the backing
+ * snippet names a clearly non-Yale institution or marks the person as visiting.
+ */
+const NON_YALE_INSTITUTION_PATTERNS: RegExp[] = [
+  /\bvisiting\b/i,
+  /\buniversit(?:y|ies)\b/i,
+  /\bpolytechnic\b/i,
+  /\binstitute\s+of\s+technolog/i,
+  /\bgeorgia\s+tech\b/i,
+  /\bjohns\s+hopkins\b/i,
+  /\bharvey\s+mudd\b/i,
+  /\bemory\b/i,
+  /\b(?:UCLA|USC|MIT|UConn|UCSD|UCSB|UCSC|NYU|UPenn|UMich|Caltech)\b/,
+];
+
+export function isHistoricalUndergradEvidence(quote?: string): boolean {
+  const text = (quote || '').trim();
+  if (!text) return false;
+  return HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function namesNonYaleInstitution(quote?: string): boolean {
+  const text = (quote || '').trim();
+  if (!text) return false;
+  if (/\byale\b/i.test(text)) return false;
+  return NON_YALE_INSTITUTION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isCurrentYaleUndergradEvidence(quote?: string): boolean {
+  return !isHistoricalUndergradEvidence(quote) && !namesNonYaleInstitution(quote);
+}
+
+/**
+ * Fail-closed recency + institution gate for `currentUndergradCount`. The raw
+ * LLM integer is never trusted on its own because the roster it counts mixes
+ * current Yale undergrads with alumni and non-Yale visiting undergrads (#1314).
+ *
+ *   - When the LLM supplies a per-person `currentUndergradEvidenceQuotes` roster
+ *     (the strengthened prompt requires one snippet per counted undergrad), the
+ *     count is derived from the subset of snippets that clear both gates.
+ *   - When no roster is present (legacy cache or an omitted array), fall back to
+ *     the LLM integer but zero it when the single backing `evidenceQuote` shows a
+ *     historical or non-Yale marker, so a contaminated count never survives.
+ */
+export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
+  const roster = extraction.currentUndergradEvidenceQuotes;
+  if (Array.isArray(roster)) {
+    return roster.filter((quote) => isCurrentYaleUndergradEvidence(quote)).length;
+  }
+  const rawCount = extraction.currentUndergradCount;
+  if (!Number.isInteger(rawCount) || rawCount <= 0) return 0;
+  return isCurrentYaleUndergradEvidence(extraction.evidenceQuote) ? rawCount : 0;
+}
+
+/**
  * Pure: turn an LLMExtraction into the ObservationInput list the materializer
  * will consume. Implements the rules:
  *
@@ -549,8 +637,10 @@ export function sourceUrlForExtraction(
  *     skipped on 'unclear'. Confidence override 0.5 (LLM-based, low-trust).
  *   - acceptingUndergrads: still emitted for legacy compatibility only.
  *   - currentUndergradCount: emitted iff evidenceSource is 'members_section'
- *     AND the count is a non-negative integer. Open prose ("we have many
- *     undergrads") is too unreliable to write a count from. Confidence 0.5.
+ *     AND the recency/institution-gated count (deriveCurrentUndergradCount) is
+ *     a positive integer. Open prose ("we have many undergrads") is too
+ *     unreliable to write a count from, and alumni / non-Yale visiting undergrads
+ *     never count toward it. Confidence 0.5.
  *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty.
  *     Confidence 0.5.
  *   - lastObservedAt: always emitted (to refresh the freshness clock).
@@ -712,15 +802,11 @@ export function extractionToObservations(
   }
   // 'unclear' → no observation
 
-  if (
-    extraction.evidenceSource === 'members_section' &&
-    Number.isInteger(extraction.currentUndergradCount) &&
-    extraction.currentUndergradCount >= 0
-  ) {
+  if (extraction.evidenceSource === 'members_section') {
     out.push({
       ...base,
       field: 'currentUndergradCount',
-      value: extraction.currentUndergradCount,
+      value: deriveCurrentUndergradCount(extraction),
       confidenceOverride: 0.5,
     });
   }

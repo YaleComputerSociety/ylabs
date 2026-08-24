@@ -24,6 +24,9 @@ import {
   LAB_UNDERGRAD_SYSTEM_PROMPT,
   logisticsAcquisitionAllowed,
   extractionToObservations,
+  deriveCurrentUndergradCount,
+  isHistoricalUndergradEvidence,
+  namesNonYaleInstitution,
   sourceUrlForExtraction,
   candidateLabFromResearchEntityDoc,
   selectLabsToProcess,
@@ -759,6 +762,123 @@ describe('extractionToObservations', () => {
     };
     const obs2 = extractionToObservations('lab-2', 'https://x/', fromProse, fixedDate);
     expect(obs2.find((o) => o.field === 'currentUndergradCount')).toBeUndefined();
+  });
+
+  const countObservationValue = (ext: LLMExtraction): number | undefined => {
+    const obs = extractionToObservations('lab-count', 'https://x/', ext, fixedDate);
+    return obs.find((o) => o.field === 'currentUndergradCount')?.value as number | undefined;
+  };
+
+  it('derives currentUndergradCount from the current-Yale subset of the roster (#1314)', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 5,
+      currentUndergradEvidenceQuotes: [
+        'Jane Doe, Yale College, Molecular Biophysics',
+        'John Smith, undergraduate researcher',
+        'Amber Anders 2009 Undergraduate student, now Senior Director Commercial BizOps, Illumina',
+        'Dustin Morado, Georgia Tech, Visiting Undergraduate, 2010, 2011',
+        'Anisha Jain - Undergraduate, University of Connecticut',
+      ],
+      evidenceQuote: 'Undergraduates in the lab',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    expect(deriveCurrentUndergradCount(ext)).toBe(2);
+    expect(countObservationValue(ext)).toBe(2);
+  });
+
+  it('excludes an all-alumni roster and writes a corrected zero count (#1314)', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 3,
+      currentUndergradEvidenceQuotes: [
+        'Matthew Barber (Physics, Yale College, 2009); Associate at Flexpoint Ford',
+        'Former undergraduate researcher, graduated 2015',
+        'Past undergrad, now a medical student',
+      ],
+      evidenceQuote: 'Alumni and former lab members',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    expect(deriveCurrentUndergradCount(ext)).toBe(0);
+    expect(countObservationValue(ext)).toBe(0);
+  });
+
+  it('counts current Yale undergrads listed with an active class year (#1314)', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 2,
+      currentUndergradEvidenceQuotes: [
+        'Priya Nair, Yale College Class of 2027',
+        'Marcus Lee, B.S. candidate, Yale',
+      ],
+      evidenceQuote: 'Current undergraduate members',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    expect(deriveCurrentUndergradCount(ext)).toBe(2);
+    expect(countObservationValue(ext)).toBe(2);
+  });
+
+  it('treats an empty roster as zero even when the raw count is positive (#1314)', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 7,
+      currentUndergradEvidenceQuotes: [],
+      evidenceQuote: 'Undergraduates: see roster',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    expect(deriveCurrentUndergradCount(ext)).toBe(0);
+    expect(countObservationValue(ext)).toBe(0);
+  });
+
+  it('falls back to the raw count for legacy extractions with a clean quote (#1314)', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 4,
+      evidenceQuote: 'Undergraduate researchers: Alice, Bob, Carol, Dan',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    expect(deriveCurrentUndergradCount(ext)).toBe(4);
+    expect(countObservationValue(ext)).toBe(4);
+  });
+
+  it('zeroes a legacy count whose only backing quote is historical or non-Yale (#1314)', () => {
+    const historical: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 40,
+      evidenceQuote: 'Matthew Barber (Physics, Yale College, 2009); Associate at Flexpoint Ford',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    expect(deriveCurrentUndergradCount(historical)).toBe(0);
+    expect(countObservationValue(historical)).toBe(0);
+
+    const visiting: LLMExtraction = {
+      openToUndergrads: 'yes',
+      currentUndergradCount: 5,
+      evidenceQuote: 'Dustin Morado, Georgia Tech, Visiting Undergraduate',
+      evidenceSource: 'members_section',
+      joinPageUrl: null,
+    };
+    expect(deriveCurrentUndergradCount(visiting)).toBe(0);
+    expect(countObservationValue(visiting)).toBe(0);
+  });
+
+  it('recency and institution gates classify roster snippets correctly (#1314)', () => {
+    expect(isHistoricalUndergradEvidence('Former undergraduate, alumni network')).toBe(true);
+    expect(isHistoricalUndergradEvidence('Jane Doe (2008-2010)')).toBe(true);
+    expect(isHistoricalUndergradEvidence('now a medical student')).toBe(true);
+    expect(isHistoricalUndergradEvidence('Yale College Class of 2027')).toBe(false);
+
+    expect(namesNonYaleInstitution('Visiting Undergraduate from UCLA')).toBe(true);
+    expect(namesNonYaleInstitution('University of Connecticut')).toBe(true);
+    expect(namesNonYaleInstitution('Georgia Tech')).toBe(true);
+    expect(namesNonYaleInstitution('Yale College, Berkeley residential college')).toBe(false);
+    expect(namesNonYaleInstitution('Undergraduate researcher')).toBe(false);
   });
 
   it('truncates very long evidence quotes to 500 characters', () => {
