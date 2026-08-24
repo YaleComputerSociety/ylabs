@@ -946,11 +946,15 @@ export function isLabResearchTextEntity(entity?: FacultyResearchTextEntity | nul
   return Boolean(entity && (entity.kind === 'lab' || entity.entityType === 'LAB'));
 }
 
-function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
-  return textValue(entity.displayName || entity.name)
+export function stripFacultyResearchAreaNameTemplateSuffix(name: unknown): string {
+  return textValue(name)
     .replace(/\s*[-–—]\s*Research$/i, '')
     .replace(/\s+(?:Faculty Research|Lab|Laboratory|Research)$/i, '')
     .trim();
+}
+
+function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
+  return stripFacultyResearchAreaNameTemplateSuffix(entity.displayName || entity.name);
 }
 
 function possessiveName(name: string): string {
