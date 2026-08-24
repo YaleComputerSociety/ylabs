@@ -41,6 +41,40 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('embedding');
   });
 
+  it('blanks a "Studies <chips>" area echo of researchAreas in the indexed description fields (#1466)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-studies-echo',
+      name: 'Echo Lab',
+      archived: false,
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+      fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+    });
+
+    expect(doc?.fullDescription).toBe('');
+    expect(doc?.shortDescription).toBe('');
+  });
+
+  it('keeps a genuine research-focus summary in the indexed description fields', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-genuine-summary',
+      name: 'Genuine Lab',
+      archived: false,
+      researchAreas: ['Mammalian evolutionary morphology', 'Functional morphology'],
+      fullDescription:
+        'The Genuine Lab studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+      shortDescription:
+        'Studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+    });
+
+    expect(doc?.fullDescription).toBe(
+      'The Genuine Lab studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+    );
+    expect(doc?.shortDescription).toBe(
+      'Studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+    );
+  });
+
   it('strips retired legacy access fields while preserving the graded access signal', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-access',

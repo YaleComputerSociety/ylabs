@@ -1,5 +1,6 @@
 import {
   isInstitutionalCenterBlurbText,
+  isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
@@ -651,16 +652,21 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   let changed = withTextGuards !== entity;
   const next: Record<string, any> = { ...withTextGuards };
 
-  for (const field of HYGIENE_FULL_DESCRIPTION_FIELDS) {
-    if (typeof next[field] !== 'string') continue;
-    const cleaned = sanitizeResearchEntityDescription(next[field]);
+  HYGIENE_FULL_DESCRIPTION_FIELDS.forEach((field, index) => {
+    if (typeof next[field] !== 'string') return;
+    const areaField = SERVED_RESEARCH_AREA_FIELDS[index];
+    let cleaned = sanitizeResearchEntityDescription(next[field]);
+    if (isStudiesResearchAreaEchoDescription(cleaned, next[areaField])) cleaned = '';
     if (cleaned !== next[field]) {
       next[field] = cleaned;
       changed = true;
     }
-  }
+  });
   if (typeof next.shortDescription === 'string') {
-    const cleaned = sanitizeResearchEntityShortDescription(next.shortDescription);
+    let cleaned = sanitizeResearchEntityShortDescription(next.shortDescription);
+    if (isStudiesResearchAreaEchoDescription(cleaned, next[SERVED_RESEARCH_AREA_FIELDS[0]])) {
+      cleaned = '';
+    }
     if (cleaned !== next.shortDescription) {
       next.shortDescription = cleaned;
       changed = true;

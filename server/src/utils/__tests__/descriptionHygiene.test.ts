@@ -21,6 +21,7 @@ import {
   isResearchAreaEchoDescription,
   isResearchAreaTemplateLeakText,
   isRosterShapedText,
+  isStudiesResearchAreaEchoDescription,
   isStaffContactBlockText,
   MID_SENTENCE_TRUNCATION_MIN_LENGTH,
   partitionSentencesLossless,
@@ -1167,6 +1168,78 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
       'This work is connected to funding from NIH. The lab studies cardiovascular disease using mouse models.';
     expect(isResearchAreaEchoDescription(prose)).toBe(false);
     expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
+});
+
+describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {
+  it('flags a bare "Studies <A>, <B>, and <C>." echo of the entity\'s own researchAreas', () => {
+    expect(
+      isStudiesResearchAreaEchoDescription(
+        'Studies economic theory, financial economics, international finance, and macroeconomics.',
+        ['Economic Theory', 'Financial Economics', 'International Finance', 'Macroeconomics'],
+      ),
+    ).toBe(true);
+  });
+
+  it('flags the echo through an "including" connector', () => {
+    expect(
+      isStudiesResearchAreaEchoDescription(
+        'Studies biological physics, including statistical physics, immunology, protein science, and machine learning.',
+        ['Biological Physics', 'Statistical Physics', 'Immunology', 'Protein Science', 'Machine Learning'],
+      ),
+    ).toBe(true);
+  });
+
+  it('consumes a chip whole even when the chip label itself contains "and"', () => {
+    expect(
+      isStudiesResearchAreaEchoDescription(
+        'Studies Paleontology and Stratigraphy of Fossils, Paleontology and Evolutionary Biology, and Evolution and Paleontology Studies.',
+        [
+          'Paleontology and Stratigraphy of Fossils',
+          'Paleontology and Evolutionary Biology',
+          'Evolution and Paleontology Studies',
+          'Planetary Science',
+        ],
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag without a researchAreas list, preserving isResearchAreaEchoDescription callers', () => {
+    expect(
+      isStudiesResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.', undefined),
+    ).toBe(false);
+    expect(isStudiesResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.', [])).toBe(
+      false,
+    );
+  });
+
+  it('keeps genuine prose that opens with a synthesis verb but is not a chip echo', () => {
+    expect(
+      isStudiesResearchAreaEchoDescription(
+        'Studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+        [
+          'Mammalian evolutionary morphology',
+          'Functional morphology',
+          'Mammalian systematics',
+          'Primate evolution',
+        ],
+      ),
+    ).toBe(false);
+    expect(
+      isStudiesResearchAreaEchoDescription(
+        'Studies computational social cognition, focusing on how minds understand each other.',
+        ['Computational Social Cognition', 'Theory of Mind'],
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps a real one-liner that is not grounded in the supplied researchAreas', () => {
+    expect(
+      isStudiesResearchAreaEchoDescription('The Takyar lab studies liver fibrosis and vascular biology.', [
+        'Liver Fibrosis',
+        'Vascular Biology',
+      ]),
+    ).toBe(false);
   });
 });
 

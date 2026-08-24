@@ -1195,6 +1195,63 @@ export function isResearchAreaEchoDescription(text: string): boolean {
   );
 }
 
+const studiesLeadSingleSentencePattern = new RegExp(
+  `${synthesisVerbLeadPattern.source}\\s+[^.!?]+[.!?]?$`,
+  'i',
+);
+
+const areaListDelimiterPattern = /^(?:,\s*(?:and\s+)?|\s+and\s+|,?\s*including\s+)/i;
+
+/**
+ * The sibling of `isResearchAreaEchoDescription` for the "Studies <A>, <B>,
+ * and <C>." template (`buildResearchAreasCardSummary`): a bare synthesis-verb
+ * lead is not itself a reliable tell, since genuine one-line research-focus
+ * prose uses the same verbs (#867), so this only fires when the text after
+ * the lead verb can be fully consumed as a plain oxford-joined list of the
+ * entity's own `researchAreas`/`profileResearchAreas` chips - i.e. the
+ * sentence carries no content beyond the chips already shown beside it
+ * (#1466). Matching is greedy-longest-chip-first (not a naive comma/"and"
+ * split) so a chip whose own label contains "and" ("Paleontology and
+ * Evolutionary Biology") is consumed whole rather than fragmented. Requires
+ * the caller to supply the entity's area list; with none supplied this
+ * returns false so existing callers of the text-only
+ * `isResearchAreaEchoDescription` are unaffected.
+ */
+export function isStudiesResearchAreaEchoDescription(
+  text: string,
+  researchAreas: readonly unknown[] | null | undefined,
+): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (!Array.isArray(researchAreas) || researchAreas.length === 0) return false;
+  if (!studiesLeadSingleSentencePattern.test(normalized)) return false;
+  const body = normalized
+    .replace(synthesisVerbLeadPattern, '')
+    .replace(/[.!?]+$/, '')
+    .trim();
+  if (!body) return false;
+  const areaKeys = researchAreas
+    .map((area) => (typeof area === 'string' ? area.trim().toLowerCase() : ''))
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  if (areaKeys.length === 0) return false;
+
+  let remaining = body.toLowerCase();
+  let matchedAny = false;
+  while (remaining.length > 0) {
+    const delimiterMatch = remaining.match(areaListDelimiterPattern);
+    if (delimiterMatch) {
+      remaining = remaining.slice(delimiterMatch[0].length);
+      continue;
+    }
+    const areaMatch = areaKeys.find((key) => remaining.startsWith(key));
+    if (!areaMatch) return false;
+    remaining = remaining.slice(areaMatch.length);
+    matchedAny = true;
+  }
+  return matchedAny;
+}
+
 const provenanceHedgePattern = /[,;]?\s*\bwhen\s+source-confirmed\b/gi;
 const internalConfidenceHedgePattern =
   /\s*This profile-derived summary should be checked against the linked official sources before outreach\.?/gi;
