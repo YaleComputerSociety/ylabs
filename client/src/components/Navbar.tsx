@@ -19,7 +19,7 @@ import HomeButton from './HomeButton';
 import YURAButton from './YURAButton';
 import AnalyticsButton from './AnalyticsButton';
 import UserContext from '../contexts/UserContext';
-import FeedbackButton from './FeebackButton';
+import FeedbackButton from './FeedbackButton';
 import { isPrimaryNavLinkActive, primaryNavLinks } from './navigationLinks';
 import { safeRouteSegment } from '../utils/url';
 import { navFocusRingSx } from '../utils/focusRing';
