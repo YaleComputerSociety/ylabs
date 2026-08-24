@@ -28,6 +28,7 @@ import {
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
 import { nextRepairActionForReasons } from '../scripts/studentVisibilityBackfillReport';
+import { countResearchEntityAlternateAccessPaths } from './researchEntityAlternateAccessPath';
 import {
   evaluateRosterLeadResolution,
   type RosterLeadResolutionResult,
@@ -153,6 +154,7 @@ const piRepairReasons = new Set([
 ]);
 const actionRepairReasons = new Set([
   'missing_action_evidence',
+  'missing_alternate_access_path',
   'missing_application_route',
   'missing_source_route',
 ]);
@@ -970,7 +972,12 @@ async function planResearchEntityGateUpdates(
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
 
-  const [rosterByEntityId, accessRows, reachOutPlausibleWithoutHttpSource] = await Promise.all([
+  const [
+    rosterByEntityId,
+    accessRows,
+    reachOutPlausibleWithoutHttpSource,
+    alternateAccessPathCounts,
+  ] = await Promise.all([
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -997,6 +1004,7 @@ async function planResearchEntityGateUpdates(
     })
       .select('researchEntityId type archived source.url source.evidenceIds source.name')
       .lean(),
+    countResearchEntityAlternateAccessPaths(entityIds),
   ]);
 
   const leadRows = Array.from(rosterByEntityId.values())
@@ -1125,6 +1133,7 @@ async function planResearchEntityGateUpdates(
           concreteLeadEntityUserIds,
         }) || samePiDuplicateRiskEntityIds.has(recordId),
       exactUrlDuplicateRisk: exactUrlDuplicateRiskEntityIds.has(recordId),
+      relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
     });
     return {
       collection: 'research' as const,
