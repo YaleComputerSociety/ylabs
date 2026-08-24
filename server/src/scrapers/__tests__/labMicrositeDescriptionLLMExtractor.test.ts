@@ -562,6 +562,70 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     ).toEqual([]);
   });
 
+  it('drops a careers/job-seekers landing page as a description source (#1678)', () => {
+    expect(
+      descriptionExtractionToObservations(
+        {
+          fullDescription:
+            'A great place to work, with competitive benefits, flexible scheduling, and opportunities for growth across our health system.',
+          shortDescription: 'A great place to work with competitive benefits.',
+          topics: [],
+          methods: [],
+        },
+        {
+          entityId: 'entity-1',
+          entityKey: 'careers-lab',
+          sourceUrl:
+            'https://instituteofliving.org/health-professionals/for-job-seekers/hartford-healthcare-careers',
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it('fails closed on a multi-person bio directory dump instead of grafting it onto one entity (#1678)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'See where Climate Fellows go next. About Jaser Abu Mousa is a Senior Fellow at the Middle East Institute studying regional policy. About Simidele Adeagbo is a four-time Olympian advocating for youth sport.',
+        shortDescription: 'About Jaser Abu Mousa is a Senior Fellow.',
+        topics: ['Climate policy'],
+        methods: [],
+      },
+      {
+        entityId: 'entity-ilc',
+        entityKey: 'center-international-leadership',
+        sourceUrl: 'https://jackson.yale.edu/international-leadership-center',
+      },
+    );
+
+    expect(observations).toEqual([]);
+  });
+
+  it('rejects a page section heading as a research topic (#1678)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The Tipton research program investigates atomic-scale imaging methods and their application to materials science problems facing the field today.',
+        shortDescription: 'Investigates atomic-scale imaging methods for materials science.',
+        topics: [
+          'Atomic-scale imaging',
+          'Selected Presentations and Articles for a General Audience',
+          'In the News',
+        ],
+        methods: [],
+      },
+      {
+        entityId: 'entity-tipton',
+        entityKey: 'tipton-faculty-research',
+        sourceUrl: 'https://physics.yale.edu/people/paul-tipton',
+      },
+    );
+
+    expect(observations.find((obs) => obs.field === 'researchAreas')?.value).toEqual([
+      'Atomic-scale imaging',
+    ]);
+  });
+
   it('derives a card-safe short description when LLM short copy is first-person', () => {
     const observations = descriptionExtractionToObservations(
       {

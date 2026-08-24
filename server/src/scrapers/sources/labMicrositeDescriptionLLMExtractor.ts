@@ -153,6 +153,8 @@ const rejectedDescriptionSourcePatterns = [
   /\/about\/a-to-z-index\/(?:atoz\/)?lab-websites$/i,
   /\/membership\/directory\/?$/i,
   /\/(?:people|faculty|directory|members)\/?$/i,
+  /\bjob-seekers?\b/i,
+  /\bcareers?\b/i,
   /(?:^|\.)orcid\.org/i,
   /(?:^|\.)doi\.org/i,
   /(?:^|\.)openalex\.org/i,
@@ -299,6 +301,44 @@ function usefulDescription(value: unknown): string {
   return text;
 }
 
+const PERSON_BIO_CARD_PATTERN =
+  /\bAbout\s+[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}\s+is\s+(?:an?|the)\b/gu;
+
+/**
+ * A directory/landing page (fellows roster, staff listing) yields a page-text
+ * summary that concatenates several unrelated people's "About <Name> is a/the
+ * ..." bio cards rather than describing the single entity the extractor asked
+ * about (#1678). Two or more distinct bio cards is the tell of a multi-person
+ * dump; a genuine single-entity description never repeats this construction.
+ */
+function isMultiPersonBioDirectoryDumpText(value: string): boolean {
+  const matches = value.match(PERSON_BIO_CARD_PATTERN);
+  return Boolean(matches && matches.length >= 2);
+}
+
+const PAGE_SECTION_HEADING_TOPIC_PATTERNS = [
+  /^selected\s+(?:presentations?|publications?|articles?|media|press|talks?)\b/i,
+  /^(?:in\s+the\s+)?news$/i,
+  /^publications?$/i,
+  /^presentations?$/i,
+  /^media(?:\s+coverage)?$/i,
+  /^press$/i,
+  /^events?$/i,
+  /^awards?(?:\s*(?:&|and)\s*honors?)?$/i,
+  /for\s+a\s+general\s+audience$/i,
+];
+
+/**
+ * A page section heading ("Selected Presentations and Articles for a General
+ * Audience", "In the News") that the LLM mistook for a research topic string
+ * rather than page furniture (#1678). Real topics never read as a bare page
+ * section label.
+ */
+function isPageSectionHeadingTopic(value: string): boolean {
+  const cleaned = textValue(value);
+  return PAGE_SECTION_HEADING_TOPIC_PATTERNS.some((pattern) => pattern.test(cleaned));
+}
+
 function sentenceCase(value: string): string {
   return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : '';
 }
@@ -381,7 +421,7 @@ export function descriptionExtractionToObservations(
   const fullDescription = normalizeKnownDescriptionAcronyms(
     usefulDescription(extraction.fullDescription),
   );
-  if (!fullDescription) return [];
+  if (!fullDescription || isMultiPersonBioDirectoryDumpText(fullDescription)) return [];
   const shortDescription = usefulShortDescription(extraction.shortDescription, fullDescription);
 
   const base = {
@@ -398,7 +438,9 @@ export function descriptionExtractionToObservations(
   if (shortDescription) {
     observations.push({ ...base, field: 'shortDescription', value: shortDescription });
   }
-  const topics = uniqueStrings(extraction.topics || []).slice(0, 12);
+  const topics = uniqueStrings(extraction.topics || [])
+    .filter((topic) => !isPageSectionHeadingTopic(topic))
+    .slice(0, 12);
   if (topics.length) observations.push({ ...base, field: 'researchAreas', value: topics });
   const methods = uniqueStrings(extraction.methods || []).slice(0, 12);
   if (methods.length) observations.push({ ...base, field: 'methods', value: methods });
