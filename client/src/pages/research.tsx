@@ -15,6 +15,7 @@ import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadin
 import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
+import useSavedSearchNewMatchSummary from '../hooks/useSavedSearchNewMatchSummary';
 import axios from '../utils/axios';
 import { safeRouteSegment } from '../utils/url';
 import {
@@ -418,6 +419,8 @@ const Research = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useContext(UserContext);
+  const { totalNewMatches: savedSearchNewMatchCount } =
+    useSavedSearchNewMatchSummary(isAuthenticated);
   const { departments, researchAreas, researchFields, fieldOrder, getResearchAreaByName } =
     useConfig();
   const isAdmin = user?.userType === 'admin';
@@ -2104,6 +2107,25 @@ const Research = () => {
                   Log in with Yale CAS
                 </Link>{' '}
                 to save research homes and reach out.
+              </div>
+            )}
+
+            {isAuthenticated && savedSearchNewMatchCount > 0 && (
+              <div
+                className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-3 py-2 text-sm leading-relaxed text-blue-900"
+                role="status"
+              >
+                <Link
+                  to="/account?tab=searches"
+                  aria-label={`${savedSearchNewMatchCount} new ${
+                    savedSearchNewMatchCount === 1 ? 'match' : 'matches'
+                  } for your saved searches`}
+                  className="font-semibold underline underline-offset-2 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  {savedSearchNewMatchCount} new{' '}
+                  {savedSearchNewMatchCount === 1 ? 'match' : 'matches'}
+                </Link>{' '}
+                for your saved searches.
               </div>
             )}
 
