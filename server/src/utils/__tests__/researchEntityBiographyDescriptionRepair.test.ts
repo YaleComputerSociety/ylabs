@@ -5,6 +5,7 @@ import {
   isProfileBiographyChromeOpener,
   protectedSentenceList,
   repairPersonBiographyLeakedDescription,
+  stripLeadingDegreeListPrefix,
   stripProfileBiographyChromeOpener,
   stripTrailingProfileChromeFooter,
 } from '../researchEntityBiographyDescriptionRepair';
@@ -60,6 +61,79 @@ describe('isEducationOrCareerTimelineSentence', () => {
     expect(
       isEducationOrCareerTimelineSentence('Dr. Rushmeier was Editor-in-Chief of ACM Transactions on Graphics from 1996-99.'),
     ).toBe(true);
+  });
+});
+
+describe('isEducationOrCareerTimelineSentence: humanities CV markers (#1533)', () => {
+  it('flags award/honorary-degree/teaching-history/editorial CV sentences with no research-topic signal', () => {
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'Professor Benhabib is the recipient of the Ernst Bloch prize for 2009.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'She has previously taught at the New School for Social Research and Harvard Universities.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'Professor Benhabib holds Honorary Degrees from the Universities of Utrecht (2004) and Valencia (2010).',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        "She is the author of several influential works including 'Critique, Norm and Utopia'.",
+      ),
+    ).toBe(true);
+    expect(isEducationOrCareerTimelineSentence('Earlier, he was CEO of the Clinton Foundation.')).toBe(
+      true,
+    );
+  });
+
+  it('flags an appositive "born in" clause without "was" (#1533: benhabib-sb422)', () => {
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'Seyla Benhabib, born in Istanbul, Turkey, is the Eugene Meyer Professor of Political Science.',
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('stripLeadingDegreeListPrefix (#1533)', () => {
+  it('strips a spaced degree-year list before a name-lead sentence', () => {
+    expect(
+      stripLeadingDegreeListPrefix(
+        'B.A., Yale University, 2003 M.A., Harvard University, 2006 Ph.D., Harvard University, 2011 Marisa Bass is a scholar of early modern art.',
+      ),
+    ).toBe('Marisa Bass is a scholar of early modern art.');
+  });
+
+  it('strips a no-space-glued degree-year list (#1533: brisman-brisman)', () => {
+    expect(
+      stripLeadingDegreeListPrefix(
+        'Ph.D., Cornell University, 1969M.A., Cornell University, 1966B.A., Columbia University, 1965 Brisman’s interests include Spenser and Milton.',
+      ),
+    ).toBe("Brisman’s interests include Spenser and Milton.");
+  });
+
+  it('strips a degree list with no year at all (#1533: bare institution names)', () => {
+    expect(
+      stripLeadingDegreeListPrefix(
+        'B.A., Stanford University Ph.D., Yale University Jennifer Raab specializes in the arts of the United States.',
+      ),
+    ).toBe('Jennifer Raab specializes in the arts of the United States.');
+  });
+
+  it('leaves ordinary research prose untouched', () => {
+    expect(
+      stripLeadingDegreeListPrefix('Studies chromatin dynamics in stem cells.'),
+    ).toBe('Studies chromatin dynamics in stem cells.');
+  });
+
+  it('does not strip a degree list that has nothing usable left afterward', () => {
+    const bareDegreeList = 'B.A., Yale University, 2003 M.A., Harvard University, 2006.';
+    expect(stripLeadingDegreeListPrefix(bareDegreeList)).toBe(bareDegreeList);
   });
 });
 
@@ -186,6 +260,44 @@ describe('repairPersonBiographyLeakedDescription', () => {
     expect(result.shortDescription).toBe(
       'Studies Computer Graphics and Visualization Techniques, 3D Shape Modeling and Analysis, and 3D Surveying and Cultural Heritage.',
     );
+  });
+
+  it('strips a leading degree-list and rebuilds the research-focused remainder (bass-mab84, #1533)', () => {
+    const result = repairPersonBiographyLeakedDescription({
+      fullDescription:
+        'B.A., Yale University, 2003 M.A., Harvard University, 2006 Ph.D., Harvard University, 2011 Marisa Bass is a scholar of early modern art whose research explores the intersections between creative and intellectual culture in northern Europe.',
+      shortDescription: '',
+      researchAreas: ['Art History'],
+    });
+    expect(result.outcome).toBe('resynthesized');
+    expect(result.fullDescription.startsWith('B.A.,')).toBe(false);
+    expect(result.fullDescription).toMatch(/^Marisa Bass is a scholar/);
+  });
+
+  it('falls back to a researchAreas summary for a humanities CV/bio with no research-topic sentence at all (benhabib-sb422, #1533)', () => {
+    const result = repairPersonBiographyLeakedDescription({
+      fullDescription:
+        'Seyla Benhabib, born in Istanbul, Turkey, is the Eugene Meyer Professor of Political Science and Philosophy at Yale University. Professor Benhabib is the recipient of the Ernst Bloch prize for 2009. She has previously taught at the New School for Social Research and Harvard Universities. Professor Benhabib holds Honorary Degrees from the Universities of Utrecht (2004) and Valencia (2010).',
+      shortDescription:
+        'She has previously taught at the New School for Social Research and Harvard Universities.',
+      researchAreas: ['Philosophy', 'Critical Theory', 'Democracy', 'Human Rights'],
+    });
+    expect(result.outcome).toBe('resynthesized');
+    expect(result.fullDescription).toBe('Studies Philosophy, Critical Theory, Democracy, and Human Rights.');
+    expect(result.shortDescription).toBe('Studies Philosophy, Critical Theory, Democracy, and Human Rights.');
+  });
+
+  it('blanks an executive-résumé description with no research signal and no researchAreas (braverman-lab-ericb, #1533)', () => {
+    const result = repairPersonBiographyLeakedDescription({
+      fullDescription:
+        "Earlier, he was CEO of the Clinton Foundation, where he strengthened governance, transparency, and strategic management, and a partner at McKinsey & Company, where he co-founded the firm's government practice.",
+      shortDescription:
+        'He has also led organizations in philanthropy, technology, and public service.',
+      researchAreas: [],
+    });
+    expect(result.outcome).toBe('blanked');
+    expect(result.fullDescription).toBe('');
+    expect(result.shortDescription).toBe('');
   });
 
   it('blanks the description when nothing usable can be derived at all', () => {
