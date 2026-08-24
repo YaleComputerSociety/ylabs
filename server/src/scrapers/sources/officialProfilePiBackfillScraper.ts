@@ -1541,34 +1541,49 @@ function nameMatchesEntity(displayName: string, entity: Record<string, any>): bo
   return entitySlug.includes(nameParts[0]) && entitySlug.includes(nameParts[nameParts.length - 1]);
 }
 
-const MEDICAL_SCHOOL_PROFILE_HOSTS = new Set(['medicine.yale.edu', 'ysph.yale.edu']);
 
-function isMedicalSchoolProfileHost(url: string): boolean {
+/**
+ * Single-discipline Yale profile hosts whose guessed match must be
+ * corroborated by the entity's own recorded school/department text. Each
+ * regex is the vocabulary that text would use if the entity actually belongs
+ * to that host's discipline. Covers both directions of the same-surname
+ * collision: a medical professor's medicine.yale.edu/ysph.yale.edu profile
+ * grafting onto an unrelated non-medical entity (issue #585), and an
+ * engineering professor's engineering.yale.edu profile grafting onto an
+ * unrelated medical-school entity that merely shares a surname (issue #1290).
+ */
+const SINGLE_DISCIPLINE_PROFILE_HOST_TEXT: ReadonlyMap<string, RegExp> = new Map([
+  ['medicine.yale.edu', /\b(?:medicine|medical|health|nursing|hospital)\b/i],
+  ['ysph.yale.edu', /\b(?:medicine|medical|health|nursing|hospital)\b/i],
+  ['engineering.yale.edu', /\b(?:engineering|applied science)\b/i],
+]);
+
+function singleDisciplineProfileHostText(url: string): RegExp | undefined {
   try {
-    return MEDICAL_SCHOOL_PROFILE_HOSTS.has(new URL(url).hostname.toLowerCase());
+    return SINGLE_DISCIPLINE_PROFILE_HOST_TEXT.get(new URL(url).hostname.toLowerCase());
   } catch {
-    return false;
+    return undefined;
   }
 }
 
-const NON_MEDICAL_DISCIPLINE_TEXT_RE = /\b(?:medicine|medical|health|nursing|hospital)\b/i;
-
 /**
  * True when the entity's own recorded school/department text is present and
- * plainly does not say medicine. A guessed medicine.yale.edu/ysph.yale.edu
- * profile must never be trusted as this entity's identity in that case, even
- * when its name happens to match - the same-surname-but-different-school
- * collision this guards against otherwise grafts a same-name medical
- * professor's areas/website onto an unrelated humanities or social-science
- * entity (issue #585).
+ * plainly does not use the fetched profile host's discipline vocabulary. A
+ * guessed single-discipline profile must never be trusted as this entity's
+ * identity in that case, even when its name happens to match - the
+ * same-surname-but-different-school collision this guards against otherwise
+ * grafts a same-name professor's areas/website onto an unrelated entity.
  */
-function entityDisciplineRulesOutMedicine(entity: Record<string, any>): boolean {
+function entityDisciplineContradictsProfileHost(
+  entity: Record<string, any>,
+  hostDisciplineText: RegExp,
+): boolean {
   const text = uniqueStrings([
     entity.school,
     ...(Array.isArray(entity.schools) ? entity.schools : []),
     ...(Array.isArray(entity.departments) ? entity.departments : []),
   ]).join(' ');
-  return Boolean(text) && !NON_MEDICAL_DISCIPLINE_TEXT_RE.test(text);
+  return Boolean(text) && !hostDisciplineText.test(text);
 }
 
 function officialProfileIdentityMatchesExpectedPerson(
@@ -1654,20 +1669,21 @@ export function extractOfficialProfileIdentity(
   // establishes identity: skip the discipline backstop solely when that email
   // is present and matches one we expect for this entity. In every other shape
   // - no known lead, a lead with no recorded email, or a fetched page exposing
-  // no email - require the entity's own department/school not to affirmatively
-  // rule out medicine before trusting a guessed medicine.yale.edu/ysph.yale.edu
+  // no email - require the entity's own department/school to use the fetched
+  // host's discipline vocabulary before trusting a guessed single-discipline
   // profile as this entity's identity (same root cause as #562's PI-attach
-  // gate, extended to the area/website layer, issue #585).
+  // gate, extended to the area/website layer, issues #585 and #1290).
   const normalizedFetchedEmail = textValue(email).toLowerCase();
   const expectedEmails = uniqueStrings(
     (options.expectedPeople || []).map((person) => textValue(person.email)),
   ).map((value) => value.toLowerCase());
   const identityConfirmedByEmail =
     Boolean(normalizedFetchedEmail) && expectedEmails.includes(normalizedFetchedEmail);
+  const fetchedHostDisciplineText = singleDisciplineProfileHostText(fetchedUrl);
   if (
     !identityConfirmedByEmail &&
-    isMedicalSchoolProfileHost(fetchedUrl) &&
-    entityDisciplineRulesOutMedicine(entity)
+    fetchedHostDisciplineText &&
+    entityDisciplineContradictsProfileHost(entity, fetchedHostDisciplineText)
   ) {
     return null;
   }
