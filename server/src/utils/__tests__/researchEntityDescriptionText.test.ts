@@ -271,6 +271,54 @@ describe('sanitizeFacultyResearchEntityText', () => {
       ),
     ).toBe("Ada Lovelace's research focuses on analytical engines.");
   });
+
+  it('collapses a doubled "<Name> Research\'s research" possessive left over from a templated display name (#1781)', () => {
+    const entity = {
+      name: 'Marcus Bosenberg Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    };
+    expect(
+      sanitizeFacultyResearchEntityText(
+        "Marcus Bosenberg Research's research investigates anti-cancer immune responses in melanoma.",
+        entity,
+      ),
+    ).toBe("Marcus Bosenberg's research investigates anti-cancer immune responses in melanoma.");
+
+    const dashEntity = {
+      name: 'Tara Boroushaki - Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+    expect(
+      sanitizeFacultyResearchEntityText(
+        "Tara Boroushaki — Research's research investigates sensing and mobile technologies.",
+        dashEntity,
+      ),
+    ).toBe("Tara Boroushaki's research investigates sensing and mobile technologies.");
+  });
+
+  it('suppresses a "this research profile" self-reference used as a sentence subject, but leaves it as an object (#1781)', () => {
+    const entity = {
+      name: 'Hao Yuan Kueh Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    };
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'This research profile has developed several mouse models to study melanoma progression. By manipulating these circuits, this research profile seeks to enhance therapeutic capabilities.',
+        entity,
+      ),
+    ).toBe(
+      'This research has developed several mouse models to study melanoma progression. By manipulating these circuits, this research seeks to enhance therapeutic capabilities.',
+    );
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'Review the research website before contacting this research profile.',
+        entity,
+      ),
+    ).toBe('Review the research website before contacting this research profile.');
+  });
 });
 
 describe('sanitizeResearchEntityPublicDescriptionFields', () => {
