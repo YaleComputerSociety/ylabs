@@ -6,6 +6,7 @@ import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
 import { isUngroundedSynthesizedCard } from '../utils/groundedCardSynthesis';
+import { isFullDescriptionRestatementOfShortDescription } from '../utils/researchEntityDescriptionQuality';
 import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
@@ -311,6 +312,7 @@ export function toPublicResearchEntityDto(
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
   const served = servedResearchEntityCopy(group);
+  const groundedShort = groundedShortDescriptionString(served.shortDescription, served.fullDescription);
 
   const dto: PublicResearchEntityDto = {
     _id: id,
@@ -331,9 +333,7 @@ export function toPublicResearchEntityDto(
     if (options.forList && LIST_TRIMMED_DESCRIPTION_FIELDS.has(field)) continue;
     if (field === 'shortDescription') {
       if (group.shortDescription !== undefined || group.fullDescription !== undefined) {
-        dto.shortDescription =
-          groundedShortDescriptionString(served.shortDescription, served.fullDescription) ||
-          String(served.fullDescription || '');
+        dto.shortDescription = groundedShort || String(served.fullDescription || '');
       }
       continue;
     }
@@ -344,6 +344,19 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
+        // A fullDescription that only near-verbatim restates the already-
+        // grounded short adds nothing on the detail page beyond the card, so
+        // it is suppressed here to protect already-materialized rows without
+        // a re-materialize (#1721); the write-time resolver guard covers new
+        // and re-materialized ones.
+        if (
+          field === 'fullDescription' &&
+          groundedShort &&
+          isFullDescriptionRestatementOfShortDescription(served[field], groundedShort)
+        ) {
+          dto[field] = '';
+          continue;
+        }
         dto[field] = String(served[field] || '');
         continue;
       }

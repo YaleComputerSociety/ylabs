@@ -397,6 +397,38 @@ describe('researchEntityDto', () => {
     expect(dto.fullDescription).toBe('');
   });
 
+  it('blanks a served fullDescription that near-verbatim restates the served shortDescription (#1721)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-restatement',
+      slug: 'restatement-lab',
+      name: 'Mu Lab',
+      shortDescription:
+        'Studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
+      fullDescription:
+        'The Mu Lab studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
+    });
+
+    expect(dto.shortDescription).toBe(
+      'Studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.',
+    );
+    expect(dto.fullDescription).toBe('');
+  });
+
+  it('keeps a served fullDescription that is genuinely distinct from the shortDescription (#1721)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-distinct-full',
+      slug: 'distinct-full-lab',
+      name: 'Mu Lab',
+      shortDescription: 'Studies the mechanisms of resistance to anti-cancer therapy.',
+      fullDescription:
+        'The Mu Lab combines patient-derived organoids and single-cell sequencing to map how tumors evolve resistance to targeted anti-cancer therapies, and tests combination regimens designed to delay or reverse that resistance in preclinical models.',
+    });
+
+    expect(dto.fullDescription).toBe(
+      'The Mu Lab combines patient-derived organoids and single-cell sequencing to map how tumors evolve resistance to targeted anti-cancer therapies, and tests combination regimens designed to delay or reverse that resistance in preclinical models.',
+    );
+  });
+
   it('strips YSM profile chrome from served descriptions and falls back the card shortDescription to fullDescription (#808, #1692)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-ysm-chrome',
