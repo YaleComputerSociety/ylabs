@@ -221,17 +221,22 @@ const hasPaperFragment = (value: string): boolean =>
   ) ||
   /\b(?:arxiv|doi|journal|proceedings|abstract)\b/i.test(value);
 
-// Most alternatives below carry an optional trailing "s" so a plural-subject
-// clause ("his scholarship and teaching examine the role of...") matches the
-// same as the singular form ("he examines the role of...") - the two read
-// identically as a research-focus signal, and requiring exact 3rd-person-
-// singular agreement was rejecting genuine research sentences whose subject
-// happened to be plural (#1533 reopen: hosang-dwh39's rebuilt fullDescription
-// was otherwise entirely usable). "uses" and "studies" are left exact since
-// their bare singular forms ("use", "study") are too generic a word to gate
-// on safely.
 const hasResearchDescriptionVerb = (value: string): boolean =>
-  /\b(studies|investigates?|examines?|explores?|focuses on|focused on|revolves? around|works? on|works? towards|develops?|supports?|advances?|fosters?|innovates?|uses|employs?|researches?|analyzes?|models?|measures?|seeks? to)\b/i.test(
+  /\b(studies|investigates|examines|explores|focuses on|focused on|revolves? around|works on|works towards|develops|supports|advances|fosters|innovates|uses|employs|researches|analyzes|models|measures|seeks to)\b/i.test(
+    value,
+  );
+
+// A plural-subject research clause ("his scholarship and teaching examine the
+// role of...") reads identically to the 3rd-person-singular form ("he
+// examines...") as a research-focus signal, but the exact-agreement verb list
+// above only recognizes the singular. This narrowly accepts the plural forms
+// of the same verbs *only when the sentence has an explicit research-activity
+// subject* ("scholarship", "research", "work", "studies", "teaching"), so a
+// bare infinitive ("...is to investigate the impact...") is not mistaken for a
+// research-focus lead (#1533 reopen: needed for hosang-dwh39's plural-subject
+// sentence without regressing lead-sentence selection on infinitive phrasing).
+const hasPluralSubjectResearchVerb = (value: string): boolean =>
+  /\b(?:scholarship|research|work|studies|teaching|writings?|interests|projects)\b[^.!?]{0,60}\b(?:investigate|examine|explore|focus on|develop|analyze|analyse|model|measure|address|concern)\b/i.test(
     value,
   );
 
@@ -240,6 +245,7 @@ const hasResearchFocusPhrase = (rawValue: string): boolean => {
   if (!value) return false;
   return (
     hasResearchDescriptionVerb(value) ||
+    hasPluralSubjectResearchVerb(value) ||
     /\bwe\s+(?:study|investigate|examine|explore|develop|use|employ|analyze|analyse|model|measure|research|aim\s+to|seek\s+to|want\s+to\s+understand|work\s+(?:on|towards))\b/i.test(value) ||
     /\bour\s+(?:research|work|lab|group|goal|mission)\b.{0,80}\b(?:is\s+to|focuses|centers?|revolves|examines|explores|investigates|aims?|seeks?|develops?|studies|understand)\b/i.test(value) ||
     /\bI\s+study\b/i.test(value) ||
