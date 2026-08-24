@@ -292,7 +292,7 @@ type ProgramPublicDescriptionState = 'present' | 'thin' | 'missing';
 
 const MIN_PROGRAM_PUBLIC_DESCRIPTION_WORDS = 6;
 
-const publicProgramDescriptionText = (value: unknown): string =>
+const usablePublicDescriptionText = (value: unknown): string =>
   typeof value === 'string'
     ? textValue(redactDirectContactInfo(sanitizeCatalogDescription(value)))
     : '';
@@ -303,8 +303,8 @@ function programPublicDescriptionState(
   program: ProgramStudentVisibilityInput,
 ): ProgramPublicDescriptionState {
   const candidates = [
-    publicProgramDescriptionText(program.description),
-    publicProgramDescriptionText(program.summary),
+    usablePublicDescriptionText(program.description),
+    usablePublicDescriptionText(program.summary),
   ].filter(Boolean);
   if (candidates.length === 0) return 'missing';
   if (candidates.some((text) => wordCount(text) >= MIN_PROGRAM_PUBLIC_DESCRIPTION_WORDS)) {
@@ -345,6 +345,45 @@ const withOverride = (
 
 export const isPublicStudentVisibilityTier = (tier: unknown): tier is StudentVisibilityTier =>
   publicStudentVisibilityTiers.includes(tier as StudentVisibilityTier);
+
+export const BLANK_PUBLIC_DESCRIPTION_REASON = 'blank_public_description';
+
+const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [
+  'fullDescription',
+  'shortDescription',
+  'description',
+  'summary',
+] as const;
+
+export function recordHasNoUsablePublicDescription(record: Record<string, any>): boolean {
+  return !PUBLIC_DESCRIPTION_INVARIANT_FIELDS.some((field) =>
+    usablePublicDescriptionText(record[field]),
+  );
+}
+
+// The single hard floor beneath every student-visibility path: a record with no
+// usable public description at all can never be promoted to `student_ready` - the
+// only publicly-served tier - even when an explicit operator override is forcing
+// it there. An override may force past softer gates (thin copy, missing card
+// shape, formalization-only, audience), but it must never publish a full card
+// that would render with literally no prose. This is the exact class of defect
+// fixed for programs in issue #1425, and it is enforced here - the shared choke
+// point every compute path returns through - so it holds for computed promotions,
+// stale overrides, and future callers alike, regardless of source. `limited_but_safe`
+// is intentionally not guarded: a routed program with a source and apply link is a
+// valid limited card without prose.
+export function enforceStudentReadyDescriptionInvariant(
+  result: StudentVisibilityResult,
+  record: Record<string, any>,
+): StudentVisibilityResult {
+  if (result.tier !== 'student_ready') return result;
+  if (!recordHasNoUsablePublicDescription(record)) return result;
+  return {
+    tier: 'operator_review',
+    computedTier: result.computedTier,
+    reasons: Array.from(new Set([...result.reasons, BLANK_PUBLIC_DESCRIPTION_REASON])),
+  };
+}
 
 export function computeResearchEntityStudentVisibility({
   entity,
@@ -515,7 +554,7 @@ export function computeResearchEntityStudentVisibility({
       reasons: Array.from(new Set([...result.reasons, 'missing_source_url'])),
     };
   }
-  return result;
+  return enforceStudentReadyDescriptionInvariant(result, entity);
 }
 
 export function computeProgramStudentVisibility(
@@ -587,5 +626,8 @@ export function computeProgramStudentVisibility(
 
   if (!hasAnyHttpUrl(sourceUrls)) reasons.push('missing_source_route');
 
-  return withOverride(program, computedTier, Array.from(new Set(reasons)));
+  return enforceStudentReadyDescriptionInvariant(
+    withOverride(program, computedTier, Array.from(new Set(reasons))),
+    program,
+  );
 }
