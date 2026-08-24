@@ -23,7 +23,7 @@ const MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL = 'https://macmillan.yale.edu/fellows
 
 const CBEY_FUNDING_OPPORTUNITIES_URL = 'https://cbey.yale.edu/funding-opportunities';
 
-const DEFAULT_PAGE_URLS = [
+export const DEFAULT_PAGE_URLS = [
   'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/yale-college-first-year-summer-research-fellowship',
