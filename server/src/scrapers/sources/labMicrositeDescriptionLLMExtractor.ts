@@ -415,12 +415,16 @@ const GOVERNANCE_ORG_NAME_RE =
 const PERSON_TITLE_OR_CREDENTIAL_NAME_RE =
   /\bprofessor\b|\bph\.?\s?d\b|\bm\.?\s?d\b|\bendowed\s+chair\b|,\s*yale\s+university\s*$/i;
 
+export function isPersonTitleOrCredentialName(value: unknown): boolean {
+  return PERSON_TITLE_OR_CREDENTIAL_NAME_RE.test(textValue(value));
+}
+
 export function usefulLabName(value: unknown): string {
   const text = stripTrailingResearchHomeDescription(textValue(value));
   if (text.length < 2 || text.length > 120) return '';
   if (/^(?:n\/a|none|unknown|the lab|lab|laboratory|research)$/i.test(text)) return '';
   if (GOVERNANCE_ORG_NAME_RE.test(text)) return '';
-  if (PERSON_TITLE_OR_CREDENTIAL_NAME_RE.test(text)) return '';
+  if (isPersonTitleOrCredentialName(text)) return '';
   return text;
 }
 
