@@ -271,4 +271,84 @@ describe('accessSummaryService', () => {
     expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
     expect(mocks.postedOpportunityFind).not.toHaveBeenCalled();
   });
+
+  it('does not let a NOT_CURRENTLY_AVAILABLE signal override a HIGH-confidence positive (#1304)', async () => {
+    const entityId = new Types.ObjectId();
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'REACH_OUT_PLAUSIBLE',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          source: { excerpt: 'Undergraduates are welcome to reach out.', url: 'https://lab.example.test/join' },
+        },
+        {
+          researchEntityId: entityId,
+          type: 'NOT_CURRENTLY_AVAILABLE',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.6,
+          source: { excerpt: 'Not taking undergraduates this term.' },
+        },
+      ]),
+    );
+
+    const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+      entityId.toString(),
+    );
+
+    expect(summary?.status).toBe('reach-out-plausible');
+    expect(summary?.bestNextStep).not.toBe('Check back later');
+  });
+
+  it('keeps outreach when an application form exists alongside a negative signal (#1304)', async () => {
+    const entityId = new Types.ObjectId();
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'APPLICATION_FORM_EXISTS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.6,
+          source: { excerpt: 'A join, opportunities, or application page was found.' },
+        },
+        {
+          researchEntityId: entityId,
+          type: 'NOT_CURRENTLY_AVAILABLE',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          source: { excerpt: 'Not accepting undergraduate students.' },
+        },
+      ]),
+    );
+
+    const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+      entityId.toString(),
+    );
+
+    expect(summary?.status).toBe('reach-out-plausible');
+    expect(summary?.bestNextStep).not.toBe('Check back later');
+  });
+
+  it('surfaces not-currently-available for a negative-only entity but never dead-ends the CTA (#1304)', async () => {
+    const entityId = new Types.ObjectId();
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'NOT_CURRENTLY_AVAILABLE',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          source: { excerpt: 'Not accepting undergraduate students at this time.' },
+        },
+      ]),
+    );
+
+    const summary = (await listAccessSummariesForResearchEntities([entityId])).get(
+      entityId.toString(),
+    );
+
+    expect(summary?.status).toBe('not-currently-available');
+    expect(summary?.bestNextStep).toBe('Reach out to confirm current availability');
+  });
 });

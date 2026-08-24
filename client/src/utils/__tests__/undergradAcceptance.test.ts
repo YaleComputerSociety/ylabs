@@ -101,7 +101,7 @@ describe('computeAcceptanceVerdict — access summary drives the verdict', () =>
     ]);
   });
 
-  it('maps not-currently-available accessSummary to the closed verdict', () => {
+  it('maps a negative-only not-currently-available accessSummary to a reach-out caveat, not a dead-end (#1304)', () => {
     const result = computeAcceptanceVerdict(
       baseGroup({
         accessSummary: {
@@ -115,7 +115,7 @@ describe('computeAcceptanceVerdict — access summary drives the verdict', () =>
             },
           ],
           signalTypes: ['NOT_CURRENTLY_AVAILABLE'],
-          bestNextStep: 'Check back later',
+          bestNextStep: 'Reach out to confirm current availability',
         },
       }),
     );
@@ -123,8 +123,38 @@ describe('computeAcceptanceVerdict — access summary drives the verdict', () =>
     expect(result.verdict).toBe('not-accepting');
     expect(result.confidence).toBe(0.72);
     expect(result.evidence[0].kind).toBe('closed-evidence');
-    expect(result.evidence[0].label).toBe('Not currently available');
+    expect(result.evidence[0].label).toBe('May not be accepting - reach out to confirm');
+    expect(result.evidence[0].strength).toBe('moderate');
     expect(result.evidence[0].detail).toBe('Not taking undergraduates this term.');
+  });
+
+  it('keeps positive evidence and softens the verdict when a negative conflicts with positives (#1304)', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        accessSummary: {
+          status: 'not-currently-available',
+          confidence: 0.7,
+          evidence: [
+            {
+              signalType: 'NOT_CURRENTLY_AVAILABLE',
+              confidence: 'MEDIUM',
+              excerpt: 'Not taking undergraduates this term.',
+            },
+            {
+              signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+              confidence: 'MEDIUM',
+              excerpt: 'Contact the lab manager to discuss projects.',
+            },
+          ],
+          signalTypes: ['NOT_CURRENTLY_AVAILABLE', 'CONTACT_INSTRUCTIONS_EXIST'],
+          bestNextStep: 'Reach out to confirm current availability',
+        },
+      }),
+    );
+
+    expect(result.verdict).toBe('likely-accepting');
+    expect(result.evidence.some((e) => e.kind === 'closed-evidence')).toBe(true);
+    expect(result.evidence.some((e) => e.label === 'Contact instructions')).toBe(true);
   });
 });
 

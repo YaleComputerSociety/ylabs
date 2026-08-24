@@ -122,6 +122,26 @@ function undergradAccessVerdict(value: unknown): 'yes' | 'no' | 'unclear' {
   return verdict === 'yes' || verdict === 'no' ? verdict : 'unclear';
 }
 
+function undergradAccessEvidenceQuote(value: unknown): string {
+  if (!value || typeof value !== 'object') return '';
+  return firstString((value as { evidenceQuote?: unknown }).evidenceQuote);
+}
+
+const EXPLICIT_UNDERGRAD_UNAVAILABILITY_PATTERNS: RegExp[] = [
+  /\bnot\s+(?!only\b|just\b|merely\b|simply\b)(?:currently\s+|presently\s+|at\s+(?:this|the\s+present)\s+time\s+|actively\s+)?(?:accepting|taking(?:\s+on)?|admitting|recruiting|considering|seeking|looking\s+for|able\s+to\s+(?:take|accept|host|supervise|mentor|advise))\b[\s\S]{0,48}?(?:undergrad|under-grad|\bstudents?\b|\binterns?\b|research\s+assistants?|new\s+(?:lab\s+)?members?|mentees?|trainees?|applicants?)/i,
+  /(?:undergrad(?:uate)?s?|\bstudents?\b|\binterns?\b)[\s\S]{0,48}?\bare\s+not\s+(?:currently\s+|presently\s+)?(?:being\s+)?(?:accepted|admitted|taken(?:\s+on)?|considered|recruited|hosted)\b/i,
+  /\b(?:unable|not\s+able|cannot|can'?t|do(?:es)?\s+not|will\s+not|won'?t)\s+(?:currently\s+)?(?:to\s+)?(?:accept|take(?:\s+on)?|host|supervise|mentor|advise)\b[\s\S]{0,48}?(?:undergrad|\bstudents?\b|\binterns?\b)/i,
+  /\bno\s+(?:undergraduate\s+|student\s+|open\s+|current\s+)?(?:openings|positions|opportunities|vacancies|spots|slots)\b/i,
+  /\b(?:lab|group|position|opening|team|roster)s?\s+(?:is|are)\s+(?:currently\s+|now\s+|presently\s+)?(?:full|closed|at\s+(?:full\s+)?capacity)\b/i,
+  /\bnot\s+(?:currently\s+|presently\s+)?accepting\s+applications\b/i,
+];
+
+export function isExplicitUndergradUnavailabilityPhrase(quote?: string): boolean {
+  const text = (quote || '').trim();
+  if (!text) return false;
+  return EXPLICIT_UNDERGRAD_UNAVAILABILITY_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 function isPositiveBoolean(obs: AccessObservation): boolean {
   return obs.value === true;
 }
@@ -352,11 +372,13 @@ export function deriveAccessArtifactsFromObservations(
     ...acceptingObservations.filter(isNegativeBoolean),
     ...negativeAccessEvidence,
   ];
-  if (negativeAccepting.length > 0) {
+  const negativeUnavailabilityQuote = [
+    firstString(bestObservation(byField.get('undergradConstraintQuote') || [])?.value),
+    firstString(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value),
+    ...negativeAccessEvidence.map((obs) => undergradAccessEvidenceQuote(obs.value)),
+  ].find(isExplicitUndergradUnavailabilityPhrase);
+  if (negativeAccepting.length > 0 && negativeUnavailabilityQuote) {
     const score = maxConfidence(negativeAccepting);
-    const quote =
-      publicExcerpt(bestObservation(byField.get('undergradConstraintQuote') || [])?.value) ||
-      publicExcerpt(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value);
     accessSignals.push(
       makeSignal({
         researchEntityId,
@@ -364,7 +386,7 @@ export function deriveAccessArtifactsFromObservations(
         type: 'NOT_CURRENTLY_AVAILABLE',
         score,
         observations: negativeAccepting,
-        excerpt: quote || undefined,
+        excerpt: publicExcerpt(negativeUnavailabilityQuote) || undefined,
       }),
     );
   }

@@ -3,6 +3,7 @@ import {
   deriveAccessArtifactsFromObservations,
   deriveAccessArtifactsForResearchGroup,
   deriveIdentifiedLeadWaysIn,
+  isExplicitUndergradUnavailabilityPhrase,
   normalizeAccessMaterializerObjectId,
   officialNonGrantSourceUrl,
   type AccessObservation,
@@ -273,6 +274,90 @@ describe('deriveAccessArtifactsFromObservations', () => {
         excerpt: 'We are not taking undergraduate researchers this year.',
       },
     ]);
+  });
+
+  it('emits NOT_CURRENTLY_AVAILABLE from an explicit phrase inside undergradAccessEvidence (#1304)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'no',
+          evidenceSource: 'explicit_text',
+          evidenceQuote: 'We are not currently accepting undergraduate students.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals).toMatchObject([
+      {
+        type: 'NOT_CURRENTLY_AVAILABLE',
+        excerpt: 'We are not currently accepting undergraduate students.',
+      },
+    ]);
+  });
+
+  it('does not emit NOT_CURRENTLY_AVAILABLE from postdoc/grad recruiting text misparsed as negative (#1304)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'no',
+          evidenceSource: 'explicit_text',
+          evidenceQuote:
+            'We currently have an opening for either a postdoctoral associate or an associate research scientist.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
+      'NOT_CURRENTLY_AVAILABLE',
+    );
+  });
+
+  it('does not emit NOT_CURRENTLY_AVAILABLE from a research-abstract sentence misparsed as negative (#1304)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: false,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.8,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'My research relates to the study of conformal field theories and the conformal bootstrap.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.8,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
+      'NOT_CURRENTLY_AVAILABLE',
+    );
+  });
+
+  it('does not emit NOT_CURRENTLY_AVAILABLE from an empty-roster fact (#1304)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: false,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.7,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'No undergraduates listed on the lab roster.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.7,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
+      'NOT_CURRENTLY_AVAILABLE',
+    );
   });
 
   it('derives official application routes from lab-microsite join-page evidence', () => {
@@ -573,5 +658,37 @@ describe('deriveIdentifiedLeadWaysIn', () => {
       deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: 'ftp://chemistry.yale.edu/lab' })
         .accessSignals,
     ).toHaveLength(0);
+  });
+});
+
+describe('isExplicitUndergradUnavailabilityPhrase (#1304)', () => {
+  it('accepts explicit undergraduate-unavailability phrases', () => {
+    const unavailable = [
+      'We are not taking undergraduate researchers this year.',
+      'We are not currently accepting undergraduate students.',
+      'The lab is currently full.',
+      'No undergraduate positions are available at this time.',
+      'We are not accepting applications right now.',
+      'Prof. Doe is unable to take on new undergraduate students.',
+    ];
+    for (const quote of unavailable) {
+      expect(isExplicitUndergradUnavailabilityPhrase(quote)).toBe(true);
+    }
+  });
+
+  it('rejects recruiting, research-abstract, and empty-roster text', () => {
+    const notUnavailable = [
+      'We currently have an opening for either a postdoctoral associate or an associate research scientist.',
+      "We're Hiring! Apply to become a Postgraduate Research Associate in the YCVL!",
+      'The Dove Lab is currently accepting PhD and MESc students.',
+      'We are currently seeking talented developers and postdoctoral scholars to join.',
+      'My research relates to the study of conformal field theories and the conformal bootstrap.',
+      'No undergraduates listed on the lab roster.',
+      '',
+      undefined,
+    ];
+    for (const quote of notUnavailable) {
+      expect(isExplicitUndergradUnavailabilityPhrase(quote)).toBe(false);
+    }
   });
 });

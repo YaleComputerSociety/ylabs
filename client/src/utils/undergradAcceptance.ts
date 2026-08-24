@@ -131,24 +131,34 @@ export function isHistoricalUndergradEvidence(quote?: string): boolean {
   return HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+export const REACH_OUT_TO_CONFIRM_LABEL = 'May not be accepting - reach out to confirm';
+
+type AccessSummaryEvidence = NonNullable<ResearchGroup['accessSummary']>['evidence'][number];
+
+function accessEvidenceChip(item: AccessSummaryEvidence, group: ResearchGroup): EvidenceItem {
+  if (item.signalType === 'NOT_CURRENTLY_AVAILABLE') {
+    return {
+      kind: 'closed-evidence',
+      label: REACH_OUT_TO_CONFIRM_LABEL,
+      detail: item.excerpt || undefined,
+      strength: 'moderate',
+    };
+  }
+  const historicalCurrentUndergrads =
+    item.signalType === 'CURRENT_UNDERGRADS' &&
+    (isHistoricalUndergradEvidence(item.excerpt) ||
+      isHistoricalUndergradEvidence(group.undergradEvidenceQuote));
+  return {
+    kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
+    label: accessSignalLabel(item.signalType),
+    detail: item.excerpt || item.sourceUrl || undefined,
+    strength: item.confidence === 'HIGH' && !historicalCurrentUndergrads ? 'strong' : 'moderate',
+  };
+}
+
 function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult | null {
   const summary = group.accessSummary;
   if (!summary || summary.status === 'unknown') return null;
-
-  if (summary.status === 'not-currently-available') {
-    return {
-      verdict: 'not-accepting',
-      confidence: summary.confidence,
-      evidence: [
-        {
-          kind: 'closed-evidence',
-          label: 'Not currently available',
-          detail: summary.evidence[0]?.excerpt || undefined,
-          strength: 'strong',
-        },
-      ],
-    };
-  }
 
   const uniqueEvidence = [
     ...summary.evidence
@@ -158,23 +168,29 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
           bySignalType.set(item.signalType, item);
         }
         return bySignalType;
-      }, new Map<string, (typeof summary.evidence)[number]>())
+      }, new Map<string, AccessSummaryEvidence>())
       .values(),
   ];
 
-  const evidence = uniqueEvidence.slice(0, 4).map<EvidenceItem>((item) => {
-    const historicalCurrentUndergrads =
-      item.signalType === 'CURRENT_UNDERGRADS' &&
-      (isHistoricalUndergradEvidence(item.excerpt) ||
-        isHistoricalUndergradEvidence(group.undergradEvidenceQuote));
-    return {
-      kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
-      label: accessSignalLabel(item.signalType),
-      detail: item.excerpt || item.sourceUrl || undefined,
-      strength: item.confidence === 'HIGH' && !historicalCurrentUndergrads ? 'strong' : 'moderate',
-    };
-  });
+  const chips = uniqueEvidence.map((item) => accessEvidenceChip(item, group));
+  const positiveChips = chips.filter((chip) => chip.kind !== 'closed-evidence');
+  const caveatChips = chips.filter((chip) => chip.kind === 'closed-evidence');
 
+  if (summary.status === 'not-currently-available') {
+    const caveat: EvidenceItem = caveatChips[0] || {
+      kind: 'closed-evidence',
+      label: REACH_OUT_TO_CONFIRM_LABEL,
+      detail: summary.evidence[0]?.excerpt || undefined,
+      strength: 'moderate',
+    };
+    return {
+      verdict: positiveChips.length > 0 ? 'likely-accepting' : 'not-accepting',
+      confidence: summary.confidence,
+      evidence: [caveat, ...positiveChips].slice(0, 4),
+    };
+  }
+
+  const evidence = [...positiveChips, ...caveatChips].slice(0, 4);
   if (evidence.length === 0) {
     evidence.push({
       kind: 'access-signal',
