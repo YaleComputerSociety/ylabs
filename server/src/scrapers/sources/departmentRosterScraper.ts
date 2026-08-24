@@ -697,6 +697,173 @@ export const viewsTableRowExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+/**
+ * YSM Drupal "profile-grid-item" cards, used by several medicine.yale.edu
+ * research-center rosters (Stem Cell Center, Physician Associate Program).
+ *   <div class="profile-grid-item">
+ *     <span class="profile-grid-item__name--link">Name, PhD</span>
+ *     <p class="profile-grid-item__title">Role</p>
+ *     <a href="/stemcell/profile/<slug>/">View Full Profile</a>
+ *     <div class="profile-grid-item__thumbnail-container"><img></div>
+ */
+export const profileGridItemExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('.profile-grid-item').each((_i, el) => {
+    const card = $(el);
+    const name = normalizeName(
+      cleanText(card.find('.profile-grid-item__name--link').first().text()),
+    );
+    if (!name) return;
+
+    const profileHref =
+      card.find('a[href*="/profile/"]').first().attr('href') ||
+      card.find('.profile-grid-item__link-details-container a').first().attr('href') ||
+      '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const titles = card
+      .find('.profile-grid-item__title')
+      .map((_j, t) => cleanText($(t).text()))
+      .get()
+      .filter(Boolean);
+    const title = titles.sort((a, b) => b.length - a.length)[0] || undefined;
+    const imageUrl = imageUrlFromElement(
+      card.find('.profile-grid-item__thumbnail-container').first(),
+      ctx.pageUrl,
+    );
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
+/**
+ * Yale SOM Drupal `node-teaser--faculty` rows.
+ *   <article class="node-teaser node-teaser--faculty">
+ *     <h3 class="node-teaser__heading"><a href="/faculty-research/faculty-directory/<slug>">Name</a></h3>
+ *     <div class="node-teaser__job-title">Title</div>
+ *     <div class="node-teaser__image"><img></div>
+ */
+export const nodeTeaserFacultyExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('article.node-teaser--faculty').each((_i, el) => {
+    const card = $(el);
+    const nameLink = card.find('.node-teaser__heading a').first();
+    const name = normalizeName(
+      cleanText(nameLink.text() || card.find('.node-teaser__heading').first().text()),
+    );
+    if (!name) return;
+
+    const profileHref = nameLink.attr('href') || '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title = cleanText(card.find('.node-teaser__job-title').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card.find('.node-teaser__image').first(), ctx.pageUrl);
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
+/**
+ * Jackson School Drupal `profile--component` cards (the newer
+ * professors-global-affairs directory, distinct from the WordPress
+ * `page-item-person` layout handled by `jacksonPersonCardExtractor`).
+ *   <article class="profile profile--component">
+ *     <div class="profile__content"><h3><a href="/directory/<slug>">Name</a></h3>
+ *       <ul class="profile-positions">Title</ul></div>
+ *     <div class="profile__media"><img></div>
+ */
+export const jacksonProfileComponentExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('article.profile--component').each((_i, el) => {
+    const card = $(el);
+    const nameLink = card.find('.profile__content h3 a, .profile__content h3').first();
+    const name = normalizeName(cleanText(nameLink.text()));
+    if (!name) return;
+
+    const profileHref = card.find('.profile__content h3 a').first().attr('href') || '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title = cleanText(card.find('.profile-positions').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card.find('.profile__media').first(), ctx.pageUrl);
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
+/**
+ * Yale Law School Drupal `node--type-person` filtered-listing cards.
+ *   <article class="node--type-person">
+ *     <h3><a href="/<slug>"><span class="field--name-title">Name</span></a></h3>
+ *     <div class="field--name-field-title">Title</div>
+ */
+export const lawPersonListingExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('article.node--type-person').each((_i, el) => {
+    const card = $(el);
+    const name = normalizeName(
+      cleanText(card.find('.field--name-title').first().text() || card.find('h3 a').first().text()),
+    );
+    if (!name) return;
+
+    const profileHref = card.find('h3 a').first().attr('href') || '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title = cleanText(card.find('.field--name-field-title').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
+/**
+ * Yale School of Nursing Drupal faculty-directory nodes.
+ *   <div class="node-faculty-directory">
+ *     <a class="group-faculty-link-wrapper" href="/faculty-research/faculty-directory/<slug>">
+ *     <div class="field-name-faculty-firstname-lastname"><h2><span>Name</span></h2></div>
+ */
+export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('.node-faculty-directory').each((_i, el) => {
+    const card = $(el);
+    const name = normalizeName(
+      cleanText(card.find('.field-name-faculty-firstname-lastname').first().text()),
+    );
+    if (!name) return;
+
+    const profileHref =
+      card.find('a.group-faculty-link-wrapper').first().attr('href') ||
+      card.find('a[href*="/faculty-directory/"]').first().attr('href') ||
+      '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title =
+      cleanText(
+        card
+          .find('.field-name-faculty-title, .field-name-position, .field-name-title')
+          .first()
+          .text(),
+      ) || undefined;
+    const imageUrl = imageUrlFromElement(card.find('.field-name-field-photo').first(), ctx.pageUrl);
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -1143,6 +1310,63 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://divinity.yale.edu/about/faculty-directory',
     paginated: false,
     extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'chemistry',
+    deptName: 'Chemistry',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://chem.yale.edu/people/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'stem-cell-center',
+    deptName: 'Stem Cell Center',
+    schoolName: 'Yale School of Medicine',
+    url: 'https://medicine.yale.edu/stemcell/people/listing/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+    officialProfileOnly: true,
+  },
+  {
+    deptKey: 'physician-associate-program',
+    deptName: 'Physician Associate Program',
+    schoolName: 'Yale School of Medicine',
+    url: 'https://medicine.yale.edu/pa/profession/meet-the-team/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+  },
+  {
+    deptKey: 'som',
+    deptName: 'Management',
+    schoolName: 'Yale School of Management',
+    url: 'https://som.yale.edu/faculty-research/faculty-directory',
+    paginated: true,
+    extractor: nodeTeaserFacultyExtractor,
+  },
+  {
+    deptKey: 'jackson-global-affairs',
+    deptName: 'Global Affairs',
+    schoolName: 'Yale Jackson School of Global Affairs',
+    url: 'https://jackson.yale.edu/faculty-research/professors-global-affairs',
+    paginated: false,
+    extractor: jacksonProfileComponentExtractor,
+  },
+  {
+    deptKey: 'nursing',
+    deptName: 'Nursing',
+    schoolName: 'Yale School of Nursing',
+    url: 'https://nursing.yale.edu/faculty-research/faculty-directory',
+    paginated: false,
+    extractor: nursingFacultyExtractor,
+  },
+  {
+    deptKey: 'law',
+    deptName: 'Law',
+    schoolName: 'Yale Law School',
+    url: 'https://law.yale.edu/faculty?type=faculty',
+    paginated: false,
+    extractor: lawPersonListingExtractor,
   },
 ];
 
