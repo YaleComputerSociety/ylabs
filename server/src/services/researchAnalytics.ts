@@ -61,9 +61,20 @@ export const RESEARCH_SEARCH_OUTCOMES = ['results', 'zero_results', 'error'] as 
 export const RESEARCH_RESULT_COUNT_BUCKETS = ['0', '1-5', '6-20', '21-50', '51+'] as const;
 export const RESEARCH_SEARCH_KINDS = ['query', 'filtered', 'department'] as const;
 export const RESEARCH_FILTER_COUNT_BUCKETS = ['0', '1', '2', '3+'] as const;
-export const RESEARCH_IMPRESSION_SURFACES = ['browse', 'search', 'saved_plans'] as const;
+export const RESEARCH_IMPRESSION_SURFACES = [
+  'browse',
+  'search',
+  'saved_plans',
+  'related_programs',
+] as const;
 export const RESEARCH_POSITION_BUCKETS = ['1-3', '4-10', '11-24', '25+'] as const;
-export const RESEARCH_PROFILE_OPEN_SOURCES = ['browse', 'search', 'direct', 'saved_plans'] as const;
+export const RESEARCH_PROFILE_OPEN_SOURCES = [
+  'browse',
+  'search',
+  'direct',
+  'saved_plans',
+  'related_programs',
+] as const;
 export const RESEARCH_SOURCE_CATEGORIES = [
   'entity_website',
   'faculty_profile',

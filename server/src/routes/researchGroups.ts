@@ -16,6 +16,12 @@ const router = Router();
 router.post('/search', isAuthenticated, asyncHandler(researchGroupController.searchResearchGroups));
 
 router.post(
+  '/related-programs',
+  isAuthenticated,
+  asyncHandler(researchGroupController.searchRelatedPrograms),
+);
+
+router.post(
   '/:slug/outreach',
   writeLimit,
   isAuthenticated,

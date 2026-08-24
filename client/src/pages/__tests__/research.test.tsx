@@ -635,9 +635,9 @@ describe('Research page', () => {
       target: { value: 'Yale College' },
     });
     await waitFor(() => {
-      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
-        expect.objectContaining({ filters: { school: ['Yale College'] }, page: 1 }),
-      );
+      expect(
+        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
+      ).toEqual(expect.objectContaining({ filters: { school: ['Yale College'] }, page: 1 }));
       expect(screen.getByTestId('location').textContent).toBe(
         '/research?q=machine+learning&school=Yale+College',
       );
@@ -648,7 +648,9 @@ describe('Research page', () => {
       target: { value: 'Computer Science' },
     });
     await waitFor(() => {
-      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
+      expect(
+        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
+      ).toEqual(
         expect.objectContaining({
           filters: {
             school: ['Yale College'],
@@ -663,17 +665,17 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remove School: Yale College' }));
     await waitFor(() => {
-      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
-        expect.objectContaining({ filters: { departments: ['Computer Science'] }, page: 1 }),
-      );
+      expect(
+        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
+      ).toEqual(expect.objectContaining({ filters: { departments: ['Computer Science'] }, page: 1 }));
       expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Department: Computer Science' }));
     await waitFor(() => {
-      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
-        expect.objectContaining({ filters: {}, page: 1 }),
-      );
+      expect(
+        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
+      ).toEqual(expect.objectContaining({ filters: {}, page: 1 }));
       expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning');
       expect(screen.queryByLabelText('Active research filters')).toBeNull();
     });
@@ -731,7 +733,9 @@ describe('Research page', () => {
 
     fireEvent.click(screen.getByLabelText('Filter by type: Programs & fellowships'));
     await waitFor(() => {
-      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
+      expect(
+        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
+      ).toEqual(
         expect.objectContaining({
           filters: {
             entityType: ['PROGRAM', 'RA_PROGRAM', 'FELLOWSHIP_PROGRAM', 'COURSE_SEQUENCE'],
@@ -747,9 +751,9 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Programs & fellowships' }));
     await waitFor(() => {
-      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
-        expect.objectContaining({ filters: {}, page: 1 }),
-      );
+      expect(
+        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
+      ).toEqual(expect.objectContaining({ filters: {}, page: 1 }));
       expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning');
     });
   });
@@ -1448,16 +1452,20 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     await waitFor(() => {
-      expect(mockedAxios.post).toHaveBeenLastCalledWith(
-        '/research/search',
+      const lastSearch = mockedAxios.post.mock.calls
+        .filter(([url]) => url === '/research/search')
+        .at(-1);
+      expect(lastSearch?.[1]).toEqual(
         expect.objectContaining({
           q: 'machine learning',
           filters: {},
         }),
-        expect.any(Object),
       );
     });
-    expect(mockedAxios.post.mock.calls.at(-1)?.[1]).not.toHaveProperty('browseQuality');
+    const lastSearchBody = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/research/search')
+      .at(-1)?.[1];
+    expect(lastSearchBody).not.toHaveProperty('browseQuality');
   });
 
   it('lets admins filter weakest browse by description and lead quality', async () => {

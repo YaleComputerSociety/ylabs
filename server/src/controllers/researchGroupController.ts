@@ -16,6 +16,7 @@ import {
   ResearchGroupSearchSort,
 } from '../services/researchGroupService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
+import { RELATED_PROGRAM_ENTITY_TYPES } from '../utils/researchEntityProgramLike';
 import {
   isStudentVisibilityTier,
   publicStudentVisibilityTiers,
@@ -245,6 +246,59 @@ export const searchResearchGroups = async (request: Request, response: Response)
     return response.json(result);
   } catch (error) {
     console.error('ResearchEntity search failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Search failed' });
+  }
+};
+
+const RELATED_PROGRAMS_LIMIT = 5;
+
+/**
+ * Cross-surface discovery for `/research`: given the same topical query a
+ * student ran against research homes, return the top few topically relevant
+ * Yale programs and fellowships (issue #1509). It reuses the unified
+ * ResearchEntity hybrid semantic search, filtered to the program/fellowship
+ * entity types and public student-visibility only, so it introduces no new
+ * index, entity type, or bespoke scorer. A blank query returns nothing rather
+ * than browsing the whole program corpus, and the whole module is bounded so it
+ * can never intermix with or perturb the primary research-home result list.
+ */
+export const searchRelatedPrograms = async (request: Request, response: Response) => {
+  try {
+    const body = (request.body || {}) as { q?: string; filters?: unknown };
+
+    if (isOversizedSearchRequest(body as Record<string, unknown>)) {
+      return response.status(400).json({ error: 'Invalid search request' });
+    }
+
+    const q = typeof body.q === 'string' ? body.q.trim() : '';
+    if (!q) {
+      return response.json({ researchEntities: [], degraded: false });
+    }
+
+    const requestedFilters = parseFilters(body.filters);
+    const filters: ResearchGroupFilterInput = {
+      entityType: [...RELATED_PROGRAM_ENTITY_TYPES],
+      studentVisibilityTier: publicStudentVisibilityTiers,
+    };
+    if (requestedFilters.school) filters.school = requestedFilters.school;
+    if (requestedFilters.departments) filters.departments = requestedFilters.departments;
+    if (requestedFilters.researchAreas) filters.researchAreas = requestedFilters.researchAreas;
+
+    const result = await searchResearchGroupsViaMeili(
+      q,
+      filters,
+      1,
+      RELATED_PROGRAMS_LIMIT,
+      {},
+      { includeNonPublic: false },
+    );
+
+    return response.json({
+      researchEntities: result.researchEntities.slice(0, RELATED_PROGRAMS_LIMIT),
+      degraded: result.degraded ?? false,
+    });
+  } catch (error) {
+    console.error('Related programs search failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Search failed' });
   }
 };
