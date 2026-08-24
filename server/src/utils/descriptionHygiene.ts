@@ -961,17 +961,49 @@ const leadingDanglingDemonstrativePattern =
 
 /**
  * A card blurb whose subject is a bare third-person pronoun ("He earned an MS
- * in...", "She holds a joint appointment...", "It seeks to enhance...") or a
- * transitional adverbial ("In addition, he...") introducing one, with no name
- * ever established on the standalone card (#1400/#1506/#1762). The reader has
- * no antecedent for "he"/"she"/"they"/"it" on a card shown out of context, so
- * this fails closed the same way a dangling demonstrative does, whatever the
- * sentence's own content quality.
+ * in...", "She holds a joint appointment...", "It seeks to enhance...", "It
+ * supports Yale College first-years...") or a transitional adverbial ("In
+ * addition, he...") introducing one, with no name ever established on the
+ * standalone card (#1400/#1506/#1762/#1821). The reader has no antecedent for
+ * "he"/"she"/"they"/"it" on a card shown out of context, so this fails closed
+ * the same way a dangling demonstrative does, whatever the sentence's own
+ * content quality. The funding-verb arm (supports/helps/funds/provides/...)
+ * covers the funding-program analogue of the research-verb arm (#1821): a
+ * fellowship/award blurb that opens "It supports..."/"It helps defray..."
+ * with no named subject.
  */
 const leadingDanglingPronounSubjectPattern =
-  /^(?:He|She|They|It)\s+(?:is|are|was|were|has|had|earned|received|holds?|held|completed|joined|serves?|served|graduated|obtained|remains?|studies|studied|investigates?|examines?|explores?|develops?|works?|focuses?|focused|specializes?|specialized|seeks?|aims?)\b/;
+  /^(?:He|She|They|It)\s+(?:is|are|was|were|has|had|earned|received|holds?|held|completed|joined|serves?|served|graduated|obtained|remains?|studies|studied|investigates?|examines?|explores?|develops?|works?|focuses?|focused|specializes?|specialized|seeks?|aims?|supports?|helps?|funds?|provides?|offers?|covers?|awards?|defrays?|reimburses?|enables?|allows?)\b/;
 const leadingTransitionalPronounSubjectPattern =
   /^(?:In addition|Additionally|Also|Moreover|Furthermore),?\s+(?:he|she|they)\b/i;
+
+/**
+ * A funding-program card blurb that opens with a second-person marketing/CTA
+ * address ("If you're planning a project... we encourage you to apply") (#1821).
+ * A student browse card is a neutral third-person summary of what the award
+ * funds, not a pitch addressed to "you", so this fails closed the same way a
+ * dangling pronoun opener does.
+ */
+const fundingProgramSecondPersonCtaOpenerPattern = /^If\s+you\b|\bwe\s+encourage\s+you\s+to\s+apply\b/i;
+
+/**
+ * A funding-program card blurb that opens mid-eligibility-criteria rather than
+ * stating what the award is or funds ("Appropriate purposes for support
+ * include...", "Research across all disciplines will be considered,
+ * provided that...") (#1821). Both shapes read as a fragment lifted from an
+ * eligibility list, not a self-contained summary.
+ */
+const fundingProgramEligibilityFragmentOpenerPattern =
+  /^Appropriate\s+purposes\s+for\s+support\s+include\b|^Research\s+across\s+all\s+disciplines\b[^.!?]*\bwill\s+be\s+considered\b/i;
+
+/**
+ * A funding-program card blurb that leads with donor-genealogy trivia rather
+ * than what the award funds ("The Class of 1960/86 has established several
+ * ... in memory of Albert St. Pergam '60, father of Lizzie BR '93...") (#1821).
+ * A student skimming the card needs the award's purpose, not who endowed it.
+ */
+const fundingProgramDonorProvenanceOpenerPattern =
+  /^The\s+[^.!?]*\bhas\s+established\b[^.!?]*\bin\s+memory\s+of\b/i;
 
 /**
  * A card blurb that opens with a discourse connective ("In addition to...",
@@ -1072,7 +1104,11 @@ function synthesisBlurbHasDanglingFirstPersonPluralReference(text: string): bool
  * connective ("In addition to...", "Moreover,") that promises context the
  * card never supplies, and on a synthesis-verb-lead blurb that dangles a
  * first-person-plural reference ("... that allow us to ...") with no subject
- * ever named to anchor it (#1762).
+ * ever named to anchor it (#1762). A funding-program opener that addresses
+ * the reader directly as a CTA ("If you..."), opens mid-eligibility-fragment
+ * ("Appropriate purposes for support include..."), or leads with
+ * donor-genealogy trivia ("The Class of ... has established ... in memory
+ * of...") likewise fails closed rather than serve verbatim (#1821).
  */
 export function isNonSelfContainedShortDescription(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
@@ -1085,6 +1121,9 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
   if (leadingDoctorDegreeOpenerPattern.test(normalized)) return true;
   if (leadingDanglingPronounSubjectPattern.test(normalized)) return true;
   if (leadingTransitionalPronounSubjectPattern.test(normalized)) return true;
+  if (fundingProgramSecondPersonCtaOpenerPattern.test(normalized)) return true;
+  if (fundingProgramEligibilityFragmentOpenerPattern.test(normalized)) return true;
+  if (fundingProgramDonorProvenanceOpenerPattern.test(normalized)) return true;
   return (
     synthesisBlurbHasDanglingDemonstrative(normalized) ||
     synthesisBlurbHasDanglingFirstPersonPluralReference(normalized)
