@@ -81,6 +81,29 @@ const engineeringProfileHtml = `
   </html>
 `;
 
+const musicProfileUrl = 'https://music.yale.edu/people/robin-fixture';
+
+const musicProfileHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="${musicProfileUrl}" />
+      <meta name="description" content="Professor of Composition" />
+    </head>
+    <body>
+      <main>
+        <h1>Robin Fixture</h1>
+        <div class="title">Professor of Composition</div>
+        <a href="mailto:robin.fixture@yale.edu">robin.fixture@yale.edu</a>
+        <div class="department">Composition</div>
+        <section class="biography">
+          Robin Fixture is a composer whose works span opera, orchestral music, and chamber music.
+        </section>
+        <div class="research-interests">Composition; Contemporary classical music</div>
+      </main>
+    </body>
+  </html>
+`;
+
 const emailLessProfileHtml = `
   <html>
     <head>
@@ -2169,6 +2192,38 @@ describe('officialProfilePiBackfillScraper', () => {
     });
 
     expect(identity).toBeNull();
+  });
+
+  it('rejects a guessed music.yale.edu profile for an entity whose own school rules out music (#1407/#1413)', () => {
+    // music.yale.edu (and the other arts/professional-school hosts) previously
+    // had no entry in SINGLE_DISCIPLINE_PROFILE_HOST_TEXT, so a same-name
+    // composer collision on a physics entity would have inherited the
+    // composer's research interests unchecked.
+    const entity = {
+      name: 'Robin Fixture Research Area',
+      slug: 'faculty-research-area-robin-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['Physics'],
+    };
+
+    const identity = extractOfficialProfileIdentity(musicProfileHtml, musicProfileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a guessed music.yale.edu profile when the entity has no known non-music discipline', () => {
+    const entity = {
+      name: 'Robin Fixture Research Area',
+      slug: 'faculty-research-area-robin-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(musicProfileHtml, musicProfileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity?.displayName).toBe('Robin Fixture');
   });
 
   it('skips profile chrome headings when extracting the appointment title', () => {
