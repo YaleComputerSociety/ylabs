@@ -30,6 +30,7 @@ const baseSearch = (overrides: Partial<SavedSearchView> = {}): SavedSearchView =
     entityType: [],
     currentAvailability: ['OPEN'],
     compensation: [],
+    eligibleStudentLevels: [],
     hostsUndergrads: false,
     hasDocumentedWayIn: false,
   },

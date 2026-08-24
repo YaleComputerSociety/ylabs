@@ -34,11 +34,14 @@ interface ResearchFilterDisclosureProps {
   selectedCurrentAvailability: string[];
   compensationOptions: FacetOption[];
   selectedCompensation: string[];
+  eligibleStudentLevelsOptions: FacetOption[];
+  selectedEligibleStudentLevels: string[];
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
   currentAvailabilityLabel: (value: string) => string;
   compensationLabel: (value: string) => string;
+  eligibleStudentLevelsLabel: (value: string) => string;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onResearchAreasChange: (value: string[]) => void;
@@ -47,6 +50,7 @@ interface ResearchFilterDisclosureProps {
   onDocumentedWayInChange: (value: boolean) => void;
   onCurrentAvailabilityChange: (value: string[]) => void;
   onCompensationChange: (value: string[]) => void;
+  onEligibleStudentLevelsChange: (value: string[]) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
@@ -67,6 +71,8 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
 const MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT = 20;
 
 const MIN_COMPENSATION_SERVABLE_COUNT = 20;
+
+const MIN_ELIGIBLE_STUDENT_LEVELS_SERVABLE_COUNT = 20;
 
 const sumOptionCounts = (options: FacetOption[]): number =>
   options.reduce((total, option) => total + (option.count ?? 0), 0);
@@ -101,11 +107,14 @@ const ResearchFilterDisclosure = ({
   selectedCurrentAvailability,
   compensationOptions,
   selectedCompensation,
+  eligibleStudentLevelsOptions,
+  selectedEligibleStudentLevels,
   isApplying,
   hasFacetError,
   departmentLabel,
   currentAvailabilityLabel,
   compensationLabel,
+  eligibleStudentLevelsLabel,
   onSchoolChange,
   onDepartmentChange,
   onResearchAreasChange,
@@ -114,6 +123,7 @@ const ResearchFilterDisclosure = ({
   onDocumentedWayInChange,
   onCurrentAvailabilityChange,
   onCompensationChange,
+  onEligibleStudentLevelsChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
@@ -193,6 +203,9 @@ const ResearchFilterDisclosure = ({
   const showCompensation =
     sumOptionCounts(compensationOptions) >= MIN_COMPENSATION_SERVABLE_COUNT ||
     selectedCompensation.length > 0;
+  const showEligibleStudentLevels =
+    sumOptionCounts(eligibleStudentLevelsOptions) >= MIN_ELIGIBLE_STUDENT_LEVELS_SERVABLE_COUNT ||
+    selectedEligibleStudentLevels.length > 0;
   const activeCount =
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
@@ -201,7 +214,8 @@ const ResearchFilterDisclosure = ({
     Number(hostsUndergrads) +
     Number(documentedWayIn) +
     selectedCurrentAvailability.length +
-    selectedCompensation.length;
+    selectedCompensation.length +
+    selectedEligibleStudentLevels.length;
   const visibleFacetKey = `${String(showSchool)}:${String(showDepartment)}`;
   const toggleCurrentAvailability = (value: string, checked: boolean) => {
     onCurrentAvailabilityChange(
@@ -215,6 +229,13 @@ const ResearchFilterDisclosure = ({
       checked
         ? [...selectedCompensation, value]
         : selectedCompensation.filter((selected) => selected !== value),
+    );
+  };
+  const toggleEligibleStudentLevels = (value: string, checked: boolean) => {
+    onEligibleStudentLevelsChange(
+      checked
+        ? [...selectedEligibleStudentLevels, value]
+        : selectedEligibleStudentLevels.filter((selected) => selected !== value),
     );
   };
 
@@ -300,7 +321,11 @@ const ResearchFilterDisclosure = ({
       : 'No additional filters can narrow these results.';
 
   const facetCountWarning = hasFacetError &&
-    (showSchool || showDepartment || showCurrentAvailability || showCompensation) && (
+    (showSchool ||
+      showDepartment ||
+      showCurrentAvailability ||
+      showCompensation ||
+      showEligibleStudentLevels) && (
     <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
       Current filter counts are unavailable. Active values remain clearable.
     </p>
@@ -368,6 +393,30 @@ const ResearchFilterDisclosure = ({
                 type="checkbox"
                 checked={selectedCompensation.includes(option.value)}
                 onChange={(event) => toggleCompensation(option.value, event.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+              />
+              <span>
+                {option.label ?? option.value}
+                {option.count !== undefined ? ` (${option.count})` : ''}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {showEligibleStudentLevels && (
+        <fieldset className="min-w-0 space-y-2 border-0 p-0">
+          <legend className="text-sm font-medium text-slate-800">Open to class year</legend>
+          {eligibleStudentLevelsOptions.map((option) => (
+            <label
+              key={option.value}
+              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
+            >
+              <input
+                type="checkbox"
+                checked={selectedEligibleStudentLevels.includes(option.value)}
+                onChange={(event) =>
+                  toggleEligibleStudentLevels(option.value, event.target.checked)
+                }
                 className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
               />
               <span>
@@ -456,7 +505,8 @@ const ResearchFilterDisclosure = ({
         !showType &&
         !showCurrentAvailability &&
         !showDocumentedWayIn &&
-        !showCompensation && (
+        !showCompensation &&
+        !showEligibleStudentLevels && (
           <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
         )}
     </fieldset>
@@ -589,6 +639,27 @@ const ResearchFilterDisclosure = ({
             onClick={() =>
               onCompensationChange(
                 selectedCompensation.filter((selected) => selected !== value),
+              )
+            }
+            aria-label={`Remove ${label}`}
+            className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            <span className="min-w-0 truncate">{label}</span>
+            <span aria-hidden="true" className="shrink-0">
+              ×
+            </span>
+          </button>
+        );
+      })}
+      {selectedEligibleStudentLevels.map((value) => {
+        const label = eligibleStudentLevelsLabel(value);
+        return (
+          <button
+            key={value}
+            type="button"
+            onClick={() =>
+              onEligibleStudentLevelsChange(
+                selectedEligibleStudentLevels.filter((selected) => selected !== value),
               )
             }
             aria-label={`Remove ${label}`}

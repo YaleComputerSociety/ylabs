@@ -1140,6 +1140,7 @@ describe('searchResearchGroupsViaMeili', () => {
           'entityType',
           'undergraduateCurrentAvailability',
           'undergraduateCompensationModel',
+          'undergraduateEligibleStudentLevels',
           'hasDocumentedWayIn',
         ],
       }),
@@ -1307,6 +1308,48 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.facetDistribution?.undergraduateCompensationModel).toEqual({
       PAID_OR_STIPEND: 3,
       COURSE_CREDIT: 5,
+    });
+  });
+
+  it('computes the eligible-student-levels facet disjunctively and filters on the browse-filterable field (#1733)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 3,
+      facetDistribution: {
+        undergraduateEligibleStudentLevels: { FIRST_YEAR: 3 },
+      },
+    });
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 20,
+      facetDistribution: {
+        undergraduateEligibleStudentLevels: { FIRST_YEAR: 3, SOPHOMORE: 5, JUNIOR: 2 },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { eligibleStudentLevels: ['FIRST_YEAR'] },
+      1,
+      24,
+    );
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1].filter).toMatch(
+      /undergraduateEligibleStudentLevels = "FIRST_YEAR"/,
+    );
+    const disjunctiveCall = mocks.search.mock.calls[1];
+    expect(disjunctiveCall[1]).toEqual(
+      expect.objectContaining({
+        facets: ['undergraduateEligibleStudentLevels'],
+        limit: 0,
+      }),
+    );
+    expect(disjunctiveCall[1].filter).not.toMatch(/undergraduateEligibleStudentLevels/);
+    expect(result.facetDistribution?.undergraduateEligibleStudentLevels).toEqual({
+      FIRST_YEAR: 3,
+      SOPHOMORE: 5,
+      JUNIOR: 2,
     });
   });
 
@@ -1841,6 +1884,7 @@ describe('searchResearchGroupsViaMeili', () => {
         'entityType',
         'undergraduateCurrentAvailability',
         'undergraduateCompensationModel',
+        'undergraduateEligibleStudentLevels',
         'hasDocumentedWayIn',
       ],
     });

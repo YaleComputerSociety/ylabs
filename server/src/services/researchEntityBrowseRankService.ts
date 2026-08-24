@@ -23,8 +23,10 @@ import {
 import {
   currentUndergradAvailabilityFromSignals,
   undergradCompensationModelFromSignals,
+  eligibleStudentLevelsFromSignals,
   type CurrentAvailabilitySignalInput,
   type CompensationSignalInput,
+  type StudentLevelSignalInput,
 } from '../scrapers/undergraduateLogisticsMaterializer';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { syncEntity } from './meiliSyncService';
@@ -145,6 +147,37 @@ const compensationSignalsByEntityId = async (
   return byId;
 };
 
+const studentLevelSignalsByEntityId = async (
+  entityIds: any[],
+): Promise<Map<string, StudentLevelSignalInput[]>> => {
+  if (entityIds.length === 0) return new Map();
+  const signals = await Signal.find({
+    researchEntityId: { $in: entityIds },
+    type: 'STUDENT_LEVEL',
+    archived: { $ne: true },
+  })
+    .select('researchEntityId type status value expiresAt')
+    .lean();
+  const byId = new Map<string, StudentLevelSignalInput[]>();
+  for (const signal of signals as any[]) {
+    const key = browseRankDocumentId(signal.researchEntityId);
+    if (!key) continue;
+    byId.set(key, [
+      ...(byId.get(key) || []),
+      {
+        type: signal.type,
+        status: signal.status,
+        value: signal.value,
+        expiresAt: signal.expiresAt,
+      },
+    ]);
+  }
+  return byId;
+};
+
+const eligibleStudentLevelsEqual = (left: string[], right: string[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
+
 export interface RecomputeBrowseRankOptions {
   /** When true, compute and report but do not write to Mongo or Meilisearch. */
   dryRun?: boolean;
@@ -185,12 +218,14 @@ export async function recomputeBrowseRankForEntities(
     hostingAffiliations,
     currentAvailabilitySignals,
     compensationSignals,
+    studentLevelSignals,
   ] = await Promise.all([
     leadMembersByEntityId(ids),
     accessSignalsByEntityId(ids),
     entitiesHostingAffiliations(ids),
     currentAvailabilitySignalsByEntityId(ids),
     compensationSignalsByEntityId(ids),
+    studentLevelSignalsByEntityId(ids),
   ]);
 
   let updated = 0;
@@ -217,6 +252,10 @@ export async function recomputeBrowseRankForEntities(
       compensationSignals.get(id) || [],
       now,
     );
+    const eligibleStudentLevels = eligibleStudentLevelsFromSignals(
+      studentLevelSignals.get(id) || [],
+      now,
+    );
 
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const levelUnchanged = (entity.accessAcceptanceLevel ?? 'none') === acceptanceLevel;
@@ -228,13 +267,20 @@ export async function recomputeBrowseRankForEntities(
       (entity.undergraduateCurrentAvailability ?? 'UNKNOWN') === currentAvailability;
     const compensationUnchanged =
       (entity.undergraduateCompensationModel ?? 'UNKNOWN') === compensationModel;
+    const eligibleStudentLevelsUnchanged = eligibleStudentLevelsEqual(
+      Array.isArray(entity.undergraduateEligibleStudentLevels)
+        ? entity.undergraduateEligibleStudentLevels
+        : [],
+      eligibleStudentLevels,
+    );
     if (
       scoreUnchanged &&
       levelUnchanged &&
       hostingUnchanged &&
       documentedWayInUnchanged &&
       availabilityUnchanged &&
-      compensationUnchanged
+      compensationUnchanged &&
+      eligibleStudentLevelsUnchanged
     )
       continue;
     updated += 1;
@@ -250,6 +296,7 @@ export async function recomputeBrowseRankForEntities(
           hasDocumentedWayIn: documentedWayIn,
           undergraduateCurrentAvailability: currentAvailability,
           undergraduateCompensationModel: compensationModel,
+          undergraduateEligibleStudentLevels: eligibleStudentLevels,
         },
       },
       { timestamps: false },

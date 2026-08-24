@@ -24,6 +24,7 @@ vi.mock('../../models/signal', async (importOriginal) => {
 import {
   currentUndergradAvailabilityFromSignals,
   undergradCompensationModelFromSignals,
+  eligibleStudentLevelsFromSignals,
   materializeUndergraduateLogisticsForResearchEntity,
   quoteExplicitlyDeclinesUndergraduates,
   resolveUndergraduateLogisticsClaims,
@@ -1416,5 +1417,71 @@ describe('undergradCompensationModelFromSignals', () => {
         NOW,
       ),
     ).toBe('UNKNOWN');
+  });
+});
+
+describe('eligibleStudentLevelsFromSignals', () => {
+  const freshExpiry = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+  const staleExpiry = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
+  const studentLevelSignal = (levels: string[], overrides: Record<string, unknown> = {}) => ({
+    type: 'STUDENT_LEVEL',
+    status: 'KNOWN',
+    value: { levels },
+    expiresAt: freshExpiry,
+    ...overrides,
+  });
+
+  it('returns the welcomed class years from a fresh KNOWN STUDENT_LEVEL signal', () => {
+    expect(
+      eligibleStudentLevelsFromSignals([studentLevelSignal(['FIRST_YEAR', 'SOPHOMORE'])], NOW),
+    ).toEqual(['FIRST_YEAR', 'SOPHOMORE']);
+  });
+
+  it('normalizes to canonical class-year order and drops unknown tokens', () => {
+    expect(
+      eligibleStudentLevelsFromSignals(
+        [studentLevelSignal(['SENIOR', 'FIRST_YEAR', 'GRAD_STUDENT'])],
+        NOW,
+      ),
+    ).toEqual(['FIRST_YEAR', 'SENIOR']);
+  });
+
+  it('fails closed to [] when the signal has expired, even if status is still KNOWN', () => {
+    expect(
+      eligibleStudentLevelsFromSignals(
+        [studentLevelSignal(['FIRST_YEAR'], { expiresAt: staleExpiry })],
+        NOW,
+      ),
+    ).toEqual([]);
+  });
+
+  it('fails closed to [] when the signal is STALE_UNDER_REVIEW or CONFLICTING_WITHHELD', () => {
+    expect(
+      eligibleStudentLevelsFromSignals(
+        [studentLevelSignal(['FIRST_YEAR'], { status: 'STALE_UNDER_REVIEW', value: undefined })],
+        NOW,
+      ),
+    ).toEqual([]);
+    expect(
+      eligibleStudentLevelsFromSignals(
+        [
+          studentLevelSignal(['FIRST_YEAR'], {
+            status: 'CONFLICTING_WITHHELD',
+            value: undefined,
+          }),
+        ],
+        NOW,
+      ),
+    ).toEqual([]);
+  });
+
+  it('fails closed to [] when no STUDENT_LEVEL signal is present', () => {
+    expect(eligibleStudentLevelsFromSignals([], NOW)).toEqual([]);
+    expect(
+      eligibleStudentLevelsFromSignals(
+        [{ type: 'CURRENT_AVAILABILITY', status: 'KNOWN', expiresAt: freshExpiry }],
+        NOW,
+      ),
+    ).toEqual([]);
   });
 });

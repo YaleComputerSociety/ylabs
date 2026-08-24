@@ -10,6 +10,16 @@ const COMPENSATION_LABELS: Record<'PAID_OR_STIPEND' | 'COURSE_CREDIT', string> =
   COURSE_CREDIT: 'Course credit',
 };
 
+const ELIGIBLE_STUDENT_LEVEL_LABELS: Record<
+  'FIRST_YEAR' | 'SOPHOMORE' | 'JUNIOR' | 'SENIOR',
+  string
+> = {
+  FIRST_YEAR: 'Open to first-years',
+  SOPHOMORE: 'Open to sophomores',
+  JUNIOR: 'Open to juniors',
+  SENIOR: 'Open to seniors',
+};
+
 const titleCaseEntityType = (value: string): string =>
   value
     .split(/[_\s-]+/)
@@ -25,6 +35,9 @@ export const savedSearchFilterChips = (filters: SavedSearchFilters): string[] =>
   filters.entityType.forEach((value) => chips.push(titleCaseEntityType(value)));
   filters.currentAvailability.forEach((value) => chips.push(AVAILABILITY_LABELS[value]));
   filters.compensation.forEach((value) => chips.push(COMPENSATION_LABELS[value]));
+  filters.eligibleStudentLevels.forEach((value) =>
+    chips.push(ELIGIBLE_STUDENT_LEVEL_LABELS[value]),
+  );
   if (filters.hostsUndergrads) chips.push('Hosts undergrads');
   if (filters.hasDocumentedWayIn) chips.push('Documented way in');
   return chips;

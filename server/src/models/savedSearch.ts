@@ -18,9 +18,17 @@ export const MAX_SAVED_SEARCH_TRACKED_MATCH_IDS = 200;
 
 export const savedSearchCurrentAvailabilityValues = ['OPEN', 'ROLLING'] as const;
 export const savedSearchCompensationValues = ['PAID_OR_STIPEND', 'COURSE_CREDIT'] as const;
+export const savedSearchEligibleStudentLevelValues = [
+  'FIRST_YEAR',
+  'SOPHOMORE',
+  'JUNIOR',
+  'SENIOR',
+] as const;
 
 export type SavedSearchCurrentAvailability = (typeof savedSearchCurrentAvailabilityValues)[number];
 export type SavedSearchCompensation = (typeof savedSearchCompensationValues)[number];
+export type SavedSearchEligibleStudentLevel =
+  (typeof savedSearchEligibleStudentLevelValues)[number];
 
 const boundedStringArray = (label: string) => ({
   validator: (values: unknown[]) =>
@@ -52,6 +60,11 @@ const savedSearchFiltersSchema = new mongoose.Schema(
       type: [String],
       default: [],
       enum: [...savedSearchCompensationValues],
+    },
+    eligibleStudentLevels: {
+      type: [String],
+      default: [],
+      enum: [...savedSearchEligibleStudentLevelValues],
     },
     hostsUndergrads: { type: Boolean, default: false },
     hasDocumentedWayIn: { type: Boolean, default: false },

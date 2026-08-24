@@ -288,4 +288,50 @@ describe('buildResearchGroupFilterString', () => {
       );
     });
   });
+
+  describe('eligibleStudentLevels filter', () => {
+    it('single value → filters the eligible-student-levels field', () => {
+      const filter = buildResearchGroupFilterString({ eligibleStudentLevels: ['FIRST_YEAR'] });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateEligibleStudentLevels = "FIRST_YEAR")',
+      );
+    });
+
+    it('two values → ORs them within the field', () => {
+      const filter = buildResearchGroupFilterString({
+        eligibleStudentLevels: ['FIRST_YEAR', 'SOPHOMORE'],
+      });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateEligibleStudentLevels = "FIRST_YEAR" OR undergraduateEligibleStudentLevels = "SOPHOMORE")',
+      );
+    });
+
+    it('unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('is droppable via excludeField for disjunctive faceting (#1080)', () => {
+      const filter = buildResearchGroupFilterString(
+        { eligibleStudentLevels: ['FIRST_YEAR'], departments: ['Genetics'] },
+        { excludeField: 'eligibleStudentLevels' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+
+    it('combines with compensation and other filters via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        departments: ['Genetics'],
+        compensation: ['PAID_OR_STIPEND'],
+        eligibleStudentLevels: ['FIRST_YEAR', 'SOPHOMORE'],
+      });
+      expect(filter).toBe(
+        [
+          'archived = false',
+          '(departments = "Genetics")',
+          '(undergraduateCompensationModel = "PAID_OR_STIPEND")',
+          '(undergraduateEligibleStudentLevels = "FIRST_YEAR" OR undergraduateEligibleStudentLevels = "SOPHOMORE")',
+        ].join(' AND '),
+      );
+    });
+  });
 });

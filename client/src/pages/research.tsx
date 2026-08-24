@@ -69,6 +69,7 @@ interface DepartmentSearchTarget {
 
 type CurrentAvailabilityFilterValue = 'OPEN' | 'ROLLING';
 type CompensationFilterValue = 'PAID_OR_STIPEND' | 'COURSE_CREDIT';
+type EligibleStudentLevelFilterValue = 'FIRST_YEAR' | 'SOPHOMORE' | 'JUNIOR' | 'SENIOR';
 
 type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
@@ -78,6 +79,7 @@ type ResearchSearchFilters = PathwaySearchFilters & {
   hasDocumentedWayIn?: boolean;
   currentAvailability?: CurrentAvailabilityFilterValue[];
   compensation?: CompensationFilterValue[];
+  eligibleStudentLevels?: EligibleStudentLevelFilterValue[];
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
@@ -101,6 +103,20 @@ const COMPENSATION_FILTER_VALUES: readonly CompensationFilterValue[] = [
 const COMPENSATION_FILTER_LABELS: Record<CompensationFilterValue, string> = {
   PAID_OR_STIPEND: 'Paid or stipend',
   COURSE_CREDIT: 'Course credit',
+};
+
+const ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES: readonly EligibleStudentLevelFilterValue[] = [
+  'FIRST_YEAR',
+  'SOPHOMORE',
+  'JUNIOR',
+  'SENIOR',
+];
+
+const ELIGIBLE_STUDENT_LEVEL_FILTER_LABELS: Record<EligibleStudentLevelFilterValue, string> = {
+  FIRST_YEAR: 'Open to first-years',
+  SOPHOMORE: 'Open to sophomores',
+  JUNIOR: 'Open to juniors',
+  SENIOR: 'Open to seniors',
 };
 
 const FILTERED_RESULT_QUERY_LABEL = 'filtered research';
@@ -177,7 +193,8 @@ interface ResearchFilterAnalyticsChange {
     | 'research_type'
     | 'hosts_undergrads'
     | 'current_availability'
-    | 'compensation';
+    | 'compensation'
+    | 'eligible_student_levels';
 }
 
 interface ResearchPageSnapshot {
@@ -197,6 +214,7 @@ interface ResearchPageSnapshot {
   documentedWayIn: boolean;
   selectedCurrentAvailability: CurrentAvailabilityFilterValue[];
   selectedCompensation: CompensationFilterValue[];
+  selectedEligibleStudentLevels: EligibleStudentLevelFilterValue[];
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
@@ -479,6 +497,17 @@ const Research = () => {
       restoredSnapshotRef.current?.selectedCompensation ??
       readSearchParamList(searchParams, 'compensation', COMPENSATION_FILTER_VALUES),
   );
+  const [selectedEligibleStudentLevels, setSelectedEligibleStudentLevels] = useState<
+    EligibleStudentLevelFilterValue[]
+  >(
+    () =>
+      restoredSnapshotRef.current?.selectedEligibleStudentLevels ??
+      readSearchParamList(
+        searchParams,
+        'eligibleYears',
+        ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES,
+      ),
+  );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
   );
@@ -658,6 +687,30 @@ const Research = () => {
     () => buildCompensationOptions(browseFacetDistribution.undergraduateCompensationModel),
     [buildCompensationOptions, browseFacetDistribution.undergraduateCompensationModel],
   );
+  const buildEligibleStudentLevelsOptions = useCallback(
+    (counts: Record<string, number> | undefined) =>
+      ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES.map((value) => ({
+        value,
+        label: ELIGIBLE_STUDENT_LEVEL_FILTER_LABELS[value],
+        count: (counts || {})[value],
+      })).filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0),
+    [],
+  );
+  const eligibleStudentLevelsOptions = useMemo(
+    () =>
+      buildEligibleStudentLevelsOptions(facetDistribution.undergraduateEligibleStudentLevels),
+    [buildEligibleStudentLevelsOptions, facetDistribution.undergraduateEligibleStudentLevels],
+  );
+  const browseEligibleStudentLevelsOptions = useMemo(
+    () =>
+      buildEligibleStudentLevelsOptions(
+        browseFacetDistribution.undergraduateEligibleStudentLevels,
+      ),
+    [
+      buildEligibleStudentLevelsOptions,
+      browseFacetDistribution.undergraduateEligibleStudentLevels,
+    ],
+  );
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
     [departments],
@@ -684,6 +737,7 @@ const Research = () => {
       documentedWayIn?: boolean;
       currentAvailability?: CurrentAvailabilityFilterValue[];
       compensation?: CompensationFilterValue[];
+      eligibleStudentLevels?: EligibleStudentLevelFilterValue[];
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -705,6 +759,9 @@ const Research = () => {
     }
     if (nextState.compensation?.length) {
       params.set('compensation', nextState.compensation.join(','));
+    }
+    if (nextState.eligibleStudentLevels?.length) {
+      params.set('eligibleYears', nextState.eligibleStudentLevels.join(','));
     }
 
     if (isAdmin) {
@@ -918,6 +975,7 @@ const Research = () => {
           documentedWayIn: filters.hasDocumentedWayIn === true,
           currentAvailability: filters.currentAvailability,
           compensation: filters.compensation,
+          eligibleStudentLevels: filters.eligibleStudentLevels,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -1098,6 +1156,7 @@ const Research = () => {
     availability = selectedCurrentAvailability,
     documented = documentedWayIn,
     compensation = selectedCompensation,
+    eligibleStudentLevels = selectedEligibleStudentLevels,
   ): ResearchSearchFilters => ({
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
@@ -1109,6 +1168,7 @@ const Research = () => {
     ...(documented ? { hasDocumentedWayIn: true } : {}),
     ...(availability.length ? { currentAvailability: availability } : {}),
     ...(compensation.length ? { compensation } : {}),
+    ...(eligibleStudentLevels.length ? { eligibleStudentLevels } : {}),
   });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -1133,6 +1193,7 @@ const Research = () => {
     setHostsUndergrads(false);
     setSelectedCurrentAvailability([]);
     setSelectedCompensation([]);
+    setSelectedEligibleStudentLevels([]);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -1245,6 +1306,11 @@ const Research = () => {
       'compensation',
       COMPENSATION_FILTER_VALUES,
     );
+    const urlEligibleStudentLevels = readSearchParamList(
+      searchParams,
+      'eligibleYears',
+      ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES,
+    );
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
     const urlQualityFilters = isAdmin
       ? readSearchParamList(
@@ -1311,6 +1377,12 @@ const Research = () => {
       setSelectedCompensation(urlCompensation);
       return;
     }
+    if (
+      selectedEligibleStudentLevels.join(',') !== urlEligibleStudentLevels.join(',')
+    ) {
+      setSelectedEligibleStudentLevels(urlEligibleStudentLevels);
+      return;
+    }
     const studentFilters: ResearchSearchFilters = {
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
@@ -1322,6 +1394,9 @@ const Research = () => {
       ...(urlDocumentedWayIn ? { hasDocumentedWayIn: true } : {}),
       ...(urlCurrentAvailability.length ? { currentAvailability: urlCurrentAvailability } : {}),
       ...(urlCompensation.length ? { compensation: urlCompensation } : {}),
+      ...(urlEligibleStudentLevels.length
+        ? { eligibleStudentLevels: urlEligibleStudentLevels }
+        : {}),
     };
 
     const urlDepartmentSearch = urlDepartmentLabel
@@ -1421,6 +1496,7 @@ const Research = () => {
     documentedWayIn,
     selectedCurrentAvailability,
     selectedCompensation,
+    selectedEligibleStudentLevels,
     departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
@@ -1446,6 +1522,7 @@ const Research = () => {
       documentedWayIn,
       selectedCurrentAvailability,
       selectedCompensation,
+      selectedEligibleStudentLevels,
       sortBy,
       sortOrder,
       facetDistribution,
@@ -1485,6 +1562,7 @@ const Research = () => {
     documentedWayIn,
     selectedCurrentAvailability,
     selectedCompensation,
+    selectedEligibleStudentLevels,
     sortBy,
     sortOrder,
     facetDistribution,
@@ -1615,7 +1693,8 @@ const Research = () => {
       selectedTypeBuckets.length ||
       hostsUndergrads ||
       selectedCurrentAvailability.length ||
-      selectedCompensation.length,
+      selectedCompensation.length ||
+      selectedEligibleStudentLevels.length,
   );
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =
@@ -1632,6 +1711,8 @@ const Research = () => {
     CURRENT_AVAILABILITY_FILTER_LABELS[value as CurrentAvailabilityFilterValue] ?? value;
   const compensationFilterLabel = (value: string) =>
     COMPENSATION_FILTER_LABELS[value as CompensationFilterValue] ?? value;
+  const eligibleStudentLevelsFilterLabel = (value: string) =>
+    ELIGIBLE_STUDENT_LEVEL_FILTER_LABELS[value as EligibleStudentLevelFilterValue] ?? value;
   const applyStudentFilters = (next: {
     school?: string;
     department?: string;
@@ -1641,6 +1722,7 @@ const Research = () => {
     documentedWayIn?: boolean;
     currentAvailability?: CurrentAvailabilityFilterValue[];
     compensation?: CompensationFilterValue[];
+    eligibleStudentLevels?: EligibleStudentLevelFilterValue[];
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
@@ -1650,6 +1732,8 @@ const Research = () => {
     const documented = next.documentedWayIn ?? documentedWayIn;
     const availability = next.currentAvailability ?? selectedCurrentAvailability;
     const compensation = next.compensation ?? selectedCompensation;
+    const eligibleStudentLevels =
+      next.eligibleStudentLevels ?? selectedEligibleStudentLevels;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (school !== selectedSchool) {
       filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
@@ -1693,6 +1777,15 @@ const Research = () => {
         filter: 'compensation',
       });
     }
+    if (eligibleStudentLevels.join(',') !== selectedEligibleStudentLevels.join(',')) {
+      filterChanges.push({
+        operation:
+          eligibleStudentLevels.length > selectedEligibleStudentLevels.length
+            ? 'apply'
+            : 'remove',
+        filter: 'eligible_student_levels',
+      });
+    }
     setSelectedSchool(school);
     setSelectedDepartment(department);
     setSelectedResearchAreas(areas);
@@ -1701,6 +1794,7 @@ const Research = () => {
     setDocumentedWayIn(documented);
     setSelectedCurrentAvailability(availability);
     setSelectedCompensation(compensation);
+    setSelectedEligibleStudentLevels(eligibleStudentLevels);
     const filters = studentSearchFilters(
       school,
       department,
@@ -1710,6 +1804,7 @@ const Research = () => {
       availability,
       documented,
       compensation,
+      eligibleStudentLevels,
     );
     if (!query.trim() && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
@@ -1872,11 +1967,14 @@ const Research = () => {
     selectedCurrentAvailability,
     compensationOptions,
     selectedCompensation,
+    eligibleStudentLevelsOptions,
+    selectedEligibleStudentLevels,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
     currentAvailabilityLabel: currentAvailabilityFilterLabel,
     compensationLabel: compensationFilterLabel,
+    eligibleStudentLevelsLabel: eligibleStudentLevelsFilterLabel,
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
     onResearchAreasChange: (areas: string[]) => applyStudentFilters({ researchAreas: areas }),
@@ -1887,6 +1985,10 @@ const Research = () => {
       applyStudentFilters({ currentAvailability: values as CurrentAvailabilityFilterValue[] }),
     onCompensationChange: (values: string[]) =>
       applyStudentFilters({ compensation: values as CompensationFilterValue[] }),
+    onEligibleStudentLevelsChange: (values: string[]) =>
+      applyStudentFilters({
+        eligibleStudentLevels: values as EligibleStudentLevelFilterValue[],
+      }),
     onClearAll: () =>
       applyStudentFilters({
         school: '',
@@ -1897,6 +1999,7 @@ const Research = () => {
         documentedWayIn: false,
         currentAvailability: [],
         compensation: [],
+        eligibleStudentLevels: [],
       }),
   };
 
@@ -1907,6 +2010,7 @@ const Research = () => {
     typeBucketOptions: browseTypeBucketOptions,
     currentAvailabilityOptions: browseCurrentAvailabilityOptions,
     compensationOptions: browseCompensationOptions,
+    eligibleStudentLevelsOptions: browseEligibleStudentLevelsOptions,
     isApplying: false,
     hasFacetError: false,
   };

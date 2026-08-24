@@ -276,4 +276,53 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await compensationOf(stale._id)).toBe('UNKNOWN');
     expect(await compensationOf(noSignal._id)).toBe('UNKNOWN');
   });
+
+  it('persists undergraduateEligibleStudentLevels from a fresh KNOWN signal and fails closed otherwise (#1733)', async () => {
+    const now = new Date('2026-08-23T12:00:00.000Z');
+    const freshExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const staleExpiry = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const welcoming = await createEntity('lab-welcoming', 'LAB');
+    const stale = await createEntity('lab-levels-stale', 'LAB');
+    const conflicting = await createEntity('lab-levels-conflicting', 'LAB');
+    const noSignal = await createEntity('lab-levels-no-signal', 'LAB');
+
+    await Signal.create({
+      researchEntityId: welcoming._id,
+      type: 'STUDENT_LEVEL',
+      status: 'KNOWN',
+      value: { levels: ['SENIOR', 'FIRST_YEAR'] },
+      expiresAt: freshExpiry,
+    });
+    await Signal.create({
+      researchEntityId: stale._id,
+      type: 'STUDENT_LEVEL',
+      status: 'KNOWN',
+      value: { levels: ['FIRST_YEAR'] },
+      expiresAt: staleExpiry,
+    });
+    await Signal.create({
+      researchEntityId: conflicting._id,
+      type: 'STUDENT_LEVEL',
+      status: 'CONFLICTING_WITHHELD',
+      expiresAt: freshExpiry,
+    });
+
+    await recomputeBrowseRankForEntities(
+      [welcoming._id, stale._id, conflicting._id, noSignal._id],
+      { sync: false, now },
+    );
+
+    const levelsOf = async (id: mongoose.Types.ObjectId): Promise<string[]> => {
+      const doc = await ResearchEntity.findById(id).lean<{
+        undergraduateEligibleStudentLevels?: string[];
+      }>();
+      return doc?.undergraduateEligibleStudentLevels ?? [];
+    };
+
+    expect(await levelsOf(welcoming._id)).toEqual(['FIRST_YEAR', 'SENIOR']);
+    expect(await levelsOf(stale._id)).toEqual([]);
+    expect(await levelsOf(conflicting._id)).toEqual([]);
+    expect(await levelsOf(noSignal._id)).toEqual([]);
+  });
 });

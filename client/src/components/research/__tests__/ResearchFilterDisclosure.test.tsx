@@ -26,11 +26,14 @@ const renderFilters = (
     selectedCurrentAvailability: [],
     compensationOptions: [],
     selectedCompensation: [],
+    eligibleStudentLevelsOptions: [],
+    selectedEligibleStudentLevels: [],
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
     currentAvailabilityLabel: (value) => value,
     compensationLabel: (value) => value,
+    eligibleStudentLevelsLabel: (value) => value,
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
     onResearchAreasChange: vi.fn(),
@@ -39,6 +42,7 @@ const renderFilters = (
     onDocumentedWayInChange: vi.fn(),
     onCurrentAvailabilityChange: vi.fn(),
     onCompensationChange: vi.fn(),
+    onEligibleStudentLevelsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -323,6 +327,78 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByRole('button', { name: 'Remove Paid or stipend' })).toBeTruthy();
   });
 
+  it('toggles the eligible-student-levels filter and exposes a removable chip once coverage clears the minimum', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      eligibleStudentLevelsOptions: [
+        { value: 'FIRST_YEAR', label: 'Open to first-years', count: 15 },
+        { value: 'SOPHOMORE', label: 'Open to sophomores', count: 10 },
+      ],
+    });
+
+    fireEvent.click(screen.getByLabelText('Open to first-years (15)'));
+    expect(props.onEligibleStudentLevelsChange).toHaveBeenCalledWith(['FIRST_YEAR']);
+
+    const { props: selectedProps } = renderFilters({
+      variant: 'sidebar',
+      eligibleStudentLevelsOptions: [
+        { value: 'FIRST_YEAR', label: 'Open to first-years', count: 25 },
+      ],
+      selectedEligibleStudentLevels: ['FIRST_YEAR'],
+      eligibleStudentLevelsLabel: (value) =>
+        ({
+          FIRST_YEAR: 'Open to first-years',
+          SOPHOMORE: 'Open to sophomores',
+          JUNIOR: 'Open to juniors',
+          SENIOR: 'Open to seniors',
+        }[value] ?? value),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Open to first-years' }));
+    expect(selectedProps.onEligibleStudentLevelsChange).toHaveBeenCalledWith([]);
+  });
+
+  it('stays hidden when eligible-student-levels coverage is below the minimum servable threshold', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    const { container: sparseContainer } = renderFilters({
+      variant: 'sidebar',
+      eligibleStudentLevelsOptions: [
+        { value: 'FIRST_YEAR', label: 'Open to first-years', count: 5 },
+        { value: 'SOPHOMORE', label: 'Open to sophomores', count: 2 },
+      ],
+    });
+    expect(within(sparseContainer).queryByText('Open to class year')).toBeNull();
+
+    const { container: emptyContainer } = renderFilters({
+      variant: 'sidebar',
+      eligibleStudentLevelsOptions: [],
+    });
+    expect(within(emptyContainer).queryByText('Open to class year')).toBeNull();
+  });
+
+  it('keeps an already-selected eligible-student-level value visible even below the coverage minimum', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    renderFilters({
+      variant: 'sidebar',
+      eligibleStudentLevelsOptions: [
+        { value: 'FIRST_YEAR', label: 'Open to first-years', count: 1 },
+      ],
+      selectedEligibleStudentLevels: ['FIRST_YEAR'],
+      eligibleStudentLevelsLabel: (value) =>
+        ({
+          FIRST_YEAR: 'Open to first-years',
+          SOPHOMORE: 'Open to sophomores',
+          JUNIOR: 'Open to juniors',
+          SENIOR: 'Open to seniors',
+        }[value] ?? value),
+    });
+
+    expect(screen.getByText('Open to class year')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Open to first-years' })).toBeTruthy();
+  });
+
   it('adds a research area from the dropdown and removes it via its chip', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props } = renderFilters({
@@ -371,11 +447,14 @@ describe('ResearchFilterDisclosure', () => {
         selectedCurrentAvailability: [],
         compensationOptions: [],
         selectedCompensation: [],
+        eligibleStudentLevelsOptions: [],
+        selectedEligibleStudentLevels: [],
         isApplying: false,
         hasFacetError: false,
         departmentLabel: (value) => value,
         currentAvailabilityLabel: (value) => value,
         compensationLabel: (value) => value,
+        eligibleStudentLevelsLabel: (value) => value,
         onSchoolChange: vi.fn(),
         onDepartmentChange: vi.fn(),
         onResearchAreasChange: () => setHasSubmittedSearch(true),
@@ -384,6 +463,7 @@ describe('ResearchFilterDisclosure', () => {
         onDocumentedWayInChange: vi.fn(),
         onCurrentAvailabilityChange: vi.fn(),
         onCompensationChange: vi.fn(),
+        onEligibleStudentLevelsChange: vi.fn(),
         onClearAll: vi.fn(),
         isOpen,
         onOpenChange: setIsOpen,

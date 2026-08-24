@@ -576,6 +576,11 @@ const isCompensationFilterInput = (
 ): value is NonNullable<ResearchGroupFilterInput['compensation']>[number] =>
   value === 'PAID_OR_STIPEND' || value === 'COURSE_CREDIT';
 
+const isEligibleStudentLevelFilterInput = (
+  value: string,
+): value is NonNullable<ResearchGroupFilterInput['eligibleStudentLevels']>[number] =>
+  value === 'FIRST_YEAR' || value === 'SOPHOMORE' || value === 'JUNIOR' || value === 'SENIOR';
+
 const sanitizeResearchGroupSearchFilters = (
   filters: ResearchGroupFilterInput = {},
 ): ResearchGroupFilterInput => ({
@@ -594,6 +599,9 @@ const sanitizeResearchGroupSearchFilters = (
   ),
   compensation: boundedResearchFilterValues(filters.compensation).filter(
     isCompensationFilterInput,
+  ),
+  eligibleStudentLevels: boundedResearchFilterValues(filters.eligibleStudentLevels).filter(
+    isEligibleStudentLevelFilterInput,
   ),
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
@@ -684,6 +692,9 @@ const mongoFilterFromResearchFilters = (
   }
   if (filters.compensation?.length) {
     mongoFilter.undergraduateCompensationModel = { $in: filters.compensation };
+  }
+  if (filters.eligibleStudentLevels?.length) {
+    mongoFilter.undergraduateEligibleStudentLevels = { $in: filters.eligibleStudentLevels };
   }
 
   return mongoFilter;
@@ -956,14 +967,16 @@ const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
     | 'researchAreas'
     | 'entityType'
     | 'currentAvailability'
-    | 'compensation';
+    | 'compensation'
+    | 'eligibleStudentLevels';
   meiliField:
     | 'schools'
     | 'departments'
     | 'researchAreas'
     | 'entityType'
     | 'undergraduateCurrentAvailability'
-    | 'undergraduateCompensationModel';
+    | 'undergraduateCompensationModel'
+    | 'undergraduateEligibleStudentLevels';
 }> = [
   { filterKey: 'school', meiliField: 'schools' },
   { filterKey: 'departments', meiliField: 'departments' },
@@ -971,6 +984,7 @@ const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
   { filterKey: 'entityType', meiliField: 'entityType' },
   { filterKey: 'currentAvailability', meiliField: 'undergraduateCurrentAvailability' },
   { filterKey: 'compensation', meiliField: 'undergraduateCompensationModel' },
+  { filterKey: 'eligibleStudentLevels', meiliField: 'undergraduateEligibleStudentLevels' },
 ];
 
 /**
@@ -1128,6 +1142,7 @@ export async function searchResearchGroupsViaMeili(
       'entityType',
       'undergraduateCurrentAvailability',
       'undergraduateCompensationModel',
+      'undergraduateEligibleStudentLevels',
       'hasDocumentedWayIn',
     ],
   };
@@ -1317,6 +1332,7 @@ export async function searchResearchGroupsViaMeili(
           'entityType',
           'undergraduateCurrentAvailability',
           'undergraduateCompensationModel',
+          'undergraduateEligibleStudentLevels',
           'hasDocumentedWayIn',
         ],
       });
@@ -1704,7 +1720,8 @@ const searchResearchGroupsViaMongoFallback = async (
       | 'researchAreas'
       | 'entityType'
       | 'currentAvailability'
-      | 'compensation',
+      | 'compensation'
+      | 'eligibleStudentLevels',
     field: string,
   ): Promise<Record<string, number>> => {
     if (!filters[filterKey]?.length) return facetCounts(visibleCandidates, field);
@@ -1743,6 +1760,7 @@ const searchResearchGroupsViaMongoFallback = async (
     entityTypeFacetCounts,
     currentAvailabilityFacetCounts,
     compensationFacetCounts,
+    eligibleStudentLevelsFacetCounts,
     documentedWayInCounts,
   ] = await Promise.all([
     disjunctiveMongoFacetCounts('school', 'schools'),
@@ -1751,6 +1769,7 @@ const searchResearchGroupsViaMongoFallback = async (
     disjunctiveMongoFacetCounts('entityType', 'entityType'),
     disjunctiveMongoFacetCounts('currentAvailability', 'undergraduateCurrentAvailability'),
     disjunctiveMongoFacetCounts('compensation', 'undergraduateCompensationModel'),
+    disjunctiveMongoFacetCounts('eligibleStudentLevels', 'undergraduateEligibleStudentLevels'),
     documentedWayInFacetCounts(),
   ]);
   const facetDistribution = {
@@ -1760,6 +1779,7 @@ const searchResearchGroupsViaMongoFallback = async (
     entityType: entityTypeFacetCounts,
     undergraduateCurrentAvailability: currentAvailabilityFacetCounts,
     undergraduateCompensationModel: compensationFacetCounts,
+    undergraduateEligibleStudentLevels: eligibleStudentLevelsFacetCounts,
     hasDocumentedWayIn: documentedWayInCounts,
   };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
