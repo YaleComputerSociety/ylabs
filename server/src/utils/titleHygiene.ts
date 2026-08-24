@@ -132,6 +132,42 @@ export function hasPhoneContactFragment(value: string | null | undefined): boole
   return phoneLabelPattern.test(text) || phoneNumberPattern.test(text);
 }
 
+const SECTION_LABEL_TITLES = new Set([
+  'research faculty',
+  'faculty research',
+  'faculty directory',
+  'faculty staff',
+  'faculty',
+  'directory',
+  'people',
+  'our people',
+  'our faculty',
+]);
+
+function normalizeSectionLabel(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[/&|,·•]+/g, ' ')
+    .replace(/\band\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * A site section, breadcrumb, or directory-index label lifted whole into the
+ * title (#1257: engineering.yale.edu faculty-directory pages yielding the
+ * page's own "Research / Faculty" section label as the PI title). These slip
+ * past `isNavMenuChromeTitle` because they carry no concatenated word runs,
+ * chained separators, or two-plus nav phrases. Matched by exact whole-string
+ * equality after normalizing separators (`/`, `&`, "and") and case, so a real
+ * role string ("Professor of Computer Science") never collides.
+ */
+export function isSectionLabelTitle(value: string | null | undefined): boolean {
+  const text = normalizeTitleWhitespace(value);
+  if (!text) return false;
+  return SECTION_LABEL_TITLES.has(normalizeSectionLabel(text));
+}
+
 function sentenceBoundaryCount(text: string): number {
   return (text.match(/[a-z]{4,}[.!?]["')\]]?\s+[A-Z]/g) || []).length;
 }
@@ -158,16 +194,18 @@ export const MAX_PERSON_TITLE_LENGTH = 140;
  * Fail-closed sanitizer for the short person `title` field, applied at both the
  * scraper write path and the member/PI card render path (#708). Returns a
  * normalized title, or undefined when the candidate is navigation/menu chrome,
- * a raw email, a street-address fragment, a phone/fax contact fragment,
- * multi-sentence bio prose, or simply longer than a role string ever runs
- * (#740's over-140-char scraped-junk heuristic), so a corrupted title never
- * lands in storage nor renders from stale data (#708, #740).
+ * a site section/directory label (#1257), a raw email, a street-address
+ * fragment, a phone/fax contact fragment, multi-sentence bio prose, or simply
+ * longer than a role string ever runs (#740's over-140-char scraped-junk
+ * heuristic), so a corrupted title never lands in storage nor renders from
+ * stale data (#708, #740, #1257).
  */
 export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
   const text = normalizeTitleWhitespace(value);
   if (!text) return undefined;
   if (text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
   if (isNavMenuChromeTitle(text)) return undefined;
+  if (isSectionLabelTitle(text)) return undefined;
   if (hasRawEmailAddress(text)) return undefined;
   if (hasStreetAddressFragment(text)) return undefined;
   if (hasPhoneContactFragment(text)) return undefined;

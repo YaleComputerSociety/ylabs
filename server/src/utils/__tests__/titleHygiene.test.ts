@@ -6,6 +6,7 @@ import {
   hasStreetAddressFragment,
   isBioProseTitle,
   isNavMenuChromeTitle,
+  isSectionLabelTitle,
   normalizeTitleWhitespace,
   sanitizePersonTitle,
 } from '../titleHygiene';
@@ -112,6 +113,33 @@ describe('hasPhoneContactFragment', () => {
   });
 });
 
+describe('isSectionLabelTitle', () => {
+  it('rejects the issue #1257 "Research / Faculty" section label', () => {
+    expect(isSectionLabelTitle('Research / Faculty')).toBe(true);
+  });
+
+  it('rejects ampersand and word-joined variants of the same label', () => {
+    expect(isSectionLabelTitle('Research & Faculty')).toBe(true);
+    expect(isSectionLabelTitle('Research and Faculty')).toBe(true);
+  });
+
+  it('rejects a directory-index label', () => {
+    expect(isSectionLabelTitle('Faculty Directory')).toBe(true);
+    expect(isSectionLabelTitle('Faculty')).toBe(true);
+  });
+
+  it('keeps a real job title that merely contains the word faculty', () => {
+    expect(isSectionLabelTitle('Faculty Director of the Graduate Program')).toBe(false);
+    expect(isSectionLabelTitle('Professor of Computer Science')).toBe(false);
+  });
+
+  it('treats empty and nullish values as not a section label', () => {
+    expect(isSectionLabelTitle('')).toBe(false);
+    expect(isSectionLabelTitle(null)).toBe(false);
+    expect(isSectionLabelTitle(undefined)).toBe(false);
+  });
+});
+
 describe('isBioProseTitle', () => {
   it('rejects a multi-sentence bio dumped into the title', () => {
     expect(
@@ -155,6 +183,11 @@ describe('sanitizePersonTitle', () => {
         'Graduate ProgramUndergraduate MajorResearch & CollectionsMedia GalleryPeople',
       ),
     ).toBeUndefined();
+  });
+
+  it('drops the issue #1257 "Research / Faculty" section label', () => {
+    expect(sanitizePersonTitle('Research / Faculty')).toBeUndefined();
+    expect(sanitizePersonTitle('Faculty Directory')).toBeUndefined();
   });
 
   it('drops a title with a street address fragment', () => {
