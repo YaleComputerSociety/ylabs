@@ -1,0 +1,75 @@
+import { describe, expect, it } from 'vitest';
+import {
+  dropDomainIncoherentUnsourcedResearchAreas,
+  hasResearchAreaProvenance,
+} from '../researchAreaDomainCoherence';
+
+describe('hasResearchAreaProvenance', () => {
+  it('is false when fieldProvenance is missing or has no researchAreas entry', () => {
+    expect(hasResearchAreaProvenance(undefined)).toBe(false);
+    expect(hasResearchAreaProvenance({})).toBe(false);
+    expect(hasResearchAreaProvenance({ fullDescription: { sourceUrl: 'x' } })).toBe(false);
+  });
+
+  it('is true when a researchAreas provenance entry is recorded', () => {
+    expect(
+      hasResearchAreaProvenance({ researchAreas: { sourceUrl: 'https://x.yale.edu', confidence: 0.7 } }),
+    ).toBe(true);
+  });
+});
+
+describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
+  const wgssContext = {
+    name: 'Joseph Fischel',
+    departments: ["Women's, Gender, and Sexuality Studies"],
+    fullDescription:
+      'Joseph Fischel studies queer theory, political theory, and the politics of sexual consent.',
+    shortDescription: 'Scholar of queer theory and political theory.',
+  };
+
+  it('drops every chip when the entity has no fieldProvenance and no chip shares vocabulary with its own text (full-graft signature)', () => {
+    const areas = [
+      'Parallel Computing and Optimization Techniques',
+      'Distributed and Parallel Computing Systems',
+      'Embedded Systems Design Techniques',
+      'Algorithms and Data Compression',
+      'VLSI and FPGA Design Techniques',
+    ];
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toEqual([]);
+  });
+
+  it('keeps a chip that overlaps the entity\'s own vocabulary and drops only the alien chips', () => {
+    const campbellContext = {
+      name: 'Jill Campbell',
+      departments: ['English'],
+      fullDescription:
+        'Jill Campbell studies eighteenth-century British literature and the novel, with an emphasis on gender and fiction.',
+    };
+    const areas = ['Eighteenth-Century British Literature', 'Health Policy', 'Epidemiology'];
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, campbellContext)).toEqual([
+      'Eighteenth-Century British Literature',
+    ]);
+  });
+
+  it('leaves chips untouched when fieldProvenance.researchAreas is recorded, regardless of overlap', () => {
+    const areas = ['Parallel Computing and Optimization Techniques'];
+    const provenance = { researchAreas: { sourceUrl: 'https://wgss.yale.edu/people/joseph-fischel' } };
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, provenance, wgssContext)).toBe(areas);
+  });
+
+  it('never drops a generic single-word canonical area name', () => {
+    const areas = ['Law'];
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toEqual(['Law']);
+  });
+
+  it('leaves areas untouched when the entity has too little of its own text to judge against', () => {
+    const areas = ['Parallel Computing and Optimization Techniques'];
+    const sparseContext = { name: 'X Y', departments: [] };
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, sparseContext)).toBe(areas);
+  });
+
+  it('returns the same array reference when nothing changes', () => {
+    const areas = ['Queer Theory'];
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toBe(areas);
+  });
+});
