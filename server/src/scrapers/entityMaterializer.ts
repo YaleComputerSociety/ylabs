@@ -159,6 +159,31 @@ export interface MaterializedShortDescriptionInput {
   synthesize: (fullDescription: string) => Promise<string>;
 }
 
+/**
+ * Whether a freshly resolved `shortDescription` observation is fit to write
+ * directly, rather than a truncated or boilerplate scrape artifact. The
+ * generic per-field resolver loop below otherwise writes any winning
+ * observation value verbatim with no quality check at all - quality gating
+ * only ever ran inside the dedicated re-derivation step, and only to decide
+ * whether to *replace* an already-written value, never to validate what got
+ * written in the first place. A live example: a `lab-microsite-description-llm`
+ * observation for the Impulsivity Program was itself truncated mid-sentence
+ * ("...and how these relate to"), and without this check it would have won
+ * the confidence tie and overwritten the served short outright (issue #1595).
+ * Rejecting here just skips the field for this pass - it does not clear an
+ * existing value - so the dedicated re-derivation step below still runs
+ * against whatever shortDescription is already on the entity.
+ */
+function resolvedShortDescriptionCandidateIsUsable(
+  candidate: unknown,
+  fullDescription: unknown,
+  isProgramLike: boolean,
+): boolean {
+  if (typeof candidate !== 'string' || !candidate.trim()) return false;
+  const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
+  return shortQuality(candidate, fullDescription).isUseful;
+}
+
 export async function resolveMaterializedShortDescription(
   input: MaterializedShortDescriptionInput,
 ): Promise<string | null> {
@@ -2567,6 +2592,20 @@ export async function materializeEntity(
     if (
       entityType === 'user' &&
       shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)
+    ) {
+      continue;
+    }
+    if (
+      isResearchEntityObservationType(entityType) &&
+      field === 'shortDescription' &&
+      !resolvedShortDescriptionCandidateIsUsable(
+        nextValue,
+        resolved.fullDescription?.value ?? entityDoc?.fullDescription,
+        isProgramLikeResearchEntity({
+          kind: resolved.kind?.value ?? entityDoc?.kind,
+          entityType: resolved.entityType?.value ?? entityDoc?.entityType,
+        }),
+      )
     ) {
       continue;
     }

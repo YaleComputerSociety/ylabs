@@ -230,4 +230,38 @@ describe('materializeEntity sanitizes description text at the write step (#670/#
     expect(calls).toEqual([GROUP_PROSE_LAB_FULL]);
     expect(persisted?.shortDescription).toBe(GROUP_PROSE_CARD);
   });
+
+  it('never lets a truncated shortDescription observation win the confidence tie outright (#1595)', async () => {
+    const GOOD_SHORT =
+      'Studies how immune cells respond to cancer immunotherapy using single-cell sequencing.';
+    const TRUNCATED_OBSERVATION_VALUE =
+      'Our interdisciplinary research program brings together computational biologists, clinicians, and data scientists who study how immune cell populations respond to';
+
+    await seedEntity({ fullDescription: CLEAN_FULL, shortDescription: GOOD_SHORT });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: 'desc-sanitize-fixture',
+      field: 'shortDescription',
+      value: TRUNCATED_OBSERVATION_VALUE,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://example.edu/lab/immunotherapy/',
+      confidence: 0.82,
+      observedAt: new Date('2026-06-01T00:00:00Z'),
+      superseded: false,
+    });
+
+    await materializeEntity(
+      'researchEntity',
+      { entityKey: 'desc-sanitize-fixture' },
+      { synthesizeCardDescription: capturingSynthesizer([]) },
+    );
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'desc-sanitize-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.shortDescription).toBe(GOOD_SHORT);
+    expect(persisted?.shortDescription).not.toBe(TRUNCATED_OBSERVATION_VALUE);
+  });
 });
