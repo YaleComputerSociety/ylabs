@@ -43,6 +43,7 @@ export type DescriptionQualityFlag =
   | 'malformed-generated-text'
   | 'non-self-contained'
   | 'non-offer-clause'
+  | 'administrative-chrome'
   | 'topic-label-list'
   | 'full-not-useful';
 
@@ -80,7 +81,7 @@ const sentenceList = (value: string): string[] => {
     .replace(/(\d)\.(?=\d)/g, `$1${INITIAL_DOT_TOKEN}`)
     .replace(/\bU\.S\./g, `U${INITIAL_DOT_TOKEN}S${INITIAL_DOT_TOKEN}`)
     .replace(/\bPh\.D\./g, `Ph${INITIAL_DOT_TOKEN}D${INITIAL_DOT_TOKEN}`)
-    .replace(/\b(Dr|Prof|Mr|Mrs|Ms)\./g, `$1${INITIAL_DOT_TOKEN}`)
+    .replace(/\b(Dr|Prof|Mr|Mrs|Ms|St)\./g, `$1${INITIAL_DOT_TOKEN}`)
     .replace(
       /\b([A-Z])\.(?=\s+[A-Z][A-Za-z.'-]+)/g,
       `$1${INITIAL_DOT_TOKEN}`,
@@ -999,6 +1000,49 @@ const isNonOfferProgramCardClause = (value: string): boolean =>
   PROGRAM_CARD_ADMIN_REVIEW_CLAUSE_PATTERN.test(value) ||
   PROGRAM_CARD_LOGISTICS_CLAUSE_PATTERN.test(value);
 
+const PROGRAM_CARD_SELF_REFERENTIAL_LISTING_PATTERN =
+  /\bis\s+listed\s+by\s+(?:the\s+)?[\p{L}][\p{L}\s]*\b/iu;
+
+const PROGRAM_CARD_BARE_APPLICATION_ANNOUNCEMENT_ELIGIBILITY_PATTERN =
+  /\b(?:from|for)\s+(?:graduate|undergraduate|current|Yale|students)\b/i;
+
+const hasBareProgramCardApplicationAnnouncementTail = (value: string): boolean => {
+  const match = value.match(/\binvites\s+applications\s+(?:to|for)\s+(?:the\s+)?(.+?)[.!?]?\s*$/i);
+  if (!match) return false;
+  return !PROGRAM_CARD_BARE_APPLICATION_ANNOUNCEMENT_ELIGIBILITY_PATTERN.test(match[1]);
+};
+
+/**
+ * Administrative-announcement chrome (issue #1653): a sentence that only
+ * names the announcing body and the award itself, with no offer/eligibility
+ * content of its own - "X is listed by the Y Center" or "X invites
+ * applications for the Y competition" with nothing else. Distinct from
+ * `isNonOfferProgramCardClause` (#1596), which rejects an otherwise-complete
+ * sentence for describing exclusions/review/logistics instead of the offer;
+ * this rejects a sentence that never gets to any content at all. A sentence
+ * that names an "invites applications" opener but also states who is
+ * eligible (e.g. "... from graduate and undergraduate students whose
+ * research focuses on ...") is left alone - it is administratively voiced
+ * but not vacuous.
+ */
+const isProgramCardAdministrativeAnnouncementChrome = (value: string): boolean =>
+  PROGRAM_CARD_SELF_REFERENTIAL_LISTING_PATTERN.test(value) ||
+  hasBareProgramCardApplicationAnnouncementTail(value);
+
+const STRAY_FOOTNOTE_MARK_PATTERN = /\*+/g;
+
+const stripStrayFootnoteMarks = (value: string): string =>
+  value.replace(STRAY_FOOTNOTE_MARK_PATTERN, '').replace(/\s{2,}/g, ' ').trim();
+
+const STALE_ABSOLUTE_YEAR_SEASON_PATTERN =
+  /\b(?:in|during)\s+the\s+(fall|winter|spring|summer)\s+of\s+(?:19|20)\d{2}\b/gi;
+
+const relativizeStaleAbsoluteYearSeasonPhrase = (value: string): string =>
+  value.replace(STALE_ABSOLUTE_YEAR_SEASON_PATTERN, 'each $1');
+
+const normalizeProgramCardCandidateSentence = (value: string): string =>
+  relativizeStaleAbsoluteYearSeasonPhrase(stripStrayFootnoteMarks(textValue(value)));
+
 /**
  * Program-typed research entities (fellowships, RA programs) describe what
  * they offer and how to apply, not a lab-style "Studies X" research focus, so
@@ -1040,6 +1084,7 @@ export function programCardShortDescriptionQuality(
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isNonOfferProgramCardClause(text)) flags.push('non-offer-clause');
+  if (text && isProgramCardAdministrativeAnnouncementChrome(text)) flags.push('administrative-chrome');
   if (!full) flags.push('full-not-useful');
 
   return {
@@ -1062,10 +1107,11 @@ export function deriveProgramCardShortDescription(fullDescription: unknown): str
   const sentences = sentenceList(full);
   if (sentences.length === 0) return '';
   if (sentences.length === 1) {
-    return programCardShortDescriptionQuality(full, full).isUseful ? full : '';
+    const candidate = normalizeProgramCardCandidateSentence(full);
+    return programCardShortDescriptionQuality(candidate, full).isUseful ? candidate : '';
   }
   for (const sentence of sentences) {
-    const candidate = textValue(sentence);
+    const candidate = normalizeProgramCardCandidateSentence(sentence);
     if (programCardShortDescriptionQuality(candidate, full).isUseful) return candidate;
   }
   return '';
