@@ -293,6 +293,12 @@ const GRANT_ABSTRACT_FUNDING_DISCLAIMER =
 const normalizeAbstractWhitespace = (value: string): string =>
   value.replace(/\s+/g, ' ').trim();
 
+const SENTENCE_SPLIT = /(?<=[.!?])\s+/;
+
+function splitIntoSentences(text: string): string[] {
+  return text.split(SENTENCE_SPLIT).filter(Boolean);
+}
+
 function stripGrantAbstractHeaders(value: string): string {
   let out = value;
   for (let i = 0; i < 4; i += 1) {
@@ -304,7 +310,7 @@ function stripGrantAbstractHeaders(value: string): string {
 }
 
 function firstSentencesWithinBudget(text: string, maxChars: number): string {
-  const sentences = text.split(/(?<=[.!?])\s+/);
+  const sentences = splitIntoSentences(text);
   let acc = '';
   for (const sentence of sentences) {
     if (!acc) {
@@ -318,21 +324,57 @@ function firstSentencesWithinBudget(text: string, maxChars: number): string {
   return acc.trim();
 }
 
+// A grant abstract conventionally opens with disease-burden/background framing
+// before reaching what the lab actually does. That framing is content-free for a
+// student deciding whether to reach out, and can even name a different disease
+// than the entity's own topic chips, so it must never survive as the served
+// description (issue #1739).
+const SIGNIFICANCE_OPENER_PATTERNS: RegExp[] = [
+  /\b(?:is|are|remains?)\s+(?:the\s+|an?\s+)?(?:\w+\s+){0,2}(?:leading|major|significant|common|most\s+common)\s+(?:cause|source)\s+of\b/i,
+  /\bis\s+at\s+the\s+forefront\s+of\b/i,
+  /^(?:nearly|over|more\s+than|approximately)\s+[\d,.]+\s*(?:million\s+|thousand\s+)?(?:persons?|people|individuals?|children|adults|patients)\b/i,
+  /\bstruggle[sd]?\s+more\s+than\s+any\s+other\b/i,
+  /\bis\s+an?\s+common\s+event\s+in\s+the\s+lives\s+of\b/i,
+  /\bis\s+the\s+most\s+common\b.*\b(?:annually|per\s+year|each\s+year)\b/i,
+];
+
+function isGrantSignificanceOpener(sentence: string): boolean {
+  return SIGNIFICANCE_OPENER_PATTERNS.some((pattern) => pattern.test(sentence));
+}
+
+function stripLeadingSignificanceSentences(text: string): string {
+  const sentences = splitIntoSentences(text);
+  let start = 0;
+  while (start < sentences.length && isGrantSignificanceOpener(sentences[start])) {
+    start += 1;
+  }
+  return sentences.slice(start).join(' ');
+}
+
+const PDF_HYPHENATION_ARTIFACT = /([a-z])-\s+([a-z])/g;
+
+function stripPdfHyphenationArtifacts(text: string): string {
+  return text.replace(PDF_HYPHENATION_ARTIFACT, '$1-$2');
+}
+
 /**
  * Derive a source-backed lab description from a funded-project abstract. Strips
  * RePORTER boilerplate headers ("PROJECT SUMMARY/ABSTRACT", "OVERALL:",
- * numbering) and returns sentence-bounded lead prose. Returns '' when the
- * abstract is empty or a "No Abstract" placeholder so the scraper emits nothing
- * rather than junk (issue #1418).
+ * numbering), PDF-extraction hyphenation artifacts, and leading disease-burden/
+ * significance framing, then returns sentence-bounded lead prose. Returns '' when
+ * the abstract is empty, a "No Abstract" placeholder, or nothing but significance
+ * framing, so the scraper emits nothing rather than junk (issues #1418, #1739).
  */
 export function grantAbstractToDescription(abstract: string | undefined | null): string {
-  const normalized = normalizeAbstractWhitespace(String(abstract || ''));
+  const normalized = stripPdfHyphenationArtifacts(normalizeAbstractWhitespace(String(abstract || '')));
   if (!normalized || GRANT_ABSTRACT_UNAVAILABLE.test(normalized)) return '';
   const withoutInlineMarker = normalized.replace(GRANT_ABSTRACT_INLINE_MARKER, '');
   const withoutHeaders = stripGrantAbstractHeaders(withoutInlineMarker);
   const withoutFundingDisclaimer = withoutHeaders.replace(GRANT_ABSTRACT_FUNDING_DISCLAIMER, '');
+  const withoutSignificanceOpener = stripLeadingSignificanceSentences(withoutFundingDisclaimer);
+  if (!withoutSignificanceOpener) return '';
   return normalizeAbstractWhitespace(
-    firstSentencesWithinBudget(withoutFundingDisclaimer, GRANT_DESCRIPTION_MAX_CHARS),
+    firstSentencesWithinBudget(withoutSignificanceOpener, GRANT_DESCRIPTION_MAX_CHARS),
   );
 }
 

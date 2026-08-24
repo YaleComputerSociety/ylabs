@@ -614,6 +614,56 @@ describe('grantAbstractToDescription', () => {
     );
     expect(out).toBe('Plant-pathogenic microorganisms are ubiquitous in soils.');
   });
+
+  it('drops a leading disease-burden significance opener and keeps the lab-specific sentence after it', () => {
+    const out = grantAbstractToDescription(
+      'Respiratory syncytial virus (RSV) is a significant source of morbidity and mortality in the pediatric population. This project develops a maternal RSV vaccine to prevent severe infection in infants.',
+    );
+    expect(out).toBe('This project develops a maternal RSV vaccine to prevent severe infection in infants.');
+  });
+
+  it('returns empty when the whole abstract is a significance/background opener with nothing else', () => {
+    expect(
+      grantAbstractToDescription(
+        'Adolescents with type 1 diabetes struggle more than any other age group to meet recommended glycemic targets.',
+      ),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription('Excessive alcohol intake is the third leading cause of preventable death in the US.'),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription('The United States is at the forefront of the global obesity epidemic.'),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription(
+        'Percutaneous coronary intervention (PCI) is the most common cardiac procedure with over 650,000 PCI performed annually in the U.S.',
+      ),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription(
+        'Major surgery is a common event in the lives of community-living older persons, with a 5-year cumulative incidence of 13.8%.',
+      ),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription(
+        'Nearly 2 million persons aged 65 years or older are admitted to an intensive care unit each year.',
+      ),
+    ).toBe('');
+  });
+
+  it('drops multiple consecutive significance/background sentences before the research description', () => {
+    const out = grantAbstractToDescription(
+      'Major surgery is a common event in the lives of community-living older persons. The United States is at the forefront of the global obesity epidemic. This study characterizes recovery trajectories after major abdominal surgery in older adults.',
+    );
+    expect(out).toBe('This study characterizes recovery trajectories after major abdominal surgery in older adults.');
+  });
+
+  it('collapses a PDF line-wrap hyphenation artifact without dropping a genuine hyphenated compound', () => {
+    const out = grantAbstractToDescription(
+      'This study examines alcohol- associated liver disease with a 5-year cumulative inci- dence of 13.8%.',
+    );
+    expect(out).toBe('This study examines alcohol-associated liver disease with a 5-year cumulative inci-dence of 13.8%.');
+  });
 });
 
 describe('labDescriptionFromRecentGrants (non-research grant guard)', () => {
