@@ -1,6 +1,6 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import PlanningOverview from '../PlanningOverview';
 
@@ -80,5 +80,45 @@ describe('PlanningOverview open-homes rollup', () => {
     renderOverview({ savedResearchCount: 3, savedOpenCount: 0, savedFellowshipCount: 0 });
 
     expect(screen.queryByText(/currently open to undergraduates/)).toBeNull();
+  });
+});
+
+describe('PlanningOverview saved-search new-match signal', () => {
+  it('surfaces the aggregate new-match count and routes to saved searches on click', () => {
+    const onViewSavedSearches = vi.fn();
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 0,
+      savedSearchNewMatchCount: 2,
+      onViewSavedSearches,
+    });
+
+    const cta = screen.getByRole('button', { name: '2 new matches for your saved searches' });
+    fireEvent.click(cta);
+    expect(onViewSavedSearches).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses singular phrasing for a single new match', () => {
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 0,
+      savedSearchNewMatchCount: 1,
+      onViewSavedSearches: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole('button', { name: '1 new match for your saved searches' }),
+    ).toBeTruthy();
+  });
+
+  it('stays silent when there are no new saved-search matches', () => {
+    renderOverview({
+      savedResearchCount: 3,
+      savedFellowshipCount: 0,
+      savedSearchNewMatchCount: 0,
+      onViewSavedSearches: vi.fn(),
+    });
+
+    expect(screen.queryByText(/new matches for your saved searches/)).toBeNull();
   });
 });

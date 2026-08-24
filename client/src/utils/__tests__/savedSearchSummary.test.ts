@@ -6,6 +6,7 @@ import {
   savedSearchFilterChips,
   savedSearchSummaryText,
   savedSearchTargetPath,
+  totalNewSavedSearchMatches,
 } from '../savedSearchSummary';
 
 const emptyFilters = (): SavedSearchFilters => ({
@@ -86,5 +87,23 @@ describe('savedSearchTargetPath', () => {
       '/research?q=ml&undergrad=1',
     );
     expect(savedSearchTargetPath(view({ urlParams: '' }))).toBe('/research');
+  });
+});
+
+describe('totalNewSavedSearchMatches', () => {
+  it('sums new-match counts across saved searches', () => {
+    expect(
+      totalNewSavedSearchMatches([view({ newMatchCount: 2 }), view({ newMatchCount: 3 })]),
+    ).toBe(5);
+  });
+
+  it('ignores null (uncomputable) and negative counts', () => {
+    expect(
+      totalNewSavedSearchMatches([view({ newMatchCount: null }), view({ newMatchCount: -1 })]),
+    ).toBe(0);
+  });
+
+  it('returns zero for no saved searches', () => {
+    expect(totalNewSavedSearchMatches([])).toBe(0);
   });
 });
