@@ -4,6 +4,15 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-23: External/National Programs Are Out Of Scope For Discovery
+
+Yale Research stays a Yale-focused directory: its north star is broad, accurate coverage of Yale research homes and Yale undergraduate access, not a national fellowship or REU aggregator.
+External and non-Yale awards (NSF REU sites at peer institutions, NIH summer programs, Goldwater, Beckman, Churchill, and similar) are out of scope for `/fellowships` and `/programs`, resolving the Tier 3 deferral that closed issue #675 left open.
+The only authoritative fellowship/program acquisition lane remains the Yale-internal `yale-college-fellowships-office` source.
+The orphaned `external-fellowship-llm-scraper` seed (issue #1280) had no scraper class, no orchestrator registration, and no coverage-registry entry, so it produced dead config and dishonest coverage reporting; it is retired rather than implemented.
+Coverage state is kept honest by an invariant test: every active seeded source must carry a `sourceCoverageRegistry` entry, so a future orphaned seed fails CI instead of silently accumulating.
+Revisit only through a deliberate, separately tracked product decision that also defines a focused eligibility boundary so the Yale corpus is not diluted.
+
 ## 2026-08-22: Consolidate Research Model Documentation Into research-model.md
 
 The landed decisions from `research-model-refactor.md` (access-boolean retirement, research-area canonicalization option A, `OrgUnit`/`TaxonomyTerm` scope, `FacultyMember`/`Paper`/`PaperAuthor` retirement, canonical `ResearchPlan`, and the continuous canonical materializer write path) are now current-state facts in [`research-model.md`](./research-model.md), which is the single source of truth for collection shapes going forward.

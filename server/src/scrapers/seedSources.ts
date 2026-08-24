@@ -294,14 +294,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'daily-during-cycle',
   },
   {
-    name: 'external-fellowship-llm-scraper',
-    displayName: 'External fellowship LLM scraper',
-    description: 'LLM extracts external programs (NSF REU, NIH, Goldwater, Beckman, etc.).',
-    baseUrl: '',
-    defaultWeight: 0.6,
-    cadence: 'weekly',
-  },
-  {
     name: 'nih-reporter',
     displayName: 'NIH RePORTER',
     description: 'Pulls active NIH grants by Yale PI to identify funded labs and recent activity.',
@@ -377,6 +369,7 @@ export const RETIRED_SOURCE_NAMES = [
   'apify-google-scholar-bootstrap',
   'apify-google-scholar',
   'student-decision-llm',
+  'external-fellowship-llm-scraper',
   ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
 ];
 
