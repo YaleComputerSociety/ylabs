@@ -18,9 +18,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   CentersInstitutesScraper,
+  DEFAULT_CENTER_CONFIGS,
   nodeTeaserPersonExtractor,
   wuTsaiExtractor,
   yaleCancerCenterExtractor,
+  yighAffiliatedFacultyExtractor,
   viewsFieldNameExtractor,
   ispsExtractor,
   ycgaExtractor,
@@ -104,6 +106,25 @@ const CANCER_HTML = `
     <a href="/cancer/profile/sarah-bell/" class="hyperlink">Bell, Sarah</a>
   </div>
   <a href="/cancer/about/contact" class="hyperlink">Contact Us</a>
+</body></html>
+`;
+
+/** Yale Institute for Global Health affiliated-faculty directory, grouped by section. */
+const YIGH_HTML = `
+<html><body>
+  <div class="categorized-list-item"><h3 class="categorized-list-item__title">Medicine</h3>
+    <ul class="link-items-list">
+      <li class="link-items-list__item"><div><a href="/yigh/profile/adebowale-adeniran/" class="hyperlink">Adeniran, Adebowale</a></div></li>
+      <li class="link-items-list__item"><div><a href="/yigh/profile/frederick-altice/" class="hyperlink">Altice, Frederick (Rick) L.</a></div></li>
+      <li class="link-items-list__item"><div><a href="/yigh/profile/adebowale-adeniran/" class="hyperlink">Adeniran, Adebowale</a></div></li>
+    </ul>
+  </div>
+  <div class="categorized-list-item"><h3 class="categorized-list-item__title">Nursing</h3>
+    <ul class="link-items-list">
+      <li class="link-items-list__item"><div><a href="/yigh/profile/sarah-bell/" class="hyperlink">Bell, Sarah</a></div></li>
+    </ul>
+  </div>
+  <a href="/yigh/about/contact" class="hyperlink">Contact Us</a>
 </body></html>
 `;
 
@@ -282,6 +303,33 @@ describe('yaleCancerCenterExtractor', () => {
     expect(out.members[2].name).toBe('Sarah Bell');
     // dedupe
     expect(out.members.filter((m) => m.name === 'Fuad Abujarad')).toHaveLength(1);
+  });
+});
+
+describe('yighAffiliatedFacultyExtractor', () => {
+  it('flips Last, First names across sections, dedupes by href, and ignores non-profile links', () => {
+    const out = yighAffiliatedFacultyExtractor(YIGH_HTML, {
+      pageUrl: 'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
+    });
+    expect(out.members).toHaveLength(3);
+    expect(out.members[0]).toMatchObject({
+      name: 'Adebowale Adeniran',
+      profileUrl: 'https://medicine.yale.edu/yigh/profile/adebowale-adeniran/',
+      role: 'affiliated',
+    });
+    expect(out.members[1].name).toBe('Frederick (Rick) L. Altice');
+    expect(out.members[2].name).toBe('Sarah Bell');
+    expect(out.members.filter((m) => m.name === 'Adebowale Adeniran')).toHaveLength(1);
+  });
+
+  it('is wired into the default center configs', () => {
+    const yigh = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'yigh');
+    expect(yigh).toBeDefined();
+    expect(yigh?.url).toBe(
+      'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
+    );
+    expect(yigh?.extractor).toBe(yighAffiliatedFacultyExtractor);
+    expect(yigh?.paginated).toBeFalsy();
   });
 });
 

@@ -1062,7 +1062,8 @@ function personNameFromProfileHtml($: cheerio.CheerioAPI): string | undefined {
  * Yale School of Architecture faculty grid. Cards expose only a headshot linking
  * `/faculty/<id>-<name-slug>`; the readable name is on the profile page, so this
  * emits a slug placeholder plus `namePlaceholder` and lets enrichment fill the
- * real name. The grid lazy-loads, so a static fetch covers the first page only.
+ * real name. The JS "infinite load" grid degrades to server-rendered `?page=N`
+ * pages, so the paginated config walks the whole roster statically.
  */
 export const facultyThumbnailExtractor: FacultyExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
@@ -1665,7 +1666,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptName: 'Architecture',
     schoolName: 'Yale School of Architecture',
     url: 'https://www.architecture.yale.edu/faculty',
-    paginated: false,
+    paginated: true,
     extractor: facultyThumbnailExtractor,
   },
 ];

@@ -286,6 +286,17 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     approxMemberCount: 22,
   },
   {
+    url: 'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
+    centerName: 'Yale Institute for Global Health (YIGH)',
+    school: '',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 3,
+    coveredByCenterKey: 'yigh',
+    notes:
+      'Wired in #1334 (Tier B) via yighAffiliatedFacultyExtractor. The affiliated-faculty directory is fully static: it groups faculty into Medicine/Nursing/Public Health/University sections, each rendering a flat list of `<a href="/yigh/profile/<slug>/" class="hyperlink">Last, First</a>` links (names flipped to First Last downstream), so no rendered fetch is needed. Each row links to the member\'s YIGH profile; the roster spans the health schools and enriches cross-department discovery.',
+  },
+  {
     url: 'https://yibs.yale.edu/people/faculty-affiliates',
     centerName: 'Yale Institute for Biospheric Studies (YIBS)',
     school: '',

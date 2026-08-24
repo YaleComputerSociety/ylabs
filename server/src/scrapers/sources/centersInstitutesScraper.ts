@@ -221,6 +221,34 @@ export const yaleCancerCenterExtractor: CenterExtractor = (html, ctx) => {
 };
 
 /**
+ * Yale Institute for Global Health affiliated-faculty directory
+ * (`/yigh/faculty-support-initiative/affiliated-faculty/`), grouped into
+ * Medicine/Nursing/Public Health/University sections, each rendering the same
+ * flat list:
+ *   <a href="/yigh/profile/<slug>/" class="hyperlink">Last, First</a>
+ * Names are "Last, First" — flipped for downstream split. No title in listing.
+ */
+export const yighAffiliatedFacultyExtractor: CenterExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const members: CenterMember[] = [];
+  const seen = new Set<string>();
+  $('a[href^="/yigh/profile/"].hyperlink').each((_i, el) => {
+    const link = $(el);
+    const raw = link.text().trim();
+    if (!raw) return;
+    const href = link.attr('href') || '';
+    if (!href || seen.has(href)) return;
+    seen.add(href);
+    members.push({
+      name: flipLastFirst(raw),
+      profileUrl: absolutize(href, ctx.pageUrl),
+      role: 'affiliated',
+    });
+  });
+  return { members };
+};
+
+/**
  * Drupal "views-field" people-table layout used by both Yale Quantum Institute
  * and Whitney Humanities Center:
  *   <div class="views-field views-field-name">
@@ -781,6 +809,16 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     url: 'https://jackson.yale.edu/centers-initiatives/',
     paginated: false,
     extractor: jacksonCentersExtractor,
+  },
+  {
+    centerKey: 'yigh',
+    centerName: 'Yale Institute for Global Health',
+    schoolName: '',
+    kind: 'institute',
+    departments: ['Medicine', 'Nursing', 'Public Health'],
+    url: 'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
+    paginated: false,
+    extractor: yighAffiliatedFacultyExtractor,
   },
 ];
 

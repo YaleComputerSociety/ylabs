@@ -937,6 +937,15 @@ describe('facultyThumbnailExtractor', () => {
       },
     ]);
   });
+
+  it('is wired to the paginated Architecture faculty grid so the whole roster is walked', () => {
+    const architecture = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'architecture');
+    expect(architecture).toBeDefined();
+    expect(architecture?.url).toBe('https://www.architecture.yale.edu/faculty');
+    expect(architecture?.schoolName).toBe('Yale School of Architecture');
+    expect(architecture?.extractor).toBe(facultyThumbnailExtractor);
+    expect(architecture?.paginated).toBe(true);
+  });
 });
 
 describe('nodePersonCardExtractor', () => {
