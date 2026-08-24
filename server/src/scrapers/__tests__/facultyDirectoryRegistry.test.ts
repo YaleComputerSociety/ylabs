@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   FACULTY_DIRECTORY_REGISTRY,
+  getEvaluatedSkippedDirectories,
+  getFacultyDirectoriesByCategory,
   getFacultyDirectoriesByStatus,
   getFacultyDirectoryGaps,
 } from '../facultyDirectoryRegistry';
 import { getSourceCoverage } from '../sourceCoverageRegistry';
 
 const renderings = new Set(['static', 'js-rendered']);
-const statuses = new Set(['covered', 'partial', 'gap']);
+const statuses = new Set(['covered', 'partial', 'gap', 'evaluated-skipped']);
 
 describe('facultyDirectoryRegistry', () => {
   it('uses unique https directory URLs', () => {
@@ -53,11 +55,45 @@ describe('facultyDirectoryRegistry', () => {
     ).toBe('covered');
   });
 
+  it('models Yale-affiliated independent institutes as an evaluated, non-gap category', () => {
+    const byUrl = new Map(FACULTY_DIRECTORY_REGISTRY.map((entry) => [entry.url, entry]));
+
+    const haskins = byUrl.get('https://haskinslabs.org/people');
+    expect(haskins?.directoryCategory).toBe('affiliated-institute');
+    expect(haskins?.status).toBe('evaluated-skipped');
+    expect(haskins?.coveredBy).toEqual(['ysm-faculty-directory']);
+    expect(haskins?.notes).toMatch(/ysm-faculty-directory/i);
+
+    const pierce = byUrl.get('https://jbpierce.org/directory/');
+    expect(pierce?.directoryCategory).toBe('affiliated-institute');
+    expect(pierce?.status).toBe('evaluated-skipped');
+    expect(pierce?.coveredBy).toBeUndefined();
+    expect(pierce?.notes).toMatch(/no.*research|administrative|board/i);
+
+    const affiliated = getFacultyDirectoriesByCategory('affiliated-institute');
+    expect(affiliated).toHaveLength(2);
+    expect(new Set(affiliated.map((entry) => entry.url))).toEqual(
+      new Set(['https://haskinslabs.org/people', 'https://jbpierce.org/directory/']),
+    );
+  });
+
+  it('keeps evaluated-skipped directories out of the actionable gap queue', () => {
+    const skipped = getEvaluatedSkippedDirectories();
+    expect(skipped.length).toBeGreaterThan(0);
+    for (const entry of skipped) {
+      expect(entry.status).toBe('evaluated-skipped');
+    }
+    const gapUrls = new Set(getFacultyDirectoryGaps().map((entry) => entry.url));
+    for (const entry of skipped) {
+      expect(gapUrls.has(entry.url), entry.url).toBe(false);
+    }
+  });
+
   it('ranks gaps by student impact tier then faculty count', () => {
     const gaps = getFacultyDirectoryGaps();
     expect(gaps.length).toBeGreaterThan(0);
     for (const entry of gaps) {
-      expect(entry.status).not.toBe('covered');
+      expect(entry.status === 'gap' || entry.status === 'partial', entry.url).toBe(true);
     }
     for (let i = 1; i < gaps.length; i += 1) {
       const prev = gaps[i - 1];
