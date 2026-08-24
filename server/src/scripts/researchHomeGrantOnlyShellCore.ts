@@ -6,7 +6,7 @@ import {
 } from './backfillResearchEntityWebsiteUrlsCore';
 
 export const GRANT_OR_IDENTIFIER_SOURCE_URL_REGEX =
-  /(reporter\.nih\.gov|nih\.gov|nsf\.gov|orcid\.org|scholar\.google\.com|doi\.org)/i;
+  /(reporter\.nih\.gov|nih\.gov|nsf\.gov|osti\.gov|orcid\.org|scholar\.google\.com|doi\.org)/i;
 
 function evidenceUrls(entity: WebsiteUrlBackfillCandidateEntity): unknown[] {
   return [entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])];

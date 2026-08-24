@@ -673,6 +673,7 @@ function isReviewedProfileAreaGroup(
     !canonicalSlug.startsWith('nih-pi-') &&
     !canonicalSlug.startsWith('nsf-pi-') &&
     !canonicalSlug.startsWith('federal-pi-') &&
+    !canonicalSlug.startsWith('doe-pi-') &&
     group.duplicateSlugs.every((slug) => String(slug || '').startsWith('faculty-research-area-'))
   );
 }

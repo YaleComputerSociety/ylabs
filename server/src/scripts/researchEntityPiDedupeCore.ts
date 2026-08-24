@@ -145,7 +145,8 @@ function isFundingShellSlug(slug: string | undefined): boolean {
   return (
     value.startsWith('nih-pi-') ||
     value.startsWith('nsf-pi-') ||
-    value.startsWith('federal-pi-')
+    value.startsWith('federal-pi-') ||
+    value.startsWith('doe-pi-')
   );
 }
 
@@ -187,7 +188,9 @@ function isFundingSourceUrl(value: string | undefined): boolean {
       host === 'nsf.gov' ||
       host.endsWith('.nsf.gov') ||
       host === 'usaspending.gov' ||
-      host.endsWith('.usaspending.gov')
+      host.endsWith('.usaspending.gov') ||
+      host === 'osti.gov' ||
+      host.endsWith('.osti.gov')
     );
   } catch {
     return false;

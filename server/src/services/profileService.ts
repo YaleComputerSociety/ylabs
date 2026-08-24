@@ -1358,7 +1358,7 @@ const formatPublicBioList = (values: string[]): string => {
 const TRUSTED_RESEARCH_HOME_BIO_MIN_SUMMARY_LENGTH = 80;
 
 const isGrantOrCitationSourceUrl = (url: unknown): boolean =>
-  /(?:orcid\.org|reporter\.nih\.gov|api\.nsf\.gov|nsf\.gov\/awardsearch|pubmed\.ncbi\.nlm\.nih\.gov|openalex\.org|api\.openalex\.org)/i.test(
+  /(?:orcid\.org|reporter\.nih\.gov|api\.nsf\.gov|nsf\.gov\/awardsearch|osti\.gov|pubmed\.ncbi\.nlm\.nih\.gov|openalex\.org|api\.openalex\.org)/i.test(
     String(url || ''),
   );
 

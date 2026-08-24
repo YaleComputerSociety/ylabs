@@ -60,6 +60,7 @@ const CREDENTIAL_TOKENS = new Set([
 const SLUG_SHELL_PREFIXES = [
   /^nih-pi-/,
   /^nsf-pi-/,
+  /^doe-pi-/,
   /^faculty-research-area-/,
   /^center-/,
 ];

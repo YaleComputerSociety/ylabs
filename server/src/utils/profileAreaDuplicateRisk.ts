@@ -7,7 +7,7 @@ export interface ProfileAreaDuplicateEntity {
   sourceUrls?: string[];
 }
 
-const fundingPortalHosts = ['reporter.nih.gov', 'nih.gov', 'nsf.gov', 'api.nsf.gov'];
+const fundingPortalHosts = ['reporter.nih.gov', 'nih.gov', 'nsf.gov', 'api.nsf.gov', 'osti.gov'];
 
 const nonLabWebsitePathPatterns = [
   /\/profile\//i,
