@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
+import ResearchPeopleModule from '../components/research/ResearchPeopleModule';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchFieldDirectory from '../components/research/ResearchFieldDirectory';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
@@ -2382,6 +2383,8 @@ const Research = () => {
                     {searchError}
                   </div>
                 )}
+
+                <ResearchPeopleModule query={activeSearchRequest?.searchQuery ?? ''} />
 
                 <section className="mt-5">
                   <SectionHeading>Research profiles</SectionHeading>

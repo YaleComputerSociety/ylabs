@@ -16,7 +16,11 @@ import {
   ResearchGroupSearchSort,
   type ResearchGroupSearchOptions,
 } from '../services/researchGroupService';
-import { getResearcherProfileByPublicKey } from '../services/researcherProfileService';
+import {
+  getResearcherProfileById,
+  getResearcherProfileByPublicKey,
+} from '../services/researcherProfileService';
+import { searchResearchersViaMeili } from '../services/researcherSearchService';
 import {
   getAreaResearchPage,
   getFieldResearchPage,
@@ -427,6 +431,44 @@ export const getResearcherProfile = async (request: Request, response: Response)
   } catch (error) {
     console.error('Researcher profile failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Failed to fetch researcher profile' });
+  }
+};
+
+const RESEARCHER_ID_PATTERN = /^[0-9a-f]{24}$/i;
+
+export const getResearcherById = async (request: Request, response: Response) => {
+  try {
+    const rawId = request.params.id;
+    if (!rawId || typeof rawId !== 'string' || !RESEARCHER_ID_PATTERN.test(rawId)) {
+      return response.status(400).json({ error: 'Invalid researcher id' });
+    }
+
+    const profile = await getResearcherProfileById(rawId);
+    if (!profile) {
+      return response.status(404).json({ error: 'Researcher not found' });
+    }
+
+    return response.status(200).json(profile);
+  } catch (error) {
+    console.error('Researcher detail failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Failed to fetch researcher' });
+  }
+};
+
+export const searchResearchers = async (request: Request, response: Response) => {
+  try {
+    const body = (request.body || {}) as { q?: string; limit?: number };
+
+    if (isOversizedSearchRequest(body as Record<string, unknown>)) {
+      return response.status(400).json({ error: 'Invalid search request' });
+    }
+
+    const q = typeof body.q === 'string' ? body.q : '';
+    const researchers = await searchResearchersViaMeili(q, parsePositiveIntegerParam(body.limit, 6));
+    return response.json({ researchers });
+  } catch (error) {
+    console.error('Researcher search failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Search failed' });
   }
 };
 

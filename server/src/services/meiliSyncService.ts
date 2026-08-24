@@ -7,8 +7,12 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import {
   buildResearchEntitySearchIndexDocumentsWithMemberNames,
 } from './researchEntitySearchIndexService';
+import {
+  RESEARCHER_SEARCH_INDEX_NAME,
+  buildResearcherSearchIndexDocumentsWithHomes,
+} from './researcherSearchIndexService';
 
-export type SyncableEntityType = 'listing' | 'researchEntity' | 'paper';
+export type SyncableEntityType = 'listing' | 'researchEntity' | 'paper' | 'researcher';
 type MaybePromise<T> = T | Promise<T>;
 
 interface EntityIndexConfig {
@@ -45,6 +49,12 @@ const ENTITY_REGISTRY: Record<SyncableEntityType, EntityIndexConfig> = {
     indexName: 'papers',
     primaryKey: 'id',
     transform: stripInternalFields,
+  },
+  researcher: {
+    indexName: RESEARCHER_SEARCH_INDEX_NAME,
+    primaryKey: 'id',
+    transform: async (doc: any) => (await buildResearcherSearchIndexDocumentsWithHomes([doc]))[0] || null,
+    transformMany: buildResearcherSearchIndexDocumentsWithHomes,
   },
 };
 

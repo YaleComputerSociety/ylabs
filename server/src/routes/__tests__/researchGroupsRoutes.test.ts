@@ -25,6 +25,12 @@ describe('research group routes', () => {
     expect(routeMethods('/person/:publicKey')).toContain('get');
     expect(routeHandlerNames('/person/:publicKey', 'get')).not.toContain('isAuthenticated');
 
+    expect(routeMethods('/researchers/search')).toContain('post');
+    expect(routeHandlerNames('/researchers/search', 'post')).not.toContain('isAuthenticated');
+
+    expect(routeMethods('/researchers/:id')).toContain('get');
+    expect(routeHandlerNames('/researchers/:id', 'get')).not.toContain('isAuthenticated');
+
     expect(routeMethods('/:slug')).toContain('get');
     expect(routeHandlerNames('/:slug', 'get')).not.toContain('isAuthenticated');
   });

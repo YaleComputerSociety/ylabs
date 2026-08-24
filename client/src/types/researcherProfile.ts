@@ -11,3 +11,17 @@ export interface ResearcherProfilePayload {
   orcidUrl?: string;
   homes: ResearchEntity[];
 }
+
+export interface ResearcherSummary {
+  id: string;
+  publicKey: string;
+  displayName: string;
+  title?: string;
+  primaryDepartment?: string;
+  school?: string;
+  homeCount: number;
+}
+
+export interface ResearcherSearchResponse {
+  researchers?: ResearcherSummary[];
+}

@@ -4,7 +4,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
-import { getResearcherProfileByPublicKey } from '../researcherProfileService';
+import {
+  getResearcherProfileById,
+  getResearcherProfileByPublicKey,
+} from '../researcherProfileService';
 
 const validPublicDescriptions = {
   shortDescription:
@@ -173,5 +176,63 @@ describe('getResearcherProfileByPublicKey', () => {
 
   it('fails closed for an empty key', async () => {
     expect(await getResearcherProfileByPublicKey('')).toBeNull();
+  });
+
+  it('resolves a researcher by its bare id', async () => {
+    const { personId } = await seedMultiHomePerson();
+    const profile = await getResearcherProfileById(personId.toHexString());
+    expect(profile?.publicKey).toBe(personId.toHexString());
+    expect(profile?.homes).toHaveLength(2);
+  });
+
+  it('fails closed for a non-24-hex id', async () => {
+    expect(await getResearcherProfileById('not-an-object-id')).toBeNull();
+  });
+
+  it('renders a researcher with no public homes but a verified official link', async () => {
+    const person = await Researcher.create({
+      displayName: 'Dr Home Free',
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: 'https://medicine.yale.edu/profile/home-free',
+          verifiedAt: new Date('2025-01-01T00:00:00Z'),
+          healthStatus: 'HEALTHY',
+        },
+      ],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    const profile = await getResearcherProfileById(
+      (person._id as mongoose.Types.ObjectId).toHexString(),
+    );
+    expect(profile).not.toBeNull();
+    expect(profile?.homes).toHaveLength(0);
+    expect(profile?.officialProfileUrl).toBe('https://medicine.yale.edu/profile/home-free');
+  });
+
+  it('excludes DEPARTED researchers from public findability', async () => {
+    const person = await Researcher.create({
+      displayName: 'Dr Gone Elsewhere',
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: 'https://medicine.yale.edu/profile/gone',
+          verifiedAt: new Date('2025-01-01T00:00:00Z'),
+          healthStatus: 'HEALTHY',
+        },
+      ],
+      status: 'DEPARTED',
+      archived: false,
+    });
+    const readyId = await seedEntity('gone-ready-lab');
+    await seedRoleAssignment(person._id as mongoose.Types.ObjectId, readyId);
+
+    const profile = await getResearcherProfileById(
+      (person._id as mongoose.Types.ObjectId).toHexString(),
+    );
+    expect(profile).toBeNull();
   });
 });

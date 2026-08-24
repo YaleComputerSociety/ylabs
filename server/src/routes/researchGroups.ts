@@ -43,6 +43,10 @@ router.get(
   entityCorrectionReportController.listMyEntityCorrectionReports,
 );
 
+router.post('/researchers/search', asyncHandler(researchGroupController.searchResearchers));
+
+router.get('/researchers/:id', asyncHandler(researchGroupController.getResearcherById));
+
 router.get('/person/:publicKey', asyncHandler(researchGroupController.getResearcherProfile));
 
 router.get(

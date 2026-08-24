@@ -88,6 +88,10 @@ const App = () => {
                       element={<PublicRoute Component={ResearchPerson} unknownBlocked={true} />}
                     />
                     <Route
+                      path="/researcher/:id"
+                      element={<PublicRoute Component={ResearchPerson} unknownBlocked={true} />}
+                    />
+                    <Route
                       path="/research/department/:slug"
                       element={
                         <PrivateRoute Component={ResearchDepartment} unknownBlocked={true} />

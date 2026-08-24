@@ -29,7 +29,9 @@ const IdentityLink = ({ href, label }: { href: string | undefined; label: string
 };
 
 const ResearchPerson = () => {
-  const { publicKey } = useParams<{ publicKey: string }>();
+  const { publicKey, id } = useParams<{ publicKey?: string; id?: string }>();
+  const personRef = id ?? publicKey;
+  const endpoint = id ? `/research/researchers/${id}` : `/research/person/${publicKey}`;
   const [state, dispatch] = useReducer(
     researchPersonReducer,
     undefined,
@@ -42,14 +44,14 @@ const ResearchPerson = () => {
   useDocumentTitle(payload?.displayName ? `${payload.displayName} - Yale Research` : 'Researcher');
 
   useEffect(() => {
-    if (!publicKey) return;
+    if (!personRef) return;
     const requestId = ++requestIdRef.current;
     const controller = new AbortController();
     fetchAbortRef.current?.abort();
     fetchAbortRef.current = controller;
     dispatch({ type: 'FETCH_START' });
     axios
-      .get<ResearcherProfilePayload>(`/research/person/${publicKey}`, { signal: controller.signal })
+      .get<ResearcherProfilePayload>(endpoint, { signal: controller.signal })
       .then((res) => {
         if (requestId !== requestIdRef.current) return;
         dispatch({ type: 'FETCH_SUCCESS', payload: res.data });
@@ -65,7 +67,7 @@ const ResearchPerson = () => {
     return () => {
       fetchAbortRef.current?.abort();
     };
-  }, [publicKey]);
+  }, [personRef, endpoint]);
 
   const clusters = useMemo(
     () =>
@@ -151,11 +153,17 @@ const ResearchPerson = () => {
           >
             Research homes at Yale
           </h2>
-          <div className="grid grid-cols-1 gap-4">
-            {clusters.map((cluster) => (
-              <ResearchHomeCard key={cluster.id} home={cluster} />
-            ))}
-          </div>
+          {clusters.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4">
+              {clusters.map((cluster) => (
+                <ResearchHomeCard key={cluster.id} home={cluster} />
+              ))}
+            </div>
+          ) : (
+            <p className="yr-panel rounded-md p-4 text-sm text-gray-600">
+              No public research homes are listed for this researcher yet.
+            </p>
+          )}
         </section>
       </div>
     </div>
