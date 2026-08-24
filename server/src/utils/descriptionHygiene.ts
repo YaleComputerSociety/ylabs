@@ -893,19 +893,30 @@ const interrogativeQuestionPattern =
 
 const faqMarkerPattern = /\bfrequently asked questions\b|\bfaqs?\b/i;
 
+const FAQ_DUMP_QUESTION_SENTENCE_RATIO = 0.4;
+
 /**
  * An FAQ / Q&A page dump: a scraped page body whose "prose" is actually a run
  * of question-and-answer pairs. FAQ questions terminate in "?", so they defeat
  * isNavigationDumpText (which bails on real sentence enders); this arm catches
- * them instead. Kept conservative so prose with a single rhetorical question is
- * unaffected.
+ * them instead. The marker-less question arms are additionally gated on the
+ * question-to-sentence ratio: a Q&A dump is *mostly* questions regardless of
+ * its length, while genuine research prose can pose several rhetorical
+ * questions among many declarative sentences without becoming a dump (#1527).
+ * The explicit `faqMarkerPattern` arm is left ungated since an actual "FAQ" /
+ * "Frequently Asked Questions" marker is unambiguous on its own.
  */
 export function isFaqDumpText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   const questionMarks = countMatches(normalized, /\?/g);
-  if (questionMarks >= 3) return true;
-  if (countMatches(normalized, interrogativeQuestionPattern) >= 2) return true;
+  const sentenceEnders = countMatches(normalized, /[.!?](?:\s|$)/g);
+  const questionRatio = sentenceEnders > 0 ? questionMarks / sentenceEnders : 0;
+  const isQuestionDominated = questionRatio >= FAQ_DUMP_QUESTION_SENTENCE_RATIO;
+  if (questionMarks >= 3 && isQuestionDominated) return true;
+  if (countMatches(normalized, interrogativeQuestionPattern) >= 2 && isQuestionDominated) {
+    return true;
+  }
   return faqMarkerPattern.test(normalized) && questionMarks >= 1;
 }
 

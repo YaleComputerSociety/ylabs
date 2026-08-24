@@ -90,6 +90,24 @@ const SYNTHETIC_FORM_DUMP = [
 const SYNTHETIC_PROSE_WITH_QUESTION =
   'What makes this program distinctive? It pairs students with faculty mentors for a summer of original research, and applications open each spring.';
 
+const SYNTHETIC_LONG_PROSE_WITH_RHETORICAL_QUESTIONS = [
+  'Our lab focuses on intergroup social cognition and how children come to understand group boundaries.',
+  'We study how people form beliefs about social categories from early childhood through adulthood.',
+  'A central puzzle motivates much of our work: why do people so readily divide the world into groups?',
+  'What are the origins of this pervasive psychological tendency?',
+  'Do children have natural tendencies to partition the social world in certain ways?',
+  'What role does cultural input play in shaping the intergroup mind?',
+  'We employ experimental and cross-cultural methodologies to address these questions.',
+  'Our studies span many countries and cultural contexts.',
+  'Participants range from toddlers to adults.',
+  'We use behavioral tasks, surveys, and computational modeling.',
+  'Findings from this work inform theories of social cognition and prejudice reduction.',
+  'The lab collaborates with researchers across psychology, anthropology, and education.',
+  'Recent projects have examined how language shapes category learning.',
+  'Other projects examine how novel groups form in laboratory settings.',
+  'Graduate students and postdoctoral researchers lead many of these projects.',
+].join(' ');
+
 const SYNTHETIC_SCRIPT_CHROME =
   '.red {color:red !important;} $(document).ready(function(){ $(".label:contains(\'filled\')").addClass("red"); }); Applications are accepted on a rolling basis each fall. The program pairs students with faculty mentors.';
 
@@ -119,6 +137,13 @@ describe('descriptionHygiene', () => {
     expect(isFormFieldDumpText(SYNTHETIC_PROSE_WITH_QUESTION)).toBe(false);
     expect(sanitizeCatalogDescription(SYNTHETIC_PROSE_WITH_QUESTION)).toBe(
       SYNTHETIC_PROSE_WITH_QUESTION,
+    );
+  });
+
+  it('keeps long research prose that poses several rhetorical questions among many declarative sentences (#1527)', () => {
+    expect(isFaqDumpText(SYNTHETIC_LONG_PROSE_WITH_RHETORICAL_QUESTIONS)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_LONG_PROSE_WITH_RHETORICAL_QUESTIONS)).toBe(
+      SYNTHETIC_LONG_PROSE_WITH_RHETORICAL_QUESTIONS,
     );
   });
 
