@@ -159,9 +159,38 @@ export const stripLeadingPageChrome = (value: string): string => {
 const capitalizeSentenceStarts = (value: string): string =>
   value.replace(/(^|[.!?]\s+)([a-z])/g, (_match, lead: string, letter: string) => lead + letter.toUpperCase());
 
+const IRREGULAR_THIRD_PERSON_SINGULAR_VERBS: Record<string, string> = {
+  have: 'has',
+  go: 'goes',
+  do: 'does',
+};
+
+const toThirdPersonSingularVerb = (verb: string): string => {
+  const lower = verb.toLowerCase();
+  const irregular = IRREGULAR_THIRD_PERSON_SINGULAR_VERBS[lower];
+  if (irregular) return irregular;
+  if (/(?:s|x|z|ch|sh)$/.test(lower)) return `${verb}es`;
+  if (/[^aeiou]y$/.test(lower)) return `${verb.slice(0, -1)}ies`;
+  if (/[^aeiou]o$/.test(lower)) return `${verb}es`;
+  return `${verb}s`;
+};
+
+const conjugateCompoundPredicateVerbList = (verbList: string): string =>
+  verbList.replace(/[a-z]+/gi, (word) => toThirdPersonSingularVerb(word));
+
+const COMPOUND_PREDICATE_AFTER_PRONOUN =
+  /\b(?:we|I)\s+([a-z]+)((?:\s*,\s*(?!and\b)[a-z]+)*)(\s*,)?\s+and\s+([a-z]+)\b/gi;
+
+const neutralizeCompoundPredicateAgreement = (value: string): string =>
+  value.replace(
+    COMPOUND_PREDICATE_AFTER_PRONOUN,
+    (_match, firstVerb: string, middleVerbs: string, oxfordComma: string | undefined, lastVerb: string) =>
+      `this research ${toThirdPersonSingularVerb(firstVerb)}${conjugateCompoundPredicateVerbList(middleVerbs)}${oxfordComma || ''} and ${toThirdPersonSingularVerb(lastVerb)}`,
+  );
+
 export const neutralizeFirstPersonResearchCopy = (value: string): string =>
   capitalizeSentenceStarts(
-    value
+    neutralizeCompoundPredicateAgreement(value)
       .replace(/\bIn the (?:laboratory|lab),?\s+we\s+study\b/gi, 'this research studies')
       .replace(/\bIn the (?:laboratory|lab),?\s+we\s+investigate\b/gi, 'this research investigates')
       .replace(/\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+is\s+focused\s+on\b/gi, 'this research is focused on')
