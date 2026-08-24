@@ -1168,6 +1168,95 @@ describe('CentersInstitutesScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('renders JS-rendered configs with an injected fetcher and parses with renderedExtractor', async () => {
+    const staticExt = vi.fn((): ExtractorResult => {
+      throw new Error('should not use the static extractor for rendered pages');
+    });
+    const renderedExt = vi.fn(
+      (): ExtractorResult => ({
+        members: [
+          { name: 'Ada Lovelace', profileUrl: 'https://gated.invalid/people/ada/', role: 'director' },
+        ],
+      }),
+    );
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'gated',
+        centerName: 'Gated Institute',
+        schoolName: '',
+        kind: 'institute',
+        url: 'https://gated.invalid/people',
+        extractor: staticExt,
+        renderedExtractor: renderedExt,
+        renderWaitSelector: '.grid__user',
+        jsRenderedSkip: true,
+      },
+    ];
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      html: '<html><body>hydrated cards</body></html>',
+      url: 'https://gated.invalid/people#rendered',
+      fetchMode: 'scrapling',
+    });
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get');
+
+    const scraper = new CentersInstitutesScraper(configs, renderedFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedFetcher).toHaveBeenCalledWith({
+      url: 'https://gated.invalid/people',
+      waitSelector: '.grid__user',
+      timeoutMs: 30000,
+    });
+    expect(renderedExt).toHaveBeenCalledWith('<html><body>hydrated cards</body></html>', {
+      pageUrl: 'https://gated.invalid/people#rendered',
+    });
+    expect(staticExt).not.toHaveBeenCalled();
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(result.notes).toContain('gated=1');
+
+    const memberObs = emitted.filter((o) => o.entityType === 'researchGroupMember');
+    expect(memberObs.some((o) => o.entityKey === 'center-gated:ada-lovelace')).toBe(true);
+    const adaSource = memberObs.find((o) => o.entityKey === 'center-gated:ada-lovelace');
+    expect(adaSource?.sourceUrl).toBe('https://gated.invalid/people#rendered');
+
+    getSpy.mockRestore();
+  });
+
+  it('skips JS-rendered configs when no rendered fetcher is available', async () => {
+    const staticExt = vi.fn();
+    const renderedExt = vi.fn();
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'gated',
+        centerName: 'Gated Institute',
+        schoolName: '',
+        kind: 'institute',
+        url: 'https://gated.invalid/people',
+        extractor: staticExt,
+        renderedExtractor: renderedExt,
+        jsRenderedSkip: true,
+      },
+    ];
+
+    const scraper = new CentersInstitutesScraper(configs, null);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(staticExt).not.toHaveBeenCalled();
+    expect(renderedExt).not.toHaveBeenCalled();
+    expect(result.notes).toContain('gated=js-rendered-skip');
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('wires FDS to enrich the yale-research-official umbrella entity, not a duplicate center-fds', () => {
+    const fds = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'fds');
+    expect(fds).toBeDefined();
+    expect(fds?.entityKey).toBe('research-yale-yale-institute-for-foundations-of-data-science');
+    expect(fds?.jsRenderedSkip).toBeFalsy();
+  });
+
   it('emits child-center ResearchGroup observations from a meta-index extractor', async () => {
     const metaExt = vi.fn(
       (): ExtractorResult => ({

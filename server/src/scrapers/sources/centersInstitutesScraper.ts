@@ -27,7 +27,20 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
-import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import {
+  createScraplingRenderedFetcher,
+  measureRenderedFetch,
+  summarizeFetchMetrics,
+  type RenderedFetcher,
+  type RenderedFetchResult,
+} from '../renderedFetch';
+import type {
+  IScraper,
+  ScraperContext,
+  ScraperResult,
+  ObservationInput,
+  ScraperFetchMetric,
+} from '../types';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -71,6 +84,9 @@ export interface ExtractorCtx {
 /** Pure HTML → structured rows. No I/O. */
 export type CenterExtractor = (html: string, ctx: ExtractorCtx) => ExtractorResult;
 
+/** Injectable static-page fetcher; defaults to the module `fetchHtml`. */
+export type HtmlFetcher = (url: string, useCache: boolean, sourceName: string) => Promise<string>;
+
 export interface CenterConfig {
   centerKey: string;
   centerName: string;
@@ -83,6 +99,13 @@ export interface CenterConfig {
   /** When true the scraper crawls `?page=0`, `?page=1`, … until empty. */
   paginated?: boolean;
   extractor: CenterExtractor;
+  /**
+   * Parser to run after a rendered fetch. Keeps headless fetching separate from
+   * domain parsing; falls back to `extractor` when unset.
+   */
+  renderedExtractor?: CenterExtractor;
+  /** Selector that should exist after hydration; used for the rendered-fetch wait. */
+  renderWaitSelector?: string;
   /**
    * Overrides the default `center-<centerKey>` entity key so the roster enriches
    * an entity another source already minted, instead of creating a duplicate.
@@ -100,9 +123,14 @@ export interface CenterConfig {
    * owning source keeps the identity website.
    */
   homeUrl?: string;
-  /** Set when the page is JS-rendered or behind auth — runner logs and skips. */
+  /**
+   * Set when the page is JS-rendered or behind auth. When a rendered fetcher is
+   * available the runner fetches the hydrated HTML and parses it with
+   * `renderedExtractor` (falling back to `extractor`); with no fetcher available
+   * it logs and skips, mirroring `departmentRosterScraper`.
+   */
   jsRenderedSkip?: boolean;
-  /** Reason string used in the log line when jsRenderedSkip is true. */
+  /** Reason string used in the log line when jsRenderedSkip is true and skipped. */
   skipReason?: string;
 }
 
@@ -731,6 +759,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     url: 'https://fds.yale.edu/people/',
     paginated: false,
     extractor: fdsUsersGridExtractor,
+    entityKey: 'research-yale-yale-institute-for-foundations-of-data-science',
   },
   {
     centerKey: 'natural-carbon-capture',
@@ -1045,8 +1074,16 @@ export class CentersInstitutesScraper implements IScraper {
   readonly name = 'centers-institutes-index';
   readonly displayName = 'Yale centers & institutes index';
 
-  /** Configs are injectable for testing; default to the bundled ten-center set. */
-  constructor(private readonly configs: CenterConfig[] = DEFAULT_CENTER_CONFIGS) {}
+  /**
+   * Configs, the rendered (headless) fetcher, and the static fetcher are all
+   * injectable for testing; they default to the bundled center set, the
+   * Scrapling renderer, and the module `fetchHtml`.
+   */
+  constructor(
+    private readonly configs: CenterConfig[] = DEFAULT_CENTER_CONFIGS,
+    private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
+    private readonly htmlFetcher: HtmlFetcher = fetchHtml,
+  ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const onlyFilter =
@@ -1064,16 +1101,105 @@ export class CentersInstitutesScraper implements IScraper {
     let totalChildCenters = 0;
     let centersProcessed = 0;
     const perCenter: Array<{ key: string; status: string; count: number }> = [];
+    const fetchAttempts: ScraperFetchMetric[] = [];
+
+    const emitCenterResults = async (
+      config: CenterConfig,
+      allMembers: CenterMember[],
+      allChildCenters: ChildCenter[],
+      sourceUrl: string,
+      pagesFetched: number,
+    ): Promise<void> => {
+      const { observations: groupObs } = centerToGroupObservations(config, allMembers, sourceUrl);
+      await ctx.emit(groupObs);
+      totalObs += groupObs.length;
+
+      const seenMemberSlugs = new Set<string>();
+      for (const member of allMembers) {
+        const cleaned = normalizeName(member.name);
+        const slug = slugify(cleaned);
+        if (!slug || seenMemberSlugs.has(slug)) continue;
+        seenMemberSlugs.add(slug);
+        const memberObs = memberToObservations(member, config, sourceUrl);
+        if (memberObs.length > 0) {
+          await ctx.emit(memberObs);
+          totalObs += memberObs.length;
+          totalMembers++;
+        }
+
+        const relationshipObs = centerMemberRelationshipObservations(member, config, sourceUrl);
+        if (relationshipObs.length > 0) {
+          await ctx.emit(relationshipObs);
+          totalObs += relationshipObs.length;
+        }
+      }
+
+      for (const child of allChildCenters) {
+        const childObs = childCenterToObservations(child, config, sourceUrl);
+        if (childObs.length > 0) {
+          await ctx.emit(childObs);
+          totalObs += childObs.length;
+          totalChildCenters++;
+        }
+      }
+
+      ctx.log(
+        `[${config.centerKey}] ${seenMemberSlugs.size} members, ${allChildCenters.length} child centers (${pagesFetched} page(s))`,
+      );
+      perCenter.push({
+        key: config.centerKey,
+        status: 'ok',
+        count: seenMemberSlugs.size + allChildCenters.length,
+      });
+    };
 
     for (const config of this.configs) {
       if (onlyFilter && !onlyFilter.has(config.centerKey.toLowerCase())) continue;
       if (centersProcessed >= limit) break;
 
       if (config.jsRenderedSkip) {
-        ctx.log(
-          `[${config.centerKey}] skipped — ${config.skipReason || 'JS-rendered, needs headless browser'}`,
+        if (!this.renderedFetcher) {
+          ctx.log(
+            `[${config.centerKey}] skipped — ${config.skipReason || 'JS-rendered, needs headless browser'}`,
+          );
+          perCenter.push({ key: config.centerKey, status: 'js-rendered-skip', count: 0 });
+          centersProcessed++;
+          continue;
+        }
+
+        const rendered = await measureRenderedFetch(
+          config.url,
+          'scrapling',
+          () => fetchRenderedCenterPage(this.name, ctx.options.useCache, config, this.renderedFetcher),
+          { selectorName: config.renderWaitSelector },
         );
-        perCenter.push({ key: config.centerKey, status: 'js-rendered-skip', count: 0 });
+        fetchAttempts.push(rendered.metric);
+
+        if (!rendered.result || !rendered.result.html) {
+          ctx.log(`[${config.centerKey}] skipped — rendered page unavailable`);
+          perCenter.push({ key: config.centerKey, status: 'rendered-unavailable', count: 0 });
+          centersProcessed++;
+          continue;
+        }
+
+        const pageUrl = rendered.result.url || config.url;
+        let result: ExtractorResult;
+        try {
+          result = (config.renderedExtractor || config.extractor)(rendered.result.html, { pageUrl });
+        } catch (err: any) {
+          ctx.log(`[${config.centerKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
+          perCenter.push({ key: config.centerKey, status: 'rendered-extractor-error', count: 0 });
+          centersProcessed++;
+          continue;
+        }
+
+        await emitCenterResults(
+          config,
+          result.members || [],
+          result.childCenters || [],
+          pageUrl,
+          1,
+        );
         centersProcessed++;
         continue;
       }
@@ -1091,7 +1217,7 @@ export class CentersInstitutesScraper implements IScraper {
         if (!firstPageUrl) firstPageUrl = pageUrl;
         let html: string;
         try {
-          html = await fetchHtml(pageUrl, ctx.options.useCache, this.name);
+          html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
         } catch (err: any) {
           ctx.log(
             `[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`,
@@ -1129,51 +1255,7 @@ export class CentersInstitutesScraper implements IScraper {
 
       const sourceUrl = firstPageUrl || config.url;
 
-      // Parent ResearchGroup observation
-      const { observations: groupObs } = centerToGroupObservations(config, allMembers, sourceUrl);
-      await ctx.emit(groupObs);
-      totalObs += groupObs.length;
-
-      // Per-member ResearchGroupMember observations
-      const seenMemberSlugs = new Set<string>();
-      for (const member of allMembers) {
-        const cleaned = normalizeName(member.name);
-        const slug = slugify(cleaned);
-        if (!slug || seenMemberSlugs.has(slug)) continue;
-        seenMemberSlugs.add(slug);
-        const memberObs = memberToObservations(member, config, sourceUrl);
-        if (memberObs.length > 0) {
-          await ctx.emit(memberObs);
-          totalObs += memberObs.length;
-          totalMembers++;
-        }
-
-        // Conservative umbrella → faculty relationship (allowlisted centers only)
-        const relationshipObs = centerMemberRelationshipObservations(member, config, sourceUrl);
-        if (relationshipObs.length > 0) {
-          await ctx.emit(relationshipObs);
-          totalObs += relationshipObs.length;
-        }
-      }
-
-      // Child ResearchGroup observations (Jackson School style)
-      for (const child of allChildCenters) {
-        const childObs = childCenterToObservations(child, config, sourceUrl);
-        if (childObs.length > 0) {
-          await ctx.emit(childObs);
-          totalObs += childObs.length;
-          totalChildCenters++;
-        }
-      }
-
-      ctx.log(
-        `[${config.centerKey}] ${seenMemberSlugs.size} members, ${allChildCenters.length} child centers (${pagesFetched} page(s))`,
-      );
-      perCenter.push({
-        key: config.centerKey,
-        status: 'ok',
-        count: seenMemberSlugs.size + allChildCenters.length,
-      });
+      await emitCenterResults(config, allMembers, allChildCenters, sourceUrl, pagesFetched);
       centersProcessed++;
     }
 
@@ -1188,6 +1270,28 @@ export class CentersInstitutesScraper implements IScraper {
       observationCount: totalObs,
       entitiesObserved: centersProcessed + totalMembers + totalChildCenters,
       notes: `Centers: ${summary}`,
+      fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
+}
+
+async function fetchRenderedCenterPage(
+  sourceName: string,
+  useCache: boolean,
+  config: CenterConfig,
+  renderedFetcher: RenderedFetcher | null,
+): Promise<RenderedFetchResult | null> {
+  if (!renderedFetcher) return null;
+  const cacheKey = `rendered-page:v1:${config.url}`;
+  if (useCache) {
+    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
+    if (cached) return cached;
+  }
+  const result = await renderedFetcher({
+    url: config.url,
+    waitSelector: config.renderWaitSelector,
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+  if (useCache && result?.html) await setCached(sourceName, cacheKey, result);
+  return result;
 }
