@@ -2,6 +2,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
+  isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
@@ -405,14 +406,14 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 
   if (typeof out.fullDescription === 'string') {
-    out.fullDescription = stripEndowedChairTitles(
-      sanitizeResearchEntityDescription(out.fullDescription),
-    );
+    let cleaned = sanitizeResearchEntityDescription(out.fullDescription);
+    if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    out.fullDescription = stripEndowedChairTitles(cleaned);
   }
   if (typeof out.shortDescription === 'string') {
-    out.shortDescription = stripEndowedChairTitles(
-      sanitizeResearchEntityShortDescription(out.shortDescription),
-    );
+    let cleaned = sanitizeResearchEntityShortDescription(out.shortDescription);
+    if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    out.shortDescription = stripEndowedChairTitles(cleaned);
   }
 
   for (const field of SEARCH_INDEX_PERSON_NAME_FIELDS) {

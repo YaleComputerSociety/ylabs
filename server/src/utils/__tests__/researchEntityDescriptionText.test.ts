@@ -11,6 +11,7 @@ import {
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
   sanitizeResearchHomeSelfReferenceText,
+  sanitizeServedResearchEntityCopyFields,
 } from '../researchEntityDescriptionText';
 
 const PROGRAM_DIRECTOR_BIO =
@@ -628,5 +629,36 @@ describe('isResearchEntitySourceChromeText breadcrumb / page-dump detection (#12
     const prose = 'The lab studies German Idealism and post-Kantian philosophy.';
     expect(isResearchEntitySourceChromeText(prose)).toBe(false);
     expect(publicResearchEntityDescriptionText(prose)).toBe(prose);
+  });
+});
+
+describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1466)', () => {
+  it('blanks a served fullDescription/shortDescription that only echoes researchAreas', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('blanks a profileSynthesisDescription echo of profileResearchAreas', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      profileSynthesisDescription: 'Studies economic theory and macroeconomics.',
+      profileResearchAreas: ['Economic Theory', 'Macroeconomics'],
+    });
+    expect(served.profileSynthesisDescription).toBe('');
+  });
+
+  it('leaves a genuine research-focus summary untouched even when it opens with a synthesis verb', () => {
+    const entity = {
+      fullDescription:
+        'The Mammalian Evolutionary Morphology Lab studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+      shortDescription:
+        'Studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+      researchAreas: ['Mammalian evolutionary morphology', 'Functional morphology', 'Primate evolution'],
+    };
+    expect(sanitizeServedResearchEntityCopyFields(entity)).toBe(entity);
   });
 });
