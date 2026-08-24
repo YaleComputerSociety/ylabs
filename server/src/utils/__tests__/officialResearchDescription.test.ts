@@ -58,6 +58,19 @@ describe('officialResearchDescription', () => {
     expect(extractOfficialResearchDescription(html, { kind: 'organization' })).toBeNull();
   });
 
+  it('inserts a block-boundary separator between a section-label div and the following prose (#1481)', () => {
+    const html = `<html><body><main>
+      <div>Titles</div>
+      <div>Assistant Professor of Medicine (General Medicine)</div>
+      <div>Biography</div>
+      <div>David Fink, PhD, MPH is a social epidemiologist whose research applies rigorous causal inference methods to study opioid use disorder treatment access. His work informs public health policy on addiction care.</div>
+    </main></body></html>`;
+    const candidates = collectVisibleDescriptionCandidates(html);
+    const wholeBlockCandidate = candidates.find((text) => text.includes('social epidemiologist'));
+    expect(wholeBlockCandidate).toBeDefined();
+    expect(wholeBlockCandidate).not.toMatch(/TitlesAssistant|MedicineBiography|BiographyDavid/);
+  });
+
   it('never emits a fullDescription that ends mid-word when the about block exceeds the candidate limit', () => {
     const topics = [
       'the molecular mechanisms of membrane transport in bacterial pathogens',

@@ -1,4 +1,6 @@
 import {
+  hasContactBlockResidue,
+  isCitationAuthorListDumpText,
   isResearchAreaTemplateLeakText,
   isStudiesTemplateGlueMalformed,
 } from './descriptionHygiene';
@@ -536,6 +538,9 @@ export function fullDescriptionQuality(value: unknown): FieldQuality {
     !hasExplicitProfileResearchFocus(text) &&
     !/\bresearch\s+aims?\s+at\s+understanding\b/i.test(text)
   ) {
+    flags.push('profile-chrome');
+  }
+  if (text && (hasContactBlockResidue(text) || isCitationAuthorListDumpText(text))) {
     flags.push('profile-chrome');
   }
   if (text && isTeachingOnlyProfileDescription(text)) flags.push('profile-chrome');

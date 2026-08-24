@@ -7,9 +7,11 @@ import {
   collapseRepeatedSentences,
   containsHtmlTagMarkup,
   hasContactBlockResidue,
+  isCitationAuthorListDumpText,
   isCtaNewsTickerDumpText,
   isStudiesTemplateGlueMalformed,
   stripGluedProfileRoleLabel,
+  stripGluedProfileSectionLabel,
   isCurationRationaleText,
   isInstitutionalCenterBlurbText,
   isFaqDumpText,
@@ -1507,6 +1509,81 @@ describe('stripGluedProfileRoleLabel + doubled-verb collapse (#975)', () => {
   it('leaves a spaced acronym in genuine prose untouched', () => {
     const clean = 'Studies how YSM researchers collaborate across departments.';
     expect(stripGluedProfileRoleLabel(clean)).toBe(clean);
+  });
+});
+
+describe('stripGluedProfileSectionLabel profile-chrome concatenation (#1481)', () => {
+  it('drops a section-header label glued to the very start of the text', () => {
+    expect(
+      stripGluedProfileSectionLabel('TitlesAssociate Professor of Medicine (General Medicine)'),
+    ).toBe('Associate Professor of Medicine (General Medicine)');
+  });
+
+  it('replaces a mid-string glued section label with a sentence break', () => {
+    expect(
+      stripGluedProfileSectionLabel(
+        'Assistant Professor of Medicine (General Medicine)BiographyDavid Fink, PhD, MPH is a social epidemiologist.',
+      ),
+    ).toBe(
+      'Assistant Professor of Medicine (General Medicine). David Fink, PhD, MPH is a social epidemiologist.',
+    );
+  });
+
+  it('repairs multiple glued section labels in the same string', () => {
+    expect(
+      stripGluedProfileSectionLabel(
+        'TitlesProfessor of Comparative MedicineBiographyCaroline Zeiss is a Professor.',
+      ),
+    ).toBe('Professor of Comparative Medicine. Caroline Zeiss is a Professor.');
+  });
+
+  it('leaves a legitimately spaced occurrence of these words untouched', () => {
+    const clean = 'About the size of a grain of rice, the sensor tracks glucose levels.';
+    expect(stripGluedProfileSectionLabel(clean)).toBe(clean);
+  });
+
+  it('is wired into the fullDescription hygiene chain', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'TitlesAssociate Professor of Medicine (General Medicine)Yale Liaison. Her research focuses on ethics in medicine.',
+      ),
+    ).toBe(
+      'Associate Professor of Medicine (General Medicine)Yale Liaison. Her research focuses on ethics in medicine.',
+    );
+  });
+});
+
+describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () => {
+  it('detects a raw citation author-initials list glued onto a bio', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Physiological homology between Drosophila melanogaster and vertebrate cardiovascular systemsChoma MA, Suter MJ, Vakoc BJ, Bouma BE, Tearney GJ.',
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves genuine prose without a repeated citation-author shape untouched', () => {
+    expect(isCitationAuthorListDumpText('Studies cardiovascular development in zebrafish embryos.')).toBe(
+      false,
+    );
+  });
+
+  it('fails the fullDescription hygiene chain closed on a citation-list dump', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'Physiological homology between Drosophila melanogaster and vertebrate cardiovascular systemsChoma MA, Suter MJ, Vakoc BJ, Bouma BE, Tearney GJ.',
+      ),
+    ).toBe('');
+  });
+});
+
+describe('hasContactBlockResidue reused for profile-chrome concatenation gating (#1481)', () => {
+  it('detects an Email:/Phone: contact block glued mid-bio', () => {
+    expect(
+      hasContactBlockResidue(
+        'Jordan Rivera, Ph.D. Professor Email: jordan.rivera@yale.eduPhone: 737-1216 Dr. Jordan Rivera is a Tenure Professor.',
+      ),
+    ).toBe(true);
   });
 });
 

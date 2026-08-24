@@ -503,6 +503,56 @@ export function stripGluedProfileRoleLabel(text: string): string {
   return normalizeHygieneWhitespace(stripped.replace(/\s+([,;])/g, '$1'));
 }
 
+const PROFILE_SECTION_LABEL_TOKENS = [
+  'Titles?',
+  'Biography',
+  'Overview',
+  'About',
+  'Education\\s*&\\s*Training',
+  'Specializations?',
+];
+
+const gluedProfileSectionLabelPattern = new RegExp(
+  `(?:^|(?<=[a-zA-Z0-9)]))(?:${PROFILE_SECTION_LABEL_TOKENS.join('|')})(?=[A-Z])`,
+  'g',
+);
+
+/**
+ * Repair a profile-page section-header label ("Titles", "Biography",
+ * "Overview", "About", "Education & Training", "Specializations") that a
+ * whole-block DOM extraction glued directly onto the surrounding text with no
+ * separator ("TitlesAssociate Professor...", "...Medicine)BiographyDavid
+ * Fink, PhD..."), a residual of #808/#931/#1077 distinct from the labels
+ * those covered (#1481). A label glued to the very start of the text is
+ * simply dropped; one glued mid-string is replaced with a sentence break,
+ * since it was standing in for the page's own paragraph break between two
+ * unrelated blocks of prose. Anchored on the no-space boundary on both sides
+ * so a legitimately spaced occurrence of these common words in prose is
+ * untouched.
+ */
+export function stripGluedProfileSectionLabel(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(gluedProfileSectionLabelPattern, (match, offset: number) =>
+    offset === 0 ? '' : '. ',
+  );
+  if (stripped === value) return value;
+  return normalizeHygieneWhitespace(stripped.replace(/\.\s*\./g, '.'));
+}
+
+const citationAuthorInitialsListPattern = /(?:[A-Z][a-zA-Z'-]+\s+[A-Z]{1,3},\s*){3,}/;
+
+/**
+ * A raw citation author-initials list ("Choma MA, Suter MJ, Vakoc BJ, Bouma
+ * BE, Tearney GJ") glued onto the end of a profile bio with no "Selected
+ * Publications:" label to key off of (#1481, a citation-list sibling to
+ * isPublicationsListDumpText's labeled case). The "Lastname INITIALS," shape
+ * repeated three or more times in a row is a bibliographic-citation signature
+ * that essentially never occurs in ordinary research prose.
+ */
+export function isCitationAuthorListDumpText(text: unknown): boolean {
+  return citationAuthorInitialsListPattern.test(normalizeHygieneWhitespace(String(text || '')));
+}
+
 const doubledSynthesisVerbPattern =
   /^(Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds)\s+\1\b/i;
 
@@ -748,12 +798,14 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   const cleaned = stripUrlTopicsFromCardSummary(
     collapseDoubledSynthesisVerb(
       stripTrailingSourceLayoutLabelSection(
-        stripGluedProfileRoleLabel(
-          stripLeadingPageChrome(
-            stripTrailingContactAddress(
-              stripBibliographicReferenceArtifacts(
-                stripInternalConfidenceHedge(
-                  stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+        stripGluedProfileSectionLabel(
+          stripGluedProfileRoleLabel(
+            stripLeadingPageChrome(
+              stripTrailingContactAddress(
+                stripBibliographicReferenceArtifacts(
+                  stripInternalConfidenceHedge(
+                    stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+                  ),
                 ),
               ),
             ),
@@ -770,6 +822,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (isFirstPersonResearchVoiceText(cleaned)) return '';
   if (isNonSelfContainedShortDescription(cleaned)) return '';
   if (containsHtmlTagMarkup(cleaned)) return '';
+  if (isCitationAuthorListDumpText(cleaned)) return '';
   return cleaned;
 }
 
@@ -1448,8 +1501,10 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
   const redacted = redactDirectContactInfo(String(text || ''));
   const stripped = stripLeadingAdministrativeLocationSentences(
     stripTrailingSourceLayoutLabelSection(
-      stripGluedProfileRoleLabel(
-        stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+      stripGluedProfileSectionLabel(
+        stripGluedProfileRoleLabel(
+          stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+        ),
       ),
     ),
   );
@@ -1457,6 +1512,7 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
   if (
     hasContactBlockResidue(stripped) ||
     isPublicationsListDumpText(stripped) ||
+    isCitationAuthorListDumpText(stripped) ||
     isResearchAreaEchoDescription(stripped) ||
     isInstitutionalCenterBlurbText(stripped) ||
     containsHtmlTagMarkup(stripped)
