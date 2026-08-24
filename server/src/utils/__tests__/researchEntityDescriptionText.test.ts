@@ -753,6 +753,32 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       'His research interests include family economics and the global economy. He has published extensively in leading economic journals.',
     );
   });
+
+  it('blanks a full-length artist/humanities CV run (degrees, exhibitions, residency, surveys, publications, faculty appointment) with zero practice/research content, on a LAB entity (#1745)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'Ms. Fixture received a B.F.A. from Pratt Institute in 1975 and an M.F.A. from the University of Minnesota in 1978. She lives and works in New York City. Her work is exhibited widely in solo and group exhibitions in galleries and museums in the United States and Europe. Among recent awards and grants she has received: a Guggenheim Fellowship and a Joan Mitchell Foundation grant. In 2012 she was an artist in residence at the Foundation for Contemporary Arts in Accra, Ghana. She will have major surveys of her work in 2016 and 2017 at museums in Geneva and Munich. Recent publications include Notes on Painting (2015) and Fixture: Selected Works (2016). Ms. Fixture was appointed to the Yale faculty in 1994 as professor of painting and became Professor Emerita in 2017.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe('');
+  });
+
+  it('preserves a genuine chronological research narrative that merely mentions a dissertation prize by name, on a LAB entity (#1745)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'How do people learn language in the face of its vast complexity? My research shows how domain-general cognitive mechanisms can explain sophisticated linguistic behaviors. My NSF GRFP-funded dissertation work at Fixture University focused on how individual differences in statistical learning predict spoken language skills in adults. This work was awarded the Cognitive Science Society’s Glushko Dissertation Prize in 2023. My work as a Postdoctoral Research Fellow expanded these findings, investigating how statistical learning shapes reading development in children.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      'How do people learn language in the face of its vast complexity? This research shows how domain-general cognitive mechanisms can explain sophisticated linguistic behaviors. This NSF GRFP-funded dissertation work at Fixture University focused on how individual differences in statistical learning predict spoken language skills in adults. This work was awarded the Cognitive Science Society’s Glushko Dissertation Prize in 2023. This work as a Postdoctoral Research Fellow expanded these findings, investigating how statistical learning shapes reading development in children.',
+    );
+  });
 });
 
 describe('isDeceasedOrEmeritusLeadBiography', () => {

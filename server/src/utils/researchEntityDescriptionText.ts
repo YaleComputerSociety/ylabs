@@ -402,18 +402,46 @@ export function isCredentialOrTitleLeadBiography(value: unknown): boolean {
 }
 
 const DEGREE_ABBREVIATION_ALTERNATION =
-  '(?:Ph\\.?D\\.?|M\\.?D\\.?|B\\.?A\\.?|M\\.?A\\.?|M\\.?S\\.?|M\\.?B\\.?A\\.?|Ed\\.?D\\.?|J\\.?D\\.?|degrees?)';
+  '(?:Ph\\.?D\\.?|M\\.?D\\.?|B\\.?F\\.?A\\.?|M\\.?F\\.?A\\.?|B\\.?A\\.?|M\\.?A\\.?|B\\.?S\\.?|M\\.?S\\.?|M\\.?B\\.?A\\.?|Ed\\.?D\\.?|J\\.?D\\.?|degrees?)';
 
 /**
  * A name-lead opener whose whole sentence is a degree-receipt CV line rather
  * than research prose ("Raffaella Zanuttini received her PhD in Linguistics
- * from..."; "Dr. Mamula's received degrees from UCLA, ..."), served verbatim
- * as the description with zero research content (#1745).
+ * from..."; "Dr. Mamula's received degrees from UCLA, ..."; "Ms. Feinstein
+ * received a B.F.A. from Pratt Institute..."), served verbatim as the
+ * description with zero research content (#1745). The determiner before the
+ * degree is optional so both "received her PhD" and "received a B.F.A." match.
  */
 const DEGREE_RECEIPT_LEAD_PATTERN = new RegExp(
-  `^(?:Dr\\.\\s+)?[A-Z][\\p{L}.'’-]+(?:\\s+[A-Z][\\p{L}.'’-]+){0,3}(?:['’]s)?\\s+received\\s+(?:(?:her|his|their)\\s+)?${DEGREE_ABBREVIATION_ALTERNATION}\\b`,
+  `^(?:Dr\\.\\s+|Ms\\.\\s+|Mr\\.\\s+|Mrs\\.\\s+)?[A-Z][\\p{L}.'’-]+(?:\\s+[A-Z][\\p{L}.'’-]+){0,3}(?:['’]s)?\\s+received\\s+(?:(?:an?|her|his|their)\\s+)?${DEGREE_ABBREVIATION_ALTERNATION}\\b`,
   'u',
 );
+
+/**
+ * Common artist/humanities-bio closer clauses that carry no research/practice
+ * content of their own (#1745: Rochelle Feinstein's full is entirely CV -
+ * degrees, "lives and works in New York City", exhibition history, awards,
+ * a residency, upcoming museum surveys, a publications list, and a faculty
+ * appointment/emeritus note - with not one sentence describing her actual
+ * artistic practice or subject matter).
+ */
+const LIVES_AND_WORKS_LEAD_PATTERN = /^(?:He|She|They)\s+lives?\s+and\s+works?\s+in\b/iu;
+
+const WORK_EXHIBITED_OR_SHOWN_LEAD_PATTERN =
+  /^(?:Her|His|Their)\s+work\s+is\s+(?:exhibited|shown|displayed|performed)\b/iu;
+
+const AMONG_AWARDS_RECEIVED_LEAD_PATTERN = /^Among\s+.{0,40}?\bhas\s+received\b/iu;
+
+const RECENT_PUBLICATIONS_INCLUDE_LEAD_PATTERN = /^Recent\s+publications?\s+include\b/iu;
+
+const APPOINTED_TO_FACULTY_LEAD_PATTERN =
+  /^(?:Dr\.\s+|Ms\.\s+|Mr\.\s+|Mrs\.\s+)?[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}\s+was\s+appointed\s+to\s+the\s+.{0,40}?\bfaculty\b/iu;
+
+const ARTIST_IN_RESIDENCE_LEAD_PATTERN =
+  /^In\s+\d{4},?\s+(?:he|she|they)\s+was\s+an?\s+(?:artist|scholar|fellow)\s+in\s+residence\b/iu;
+
+const MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN =
+  /^(?:He|She|They)\s+(?:will\s+have|has\s+had|had)\s+major\s+surveys?\s+of\s+(?:his|her|their)\s+work\b/iu;
 
 /**
  * A pronoun- or name-lead awards/fellowship credential opener with no
@@ -474,7 +502,14 @@ export function isCredentialOrAwardLeadBiography(value: unknown): boolean {
     FIRST_PERSON_TITLE_LEAD_PATTERN.test(cleaned) ||
     FELLOWSHIP_LEAD_PATTERN.test(cleaned) ||
     CONTINUED_AWARDS_RECEIPT_PATTERN.test(cleaned) ||
-    AUTHOR_OR_WINNER_OF_LEAD_PATTERN.test(cleaned)
+    AUTHOR_OR_WINNER_OF_LEAD_PATTERN.test(cleaned) ||
+    LIVES_AND_WORKS_LEAD_PATTERN.test(cleaned) ||
+    WORK_EXHIBITED_OR_SHOWN_LEAD_PATTERN.test(cleaned) ||
+    AMONG_AWARDS_RECEIVED_LEAD_PATTERN.test(cleaned) ||
+    RECENT_PUBLICATIONS_INCLUDE_LEAD_PATTERN.test(cleaned) ||
+    APPOINTED_TO_FACULTY_LEAD_PATTERN.test(cleaned) ||
+    ARTIST_IN_RESIDENCE_LEAD_PATTERN.test(cleaned) ||
+    MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN.test(cleaned)
   );
 }
 
@@ -510,7 +545,14 @@ function firstBiographyOpenerMatch(value: string, allowLabCredentialPatterns: bo
     value.match(FIRST_PERSON_TITLE_LEAD_PATTERN) ||
     value.match(FELLOWSHIP_LEAD_PATTERN) ||
     value.match(CONTINUED_AWARDS_RECEIPT_PATTERN) ||
-    value.match(AUTHOR_OR_WINNER_OF_LEAD_PATTERN)
+    value.match(AUTHOR_OR_WINNER_OF_LEAD_PATTERN) ||
+    value.match(LIVES_AND_WORKS_LEAD_PATTERN) ||
+    value.match(WORK_EXHIBITED_OR_SHOWN_LEAD_PATTERN) ||
+    value.match(AMONG_AWARDS_RECEIVED_LEAD_PATTERN) ||
+    value.match(RECENT_PUBLICATIONS_INCLUDE_LEAD_PATTERN) ||
+    value.match(APPOINTED_TO_FACULTY_LEAD_PATTERN) ||
+    value.match(ARTIST_IN_RESIDENCE_LEAD_PATTERN) ||
+    value.match(MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN)
   );
 }
 
@@ -583,8 +625,16 @@ const GREETING_LEAD_PATTERN = /^welcome to\b/i;
 // "Welcome to Professor Scott A. Strobel's Laboratory."), so the scan below
 // only treats "." as a sentence end when it is not immediately preceded by
 // one of these; otherwise the greeting is left half-stripped.
+//
+// The bare single-capital-letter case is checked separately from the named
+// multi-char abbreviations and also allows a period (not just whitespace/
+// paren/start) immediately before the letter, so every period inside a
+// chained-initials or multi-letter degree abbreviation ("B.F.A.", "M.F.A.",
+// "Ralph J. Gleason") is recognized, not just its first letter (#1745/#1790:
+// only the first period of "B.F.A." was skipped, so the scan stopped and cut
+// the sentence mid-abbreviation).
 const SENTENCE_BOUNDARY_ABBREVIATION_PATTERN =
-  /(?:^|[\s(])(?:[A-Z]|Prof|Dr|Mr|Mrs|Ms|Jr|Sr|St|Rev|Hon|Ph\.?D|M\.?D|B\.?S|M\.?S|M\.?A|D\.?Phil|Esq)\.$/;
+  /(?:^|[\s(.])[A-Z]\.$|(?:^|[\s(])(?:Prof|Dr|Mr|Mrs|Ms|Jr|Sr|St|Rev|Hon|Ph\.?D|M\.?D|B\.?S|M\.?S|M\.?A|D\.?Phil|Esq)\.$/;
 
 function sentenceEndIndex(value: string, from: number): number {
   for (let index = from; index < value.length; index += 1) {
