@@ -26,6 +26,7 @@
     "research-entity:repair-archived-artifacts": "tsx src/scripts/repairArchivedEntityArtifacts.ts",
     "research-entity:cleanup-archived": "tsx src/scripts/cleanupArchivedResearchEntities.ts",
     "research-entity:audit-lead-identity": "tsx src/scripts/leadIdentityConsistencyAudit.ts",
+    "research-entity:audit-manual-edit-decay": "tsx src/scripts/auditManualEditDecayReversal.ts",
     "research-entity:purge-contested-lead-profiles": "tsx src/scripts/purgeContestedLeadProfileEnrichment.ts",
     "research-entity:repair-shell-clobbered-descriptions": "tsx src/scripts/repairShellClobberedCanonicalDescriptions.ts",
     "research-entity:rematerialize": "tsx src/scripts/rematerializeResearchEntities.ts",
