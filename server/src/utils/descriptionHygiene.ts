@@ -1243,6 +1243,25 @@ export function isInstitutionalCenterBlurbText(text: string): boolean {
 const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?]+[.!?]?$/i;
 const connectedToAreaEchoPattern = /^[^.!?]*\bis\s+connected\s+to\b[^.!?]*[.!?]?$/i;
 
+const researchActivitySignalPattern =
+  /\b(?:focus(?:es|ed|ing)?\s+on|studies|study|studying|investigat(?:es|ed|ing|ion|ions)?|examin(?:es|ed|ing)|explor(?:es|ed|ing|ation)?|develop(?:s|ed|ing|ment|ments)?|design(?:s|ed|ing)?|analyz(?:es|ed|ing)|model(?:s|ed|ing)?|measur(?:es|ed|ing|ement)?|specializ(?:es|ed|ing)|dedicated\s+to|interested\s+in|work(?:s|ing)?\s+on|aims?\s+to|seeks?\s+to|advanc(?:es|ed|ing)|our\s+(?:research|work|lab)|we\s+(?:study|develop|investigate|build|design|explore|examine|focus|research|use|create|model))\b/i;
+
+/**
+ * A research-activity verb ("studies", "develops", "investigates", ...)
+ * acting on a following object, as opposed to the same word appearing bare as
+ * the tail of a keyword-list item ("...and diet and metabolism studies.",
+ * "...during development."). `researchActivitySignalPattern` matches either
+ * shape, which made the "is connected to <chips>" echo check below miss the
+ * #1393 keyword-list-fallback template whenever a chip label happened to end
+ * in one of these words as a noun (#1511) - the negative lookahead here
+ * requires a real following object (not a list delimiter or sentence end) so
+ * only a genuine verb clause disqualifies the echo match.
+ */
+const researchActivityVerbWithObjectPattern = new RegExp(
+  `${researchActivitySignalPattern.source}(?!\\s*(?:,|and\\b|including\\b|[.!?]|$))`,
+  'i',
+);
+
 /**
  * A vacuous "Research fields include <A>, <B>, and <C>." description whose only
  * content is a comma-join of the entity's own researchAreas: a bare labeled
@@ -1252,16 +1271,30 @@ const connectedToAreaEchoPattern = /^[^.!?]*\bis\s+connected\s+to\b[^.!?]*[.!?]?
  * continues into a real description is kept. The sibling "<Name/lab> is
  * connected to <A>, <B>, and <C>." fallback template is the same vacuous shape
  * under a different lead verb, so it is caught here too, but only when the
- * sentence carries no independent research-activity verb - a genuine one-line
- * summary that happens to use "connected to" as connective tissue around real
- * content is kept (#1393/#1394).
+ * sentence carries no independent research-activity verb acting on an object -
+ * a genuine one-line summary that happens to use "connected to" as connective
+ * tissue around real content is kept (#1393/#1394).
  */
 export function isResearchAreaEchoDescription(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (researchAreaEchoPattern.test(normalized)) return true;
+  return isConnectedToKeywordListStub(normalized);
+}
+
+/**
+ * The "<EntityName/Lab/Center/...> is connected to <A>, <B>, and <C>."
+ * keyword-list-fallback stub (#1393 family), shared between the serve-time
+ * echo detector above and `isTemplatedKeywordStub`
+ * (`backfillDescriptionQualityCore.ts`) so the quality classifier and the
+ * serve gate agree (#1511).
+ */
+export function isConnectedToKeywordListStub(text: unknown): boolean {
+  const normalized = normalizeHygieneWhitespace(String(text ?? ''));
+  if (!normalized) return false;
   return (
-    connectedToAreaEchoPattern.test(normalized) && !researchActivitySignalPattern.test(normalized)
+    connectedToAreaEchoPattern.test(normalized) &&
+    !researchActivityVerbWithObjectPattern.test(normalized)
   );
 }
 
@@ -1430,9 +1463,6 @@ const administrativeLeadershipClausePattern =
 
 const physicalLocationClausePattern =
   /\b(?:[Ll]ocated|[Hh]oused|[Bb]ased|[Ss]ituated|[Hh]eadquartered)\s+(?:in|at|on|within)\s+(?:the\s+)?(?:[A-Z][A-Za-z.'&-]+(?:\s+[A-Za-z.'&-]+){0,5}\s+(?:Hall|Building|Bldg|Center|Centre|Wing|Tower|Complex|Laboratory|Library|House|Plaza|Institute|Annex|Pavilion)|(?:Room|Rm|Suite|Ste|Floor|Fl|Unit)\.?\s*\d+[A-Za-z]?|[A-Z]{2,5}\s?\d{1,4})/;
-
-const researchActivitySignalPattern =
-  /\b(?:focus(?:es|ed|ing)?\s+on|studies|study|studying|investigat(?:es|ed|ing|ion|ions)?|examin(?:es|ed|ing)|explor(?:es|ed|ing|ation)?|develop(?:s|ed|ing|ment|ments)?|design(?:s|ed|ing)?|analyz(?:es|ed|ing)|model(?:s|ed|ing)?|measur(?:es|ed|ing|ement)?|specializ(?:es|ed|ing)|dedicated\s+to|interested\s+in|work(?:s|ing)?\s+on|aims?\s+to|seeks?\s+to|advanc(?:es|ed|ing)|our\s+(?:research|work|lab)|we\s+(?:study|develop|investigate|build|design|explore|examine|focus|research|use|create|model))\b/i;
 
 const NAME_INITIAL_TAIL = /(?:^|\s)[A-Z]\.\s*$/;
 

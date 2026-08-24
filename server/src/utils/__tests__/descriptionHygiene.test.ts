@@ -1206,6 +1206,26 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
     expect(isResearchAreaEchoDescription(prose)).toBe(false);
     expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
   });
+
+  it('flags the "is connected to <chips>" template even when a chip label ends in a bare research-activity noun (#1511)', () => {
+    expect(
+      isResearchAreaEchoDescription(
+        'Example Lab is connected to health disparities and outcomes, posttraumatic stress disorder, suicide and self-harm studies, and schizophrenia.',
+      ),
+    ).toBe(true);
+    expect(
+      isResearchAreaEchoDescription(
+        'Example Research is connected to genetic neurodegenerative diseases, mitochondrial function and pathology, and developmental biology and gene regulation.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a genuine "is connected to" sentence whose verb takes a real object', () => {
+    const prose =
+      'Example Lab is connected to a broader effort that investigates how neurons in the hippocampus encode memory.';
+    expect(isResearchAreaEchoDescription(prose)).toBe(false);
+    expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
 });
 
 describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {

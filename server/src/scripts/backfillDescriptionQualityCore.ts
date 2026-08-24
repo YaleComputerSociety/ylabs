@@ -4,6 +4,7 @@ import {
   shortDescriptionQuality,
   type DescriptionQualityFlag,
 } from '../utils/researchEntityDescriptionQuality';
+import { isConnectedToKeywordListStub } from '../utils/descriptionHygiene';
 
 export const THIN_SHORT_MAX_CHARS = 40;
 export const THIN_FULL_MAX_CHARS = 120;
@@ -71,12 +72,6 @@ const CAVEAT_PATTERNS: RegExp[] = [
 
 const TEMPLATED_STUB_LEAD =
   /^(?:research (?:fields?|areas?) include\b|studies fields of interest\b|fields of interest include\b|research home (?:connected to|focused on)\b)/i;
-
-const SYNTH_CONNECTED_TO =
-  /\bis (?:an? [\w-]+ )?(?:Yale )?research home connected to\b|\b(?:Lab|Laboratory|Center|Centre|Institute|Program|Initiative|Group) is connected to\b|\bis connected to\b/i;
-
-const RESEARCH_VERB =
-  /\b(?:studies|investigates|examines|explores|focuses on|focused on|works on|develops|designs|builds|uses|employs|researches|analyzes|analyses|models|measures|conducts?|advances|combines)\b/i;
 
 const AZ_INDEX_PATTERN = /\bA[–-]Z index\b|\blists Yale School of Medicine lab websites\b/i;
 
@@ -149,7 +144,7 @@ export function isTemplatedKeywordStub(value: unknown): boolean {
   const text = normalizeText(value);
   if (!text) return false;
   if (TEMPLATED_STUB_LEAD.test(text)) return true;
-  return SYNTH_CONNECTED_TO.test(text) && !RESEARCH_VERB.test(text);
+  return isConnectedToKeywordListStub(text);
 }
 
 export function isOffTopicFullDescription(value: unknown): boolean {

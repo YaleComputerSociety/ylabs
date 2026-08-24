@@ -1,6 +1,7 @@
 import {
   hasContactBlockResidue,
   isCitationAuthorListDumpText,
+  isConnectedToKeywordListStub,
   isInstitutionalCenterBlurbText,
   isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
@@ -185,13 +186,17 @@ export function isMidCvContinuationOpener(value: unknown): boolean {
 export function isSyntheticResearchHomeMetadataDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
-  return [
-    /^research home connected to\b.*\.$/i,
-    /^research home focused on\b.*\.$/i,
-    /^.+ is a Yale research home(?: connected to\b.*)?\. This context is synthesized from indexed Yale(?: source)? metadata and should be checked against (?:the linked official sources|official sources before outreach)\.$/i,
-    /\band\s*\./i,
-    /\bconnected to\s*\./i,
-  ].some((pattern) => pattern.test(cleaned));
+  return (
+    [
+      /^research home connected to\b.*\.$/i,
+      /^research home focused on\b.*\.$/i,
+      /^.+ is a Yale research home(?: connected to\b.*)?\. This context is synthesized from indexed Yale(?: source)? metadata and should be checked against (?:the linked official sources|official sources before outreach)\.$/i,
+      /\band\s*\./i,
+      /\bconnected to\s*\./i,
+    ].some((pattern) => pattern.test(cleaned)) ||
+    // Shared with backfillDescriptionQualityCore's TEMPLATED classifier (#1511).
+    isConnectedToKeywordListStub(cleaned)
+  );
 }
 
 export function isResearchAreaPlaceholderDescription(value: unknown): boolean {
