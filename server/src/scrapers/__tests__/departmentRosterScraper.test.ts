@@ -1575,6 +1575,13 @@ describe('DepartmentRosterScraper.run', () => {
       extractor: mcdbExtractor,
       emitPersonalResearchEntities: false,
     });
+    expect(configsByKey.get('yibs')).toMatchObject({
+      deptName: 'Biospheric Studies',
+      url: 'https://yibs.yale.edu/people/faculty-affiliates',
+      extractor: fieldCollectionPersonExtractor,
+      officialProfileOnly: true,
+      affiliatesOnly: true,
+    });
   });
 
   it('emits official-profile person observations without minting a lab entity when officialProfileOnly is set', async () => {
@@ -1613,6 +1620,68 @@ describe('DepartmentRosterScraper.run', () => {
       departmental: 'https://wlab.yale.edu/profile/robin-roster',
     });
     expect(emitted.find((o) => o.field === 'primaryDepartment')?.value).toBe('Physics');
+  });
+
+  it('suppresses department claims for an affiliates-only institute roster', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://environment.yale.edu/profile/robin-roster',
+        title: 'Professor of Ecology',
+        labUrl: 'https://roster-lab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'yibs',
+        deptName: 'Biospheric Studies',
+        schoolName: 'Yale Institute for Biospheric Studies',
+        url: 'https://yibs.yale.edu/people/faculty-affiliates',
+        paginated: false,
+        extractor: cannedExtractor,
+        officialProfileOnly: true,
+        affiliatesOnly: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'primaryDepartment')).toBeUndefined();
+    expect(emitted.find((o) => o.field === 'departments')).toBeUndefined();
+    expect(emitted.find((o) => o.field === 'userType')?.value).toBe('faculty');
+  });
+
+  it('suppresses department claims on a derived research entity for an affiliates-only roster', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        labUrl: 'https://roster-lab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'yibs',
+        deptName: 'Biospheric Studies',
+        schoolName: 'Yale Institute for Biospheric Studies',
+        url: 'https://yibs.yale.edu/people/faculty-affiliates',
+        paginated: false,
+        extractor: cannedExtractor,
+        affiliatesOnly: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.length).toBeGreaterThan(0);
+    expect(entityObs.find((o) => o.field === 'departments')).toBeUndefined();
+    expect(entityObs.find((o) => o.field === 'school')?.value).toBe(
+      'Yale Institute for Biospheric Studies',
+    );
   });
 
   it('skips JS-rendered depts and only invokes extractors for matching only-filter', async () => {

@@ -11,11 +11,16 @@
  * the uncorroborated seed values from the affected member entities and (b) retire
  * the legacy observations so a future re-materialize cannot re-inject them.
  *
- * The leaked (sourceUrl -> seed) pairs are derived from the live observations,
- * not hard-coded, so the script self-scopes to exactly what leaked. A seed value
- * is stripped from a member only when the member's own (non-center) observations
- * do not independently assert it - a genuine Neuroscience-department member keeps
- * "Neuroscience"; a Computer Science member has it removed.
+ * The leaked seeds are derived from the live observations, not hard-coded, so
+ * the script self-scopes to exactly what leaked. A seed value is stripped from
+ * a member only when the member's own (non-center) observations do not
+ * independently assert it - a genuine Neuroscience-department member keeps
+ * "Neuroscience"; a Computer Science member has it removed. A second pass
+ * catches the case where a PI-dedupe merge folded a `faculty-research-area-*`
+ * shell straight into an existing canonical entity (e.g. an `nih-pi-*` shell),
+ * copying the leaked departments array by value with no observation ever
+ * recorded under the survivor's own entityKey - those are matched by value
+ * against the known leaked seed forms instead.
  *
  * Dry-run by default. Apply requires `--apply --confirm-center-seed-department-backfill`.
  *
@@ -79,29 +84,33 @@ function asStringArray(value: unknown): string[] {
 }
 
 /**
- * Read the live legacy observations to learn which center people-pages leaked a
- * `departments` seed and what that seed was, keyed by sourceUrl.
+ * Read every `departments` observation the center-institutes scraper ever
+ * emitted onto a member's own `faculty-research-area-*` entity, keyed by that
+ * entity's slug. Includes already-superseded observations - a first backfill
+ * run retires them, and matching by entityKey (rather than by re-deriving the
+ * leaked sourceUrl from non-superseded observations) keeps a second run able
+ * to find the same leaks and keeps the entity-matching independent of whether
+ * the entity's own `sourceUrls` field happens to include the leaking page.
  */
-async function deriveLeakedSeedsByUrl(): Promise<Map<string, string[]>> {
+async function deriveLeakedSeedsByEntityKey(): Promise<Map<string, string[]>> {
   const leakObs = await Observation.find({
     entityKey: { $regex: `^${FACULTY_RESEARCH_AREA_KEY_PREFIX}` },
     field: 'departments',
     sourceName: CENTER_SOURCE_NAME,
-    superseded: { $ne: true },
   })
-    .select('value sourceUrl')
+    .select('entityKey value')
     .lean();
 
-  const seedsByUrl = new Map<string, Set<string>>();
-  for (const obs of leakObs as Array<{ value?: unknown; sourceUrl?: unknown }>) {
-    const url = typeof obs.sourceUrl === 'string' ? obs.sourceUrl : '';
-    if (!url) continue;
+  const seedsByKey = new Map<string, Set<string>>();
+  for (const obs of leakObs as Array<{ entityKey?: unknown; value?: unknown }>) {
+    const key = typeof obs.entityKey === 'string' ? obs.entityKey : '';
+    if (!key) continue;
     const values = asStringArray(obs.value);
-    const bucket = seedsByUrl.get(url) || new Set<string>();
+    const bucket = seedsByKey.get(key) || new Set<string>();
     for (const form of expandLeakedSeedForms(values)) bucket.add(form);
-    seedsByUrl.set(url, bucket);
+    seedsByKey.set(key, bucket);
   }
-  return new Map([...seedsByUrl].map(([url, set]) => [url, [...set]]));
+  return new Map([...seedsByKey].map(([key, set]) => [key, [...set]]));
 }
 
 async function ownObservedValuesBySlug(
@@ -137,13 +146,12 @@ async function main() {
   });
   await initializeConnections();
 
-  const seedsByUrl = await deriveLeakedSeedsByUrl();
-  const leakedUrls = [...seedsByUrl.keys()];
+  const seedsByEntityKey = await deriveLeakedSeedsByEntityKey();
+  const leakedEntityKeys = [...seedsByEntityKey.keys()];
 
-  const affected: any[] = leakedUrls.length
+  const affected: any[] = leakedEntityKeys.length
     ? await ResearchEntity.find({
-        sourceUrls: { $in: leakedUrls },
-        slug: { $not: /^center-/ },
+        slug: { $in: leakedEntityKeys },
         archived: { $ne: true },
       })
         .select({ slug: 1, name: 1, kind: 1, departments: 1, researchAreas: 1, sourceUrls: 1 })
@@ -157,14 +165,8 @@ async function main() {
   const plannedUpdates: PlannedUpdate[] = [];
   for (const entity of affected) {
     const slug = String(entity.slug);
-    const entitySourceUrls = asStringArray(entity.sourceUrls);
-    const leaked = new Set<string>();
-    for (const url of entitySourceUrls) {
-      const seeds = seedsByUrl.get(url);
-      if (seeds) for (const seed of seeds) leaked.add(seed);
-    }
-    if (leaked.size === 0) continue;
-    const leakedForms = [...leaked];
+    const leakedForms = seedsByEntityKey.get(slug) || [];
+    if (leakedForms.length === 0) continue;
 
     const currentDepts = asStringArray(entity.departments);
     const currentAreas = asStringArray(entity.researchAreas);
@@ -194,12 +196,104 @@ async function main() {
     });
   }
 
+  // A PI-dedupe merge can fold a `faculty-research-area-*` shell straight into
+  // an existing canonical entity (a pre-existing `nih-pi-*`/`nsf-pi-*` shell),
+  // copying the shell's raw `departments` array onto the survivor by value
+  // with no observation ever recorded under the survivor's own entityKey.
+  // Catch that residue, but only on an EXACT match of the full leaked array -
+  // matching on any single overlapping token (e.g. "Computer Science" alone)
+  // would misfire on every unrelated entity that legitimately belongs to one
+  // of the same real departments the institute also spans.
+  const rawLeakObs = await Observation.find({
+    entityKey: { $regex: `^${FACULTY_RESEARCH_AREA_KEY_PREFIX}` },
+    field: 'departments',
+    sourceName: CENTER_SOURCE_NAME,
+  })
+    .select('value')
+    .lean();
+  const rawSeedGroups = new Set<string>();
+  for (const obs of rawLeakObs as Array<{ value?: unknown }>) {
+    const rawSeed = asStringArray(obs.value);
+    if (rawSeed.length > 0) rawSeedGroups.add(JSON.stringify([...rawSeed].sort()));
+  }
+
+  // Punctuation for the same seed can drift between the scraper's literal
+  // config string and the materialized entity (e.g. an Oxford comma), so the
+  // exact-match check below compares normalized token sets rather than raw
+  // strings. `$size` alone is enough of a DB-side pre-filter; the real
+  // equality check happens in JS against the fetched candidates.
+  const seedGroups: string[][] = [...rawSeedGroups].map((g) => JSON.parse(g));
+  const candidateLengths = [...new Set(seedGroups.map((g) => g.length))];
+  const alreadyCovered = new Set([...leakedEntityKeys, ...affected.map((e) => String(e.slug))]);
+  const residualCandidates: any[] = [];
+  for (const length of candidateLengths) {
+    const normalizedGroupsOfLength = seedGroups
+      .filter((g) => g.length === length)
+      .map((g) => new Set(g.map(normalizeDeptToken)));
+    const candidates = await ResearchEntity.find({
+      slug: { $not: /^center-/ },
+      archived: { $ne: true },
+      departments: { $size: length },
+    })
+      .select({ slug: 1, name: 1, kind: 1, departments: 1, researchAreas: 1 })
+      .lean();
+    for (const candidate of candidates) {
+      const slug = String(candidate.slug);
+      if (alreadyCovered.has(slug)) continue;
+      const docNormalized = new Set(asStringArray(candidate.departments).map(normalizeDeptToken));
+      const exactMatch = normalizedGroupsOfLength.some(
+        (group) => group.size === docNormalized.size && [...group].every((t) => docNormalized.has(t)),
+      );
+      if (!exactMatch) continue;
+      alreadyCovered.add(slug);
+      residualCandidates.push(candidate);
+    }
+  }
+
+  const residualSlugs = residualCandidates.map((e) => String(e.slug)).filter(Boolean);
+  const residualOwnDeptBySlug = await ownObservedValuesBySlug(residualSlugs, 'departments');
+  const residualOwnAreaBySlug = await ownObservedValuesBySlug(residualSlugs, 'researchAreas');
+  const allLeakedForms = expandLeakedSeedForms(
+    [...rawSeedGroups].flatMap((g) => JSON.parse(g) as string[]),
+  );
+
+  for (const entity of residualCandidates) {
+    const slug = String(entity.slug);
+    const currentDepts = asStringArray(entity.departments);
+    const currentAreas = asStringArray(entity.researchAreas);
+
+    const deptResult = stripUncorroboratedLeak({
+      current: currentDepts,
+      ownObserved: [...(residualOwnDeptBySlug.get(slug) || [])],
+      leaked: allLeakedForms,
+    });
+    const areaResult = stripUncorroboratedLeak({
+      current: currentAreas,
+      ownObserved: [...(residualOwnAreaBySlug.get(slug) || [])],
+      leaked: allLeakedForms,
+    });
+
+    if (!deptResult.changed && !areaResult.changed) continue;
+    plannedUpdates.push({
+      slug,
+      name: entity.name,
+      kind: entity.kind,
+      ...(deptResult.changed
+        ? { departments: { from: currentDepts, to: deptResult.cleaned, removed: deptResult.removed } }
+        : {}),
+      ...(areaResult.changed
+        ? { researchAreas: { from: currentAreas, to: areaResult.cleaned, removed: areaResult.removed } }
+        : {}),
+    });
+  }
+
   const summary = {
     mode: options.apply ? 'apply' : 'dry-run',
     environment: guard.environment,
     db: guard.dbLabel,
-    leakedSourceUrls: leakedUrls,
-    scannedAffected: affected.length,
+    leakedEntityKeys: leakedEntityKeys.length,
+    scannedAffected: affected.length + residualCandidates.length,
+    residualValueMatchedAffected: residualCandidates.length,
     entitiesChanged: plannedUpdates.length,
     departmentsCleaned: plannedUpdates.filter((u) => u.departments).length,
     researchAreasCleaned: plannedUpdates.filter((u) => u.researchAreas).length,
