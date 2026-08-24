@@ -429,6 +429,27 @@ describe('sourceUrlSchoolContradictsEntity', () => {
       }),
     ).toBe(false);
   });
+
+  it('exempts the Law/Management cross-appointment pair from the hard contradiction', () => {
+    expect(
+      sourceUrlSchoolContradictsEntity('https://law.yale.edu/jordan-avery', {
+        school: 'School of Management',
+      }),
+    ).toBe(false);
+    expect(
+      sourceUrlSchoolContradictsEntity('https://faculty.som.yale.edu/jordanavery/', {
+        school: 'Yale Law School',
+      }),
+    ).toBe(false);
+  });
+
+  it('still fires Law/Management contradictions against an unrelated third school', () => {
+    expect(
+      sourceUrlSchoolContradictsEntity('https://law.yale.edu/jordan-avery', {
+        school: 'School of Drama',
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('isPersonOrGrantShellSlug (#1595)', () => {
