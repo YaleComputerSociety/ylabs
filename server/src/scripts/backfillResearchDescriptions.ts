@@ -375,6 +375,7 @@ export interface ResearchDescriptionBackfillResult {
 export async function runResearchDescriptionBackfill(options: {
   dryRun: boolean;
   limit?: number;
+  recordIds?: string[];
   rewriter?: DescriptionRewriter;
 }): Promise<ResearchDescriptionBackfillResult> {
   const rewrite = options.rewriter || defaultRewriter;
@@ -383,6 +384,7 @@ export async function runResearchDescriptionBackfill(options: {
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['operator_review', 'limited_but_safe'] },
       studentVisibilityReasons: { $in: DESC_BLOCK_REASONS },
+      ...(options.recordIds?.length ? { _id: { $in: options.recordIds } } : {}),
     },
     {
       _id: 1,
@@ -637,6 +639,7 @@ async function runLlmRewriteLane(options: ResearchDescriptionBackfillOptions): P
     const result = await runResearchDescriptionBackfill({
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
+      recordIds: options.recordIds,
     });
     writeBackfillReport(
       options,
@@ -648,6 +651,7 @@ async function runLlmRewriteLane(options: ResearchDescriptionBackfillOptions): P
         options: {
           dryRun: options.dryRun,
           limit: options.explicitLimit ? options.limit : undefined,
+          recordIds: options.recordIds,
         },
         result,
       },
