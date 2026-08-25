@@ -246,7 +246,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const result = await scraper.run(ctx);
 
-    expect(result).toMatchObject({ observationCount: 1, entitiesObserved: 1 });
+    expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenNthCalledWith(1, 'https://statml.yale.edu/');
     expect(fetchPage).toHaveBeenNthCalledWith(
       2,
@@ -262,6 +262,42 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         }),
       ]),
     );
+  });
+
+  it('emits only word-grounded methods and drops fabricated ones', async () => {
+    const { ctx, emitted } = makeContext();
+    ctx.options.only = ['ysm-flow-lab'];
+    ctx.options.limit = 1;
+    const pageProse =
+      'The Flow Lab studies immune signaling and inflammation in cortical circuits, using flow cytometry and live-cell imaging to quantify single-cell responses across experimental conditions.';
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://medicine.yale.edu/lab/flow/',
+      html: `<main><h1>Flow Lab</h1><p>${pageProse}</p></main>`,
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-flow',
+          slug: 'ysm-flow-lab',
+          name: 'Flow Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/flow/',
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: pageProse,
+        shortDescription: '',
+        topics: [],
+        methods: ['flow cytometry', 'live-cell imaging', 'mass spectrometry'],
+      } satisfies DescriptionExtraction),
+      callCardLLM: vi.fn().mockResolvedValue(''),
+    });
+
+    await scraper.run(ctx);
+
+    const methodsObservation = emitted.find((obs) => obs.field === 'methods');
+    expect(methodsObservation?.value).toEqual(['flow cytometry', 'live-cell imaging']);
   });
 
   it('rejects unsafe runtime bounds before fetching lab pages', async () => {
@@ -387,7 +423,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenCalledTimes(2);
-    expect(callLLM).not.toHaveBeenCalled();
+    expect(callLLM).toHaveBeenCalledTimes(1);
     expect(emitted).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ entityId: 'reachable-1', field: 'fullDescription' }),
@@ -420,7 +456,9 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     const result = await scraper.run(ctx);
 
     expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
-    expect(callLLM).not.toHaveBeenCalled();
+    // The description still comes verbatim from the embedded prose even though the
+    // LLM is now also consulted for methods on the deterministic path.
+    expect(callLLM).toHaveBeenCalledTimes(1);
     expect(emitted).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

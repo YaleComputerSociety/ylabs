@@ -483,15 +483,6 @@ const SOURCES: SourceSeed[] = [
     defaultWeight: 0.65,
     cadence: 'monthly',
   },
-  {
-    name: 'research-entity-description-methods-llm',
-    displayName: 'Research-entity description methods (derived)',
-    description:
-      "Word-grounded methods/techniques derived from an entity's already-stored fullDescription for research homes that still lack methods; emits methods observations only.",
-    baseUrl: '',
-    defaultWeight: 0.5,
-    cadence: 'event',
-  },
 ];
 
 const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({

@@ -39,6 +39,7 @@ import {
   synthesizeGroundedCardDescription,
   type CardSynthesisLLMFn,
 } from '../../utils/groundedCardSynthesis';
+import { groundMethods } from '../utils/methodGrounding';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -58,6 +59,12 @@ export function normalizeDescriptionLlmObjectId(value: unknown): string | undefi
   return undefined;
 }
 
+export interface SourceLinkHealthEntry {
+  url?: string;
+  healthStatus?: string;
+  httpStatusCode?: number;
+}
+
 export interface CandidateDescriptionLab {
   _id?: unknown;
   slug?: string;
@@ -70,6 +77,8 @@ export interface CandidateDescriptionLab {
   school?: string;
   schools?: string[];
   departments?: string[];
+  fullDescription?: string;
+  sourceLinkHealth?: SourceLinkHealthEntry[];
 }
 
 export interface CandidateDescriptionLabDoc {
@@ -86,6 +95,7 @@ export interface CandidateDescriptionLabDoc {
   school?: string;
   schools?: string[];
   departments?: string[];
+  sourceLinkHealth?: SourceLinkHealthEntry[];
 }
 
 export interface FetchedDescriptionPage {
@@ -144,6 +154,23 @@ const uniqueStrings = (values: unknown): string[] =>
         .filter(Boolean),
     ),
   );
+
+const normalizeSourceUrlKey = (url: string): string => url.trim().replace(/\/+$/, '').toLowerCase();
+
+function isKnownUnavailableSourceUrl(
+  url: string,
+  health: SourceLinkHealthEntry[] | undefined,
+): boolean {
+  if (!Array.isArray(health) || health.length === 0) return false;
+  const key = normalizeSourceUrlKey(url);
+  return health.some(
+    (entry) =>
+      typeof entry?.url === 'string' &&
+      normalizeSourceUrlKey(entry.url) === key &&
+      (entry.healthStatus === 'UNAVAILABLE' ||
+        (typeof entry.httpStatusCode === 'number' && entry.httpStatusCode >= 400)),
+  );
+}
 
 function parseRuntimeIntegerOption(
   value: number | undefined,
@@ -297,6 +324,9 @@ export function candidateDescriptionLabsFromDocs(
       school: doc.school,
       schools: doc.schools,
       departments: doc.departments,
+      fullDescription:
+        textValue((doc as { fullDescription?: unknown }).fullDescription) || undefined,
+      sourceLinkHealth: doc.sourceLinkHealth,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
   });
@@ -610,6 +640,8 @@ async function defaultLabFinder(
       school: 1,
       schools: 1,
       departments: 1,
+      fullDescription: 1,
+      sourceLinkHealth: 1,
     },
   ).lean();
   return candidateDescriptionLabsFromDocs(docs as CandidateDescriptionLabDoc[], {
@@ -747,7 +779,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           }
         }
         const urls = uniqueStrings([lab.websiteUrl, ...(lab.sourceUrls || [])]).filter(
-          (url) => !isRejectedDescriptionSourceUrl(url) && personProfileSourceMatchesEntity(url, lab),
+          (url) =>
+            !isRejectedDescriptionSourceUrl(url) &&
+            !isKnownUnavailableSourceUrl(url, lab.sourceLinkHealth) &&
+            personProfileSourceMatchesEntity(url, lab),
         );
         let page: FetchedDescriptionPage | null = null;
         let lastFetchError = '';
@@ -800,48 +835,82 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               shortDescription: embedded.shortDescription || '',
             }
           : extractOfficialResearchDescription(page.html, { kind });
-        if (officialProse?.fullDescription) {
-          const deterministicObservations = descriptionExtractionToObservations(
-            {
-              fullDescription: officialProse.fullDescription,
-              shortDescription: officialProse.shortDescription || '',
-              topics: [],
-              methods: [],
-            },
-            {
-              entityId: serializedDocumentId(lab._id),
-              entityKey: lab.slug,
-              sourceUrl: page.url,
-            },
-          );
-          if (deterministicObservations.length) {
-            const withCard = await this.withSynthesizedCard(deterministicObservations);
-            await ctx.emit(withCard);
-            observationCount += withCard.length;
-            entitiesObserved += 1;
-            continue;
-          }
-        }
 
         const pageText = htmlToText(page.html);
-        if (pageText.length < 120) continue;
+        const llmExtraction =
+          pageText.length >= 120
+            ? await this.callLLM({
+                model: this.model,
+                apiKey: this.apiKey,
+                labName: lab.name,
+                sourceUrl: page.url,
+                pageText,
+              })
+            : null;
 
-        const extraction = await this.callLLM({
-          model: this.model,
-          apiKey: this.apiKey,
-          labName: lab.name,
-          sourceUrl: page.url,
-          pageText,
-        });
-        const observations = descriptionExtractionToObservations(
-          groundDescriptionExtraction(extraction, pageText),
-          {
-            entityId: serializedDocumentId(lab._id),
-            entityKey: lab.slug,
+        // Methods are LLM-extracted and word-grounded before use, and are
+        // emitted regardless of which description path wins - the deterministic
+        // embedded-prose path previously dropped methods entirely. When the live
+        // page names no groundable methods, fall back to deriving them from the
+        // entity's already-stored description so research homes without method
+        // language on the page still surface techniques.
+        let methods = llmExtraction ? groundMethods(llmExtraction.methods, pageText) : [];
+        const storedDescription = textValue(lab.fullDescription);
+        if (methods.length === 0 && storedDescription.length >= 120) {
+          const descExtraction = await this.callLLM({
+            model: this.model,
+            apiKey: this.apiKey,
+            labName: lab.name,
             sourceUrl: page.url,
-          },
-        );
-        if (!observations.length) continue;
+            pageText: storedDescription,
+          });
+          methods = groundMethods(descExtraction.methods, storedDescription);
+        }
+
+        const identity = {
+          entityId: serializedDocumentId(lab._id),
+          entityKey: lab.slug,
+          sourceUrl: page.url,
+        };
+
+        let observations: ObservationInput[] = officialProse?.fullDescription
+          ? descriptionExtractionToObservations(
+              {
+                fullDescription: officialProse.fullDescription,
+                shortDescription: officialProse.shortDescription || '',
+                topics: [],
+                methods,
+              },
+              identity,
+            )
+          : [];
+        if (observations.length === 0 && llmExtraction) {
+          observations = descriptionExtractionToObservations(
+            { ...groundDescriptionExtraction(llmExtraction, pageText), methods },
+            identity,
+          );
+        }
+
+        if (observations.length === 0) {
+          // No usable description this run, but grounded methods (e.g. derived
+          // from the stored description when the live page is an empty shell)
+          // should still fill the field on their own.
+          if (methods.length > 0) {
+            const methodsObservation: ObservationInput = {
+              entityType: 'researchEntity',
+              entityId: identity.entityId,
+              entityKey: identity.entityKey,
+              sourceUrl: identity.sourceUrl,
+              confidenceOverride: /\/profile\//i.test(page.url) ? 0.55 : 0.82,
+              field: 'methods',
+              value: methods,
+            };
+            await ctx.emit([methodsObservation]);
+            observationCount += 1;
+            entitiesObserved += 1;
+          }
+          continue;
+        }
 
         const withCard = await this.withSynthesizedCard(observations);
         await ctx.emit(withCard);
