@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import PeopleResults from '../components/research/PeopleResults';
@@ -281,9 +281,7 @@ const searchResearchEntities = async (
         ? { studentVisibilityTier: options.trustTierFilters }
         : {}),
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
-      ...(options.sortBy
-        ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' }
-        : {}),
+      ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.standardOrder ? { standardOrder: true } : {}),
     },
     { signal },
@@ -420,7 +418,6 @@ const scrollResearchViewportToTop = () => {
 
 const Research = () => {
   const location = useLocation();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useContext(UserContext);
   const { totalNewMatches: savedSearchNewMatchCount } =
@@ -512,11 +509,7 @@ const Research = () => {
   >(
     () =>
       restoredSnapshotRef.current?.selectedEligibleStudentLevels ??
-      readSearchParamList(
-        searchParams,
-        'eligibleYears',
-        ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES,
-      ),
+      readSearchParamList(searchParams, 'eligibleYears', ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES),
   );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
@@ -560,9 +553,9 @@ const Research = () => {
     );
   const [isSaveSearchPanelOpen, setIsSaveSearchPanelOpen] = useState(false);
   const [saveSearchLabel, setSaveSearchLabel] = useState('');
-  const [saveSearchStatus, setSaveSearchStatus] = useState<
-    'idle' | 'saving' | 'saved' | 'error'
-  >('idle');
+  const [saveSearchStatus, setSaveSearchStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
+    'idle',
+  );
   const [defaultResearchEntities, setDefaultResearchEntities] = useState<ResearchEntity[]>(
     () => restoredSnapshotRef.current?.defaultResearchEntities ?? [],
   );
@@ -662,8 +655,7 @@ const Research = () => {
     [buildCurrentAvailabilityOptions, facetDistribution.undergraduateCurrentAvailability],
   );
   const browseCurrentAvailabilityOptions = useMemo(
-    () =>
-      buildCurrentAvailabilityOptions(browseFacetDistribution.undergraduateCurrentAvailability),
+    () => buildCurrentAvailabilityOptions(browseFacetDistribution.undergraduateCurrentAvailability),
     [buildCurrentAvailabilityOptions, browseFacetDistribution.undergraduateCurrentAvailability],
   );
   const buildCompensationOptions = useCallback(
@@ -693,19 +685,13 @@ const Research = () => {
     [],
   );
   const eligibleStudentLevelsOptions = useMemo(
-    () =>
-      buildEligibleStudentLevelsOptions(facetDistribution.undergraduateEligibleStudentLevels),
+    () => buildEligibleStudentLevelsOptions(facetDistribution.undergraduateEligibleStudentLevels),
     [buildEligibleStudentLevelsOptions, facetDistribution.undergraduateEligibleStudentLevels],
   );
   const browseEligibleStudentLevelsOptions = useMemo(
     () =>
-      buildEligibleStudentLevelsOptions(
-        browseFacetDistribution.undergraduateEligibleStudentLevels,
-      ),
-    [
-      buildEligibleStudentLevelsOptions,
-      browseFacetDistribution.undergraduateEligibleStudentLevels,
-    ],
+      buildEligibleStudentLevelsOptions(browseFacetDistribution.undergraduateEligibleStudentLevels),
+    [buildEligibleStudentLevelsOptions, browseFacetDistribution.undergraduateEligibleStudentLevels],
   );
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
@@ -1157,9 +1143,7 @@ const Research = () => {
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
     ...(areas.length ? { researchAreas: areas } : {}),
-    ...(typeBuckets.length
-      ? { entityType: entityTypesForResearchTypeBuckets(typeBuckets) }
-      : {}),
+    ...(typeBuckets.length ? { entityType: entityTypesForResearchTypeBuckets(typeBuckets) } : {}),
     ...(undergrads ? { hostsUndergrads: true } : {}),
     ...(documented ? { hasDocumentedWayIn: true } : {}),
     ...(availability.length ? { currentAvailability: availability } : {}),
@@ -1373,9 +1357,7 @@ const Research = () => {
       setSelectedCompensation(urlCompensation);
       return;
     }
-    if (
-      selectedEligibleStudentLevels.join(',') !== urlEligibleStudentLevels.join(',')
-    ) {
+    if (selectedEligibleStudentLevels.join(',') !== urlEligibleStudentLevels.join(',')) {
       setSelectedEligibleStudentLevels(urlEligibleStudentLevels);
       return;
     }
@@ -1684,13 +1666,13 @@ const Research = () => {
   });
   const hasStudentFacetSelection = Boolean(
     selectedSchool ||
-      selectedDepartment ||
-      selectedResearchAreas.length ||
-      selectedTypeBuckets.length ||
-      hostsUndergrads ||
-      selectedCurrentAvailability.length ||
-      selectedCompensation.length ||
-      selectedEligibleStudentLevels.length,
+    selectedDepartment ||
+    selectedResearchAreas.length ||
+    selectedTypeBuckets.length ||
+    hostsUndergrads ||
+    selectedCurrentAvailability.length ||
+    selectedCompensation.length ||
+    selectedEligibleStudentLevels.length,
   );
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =
@@ -1728,8 +1710,7 @@ const Research = () => {
     const documented = next.documentedWayIn ?? documentedWayIn;
     const availability = next.currentAvailability ?? selectedCurrentAvailability;
     const compensation = next.compensation ?? selectedCompensation;
-    const eligibleStudentLevels =
-      next.eligibleStudentLevels ?? selectedEligibleStudentLevels;
+    const eligibleStudentLevels = next.eligibleStudentLevels ?? selectedEligibleStudentLevels;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (school !== selectedSchool) {
       filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
@@ -1776,9 +1757,7 @@ const Research = () => {
     if (eligibleStudentLevels.join(',') !== selectedEligibleStudentLevels.join(',')) {
       filterChanges.push({
         operation:
-          eligibleStudentLevels.length > selectedEligibleStudentLevels.length
-            ? 'apply'
-            : 'remove',
+          eligibleStudentLevels.length > selectedEligibleStudentLevels.length ? 'apply' : 'remove',
         filter: 'eligible_student_levels',
       });
     }
