@@ -3,11 +3,11 @@ import { researchEntityHasDeceasedLead } from './researchEntityDeceasedLead';
 const MARKER_SCAN_WINDOW = 200;
 const MIN_HUMAN_LIFESPAN_YEARS = 15;
 const MAX_HUMAN_LIFESPAN_YEARS = 120;
-const NAME_LIFESPAN_ANYWHERE_RE =
-  /((?:18|19|20)\d{2})\s*[-‒–—―−]\s*((?:19|20)\d{2})/;
+const NAME_LIFESPAN_ANYWHERE_RE = /((?:18|19|20)\d{2})\s*[-‒–—―−]\s*((?:19|20)\d{2})/;
 
 const EMERITUS_URL_PATH_RE = /\bemeritus\b|\bemerita\b/i;
-const EMERITUS_TEXT_RE = /\bprofessors?\s+emeritus\b|\bprofessors?\s+emerita\b|\bemeritus\b|\bemerita\b/i;
+const EMERITUS_TEXT_RE =
+  /\bprofessors?\s+emeritus\b|\bprofessors?\s+emerita\b|\bemeritus\b|\bemerita\b/i;
 
 // An emeritus title attached to a specific non-Yale institution ("Professor
 // Emeritus at the University of Michigan") does not mean the person departed
