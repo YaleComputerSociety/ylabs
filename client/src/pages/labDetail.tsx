@@ -91,7 +91,7 @@ const SectionHeading = ({ children }: { children: React.ReactNode }) => (
 );
 
 const formatEntityKindTag = (kind?: string | null): string | undefined =>
-  kind ? formatTitleCaseLabel(kind.replace(/[_-]+/g, ' ')) : undefined;
+  kind ? formatTitleCaseLabel(kind.replace(/[_-]+/g, ' ').toLowerCase()) : undefined;
 
 const RelatedResearchEntitiesSection = ({
   relationships,
