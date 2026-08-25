@@ -108,6 +108,34 @@ describe('deriveResearchEntityYaleStatus', () => {
     expect(signal).toBeNull();
   });
 
+  it('does not flag active Yale faculty holding bare-named emeritus status elsewhere', () => {
+    const yalePhilosopherAtHarvard = deriveResearchEntityYaleStatus({
+      name: 'Jane Doe - Research',
+      sourceUrls: ['https://philosophy.yale.edu/faculty'],
+      fullDescription:
+        'Jane Doe is a Professor of Philosophy at Yale University and Professor Emeritus at Harvard. Her research examines moral reasoning.',
+    });
+    expect(yalePhilosopherAtHarvard).toBeNull();
+
+    const emeritusFirstAtMit = deriveResearchEntityYaleStatus({
+      name: 'John Roe - Research',
+      sourceUrls: ['https://engineering.yale.edu/faculty'],
+      fullDescription:
+        'John Roe is a Professor at Yale University and Emeritus Professor at MIT, studying control systems.',
+    });
+    expect(emeritusFirstAtMit).toBeNull();
+  });
+
+  it('still flags emeritus attributed to Yale itself', () => {
+    const signal = deriveResearchEntityYaleStatus({
+      name: 'Alex Poe - Research',
+      sourceUrls: ['https://philosophy.yale.edu/faculty'],
+      fullDescription: 'Alex Poe is Professor Emeritus at Yale, studying logic.',
+    });
+
+    expect(signal?.reason).toBe('emeritus');
+  });
+
   it('returns null for a null or undefined entity', () => {
     expect(deriveResearchEntityYaleStatus(null)).toBeNull();
     expect(deriveResearchEntityYaleStatus(undefined)).toBeNull();

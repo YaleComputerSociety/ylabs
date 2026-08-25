@@ -15,7 +15,7 @@ const EMERITUS_TEXT_RE = /\bprofessors?\s+emeritus\b|\bprofessors?\s+emerita\b|\
 // such non-Yale-attributed emeritus mentions before testing for a Yale
 // departure so they do not falsely suppress an active Yale research home.
 const NON_YALE_EMERITUS_ATTRIBUTION_RE =
-  /[Ee]merit(?:us|a)\b(?:\s+[Pp]rofessor)?\s*,?\s+(?:(?:at|of)\s+)?(?:the\s+)?((?:[A-Z][A-Za-z.&'’-]+\s+){0,3}(?:University|College|Institute|School)(?:\s+of\s+[A-Z][A-Za-z.&'’-]+(?:\s+[A-Z][A-Za-z.&'’-]+)?)?)/g;
+  /[Ee]merit(?:us|a)\b(?:\s+[Pp]rofessor)?\s*,?\s+(?:(?:at|of)\s+)?(?:the\s+)?((?:[A-Z][A-Za-z.&'’-]+\s+){0,3}(?:University|College|Institute|School)(?:\s+of\s+[A-Z][A-Za-z.&'’-]+(?:\s+[A-Z][A-Za-z.&'’-]+)?)?)|[Ee]merit(?:us|a)\b(?:\s+[Pp]rofessor)?\s*,?\s+at\s+(?:the\s+)?([A-Z][A-Za-z.&'’-]+(?:\s+[A-Z][A-Za-z.&'’-]+){0,3})/g;
 
 const IN_MEMORIAM_URL_PATH_RE = /\bin-memoriam\b|\bobituar(?:y|ies)\b/i;
 const IN_MEMORIAM_TEXT_RE = /\bin memoriam\b|\bpassed away\b/i;
@@ -77,8 +77,10 @@ function hasInMemoriamMarker(entity: Record<string, any>): boolean {
 }
 
 function stripNonYaleEmeritusAttributions(opening: string): string {
-  return opening.replace(NON_YALE_EMERITUS_ATTRIBUTION_RE, (match, institution) =>
-    /yale/i.test(institution) ? match : ' ',
+  return opening.replace(
+    NON_YALE_EMERITUS_ATTRIBUTION_RE,
+    (match, keywordInstitution, bareInstitution) =>
+      /yale/i.test(keywordInstitution ?? bareInstitution ?? '') ? match : ' ',
   );
 }
 
