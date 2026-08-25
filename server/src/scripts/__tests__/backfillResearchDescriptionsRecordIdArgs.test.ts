@@ -18,6 +18,22 @@ describe('parseResearchDescriptionBackfillArgs --record-id', () => {
     ]);
   });
 
+  it('collects repeated valid record ids for a scoped llm-synthesis run', () => {
+    const options = parseResearchDescriptionBackfillArgs([
+      '--llm-synthesis',
+      '--dry-run',
+      '--record-id=6a05677d7c6d4fba869fbbc3',
+      '--record-id=6a057de313fc60d57ec2a09a',
+    ]);
+
+    expect(options.llmSynthesis).toBe(true);
+    expect(options.explicitLimit).toBe(false);
+    expect(options.recordIds).toEqual([
+      '6a05677d7c6d4fba869fbbc3',
+      '6a057de313fc60d57ec2a09a',
+    ]);
+  });
+
   it('rejects a record id that is not a 24-character hex ObjectId', () => {
     expect(() =>
       parseResearchDescriptionBackfillArgs(['--card-synthesis', '--record-id=not-an-object-id']),
