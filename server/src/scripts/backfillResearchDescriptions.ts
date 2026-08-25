@@ -375,6 +375,7 @@ export interface ResearchDescriptionBackfillResult {
 export async function runResearchDescriptionBackfill(options: {
   dryRun: boolean;
   limit?: number;
+  recordIds?: string[];
   rewriter?: DescriptionRewriter;
 }): Promise<ResearchDescriptionBackfillResult> {
   const rewrite = options.rewriter || defaultRewriter;
@@ -383,6 +384,7 @@ export async function runResearchDescriptionBackfill(options: {
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['operator_review', 'limited_but_safe'] },
       studentVisibilityReasons: { $in: DESC_BLOCK_REASONS },
+      ...(options.recordIds?.length ? { _id: { $in: options.recordIds } } : {}),
     },
     {
       _id: 1,
@@ -637,6 +639,7 @@ async function runLlmRewriteLane(options: ResearchDescriptionBackfillOptions): P
     const result = await runResearchDescriptionBackfill({
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
+      recordIds: options.recordIds,
     });
     writeBackfillReport(
       options,
@@ -648,6 +651,7 @@ async function runLlmRewriteLane(options: ResearchDescriptionBackfillOptions): P
         options: {
           dryRun: options.dryRun,
           limit: options.explicitLimit ? options.limit : undefined,
+          recordIds: options.recordIds,
         },
         result,
       },
@@ -1068,29 +1072,28 @@ export async function runCardSynthesisBackfill(options: {
     studentVisibilityReasons: CARD_BLOCKER_REASON,
   };
   if (scopedIds.length > 0) query._id = { $in: scopedIds };
-  const docs = (await ResearchEntity.find(
-    query,
-    {
-      _id: 1,
-      slug: 1,
-      name: 1,
-      displayName: 1,
-      entityType: 1,
-      kind: 1,
-      shortDescription: 1,
-      fullDescription: 1,
-      researchAreas: 1,
-      studentVisibilityReasons: 1,
-      websiteUrl: 1,
-      website: 1,
-      sourceUrls: 1,
-    },
-  )
+  const docs = (await ResearchEntity.find(query, {
+    _id: 1,
+    slug: 1,
+    name: 1,
+    displayName: 1,
+    entityType: 1,
+    kind: 1,
+    shortDescription: 1,
+    fullDescription: 1,
+    researchAreas: 1,
+    studentVisibilityReasons: 1,
+    websiteUrl: 1,
+    website: 1,
+    sourceUrls: 1,
+  })
     .sort({ _id: 1 })
     .lean()) as CardSynthesisEntityDoc[];
 
   const limited = options.limit ? docs.slice(0, options.limit) : docs;
-  const docsById = new Map(limited.map((doc) => [serializedDocumentId(doc._id) || String(doc._id), doc]));
+  const docsById = new Map(
+    limited.map((doc) => [serializedDocumentId(doc._id) || String(doc._id), doc]),
+  );
   const recordIds = Array.from(docsById.keys());
 
   const plans = recordIds.length
