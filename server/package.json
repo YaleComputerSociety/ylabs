@@ -76,7 +76,6 @@
     "beta:repair-queue": "tsx src/scripts/betaRepairQueue.ts",
     "data:materialize-inferred-pi-leads": "tsx src/scripts/backfillInferredPiLeadMaterialization.ts",
     "programs:backfill-classification": "tsx src/scripts/backfillProgramClassifications.ts",
-    "programs:retire-projected-research-entities": "tsx src/scripts/retireProjectedProgramResearchEntities.ts",
     "programs:backfill-global-regions": "tsx src/scripts/backfillGlobalRegionsDefaultFill.ts",
     "programs:backfill-official-sources": "tsx src/scripts/backfillProgramOfficialSources.ts",
     "programs:backfill-link-labels": "tsx src/scripts/backfillProgramLinkLabels.ts",
