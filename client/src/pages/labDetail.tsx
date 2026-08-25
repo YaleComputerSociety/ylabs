@@ -640,7 +640,8 @@ const DecisionSummary = ({
               </h2>
               <LongText
                 text={description}
-                className="mt-2 text-base leading-relaxed text-gray-800"
+                className="mt-2 max-w-[68ch] text-base leading-relaxed text-gray-800"
+                paragraphClassName="mt-4 first:mt-0"
               />
             </>
           )}
