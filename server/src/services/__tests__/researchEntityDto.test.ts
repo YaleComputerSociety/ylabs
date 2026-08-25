@@ -19,6 +19,31 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toBe('The lab studies airway disease.');
   });
 
+  it('drops methods already shown as research areas so a term never appears in both lists', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-methods',
+      slug: 'psych-neuro-lab',
+      name: 'Neuro Lab',
+      kind: 'lab',
+      researchAreas: ['Neuroimaging', 'Neuropsychology'],
+      methods: ['Behavioral Experiments', 'Computational Modeling', 'Neuroimaging', 'neuropsychology'],
+    });
+    expect(dto.researchAreas).toEqual(['Neuroimaging', 'Neuropsychology']);
+    expect(dto.methods).toEqual(['Behavioral Experiments', 'Computational Modeling']);
+  });
+
+  it('de-duplicates methods case-insensitively within the served list', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-methods-dupe',
+      slug: 'dupe-lab',
+      name: 'Dupe Lab',
+      kind: 'lab',
+      researchAreas: [],
+      methods: ['Flow Cytometry', 'flow cytometry', 'RNA sequencing'],
+    });
+    expect(dto.methods).toEqual(['Flow Cytometry', 'RNA sequencing']);
+  });
+
   it('fails a first-person source-bio shortDescription closed in the served DTO (#1077)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-first-person',
