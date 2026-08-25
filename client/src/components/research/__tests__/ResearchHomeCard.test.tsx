@@ -201,6 +201,33 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('Needs description')).toBeTruthy();
   });
 
+  it('elevates a genuine undergrad-hosting signal to the prominent lead line', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({ wayInBadges: ['Contact route', 'Undergrad evidence'] })}
+        />
+      </MemoryRouter>,
+    );
+
+    const lead = screen.getByText('Has hosted undergraduate researchers');
+    expect(lead.className).toContain('font-semibold');
+    expect(lead.className).not.toContain('yr-pill');
+    expect(screen.getByText('Open to inquiries').className).toContain('yr-pill');
+  });
+
+  it('does not elevate a fallback contact route to the prominent lead line', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome({ wayInBadges: ['Contact route'] })} />
+      </MemoryRouter>,
+    );
+
+    const chip = screen.getByText('Open to inquiries');
+    expect(chip.className).toContain('yr-pill');
+    expect(chip.className).not.toContain('font-semibold');
+  });
+
   it('uses responsive topic caps with more-count badges', () => {
     render(
       <MemoryRouter>
