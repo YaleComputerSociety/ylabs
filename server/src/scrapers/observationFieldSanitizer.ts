@@ -41,6 +41,7 @@ import { isResearchAreaLabelLeakage } from './researchAreaCanonicalization';
 import { isResearchSectionLabel } from './researchAreaLabels';
 import {
   normalizeResearchEntityNameDashes,
+  normalizeResearchEntityNameSmartQuotes,
   stripTrailingResearchHomeDescription,
   collapseDuplicateResearchHomeSuffix,
 } from '../utils/researchEntityNameNormalization';
@@ -79,8 +80,10 @@ function sanitizePersonTitleField(value: string): SanitizedObservationField {
 }
 
 function normalizeEntityName(value: string): string {
-  return normalizeResearchEntityNameDashes(
-    collapseDuplicateResearchHomeSuffix(stripTrailingResearchHomeDescription(value)),
+  return normalizeResearchEntityNameSmartQuotes(
+    normalizeResearchEntityNameDashes(
+      collapseDuplicateResearchHomeSuffix(stripTrailingResearchHomeDescription(value)),
+    ),
   );
 }
 
