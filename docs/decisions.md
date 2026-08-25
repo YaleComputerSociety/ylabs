@@ -14,6 +14,39 @@ A scraped `PROGRAM` research home discovered on a Yale department or official pa
 Existing projected entities are removed from the corpus by the guarded `programs:retire-projected-research-entities` data operation (dry-run first).
 Future work must not reintroduce a Fellowship-to-research projection or those two entity types.
 
+## 2026-08-25: Simple Directory First; Signals Are Factual Enrichment, Not An Access-Plausibility Tier
+
+Yale Research is a simple, high-quality directory of Yale research whose two co-equal priorities are good data and good search.
+The student job is to find a professor and their work and reach out; the directory's job is to make that fast and trustworthy, not to compute pathways or score access.
+The durable core stays: `ResearchEntity` + `Researcher` + `RoleAssignment` (what exists, who it is, who leads it), official links, real descriptions, and Meilisearch discovery.
+
+Enrichment versus gate is the organizing axis, and every entity field sorts into exactly one bucket.
+A gate can hide a lab and covers correctness only: a real, coherent, research-focus description, the right lead attached, and not a duplicate or suppressed shell, in scope and active.
+Enrichment never hides anything: funded, has mentored undergraduates before, wet or dry lab, paid or credit, active, size, topics, and methods.
+Enrichment does not decide whether a student reaches out; it helps the student pick whom to email first and what to say.
+This is the model `student-ready-definition.md` already encodes, so the visibility gate does not change.
+
+Reaching out is the universal action and needs no plausibility score.
+The next-step action is a function of entity type, not a computed access grade: a lab or faculty entity resolves to reaching out to the professor, and a course sequence resolves to enrolling or asking the DUS.
+Applying is the action on the separate programs and fellowships board, not in the directory.
+
+The access-plausibility tier is retired: the `Signal`-driven browse trust filter and ranking, the `REACH_OUT_PLAUSIBLE` style plausibility signals, the `accessAcceptanceLevel` grade, the `accessSummary` and best-next-step engine, and the "Ways in" and Planning Context pathway framing all go away.
+Signals become factual, sourced, non-ranking badges.
+Research-area topic chips are demoted from a first-class, gating field to a search-only enrichment signal, and the inert "Open now / Rolling" availability filter is removed.
+The vocabulary "research home" and "research area" is deprecated in favor of plain directory language.
+
+Faculty are represented once.
+A professor is a `LAB` if they have a named lab and a `FACULTY_RESEARCH_AREA` (a lab of one) only if they do not; the two share one content contract, a research-focus description grounded in the professor's own official source, never a bio or CV.
+A `FACULTY_RESEARCH_AREA` that duplicates a lab is evidence the professor has a lab, so it merges into the lab rather than being held for review; a standalone `FACULTY_RESEARCH_AREA` remains only for genuinely lab-less faculty.
+The remaining `FACULTY_RESEARCH_AREA` description defects are a scraper and data-quality problem (extract the research, not the bio; do not graft a sibling entity's areas), not a schema problem.
+
+The programs and fellowships board stays a separate surface, as it is today after the split-brain resolution (#1948 removed the `Fellowship`-to-`ResearchEntity` projection).
+The directory is find a person and reach out; the board is apply to a program.
+
+This decision states direction.
+It supersedes the 2026-05-07 "North Star Is Research Navigation" and 2026-05-11 "Use Pathways As The Student Action Layer" framings and amends the 2026-08-19 trust-filter role of `Signal`.
+The code removals (trust filter, `accessSummary`, `REACH_OUT_PLAUSIBLE`, ways-in) and the current-state runtime docs that still describe them are updated in follow-up work, not by this decision; until then those docs still describe live code.
+
 ## 2026-08-25: Researcher Person Page Is Retired; Discovery Ends At The Research Entity
 
 The standalone researcher person page (`/research/person/:publicKey`) and the researcher people-search card on `/research` are removed.
