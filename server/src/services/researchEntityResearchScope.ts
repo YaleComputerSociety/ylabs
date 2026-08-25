@@ -1,8 +1,9 @@
 /**
  * Classifies whether an organizational ResearchEntity is actually a research
  * home. Organization type and polished source copy are not sufficient by
- * themselves: service, administrative, and instructional-support units need
- * positive evidence that they conduct or organize research.
+ * themselves: service, administrative, instructional-support, and
+ * publication or media-outlet units need positive evidence that they
+ * conduct or organize research.
  */
 
 export interface ResearchEntityResearchScopeInput {
