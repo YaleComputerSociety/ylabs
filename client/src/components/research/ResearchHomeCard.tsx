@@ -259,14 +259,14 @@ const ResearchHomeCard = ({
             </span>
           ))}
           {alwaysVisibleTopicBadges.map((label) => (
-            <span key={label} className="yr-pill min-h-0 rounded px-2 py-0.5">
+            <span key={label} className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {desktopOnlyTopicBadges.map((label) => (
             <span
               key={label}
-              className="yr-pill hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex"
+              className="yr-pill yr-pill-blue hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex"
             >
               {formatTitleCaseLabel(label)}
             </span>
