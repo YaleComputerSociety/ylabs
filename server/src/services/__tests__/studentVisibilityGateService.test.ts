@@ -385,6 +385,64 @@ describe('studentVisibilityGateService', () => {
     expect([...ids]).toEqual(['christensen-shell']);
   });
 
+  it('does not collide unrelated faculty whose sites are wrapped as distinct Outlook safelinks', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds(
+      [
+        {
+          _id: 'bhagchandani-research',
+          slug: 'dept-one-shakti-bhagchandani',
+          name: 'Shakti Bhagchandani Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl:
+            'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.shaktibhagchandani.com%2F&data=05%7C01%7C&sdata=abc&reserved=0',
+          sourceUrls: ['https://example.yale.edu/people/faculty'],
+        },
+        {
+          _id: 'lovelace-research',
+          slug: 'dept-two-ada-lovelace',
+          name: 'Ada Lovelace Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl:
+            'https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fadalovelacelab.org%2F&data=05%7C02%7C&sdata=xyz&reserved=0',
+          sourceUrls: ['https://example.yale.edu/people/faculty'],
+        },
+      ],
+    );
+
+    expect([...ids]).toEqual([]);
+  });
+
+  it('still detects duplicates when both entities wrap the same site in a safelinks wrapper', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds(
+      [
+        {
+          _id: 'shakti-canonical',
+          slug: 'shakti-bhagchandani-lab',
+          name: 'Shakti Bhagchandani Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'student_ready',
+          fullDescription:
+            'The lab studies developmental neurobiology, synaptic plasticity, and circuit formation across model organisms at Yale.',
+          shortDescription: 'Studies developmental neurobiology and synaptic plasticity.',
+          sourceUrls: ['http://www.shaktibhagchandani.com/'],
+        },
+        {
+          _id: 'shakti-shell',
+          slug: 'dept-shakti-bhagchandani',
+          name: 'Shakti Bhagchandani Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl:
+            'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.shaktibhagchandani.com%2F&data=05%7C01%7C&reserved=0',
+          sourceUrls: ['https://example.yale.edu/people/faculty'],
+        },
+      ],
+      [{ researchEntityId: 'shakti-canonical', userId: 'user-shakti' }],
+    );
+
+    expect([...ids]).toEqual(['shakti-shell']);
+  });
+
   it('classifies missing-data reasons as blockers and evidence reasons as signals', () => {
     expect(isBlockingVisibilityReason('missing_description')).toBe(true);
     expect(isBlockingVisibilityReason('thin_description')).toBe(true);

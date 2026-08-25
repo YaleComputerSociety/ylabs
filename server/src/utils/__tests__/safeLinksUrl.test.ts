@@ -38,7 +38,8 @@ describe('unwrapMicrosoftSafeLinksUrl', () => {
   });
 
   it('unwraps a doubly-wrapped safelinks target', () => {
-    const inner = 'https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fx';
+    const inner =
+      'https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fx';
     const outer =
       'https://nam12.safelinks.protection.outlook.com/?url=' + encodeURIComponent(inner);
     expect(unwrapMicrosoftSafeLinksUrl(outer)).toBe('https://example.com/x');
