@@ -240,10 +240,10 @@ const ResearchFilterDisclosure = ({
       showCurrentAvailability ||
       showCompensation ||
       showEligibleStudentLevels) && (
-    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-      Current filter counts are unavailable. Active values remain clearable.
-    </p>
-  );
+      <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        Current filter counts are unavailable. Active values remain clearable.
+      </p>
+    );
 
   const filterFields = (
     <fieldset className="min-w-0 space-y-4 border-0 p-0">
@@ -274,9 +274,7 @@ const ResearchFilterDisclosure = ({
       )}
       {showCompensation && (
         <fieldset className="min-w-0 space-y-2 border-0 p-0">
-          <legend className="text-sm font-medium text-slate-800">
-            Undergraduate compensation
-          </legend>
+          <legend className="text-sm font-medium text-slate-800">Undergraduate compensation</legend>
           {compensationOptions.map((option) => (
             <label
               key={option.value}
@@ -441,9 +439,7 @@ const ResearchFilterDisclosure = ({
             key={value}
             type="button"
             onClick={() =>
-              onCompensationChange(
-                selectedCompensation.filter((selected) => selected !== value),
-              )
+              onCompensationChange(selectedCompensation.filter((selected) => selected !== value))
             }
             aria-label={`Remove ${label}`}
             className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"

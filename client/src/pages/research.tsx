@@ -1529,10 +1529,10 @@ const Research = () => {
   });
   const hasStudentFacetSelection = Boolean(
     selectedSchool ||
-      selectedDepartment ||
-      selectedCurrentAvailability.length ||
-      selectedCompensation.length ||
-      selectedEligibleStudentLevels.length,
+    selectedDepartment ||
+    selectedCurrentAvailability.length ||
+    selectedCompensation.length ||
+    selectedEligibleStudentLevels.length,
   );
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =

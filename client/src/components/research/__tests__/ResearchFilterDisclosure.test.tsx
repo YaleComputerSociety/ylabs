@@ -81,9 +81,7 @@ describe('ResearchFilterDisclosure', () => {
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
     expect(dialog.className).toContain('sm:absolute');
     expect(dialog).not.toHaveAttribute('aria-modal');
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText('Filter by school')).toHaveFocus(),
-    );
+    await waitFor(() => expect(within(dialog).getByLabelText('Filter by school')).toHaveFocus());
     expect(within(dialog).getByRole('button', { name: 'Close filters' })).not.toHaveFocus();
 
     const last = within(dialog).getByLabelText('Filter by department');
@@ -128,9 +126,7 @@ describe('ResearchFilterDisclosure', () => {
     renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
 
     expect(screen.queryByRole('button', { name: /^Filters/ })).toBeNull();
-    expect(
-      screen.getByRole('heading', { name: 'Research filters', level: 2 }),
-    ).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Research filters', level: 2 })).toBeTruthy();
     expect(screen.getByLabelText('Filter by school')).toBeTruthy();
     expect(screen.getByLabelText('Filter by department')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
@@ -153,7 +149,8 @@ describe('ResearchFilterDisclosure', () => {
       variant: 'sidebar',
       currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 25 }],
       selectedCurrentAvailability: ['OPEN'],
-      currentAvailabilityLabel: (value) => ({ OPEN: 'Open now', ROLLING: 'Rolling' }[value] ?? value),
+      currentAvailabilityLabel: (value) =>
+        ({ OPEN: 'Open now', ROLLING: 'Rolling' })[value] ?? value,
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Open now' }));
     expect(selectedProps.onCurrentAvailabilityChange).toHaveBeenCalledWith([]);
@@ -169,17 +166,13 @@ describe('ResearchFilterDisclosure', () => {
         { value: 'ROLLING', label: 'Rolling', count: 2 },
       ],
     });
-    expect(
-      within(sparseContainer).queryByText('Current undergraduate availability'),
-    ).toBeNull();
+    expect(within(sparseContainer).queryByText('Current undergraduate availability')).toBeNull();
 
     const { container: emptyContainer } = renderFilters({
       variant: 'sidebar',
       currentAvailabilityOptions: [],
     });
-    expect(
-      within(emptyContainer).queryByText('Current undergraduate availability'),
-    ).toBeNull();
+    expect(within(emptyContainer).queryByText('Current undergraduate availability')).toBeNull();
   });
 
   it('keeps an already-selected current-availability value visible even below the coverage minimum', () => {
@@ -189,7 +182,8 @@ describe('ResearchFilterDisclosure', () => {
       variant: 'sidebar',
       currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 1 }],
       selectedCurrentAvailability: ['OPEN'],
-      currentAvailabilityLabel: (value) => ({ OPEN: 'Open now', ROLLING: 'Rolling' }[value] ?? value),
+      currentAvailabilityLabel: (value) =>
+        ({ OPEN: 'Open now', ROLLING: 'Rolling' })[value] ?? value,
     });
 
     expect(screen.getByText('Current undergraduate availability')).toBeTruthy();
@@ -214,7 +208,7 @@ describe('ResearchFilterDisclosure', () => {
       compensationOptions: [{ value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 25 }],
       selectedCompensation: ['PAID_OR_STIPEND'],
       compensationLabel: (value) =>
-        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' }[value] ?? value),
+        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' })[value] ?? value,
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Paid or stipend' }));
     expect(selectedProps.onCompensationChange).toHaveBeenCalledWith([]);
@@ -247,7 +241,7 @@ describe('ResearchFilterDisclosure', () => {
       compensationOptions: [{ value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 1 }],
       selectedCompensation: ['PAID_OR_STIPEND'],
       compensationLabel: (value) =>
-        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' }[value] ?? value),
+        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' })[value] ?? value,
     });
 
     expect(screen.getByText('Undergraduate compensation')).toBeTruthy();
@@ -279,7 +273,7 @@ describe('ResearchFilterDisclosure', () => {
           SOPHOMORE: 'Open to sophomores',
           JUNIOR: 'Open to juniors',
           SENIOR: 'Open to seniors',
-        }[value] ?? value),
+        })[value] ?? value,
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Open to first-years' }));
     expect(selectedProps.onEligibleStudentLevelsChange).toHaveBeenCalledWith([]);
@@ -319,7 +313,7 @@ describe('ResearchFilterDisclosure', () => {
           SOPHOMORE: 'Open to sophomores',
           JUNIOR: 'Open to juniors',
           SENIOR: 'Open to seniors',
-        }[value] ?? value),
+        })[value] ?? value,
     });
 
     expect(screen.getByText('Open to class year')).toBeTruthy();

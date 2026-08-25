@@ -670,7 +670,9 @@ describe('Research page', () => {
     await waitFor(() => {
       expect(
         mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
-      ).toEqual(expect.objectContaining({ filters: { departments: ['Computer Science'] }, page: 1 }));
+      ).toEqual(
+        expect.objectContaining({ filters: { departments: ['Computer Science'] }, page: 1 }),
+      );
       expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
     });
 
@@ -2684,9 +2686,11 @@ describe('Research landing saved-search new-match signal', () => {
 
     renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
 
-    await waitFor(() => expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedSearches', {
-      withCredentials: true,
-    }));
+    await waitFor(() =>
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedSearches', {
+        withCredentials: true,
+      }),
+    );
     expect(screen.queryByText(/new matches for your saved searches/)).toBeNull();
   });
 
@@ -2696,10 +2700,7 @@ describe('Research landing saved-search new-match signal', () => {
     renderResearch(departments, ['/research']);
 
     expect(screen.getByText(/browsing as a guest/i)).toBeTruthy();
-    expect(mockedAxios.get).not.toHaveBeenCalledWith(
-      '/users/savedSearches',
-      expect.anything(),
-    );
+    expect(mockedAxios.get).not.toHaveBeenCalledWith('/users/savedSearches', expect.anything());
   });
 });
 
@@ -2762,10 +2763,7 @@ describe('Research landing watched-deadline urgency signal', () => {
     renderResearch(departments, ['/research']);
 
     expect(screen.getByText(/browsing as a guest/i)).toBeTruthy();
-    expect(mockedAxios.get).not.toHaveBeenCalledWith(
-      '/users/watchedPrograms',
-      expect.anything(),
-    );
+    expect(mockedAxios.get).not.toHaveBeenCalledWith('/users/watchedPrograms', expect.anything());
   });
 });
 
@@ -2838,9 +2836,7 @@ describe('Research zero-result recovery', () => {
     const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
     await within(region).findByRole('button', { name: 'Browse all research homes' });
     await waitFor(() => {
-      expect(
-        within(region).queryByRole('button', { name: /Search .* instead/ }),
-      ).toBeNull();
+      expect(within(region).queryByRole('button', { name: /Search .* instead/ })).toBeNull();
     });
   });
 
@@ -2870,9 +2866,7 @@ describe('Research zero-result recovery', () => {
     fireEvent.click(clearAll);
 
     expect(await screen.findByRole('heading', { name: 'ML Lab' })).toBeTruthy();
-    expect(
-      screen.queryByRole('region', { name: 'Ways to recover this search' }),
-    ).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
     await waitFor(() => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
         '/research/search',
@@ -2889,9 +2883,7 @@ describe('Research zero-result recovery', () => {
         return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
       }
       if (url === '/research/search') {
-        return Promise.resolve(
-          researchSearchResponse([researchEntity], { estimatedTotalHits: 5 }),
-        );
+        return Promise.resolve(researchSearchResponse([researchEntity], { estimatedTotalHits: 5 }));
       }
       if (url === '/users/savedSearches') {
         savedPayloads.push(body);
