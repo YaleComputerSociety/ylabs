@@ -179,7 +179,9 @@ describe('inferKind', () => {
   it('falls back to center for ambiguous names and classifies forums/dialogues as organizational initiatives', () => {
     expect(inferKind('Yale Environment 360', 'https://x/yale-environment-360')).toBe('center');
     expect(inferKind('Yale Forest Forum (YFF)', 'https://x/yale-forest-forum')).toBe('initiative');
-    expect(inferKind('The Forests Dialogue (TFD)', 'https://x/forests-dialogue')).toBe('initiative');
+    expect(inferKind('The Forests Dialogue (TFD)', 'https://x/forests-dialogue')).toBe(
+      'initiative',
+    );
   });
 });
 
