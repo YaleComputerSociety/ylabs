@@ -36,6 +36,12 @@ describe('formatTitleCaseLabel', () => {
     expect(formatTitleCaseLabel('lab')).toBe('Lab');
   });
 
+  it('normalizes multi-word screaming-case inputs while keeping known acronyms', () => {
+    expect(formatTitleCaseLabel('STEM CELL BIOLOGY')).toBe('Stem Cell Biology');
+    expect(formatTitleCaseLabel('CANCER-BIOLOGY')).toBe('Cancer-Biology');
+    expect(formatTitleCaseLabel('MOLECULAR/CELLULAR BIOLOGY')).toBe('Molecular/Cellular Biology');
+  });
+
   it('collapses whitespace and trims', () => {
     expect(formatTitleCaseLabel('  cancer   biology  ')).toBe('Cancer Biology');
   });
