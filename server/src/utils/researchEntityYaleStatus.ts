@@ -3,11 +3,19 @@ import { researchEntityHasDeceasedLead } from './researchEntityDeceasedLead';
 const MARKER_SCAN_WINDOW = 200;
 const MIN_HUMAN_LIFESPAN_YEARS = 15;
 const MAX_HUMAN_LIFESPAN_YEARS = 120;
-const NAME_LIFESPAN_ANYWHERE_RE =
-  /((?:18|19|20)\d{2})\s*[-‒–—―−]\s*((?:19|20)\d{2})/;
+const NAME_LIFESPAN_ANYWHERE_RE = /((?:18|19|20)\d{2})\s*[-‒–—―−]\s*((?:19|20)\d{2})/;
 
 const EMERITUS_URL_PATH_RE = /\bemeritus\b|\bemerita\b/i;
-const EMERITUS_TEXT_RE = /\bprofessors?\s+emeritus\b|\bprofessors?\s+emerita\b|\bemeritus\b|\bemerita\b/i;
+const EMERITUS_TEXT_RE =
+  /\bprofessors?\s+emeritus\b|\bprofessors?\s+emerita\b|\bemeritus\b|\bemerita\b/i;
+
+// An emeritus title attached to a specific non-Yale institution ("Professor
+// Emeritus at the University of Michigan") does not mean the person departed
+// Yale: active Yale faculty commonly hold emeritus status elsewhere. Strip
+// such non-Yale-attributed emeritus mentions before testing for a Yale
+// departure so they do not falsely suppress an active Yale research home.
+const NON_YALE_EMERITUS_ATTRIBUTION_RE =
+  /[Ee]merit(?:us|a)\b(?:\s+[Pp]rofessor)?\s*,?\s+(?:(?:at|of)\s+)?(?:the\s+)?((?:[A-Z][A-Za-z.&'’-]+\s+){0,3}(?:University|College|Institute|School)(?:\s+of\s+[A-Z][A-Za-z.&'’-]+(?:\s+[A-Z][A-Za-z.&'’-]+)?)?)|[Ee]merit(?:us|a)\b(?:\s+[Pp]rofessor)?\s*,?\s+at\s+(?:the\s+)?([A-Z][A-Za-z.&'’-]+(?:\s+[A-Z][A-Za-z.&'’-]+){0,3})/g;
 
 const IN_MEMORIAM_URL_PATH_RE = /\bin-memoriam\b|\bobituar(?:y|ies)\b/i;
 const IN_MEMORIAM_TEXT_RE = /\bin memoriam\b|\bpassed away\b/i;
@@ -68,11 +76,19 @@ function hasInMemoriamMarker(entity: Record<string, any>): boolean {
   );
 }
 
-function hasEmeritusMarker(entity: Record<string, any>): boolean {
-  return (
-    anyUrlMatches(sourceUrlPaths(entity), EMERITUS_URL_PATH_RE) ||
-    anyOpeningMatches(descriptionOpenings(entity), EMERITUS_TEXT_RE)
+function stripNonYaleEmeritusAttributions(opening: string): string {
+  return opening.replace(
+    NON_YALE_EMERITUS_ATTRIBUTION_RE,
+    (match, keywordInstitution, bareInstitution) =>
+      /yale/i.test(keywordInstitution ?? bareInstitution ?? '') ? match : ' ',
   );
+}
+
+function hasEmeritusMarker(entity: Record<string, any>): boolean {
+  if (anyUrlMatches(sourceUrlPaths(entity), EMERITUS_URL_PATH_RE)) return true;
+  return descriptionOpenings(entity)
+    .map(stripNonYaleEmeritusAttributions)
+    .some((opening) => EMERITUS_TEXT_RE.test(opening));
 }
 
 export function deriveResearchEntityYaleStatus(

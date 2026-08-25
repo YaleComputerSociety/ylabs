@@ -21,6 +21,16 @@ const otherwiseStudentReadyDeceasedEntity = {
   sourceUrls: ['https://astronomy.yale.edu/people/pierre-demarque-1932-2025'],
 };
 
+const activeYaleFacultyEmeritusElsewhereEntity = {
+  name: 'Stephen Darwall - Research',
+  shortDescription: 'Studies moral philosophy, second-personal ethics, and moral reasoning.',
+  fullDescription:
+    'Stephen Darwall is the Andrew Downey Orrick Professor of Philosophy at Yale University and the John Dewey Distinguished University Professor Emeritus at the University of Michigan. His research interests include moral philosophy, particularly second-personal ethics.',
+  sourceUrls: ['https://philosophy.yale.edu/faculty'],
+  activeAtYaleCache: true,
+  yaleStatusCache: 'unknown',
+};
+
 describe('activeAtYaleCache producer gates studentVisibilityTier to suppressed', () => {
   it('would otherwise be student_ready before the yale-status signal is applied', () => {
     const before = computeResearchEntityStudentVisibility({
@@ -78,5 +88,19 @@ describe('activeAtYaleCache producer gates studentVisibilityTier to suppressed',
 
     expect(after.tier).toBe('suppressed');
     expect(after.reasons).toContain('inactive_at_yale');
+  });
+
+  it('does not flag active Yale faculty who hold emeritus status at another institution', () => {
+    expect(deriveResearchEntityYaleStatus(activeYaleFacultyEmeritusElsewhereEntity)).toBeNull();
+
+    const result = computeResearchEntityStudentVisibility({
+      entity: activeYaleFacultyEmeritusElsewhereEntity,
+      leadMembers: [{ userId: 'user-2', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('inactive_at_yale');
+    expect(result.tier).toBe('student_ready');
   });
 });
