@@ -11,7 +11,6 @@ import RootRedirect from './pages/rootRedirect';
 import Fellowships from './pages/fellowships';
 import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
-import ResearchPerson from './pages/researchPerson';
 import ResearchDepartment from './pages/researchDepartment';
 import { ResearchAreaPage, ResearchFieldPage } from './pages/researchArea';
 import ResearchSchool from './pages/researchSchool';
@@ -35,6 +34,7 @@ const Analytics = lazy(() => import('./pages/analytics'));
 
 const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
 const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
+const RetiredPersonRedirect = () => <Navigate to="/research" replace />;
 
 const App = () => {
   return (
@@ -84,10 +84,7 @@ const App = () => {
                       path="/research"
                       element={<PublicRoute Component={Research} unknownBlocked={true} />}
                     />
-                    <Route
-                      path="/research/person/:publicKey"
-                      element={<PublicRoute Component={ResearchPerson} unknownBlocked={true} />}
-                    />
+                    <Route path="/research/person/:publicKey" element={<RetiredPersonRedirect />} />
                     <Route
                       path="/research/department/:slug"
                       element={

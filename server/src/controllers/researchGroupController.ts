@@ -16,8 +16,6 @@ import {
   ResearchGroupSearchSort,
   type ResearchGroupSearchOptions,
 } from '../services/researchGroupService';
-import { getResearcherProfileByPublicKey } from '../services/researcherProfileService';
-import { searchResearchersViaMeili } from '../services/researcherSearchIndexService';
 import {
   getAreaResearchPage,
   getFieldResearchPage,
@@ -430,63 +428,6 @@ export const getResearchFieldPage = async (request: Request, response: Response)
     }
     console.error('Research field page failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Failed to fetch research field' });
-  }
-};
-
-const MAX_PERSON_PUBLIC_KEY_LENGTH = 200;
-const PERSON_PUBLIC_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,199}$/i;
-
-export const getResearcherProfile = async (request: Request, response: Response) => {
-  try {
-    const rawPublicKey = request.params.publicKey;
-    if (
-      !rawPublicKey ||
-      typeof rawPublicKey !== 'string' ||
-      rawPublicKey.length > MAX_PERSON_PUBLIC_KEY_LENGTH ||
-      !PERSON_PUBLIC_KEY_PATTERN.test(rawPublicKey)
-    ) {
-      return response.status(400).json({ error: 'Invalid researcher key' });
-    }
-
-    const profile = await getResearcherProfileByPublicKey(rawPublicKey);
-    if (!profile) {
-      return response.status(404).json({ error: 'Researcher not found' });
-    }
-
-    return response.status(200).json(profile);
-  } catch (error) {
-    console.error('Researcher profile failed:', sanitizeLogValue(error));
-    return response.status(500).json({ error: 'Failed to fetch researcher profile' });
-  }
-};
-
-const MAX_RESEARCHER_SEARCH_PAGE_SIZE = 25;
-const DEFAULT_RESEARCHER_SEARCH_PAGE_SIZE = 10;
-
-export const searchResearchers = async (request: Request, response: Response) => {
-  try {
-    const body = (request.body || {}) as { q?: string; page?: number; pageSize?: number };
-    const q = typeof body.q === 'string' ? body.q : '';
-    if (q.length > MAX_SEARCH_QUERY_LENGTH) {
-      return response.status(400).json({ error: 'Invalid search request' });
-    }
-
-    const requestedPage = parsePositiveIntegerParam(body.page, 1);
-    const page = Math.min(MAX_PAGE, Math.max(1, Math.floor(requestedPage) || 1));
-    const requestedPageSize = parsePositiveIntegerParam(
-      body.pageSize,
-      DEFAULT_RESEARCHER_SEARCH_PAGE_SIZE,
-    );
-    const pageSize = Math.min(
-      MAX_RESEARCHER_SEARCH_PAGE_SIZE,
-      Math.max(1, Math.floor(requestedPageSize) || 1),
-    );
-
-    const result = await searchResearchersViaMeili(q, { page, pageSize });
-    return response.json(result);
-  } catch (error) {
-    console.error('Researcher search failed:', sanitizeLogValue(error));
-    return response.status(500).json({ error: 'Search failed' });
   }
 };
 

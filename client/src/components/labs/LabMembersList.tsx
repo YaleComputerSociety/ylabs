@@ -5,7 +5,6 @@
  * a member headshot is missing or fails to load.
  */
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { LabMember, LabMemberRole } from '../../types/labDetail';
 import { EXTERNAL_IMAGE_REFERRER_POLICY, EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
 import { useConfig } from '../../hooks/useConfig';
@@ -18,7 +17,6 @@ interface LabMembersListProps {
   singleColumn?: boolean;
   entityDepartments?: Array<string | undefined | null>;
   resolveMemberProfileUrl?: (member: LabMember) => string | undefined;
-  resolvePersonHref?: (member: LabMember) => string | undefined;
 }
 
 const ROLE_LABELS: Record<LabMemberRole, string> = {
@@ -99,7 +97,6 @@ const LabMemberCard = ({
   departmentTable,
   entityDepartments,
   profileUrl,
-  personHref,
 }: {
   user: LabMember['user'];
   role: LabMemberRole;
@@ -107,7 +104,6 @@ const LabMemberCard = ({
   departmentTable: DepartmentNameRecord[];
   entityDepartments: Array<string | undefined | null>;
   profileUrl?: string;
-  personHref?: string;
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
@@ -123,8 +119,8 @@ const LabMemberCard = ({
   const rolePillClassName = isMisattributedTraineeLead
     ? NEUTRAL_TRAINEE_ROLE_PILL
     : ROLE_PILL_CLASSES[role];
-  const isExternalLink = Boolean(profileUrl) && !personHref;
-  const isInteractive = isExternalLink || Boolean(personHref);
+  const isExternalLink = Boolean(profileUrl);
+  const isInteractive = isExternalLink;
   const baseClassName = `group flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
   const linkClassName = `${baseClassName} hover:border-blue-300 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200`;
   const identityBody = (
@@ -177,31 +173,6 @@ const LabMemberCard = ({
       {isExternalLink && <ExternalLinkIcon />}
     </>
   );
-  if (personHref) {
-    return (
-      <div className={`${baseClassName} flex-col !items-stretch`}>
-        <Link
-          to={personHref}
-          aria-label={`View ${fullName}'s Yale Research profile`}
-          className={`group flex items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${singleColumn ? 'gap-2' : 'gap-3'}`}
-        >
-          {identityBody}
-        </Link>
-        {profileUrl && (
-          <a
-            href={profileUrl}
-            target="_blank"
-            rel={EXTERNAL_LINK_REL}
-            aria-label={`Open ${fullName}'s official profile`}
-            className="mt-2 inline-flex items-center gap-1 self-start rounded-sm text-xs font-semibold text-[var(--yr-blue)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-          >
-            View official profile
-            <ExternalLinkIcon />
-          </a>
-        )}
-      </div>
-    );
-  }
   if (isExternalLink && profileUrl) {
     return (
       <a
@@ -223,7 +194,6 @@ const LabMembersList = ({
   singleColumn = false,
   entityDepartments = [],
   resolveMemberProfileUrl,
-  resolvePersonHref,
 }: LabMembersListProps) => {
   const { departments } = useConfig();
   if (!members || members.length === 0) {
@@ -273,7 +243,6 @@ const LabMembersList = ({
             departmentTable={departments}
             entityDepartments={entityDepartments}
             profileUrl={safeHttpUrl(resolveMemberProfileUrl?.(member))}
-            personHref={resolvePersonHref?.(member)}
           />
         );
       })}
