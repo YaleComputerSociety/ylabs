@@ -1,6 +1,5 @@
 export interface UndergraduateAccessFields {
   undergraduateCurrentAvailability?: string | null;
-  accessAcceptanceLevel?: string | null;
   hasUndergradHostingEvidence?: boolean | null;
 }
 

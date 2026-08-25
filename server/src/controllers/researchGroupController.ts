@@ -98,14 +98,6 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   const researchAreas = toStringArray(r.researchAreas);
   if (researchAreas) filters.researchAreas = researchAreas;
 
-  if (
-    r.acceptanceLevel === 'verified' ||
-    r.acceptanceLevel === 'verified-or-likely' ||
-    r.acceptanceLevel === 'all'
-  ) {
-    filters.acceptanceLevel = r.acceptanceLevel;
-  }
-
   if (r.hostsUndergrads === true) {
     filters.hostsUndergrads = true;
   }

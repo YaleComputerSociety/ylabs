@@ -25,7 +25,6 @@ import {
   formatEventType,
   formatFullName,
   formatNumber,
-  formatOpenness,
   formatOutcome,
   formatPercent,
   formatSearcherName,
@@ -276,17 +275,11 @@ const AnalyticsSupportingDetail = ({
 
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
-              <h3 className="text-lg font-semibold text-gray-800">Openness & Scholarly Signal</h3>
-              <p className="text-sm text-gray-500">Access posture and recent activity</p>
+              <h3 className="text-lg font-semibold text-gray-800">Scholarly Signal</h3>
+              <p className="text-sm text-gray-500">Recent activity</p>
             </div>
             <div className="space-y-2 p-4 text-sm">
-              {researchCoverage.byOpenness.map((row) => (
-                <div key={row.status || 'unknown'} className="flex items-center justify-between">
-                  <span className="text-gray-600">{formatOpenness(row.status)}</span>
-                  <span className="font-medium text-gray-900">{formatNumber(row.count)}</span>
-                </div>
-              ))}
-              <div className="mt-3 flex items-center justify-between border-t border-[var(--yr-line)] pt-3">
+              <div className="flex items-center justify-between">
                 <span className="text-gray-600">With recent grants</span>
                 <span className="font-medium text-gray-900">
                   {formatNumber(researchCoverage.scholarly.withRecentGrants)}

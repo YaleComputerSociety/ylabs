@@ -558,11 +558,6 @@ const boundedResearchFilterValues = (values?: string[]): string[] => {
   return clean;
 };
 
-const isAcceptanceLevelInput = (
-  value: unknown,
-): value is NonNullable<ResearchGroupFilterInput['acceptanceLevel']> =>
-  value === 'verified' || value === 'verified-or-likely' || value === 'all';
-
 const isResearchGroupQualityFilter = (value: unknown): value is ResearchGroupQualityFilter =>
   value === 'description-issue' || value === 'missing-lead' || value === 'profile-fallback';
 
@@ -589,9 +584,6 @@ const sanitizeResearchGroupSearchFilters = (
   school: boundedResearchFilterValues(filters.school),
   departments: boundedResearchFilterValues(filters.departments),
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
-  acceptanceLevel: isAcceptanceLevelInput(filters.acceptanceLevel)
-    ? filters.acceptanceLevel
-    : undefined,
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
   hasDocumentedWayIn: filters.hasDocumentedWayIn === true ? true : undefined,
   currentAvailability: boundedResearchFilterValues(filters.currentAvailability).filter(
@@ -676,11 +668,6 @@ const mongoFilterFromResearchFilters = (
   if (filters.school?.length) mongoFilter.schools = { $in: filters.school };
   if (filters.departments?.length) mongoFilter.departments = { $in: filters.departments };
   if (filters.researchAreas?.length) mongoFilter.researchAreas = { $in: filters.researchAreas };
-  if (filters.acceptanceLevel === 'verified') {
-    mongoFilter.accessAcceptanceLevel = 'verified';
-  } else if (filters.acceptanceLevel === 'verified-or-likely') {
-    mongoFilter.accessAcceptanceLevel = { $in: ['verified', 'likely'] };
-  }
   if (filters.hostsUndergrads === true) {
     mongoFilter.hasUndergradHostingEvidence = true;
   }

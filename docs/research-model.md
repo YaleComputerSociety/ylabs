@@ -39,7 +39,7 @@ See [Legacy `User` Residue](#legacy-user-residue).
 The lab, center, institute, or faculty project: the discovery center.
 [`server/src/models/researchEntity.ts`](../server/src/models/researchEntity.ts) is a clean schema (not the retired `researchGroupSchema`).
 Its roster is **not** embedded: membership lives in canonical `RoleAssignment` rows joined to `Researcher` (see below).
-Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `DIGITAL_HUMANITIES_PROJECT`, `COLLECTIONS_INITIATIVE`, `COURSE_SEQUENCE`, `ARCHIVE_OR_MUSEUM_PROJECT`, `PROGRAM`, `INITIATIVE`, `GROUP`, `INDIVIDUAL_RESEARCH`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, `accessAcceptanceLevel` (`verified` | `likely` | `none`), a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
+Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `DIGITAL_HUMANITIES_PROJECT`, `COLLECTIONS_INITIATIVE`, `COURSE_SEQUENCE`, `ARCHIVE_OR_MUSEUM_PROJECT`, `PROGRAM`, `INITIATIVE`, `GROUP`, `INDIVIDUAL_RESEARCH`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
 It does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact fields, or a paper cache.
 Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are the sole canonical prose pair.
 
@@ -344,7 +344,7 @@ Examples:
 The student-facing vocabulary for this section should usually be "Best Next Step", not `RecommendedNextStep`.
 
 `accessSummaryService.ts` computes the `accessSummary` for research search/detail payloads so the UI presents Evidence and Best Next Step.
-The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`: access now derives solely from the Signal-backed `accessSummary` and its indexed `accessAcceptanceLevel` grade (`verified`, `likely`, or `none`).
+The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`. The `accessAcceptanceLevel` grade was itself retired by the 2026-08-25 "Simple Directory First" pivot (access plausibility no longer feeds ranking, filtering, or a trust tier); access context now derives solely from the Signal-backed `accessSummary`.
 
 Client API boundaries normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`, and Explore Research cards derive access summaries from `accessSummary`.
 

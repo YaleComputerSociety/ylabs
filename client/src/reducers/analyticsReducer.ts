@@ -145,7 +145,6 @@ export interface AnalyticsData {
     overview: { active: number; total: number };
     byType: Array<{ entityType: string; count: number }>;
     byVisibilityTier: Array<{ tier: string; count: number }>;
-    byOpenness: Array<{ status: string; count: number }>;
     freshness: {
       observedLast7Days: number;
       observedLast30Days: number;

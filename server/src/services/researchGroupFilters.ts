@@ -5,8 +5,6 @@
  * Meilisearch, Mongo, or Express.
  */
 
-export type AcceptanceLevelInput = 'verified' | 'verified-or-likely' | 'all';
-
 export type CurrentAvailabilityFilterInput = 'OPEN' | 'ROLLING';
 
 export type CompensationFilterInput = 'PAID_OR_STIPEND' | 'COURSE_CREDIT';
@@ -19,7 +17,6 @@ export interface ResearchGroupFilterInput {
   school?: string[];
   departments?: string[];
   researchAreas?: string[];
-  acceptanceLevel?: AcceptanceLevelInput;
   hostsUndergrads?: boolean;
   hasDocumentedWayIn?: boolean;
   currentAvailability?: CurrentAvailabilityFilterInput[];
@@ -39,17 +36,6 @@ const orEqualsClause = (field: string, values: unknown[]): string | null => {
   if (cleaned.length === 0) return null;
   const inner = cleaned.map((v) => `${field} = "${escapeMeiliFilterValue(v)}"`).join(' OR ');
   return `(${inner})`;
-};
-
-const acceptanceLevelClauses = (level: AcceptanceLevelInput | undefined): string[] => {
-  if (!level || level === 'all') return [];
-  if (level === 'verified') {
-    return ['accessAcceptanceLevel = "verified"'];
-  }
-  if (level === 'verified-or-likely') {
-    return ['(accessAcceptanceLevel = "verified" OR accessAcceptanceLevel = "likely")'];
-  }
-  return [];
 };
 
 export interface BuildResearchGroupFilterStringOptions {
@@ -96,10 +82,6 @@ export function buildResearchGroupFilterString(
     ? orEqualsClause('researchAreas', effectiveFilters.researchAreas)
     : null;
   if (researchAreasClause) parts.push(researchAreasClause);
-
-  for (const clause of acceptanceLevelClauses(effectiveFilters.acceptanceLevel)) {
-    parts.push(clause);
-  }
 
   if (effectiveFilters.hostsUndergrads === true) {
     parts.push('hasUndergradHostingEvidence = true');
