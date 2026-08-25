@@ -166,6 +166,32 @@ describe('classifyResearchEntityResearchScope', () => {
     expect(result.reasons).toEqual(['positive_research_evidence']);
   });
 
+  it('keeps a shared-instrumentation core that offers technical support for its instruments eligible', () => {
+    const result = classifyResearchEntityResearchScope({
+      name: 'West Campus Flow Cytometry Facility',
+      entityType: 'CENTER',
+      shortDescription:
+        'Provides comprehensive flow cytometric analysis and sorting, including instrumentation, technical support, training, and consultation.',
+      fullDescription:
+        'The facility provides comprehensive flow cytometric analysis and sorting, including instrumentation, technical support, training, and consultation.',
+    });
+
+    expect(result.researchHomeEligible).toBe(true);
+    expect(result.reasons).toEqual([]);
+  });
+
+  it('still suppresses an information-technology desktop-support unit without research evidence', () => {
+    const result = classifyResearchEntityResearchScope({
+      name: 'Example Campus Technology Center',
+      entityType: 'CENTER',
+      fullDescription:
+        'Delivers desktop support and information technology services to departments across the college.',
+    });
+
+    expect(result.researchHomeEligible).toBe(false);
+    expect(result.reasons).toContain('administrative_or_service_organization');
+  });
+
   it('applies the negative-evidence rule when the organizational type comes from kind', () => {
     const result = classifyResearchEntityResearchScope({
       name: 'Example Advising Core Facility',
