@@ -429,8 +429,7 @@ const Research = () => {
     approachingCount: watchedDeadlineApproachingCount,
     notStartedCount: watchedDeadlineNotStartedCount,
   } = useWatchedDeadlineSummary(isAuthenticated);
-  const { departments, researchAreas, researchFields, fieldOrder, getResearchAreaByName } =
-    useConfig();
+  const { departments, researchAreas } = useConfig();
   const isAdmin = user?.userType === 'admin';
   const pageSnapshotKey = searchParams.toString();
   const restorableSnapshot =
@@ -640,10 +639,6 @@ const Research = () => {
   const browseResearchAreaOptions = useMemo(
     () => buildResearchAreaOptions(browseFacetDistribution.researchAreas),
     [buildResearchAreaOptions, browseFacetDistribution.researchAreas],
-  );
-  const fieldColorKeyByName = useMemo(
-    () => new Map(researchFields.map((field) => [field.name, field.colorKey])),
-    [researchFields],
   );
   const typeBucketOptions = useMemo(
     () => aggregateResearchTypeBucketCounts(facetDistribution.entityType),
