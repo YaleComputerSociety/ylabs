@@ -47,6 +47,7 @@ import {
   stripDanglingSourceSiteReferenceSentences,
   stripDeadAnchorCtaSentences,
   startsWithRoleTitleHeaderSentence,
+  stripLeadingAdministrativeTitleListDump,
   stripLeadingAdministrativeLocationSentences,
   stripLeadingRoleTitleHeaderSentences,
   stripLeadingPageChrome,
@@ -2255,6 +2256,57 @@ describe('stripLeadingRoleTitleHeaderSentences (#1761)', () => {
     const text = 'Studies quantum error correction using superconducting qubit devices.';
     expect(startsWithRoleTitleHeaderSentence(text)).toBe(false);
     expect(stripLeadingRoleTitleHeaderSentences(text)).toBe(text);
+  });
+});
+
+describe('stripLeadingAdministrativeTitleListDump (#1815)', () => {
+  // A leading administrative title run glued with NO delimiter onto an
+  // honorific-led bio narrative. Synthetic names stand in for the real records.
+  const HONORIFIC_GLUE =
+    'Director, Sleep Medicine Laboratory at Coastal Veterans Healthcare System, Medicine; Director, Center for Movement Disorders Dr. Jamie Rivera is director of the Center for Movement Disorders and studies the neurobiology of sleep-related movement disorders.';
+
+  // A leading title run glued onto a determiner-led appositive that resolves to
+  // an honorific + surname subject.
+  const APPOSITIVE_GLUE =
+    'Professor of Internal Medicine (Medical Oncology) Director, Clinical Trials Office; Chief Clinical Research Officer, Cancer Center; Associate Director, Clinical Sciences, Cancer Center An international leader in the clinical care of patients with breast cancer, Dr. Alex Doe joined the university and now studies HER2-positive disease.';
+
+  // A pure administrative title dump with no narrative glued on at all.
+  const PURE_TITLE_DUMP =
+    'Professor of Pediatrics (Hematology/Oncology) Chair of the Faculty Mentoring Program, Pediatrics; Fellowship Director, Pediatric Hematology & Oncology Program; Director, Solid Tumor Program, Pediatric Hematology & Oncology Program';
+
+  it('drops the title prefix and keeps an honorific-led narrative', () => {
+    const kept = stripLeadingAdministrativeTitleListDump(HONORIFIC_GLUE);
+    expect(kept).toMatch(/^Dr\. Jamie Rivera is director/);
+    expect(kept).not.toMatch(/Sleep Medicine Laboratory/);
+  });
+
+  it('keeps the full determiner-led appositive sentence, not just the surname clause', () => {
+    const kept = stripLeadingAdministrativeTitleListDump(APPOSITIVE_GLUE);
+    expect(kept).toMatch(/^An international leader in the clinical care/);
+    expect(kept).toMatch(/Dr\. Alex Doe joined/);
+    expect(kept).not.toMatch(/Clinical Trials Office/);
+  });
+
+  it('fails closed to empty for a pure title dump with no narrative', () => {
+    expect(stripLeadingAdministrativeTitleListDump(PURE_TITLE_DUMP)).toBe('');
+  });
+
+  it('leaves genuine title-led prose untouched (finite verb in the opener)', () => {
+    const prose =
+      'Professor Smith is a leading expert in cardiovascular imaging who develops new MRI techniques for early disease detection.';
+    expect(stripLeadingAdministrativeTitleListDump(prose)).toBe(prose);
+  });
+
+  it('leaves a description that does not open on a title head untouched', () => {
+    const prose = 'Studies the neurobiological underpinnings of restless legs syndrome.';
+    expect(stripLeadingAdministrativeTitleListDump(prose)).toBe(prose);
+  });
+
+  it('is applied by sanitizeResearchEntityDescription end to end', () => {
+    expect(sanitizeResearchEntityDescription(APPOSITIVE_GLUE)).toMatch(
+      /^An international leader in the clinical care/,
+    );
+    expect(sanitizeResearchEntityDescription(PURE_TITLE_DUMP)).toBe('');
   });
 });
 

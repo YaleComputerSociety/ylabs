@@ -2136,6 +2136,93 @@ export function stripLeadingRoleTitleHeaderSentences(text: string): string {
 }
 
 /**
+ * An appointment / leadership role head that opens an administrative title
+ * clause: an academic rank ("Professor") or a leadership post ("Director",
+ * "Chief", "Chair", "Dean", ...), optionally carrying a rank qualifier
+ * ("Sterling", "Clinical", "Interim", "Co-", ...). The anchored form requires
+ * the whole description to *open* on such a head; the global form is used only
+ * to count how many distinct title heads a leading run contains.
+ */
+const leadingAppointmentTitleHeadPattern =
+  /^(?:(?:Sterling|Adjunct|Clinical|Research|Visiting|Emeritus|Emerita|Senior|Assistant|Associate|Deputy|Interim|Acting|Executive|Vice|Co)[\s-]+)*(?:Professor|Director|Chief|Chair|Chairman|Chairperson|Dean|Head|Officer|President|Provost|Curator|Coordinator|Lecturer|Fellow|Instructor)\b/;
+
+const appointmentTitleHeadPattern =
+  /(?:(?:Sterling|Adjunct|Clinical|Research|Visiting|Emeritus|Emerita|Senior|Assistant|Associate|Deputy|Interim|Acting|Executive|Vice|Co)[\s-]+)*(?:Professor|Director|Chief|Chair|Chairman|Chairperson|Dean|Head|Officer|President|Provost|Curator|Coordinator|Lecturer|Fellow|Instructor)\b/g;
+
+/**
+ * The onset of a genuine biography / research narrative that has been glued -
+ * with no delimiting punctuation - directly onto a leading administrative title
+ * list. Two observed shapes:
+ *   - an honorific + surname subject with a finite verb
+ *     ("Dr. Brian Koo is director of ...", "Dr. Krop joined Yale ...")
+ *   - a determiner-led appositive that resolves to an honorific + surname
+ *     ("An international leader in ..., Dr. Krop joined ...")
+ * Both are far too specific to occur inside a bare "Role, Unit; Role, Unit"
+ * title run, so the leftmost match marks the exact character offset where the
+ * concatenated narrative block begins. The optional determiner-appositive
+ * prefix is captured so the kept narrative opens on the full lead sentence
+ * ("An international leader ..., Dr. Krop joined ...") rather than mid-clause.
+ */
+const leadingTitleListNarrativeOnsetPattern =
+  /(?:\b(?:An?|The)\s+[a-z][^;]*?,\s+)?\b(?:Dr|Prof|Professor|Mr|Ms|Mrs|Mx)\.\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+(?:is|was|joined|serves|completed|graduated|received|earned|leads|directs|has)\b/;
+
+/**
+ * A single-clause academic rank phrase ("Professor of Genetics", "Director,
+ * Clinical Trials Office") used to confirm a leading run really is an
+ * appointment-title enumeration when it carries no semicolon and only one role
+ * head - a lone "Professor of X ..." dump still reads as a title block.
+ */
+const rankPhraseHeadPattern =
+  /\b(?:Professor|Director|Chief|Chair|Chairman|Dean|Officer|Lecturer|Instructor|Fellow)\b\s+(?:of|for|,)/i;
+
+/**
+ * Repairs the #1815 defect: a fullDescription that opens with a bare
+ * administrative appointment-title run ("Professor of Internal Medicine
+ * (Medical Oncology) Director, Clinical Trials Office; Chief Clinical Research
+ * Officer, Yale Cancer Center; ...") concatenated with *no* delimiting
+ * punctuation - not even a period - directly onto the next block. The
+ * #1745-family sentence-based lead strippers
+ * (`stripLeadingRoleTitleHeaderSentences`,
+ * `stripLeadingAdministrativeLocationSentences`) cannot bound this: with no
+ * sentence terminator at the join, the title list and whatever follows are one
+ * run-on "sentence", so a sentence-level strip would delete the good narrative
+ * along with the titles.
+ *
+ * This works at the punctuation-free join instead. The text must *open* on an
+ * appointment role head, and the leading run (up to the narrative onset, or the
+ * whole text when none is found) must read as a title enumeration: it carries a
+ * semicolon, a second role head, or a single rank phrase, and contains neither a
+ * research-activity signal nor a finite "is/are/was/were" clause (either would
+ * make it genuine prose - "Professor Smith is a leading expert who studies ..."
+ * - which is left untouched). When a bio-narrative onset
+ * (`leadingTitleListNarrativeOnsetPattern`) follows the title run, the title
+ * prefix is dropped and the narrative is kept whole. When no narrative follows,
+ * the description is a pure title dump with no research content, so it fails
+ * closed to '' rather than serving the enumeration. Text that does not match is
+ * returned unchanged.
+ */
+export function stripLeadingAdministrativeTitleListDump(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (!value) return value;
+  if (!leadingAppointmentTitleHeadPattern.test(value)) return value;
+  const match = value.match(leadingTitleListNarrativeOnsetPattern);
+  const boundary = match ? (match.index ?? -1) : -1;
+  const head = boundary === -1 ? value : value.slice(0, boundary).trim();
+  const tail = boundary === -1 ? '' : value.slice(boundary).trim();
+  if (!head) return value;
+  if (researchActivitySignalPattern.test(head)) return value;
+  if (/\b(?:is|are|was|were)\b/i.test(head)) return value;
+  const semicolons = (head.match(/;/g) || []).length;
+  const roleHeads = (head.match(appointmentTitleHeadPattern) || []).length;
+  const looksLikeTitleEnumeration =
+    semicolons >= 1 || roleHeads >= 2 || rankPhraseHeadPattern.test(head);
+  if (!looksLikeTitleEnumeration) return value;
+  // A title dump with a genuine narrative glued on: keep only the narrative.
+  // A title dump with nothing else: fail closed rather than serve the titles.
+  return tail ? normalizeHygieneWhitespace(tail) : '';
+}
+
+/**
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
  * fullDescription or shortDescription is the primary "what this lab studies"
@@ -2151,14 +2238,16 @@ export function stripLeadingRoleTitleHeaderSentences(text: string): string {
  */
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
-  const stripped = stripLeadingAdministrativeLocationSentences(
-    stripTrailingSourceLayoutLabelSection(
-      stripGluedProfileSectionLabel(
-        stripGluedResearchRoleTrackToken(
-          stripDirectoryResearcherNavChrome(
-            stripGluedProfileRoleLabel(
-              stripTrailingContactAddress(
-                sanitizeCatalogDescription(repairMissingSpaceAfterSentence(redacted)),
+  const stripped = stripLeadingAdministrativeTitleListDump(
+    stripLeadingAdministrativeLocationSentences(
+      stripTrailingSourceLayoutLabelSection(
+        stripGluedProfileSectionLabel(
+          stripGluedResearchRoleTrackToken(
+            stripDirectoryResearcherNavChrome(
+              stripGluedProfileRoleLabel(
+                stripTrailingContactAddress(
+                  sanitizeCatalogDescription(repairMissingSpaceAfterSentence(redacted)),
+                ),
               ),
             ),
           ),
