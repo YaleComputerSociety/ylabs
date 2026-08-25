@@ -7,10 +7,6 @@ const mocks = vi.hoisted(() => ({
   resolveArchivedResearchEntityCanonicalSlug: vi.fn(),
   recordResearchEntityOutreach: vi.fn(),
   getStudentResearchInterests: vi.fn(),
-  getDepartmentResearchPage: vi.fn(),
-  getAreaResearchPage: vi.fn(),
-  getFieldResearchPage: vi.fn(),
-  getSchoolResearchPage: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -25,11 +21,6 @@ vi.mock('../../services/researchGroupService', () => ({
   recordResearchEntityOutreach: mocks.recordResearchEntityOutreach,
 }));
 
-vi.mock('../../services/areaResearchPageService', () => ({
-  getAreaResearchPage: mocks.getAreaResearchPage,
-  getFieldResearchPage: mocks.getFieldResearchPage,
-}));
-
 vi.mock('../../services/adminGrantService', () => ({
   hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
@@ -38,19 +29,7 @@ vi.mock('../../services/studentInterestProfileService', () => ({
   getStudentResearchInterests: mocks.getStudentResearchInterests,
 }));
 
-vi.mock('../../services/departmentResearchPageService', () => ({
-  getDepartmentResearchPage: mocks.getDepartmentResearchPage,
-}));
-
-vi.mock('../../services/schoolResearchPageService', () => ({
-  getSchoolResearchPage: mocks.getSchoolResearchPage,
-}));
-
 import {
-  getResearchDepartmentPage,
-  getResearchAreaPage,
-  getResearchFieldPage,
-  getResearchSchoolPage,
   getResearchGroupBySlug,
   recordResearchOutreach,
   searchRelatedPrograms,
@@ -573,143 +552,5 @@ describe('researchGroupController', () => {
 
     expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({ error: 'No approved outreach route is available' });
-  });
-
-  it('serves the aggregated department page for a resolvable slug', async () => {
-    const page = { department: { slug: 'chemistry', label: 'Chemistry' }, homeGroups: [] };
-    mocks.getDepartmentResearchPage.mockResolvedValue(page);
-    const req = { params: { slug: 'chemistry' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await getResearchDepartmentPage(req, res);
-
-    expect(mocks.getDepartmentResearchPage).toHaveBeenCalledWith('chemistry');
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(page);
-  });
-
-  it('returns 404 when the department slug does not resolve', async () => {
-    mocks.getDepartmentResearchPage.mockResolvedValue(null);
-    const req = { params: { slug: 'school-of-medicine' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await getResearchDepartmentPage(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Research department not found' });
-  });
-
-  it('does not leak internal errors from department page failures', async () => {
-    mocks.getDepartmentResearchPage.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid department page failed'),
-    );
-    const req = { params: { slug: 'chemistry' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await getResearchDepartmentPage(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch research department' });
-  });
-
-  describe('getResearchAreaPage', () => {
-    it('returns 404 when the slug does not resolve to a research area', async () => {
-      mocks.getAreaResearchPage.mockResolvedValue(null);
-      const req = { params: { slug: 'not-a-real-area' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearchAreaPage(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Research area not found' });
-    });
-
-    it('serves the aggregated area page', async () => {
-      const page = { scope: { kind: 'area', slug: 'neuroscience', name: 'Neuroscience' } };
-      mocks.getAreaResearchPage.mockResolvedValue(page);
-      const req = { params: { slug: 'neuroscience' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearchAreaPage(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(page);
-    });
-
-    it('does not leak internal service errors', async () => {
-      mocks.getAreaResearchPage.mockRejectedValue(
-        new Error('mongodb://user:pass@example.invalid area lookup failed'),
-      );
-      const req = { params: { slug: 'neuroscience' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearchAreaPage(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
-    });
-  });
-
-  describe('getResearchFieldPage', () => {
-    it('returns 404 when the slug does not resolve to a research field', async () => {
-      mocks.getFieldResearchPage.mockResolvedValue(null);
-      const req = { params: { slug: 'not-a-real-field' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearchFieldPage(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Research field not found' });
-    });
-
-    it('serves the aggregated field page', async () => {
-      const page = { scope: { kind: 'field', slug: 'mathematics', name: 'Mathematics' } };
-      mocks.getFieldResearchPage.mockResolvedValue(page);
-      const req = { params: { slug: 'mathematics' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearchFieldPage(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(page);
-    });
-  });
-
-  it('serves the aggregated school page for a resolvable slug', async () => {
-    const page = { school: { slug: 'school-of-medicine', label: 'School of Medicine' }, homeGroups: [] };
-    mocks.getSchoolResearchPage.mockResolvedValue(page);
-    const req = { params: { slug: 'school-of-medicine' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await getResearchSchoolPage(req, res);
-
-    expect(mocks.getSchoolResearchPage).toHaveBeenCalledWith('school-of-medicine');
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(page);
-  });
-
-  it('returns 404 when the school slug does not resolve', async () => {
-    mocks.getSchoolResearchPage.mockResolvedValue(null);
-    const req = { params: { slug: 'not-a-school' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await getResearchSchoolPage(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Research school not found' });
-  });
-
-  it('does not leak internal errors from school page failures', async () => {
-    mocks.getSchoolResearchPage.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid school page failed'),
-    );
-    const req = { params: { slug: 'school-of-medicine' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await getResearchSchoolPage(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch research school' });
-    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
   });
 });

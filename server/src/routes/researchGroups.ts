@@ -43,30 +43,6 @@ router.get(
   entityCorrectionReportController.listMyEntityCorrectionReports,
 );
 
-router.get(
-  '/department/:slug',
-  isAuthenticated,
-  asyncHandler(researchGroupController.getResearchDepartmentPage),
-);
-
-router.get(
-  '/area/:slug',
-  isAuthenticated,
-  asyncHandler(researchGroupController.getResearchAreaPage),
-);
-
-router.get(
-  '/field/:slug',
-  isAuthenticated,
-  asyncHandler(researchGroupController.getResearchFieldPage),
-);
-
-router.get(
-  '/school/:slug',
-  isAuthenticated,
-  asyncHandler(researchGroupController.getResearchSchoolPage),
-);
-
 router.get('/:slug', asyncHandler(researchGroupController.getResearchGroupBySlug));
 
 export default router;
