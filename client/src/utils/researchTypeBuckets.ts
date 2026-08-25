@@ -30,7 +30,7 @@ export const RESEARCH_TYPE_BUCKETS: readonly ResearchTypeBucketDefinition[] = [
   {
     key: 'programs',
     label: 'Programs & fellowships',
-    entityTypes: ['PROGRAM', 'RA_PROGRAM', 'FELLOWSHIP_PROGRAM', 'COURSE_SEQUENCE'],
+    entityTypes: ['PROGRAM', 'COURSE_SEQUENCE'],
   },
   {
     key: 'collections',

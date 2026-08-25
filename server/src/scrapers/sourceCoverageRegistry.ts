@@ -436,11 +436,11 @@ export const sourceCoverageRegistry = {
   'yale-reu-programs': {
     priority: 4,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['Fellowship', 'ResearchEntity', 'Observation'],
+    artifactTypes: ['Fellowship', 'Observation'],
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
-      'Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Each program\'s own official Yale page is the cited source; the NSF REU Sites directory is a non-Yale crawl seed used only to discover Yale-hosted site URLs and is never recorded as a source. Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that project to RA_PROGRAM research entities. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.',
+      'Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Each program\'s own official Yale page is the cited source; the NSF REU Sites directory is a non-Yale crawl seed used only to discover Yale-hosted site URLs and is never recorded as a source. Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that surface on the /programs catalog. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.',
   },
   'yale-health-sciences-summer-programs': {
     priority: 4,

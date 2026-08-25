@@ -4,6 +4,16 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-25: Programs And Fellowships Live Only On `/programs`; The Split-Brain Projection Is Removed
+
+The Fellowship to `ResearchEntity` projection is removed, resolving the long-tracked "program split-brain" where a program appeared both as a `Fellowship` on `/programs` and as a projected `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` `ResearchEntity` on `/research`.
+The projected entity was a pure derived duplicate of the authoritative `Fellowship` record, so mirroring it into the research corpus split one concept across two student surfaces with no added information.
+Programs and fellowships now live only on `/programs`; `/research` surfaces research homes and entities.
+Removed: the projection writer and its live materializer trigger, the batch projection script, the `/research` "Related programs & fellowships" cross-surface module (`POST /research/related-programs` and its client component, issue #1509), the `RA_PROGRAM` and `FELLOWSHIP_PROGRAM` `entityType` values, and the funding-program topic derivation that only enriched projected programs.
+A scraped `PROGRAM` research home discovered on a Yale department or official page is a first-class `/research` citizen and is unaffected; `RA_PROGRAM` remains a `Fellowship` `programKind` on the `/programs` domain and is distinct from the removed `entityType`.
+Existing projected entities are removed from the corpus by the guarded `programs:retire-projected-research-entities` data operation (dry-run first).
+Future work must not reintroduce a Fellowship-to-research projection or those two entity types.
+
 ## 2026-08-25: Researcher Person Page Is Retired; Discovery Ends At The Research Entity
 
 The standalone researcher person page (`/research/person/:publicKey`) and the researcher people-search card on `/research` are removed.

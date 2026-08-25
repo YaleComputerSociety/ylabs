@@ -4,7 +4,7 @@
  * - POST /search → Meilisearch-backed hybrid search with filter strings.
  * - GET  /:slug  → Full lab detail payload (group + members + papers + listings).
  *
- * The read paths (search, related-programs, and detail) are
+ * The read paths (search and detail) are
  * public: a logged-out visitor can browse and open any research home, and the
  * controllers only ever serve the public student-visibility tiers because no
  * authenticated principal means no operator authority and no personalization.
@@ -20,8 +20,6 @@ import { writeLimit } from '../middleware/rateLimiters';
 const router = Router();
 
 router.post('/search', asyncHandler(researchGroupController.searchResearchGroups));
-
-router.post('/related-programs', asyncHandler(researchGroupController.searchRelatedPrograms));
 
 router.post(
   '/:slug/outreach',

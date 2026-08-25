@@ -26,8 +26,6 @@ describe('researchTypeBuckets', () => {
     it('flattens the raw entityType enum values for the selected buckets', () => {
       expect(entityTypesForResearchTypeBuckets(['programs'])).toEqual([
         'PROGRAM',
-        'RA_PROGRAM',
-        'FELLOWSHIP_PROGRAM',
         'COURSE_SEQUENCE',
       ]);
     });
@@ -59,7 +57,7 @@ describe('researchTypeBuckets', () => {
           LAB: 10,
           GROUP: 2,
           INDIVIDUAL_RESEARCH: 3,
-          FELLOWSHIP_PROGRAM: 4,
+          PROGRAM: 4,
           CENTER: 0,
         }),
       ).toEqual([

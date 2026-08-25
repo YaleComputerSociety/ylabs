@@ -56,7 +56,7 @@ describe('isStudentEngagementIntent / isActiveEngagementIntent', () => {
 });
 
 describe('researchHomeMatchesEngagementIntent', () => {
-  it('matches ra-position on paid compensation, a posted opening, or an RA program', () => {
+  it('matches ra-position on paid compensation or a posted opening', () => {
     expect(
       researchHomeMatchesEngagementIntent(
         { undergraduateCompensationModel: 'PAID_OR_STIPEND' },
@@ -69,9 +69,6 @@ describe('researchHomeMatchesEngagementIntent', () => {
         'ra-position',
       ),
     ).toBe(true);
-    expect(researchHomeMatchesEngagementIntent({ entityType: 'RA_PROGRAM' }, 'ra-position')).toBe(
-      true,
-    );
     expect(
       researchHomeMatchesEngagementIntent(
         { entityType: 'LAB', undergraduateCompensationModel: 'UNKNOWN' },

@@ -82,7 +82,6 @@ import {
   applyResearchEntityResearchAreaCanonicalization,
   getResearchAreaCanonicalizer,
 } from './researchAreaCanonicalization';
-import { deriveFundingProgramTopic } from './fundingProgramTopicDerivation';
 import {
   resolveBackfillWebsiteUrl,
   type WebsiteUrlBackfillResolution,
@@ -107,8 +106,6 @@ import {
   type ResearchEntityIdentity,
 } from './utils/personProfileEntityMatch';
 import { deriveResearchEntityYaleStatus } from '../utils/researchEntityYaleStatus';
-import { projectFellowshipToResearchEntity } from '../services/fellowshipResearchEntityProjectionService';
-import type { FellowshipProjectionInput } from '../services/fellowshipResearchEntityProjection';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -365,38 +362,8 @@ function isResearchEntityObservationType(entityType: ObservedEntityType): boolea
   return entityType === 'researchEntity' || entityType === 'researchGroup';
 }
 
-const FUNDING_PROGRAM_TOPIC_DERIVATION_ENTITY_TYPES = new Set(['FELLOWSHIP_PROGRAM', 'RA_PROGRAM']);
-
 function hasNonEmptyStringArray(...values: unknown[]): boolean {
   return values.some((value) => Array.isArray(value) && value.length > 0);
-}
-
-/**
- * FELLOWSHIP_PROGRAM/RA_PROGRAM entities are almost never scraped with
- * researchAreas/departments observations, so the generic resolver above never
- * even puts those keys in `set` and the org-unit/research-area canonicalizers
- * below never run for them (issue #1700). When both are still genuinely empty,
- * this derives them from the entity's own name/description via the curated,
- * evidence-grounded sponsor mapping and seeds `set` as if an observation had
- * written them, so the normal canonicalization pipeline still owns dedup and
- * school derivation.
- */
-function applyFundingProgramTopicDerivation(
-  set: Record<string, unknown>,
-  entityDoc: Record<string, unknown> | null,
-): void {
-  const entityType = set.entityType ?? entityDoc?.entityType;
-  if (typeof entityType !== 'string' || !FUNDING_PROGRAM_TOPIC_DERIVATION_ENTITY_TYPES.has(entityType)) {
-    return;
-  }
-  if (hasNonEmptyStringArray(set.departments, entityDoc?.departments)) return;
-  if (hasNonEmptyStringArray(set.researchAreas, entityDoc?.researchAreas)) return;
-
-  const name = set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName;
-  const fullDescription = set.fullDescription ?? entityDoc?.fullDescription;
-  const topic = deriveFundingProgramTopic(name, fullDescription);
-  if (topic.department) set.departments = [topic.department];
-  if (topic.researchArea) set.researchAreas = [topic.researchArea];
 }
 
 const DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
@@ -407,8 +374,8 @@ const DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEAR
 // returns early - leaving the row with empty chips even when its own description names
 // clear topics. Such a row is then held out of student_ready on the research-area facet
 // gate (missing_facet_signal) despite being otherwise complete (issue #1717 covered only
-// already-student_ready rows). Mirror `applyFundingProgramTopicDerivation` (#1700): when
-// both are genuinely empty, derive chips from the entity's own name/short/full via the
+// already-student_ready rows). When both are genuinely empty, derive chips from the
+// entity's own name/short/full via the
 // curated canonical phrase index and seed `set` as if an observation had written them, so
 // the normal canonicalization pass still owns dedup and department-duplicate rejection.
 async function applyDescriptionResearchAreaDerivation(
@@ -2908,7 +2875,6 @@ export async function materializeEntity(
           ? entityDoc.sourceUrls
           : []),
     ].filter((url): url is string => typeof url === 'string');
-    applyFundingProgramTopicDerivation(set, entityDoc);
     await applyDescriptionResearchAreaDerivation(set, entityDoc);
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc, orgUnitProfileUrls);
     await applyResearchEntityResearchAreaCanonicalization(set, set.departments ?? entityDoc?.departments);
@@ -3094,20 +3060,6 @@ export async function materializeEntity(
   if (isSyncableEntityType(syncEntityType) && entityIdString) {
     const fresh = await Model.findById(entityIdString).lean();
     if (fresh) await syncEntity(syncEntityType, fresh);
-  }
-
-  if (entityType === 'fellowship' && entityIdString && !options.dryRun) {
-    try {
-      const freshFellowship = await Model.findById(entityIdString).lean();
-      if (freshFellowship) {
-        await projectFellowshipToResearchEntity(freshFellowship as FellowshipProjectionInput);
-      }
-    } catch (error) {
-      console.error(
-        'materializeEntity: fellowship research-entity projection failed:',
-        sanitizeLogValue({ entityId: entityIdString, error }),
-      );
-    }
   }
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;

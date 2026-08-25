@@ -3,7 +3,6 @@ import { isCancel } from 'axios';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
-import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchSortDropdown, {
@@ -2280,13 +2279,6 @@ const Research = () => {
                     />
                   )}
                 </section>
-                <RelatedProgramsModule
-                  query={activeSearchRequest?.searchQuery ?? ''}
-                  topicFilters={{
-                    school: activeSearchRequest?.filters?.school,
-                    departments: activeSearchRequest?.filters?.departments,
-                  }}
-                />
               </section>
             )}
           </div>

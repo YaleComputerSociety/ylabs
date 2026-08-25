@@ -127,7 +127,7 @@ describe('computeResearchEntityBrowseRank', () => {
   it('does not demote direct research homes', () => {
     expect(__testing.entityTypeRankAdjustment({ entityType: 'LAB' }, true)).toBe(0);
     expect(__testing.entityTypeRankAdjustment({ entityType: 'FACULTY_PROJECT' }, true)).toBe(0);
-    expect(__testing.entityTypeRankAdjustment({ entityType: 'FELLOWSHIP_PROGRAM' }, true)).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'GROUP' }, true)).toBe(0);
   });
 
   it('gates the umbrella demotion on hosting affiliated research homes', () => {

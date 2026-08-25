@@ -80,10 +80,10 @@ describe('buildResearchGroupFilterString', () => {
   describe('entityType filter', () => {
     it('ORs multiple entityType enum values within the field', () => {
       const filter = buildResearchGroupFilterString({
-        entityType: ['PROGRAM', 'RA_PROGRAM', 'FELLOWSHIP_PROGRAM'],
+        entityType: ['PROGRAM', 'COURSE_SEQUENCE', 'CENTER'],
       });
       expect(filter).toBe(
-        'archived = false AND (entityType = "PROGRAM" OR entityType = "RA_PROGRAM" OR entityType = "FELLOWSHIP_PROGRAM")',
+        'archived = false AND (entityType = "PROGRAM" OR entityType = "COURSE_SEQUENCE" OR entityType = "CENTER")',
       );
     });
 

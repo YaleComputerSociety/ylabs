@@ -19,9 +19,6 @@ describe('research group routes', () => {
     expect(routeMethods('/search')).toContain('post');
     expect(routeHandlerNames('/search', 'post')).not.toContain('isAuthenticated');
 
-    expect(routeMethods('/related-programs')).toContain('post');
-    expect(routeHandlerNames('/related-programs', 'post')).not.toContain('isAuthenticated');
-
     expect(routeMethods('/:slug')).toContain('get');
     expect(routeHandlerNames('/:slug', 'get')).not.toContain('isAuthenticated');
   });

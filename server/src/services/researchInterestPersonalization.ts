@@ -115,9 +115,8 @@ const INDEPENDENT_STUDY_COMPENSATION = 'COURSE_CREDIT';
  * fabricates a pathway an entity's evidence does not support. A home lacking the
  * evidence returns false and therefore keeps its global browse position.
  *
- *  - `ra-position`        -> paid/stipended RA compensation, a posted opening
- *                            (currently OPEN/ROLLING for undergrads), or an
- *                            RA_PROGRAM home.
+ *  - `ra-position`        -> paid/stipended RA compensation or a posted opening
+ *                            (currently OPEN/ROLLING for undergrads).
  *  - `thesis-advisor`     -> faculty-led homes (LAB / FACULTY_RESEARCH_AREA) and
  *                            senior-thesis COURSE_SEQUENCE pathways.
  *  - `independent-study`  -> directed-study COURSE_SEQUENCE pathways or
@@ -132,8 +131,7 @@ export const researchHomeMatchesEngagementIntent = (
     case 'ra-position':
       return (
         hitStringField(hit, 'undergraduateCompensationModel') === RA_POSITION_COMPENSATION ||
-        RA_POSITION_AVAILABILITY.has(hitStringField(hit, 'undergraduateCurrentAvailability')) ||
-        hitStringField(hit, 'entityType') === 'RA_PROGRAM'
+        RA_POSITION_AVAILABILITY.has(hitStringField(hit, 'undergraduateCurrentAvailability'))
       );
     case 'thesis-advisor':
       return THESIS_ADVISOR_ENTITY_TYPES.has(hitStringField(hit, 'entityType'));
