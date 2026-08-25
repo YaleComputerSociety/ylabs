@@ -32,6 +32,9 @@ const SERVICE_OR_INSTRUCTIONAL_SUPPORT =
 const ADMINISTRATIVE_OR_SERVICE_ORGANIZATION =
   /\b(administrative (?:office|services|support|unit|operations)|office of administration|business operations|operations (?:office|team|unit)|human resources|career services|career advising|academic advising|advising services|student (?:services|affairs)|dean of students|office of the registrar|registrar's office|financial aid office|office of financial aid|admissions office|office of admissions|information technology services|help ?desk|technical support|facilities management|facilities services|event (?:planning|management|services)|conference services|communications office|office of communications|marketing and communications|communications and marketing|public relations|media relations|alumni relations|development office|office of development|advancement office)\b/i;
 
+const PUBLICATION_OR_MEDIA_OUTLET =
+  /\b(online magazine|news magazine|digital magazine|magazine dedicated to|environmental journalism|news outlet|editorial (?:content|voice|board)|op-?ed|publishes (?:opinion|analysis|reporting|commentary))\b/i;
+
 const CONDUCTS_OR_ORGANIZES_RESEARCH =
   /\b(conducts? research|research center|research institute|research initiative|research program|research programs|research project|research projects|researchers?|investigators?|laborator(?:y|ies)|fieldwork|clinical trials?|research fellows?|postdoctoral research|data collection|empirical research|scholarly research)\b/i;
 
@@ -65,15 +68,19 @@ export function classifyResearchEntityResearchScope(
   const serviceOrInstructionalSupport = SERVICE_OR_INSTRUCTIONAL_SUPPORT.test(narrative);
   const administrativeOrServiceOrganization =
     ADMINISTRATIVE_OR_SERVICE_ORGANIZATION.test(narrative);
+  const publicationOrMediaOutlet = PUBLICATION_OR_MEDIA_OUTLET.test(narrative);
   const positiveResearchEvidence = CONDUCTS_OR_ORGANIZES_RESEARCH.test(narrative);
 
   const nonResearchOrganization =
-    serviceOrInstructionalSupport || administrativeOrServiceOrganization;
+    serviceOrInstructionalSupport ||
+    administrativeOrServiceOrganization ||
+    publicationOrMediaOutlet;
 
   if (nonResearchOrganization && !positiveResearchEvidence) {
     const reasons: string[] = [];
     if (serviceOrInstructionalSupport) reasons.push('service_or_instructional_support');
     if (administrativeOrServiceOrganization) reasons.push('administrative_or_service_organization');
+    if (publicationOrMediaOutlet) reasons.push('publication_or_media_outlet');
     reasons.push('missing_positive_research_evidence');
     return { researchHomeEligible: false, reasons };
   }
