@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  syncEntities: vi.fn(async () => {}),
-  researchBulkWrite: vi.fn(async () => ({})),
-  fellowshipBulkWrite: vi.fn(async () => ({})),
-  queueBulkWrite: vi.fn(async () => ({})),
-  queueUpdateMany: vi.fn(async () => ({ modifiedCount: 0 })),
+  syncEntities: vi.fn(async (_entityType: string, _docs: unknown[]) => {}),
+  researchBulkWrite: vi.fn(async (..._args: unknown[]) => ({})),
+  fellowshipBulkWrite: vi.fn(async (..._args: unknown[]) => ({})),
+  queueBulkWrite: vi.fn(async (..._args: unknown[]) => ({})),
+  queueUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
   researchDocsById: new Map<string, Record<string, unknown>>(),
 }));
 
