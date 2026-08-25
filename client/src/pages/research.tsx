@@ -21,7 +21,6 @@ import {
   notStartedEmphasis,
 } from '../utils/watchedDeadlineSummary';
 import axios from '../utils/axios';
-import { safeRouteSegment } from '../utils/url';
 import {
   buildGroupedSearchResults,
   GroupedResearchResults,
@@ -33,8 +32,7 @@ import {
   ResearchEntitySearchResponse,
   StudentVisibilityTier,
 } from '../types/researchEntity';
-import { getDepartmentSlug, getUniqueDepartmentLabels } from '../utils/departmentNames';
-import { getSchoolSlug } from '../utils/schoolNames';
+import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
@@ -2213,28 +2211,6 @@ const Research = () => {
                       </div>
                     )}
                   </div>
-                )}
-
-                {departmentSearch && getDepartmentSlug(departmentSearch.label) && (
-                  <p className="mt-2 text-sm">
-                    <Link
-                      to={`/research/department/${safeRouteSegment(getDepartmentSlug(departmentSearch.label))}`}
-                      className="yr-link yr-focus-ring rounded-sm font-semibold"
-                    >
-                      View the {departmentSearch.label} department page →
-                    </Link>
-                  </p>
-                )}
-
-                {selectedSchool && getSchoolSlug(selectedSchool) && (
-                  <p className="mt-2 text-sm">
-                    <Link
-                      to={`/research/school/${safeRouteSegment(getSchoolSlug(selectedSchool))}`}
-                      className="yr-link yr-focus-ring rounded-sm font-semibold"
-                    >
-                      View the {selectedSchool} school page →
-                    </Link>
-                  </p>
                 )}
 
                 {!isWideFilterLayout && (

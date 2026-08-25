@@ -11,9 +11,6 @@ import RootRedirect from './pages/rootRedirect';
 import Fellowships from './pages/fellowships';
 import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
-import ResearchDepartment from './pages/researchDepartment';
-import { ResearchAreaPage, ResearchFieldPage } from './pages/researchArea';
-import ResearchSchool from './pages/researchSchool';
 import Login from './pages/login';
 import About from './pages/about';
 import Account from './pages/account';
@@ -85,24 +82,6 @@ const App = () => {
                       element={<PublicRoute Component={Research} unknownBlocked={true} />}
                     />
                     <Route path="/research/person/:publicKey" element={<RetiredPersonRedirect />} />
-                    <Route
-                      path="/research/department/:slug"
-                      element={
-                        <PrivateRoute Component={ResearchDepartment} unknownBlocked={true} />
-                      }
-                    />
-                    <Route
-                      path="/research/area/:slug"
-                      element={<PrivateRoute Component={ResearchAreaPage} unknownBlocked={true} />}
-                    />
-                    <Route
-                      path="/research/field/:slug"
-                      element={<PrivateRoute Component={ResearchFieldPage} unknownBlocked={true} />}
-                    />
-                    <Route
-                      path="/research/school/:slug"
-                      element={<PrivateRoute Component={ResearchSchool} unknownBlocked={true} />}
-                    />
                     <Route
                       path="/research/:slug"
                       element={<PublicRoute Component={ResearchDetail} unknownBlocked={true} />}

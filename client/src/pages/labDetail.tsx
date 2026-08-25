@@ -75,7 +75,6 @@ import {
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
 import { UndergraduateLogisticsSection } from '../components/research/UndergraduateLogisticsSection';
-import ResearchAreaPivotChip from '../components/research/ResearchAreaPivotChip';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -659,12 +658,12 @@ const DecisionSummary = ({
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {topics.map((topic) => (
-                  <ResearchAreaPivotChip
+                  <span
                     key={topic}
-                    label={topic}
-                    staticClassName="rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 py-1 text-xs font-medium text-blue-800"
-                    interactiveClassName="yr-focus-ring inline-flex min-h-11 items-center rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 text-xs font-medium text-blue-800 transition-colors hover:border-blue-300 hover:bg-blue-100"
-                  />
+                    className="rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 py-1 text-xs font-medium text-blue-800"
+                  >
+                    {formatTitleCaseLabel(topic)}
+                  </span>
                 ))}
               </div>
             </div>

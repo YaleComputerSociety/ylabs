@@ -470,7 +470,7 @@ describe('ResearchHomeCard', () => {
     );
   });
 
-  it('turns a canonical research-area chip into a pre-filtered browse pivot', () => {
+  it('renders a canonical research-area label as an inert display pill', () => {
     render(
       <MemoryRouter initialEntries={['/research']}>
         <ConfigContext.Provider value={researchAreaConfigValue}>
@@ -479,28 +479,10 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    const chip = screen.getByRole('link', {
-      name: 'Browse Systems Neuroscience research homes',
-    });
-    expect(chip.getAttribute('href')).toBe('/research?researchAreas=Systems+Neuroscience');
-  });
-
-  it('does not trigger card-detail navigation when a topic chip is activated', () => {
-    const { container } = render(
-      <MemoryRouter initialEntries={['/research']}>
-        <ConfigContext.Provider value={researchAreaConfigValue}>
-          <ResearchHomeCard home={researchHome()} />
-          <LocationProbe />
-        </ConfigContext.Provider>
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(
-      screen.getByRole('link', { name: 'Browse Systems Neuroscience research homes' }),
-    );
-
-    expect(screen.getByLabelText('Current path').textContent).toBe('/research');
-    expect(container.querySelector('article')).not.toBeNull();
+    expect(
+      screen.queryByRole('link', { name: /Systems Neuroscience/ }),
+    ).toBeNull();
+    expect(screen.getByText('Systems Neuroscience').tagName).toBe('SPAN');
   });
 
   it('keeps non-area topic labels as inert display pills', () => {
@@ -512,7 +494,6 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole('link', { name: /Browse Bespoke Method Label/ })).toBeNull();
     expect(screen.getByText('Bespoke Method Label').tagName).toBe('SPAN');
   });
 

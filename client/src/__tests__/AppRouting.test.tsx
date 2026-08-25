@@ -52,8 +52,6 @@ vi.mock('../pages/fellowships', () => ({
   default: () => <div data-testid="programs-page">Programs & Fellowships</div>,
 }));
 vi.mock('../pages/labDetail', () => ({ default: () => null }));
-vi.mock('../pages/researchDepartment', () => ({ default: () => null }));
-vi.mock('../pages/researchSchool', () => ({ default: () => null }));
 vi.mock('../pages/opportunityDetail', () => ({ default: () => null }));
 vi.mock('../pages/login', () => ({ default: () => null }));
 vi.mock('../pages/about', () => ({ default: () => null }));
