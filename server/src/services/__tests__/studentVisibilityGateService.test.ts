@@ -224,6 +224,50 @@ describe('studentVisibilityGateService', () => {
     expect([...ids]).toEqual([]);
   });
 
+  it('does not treat a shared institutional /about landing page as exact duplicate evidence', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds(
+      [
+        {
+          _id: 'safdar-lab',
+          slug: 'ysm-safdar',
+          name: 'Safdar Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'suppressed',
+          websiteUrl: 'https://medicine.yale.edu/lab/safdar/',
+          sourceUrls: ['https://medicine.yale.edu/lab/safdar/', 'https://medicine.yale.edu/about/'],
+        },
+        {
+          _id: 'flavell-lab',
+          slug: 'ysm-flavell',
+          name: 'Flavell Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'suppressed',
+          websiteUrl: 'https://medicine.yale.edu/lab/flavell/',
+          sourceUrls: ['https://medicine.yale.edu/lab/flavell/', 'https://medicine.yale.edu/about/'],
+        },
+        {
+          _id: 'kang-lab',
+          slug: 'ysm-kang',
+          name: 'Kang Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'student_ready',
+          websiteUrl: 'https://medicine.yale.edu/lab/kang/',
+          sourceUrls: ['https://medicine.yale.edu/lab/kang/', 'https://medicine.yale.edu/about/'],
+        },
+      ],
+      [
+        { researchEntityId: 'safdar-lab', userId: 'user-safdar' },
+        { researchEntityId: 'flavell-lab', userId: 'user-flavell' },
+        { researchEntityId: 'kang-lab', userId: 'user-kang' },
+      ],
+    );
+
+    expect([...ids]).toEqual([]);
+  });
+
   it('does not treat nested shared membership directory pages as exact duplicate evidence', () => {
     const ids = selectExactUrlDuplicateRiskEntityIds([
       {
