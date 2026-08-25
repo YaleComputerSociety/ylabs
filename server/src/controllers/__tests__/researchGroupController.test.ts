@@ -7,8 +7,6 @@ const mocks = vi.hoisted(() => ({
   resolveArchivedResearchEntityCanonicalSlug: vi.fn(),
   recordResearchEntityOutreach: vi.fn(),
   getStudentResearchInterests: vi.fn(),
-  getResearcherProfileByPublicKey: vi.fn(),
-  searchResearchersViaMeili: vi.fn(),
   getDepartmentResearchPage: vi.fn(),
   getAreaResearchPage: vi.fn(),
   getFieldResearchPage: vi.fn(),
@@ -25,14 +23,6 @@ vi.mock('../../services/researchGroupService', () => ({
   searchResearchGroupsViaMeili: mocks.searchResearchGroupsViaMeili,
   resolveArchivedResearchEntityCanonicalSlug: mocks.resolveArchivedResearchEntityCanonicalSlug,
   recordResearchEntityOutreach: mocks.recordResearchEntityOutreach,
-}));
-
-vi.mock('../../services/researcherProfileService', () => ({
-  getResearcherProfileByPublicKey: mocks.getResearcherProfileByPublicKey,
-}));
-
-vi.mock('../../services/researcherSearchIndexService', () => ({
-  searchResearchersViaMeili: mocks.searchResearchersViaMeili,
 }));
 
 vi.mock('../../services/areaResearchPageService', () => ({
@@ -62,11 +52,9 @@ import {
   getResearchFieldPage,
   getResearchSchoolPage,
   getResearchGroupBySlug,
-  getResearcherProfile,
   recordResearchOutreach,
   searchRelatedPrograms,
   searchResearchGroups,
-  searchResearchers,
 } from '../researchGroupController';
 
 describe('researchGroupController', () => {
@@ -585,96 +573,6 @@ describe('researchGroupController', () => {
 
     expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({ error: 'No approved outreach route is available' });
-  });
-
-  describe('getResearcherProfile', () => {
-    it('rejects malformed researcher keys before service work', async () => {
-      const req = { params: { publicKey: '../secret' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearcherProfile(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(mocks.getResearcherProfileByPublicKey).not.toHaveBeenCalled();
-    });
-
-    it('returns 404 when the key resolves to no student-visible homes', async () => {
-      mocks.getResearcherProfileByPublicKey.mockResolvedValue(null);
-      const req = { params: { publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6-pi' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearcherProfile(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Researcher not found' });
-    });
-
-    it('serves the aggregated researcher profile', async () => {
-      const profile = { publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6-pi', displayName: 'Dr X', homes: [] };
-      mocks.getResearcherProfileByPublicKey.mockResolvedValue(profile);
-      const req = { params: { publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6-pi' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearcherProfile(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(profile);
-    });
-
-    it('does not leak internal service errors', async () => {
-      mocks.getResearcherProfileByPublicKey.mockRejectedValue(
-        new Error('mongodb://user:pass@example.invalid researcher lookup failed'),
-      );
-      const req = { params: { publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6-pi' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await getResearcherProfile(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
-    });
-  });
-
-  describe('searchResearchers', () => {
-    it('returns researcher search hits for a name query', async () => {
-      const payload = {
-        hits: [{ id: 'a1b2c3d4e5f6a1b2c3d4e5f6', publicKey: 'a1b2c3d4e5f6a1b2c3d4e5f6', displayName: 'Dr X', homeCount: 2 }],
-        estimatedTotalHits: 1,
-        page: 1,
-        pageSize: 10,
-      };
-      mocks.searchResearchersViaMeili.mockResolvedValue(payload);
-      const req = { body: { q: 'dr x' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await searchResearchers(req, res);
-
-      expect(mocks.searchResearchersViaMeili).toHaveBeenCalledWith('dr x', { page: 1, pageSize: 10 });
-      expect(res.json).toHaveBeenCalledWith(payload);
-    });
-
-    it('rejects an oversized query before service work', async () => {
-      const req = { body: { q: 'x'.repeat(600) } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await searchResearchers(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(mocks.searchResearchersViaMeili).not.toHaveBeenCalled();
-    });
-
-    it('does not leak internal service errors', async () => {
-      mocks.searchResearchersViaMeili.mockRejectedValue(
-        new Error('mongodb://user:pass@example.invalid researcher search failed'),
-      );
-      const req = { body: { q: 'dr x' } } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-      await searchResearchers(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
-    });
   });
 
   it('serves the aggregated department page for a resolvable slug', async () => {

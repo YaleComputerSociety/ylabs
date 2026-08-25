@@ -1,7 +1,5 @@
-import { Link } from 'react-router-dom';
 import type { LabMember, LabMemberRole, LabRosterDisclosure } from '../../types/labDetail';
 import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
-import { researcherPersonPagePath } from '../../utils/researcherPersonPage';
 
 const MAX_PRESENTED_TEAM_MEMBERS = 24;
 
@@ -74,7 +72,6 @@ export default function ResearchTeamSection({
                 {groupedMembers.map((member) => {
                   const name = displayName(member);
                   const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
-                  const personHref = researcherPersonPagePath(member.user.publicKey);
                   const content = (
                     <>
                       <span className="block font-semibold text-gray-900">{name}</span>
@@ -90,28 +87,7 @@ export default function ResearchTeamSection({
                       key={`${member.user.publicKey || name}-${member.role}`}
                       className="min-w-0 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
                     >
-                      {personHref ? (
-                        <div className="py-1">
-                          <Link
-                            to={personHref}
-                            className="block min-h-11 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                            aria-label={`${name}, ${label}. View Yale Research profile`}
-                          >
-                            {content}
-                          </Link>
-                          {profileUrl && (
-                            <a
-                              href={profileUrl}
-                              target="_blank"
-                              rel={EXTERNAL_LINK_REL}
-                              className="mt-1 inline-flex items-center rounded-sm text-xs font-semibold text-blue-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                              aria-label={`${name}, ${label}. Open official public profile`}
-                            >
-                              View official profile
-                            </a>
-                          )}
-                        </div>
-                      ) : profileUrl ? (
+                      {profileUrl ? (
                         <a
                           href={profileUrl}
                           target="_blank"

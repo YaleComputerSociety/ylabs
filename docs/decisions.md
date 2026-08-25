@@ -4,10 +4,18 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-25: Researcher Person Page Is Retired; Discovery Ends At The Research Entity
+
+The standalone researcher person page (`/research/person/:publicKey`) and the researcher people-search card on `/research` are removed.
+Discovery now surfaces research homes and entities only; a person is reachable through the entity they lead, not through a dedicated person page.
+The Principal Investigator section on `/research/*` entity pages is unaffected: a PI's name, photo, title, and official-profile link are served independently by the entity resolver (the embedded `members` array in `GET /research/:slug`), which never depended on the researcher-profile endpoint.
+The two backend endpoints (`GET /research/person/:publicKey`, `POST /research/people/search`) and their services are removed; old person URLs redirect to `/research`.
+Future work must not reintroduce a person page or cite a researcher-profile read path; treat any lingering reference to one as stale.
+
 ## 2026-08-24: Logged-Out Read-Only Discovery For Public Research And About Pages
 
 Yale Research is a discovery product, so its top-of-funnel pages are readable without a Yale CAS login rather than gated behind it.
-A logged-out visitor can browse and search `/research`, open any public `/research/:slug` and `/research/person/:publicKey`, and read `/about`, seeing only the public student-visibility tiers already served to authenticated students.
+A logged-out visitor can browse and search `/research`, open any public `/research/:slug`, and read `/about`, seeing only the public student-visibility tiers already served to authenticated students.
 Anonymous requests carry no authenticated principal, so the read controllers grant no operator authority and apply no personalization; logged-out browsing always uses the global Recommended order and never exposes non-public tiers or operator/admin fields.
 Every write and account surface stays behind auth: saved plans, private notes, compare, outreach tracking and drafting, interest personalization, program watch, profiles, analytics, admin, and the seed routes.
 On the public surfaces, save and outreach affordances are replaced with a Yale CAS login call to action, and journey analytics stays off for guests.

@@ -4,7 +4,7 @@
  * - POST /search → Meilisearch-backed hybrid search with filter strings.
  * - GET  /:slug  → Full lab detail payload (group + members + papers + listings).
  *
- * The read paths (search, related-programs, detail, and researcher profile) are
+ * The read paths (search, related-programs, and detail) are
  * public: a logged-out visitor can browse and open any research home, and the
  * controllers only ever serve the public student-visibility tiers because no
  * authenticated principal means no operator authority and no personalization.
@@ -22,8 +22,6 @@ const router = Router();
 router.post('/search', asyncHandler(researchGroupController.searchResearchGroups));
 
 router.post('/related-programs', asyncHandler(researchGroupController.searchRelatedPrograms));
-
-router.post('/people/search', asyncHandler(researchGroupController.searchResearchers));
 
 router.post(
   '/:slug/outreach',
@@ -44,8 +42,6 @@ router.get(
   isAuthenticated,
   entityCorrectionReportController.listMyEntityCorrectionReports,
 );
-
-router.get('/person/:publicKey', asyncHandler(researchGroupController.getResearcherProfile));
 
 router.get(
   '/department/:slug',
