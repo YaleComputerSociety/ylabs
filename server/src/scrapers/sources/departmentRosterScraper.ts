@@ -69,6 +69,7 @@ import {
   fullDescriptionQuality,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
+import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -232,10 +233,13 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
     let email: string | undefined;
     let labUrl: string | undefined;
     card.find('.directory-listing-card__link').each((_j, a) => {
-      const href = $(a).attr('href') || '';
-      if (/^mailto:/i.test(href)) {
-        email = href.replace(/^mailto:/i, '').trim() || email;
-      } else if (/^https?:\/\//i.test(href) && !labUrl && !isGenericLabDirectoryUrl(href)) {
+      const rawHref = $(a).attr('href') || '';
+      if (/^mailto:/i.test(rawHref)) {
+        email = rawHref.replace(/^mailto:/i, '').trim() || email;
+        return;
+      }
+      const href = unwrapMicrosoftSafeLinksUrl(rawHref);
+      if (/^https?:\/\//i.test(href) && !labUrl && !isGenericLabDirectoryUrl(href)) {
         labUrl = href;
       }
     });
@@ -1853,7 +1857,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
 
 function absolutize(href: string, base: string): string {
   try {
-    return new URL(href, base).toString();
+    return unwrapMicrosoftSafeLinksUrl(new URL(href, base).toString());
   } catch {
     return href;
   }

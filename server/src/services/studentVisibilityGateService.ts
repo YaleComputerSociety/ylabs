@@ -40,6 +40,7 @@ import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk'
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
 import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
+import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -270,7 +271,7 @@ const exactDuplicateUrlRejectedPathPatterns = [
 const genericDuplicateSignalHosts = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
 
 function normalizedExactDuplicateUrl(value: unknown): string {
-  const raw = typeof value === 'string' ? value.trim() : '';
+  const raw = unwrapMicrosoftSafeLinksUrl(value);
   if (!/^https?:\/\//i.test(raw)) return '';
   try {
     const url = new URL(raw);
