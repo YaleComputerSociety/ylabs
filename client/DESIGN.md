@@ -67,7 +67,6 @@ Prefer these over ad hoc styling.
 - Secondary button: `brand` text on `brand-soft` or panel fill with a `line` border.
 - Cards and panels: `panel` surface, `line` border, `shadow-yr` elevation, rounded corners.
 - Chips and badges: soft tints (`brand-soft`, `gold-soft`, `success-soft`) with the matching strong text color.
-- Focus ring: the canonical keyboard focus indicator is the `.yr-focus-ring` class (a brand-tinted `:focus-visible` outline with offset, defined in `src/index.css`). Use it on interactive controls rather than ad hoc `ring-blue-*` utilities.
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
 - Keyboard focus: `.yr-focus-ring` (defined in `src/index.css`) is the canonical focus indicator for interactive controls - a `:focus-visible`-only, brand-tinted outset outline. Use it instead of ad hoc `focus-visible:ring-2 focus-visible:ring-blue-*` clusters.
 
