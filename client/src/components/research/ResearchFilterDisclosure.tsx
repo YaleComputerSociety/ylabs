@@ -246,125 +246,131 @@ const ResearchFilterDisclosure = ({
     );
 
   const filterFields = (
-    <fieldset className="min-w-0 space-y-4 border-0 p-0">
+    <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
-      {showCurrentAvailability && (
-        <fieldset className="min-w-0 space-y-2 border-0 p-0">
-          <legend className="text-sm font-medium text-slate-800">
-            Current undergraduate availability
-          </legend>
-          {currentAvailabilityOptions.map((option) => (
-            <label
-              key={option.value}
-              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-            >
-              <input
-                type="checkbox"
-                checked={selectedCurrentAvailability.includes(option.value)}
-                onChange={(event) => toggleCurrentAvailability(option.value, event.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-              />
-              <span>
-                {option.label ?? option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      )}
-      {showCompensation && (
-        <fieldset className="min-w-0 space-y-2 border-0 p-0">
-          <legend className="text-sm font-medium text-slate-800">Undergraduate compensation</legend>
-          {compensationOptions.map((option) => (
-            <label
-              key={option.value}
-              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-            >
-              <input
-                type="checkbox"
-                checked={selectedCompensation.includes(option.value)}
-                onChange={(event) => toggleCompensation(option.value, event.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-              />
-              <span>
-                {option.label ?? option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      )}
-      {showEligibleStudentLevels && (
-        <fieldset className="min-w-0 space-y-2 border-0 p-0">
-          <legend className="text-sm font-medium text-slate-800">Open to class year</legend>
-          {eligibleStudentLevelsOptions.map((option) => (
-            <label
-              key={option.value}
-              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-            >
-              <input
-                type="checkbox"
-                checked={selectedEligibleStudentLevels.includes(option.value)}
-                onChange={(event) =>
-                  toggleEligibleStudentLevels(option.value, event.target.checked)
-                }
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-              />
-              <span>
-                {option.label ?? option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      )}
-      {showSchool && (
-        <label className="block min-w-0 text-sm font-medium text-slate-800">
-          School
-          <select
-            ref={firstSchoolRef}
-            aria-label="Filter by school"
-            value={selectedSchool}
-            onChange={(event) => onSchoolChange(event.target.value)}
-            className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
-          >
-            <option value="">All schools</option>
-            {schoolOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </option>
+      <div className="min-w-0 space-y-4">
+        {showCurrentAvailability && (
+          <fieldset className="min-w-0 space-y-2 border-0 p-0">
+            <legend className="text-sm font-medium text-slate-800">
+              Current undergraduate availability
+            </legend>
+            {currentAvailabilityOptions.map((option) => (
+              <label
+                key={option.value}
+                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedCurrentAvailability.includes(option.value)}
+                  onChange={(event) =>
+                    toggleCurrentAvailability(option.value, event.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                />
+                <span>
+                  {option.label ?? option.value}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </span>
+              </label>
             ))}
-          </select>
-        </label>
-      )}
-      {showDepartment && (
-        <label className="block min-w-0 text-sm font-medium text-slate-800">
-          Department
-          <select
-            ref={!showSchool ? firstDepartmentRef : undefined}
-            aria-label="Filter by department"
-            value={selectedDepartment}
-            onChange={(event) => onDepartmentChange(event.target.value)}
-            className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
-          >
-            <option value="">All departments</option>
-            {departmentOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {departmentLabel(option.value)}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {!showSchool &&
-        !showDepartment &&
-        !showCurrentAvailability &&
-        !showCompensation &&
-        !showEligibleStudentLevels && (
-          <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+          </fieldset>
         )}
+        {showCompensation && (
+          <fieldset className="min-w-0 space-y-2 border-0 p-0">
+            <legend className="text-sm font-medium text-slate-800">
+              Undergraduate compensation
+            </legend>
+            {compensationOptions.map((option) => (
+              <label
+                key={option.value}
+                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedCompensation.includes(option.value)}
+                  onChange={(event) => toggleCompensation(option.value, event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                />
+                <span>
+                  {option.label ?? option.value}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {showEligibleStudentLevels && (
+          <fieldset className="min-w-0 space-y-2 border-0 p-0">
+            <legend className="text-sm font-medium text-slate-800">Open to class year</legend>
+            {eligibleStudentLevelsOptions.map((option) => (
+              <label
+                key={option.value}
+                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedEligibleStudentLevels.includes(option.value)}
+                  onChange={(event) =>
+                    toggleEligibleStudentLevels(option.value, event.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                />
+                <span>
+                  {option.label ?? option.value}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {showSchool && (
+          <label className="block min-w-0 text-sm font-medium text-slate-800">
+            School
+            <select
+              ref={firstSchoolRef}
+              aria-label="Filter by school"
+              value={selectedSchool}
+              onChange={(event) => onSchoolChange(event.target.value)}
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
+            >
+              <option value="">All schools</option>
+              {schoolOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.value}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {showDepartment && (
+          <label className="block min-w-0 text-sm font-medium text-slate-800">
+            Department
+            <select
+              ref={!showSchool ? firstDepartmentRef : undefined}
+              aria-label="Filter by department"
+              value={selectedDepartment}
+              onChange={(event) => onDepartmentChange(event.target.value)}
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
+            >
+              <option value="">All departments</option>
+              {departmentOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {departmentLabel(option.value)}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!showSchool &&
+          !showDepartment &&
+          !showCurrentAvailability &&
+          !showCompensation &&
+          !showEligibleStudentLevels && (
+            <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+          )}
+      </div>
     </fieldset>
   );
 
