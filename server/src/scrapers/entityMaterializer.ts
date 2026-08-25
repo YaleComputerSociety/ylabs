@@ -262,6 +262,14 @@ const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
 ]);
 const FELLOWSHIP_DESCRIPTION_FIELDS = new Set(['description', 'summary']);
 const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt']);
+const CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS = ['methods', 'inferredPiUserId'];
+
+function isClearableStaleFieldValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
 const MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeMaterializerObjectId(value: unknown): string | undefined {
@@ -2968,6 +2976,18 @@ export async function materializeEntity(
   }
   set.confidenceByField = confidenceByField;
   set.lastObservedAt = new Date();
+
+  if (isResearchEntityObservationType(entityType) && entityDoc) {
+    const fieldsWithLiveObservation = new Set(resolverObs.map((o) => o.field));
+    for (const field of CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS) {
+      if (manuallyLockedFields.includes(field)) continue;
+      if (field in set) continue;
+      if (fieldsWithLiveObservation.has(field)) continue;
+      if (!isClearableStaleFieldValue((entityDoc as Record<string, unknown>)[field])) continue;
+      unset[field] = '';
+      delete confidenceByField[field];
+    }
+  }
 
   if (options.writeOnlyFields && options.writeOnlyFields.length > 0) {
     fieldsWritten = restrictMaterializerSetToFields(
