@@ -111,6 +111,45 @@ describe('researchEntityPublicDescription', () => {
     expect(researchEntityServesPublicDetail(entity)).toBe(true);
   });
 
+  it('does not require a lab-style card for an organizational home with a useful full description', () => {
+    const entity = {
+      kind: 'organization',
+      entityType: 'CENTER',
+      shortDescription: '',
+      // No lab-style "Studies X" first sentence for the card resolver to derive
+      // from, so this genuinely exercises the exemption rather than an
+      // auto-derived card: full is useful, but no card is derivable.
+      fullDescription:
+        'The Center brings together faculty, postdoctoral fellows, and graduate students from across the university, and it partners with community organizations, hosts an annual symposium, and administers a competitive seed-grant program open to the whole campus.',
+      sourceUrls: ['https://example.yale.edu/centers/ycri'],
+    };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(representation.quality.full.isUseful).toBe(true);
+    expect(representation.quality.short.isUseful).toBe(false);
+    expect(representation.invariant.reasons).not.toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(true);
+    expect(researchEntityServesPublicDetail(entity)).toBe(true);
+  });
+
+  it('does not require a lab-style card for an archive/museum project home', () => {
+    const entity = {
+      kind: 'organization',
+      entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+      shortDescription: '',
+      fullDescription:
+        'This Beinecke curatorial project catalogs and digitizes early modern manuscripts held in the library, making high-resolution images and descriptive metadata available to researchers and students through the library reading room and its online collections portal.',
+      sourceUrls: ['https://example.yale.edu/collections/beinecke-project'],
+    };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(representation.quality.full.isUseful).toBe(true);
+    // No derivable card either, so the invariant passes purely on the exemption.
+    expect(representation.quality.short.isUseful).toBe(false);
+    expect(representation.invariant.reasons).not.toContain('missing_public_card_description');
+    expect(representation.invariant.pass).toBe(true);
+  });
+
   it('still requires a lab-style card for a non-program lab home (#1381)', () => {
     // fullDescription is deliberately appointment-only (no research-focus
     // sentence for #1506's resolver to derive a card from), and there are no

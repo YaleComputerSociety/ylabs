@@ -8,7 +8,7 @@ import {
   sanitizeResearchHomeSelfReferenceCopyFields,
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
-import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { researchEntityCardIsOptional } from '../utils/researchEntityProgramLike';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   isResearchAreaEchoDescription,
@@ -113,7 +113,14 @@ export function buildResearchEntityPublicDescriptionRepresentation({
       entityType: resolvedEntityType,
     }),
   };
-  const programLike = isProgramLikeResearchEntity(sanitizedEntity);
+  // A lab-style "Studies X" card is required only for PI-led labs and faculty
+  // research areas. Program-like homes (described by what they offer) and
+  // organizational homes (centers, institutes, library collections, archive/
+  // museum and digital-humanities projects - described by what the home is and
+  // does) are card-optional: the assessor treats a missing short as complete
+  // when the full is useful, and the card invariant below is skipped. The
+  // full-description requirement and non-blank served-copy guard still apply.
+  const cardOptional = researchEntityCardIsOptional(sanitizedEntity);
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,
     shortDescription: sanitizedEntity.shortDescription,
@@ -121,7 +128,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     sourceUrls: sanitizedEntity.sourceUrls,
     website: sanitizedEntity.website,
     websiteUrl: sanitizedEntity.websiteUrl,
-    isProgramLike: programLike,
+    isProgramLike: cardOptional,
     entityType: sanitizedEntity.entityType,
   });
   // The public DTO runs a second read-time hygiene pass over the served copy
@@ -136,16 +143,18 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   const rawShortDescription = textValue(sanitizedEntity.shortDescription);
   const servedFullDescription = sanitizeResearchEntityDescription(rawFullDescription);
   const servedShortDescription = sanitizeResearchEntityShortDescription(rawShortDescription);
-  // A program-like home's student-facing copy describes what the program offers
-  // and how to apply, not a lab-style "Studies X" research focus, so the
+  // A program-like or organizational home's student-facing copy describes what
+  // the home offers or is, not a lab-style "Studies X" research focus, so the
   // research-focus card invariant is the wrong bar for it: require a useful full
   // description (and non-blank served copy below) but do not additionally demand
   // a lab-style card. This mirrors the program-specific visibility path
   // (`computeProgramStudentVisibility`) and keeps projected RA_PROGRAM /
-  // FELLOWSHIP_PROGRAM homes (#1381) servable on the detail page.
+  // FELLOWSHIP_PROGRAM homes (#1381) and organizational homes (centers,
+  // institutes, library collections, archive/museum and digital-humanities
+  // projects) servable on the detail page.
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
   if (!quality.full.isUseful) reasons.push('missing_public_full_description');
-  if (!quality.short.isUseful && !programLike) reasons.push('missing_public_card_description');
+  if (!quality.short.isUseful && !cardOptional) reasons.push('missing_public_card_description');
   if (!servedFullDescription && !servedShortDescription) {
     reasons.push('blank_served_public_description');
   }

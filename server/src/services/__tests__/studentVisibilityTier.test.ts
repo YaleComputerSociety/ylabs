@@ -330,6 +330,31 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('missing_alternate_access_path');
   });
 
+  it('publishes an organizational home with a useful full description but no lab-style card as student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-no-card',
+        name: 'Yale Center for the Study of Representative Institutions',
+        slug: 'ycri',
+        entityType: 'CENTER',
+        shortDescription: '',
+        // No lab-style first sentence to derive a card from: useful full, no
+        // derivable card, so this reaches student_ready only via the exemption.
+        fullDescription:
+          'The Center brings together faculty, postdoctoral fellows, and graduate students from across the university, and it partners with community organizations, hosts an annual symposium, and administers a competitive seed-grant program open to the whole campus.',
+        websiteUrl: 'https://example.yale.edu/centers/ycri',
+        sourceUrls: ['https://example.yale.edu/centers/ycri'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_card_description');
+  });
+
   it('still holds a program whose only source url is a generic resources page', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
