@@ -127,6 +127,33 @@ describe('classifyResearchEntityResearchScope', () => {
     ]);
   });
 
+  it('keeps a center that studies environmental journalism as a topic in research scope', () => {
+    const result = classifyResearchEntityResearchScope({
+      name: 'Example Center for Media and Climate',
+      entityType: 'CENTER',
+      fullDescription:
+        'The center studies environmental journalism and media coverage of climate change, convening faculty and students around public engagement.',
+    });
+
+    expect(result.researchHomeEligible).toBe(true);
+    expect(result.reasons).toEqual([]);
+  });
+
+  it('suppresses a journalism outlet listed as a center without positive research evidence', () => {
+    const result = classifyResearchEntityResearchScope({
+      name: 'Example Climate Desk',
+      entityType: 'CENTER',
+      fullDescription:
+        'An independent environmental journalism nonprofit. It publishes reporting on global environmental issues to inform the public.',
+    });
+
+    expect(result.researchHomeEligible).toBe(false);
+    expect(result.reasons).toEqual([
+      'publication_or_media_outlet',
+      'missing_positive_research_evidence',
+    ]);
+  });
+
   it('keeps a communication center that conducts research eligible despite journalism language', () => {
     const result = classifyResearchEntityResearchScope({
       name: 'Center for Environmental Communication',

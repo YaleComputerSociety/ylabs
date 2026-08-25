@@ -33,7 +33,7 @@ const ADMINISTRATIVE_OR_SERVICE_ORGANIZATION =
   /\b(administrative (?:office|services|support|unit|operations)|office of administration|business operations|operations (?:office|team|unit)|human resources|career services|career advising|academic advising|advising services|student (?:services|affairs)|dean of students|office of the registrar|registrar's office|financial aid office|office of financial aid|admissions office|office of admissions|information technology services|help ?desk|technical support|facilities management|facilities services|event (?:planning|management|services)|conference services|communications office|office of communications|marketing and communications|communications and marketing|public relations|media relations|alumni relations|development office|office of development|advancement office)\b/i;
 
 const PUBLICATION_OR_MEDIA_OUTLET =
-  /\b(online magazine|news magazine|digital magazine|magazine dedicated to|environmental journalism|news outlet|editorial (?:content|voice|board)|op-?ed|publishes (?:opinion|analysis|reporting|commentary))\b/i;
+  /\b(online magazine|news magazine|digital magazine|magazine dedicated to|journalism (?:outlet|organization|organisation|nonprofit|non-profit|publication|website|platform)|news outlet|editorial (?:content|voice|board)|op-?ed|publishes (?:opinion|analysis|reporting|commentary))\b/i;
 
 const CONDUCTS_OR_ORGANIZES_RESEARCH =
   /\b(conducts? research|research center|research institute|research initiative|research program|research programs|research project|research projects|researchers?|investigators?|laborator(?:y|ies)|fieldwork|clinical trials?|research fellows?|postdoctoral research|data collection|empirical research|scholarly research)\b/i;
