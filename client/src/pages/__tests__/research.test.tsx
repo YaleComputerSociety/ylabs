@@ -2940,6 +2940,72 @@ describe('Research landing saved-search new-match signal', () => {
   });
 });
 
+describe('Research landing watched-deadline urgency signal', () => {
+  const inWindow = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+  const beyondWindow = new Date(Date.now() + 40 * 24 * 60 * 60 * 1000).toISOString();
+
+  const mockWatchedPrograms = (
+    watchedPrograms: Array<{ _id: string; title: string; deadline: string | null }>,
+    watchedProgramPlans: Record<string, { stage?: string }> = {},
+  ) => {
+    mockedAxios.get.mockReset();
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({ data: { watchedPrograms } });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans } });
+      }
+      if (url === '/users/savedSearches') {
+        return Promise.resolve({ data: { savedSearches: [] } });
+      }
+      return Promise.resolve({ data: { suggestions: [] } });
+    });
+  };
+
+  it('shows the aggregate near-term count for a signed-in student and links to Program Watch', async () => {
+    mockWatchedPrograms(
+      [
+        { _id: 'p1', title: 'STARS', deadline: inWindow },
+        { _id: 'p2', title: 'Travel', deadline: beyondWindow },
+      ],
+      { p1: { stage: 'SAVED' } },
+    );
+
+    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
+
+    const cta = await screen.findByRole('link', {
+      name: '1 watched program closes within 2 weeks, 1 not started',
+    });
+    expect(cta).toHaveAttribute('href', '/account?tab=programs');
+  });
+
+  it('stays silent when no watched deadline is approaching', async () => {
+    mockWatchedPrograms([{ _id: 'p2', title: 'Travel', deadline: beyondWindow }]);
+
+    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
+
+    await waitFor(() =>
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedPrograms', {
+        withCredentials: true,
+      }),
+    );
+    expect(screen.queryByText(/close within/)).toBeNull();
+  });
+
+  it('stays silent for a guest, never fetching watched programs', async () => {
+    mockWatchedPrograms([{ _id: 'p1', title: 'STARS', deadline: inWindow }]);
+
+    renderResearch(departments, ['/research']);
+
+    expect(screen.getByText(/browsing as a guest/i)).toBeTruthy();
+    expect(mockedAxios.get).not.toHaveBeenCalledWith(
+      '/users/watchedPrograms',
+      expect.anything(),
+    );
+  });
+});
+
 describe('Research zero-result recovery', () => {
   const recoveryResearchAreas = [
     { name: 'Genomics', field: 'Life Sciences', colorKey: 'a', isDefault: false },

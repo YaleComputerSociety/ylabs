@@ -16,6 +16,12 @@ import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useSavedSearchNewMatchSummary from '../hooks/useSavedSearchNewMatchSummary';
+import useWatchedDeadlineSummary from '../hooks/useWatchedDeadlineSummary';
+import {
+  approachingDeadlineAriaLabel,
+  approachingDeadlineLabel,
+  notStartedEmphasis,
+} from '../utils/watchedDeadlineSummary';
 import axios from '../utils/axios';
 import { safeRouteSegment } from '../utils/url';
 import {
@@ -421,6 +427,10 @@ const Research = () => {
   const { user, isAuthenticated } = useContext(UserContext);
   const { totalNewMatches: savedSearchNewMatchCount } =
     useSavedSearchNewMatchSummary(isAuthenticated);
+  const {
+    approachingCount: watchedDeadlineApproachingCount,
+    notStartedCount: watchedDeadlineNotStartedCount,
+  } = useWatchedDeadlineSummary(isAuthenticated);
   const { departments, researchAreas, researchFields, fieldOrder, getResearchAreaByName } =
     useConfig();
   const isAdmin = user?.userType === 'admin';
@@ -2126,6 +2136,27 @@ const Research = () => {
                   {savedSearchNewMatchCount === 1 ? 'match' : 'matches'}
                 </Link>{' '}
                 for your saved searches.
+              </div>
+            )}
+
+            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
+              <div
+                className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
+                role="status"
+              >
+                <Link
+                  to="/account?tab=programs"
+                  aria-label={approachingDeadlineAriaLabel(
+                    watchedDeadlineApproachingCount,
+                    watchedDeadlineNotStartedCount,
+                  )}
+                  className="font-semibold underline underline-offset-2 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+                >
+                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
+                </Link>
+                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
+                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
+                )}
               </div>
             )}
 
