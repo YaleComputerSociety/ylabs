@@ -245,7 +245,10 @@ describe('studentVisibilityGateService', () => {
           kind: 'lab',
           studentVisibilityTier: 'suppressed',
           websiteUrl: 'https://medicine.yale.edu/lab/flavell/',
-          sourceUrls: ['https://medicine.yale.edu/lab/flavell/', 'https://medicine.yale.edu/about/'],
+          sourceUrls: [
+            'https://medicine.yale.edu/lab/flavell/',
+            'https://medicine.yale.edu/about/',
+          ],
         },
         {
           _id: 'kang-lab',
@@ -383,6 +386,62 @@ describe('studentVisibilityGateService', () => {
     );
 
     expect([...ids]).toEqual(['christensen-shell']);
+  });
+
+  it('does not collide unrelated faculty whose sites are wrapped as distinct Outlook safelinks', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds([
+      {
+        _id: 'roster-research',
+        slug: 'dept-one-morgan-roster',
+        name: 'Morgan Roster Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl:
+          'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.morganroster.com%2F&data=05%7C01%7C&sdata=abc&reserved=0',
+        sourceUrls: ['https://example.yale.edu/people/faculty'],
+      },
+      {
+        _id: 'lovelace-research',
+        slug: 'dept-two-ada-lovelace',
+        name: 'Ada Lovelace Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl:
+          'https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fadalovelacelab.org%2F&data=05%7C02%7C&sdata=xyz&reserved=0',
+        sourceUrls: ['https://example.yale.edu/people/faculty'],
+      },
+    ]);
+
+    expect([...ids]).toEqual([]);
+  });
+
+  it('still detects duplicates when both entities wrap the same site in a safelinks wrapper', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds(
+      [
+        {
+          _id: 'roster-canonical',
+          slug: 'morgan-roster-lab',
+          name: 'Morgan Roster Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'student_ready',
+          fullDescription:
+            'The lab studies developmental neurobiology, synaptic plasticity, and circuit formation across model organisms at Yale.',
+          shortDescription: 'Studies developmental neurobiology and synaptic plasticity.',
+          sourceUrls: ['http://www.morganroster.com/'],
+        },
+        {
+          _id: 'roster-shell',
+          slug: 'dept-morgan-roster',
+          name: 'Morgan Roster Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl:
+            'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.morganroster.com%2F&data=05%7C01%7C&reserved=0',
+          sourceUrls: ['https://example.yale.edu/people/faculty'],
+        },
+      ],
+      [{ researchEntityId: 'roster-canonical', userId: 'user-roster' }],
+    );
+
+    expect([...ids]).toEqual(['roster-shell']);
   });
 
   it('classifies missing-data reasons as blockers and evidence reasons as signals', () => {

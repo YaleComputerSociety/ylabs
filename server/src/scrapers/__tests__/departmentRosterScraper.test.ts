@@ -578,6 +578,31 @@ describe('mcdbExtractor', () => {
     });
     expect(out[2].labUrl).toBeUndefined();
   });
+
+  it('stores the unwrapped target when a lab website href is an Outlook safelinks wrapper', () => {
+    const html = `
+      <html><body>
+        <div class="directory-listing-card">
+          <div class="directory-listing-card__content">
+            <h3 class="directory-listing-card__heading">
+              <a class="directory-listing-card__heading-link" href="/profile/morgan-roster">
+                Morgan Roster
+              </a>
+            </h3>
+            <div class="directory-listing-card__subheading">Assistant Professor</div>
+            <a class="directory-listing-card__link" href="mailto:morgan.roster@yale.edu">Email</a>
+            <a class="directory-listing-card__link" href="https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.morganroster.com%2F&data=05%7C01%7C&sdata=abc&reserved=0">Lab Website</a>
+          </div>
+        </div>
+      </body></html>
+    `;
+    const out = mcdbExtractor(html, { pageUrl: 'https://mcdb.yale.edu/people/faculty' });
+    expect(out[0]).toMatchObject({
+      name: 'Morgan Roster',
+      email: 'morgan.roster@yale.edu',
+      labUrl: 'http://www.morganroster.com/',
+    });
+  });
 });
 
 describe('official Yale profile-card extractor coverage', () => {
@@ -1277,10 +1302,26 @@ describe('YSM basic-science department roster configs (#1629)', () => {
 
   const expectedYsmBasicScienceConfigs: Array<{ deptKey: string; deptName: string; url: string }> =
     [
-      { deptKey: 'ysm-cell-biology', deptName: 'Cell Biology', url: 'https://medicine.yale.edu/cellbio/people/' },
-      { deptKey: 'ysm-immunobiology', deptName: 'Immunobiology', url: 'https://medicine.yale.edu/immuno/people/' },
-      { deptKey: 'ysm-pharmacology', deptName: 'Pharmacology', url: 'https://medicine.yale.edu/pharm/people/' },
-      { deptKey: 'ysm-genetics', deptName: 'Genetics', url: 'https://medicine.yale.edu/genetics/people/' },
+      {
+        deptKey: 'ysm-cell-biology',
+        deptName: 'Cell Biology',
+        url: 'https://medicine.yale.edu/cellbio/people/',
+      },
+      {
+        deptKey: 'ysm-immunobiology',
+        deptName: 'Immunobiology',
+        url: 'https://medicine.yale.edu/immuno/people/',
+      },
+      {
+        deptKey: 'ysm-pharmacology',
+        deptName: 'Pharmacology',
+        url: 'https://medicine.yale.edu/pharm/people/',
+      },
+      {
+        deptKey: 'ysm-genetics',
+        deptName: 'Genetics',
+        url: 'https://medicine.yale.edu/genetics/people/',
+      },
       {
         deptKey: 'ysm-cellular-molecular-physiology',
         deptName: 'Cellular & Molecular Physiology',
@@ -1296,9 +1337,21 @@ describe('YSM basic-science department roster configs (#1629)', () => {
         deptName: 'Microbial Pathogenesis',
         url: 'https://medicine.yale.edu/micropath/people/research-faculty/',
       },
-      { deptKey: 'ysm-comparative-medicine', deptName: 'Comparative Medicine', url: 'https://medicine.yale.edu/compmed/people/' },
-      { deptKey: 'ysm-pathology', deptName: 'Pathology', url: 'https://medicine.yale.edu/pathology/people/' },
-      { deptKey: 'ysm-neuroscience', deptName: 'Neuroscience', url: 'https://medicine.yale.edu/neuroscience/people/' },
+      {
+        deptKey: 'ysm-comparative-medicine',
+        deptName: 'Comparative Medicine',
+        url: 'https://medicine.yale.edu/compmed/people/',
+      },
+      {
+        deptKey: 'ysm-pathology',
+        deptName: 'Pathology',
+        url: 'https://medicine.yale.edu/pathology/people/',
+      },
+      {
+        deptKey: 'ysm-neuroscience',
+        deptName: 'Neuroscience',
+        url: 'https://medicine.yale.edu/neuroscience/people/',
+      },
       {
         deptKey: 'ysm-biomedical-informatics-data-science',
         deptName: 'Biomedical Informatics & Data Science',
