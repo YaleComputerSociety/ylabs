@@ -2234,6 +2234,53 @@ describe('isNonSelfContainedShortDescription role/title-header opener guard (#17
   });
 });
 
+describe('isNonSelfContainedShortDescription personal-title/name opener guard (#1886)', () => {
+  const TITLE_NAME_OPENERS = [
+    'Professor Edward S. Cooke, Jr. Focuses on American material culture and decorative arts, with significant contributions to the understanding of craftsman-client relations.',
+    'Professor Edward S. Cooke, Jr. focuses on American material culture and decorative arts.',
+    'Dr. Jane Smith studies the molecular basis of synaptic plasticity in the developing brain.',
+    'Prof. Ana Ruiz Vega investigates transnational migration and labor across the Americas.',
+  ];
+
+  it('fails a personal-honorific-plus-name bio opener closed', () => {
+    for (const text of TITLE_NAME_OPENERS) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+    }
+  });
+
+  it('keeps a research short with no leading honorific', () => {
+    const kept = [
+      'Studies American material culture and decorative arts, exploring the social lives of objects.',
+      'Investigates transnational migration and labor across the Americas.',
+    ];
+    for (const text of kept) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(false);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe(text);
+    }
+  });
+
+  it('keeps an organization/program name and a role continuation that only look title-like', () => {
+    const kept = [
+      'Professor of the practice program supports undergraduate mentored research in the humanities.',
+      'Massachusetts Institute of Technology partners on materials science and manufacturing research.',
+    ];
+    for (const text of kept) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(false);
+    }
+  });
+
+  it('keeps a possessive subject that names a real noun after the honorific', () => {
+    const kept = [
+      "Dr. Ma's lab focuses on cardiovascular epidemiology and population health.",
+      "Professor Ruiz's group studies transnational migration across the Americas.",
+    ];
+    for (const text of kept) {
+      expect(isNonSelfContainedShortDescription(text)).toBe(false);
+    }
+  });
+});
+
 describe('stripLeadingRoleTitleHeaderSentences (#1761)', () => {
   it('strips a leading role-header sentence when a research sentence follows', () => {
     const text =

@@ -345,6 +345,22 @@ describe('resolveServedShortDescription bare researchArea-chip-echo residual (#1
   });
 });
 
+describe('resolveServedShortDescription personal-title/name opener (#1886)', () => {
+  it('re-derives from the grounded full when the short is a title+name bio opener', () => {
+    const full =
+      "Edward Cooke's research focuses on American material culture and decorative arts, exploring the social lives of objects.";
+    const resolved = resolveServedShortDescription({
+      shortDescription:
+        'Professor Edward S. Cooke, Jr. Focuses on American material culture and decorative arts, with significant contributions to the understanding of craftsman-client relations.',
+      fullDescription: full,
+      researchAreas: ['American Material Culture', 'Decorative Arts'],
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(resolved).toBe(deriveShortDescriptionFromFullDescription(full));
+    expect(resolved).not.toMatch(/^Professor\b/);
+  });
+});
+
 describe('resolveGroundedCardDescription program path (#1425)', () => {
   const PROGRAM_FULL =
     'Yale Economics summer research opportunities that match undergraduate students with faculty research projects.';

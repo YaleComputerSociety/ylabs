@@ -1061,6 +1061,28 @@ const leadingDoctorDegreeOpenerPattern =
   /^Dr\.\s+[A-Z][a-z]+\s+(?:received|earned|completed|obtained|graduated)\b/;
 
 /**
+ * A card blurb that opens with the entity's own personal honorific and name
+ * acting directly as the subject of a research verb ("Professor Edward S.
+ * Cooke, Jr. Focuses on ...", "Dr. Jane Smith studies ...") lifted from a
+ * faculty-bio sentence (#1886). The person's name is already the card's own
+ * title, so re-stating it in the blurb is redundant bio voice; the mid-string
+ * capital verb ("Focuses") is a compound-abbreviation ("Jr.") sentence-split
+ * artifact. Failing this shape closed lets `resolveServedShortDescription`
+ * re-derive a cleaner short from the grounded fullDescription instead of
+ * serving the bio opener verbatim.
+ *
+ * Three guards keep this narrow: the honorific is required (a bare capitalized
+ * noun phrase would catch legitimate organization/program names); the token
+ * after the honorific must be a capitalized given name, not a lowercase role
+ * continuation ("Professor of the practice"); and a present-tense research verb
+ * must follow the name directly, so a possessive subject that names a real noun
+ * ("Dr. Ma's lab focuses on ...") is kept - only the name-as-subject bio opener
+ * fails closed.
+ */
+const leadingPersonalTitleNameOpenerPattern =
+  /^(?:Prof(?:essor)?|Dr|Doctor|Mr|Mrs|Ms|Miss|Mx)\.?\s+[A-Z][a-z]+(?:\s+(?:[A-Z]\.|[A-Z][a-z]+))*(?:,?\s+(?:Jr|Sr|II|III|IV)\.?)?[.,]?\s+(?:[Ff]ocus(?:es|ed)?|[Ss]tud(?:y|ies|ied)|[Ii]nvestigat(?:es|ed)|[Ee]xamin(?:es|ed)|[Ee]xplor(?:es|ed)|[Dd]evelop(?:s|ed)?|[Dd]esign(?:s|ed)?|[Aa]nalyz(?:es|ed)|[Mm]odel(?:s|ed)?|[Rr]esearch(?:es|ed)?|[Ss]pecializ(?:es|ed)|[Ss]eeks?|[Aa]ims?|[Ww]orks?\s+on|[Ii]s\s+interested\s+in)\b/;
+
+/**
  * A card blurb that opens mid-discourse by singling out "one line/area/strand
  * of investigation/research" as if continuing an enumeration begun in a
  * paragraph that never made it onto the standalone card ("One line of
@@ -1179,6 +1201,9 @@ export function isRoleTitleHeaderOpenerShortDescription(text: string): boolean {
  * that opens mid-discourse on "one line/area of investigation" (implying other
  * lines never shown), or that welds a generic world-claim opener to a
  * misattributed research-methods gerund list, is also failed closed (#1832).
+ * A blurb that opens with the entity's own personal honorific and name
+ * ("Professor Edward S. Cooke, Jr. Focuses on ...") - redundant bio voice
+ * beside the card's own name title - is likewise failed closed (#1886).
  */
 export function isNonSelfContainedShortDescription(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
@@ -1189,6 +1214,7 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
   if (leadingBareSubjectPronounPattern.test(normalized)) return true;
   if (leadingCareerHistoryOpenerPattern.test(normalized)) return true;
   if (leadingDoctorDegreeOpenerPattern.test(normalized)) return true;
+  if (leadingPersonalTitleNameOpenerPattern.test(normalized)) return true;
   if (leadingDanglingPronounSubjectPattern.test(normalized)) return true;
   if (leadingTransitionalPronounSubjectPattern.test(normalized)) return true;
   if (leadingEnumeratedResearchStrandOpenerPattern.test(normalized)) return true;
