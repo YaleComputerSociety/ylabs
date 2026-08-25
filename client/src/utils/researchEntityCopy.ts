@@ -14,8 +14,6 @@ const ENTITY_TYPE_TO_KIND: Record<string, string> = {
   CENTER: 'center',
   INSTITUTE: 'institute',
   PROGRAM: 'program',
-  RA_PROGRAM: 'program',
-  FELLOWSHIP_PROGRAM: 'program',
   COURSE_SEQUENCE: 'program',
   INITIATIVE: 'initiative',
   COLLECTIONS_INITIATIVE: 'initiative',

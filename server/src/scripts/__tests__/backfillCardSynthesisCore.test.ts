@@ -134,7 +134,7 @@ describe('planCardBackfillRow', () => {
     const row = await planCardBackfillRow(
       {
         id: '000000000000000000000008',
-        entityType: 'RA_PROGRAM',
+        entityType: 'PROGRAM',
         kind: 'program',
         fullDescription: programFull,
         visibilityReasons: ['missing_card_description'],

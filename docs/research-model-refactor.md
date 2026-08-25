@@ -31,7 +31,8 @@ This gets canonicalization's dedupe benefit without letting a guessed grouping c
 In practice every reader wanted the entity plus its access evidence, not a separate pathway record, so ways-in and posted-opening evidence collapsed into typed `Signal` rows on the entity, and contact became a derived read-time projection instead of a stored route.
 
 `Fellowship`/`Listing` deliberately left outside the lab model: they power the programs and funding page, a distinct product surface with its own search.
-The "program" split-brain (a program can appear both as a `Fellowship` and as a `ResearchEntity`) was a known, accepted seam rather than something worth forcing into one model.
+The "program" split-brain (a program appearing both as a `Fellowship` and as a projected `ResearchEntity`) was initially a known, accepted seam rather than something worth forcing into one model.
+It was later resolved by removing the projection so programs and fellowships live only on `/programs`; see the current state in [`research-model.md`](./research-model.md).
 
 The heavy evidence claim-graph (`EvidenceClaim`, `SourceDocument`, `ReviewDecision`) was deliberately frozen rather than built out: the lightweight `Observation` to `Signal` pipeline covered the product's actual needs, and the governed claim-graph's cost (predicate registry, source-document machinery, review workflow) was not justified by any current reader.
 

@@ -141,8 +141,8 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // research-focus card invariant is the wrong bar for it: require a useful full
   // description (and non-blank served copy below) but do not additionally demand
   // a lab-style card. This mirrors the program-specific visibility path
-  // (`computeProgramStudentVisibility`) and keeps projected RA_PROGRAM /
-  // FELLOWSHIP_PROGRAM homes (#1381) servable on the detail page.
+  // (`computeProgramStudentVisibility`) and keeps program-like homes servable on
+  // the detail page.
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
   if (!quality.full.isUseful) reasons.push('missing_public_full_description');
   if (!quality.short.isUseful && !programLike) reasons.push('missing_public_card_description');

@@ -92,7 +92,7 @@ describe('researchEntityPublicDescription', () => {
   it('does not require a lab-style card for a program-like home with a useful full description (#1381)', () => {
     const entity = {
       kind: 'program',
-      entityType: 'FELLOWSHIP_PROGRAM',
+      entityType: 'PROGRAM',
       shortDescription: '',
       fullDescription:
         'A Richter Summer Fellowship is awarded for independent study and research, not for mere travel, work, or enrollment in a school. An internship is a valid use only if its primary component is study or research.',

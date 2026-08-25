@@ -48,7 +48,7 @@ describe('researchEntityDto', () => {
       slug: 'program-no-short-field',
       name: 'Global Health Awards Program',
       kind: 'program',
-      entityType: 'RA_PROGRAM',
+      entityType: 'PROGRAM',
       fullDescription: 'Funded by the Yale College Fellowships for Research in Global Health Studies.',
     });
     expect(dto.shortDescription).toBe(

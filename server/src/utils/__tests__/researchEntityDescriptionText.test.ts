@@ -450,7 +450,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
 
   it('blanks a researcher-voice "Studies <topic>" shortDescription on a funding-program entity (#1555)', () => {
     const raProgram = {
-      entityType: 'RA_PROGRAM',
+      entityType: 'PROGRAM',
       fullDescription:
         'The Impulsivity and Impulse Control Disorder Research Program funds undergraduate research assistantships in psychiatry, neuroscience, psychology, and developmental biology.',
       shortDescription: 'Studies Psychiatry, Neuroscience, Psychology, and Developmental Biology.',

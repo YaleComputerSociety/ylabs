@@ -32,7 +32,6 @@ vi.mock('../../services/studentInterestProfileService', () => ({
 import {
   getResearchGroupBySlug,
   recordResearchOutreach,
-  searchRelatedPrograms,
   searchResearchGroups,
 } from '../researchGroupController';
 
@@ -377,92 +376,6 @@ describe('researchGroupController', () => {
         qualityFilters: ['missing-lead'],
       },
     );
-  });
-
-  it('returns an empty related-programs module for a blank query without search work', async () => {
-    const req = { body: { q: '   ' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await searchRelatedPrograms(req, res);
-
-    expect(mocks.searchResearchGroupsViaMeili).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ researchEntities: [], degraded: false });
-  });
-
-  it('searches only public program and fellowship entity types for a topical query', async () => {
-    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
-      researchEntities: [{ _id: 'a' }, { _id: 'b' }],
-      estimatedTotalHits: 2,
-      page: 1,
-      pageSize: 5,
-      degraded: false,
-    });
-    const req = {
-      body: { q: '  climate  ', filters: { researchAreas: ['Climate Science'], school: ['FAS'] } },
-    } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await searchRelatedPrograms(req, res);
-
-    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
-      'climate',
-      {
-        entityType: ['PROGRAM', 'RA_PROGRAM', 'FELLOWSHIP_PROGRAM'],
-        studentVisibilityTier: ['student_ready'],
-        school: ['FAS'],
-        researchAreas: ['Climate Science'],
-      },
-      1,
-      5,
-      {},
-      { includeNonPublic: false },
-    );
-    expect(res.json).toHaveBeenCalledWith({
-      researchEntities: [{ _id: 'a' }, { _id: 'b' }],
-      degraded: false,
-    });
-  });
-
-  it('caps the related-programs module to five entities', async () => {
-    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
-      researchEntities: Array.from({ length: 8 }, (_, index) => ({ _id: `p${index}` })),
-      estimatedTotalHits: 8,
-      page: 1,
-      pageSize: 5,
-    });
-    const req = { body: { q: 'immunology' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await searchRelatedPrograms(req, res);
-
-    const payload = res.json.mock.calls[0][0];
-    expect(payload.researchEntities).toHaveLength(5);
-    expect(payload.degraded).toBe(false);
-  });
-
-  it('rejects an oversized related-programs query before search work', async () => {
-    const req = { body: { q: 'x'.repeat(513) } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await searchRelatedPrograms(req, res);
-
-    expect(mocks.searchResearchGroupsViaMeili).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid search request' });
-  });
-
-  it('does not leak internal errors when the related-programs search fails', async () => {
-    mocks.searchResearchGroupsViaMeili.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid related search failed'),
-    );
-    const req = { body: { q: 'genetics' } } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await searchRelatedPrograms(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Search failed' });
-    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
   });
 
   it('rejects an outreach record from a session with no student profile', async () => {
