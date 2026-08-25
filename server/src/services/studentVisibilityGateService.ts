@@ -259,6 +259,10 @@ const exactDuplicateUrlRejectedPathPatterns = [
   /(?:employment|research|undergraduate|volunteer)[-/]opportunities/i,
   /\/diversity\//i,
   /(?:awards?\.json|\/services\/)/i,
+  // Institutional "about"/landing pages (and their index subtrees such as the
+  // YSM A-to-Z lab index) are navigation furniture that many unrelated research
+  // homes carry in sourceUrls, so they are never a same-entity duplicate signal.
+  /^\/about(?:\/|$)/i,
 ];
 
 // Hosts that serve generic API/listing endpoints rather than a specific
