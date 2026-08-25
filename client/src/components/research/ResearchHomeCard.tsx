@@ -61,10 +61,35 @@ const directoryFirstPathwayLabel = (label: string): string => {
   return label;
 };
 
-const directoryFirstBadgeLabel = (label: string): string => {
-  if (label === 'Contact route') return 'Source route';
-  return label;
+const ACCESS_SIGNAL_LABELS: Record<string, string> = {
+  'Undergrad evidence': 'Has hosted undergraduate researchers',
+  'Student project evidence': 'Supervises student projects',
+  'Posted route': 'Posted opportunity',
+  'Contact route': 'Open to inquiries',
 };
+
+const ACCESS_SIGNAL_PRIORITY = [
+  'Undergrad evidence',
+  'Student project evidence',
+  'Posted route',
+  'Contact route',
+];
+
+const ELEVATED_ACCESS_SIGNALS = new Set([
+  'Undergrad evidence',
+  'Student project evidence',
+  'Posted route',
+]);
+
+const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
+
+const accessSignalRank = (label: string): number => {
+  const index = ACCESS_SIGNAL_PRIORITY.indexOf(label);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+};
+
+const orderAccessSignals = (badges: string[]): string[] =>
+  [...badges].sort((a, b) => accessSignalRank(a) - accessSignalRank(b));
 
 const adminQualityLabels = (home: ResearchCluster): string[] => {
   const flags = new Set(
@@ -109,6 +134,13 @@ const ResearchHomeCard = ({
   const wayInBadges = home.wayInBadges?.length
     ? home.wayInBadges
     : buildWayInBadges(home.entities[0], home.pathways || []);
+  const orderedAccessSignals = orderAccessSignals(wayInBadges);
+  const leadAccessSignal = orderedAccessSignals.find((signal) =>
+    ELEVATED_ACCESS_SIGNALS.has(signal),
+  );
+  const secondaryAccessSignals = orderedAccessSignals.filter(
+    (signal) => signal !== leadAccessSignal,
+  );
   const contextLine = home.contextLine || buildResearchHomeContextLine(home.entities[0]);
   const contextLineKeys = new Set(
     contextLine
@@ -334,14 +366,31 @@ const ResearchHomeCard = ({
         </div>
       )}
 
-      {wayInBadges.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Planning context">
-          {wayInBadges.slice(0, isCompact ? 3 : undefined).map((badge) => (
+      {orderedAccessSignals.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5" aria-label="Ways to get involved">
+          {leadAccessSignal && (
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--yr-green)]">
+              <svg
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-4 w-4 shrink-0"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M16.704 5.29a1 1 0 010 1.42l-7.5 7.5a1 1 0 01-1.42 0l-3.5-3.5a1 1 0 011.42-1.42l2.79 2.8 6.79-6.8a1 1 0 011.42 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              {accessSignalLabel(leadAccessSignal)}
+            </span>
+          )}
+          {secondaryAccessSignals.slice(0, isCompact ? 2 : undefined).map((badge) => (
             <span
               key={badge}
               className="yr-pill yr-pill-green min-h-0 rounded px-2 py-0.5"
             >
-              {directoryFirstBadgeLabel(badge)}
+              {accessSignalLabel(badge)}
             </span>
           ))}
         </div>
