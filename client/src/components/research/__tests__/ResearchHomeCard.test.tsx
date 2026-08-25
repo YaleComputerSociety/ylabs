@@ -233,6 +233,32 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('+1 more').className).toContain('sm:inline-flex');
   });
 
+  it('renders research-area topic chips in blue to match the entity-page "Best fit for" chips', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            labels: [
+              'alpha topic modeling',
+              'beta field methods',
+              'gamma archive analysis',
+              'delta source review',
+            ],
+            metadataTags: ['Fixture Department'],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    const alwaysVisibleChip = screen.getByText('Alpha Topic Modeling');
+    expect(alwaysVisibleChip.className).toContain('yr-pill');
+    expect(alwaysVisibleChip.className).toContain('yr-pill-blue');
+
+    const desktopOnlyChip = screen.getByText('Delta Source Review');
+    expect(desktopOnlyChip.className).toContain('yr-pill');
+    expect(desktopOnlyChip.className).toContain('yr-pill-blue');
+  });
+
   it('opens the research profile when the card body is clicked', () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/research']}>
