@@ -5,6 +5,9 @@ This document is the single source of truth for collection shapes and product-mo
 Design rationale, sequencing decisions, and the phased migration history that produced this model live in [`research-model-refactor.md`](./research-model-refactor.md) (historical decision record) and [`research-model-refactor-phase0.md`](./research-model-refactor-phase0.md) (Phase 0 inventory runbook).
 Where an older note, issue, or skill still describes `Person`, `ResearchGroup`/`ResearchGroupMember`, `FacultyMember`, `Paper`/`PaperAuthor`, `EntryPathway`, `ContactRoute`, `PostedOpportunity`, an embedded roster or `discovery` blob, or the legacy access booleans (`acceptingUndergrads`/`openness`/`acceptanceConfidence`/`opennessSignals`) as active, this document wins.
 
+Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](./decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the access-plausibility tier described below - the `Signal` confidence gradient that drives the browse trust filter, the `accessAcceptanceLevel` grade, the `REACH_OUT_PLAUSIBLE` style plausibility signals, and the "Ways in" / "Evidence" / best-next-step framing - is being retired in favor of factual, non-gating signals shown as plain badges.
+This document still describes current runtime because that code has not changed yet; update these sections only when the trust-filter removal lands, not ahead of it.
+
 ## What This Solves
 
 The main problem is making Yale labs and other research homes discoverable, and improving the scraped data and the scrapers that produce it.

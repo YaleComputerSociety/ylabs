@@ -5,9 +5,10 @@ description: Use when changing or evaluating Yale Research product behavior, stu
 
 # Product Model
 
-Yale Research is a source-driven directory that makes research homes and undergraduate-access context legible.
-Its first responsibility is broad, accurate research-home coverage with the correct PI and official links.
-Access evidence signals and research-entity affiliations are optional enrichments.
+Yale Research is a simple, source-driven directory of Yale research whose two co-equal priorities are good data and good search.
+Its first responsibility is broad, accurate coverage of research entities and researchers with the correct lead and official links, made findable through fast, relevant search.
+Signals and research-entity affiliations are factual enrichments that inform a student; they never gate visibility, score trust, or condition contact.
+Per the 2026-08-25 "Simple Directory First" decision, the access-plausibility tier (the `Signal`-driven browse trust filter, `REACH_OUT_PLAUSIBLE` plausibility signals, the "Evidence" and "Best Next Step" framing, and "Ways in") is retired, and "research home" and "research area" are deprecated framings; see `docs/decisions.md`.
 
 Do not model the product as a faculty-maintained job board or require faculty uploads for coverage.
 Yale research includes labs, centers, institutes, faculty projects, digital humanities initiatives, collections and archive projects, RA programs, fellowships, senior theses, and exploratory outreach.

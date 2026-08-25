@@ -2,10 +2,11 @@
 
 ## North Star
 
-Yale Research is a source-driven directory that makes Yale research homes and undergraduate-access context legible.
-Its first responsibility is comprehensive, accurate discovery of labs and other useful research homes with the correct PI and official links.
-Its second responsibility is to add restrained, source-backed access evidence and real opportunities when those records exist.
-Source-backed affiliations help students understand how labs relate to centers, institutes, programs, and other research homes.
+Yale Research is a simple, high-quality directory of Yale research.
+Its two co-equal priorities are good data and good search: comprehensive, accurate discovery of labs, centers, faculty, and projects with the correct lead and official links, made findable through fast, relevant search.
+The student job is to find a professor and their work and reach out, so the directory's job is to make that fast and trustworthy.
+Signals are restrained, factual, source-backed enrichment that inform a student about a research home (for example that a lab is funded or has mentored undergraduates before); they never gate visibility, act as a trust score, or condition contact.
+Source-backed affiliations help students understand how labs relate to centers, institutes, programs, and other research entities.
 
 The product is not a faculty-maintained job board.
 Directory coverage comes from official-source discovery and scraping rather than requiring professors to create accounts, upload profiles, or maintain duplicate listings.
@@ -47,6 +48,10 @@ Curiosity-first browsing of what exists:
 This surface should support exploration even when no active position is posted.
 
 ### Planning Context
+
+Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the "Ways in", Planning Context, "Evidence", and "Best Next Step" framing across this and the following sections is retired.
+The target is that signals become factual, sourced badges (funded, has mentored undergrads before, paid or credit, hours, modality, methods) shown without confidence stamps or plausibility labels; the circular "reach-out plausible" signal is deleted; topic and method descriptors move to search facets; and reaching out is the universal action, with "Apply" living on the separate programs and fellowships board.
+The prose below still describes current behavior and is reframed when the code changes, not before.
 
 Practical context for how a student might evaluate a research home, embedded inside Yale Research rather than split into a separate product surface:
 
@@ -167,15 +172,15 @@ It should help a student discuss options with an advisor, not create mass-email 
 
 ## Product Principles
 
-- Directory-first: maximize accurate research-home, PI, and official-link coverage.
+- Directory-first: maximize accurate research-entity, lead, and official-link coverage.
+- Search-first: fast, relevant discovery is a co-equal priority with data quality, not an afterthought.
 - Source-driven: scale through maintained official-source adapters rather than faculty uploads.
-- Evidence-scored: show why an access conclusion is credible and where it came from.
-- Affiliation-aware: retain important source-backed relationships among labs, centers, institutes, programs, and other research homes.
+- Factual signals only: signals are sourced, positive facts that inform a student (funded, has mentored undergrads before, paid or credit, methods); they never gate, score trust, or condition contact.
+- Affiliation-aware: retain important source-backed relationships among labs, centers, institutes, programs, and other research entities.
 - Publication-light: link to verified official, Google Scholar, and ORCID profiles instead of rendering or maintaining research papers and publication-derived activity.
-- Pathway-aware: keep pathways optional and distinguish them from access evidence, contact destinations, later formalization, and active postings.
 - Discipline-flexible: do not make STEM lab hierarchy the universal model.
 - Progressively disclosed: do not expose model complexity that does not improve a student decision.
-- Student-actionable: keep official-source navigation useful even when access evidence is unknown.
+- Student-actionable: keep official-source navigation useful even when no signals are present, and keep reaching out always available and never gated.
 
 ## Student-Ready Visibility
 
