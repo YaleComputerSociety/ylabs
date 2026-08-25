@@ -37,6 +37,24 @@ describe('isLikelyOfficialPersonProfileUrl', () => {
       ),
     ).toBe(false);
   });
+
+  it('rejects SOM faculty-directory subdiscipline listing pages but accepts real per-person pages (#1914)', () => {
+    expect(
+      isLikelyOfficialPersonProfileUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory/finance',
+      ),
+    ).toBe(false);
+    expect(
+      isLikelyOfficialPersonProfileUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory/economics',
+      ),
+    ).toBe(false);
+    expect(
+      isLikelyOfficialPersonProfileUrl(
+        'https://som.yale.edu/faculty-research/faculty-directory/jordan-fixture',
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('entityOfficialPersonProfileDestinations', () => {
@@ -378,6 +396,48 @@ describe('detectProfileIdentityRisk', () => {
           { user: { netid: 'teg5', fname: 'Thomas', lname: 'Graedel' } },
           { user: { netid: 'abg9', fname: 'Alice', lname: 'Graedel' } },
         ],
+      }),
+    ).toBe(true);
+  });
+
+  it('is neutral on a faculty-directory subdiscipline listing URL, not a person profile (#1914)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          name: 'Fixture Faculty - Research',
+          websiteUrl: 'https://som.yale.edu/faculty-research/faculty-directory/finance',
+          sourceUrls: ['https://som.yale.edu/faculty-research/faculty-directory/finance'],
+        },
+        leadMembers: [{ user: { netid: 'ff123', fname: 'Fixture', lname: 'Faculty' } }],
+      }),
+    ).toBe(false);
+    for (const subdiscipline of [
+      'accounting',
+      'economics',
+      'marketing',
+      'operations',
+      'organizational-behavior',
+    ]) {
+      expect(
+        detectProfileIdentityRisk({
+          entity: {
+            websiteUrl: `https://som.yale.edu/faculty-research/faculty-directory/${subdiscipline}`,
+            sourceUrls: [`https://som.yale.edu/faculty-research/faculty-directory/${subdiscipline}`],
+          },
+          leadMembers: [{ user: { netid: 'ff123', fname: 'Fixture', lname: 'Faculty' } }],
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('still flags a genuinely conflicting person-profile URL under faculty-directory (#1914)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://som.yale.edu/faculty-research/faculty-directory/jordan-fixture',
+          sourceUrls: ['https://som.yale.edu/faculty-research/faculty-directory/jordan-fixture'],
+        },
+        leadMembers: [{ user: { netid: 'ff123', fname: 'Fixture', lname: 'Faculty' } }],
       }),
     ).toBe(true);
   });
