@@ -3,20 +3,12 @@ interface ResearchZeroResultRecoveryProps {
   activeFilterCount: number;
   selectedSchool: string;
   selectedDepartment: string;
-  selectedResearchAreas: string[];
-  hostsUndergrads: boolean;
-  documentedWayIn: boolean;
   departmentLabel: (value: string) => string;
   onRemoveSchool: () => void;
   onRemoveDepartment: () => void;
-  onRemoveResearchArea: (value: string) => void;
-  onRemoveHostsUndergrads: () => void;
-  onRemoveDocumentedWayIn: () => void;
   onClearAllFilters: () => void;
   relaxedQuery: string | null;
   onRelaxQuery: () => void;
-  researchAreaSuggestions: string[];
-  onSelectResearchArea: (value: string) => void;
   onBrowseAll: () => void;
 }
 
@@ -31,20 +23,12 @@ const ResearchZeroResultRecovery = ({
   activeFilterCount,
   selectedSchool,
   selectedDepartment,
-  selectedResearchAreas,
-  hostsUndergrads,
-  documentedWayIn,
   departmentLabel,
   onRemoveSchool,
   onRemoveDepartment,
-  onRemoveResearchArea,
-  onRemoveHostsUndergrads,
-  onRemoveDocumentedWayIn,
   onClearAllFilters,
   relaxedQuery,
   onRelaxQuery,
-  researchAreaSuggestions,
-  onSelectResearchArea,
   onBrowseAll,
 }: ResearchZeroResultRecoveryProps) => (
   <section
@@ -94,46 +78,6 @@ const ResearchZeroResultRecovery = ({
               </span>
             </button>
           )}
-          {selectedResearchAreas.map((area) => (
-            <button
-              key={area}
-              type="button"
-              onClick={() => onRemoveResearchArea(area)}
-              aria-label={`Remove Research area: ${area}`}
-              className={chipClassName}
-            >
-              <span className="min-w-0 truncate">Research area: {area}</span>
-              <span aria-hidden="true" className="shrink-0">
-                ×
-              </span>
-            </button>
-          ))}
-          {hostsUndergrads && (
-            <button
-              type="button"
-              onClick={onRemoveHostsUndergrads}
-              aria-label="Remove Has hosted undergrads before"
-              className={chipClassName}
-            >
-              <span className="min-w-0 truncate">Has hosted undergrads before</span>
-              <span aria-hidden="true" className="shrink-0">
-                ×
-              </span>
-            </button>
-          )}
-          {documentedWayIn && (
-            <button
-              type="button"
-              onClick={onRemoveDocumentedWayIn}
-              aria-label="Remove Has a documented way in"
-              className={chipClassName}
-            >
-              <span className="min-w-0 truncate">Has a documented way in</span>
-              <span aria-hidden="true" className="shrink-0">
-                ×
-              </span>
-            </button>
-          )}
         </div>
         <button
           type="button"
@@ -150,24 +94,6 @@ const ResearchZeroResultRecovery = ({
         <button type="button" onClick={onRelaxQuery} className={actionClassName}>
           Search &lsquo;{relaxedQuery}&rsquo; instead
         </button>
-      </div>
-    )}
-
-    {researchAreaSuggestions.length > 0 && (
-      <div className="mt-4" aria-label="Related research areas">
-        <span className="yr-kicker text-[0.7rem]">Explore a related research area</span>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {researchAreaSuggestions.map((area) => (
-            <button
-              key={area}
-              type="button"
-              onClick={() => onSelectResearchArea(area)}
-              className={actionClassName}
-            >
-              {area}
-            </button>
-          ))}
-        </div>
       </div>
     )}
 

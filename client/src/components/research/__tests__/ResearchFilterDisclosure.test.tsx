@@ -16,12 +16,6 @@ const renderFilters = (
     },
     selectedSchool: '',
     selectedDepartment: '',
-    selectedResearchAreas: [],
-    researchAreaOptions: [],
-    typeBucketOptions: [],
-    selectedTypeBuckets: [],
-    hostsUndergrads: false,
-    documentedWayIn: false,
     currentAvailabilityOptions: [],
     selectedCurrentAvailability: [],
     compensationOptions: [],
@@ -36,10 +30,6 @@ const renderFilters = (
     eligibleStudentLevelsLabel: (value) => value,
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
-    onResearchAreasChange: vi.fn(),
-    onTypeBucketsChange: vi.fn(),
-    onHostsUndergradsChange: vi.fn(),
-    onDocumentedWayInChange: vi.fn(),
     onCurrentAvailabilityChange: vi.fn(),
     onCompensationChange: vi.fn(),
     onEligibleStudentLevelsChange: vi.fn(),
@@ -91,9 +81,7 @@ describe('ResearchFilterDisclosure', () => {
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
     expect(dialog.className).toContain('sm:absolute');
     expect(dialog).not.toHaveAttribute('aria-modal');
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText('Has hosted undergrads before')).toHaveFocus(),
-    );
+    await waitFor(() => expect(within(dialog).getByLabelText('Filter by school')).toHaveFocus());
     expect(within(dialog).getByRole('button', { name: 'Close filters' })).not.toHaveFocus();
 
     const last = within(dialog).getByLabelText('Filter by department');
@@ -138,75 +126,10 @@ describe('ResearchFilterDisclosure', () => {
     renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
 
     expect(screen.queryByRole('button', { name: /^Filters/ })).toBeNull();
-    expect(
-      screen.getByRole('heading', { name: 'Research filters', level: 2 }),
-    ).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Research filters', level: 2 })).toBeTruthy();
     expect(screen.getByLabelText('Filter by school')).toBeTruthy();
     expect(screen.getByLabelText('Filter by department')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
-  });
-
-  it('toggles the hosts-undergrads filter and exposes a removable chip', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props } = renderFilters({ variant: 'sidebar' });
-
-    fireEvent.click(screen.getByLabelText('Has hosted undergrads before'));
-    expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(true);
-
-    const { props: selectedProps } = renderFilters({ variant: 'sidebar', hostsUndergrads: true });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Has hosted undergrads before' }));
-    expect(selectedProps.onHostsUndergradsChange).toHaveBeenCalledWith(false);
-  });
-
-  it('shows the documented-way-in toggle only when the query splits documented and undocumented homes (#1519)', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props } = renderFilters({
-      variant: 'sidebar',
-      facetDistribution: { hasDocumentedWayIn: { true: 6, false: 9 } },
-    });
-
-    fireEvent.click(screen.getByLabelText('Has a documented way in'));
-    expect(props.onDocumentedWayInChange).toHaveBeenCalledWith(true);
-
-    const { props: selectedProps } = renderFilters({
-      variant: 'sidebar',
-      documentedWayIn: true,
-      facetDistribution: { hasDocumentedWayIn: { true: 6, false: 9 } },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Has a documented way in' }));
-    expect(selectedProps.onDocumentedWayInChange).toHaveBeenCalledWith(false);
-  });
-
-  it('hides the documented-way-in toggle for a degenerate all-or-nothing distribution (#1519)', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-
-    const { container: allDocumented } = renderFilters({
-      variant: 'sidebar',
-      facetDistribution: { hasDocumentedWayIn: { true: 12, false: 0 } },
-    });
-    expect(within(allDocumented).queryByLabelText('Has a documented way in')).toBeNull();
-
-    const { container: noneDocumented } = renderFilters({
-      variant: 'sidebar',
-      facetDistribution: { hasDocumentedWayIn: { true: 0, false: 12 } },
-    });
-    expect(within(noneDocumented).queryByLabelText('Has a documented way in')).toBeNull();
-
-    const { container: missingFacet } = renderFilters({ variant: 'sidebar' });
-    expect(within(missingFacet).queryByLabelText('Has a documented way in')).toBeNull();
-  });
-
-  it('keeps an already-selected documented-way-in filter visible even when the split is degenerate (#1519)', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-
-    renderFilters({
-      variant: 'sidebar',
-      documentedWayIn: true,
-      facetDistribution: { hasDocumentedWayIn: { true: 12, false: 0 } },
-    });
-
-    expect(screen.getByLabelText('Has a documented way in')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove Has a documented way in' })).toBeTruthy();
   });
 
   it('toggles the current-availability filter and exposes a removable chip once coverage clears the minimum', () => {
@@ -226,7 +149,8 @@ describe('ResearchFilterDisclosure', () => {
       variant: 'sidebar',
       currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 25 }],
       selectedCurrentAvailability: ['OPEN'],
-      currentAvailabilityLabel: (value) => ({ OPEN: 'Open now', ROLLING: 'Rolling' }[value] ?? value),
+      currentAvailabilityLabel: (value) =>
+        ({ OPEN: 'Open now', ROLLING: 'Rolling' })[value] ?? value,
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Open now' }));
     expect(selectedProps.onCurrentAvailabilityChange).toHaveBeenCalledWith([]);
@@ -242,17 +166,13 @@ describe('ResearchFilterDisclosure', () => {
         { value: 'ROLLING', label: 'Rolling', count: 2 },
       ],
     });
-    expect(
-      within(sparseContainer).queryByText('Current undergraduate availability'),
-    ).toBeNull();
+    expect(within(sparseContainer).queryByText('Current undergraduate availability')).toBeNull();
 
     const { container: emptyContainer } = renderFilters({
       variant: 'sidebar',
       currentAvailabilityOptions: [],
     });
-    expect(
-      within(emptyContainer).queryByText('Current undergraduate availability'),
-    ).toBeNull();
+    expect(within(emptyContainer).queryByText('Current undergraduate availability')).toBeNull();
   });
 
   it('keeps an already-selected current-availability value visible even below the coverage minimum', () => {
@@ -262,7 +182,8 @@ describe('ResearchFilterDisclosure', () => {
       variant: 'sidebar',
       currentAvailabilityOptions: [{ value: 'OPEN', label: 'Open now', count: 1 }],
       selectedCurrentAvailability: ['OPEN'],
-      currentAvailabilityLabel: (value) => ({ OPEN: 'Open now', ROLLING: 'Rolling' }[value] ?? value),
+      currentAvailabilityLabel: (value) =>
+        ({ OPEN: 'Open now', ROLLING: 'Rolling' })[value] ?? value,
     });
 
     expect(screen.getByText('Current undergraduate availability')).toBeTruthy();
@@ -287,7 +208,7 @@ describe('ResearchFilterDisclosure', () => {
       compensationOptions: [{ value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 25 }],
       selectedCompensation: ['PAID_OR_STIPEND'],
       compensationLabel: (value) =>
-        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' }[value] ?? value),
+        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' })[value] ?? value,
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Paid or stipend' }));
     expect(selectedProps.onCompensationChange).toHaveBeenCalledWith([]);
@@ -320,7 +241,7 @@ describe('ResearchFilterDisclosure', () => {
       compensationOptions: [{ value: 'PAID_OR_STIPEND', label: 'Paid or stipend', count: 1 }],
       selectedCompensation: ['PAID_OR_STIPEND'],
       compensationLabel: (value) =>
-        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' }[value] ?? value),
+        ({ PAID_OR_STIPEND: 'Paid or stipend', COURSE_CREDIT: 'Course credit' })[value] ?? value,
     });
 
     expect(screen.getByText('Undergraduate compensation')).toBeTruthy();
@@ -352,7 +273,7 @@ describe('ResearchFilterDisclosure', () => {
           SOPHOMORE: 'Open to sophomores',
           JUNIOR: 'Open to juniors',
           SENIOR: 'Open to seniors',
-        }[value] ?? value),
+        })[value] ?? value,
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Open to first-years' }));
     expect(selectedProps.onEligibleStudentLevelsChange).toHaveBeenCalledWith([]);
@@ -392,39 +313,11 @@ describe('ResearchFilterDisclosure', () => {
           SOPHOMORE: 'Open to sophomores',
           JUNIOR: 'Open to juniors',
           SENIOR: 'Open to seniors',
-        }[value] ?? value),
+        })[value] ?? value,
     });
 
     expect(screen.getByText('Open to class year')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove Open to first-years' })).toBeTruthy();
-  });
-
-  it('adds a research area from the dropdown and removes it via its chip', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props } = renderFilters({
-      variant: 'sidebar',
-      researchAreaOptions: [
-        { value: 'Genomics', count: 3 },
-        { value: 'Robotics', count: 2 },
-      ],
-    });
-
-    const areaInput = screen.getByLabelText('Filter by research area');
-    fireEvent.focus(areaInput);
-    expect(screen.getByRole('option', { name: 'Robotics (2)' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('option', { name: 'Robotics (2)' }));
-    expect(props.onResearchAreasChange).toHaveBeenCalledWith(['Robotics']);
-
-    const { props: selectedProps } = renderFilters({
-      variant: 'sidebar',
-      researchAreaOptions: [
-        { value: 'Genomics', count: 3 },
-        { value: 'Robotics', count: 2 },
-      ],
-      selectedResearchAreas: ['Robotics'],
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Research area: Robotics' }));
-    expect(selectedProps.onResearchAreasChange).toHaveBeenCalledWith([]);
   });
 
   it('keeps a controlled popover open across a browse-to-search-results remount', async () => {
@@ -434,15 +327,11 @@ describe('ResearchFilterDisclosure', () => {
       const [hasSubmittedSearch, setHasSubmittedSearch] = useState(false);
       const [isOpen, setIsOpen] = useState(false);
       const shared: ComponentProps<typeof ResearchFilterDisclosure> = {
-        facetDistribution: {},
+        facetDistribution: {
+          school: { 'Yale College': 8, 'School of Medicine': 4 },
+        },
         selectedSchool: '',
         selectedDepartment: '',
-        selectedResearchAreas: [],
-        researchAreaOptions: [{ value: 'Artificial Intelligence', count: 23 }],
-        typeBucketOptions: [],
-        selectedTypeBuckets: [],
-        hostsUndergrads: false,
-        documentedWayIn: false,
         currentAvailabilityOptions: [],
         selectedCurrentAvailability: [],
         compensationOptions: [],
@@ -455,12 +344,8 @@ describe('ResearchFilterDisclosure', () => {
         currentAvailabilityLabel: (value) => value,
         compensationLabel: (value) => value,
         eligibleStudentLevelsLabel: (value) => value,
-        onSchoolChange: vi.fn(),
+        onSchoolChange: () => setHasSubmittedSearch(true),
         onDepartmentChange: vi.fn(),
-        onResearchAreasChange: () => setHasSubmittedSearch(true),
-        onTypeBucketsChange: vi.fn(),
-        onHostsUndergradsChange: vi.fn(),
-        onDocumentedWayInChange: vi.fn(),
         onCurrentAvailabilityChange: vi.fn(),
         onCompensationChange: vi.fn(),
         onEligibleStudentLevelsChange: vi.fn(),
@@ -490,69 +375,13 @@ describe('ResearchFilterDisclosure', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     await screen.findByRole('dialog', { name: 'Research filters' });
 
-    const areaInput = screen.getByLabelText('Filter by research area');
-    fireEvent.focus(areaInput);
-    fireEvent.click(screen.getByRole('option', { name: 'Artificial Intelligence (23)' }));
+    fireEvent.change(screen.getByLabelText('Filter by school'), {
+      target: { value: 'Yale College' },
+    });
 
     expect(screen.getByTestId('search-results')).toBeTruthy();
     expect(screen.queryByTestId('browse')).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Research filters' })).toBeTruthy();
-  });
-
-  it('renders type buckets with counts, applies, chips, and clears like other filters', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props } = renderFilters({
-      variant: 'sidebar',
-      typeBucketOptions: [
-        { key: 'labs', label: 'Research groups & labs', count: 12 },
-        { key: 'programs', label: 'Programs & fellowships', count: 4 },
-      ],
-    });
-
-    const labsCheckbox = screen.getByLabelText('Filter by type: Research groups & labs');
-    expect(screen.getByText('Research groups & labs (12)')).toBeTruthy();
-    expect(screen.getByText('Programs & fellowships (4)')).toBeTruthy();
-    fireEvent.click(labsCheckbox);
-    expect(props.onTypeBucketsChange).toHaveBeenCalledWith(['labs']);
-
-    const { props: selectedProps } = renderFilters({
-      variant: 'sidebar',
-      typeBucketOptions: [
-        { key: 'labs', label: 'Research groups & labs', count: 12 },
-        { key: 'programs', label: 'Programs & fellowships', count: 4 },
-      ],
-      selectedTypeBuckets: ['labs'],
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Research groups & labs' }));
-    expect(selectedProps.onTypeBucketsChange).toHaveBeenCalledWith([]);
-  });
-
-  it('keeps a selected type bucket visible even when its facet count disappears', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    renderFilters({
-      variant: 'sidebar',
-      typeBucketOptions: [],
-      selectedTypeBuckets: ['collections'],
-    });
-
-    expect(
-      screen.getByLabelText('Filter by type: Collections, museum & digital humanities'),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('button', {
-        name: 'Remove Type: Collections, museum & digital humanities',
-      }),
-    ).toBeTruthy();
-  });
-
-  it('hides the type control when only a single bucket has results', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    renderFilters({
-      variant: 'sidebar',
-      typeBucketOptions: [{ key: 'labs', label: 'Research groups & labs', count: 9 }],
-    });
-
-    expect(screen.queryByLabelText('Filter by type: Research groups & labs')).toBeNull();
   });
 
   it('hides single and non-positive facets unless selected', () => {

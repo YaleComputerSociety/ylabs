@@ -1,10 +1,4 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import ResearchAreaTypeahead from './ResearchAreaTypeahead';
-import {
-  readResearchTypeBucketKeys,
-  researchTypeBucketLabel,
-  type ResearchTypeBucketOption,
-} from '../../utils/researchTypeBuckets';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -14,22 +8,10 @@ interface FacetOption {
   label?: string;
 }
 
-interface TypeBucketDisplayOption {
-  key: string;
-  label: string;
-  count?: number;
-}
-
 interface ResearchFilterDisclosureProps {
   facetDistribution: FacetDistribution;
   selectedSchool: string;
   selectedDepartment: string;
-  selectedResearchAreas: string[];
-  researchAreaOptions: FacetOption[];
-  typeBucketOptions: ResearchTypeBucketOption[];
-  selectedTypeBuckets: string[];
-  hostsUndergrads: boolean;
-  documentedWayIn: boolean;
   currentAvailabilityOptions: FacetOption[];
   selectedCurrentAvailability: string[];
   compensationOptions: FacetOption[];
@@ -44,10 +26,6 @@ interface ResearchFilterDisclosureProps {
   eligibleStudentLevelsLabel: (value: string) => string;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
-  onResearchAreasChange: (value: string[]) => void;
-  onTypeBucketsChange: (value: string[]) => void;
-  onHostsUndergradsChange: (value: boolean) => void;
-  onDocumentedWayInChange: (value: boolean) => void;
   onCurrentAvailabilityChange: (value: string[]) => void;
   onCompensationChange: (value: string[]) => void;
   onEligibleStudentLevelsChange: (value: string[]) => void;
@@ -77,32 +55,10 @@ const MIN_ELIGIBLE_STUDENT_LEVELS_SERVABLE_COUNT = 20;
 const sumOptionCounts = (options: FacetOption[]): number =>
   options.reduce((total, option) => total + (option.count ?? 0), 0);
 
-const withSelectedTypeBuckets = (
-  options: ResearchTypeBucketOption[],
-  selected: string[],
-): TypeBucketDisplayOption[] => {
-  const optionByKey = new Map(options.map((option) => [option.key, option]));
-  const missingSelected = selected
-    .filter((key) => !optionByKey.has(key))
-    .map((key) => ({ key, label: researchTypeBucketLabel(key) }));
-  return readResearchTypeBucketKeys([
-    ...options.map((option) => option.key),
-    ...missingSelected.map((option) => option.key),
-  ]).map(
-    (key) => optionByKey.get(key) ?? { key, label: researchTypeBucketLabel(key) },
-  );
-};
-
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedSchool,
   selectedDepartment,
-  selectedResearchAreas,
-  researchAreaOptions,
-  typeBucketOptions,
-  selectedTypeBuckets,
-  hostsUndergrads,
-  documentedWayIn,
   currentAvailabilityOptions,
   selectedCurrentAvailability,
   compensationOptions,
@@ -117,10 +73,6 @@ const ResearchFilterDisclosure = ({
   eligibleStudentLevelsLabel,
   onSchoolChange,
   onDepartmentChange,
-  onResearchAreasChange,
-  onTypeBucketsChange,
-  onHostsUndergradsChange,
-  onDocumentedWayInChange,
   onCurrentAvailabilityChange,
   onCompensationChange,
   onEligibleStudentLevelsChange,
@@ -146,7 +98,6 @@ const ResearchFilterDisclosure = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  const firstControlRef = useRef<HTMLInputElement | null>(null);
   const firstSchoolRef = useRef<HTMLSelectElement | null>(null);
   const firstDepartmentRef = useRef<HTMLSelectElement | null>(null);
   const panelId = useId();
@@ -167,39 +118,11 @@ const ResearchFilterDisclosure = ({
     () => withSelectedOption(positiveDepartments, selectedDepartment),
     [positiveDepartments, selectedDepartment],
   );
-  const availableResearchAreas = useMemo(
-    () => researchAreaOptions.filter((option) => !selectedResearchAreas.includes(option.value)),
-    [researchAreaOptions, selectedResearchAreas],
-  );
-  const displayedTypeBuckets = useMemo(
-    () => withSelectedTypeBuckets(typeBucketOptions, selectedTypeBuckets),
-    [typeBucketOptions, selectedTypeBuckets],
-  );
   const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
-  const showResearchAreas = availableResearchAreas.length > 0 || selectedResearchAreas.length > 0;
-  const showType = typeBucketOptions.length > 1 || selectedTypeBuckets.length > 0;
-  const toggleTypeBucket = (key: string) =>
-    onTypeBucketsChange(
-      readResearchTypeBucketKeys(
-        selectedTypeBuckets.includes(key)
-          ? selectedTypeBuckets.filter((value) => value !== key)
-          : [...selectedTypeBuckets, key],
-      ),
-    );
   const showCurrentAvailability =
     sumOptionCounts(currentAvailabilityOptions) >= MIN_CURRENT_AVAILABILITY_SERVABLE_COUNT ||
     selectedCurrentAvailability.length > 0;
-  // EF-03: the documented-way-in toggle is facet-gated, not always-on. It only
-  // appears when the current result set actually splits into homes that carry a
-  // documented way in and homes that do not, so filtering can narrow. A
-  // degenerate distribution (all-or-nothing) hides it. It stays visible while
-  // selected so it remains clearable. See #1519.
-  const documentedWayInCounts = facetDistribution.hasDocumentedWayIn;
-  const documentedWayInPositiveCount = documentedWayInCounts?.true ?? 0;
-  const documentedWayInNegativeCount = documentedWayInCounts?.false ?? 0;
-  const showDocumentedWayIn =
-    (documentedWayInPositiveCount > 0 && documentedWayInNegativeCount > 0) || documentedWayIn;
   const showCompensation =
     sumOptionCounts(compensationOptions) >= MIN_COMPENSATION_SERVABLE_COUNT ||
     selectedCompensation.length > 0;
@@ -209,10 +132,6 @@ const ResearchFilterDisclosure = ({
   const activeCount =
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
-    selectedResearchAreas.length +
-    selectedTypeBuckets.length +
-    Number(hostsUndergrads) +
-    Number(documentedWayIn) +
     selectedCurrentAvailability.length +
     selectedCompensation.length +
     selectedEligibleStudentLevels.length;
@@ -248,12 +167,7 @@ const ResearchFilterDisclosure = ({
 
   const focusFirstControl = useCallback(() => {
     if (isDesktop) {
-      (
-        firstControlRef.current ||
-        firstSchoolRef.current ||
-        firstDepartmentRef.current ||
-        closeRef.current
-      )?.focus();
+      (firstSchoolRef.current || firstDepartmentRef.current || closeRef.current)?.focus();
       return;
     }
     closeRef.current?.focus();
@@ -326,189 +240,137 @@ const ResearchFilterDisclosure = ({
       showCurrentAvailability ||
       showCompensation ||
       showEligibleStudentLevels) && (
-    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-      Current filter counts are unavailable. Active values remain clearable.
-    </p>
-  );
+      <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        Current filter counts are unavailable. Active values remain clearable.
+      </p>
+    );
 
   const filterFields = (
-    <fieldset className="min-w-0 space-y-4 border-0 p-0">
+    <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
-      <label className="flex min-w-0 items-start gap-2 text-sm font-medium text-slate-800">
-        <input
-          ref={firstControlRef}
-          type="checkbox"
-          checked={hostsUndergrads}
-          onChange={(event) => onHostsUndergradsChange(event.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-        />
-        <span>Has hosted undergrads before</span>
-      </label>
-      {showDocumentedWayIn && (
-        <label className="flex min-w-0 items-start gap-2 text-sm font-medium text-slate-800">
-          <input
-            type="checkbox"
-            checked={documentedWayIn}
-            onChange={(event) => onDocumentedWayInChange(event.target.checked)}
-            className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-          />
-          <span>Has a documented way in</span>
-        </label>
-      )}
-      {showCurrentAvailability && (
-        <fieldset className="min-w-0 space-y-2 border-0 p-0">
-          <legend className="text-sm font-medium text-slate-800">
-            Current undergraduate availability
-          </legend>
-          {currentAvailabilityOptions.map((option) => (
-            <label
-              key={option.value}
-              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-            >
-              <input
-                type="checkbox"
-                checked={selectedCurrentAvailability.includes(option.value)}
-                onChange={(event) => toggleCurrentAvailability(option.value, event.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-              />
-              <span>
-                {option.label ?? option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      )}
-      {showCompensation && (
-        <fieldset className="min-w-0 space-y-2 border-0 p-0">
-          <legend className="text-sm font-medium text-slate-800">
-            Undergraduate compensation
-          </legend>
-          {compensationOptions.map((option) => (
-            <label
-              key={option.value}
-              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-            >
-              <input
-                type="checkbox"
-                checked={selectedCompensation.includes(option.value)}
-                onChange={(event) => toggleCompensation(option.value, event.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-              />
-              <span>
-                {option.label ?? option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      )}
-      {showEligibleStudentLevels && (
-        <fieldset className="min-w-0 space-y-2 border-0 p-0">
-          <legend className="text-sm font-medium text-slate-800">Open to class year</legend>
-          {eligibleStudentLevelsOptions.map((option) => (
-            <label
-              key={option.value}
-              className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
-            >
-              <input
-                type="checkbox"
-                checked={selectedEligibleStudentLevels.includes(option.value)}
-                onChange={(event) =>
-                  toggleEligibleStudentLevels(option.value, event.target.checked)
-                }
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-              />
-              <span>
-                {option.label ?? option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      )}
-      {showResearchAreas && (
-        <ResearchAreaTypeahead
-          options={availableResearchAreas}
-          hasSelections={selectedResearchAreas.length > 0}
-          onSelect={(value) => onResearchAreasChange([...selectedResearchAreas, value])}
-        />
-      )}
-      {showType && (
-        <fieldset className="min-w-0 border-0 p-0">
-          <legend className="mb-2 block text-sm font-medium text-slate-800">Type</legend>
-          <div className="flex flex-col gap-2">
-            {displayedTypeBuckets.map((option) => (
+      <div className="min-w-0 space-y-4">
+        {showCurrentAvailability && (
+          <fieldset className="min-w-0 space-y-2 border-0 p-0">
+            <legend className="text-sm font-medium text-slate-800">
+              Current undergraduate availability
+            </legend>
+            {currentAvailabilityOptions.map((option) => (
               <label
-                key={option.key}
-                className="flex min-w-0 items-start gap-2 text-sm font-medium text-slate-800"
+                key={option.value}
+                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
               >
                 <input
                   type="checkbox"
-                  checked={selectedTypeBuckets.includes(option.key)}
-                  onChange={() => toggleTypeBucket(option.key)}
-                  aria-label={`Filter by type: ${option.label}`}
+                  checked={selectedCurrentAvailability.includes(option.value)}
+                  onChange={(event) =>
+                    toggleCurrentAvailability(option.value, event.target.checked)
+                  }
                   className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
                 />
-                <span className="min-w-0">
-                  {option.label}
+                <span>
+                  {option.label ?? option.value}
                   {option.count !== undefined ? ` (${option.count})` : ''}
                 </span>
               </label>
             ))}
-          </div>
-        </fieldset>
-      )}
-      {showSchool && (
-        <label className="block min-w-0 text-sm font-medium text-slate-800">
-          School
-          <select
-            ref={firstSchoolRef}
-            aria-label="Filter by school"
-            value={selectedSchool}
-            onChange={(event) => onSchoolChange(event.target.value)}
-            className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
-          >
-            <option value="">All schools</option>
-            {schoolOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {showDepartment && (
-        <label className="block min-w-0 text-sm font-medium text-slate-800">
-          Department
-          <select
-            ref={!showSchool ? firstDepartmentRef : undefined}
-            aria-label="Filter by department"
-            value={selectedDepartment}
-            onChange={(event) => onDepartmentChange(event.target.value)}
-            className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
-          >
-            <option value="">All departments</option>
-            {departmentOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {departmentLabel(option.value)}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {!showSchool &&
-        !showDepartment &&
-        !showResearchAreas &&
-        !showType &&
-        !showCurrentAvailability &&
-        !showDocumentedWayIn &&
-        !showCompensation &&
-        !showEligibleStudentLevels && (
-          <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+          </fieldset>
         )}
+        {showCompensation && (
+          <fieldset className="min-w-0 space-y-2 border-0 p-0">
+            <legend className="text-sm font-medium text-slate-800">
+              Undergraduate compensation
+            </legend>
+            {compensationOptions.map((option) => (
+              <label
+                key={option.value}
+                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedCompensation.includes(option.value)}
+                  onChange={(event) => toggleCompensation(option.value, event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                />
+                <span>
+                  {option.label ?? option.value}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {showEligibleStudentLevels && (
+          <fieldset className="min-w-0 space-y-2 border-0 p-0">
+            <legend className="text-sm font-medium text-slate-800">Open to class year</legend>
+            {eligibleStudentLevelsOptions.map((option) => (
+              <label
+                key={option.value}
+                className="flex min-w-0 items-start gap-2 text-sm text-slate-800"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedEligibleStudentLevels.includes(option.value)}
+                  onChange={(event) =>
+                    toggleEligibleStudentLevels(option.value, event.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                />
+                <span>
+                  {option.label ?? option.value}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {showSchool && (
+          <label className="block min-w-0 text-sm font-medium text-slate-800">
+            School
+            <select
+              ref={firstSchoolRef}
+              aria-label="Filter by school"
+              value={selectedSchool}
+              onChange={(event) => onSchoolChange(event.target.value)}
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
+            >
+              <option value="">All schools</option>
+              {schoolOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.value}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {showDepartment && (
+          <label className="block min-w-0 text-sm font-medium text-slate-800">
+            Department
+            <select
+              ref={!showSchool ? firstDepartmentRef : undefined}
+              aria-label="Filter by department"
+              value={selectedDepartment}
+              onChange={(event) => onDepartmentChange(event.target.value)}
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
+            >
+              <option value="">All departments</option>
+              {departmentOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {departmentLabel(option.value)}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!showSchool &&
+          !showDepartment &&
+          !showCurrentAvailability &&
+          !showCompensation &&
+          !showEligibleStudentLevels && (
+            <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+          )}
+      </div>
     </fieldset>
   );
 
@@ -527,20 +389,6 @@ const ResearchFilterDisclosure = ({
       className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
       aria-label="Active research filters"
     >
-      {selectedTypeBuckets.map((key) => (
-        <button
-          key={`type-${key}`}
-          type="button"
-          onClick={() => onTypeBucketsChange(selectedTypeBuckets.filter((value) => value !== key))}
-          aria-label={`Remove Type: ${researchTypeBucketLabel(key)}`}
-          className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-        >
-          <span className="min-w-0 truncate">Type: {researchTypeBucketLabel(key)}</span>
-          <span aria-hidden="true" className="shrink-0">
-            ×
-          </span>
-        </button>
-      ))}
       {selectedSchool && (
         <button
           type="button"
@@ -564,46 +412,6 @@ const ResearchFilterDisclosure = ({
           <span className="min-w-0 truncate">
             Department: {departmentLabel(selectedDepartment)}
           </span>
-          <span aria-hidden="true" className="shrink-0">
-            ×
-          </span>
-        </button>
-      )}
-      {selectedResearchAreas.map((area) => (
-        <button
-          key={area}
-          type="button"
-          onClick={() => onResearchAreasChange(selectedResearchAreas.filter((a) => a !== area))}
-          aria-label={`Remove Research area: ${area}`}
-          className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-        >
-          <span className="min-w-0 truncate">Research area: {area}</span>
-          <span aria-hidden="true" className="shrink-0">
-            ×
-          </span>
-        </button>
-      ))}
-      {hostsUndergrads && (
-        <button
-          type="button"
-          onClick={() => onHostsUndergradsChange(false)}
-          aria-label="Remove Has hosted undergrads before"
-          className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-        >
-          <span className="min-w-0 truncate">Has hosted undergrads before</span>
-          <span aria-hidden="true" className="shrink-0">
-            ×
-          </span>
-        </button>
-      )}
-      {documentedWayIn && (
-        <button
-          type="button"
-          onClick={() => onDocumentedWayInChange(false)}
-          aria-label="Remove Has a documented way in"
-          className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
-        >
-          <span className="min-w-0 truncate">Has a documented way in</span>
           <span aria-hidden="true" className="shrink-0">
             ×
           </span>
@@ -637,9 +445,7 @@ const ResearchFilterDisclosure = ({
             key={value}
             type="button"
             onClick={() =>
-              onCompensationChange(
-                selectedCompensation.filter((selected) => selected !== value),
-              )
+              onCompensationChange(selectedCompensation.filter((selected) => selected !== value))
             }
             aria-label={`Remove ${label}`}
             className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700"
