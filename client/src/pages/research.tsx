@@ -1,12 +1,11 @@
 import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import PeopleResults from '../components/research/PeopleResults';
 import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
-import ResearchFieldDirectory from '../components/research/ResearchFieldDirectory';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchSortDropdown, {
   ResearchSortField,
@@ -37,8 +36,7 @@ import {
 } from '../types/researchEntity';
 import { getDepartmentSlug, getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { getSchoolSlug } from '../utils/schoolNames';
-import { buildResearchFieldDirectory } from '../utils/researchFieldDirectory';
-import { researchAreaPath, researchFieldPath } from '../utils/researchAreaSlug';
+import { researchAreaPath } from '../utils/researchAreaSlug';
 import {
   relaxResearchQuery,
   suggestCorpusResearchAreas,
@@ -283,9 +281,7 @@ const searchResearchEntities = async (
         ? { studentVisibilityTier: options.trustTierFilters }
         : {}),
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
-      ...(options.sortBy
-        ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' }
-        : {}),
+      ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.standardOrder ? { standardOrder: true } : {}),
     },
     { signal },
@@ -422,7 +418,6 @@ const scrollResearchViewportToTop = () => {
 
 const Research = () => {
   const location = useLocation();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useContext(UserContext);
   const { totalNewMatches: savedSearchNewMatchCount } =
@@ -431,8 +426,7 @@ const Research = () => {
     approachingCount: watchedDeadlineApproachingCount,
     notStartedCount: watchedDeadlineNotStartedCount,
   } = useWatchedDeadlineSummary(isAuthenticated);
-  const { departments, researchAreas, researchFields, fieldOrder, getResearchAreaByName } =
-    useConfig();
+  const { departments, researchAreas } = useConfig();
   const isAdmin = user?.userType === 'admin';
   const pageSnapshotKey = searchParams.toString();
   const restorableSnapshot =
@@ -515,11 +509,7 @@ const Research = () => {
   >(
     () =>
       restoredSnapshotRef.current?.selectedEligibleStudentLevels ??
-      readSearchParamList(
-        searchParams,
-        'eligibleYears',
-        ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES,
-      ),
+      readSearchParamList(searchParams, 'eligibleYears', ELIGIBLE_STUDENT_LEVEL_FILTER_VALUES),
   );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
@@ -563,9 +553,9 @@ const Research = () => {
     );
   const [isSaveSearchPanelOpen, setIsSaveSearchPanelOpen] = useState(false);
   const [saveSearchLabel, setSaveSearchLabel] = useState('');
-  const [saveSearchStatus, setSaveSearchStatus] = useState<
-    'idle' | 'saving' | 'saved' | 'error'
-  >('idle');
+  const [saveSearchStatus, setSaveSearchStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
+    'idle',
+  );
   const [defaultResearchEntities, setDefaultResearchEntities] = useState<ResearchEntity[]>(
     () => restoredSnapshotRef.current?.defaultResearchEntities ?? [],
   );
@@ -643,20 +633,6 @@ const Research = () => {
     () => buildResearchAreaOptions(browseFacetDistribution.researchAreas),
     [buildResearchAreaOptions, browseFacetDistribution.researchAreas],
   );
-  const fieldColorKeyByName = useMemo(
-    () => new Map(researchFields.map((field) => [field.name, field.colorKey])),
-    [researchFields],
-  );
-  const researchFieldDirectory = useMemo(
-    () =>
-      buildResearchFieldDirectory({
-        areaOptions: browseResearchAreaOptions,
-        fieldForArea: (name) => getResearchAreaByName(name)?.field,
-        fieldOrder,
-        colorKeyForField: (field) => fieldColorKeyByName.get(field),
-      }),
-    [browseResearchAreaOptions, getResearchAreaByName, fieldOrder, fieldColorKeyByName],
-  );
   const typeBucketOptions = useMemo(
     () => aggregateResearchTypeBucketCounts(facetDistribution.entityType),
     [facetDistribution.entityType],
@@ -679,8 +655,7 @@ const Research = () => {
     [buildCurrentAvailabilityOptions, facetDistribution.undergraduateCurrentAvailability],
   );
   const browseCurrentAvailabilityOptions = useMemo(
-    () =>
-      buildCurrentAvailabilityOptions(browseFacetDistribution.undergraduateCurrentAvailability),
+    () => buildCurrentAvailabilityOptions(browseFacetDistribution.undergraduateCurrentAvailability),
     [buildCurrentAvailabilityOptions, browseFacetDistribution.undergraduateCurrentAvailability],
   );
   const buildCompensationOptions = useCallback(
@@ -710,19 +685,13 @@ const Research = () => {
     [],
   );
   const eligibleStudentLevelsOptions = useMemo(
-    () =>
-      buildEligibleStudentLevelsOptions(facetDistribution.undergraduateEligibleStudentLevels),
+    () => buildEligibleStudentLevelsOptions(facetDistribution.undergraduateEligibleStudentLevels),
     [buildEligibleStudentLevelsOptions, facetDistribution.undergraduateEligibleStudentLevels],
   );
   const browseEligibleStudentLevelsOptions = useMemo(
     () =>
-      buildEligibleStudentLevelsOptions(
-        browseFacetDistribution.undergraduateEligibleStudentLevels,
-      ),
-    [
-      buildEligibleStudentLevelsOptions,
-      browseFacetDistribution.undergraduateEligibleStudentLevels,
-    ],
+      buildEligibleStudentLevelsOptions(browseFacetDistribution.undergraduateEligibleStudentLevels),
+    [buildEligibleStudentLevelsOptions, browseFacetDistribution.undergraduateEligibleStudentLevels],
   );
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
@@ -1174,9 +1143,7 @@ const Research = () => {
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
     ...(areas.length ? { researchAreas: areas } : {}),
-    ...(typeBuckets.length
-      ? { entityType: entityTypesForResearchTypeBuckets(typeBuckets) }
-      : {}),
+    ...(typeBuckets.length ? { entityType: entityTypesForResearchTypeBuckets(typeBuckets) } : {}),
     ...(undergrads ? { hostsUndergrads: true } : {}),
     ...(documented ? { hasDocumentedWayIn: true } : {}),
     ...(availability.length ? { currentAvailability: availability } : {}),
@@ -1390,9 +1357,7 @@ const Research = () => {
       setSelectedCompensation(urlCompensation);
       return;
     }
-    if (
-      selectedEligibleStudentLevels.join(',') !== urlEligibleStudentLevels.join(',')
-    ) {
+    if (selectedEligibleStudentLevels.join(',') !== urlEligibleStudentLevels.join(',')) {
       setSelectedEligibleStudentLevels(urlEligibleStudentLevels);
       return;
     }
@@ -1701,13 +1666,13 @@ const Research = () => {
   });
   const hasStudentFacetSelection = Boolean(
     selectedSchool ||
-      selectedDepartment ||
-      selectedResearchAreas.length ||
-      selectedTypeBuckets.length ||
-      hostsUndergrads ||
-      selectedCurrentAvailability.length ||
-      selectedCompensation.length ||
-      selectedEligibleStudentLevels.length,
+    selectedDepartment ||
+    selectedResearchAreas.length ||
+    selectedTypeBuckets.length ||
+    hostsUndergrads ||
+    selectedCurrentAvailability.length ||
+    selectedCompensation.length ||
+    selectedEligibleStudentLevels.length,
   );
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled =
@@ -1745,8 +1710,7 @@ const Research = () => {
     const documented = next.documentedWayIn ?? documentedWayIn;
     const availability = next.currentAvailability ?? selectedCurrentAvailability;
     const compensation = next.compensation ?? selectedCompensation;
-    const eligibleStudentLevels =
-      next.eligibleStudentLevels ?? selectedEligibleStudentLevels;
+    const eligibleStudentLevels = next.eligibleStudentLevels ?? selectedEligibleStudentLevels;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (school !== selectedSchool) {
       filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
@@ -1793,9 +1757,7 @@ const Research = () => {
     if (eligibleStudentLevels.join(',') !== selectedEligibleStudentLevels.join(',')) {
       filterChanges.push({
         operation:
-          eligibleStudentLevels.length > selectedEligibleStudentLevels.length
-            ? 'apply'
-            : 'remove',
+          eligibleStudentLevels.length > selectedEligibleStudentLevels.length ? 'apply' : 'remove',
         filter: 'eligible_student_levels',
       });
     }
@@ -2047,16 +2009,6 @@ const Research = () => {
     [isZeroResultSearch, researchAreas, activeSearchRequest, selectedResearchAreas],
   );
 
-  const navigateToResearchArea = (area: string) => {
-    const trimmed = area.trim();
-    if (trimmed) navigate(researchAreaPath(trimmed));
-  };
-
-  const navigateToResearchField = (field: string) => {
-    const trimmed = field.trim();
-    if (trimmed) navigate(researchFieldPath(trimmed));
-  };
-
   const pivotToResearchArea = (area: string) => {
     scrollResearchViewportToTop();
     setQuery('');
@@ -2210,16 +2162,6 @@ const Research = () => {
           </header>
 
           <div className="min-w-0">
-            {!hasSubmittedSearch && researchFieldDirectory.length > 0 && (
-              <div className="mb-6">
-                <ResearchFieldDirectory
-                  domains={researchFieldDirectory}
-                  selectedAreas={selectedResearchAreas}
-                  onSelectArea={navigateToResearchArea}
-                  onSelectField={navigateToResearchField}
-                />
-              </div>
-            )}
             {!hasSubmittedSearch && (
               <section aria-busy={defaultSearchLoading} aria-label="Research homes to explore">
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
