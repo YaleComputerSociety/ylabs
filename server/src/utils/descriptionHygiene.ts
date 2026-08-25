@@ -1235,8 +1235,16 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
  * ~1,500-character CV essay - degrees, publications, "see curriculum vitae
  * for details" - was promoted verbatim into a card because nothing bounded
  * shortDescription length at all).
+ *
+ * The 200-char bound is measured, not arbitrary (#1951): the primary
+ * `shortDescription` surface is the `/research` card, whose `line-clamp-4`
+ * body visually truncates with a CSS ellipsis well before the old 400-char
+ * clamp ever fired. Measured against the live cards, that box holds ~190 chars
+ * on a narrow mobile column and ~219 on a desktop 3-column layout, so 200
+ * keeps a short from clamping on the card it renders on rather than letting an
+ * over-long blurb get cut mid-idea in the browser.
  */
-export const MAX_SHORT_DESCRIPTION_LENGTH = 400;
+export const MAX_SHORT_DESCRIPTION_LENGTH = 200;
 
 /**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
