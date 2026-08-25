@@ -63,6 +63,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence.',
   },
+  'research-entity-description-methods-llm': {
+    priority: 2,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['METHODS'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Word-grounded methods/techniques recovery derived from an entity's already-stored fullDescription for research homes that still lack methods. Emits only method terms whose significant words all appear in that description; never creates description, identity, access, route, or opportunity evidence.",
+  },
   'research-area-source-extractor': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
