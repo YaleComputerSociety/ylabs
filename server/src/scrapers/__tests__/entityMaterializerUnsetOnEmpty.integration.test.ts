@@ -79,8 +79,7 @@ describe('materializeEntity clears stale observation-backed fields on rematerial
     });
   };
 
-  const persisted = () =>
-    ResearchEntity.findOne({ slug: 'unset-fixture' }).lean<PersistedEntity>();
+  const persisted = () => ResearchEntity.findOne({ slug: 'unset-fixture' }).lean<PersistedEntity>();
 
   it('unsets methods and inferredPiUserId that no longer have a live observation', async () => {
     await seedEntity({ methods: ['Cryo-EM'], inferredPiUserId: STALE_PI });
