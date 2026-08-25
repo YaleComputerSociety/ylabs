@@ -6,7 +6,6 @@ import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import PeopleResults from '../components/research/PeopleResults';
 import RelatedProgramsModule from '../components/research/RelatedProgramsModule';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
-import ResearchFieldDirectory from '../components/research/ResearchFieldDirectory';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchSortDropdown, {
   ResearchSortField,
@@ -37,8 +36,7 @@ import {
 } from '../types/researchEntity';
 import { getDepartmentSlug, getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { getSchoolSlug } from '../utils/schoolNames';
-import { buildResearchFieldDirectory } from '../utils/researchFieldDirectory';
-import { researchAreaPath, researchFieldPath } from '../utils/researchAreaSlug';
+import { researchAreaPath } from '../utils/researchAreaSlug';
 import {
   relaxResearchQuery,
   suggestCorpusResearchAreas,
@@ -646,16 +644,6 @@ const Research = () => {
   const fieldColorKeyByName = useMemo(
     () => new Map(researchFields.map((field) => [field.name, field.colorKey])),
     [researchFields],
-  );
-  const researchFieldDirectory = useMemo(
-    () =>
-      buildResearchFieldDirectory({
-        areaOptions: browseResearchAreaOptions,
-        fieldForArea: (name) => getResearchAreaByName(name)?.field,
-        fieldOrder,
-        colorKeyForField: (field) => fieldColorKeyByName.get(field),
-      }),
-    [browseResearchAreaOptions, getResearchAreaByName, fieldOrder, fieldColorKeyByName],
   );
   const typeBucketOptions = useMemo(
     () => aggregateResearchTypeBucketCounts(facetDistribution.entityType),
@@ -2047,16 +2035,6 @@ const Research = () => {
     [isZeroResultSearch, researchAreas, activeSearchRequest, selectedResearchAreas],
   );
 
-  const navigateToResearchArea = (area: string) => {
-    const trimmed = area.trim();
-    if (trimmed) navigate(researchAreaPath(trimmed));
-  };
-
-  const navigateToResearchField = (field: string) => {
-    const trimmed = field.trim();
-    if (trimmed) navigate(researchFieldPath(trimmed));
-  };
-
   const pivotToResearchArea = (area: string) => {
     scrollResearchViewportToTop();
     setQuery('');
@@ -2210,16 +2188,6 @@ const Research = () => {
           </header>
 
           <div className="min-w-0">
-            {!hasSubmittedSearch && researchFieldDirectory.length > 0 && (
-              <div className="mb-6">
-                <ResearchFieldDirectory
-                  domains={researchFieldDirectory}
-                  selectedAreas={selectedResearchAreas}
-                  onSelectArea={navigateToResearchArea}
-                  onSelectField={navigateToResearchField}
-                />
-              </div>
-            )}
             {!hasSubmittedSearch && (
               <section aria-busy={defaultSearchLoading} aria-label="Research homes to explore">
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
