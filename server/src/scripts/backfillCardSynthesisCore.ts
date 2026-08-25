@@ -47,6 +47,25 @@ const cardIsSoleBlocker = (reasons?: string[]): boolean => {
   return blockers.size === 1 && blockers.has(CARD_BLOCKER_REASON);
 };
 
+/**
+ * The Mongo filter selecting entities the card-synthesis lane will consider.
+ *
+ * A corpus scan pre-filters on the persisted `studentVisibilityReasons` flag as
+ * a cheap index hit. But that stored reason array can lag a fresh recompute: an
+ * entity re-gated in memory still carries its older persisted reasons until the
+ * gate is applied, so a document that a fresh recompute shows as sole
+ * card-blocked can still be missing the flag on disk (and vice versa). When the
+ * caller names ids explicitly via `--record-id`, re-applying that stale flag
+ * would silently drop the very ids the caller scoped - so an explicit scope is
+ * queried by `_id` alone, and the per-row `planStudentVisibilityGate` recompute
+ * plus the `wouldPromote` (sole-blocker) gate decide what actually gets a card.
+ */
+export function buildCardSynthesisQuery(hasScopedIds: boolean): Record<string, unknown> {
+  return hasScopedIds
+    ? { archived: { $ne: true } }
+    : { archived: { $ne: true }, studentVisibilityReasons: CARD_BLOCKER_REASON };
+}
+
 export async function planCardBackfillRow(
   entity: CardBackfillEntity,
   synthesize: CardSynthesizeFn,

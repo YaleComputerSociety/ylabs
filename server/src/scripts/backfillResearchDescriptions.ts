@@ -89,7 +89,7 @@ import {
 import {
   planCardBackfillRow,
   summarizeCardBackfill,
-  CARD_BLOCKER_REASON,
+  buildCardSynthesisQuery,
   type CardBackfillEntity,
   type CardBackfillRow,
   type CardBackfillSummary,
@@ -1063,10 +1063,7 @@ export async function runCardSynthesisBackfill(options: {
   };
 
   const scopedIds = (options.recordIds || []).map((id) => new mongoose.Types.ObjectId(id));
-  const query: Record<string, unknown> = {
-    archived: { $ne: true },
-    studentVisibilityReasons: CARD_BLOCKER_REASON,
-  };
+  const query = buildCardSynthesisQuery(scopedIds.length > 0);
   if (scopedIds.length > 0) query._id = { $in: scopedIds };
   const docs = (await ResearchEntity.find(
     query,

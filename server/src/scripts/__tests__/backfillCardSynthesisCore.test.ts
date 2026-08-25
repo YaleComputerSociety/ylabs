@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   planCardBackfillRow,
   summarizeCardBackfill,
+  buildCardSynthesisQuery,
+  CARD_BLOCKER_REASON,
   type CardBackfillRow,
 } from '../backfillCardSynthesisCore';
 import { deriveShortDescriptionFromFullDescription } from '../../utils/researchEntityDescriptionQuality';
@@ -206,6 +208,22 @@ describe('planCardBackfillRow topic-label-list awareness (#1730/#1680)', () => {
     expect(row.proposedShort).toBe(rewordedCard);
     expect(row.gainedCard).toBe(true);
     expect(row.wouldPromote).toBe(true);
+  });
+});
+
+describe('buildCardSynthesisQuery', () => {
+  it('pre-filters a corpus scan on the stored card-blocker reason', () => {
+    const query = buildCardSynthesisQuery(false);
+    expect(query).toEqual({
+      archived: { $ne: true },
+      studentVisibilityReasons: CARD_BLOCKER_REASON,
+    });
+  });
+
+  it('drops the stored-reason filter for an explicit id scope so stale reasons cannot hide named ids', () => {
+    const query = buildCardSynthesisQuery(true);
+    expect(query).toEqual({ archived: { $ne: true } });
+    expect(query).not.toHaveProperty('studentVisibilityReasons');
   });
 });
 
