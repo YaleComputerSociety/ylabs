@@ -63,7 +63,6 @@ describe('buildResearchGroupFilterString', () => {
       school: ['School of Medicine'],
       departments: ['Genetics'],
       researchAreas: ['Genomics'],
-      acceptanceLevel: 'verified',
     });
     expect(filter).toBe(
       [
@@ -72,7 +71,6 @@ describe('buildResearchGroupFilterString', () => {
         '(schools = "School of Medicine")',
         '(departments = "Genetics")',
         '(researchAreas = "Genomics")',
-        'accessAcceptanceLevel = "verified"',
       ].join(' AND '),
     );
   });
@@ -113,37 +111,6 @@ describe('buildResearchGroupFilterString', () => {
         { excludeField: 'entityType' },
       );
       expect(filter).toBe('archived = false AND (departments = "Genetics")');
-    });
-  });
-
-  describe('acceptanceLevel filter', () => {
-    it('"all" or unset → no extra clause', () => {
-      expect(buildResearchGroupFilterString({ acceptanceLevel: 'all' })).toBe('archived = false');
-      expect(buildResearchGroupFilterString({})).toBe('archived = false');
-    });
-
-    it('"verified" → filters the canonical Signal-derived acceptance level', () => {
-      const filter = buildResearchGroupFilterString({ acceptanceLevel: 'verified' });
-      expect(filter).toBe('archived = false AND accessAcceptanceLevel = "verified"');
-    });
-
-    it('"verified-or-likely" → accepts either verified or likely', () => {
-      const filter = buildResearchGroupFilterString({
-        acceptanceLevel: 'verified-or-likely',
-      });
-      expect(filter).toBe(
-        'archived = false AND (accessAcceptanceLevel = "verified" OR accessAcceptanceLevel = "likely")',
-      );
-    });
-
-    it('combines acceptanceLevel with other filters via AND', () => {
-      const filter = buildResearchGroupFilterString({
-        kind: ['lab'],
-        acceptanceLevel: 'verified',
-      });
-      expect(filter).toBe(
-        'archived = false AND (kind = "lab") AND accessAcceptanceLevel = "verified"',
-      );
     });
   });
 

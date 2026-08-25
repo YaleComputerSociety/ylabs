@@ -153,39 +153,6 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await documentedOf(noEvidence._id)).toBe(false);
   });
 
-  it('only lifts accessAcceptanceLevel for a bare-key REACH_OUT_PLAUSIBLE with a real excerpt (#1343)', async () => {
-    const bareKeyNoExcerpt = await createEntity('lab-bare-key-no-excerpt', 'LAB');
-    const bareKeyWithExcerpt = await createEntity('lab-bare-key-with-excerpt', 'LAB');
-
-    await Signal.create({
-      researchEntityId: bareKeyNoExcerpt._id,
-      type: 'REACH_OUT_PLAUSIBLE',
-      derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
-      confidenceScore: 0.5,
-    });
-    await Signal.create({
-      researchEntityId: bareKeyWithExcerpt._id,
-      type: 'REACH_OUT_PLAUSIBLE',
-      derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
-      confidenceScore: 0.5,
-      source: {
-        excerpt: 'Undergraduates interested in the lab should email the PI to discuss projects.',
-      },
-    });
-
-    await recomputeBrowseRankForEntities([bareKeyNoExcerpt._id, bareKeyWithExcerpt._id], {
-      sync: false,
-    });
-
-    const acceptanceLevelOf = async (id: mongoose.Types.ObjectId): Promise<string> => {
-      const doc = await ResearchEntity.findById(id).lean<{ accessAcceptanceLevel?: string }>();
-      return doc?.accessAcceptanceLevel ?? 'none';
-    };
-
-    expect(await acceptanceLevelOf(bareKeyNoExcerpt._id)).toBe('none');
-    expect(await acceptanceLevelOf(bareKeyWithExcerpt._id)).toBe('likely');
-  });
-
   it('persists undergraduateCurrentAvailability from a fresh KNOWN signal and fails closed otherwise (#1285)', async () => {
     const now = new Date('2026-08-23T12:00:00.000Z');
     const freshExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);

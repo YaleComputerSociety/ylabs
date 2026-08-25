@@ -77,7 +77,6 @@ const analyticsData: AnalyticsData = {
       { entityType: 'CENTER', count: 10 },
     ],
     byVisibilityTier: [{ tier: 'student_ready', count: 12 }],
-    byOpenness: [{ status: 'unknown', count: 25 }],
     freshness: {
       observedLast7Days: 8,
       observedLast30Days: 20,

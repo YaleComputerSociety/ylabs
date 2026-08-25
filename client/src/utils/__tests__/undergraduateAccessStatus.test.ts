@@ -50,7 +50,6 @@ describe('deriveUndergraduateAccessStatus', () => {
     expect(
       deriveUndergraduateAccessStatus({ undergraduateCurrentAvailability: 'UNKNOWN' }),
     ).toBeNull();
-    expect(deriveUndergraduateAccessStatus({ accessAcceptanceLevel: 'verified' })).toBeNull();
   });
 
   it('prefers current availability over hosting evidence', () => {

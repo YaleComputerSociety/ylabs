@@ -58,7 +58,6 @@ const sampleData: AnalyticsData = {
     overview: { active: 40, total: 40 },
     byType: [{ entityType: 'LAB', count: 30 }],
     byVisibilityTier: [{ tier: 'student_ready', count: 12 }],
-    byOpenness: [{ status: 'unknown', count: 25 }],
     freshness: {
       observedLast7Days: 8,
       observedLast30Days: 20,
