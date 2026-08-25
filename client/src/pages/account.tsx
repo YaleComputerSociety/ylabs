@@ -25,6 +25,8 @@ type ProgramSummary = {
   count: number;
   nextDeadlineLabel?: string;
   nextDeadlineDate?: string;
+  approachingCount?: number;
+  notStartedCount?: number;
 };
 
 const SURFACES: AccountSurface[] = ['dashboard', 'programs', 'searches', 'interests'];
@@ -93,6 +95,9 @@ const Account = () => {
           nextDeadlineLabel={programSummary.nextDeadlineLabel}
           savedSearchNewMatchCount={savedSearchNewMatchCount}
           onViewSavedSearches={() => activateSurface('searches', true)}
+          watchedDeadlineApproachingCount={programSummary.approachingCount}
+          watchedDeadlineNotStartedCount={programSummary.notStartedCount}
+          onViewProgramWatch={() => activateSurface('programs', true)}
         />
 
         <div className="mb-6 flex justify-center">
