@@ -4,8 +4,8 @@ import { unwrapMicrosoftSafeLinksUrl } from '../safeLinksUrl';
 describe('unwrapMicrosoftSafeLinksUrl', () => {
   it('unwraps an Outlook safelinks wrapper to its inner target', () => {
     const wrapped =
-      'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.shaktibhagchandani.com%2F&data=05%7C01%7C&sdata=abc&reserved=0';
-    expect(unwrapMicrosoftSafeLinksUrl(wrapped)).toBe('http://www.shaktibhagchandani.com/');
+      'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.morganroster.com%2F&data=05%7C01%7C&sdata=abc&reserved=0';
+    expect(unwrapMicrosoftSafeLinksUrl(wrapped)).toBe('http://www.morganroster.com/');
   });
 
   it('unwraps a safelinks wrapper around an https target', () => {

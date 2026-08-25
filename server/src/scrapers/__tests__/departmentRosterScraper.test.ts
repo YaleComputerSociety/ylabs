@@ -585,22 +585,22 @@ describe('mcdbExtractor', () => {
         <div class="directory-listing-card">
           <div class="directory-listing-card__content">
             <h3 class="directory-listing-card__heading">
-              <a class="directory-listing-card__heading-link" href="/profile/shakti-bhagchandani">
-                Shakti Bhagchandani
+              <a class="directory-listing-card__heading-link" href="/profile/morgan-roster">
+                Morgan Roster
               </a>
             </h3>
             <div class="directory-listing-card__subheading">Assistant Professor</div>
-            <a class="directory-listing-card__link" href="mailto:shakti.bhagchandani@yale.edu">Email</a>
-            <a class="directory-listing-card__link" href="https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.shaktibhagchandani.com%2F&data=05%7C01%7C&sdata=abc&reserved=0">Lab Website</a>
+            <a class="directory-listing-card__link" href="mailto:morgan.roster@yale.edu">Email</a>
+            <a class="directory-listing-card__link" href="https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.morganroster.com%2F&data=05%7C01%7C&sdata=abc&reserved=0">Lab Website</a>
           </div>
         </div>
       </body></html>
     `;
     const out = mcdbExtractor(html, { pageUrl: 'https://mcdb.yale.edu/people/faculty' });
     expect(out[0]).toMatchObject({
-      name: 'Shakti Bhagchandani',
-      email: 'shakti.bhagchandani@yale.edu',
-      labUrl: 'http://www.shaktibhagchandani.com/',
+      name: 'Morgan Roster',
+      email: 'morgan.roster@yale.edu',
+      labUrl: 'http://www.morganroster.com/',
     });
   });
 });
