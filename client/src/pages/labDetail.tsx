@@ -679,9 +679,9 @@ const DecisionSummary = ({
                 {methods.map((method) => (
                   <span
                     key={method}
-                    className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-1 text-xs font-medium text-gray-700"
+                    className="inline-flex items-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-1 text-xs font-medium text-gray-700"
                   >
-                    {method}
+                    {formatTitleCaseLabel(method)}
                   </span>
                 ))}
               </div>
