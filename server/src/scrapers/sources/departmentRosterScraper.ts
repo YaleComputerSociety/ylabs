@@ -1425,7 +1425,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
   {
     deptKey: 'global-affairs',
     deptName: 'Global Affairs',
-    schoolName: 'Yale Jackson School of Global Affairs',
+    schoolName: 'Jackson School of Global Affairs',
     url: 'https://jackson.yale.edu/about/meet-us/faculty/lecturers/',
     paginated: false,
     extractor: jacksonPersonCardExtractor,
@@ -1678,7 +1678,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
   {
     deptKey: 'jackson-global-affairs',
     deptName: 'Global Affairs',
-    schoolName: 'Yale Jackson School of Global Affairs',
+    schoolName: 'Jackson School of Global Affairs',
     url: 'https://jackson.yale.edu/faculty-research/professors-global-affairs',
     paginated: false,
     extractor: jacksonProfileComponentExtractor,
