@@ -2997,6 +2997,18 @@ describe('sanitizeResearchEntityShortDescription length cap (#1745)', () => {
     expect(cleaned.endsWith('.')).toBe(true);
   });
 
+  it('caps at the measured 200-char /research card clamp point (#1951)', () => {
+    expect(MAX_SHORT_DESCRIPTION_LENGTH).toBe(200);
+  });
+
+  it('clamps an over-cap research blurb to the card-sized bound (#1951)', () => {
+    const overCap =
+      'Investigates the molecular and cellular mechanisms of neural circuit development and function, using genetics, imaging, and computational modeling to understand how the brain wires itself and adapts across the lifespan in health and disease.';
+    expect(overCap.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+    const cleaned = sanitizeResearchEntityShortDescription(overCap);
+    expect(cleaned.length).toBeLessThanOrEqual(MAX_SHORT_DESCRIPTION_LENGTH);
+  });
+
   it('leaves an ordinary card blurb under the cap untouched', () => {
     const clean = 'Studies coral reef resilience under ocean acidification.';
     expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
