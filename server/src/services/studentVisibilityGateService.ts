@@ -36,6 +36,7 @@ import {
   type RosterLeadResolutionResult,
 } from './rosterLeadResolutionGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { syncEntities } from './meiliSyncService';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
@@ -952,6 +953,20 @@ export async function applyStudentVisibilityGatePlans(
       : undefined,
   ]);
   await resolveArchivedResearchQueueItems(now);
+  await syncGatedResearchEntitiesToIndex(researchOps);
+}
+
+const GATE_MEILI_SYNC_CHUNK_SIZE = 500;
+
+async function syncGatedResearchEntitiesToIndex(researchOps: any[]): Promise<void> {
+  const objectIds = researchOps
+    .map((op) => toStudentVisibilityGateObjectId(op?.updateOne?.filter?._id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  for (let start = 0; start < objectIds.length; start += GATE_MEILI_SYNC_CHUNK_SIZE) {
+    const batch = objectIds.slice(start, start + GATE_MEILI_SYNC_CHUNK_SIZE);
+    const docs = await ResearchEntity.find({ _id: { $in: batch } }).lean();
+    if (docs.length > 0) await syncEntities('researchEntity', docs as any);
+  }
 }
 
 async function planResearchEntityGateUpdates(
