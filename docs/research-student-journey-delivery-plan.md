@@ -59,8 +59,7 @@ Progressive disclosure should keep early discovery quiet and move detail into th
   Access context may only break close relevance ties within a bounded server-owned rule.
 - Show at most one sparse, claim-specific, positive planning signal on an entity card.
 - Do not add a parallel results stream, persistent access controls, generic scores, or negative unknown labels.
-- The `Has hosted undergrads before` browse filter (server `acceptanceLevel=verified-or-likely`) is the one deliberate, always-available access-oriented control, admitted under issue `#347` because prior undergraduate hosting is the core discovery signal students ask for; it stays evidence-backed and does not revive the retired unsupported undergraduate-evidence filter.
-- Offer a `Documented way in` filter only when both states exist and the filter materially narrows the current result set.
+- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`; their evidence remains server-owned - the `acceptanceLevel=verified-or-likely` semantics and the `hasDocumentedWayIn` projection that still drives the sparse positive card signal - rather than a persistent access-oriented filter, and neither revives the retired unsupported undergraduate-evidence filter.
 
 ## Status Definitions
 
@@ -88,12 +87,13 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 
 - **Status:** Complete.
 - **Depends on:** accurate query-scoped facet distributions.
-- **Acceptance criteria:** school and department controls appear only when their positive buckets can narrow the current results; selected filters remain visible and clearable; missing facet counts never fall back to the total result count; mobile controls do not overflow; the config-sourced research-area multi-select and the hosts-undergrads filter (mapped to the server `verified-or-likely` acceptance level, so it stays evidence-backed rather than the retired unsupported undergraduate-evidence control) are intentionally always-on rather than facet-gated, because their option sets come from server acceptance-level semantics and `useConfig().researchAreas` rather than Meilisearch facet buckets, and they round-trip through the same URL state, removable chips, active-filter count, and clear-all machinery; a future documented-way-in control follows EF-03.
+- **Acceptance criteria:** school and department controls appear only when their positive buckets can narrow the current results; selected filters remain visible and clearable; missing facet counts never fall back to the total result count; mobile controls do not overflow; active selections round-trip through URL state, removable chips, an active-filter count, and clear-all machinery.
 - **Validation evidence:** PR `#171` removed the unsupported undergraduate-evidence control.
   PR `#196` added one adaptive Research filter disclosure, query-scoped positive school and department choices, persistent selected values without invented counts, URL-backed removable chips, clear-one and clear-all actions, independent facet-error handling, a non-modal desktop disclosure, and a focus-contained mobile sheet with focused responsive and accessibility tests.
   Issue `#347` then exposed two already-server-supported browse filters in the same disclosure: a config-sourced research-area multi-select (add-via-dropdown plus removable chips, sourced from `useConfig().researchAreas` rather than Meilisearch facets) and a `Has hosted undergrads before` checkbox mapped to the server `verified-or-likely` acceptance level, both round-tripping through the URL (`researchAreas` CSV and `undergrad=1`), the in-page snapshot restore, the active-filter count, chips, and clear-all.
   The documented-way-in distribution remains separate EF-03 work and is not exposed as a filter.
-- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171), [#196](https://github.com/YaleComputerSociety/ylabs/pull/196).
+- **Subsequent state:** issue `#1884` then retired the research-area and hosts-undergrads browse controls (plus the entity-type filter) from research discovery, removing their state, URL params, chips, and analytics kinds along with the research-area field directory and zero-result area pivot; the server acceptance-level semantics, the `researchAreas` field, and the standalone research-area pages remain. School and department stay the adaptive query-scoped discovery filters, so EF-02 stays Complete.
+- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171), [#196](https://github.com/YaleComputerSociety/ylabs/pull/196), [#1884](https://github.com/YaleComputerSociety/ylabs/issues/1884).
 
 #### EF-03 - Sparse Documented-Way-In Signal
 
@@ -103,7 +103,8 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Validation evidence:** current Beta deliberately removed the prior parallel `Verified ways in` presentation in PR `#171`.
   The qualified-planning-context implementation adds a bounded, optional server projection with one deterministic signal per entity and deny-by-default policy tests.
   Issue `#1519` then added the query-scoped distribution and client presentation: a server `hasDocumentedWayIn` projection (derived by `hasDocumentedWayInFromSignals` from the same allowlist that backs the `Posted route` / `Contact route` / `Undergrad evidence` / `Student project evidence` badges, excluding the `REACH_OUT_PLAUSIBLE` fallback and negative signals), a `hasDocumentedWayIn` Meilisearch filterable attribute and query-scoped boolean facet distribution, and a `documented=1` browse control that is facet-gated to appear only when the current query holds both documented and undocumented homes, round-trips through the URL, snapshot restore, active-filter count, removable chips, and clear-all, and fires the reserved `documented_way_in` analytics operation on apply and remove.
-- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171) establishes the baseline; [#1519](https://github.com/YaleComputerSociety/ylabs/issues/1519) adds the query-scoped distribution and the documented-way-in browse filter.
+  Issue `#1884` then retired the `documented=1` browse control - its state, URL param, chips, and `documented_way_in` analytics kind - from research discovery; the server `hasDocumentedWayIn` projection, its query-scoped Meilisearch facet distribution, and the sparse positive card signal remain, so EF-03 stays Active without an exposed browse filter.
+- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171) establishes the baseline; [#1519](https://github.com/YaleComputerSociety/ylabs/issues/1519) adds the query-scoped distribution and the documented-way-in browse filter; [#1884](https://github.com/YaleComputerSociety/ylabs/issues/1884) removes that browse filter while keeping the server projection and card signal.
 
 #### EF-04 - Stable And Efficient Discovery Requests
 
