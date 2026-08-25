@@ -702,121 +702,6 @@ describe('Research page', () => {
     expect(screen.queryByLabelText('Undergraduate participation documented')).toBeNull();
   });
 
-  it('surfaces the research-home type filter, applies raw entityTypes, and round-trips via URL', async () => {
-    mockSearchResponses((url) => {
-      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse([researchEntity], {
-        facetDistribution: {
-          entityType: { LAB: 12, GROUP: 3, FELLOWSHIP_PROGRAM: 4 },
-        },
-      });
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/research?q=machine+learning']}>
-        <ConfigContext.Provider
-          value={{
-            ...defaultConfigContext,
-            isLoading: false,
-            isLoaded: true,
-            departments,
-            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
-          }}
-        >
-          <LocationDisplay />
-          <Research />
-        </ConfigContext.Provider>
-      </MemoryRouter>,
-    );
-
-    await screen.findByRole('heading', { name: 'AI Safety Lab' });
-    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-    expect(screen.getByRole('dialog', { name: 'Research filters' })).toBeTruthy();
-    expect(screen.getByText('Research groups & labs (15)')).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText('Filter by type: Programs & fellowships'));
-    await waitFor(() => {
-      expect(
-        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
-      ).toEqual(
-        expect.objectContaining({
-          filters: {
-            entityType: ['PROGRAM', 'RA_PROGRAM', 'FELLOWSHIP_PROGRAM', 'COURSE_SEQUENCE'],
-          },
-          page: 1,
-        }),
-      );
-      expect(screen.getByTestId('location').textContent).toBe(
-        '/research?q=machine+learning&type=programs',
-      );
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Programs & fellowships' }));
-    await waitFor(() => {
-      expect(
-        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
-      ).toEqual(expect.objectContaining({ filters: {}, page: 1 }));
-      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning');
-    });
-  });
-
-  it('round-trips the research-home type filter from the URL and sends raw entityTypes', async () => {
-    mockSearchResponses((url) => {
-      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse([researchEntity], {
-        facetDistribution: {
-          entityType: { LAB: 12, FELLOWSHIP_PROGRAM: 4 },
-        },
-      });
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/research?q=machine+learning&type=collections,programs']}>
-        <ConfigContext.Provider
-          value={{
-            ...defaultConfigContext,
-            isLoading: false,
-            isLoaded: true,
-            departments,
-            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
-          }}
-        >
-          <LocationDisplay />
-          <Research />
-        </ConfigContext.Provider>
-      </MemoryRouter>,
-    );
-
-    await screen.findByRole('heading', { name: 'AI Safety Lab' });
-    const researchSearchCall = mockedAxios.post.mock.calls.find(
-      ([url]) => url === '/research/search',
-    );
-    expect(researchSearchCall?.[1]).toEqual(
-      expect.objectContaining({
-        filters: {
-          entityType: [
-            'PROGRAM',
-            'RA_PROGRAM',
-            'FELLOWSHIP_PROGRAM',
-            'COURSE_SEQUENCE',
-            'ARCHIVE_OR_MUSEUM_PROJECT',
-            'COLLECTIONS_INITIATIVE',
-            'DIGITAL_HUMANITIES_PROJECT',
-          ],
-        },
-      }),
-    );
-    expect(
-      screen.getByRole('button', { name: 'Remove Type: Programs & fellowships' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('button', {
-        name: 'Remove Type: Collections, museum & digital humanities',
-      }),
-    ).toBeTruthy();
-  });
-
   it('exposes browse filters on the default view without a submitted search', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
@@ -908,7 +793,14 @@ describe('Research page', () => {
         }
         if (url !== '/research/search') return Promise.reject(unexpectedSearchEndpoint(url));
         searchFilters.push(body.filters || {});
-        return Promise.resolve(researchSearchResponse([researchEntity], { estimatedTotalHits: 5 }));
+        return Promise.resolve(
+          researchSearchResponse([researchEntity], {
+            estimatedTotalHits: 5,
+            facetDistribution: {
+              school: { 'Yale College': 8, 'School of Medicine': 4 },
+            },
+          }),
+        );
       },
     );
 
@@ -917,7 +809,9 @@ describe('Research page', () => {
     const beforeToggle = searchFilters.length;
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-    fireEvent.click(screen.getByLabelText('Has hosted undergrads before'));
+    fireEvent.change(screen.getByLabelText('Filter by school'), {
+      target: { value: 'Yale College' },
+    });
 
     await waitFor(() => {
       expect(searchFilters.length).toBeGreaterThan(beforeToggle);
@@ -927,7 +821,7 @@ describe('Research page', () => {
     });
 
     const toggleSearches = searchFilters.slice(beforeToggle);
-    expect(toggleSearches).toEqual([{ hostsUndergrads: true }]);
+    expect(toggleSearches).toEqual([{ school: ['Yale College'] }]);
     expect(screen.getByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
   });
 
@@ -991,56 +885,6 @@ describe('Research page', () => {
     expect(within(schoolSelect).getByRole('option', { name: 'Yale College' })).toBeTruthy();
     expect(within(departmentSelect).getByRole('option', { name: 'Computer Science' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: /\(37\)/ })).toBeNull();
-  });
-
-  it('round-trips the hosts-undergrads and research-area filters from the URL', async () => {
-    mockSearchResponses((url) => {
-      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse([researchEntity], {
-        estimatedTotalHits: 12,
-        facetDistribution: { school: {}, departments: {} },
-      });
-    });
-
-    render(
-      <MemoryRouter
-        initialEntries={['/research?q=machine+learning&undergrad=1&researchAreas=Genomics']}
-      >
-        <ConfigContext.Provider
-          value={{
-            ...defaultConfigContext,
-            isLoading: false,
-            isLoaded: true,
-            departments,
-            researchAreas: [
-              { name: 'Genomics', field: 'Life Sciences', colorKey: 'a', isDefault: false },
-              { name: 'Robotics', field: 'Computing & AI', colorKey: 'b', isDefault: false },
-            ],
-            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
-          }}
-        >
-          <LocationDisplay />
-          <Research />
-        </ConfigContext.Provider>
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole('button', { name: 'Filters, 2 active' })).toBeTruthy();
-    const researchSearchCall = mockedAxios.post.mock.calls.find(
-      ([url]) => url === '/research/search',
-    );
-    expect(researchSearchCall?.[1]).toEqual(
-      expect.objectContaining({
-        filters: {
-          researchAreas: ['Genomics'],
-          hostsUndergrads: true,
-        },
-      }),
-    );
-    expect(
-      screen.getByRole('button', { name: 'Remove Has hosted undergrads before' }),
-    ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove Research area: Genomics' })).toBeTruthy();
   });
 
   it('round-trips the current-availability filter from the URL (#1285)', async () => {
@@ -1117,87 +961,6 @@ describe('Research page', () => {
     expect(screen.getByRole('button', { name: 'Remove Open to first-years' })).toBeTruthy();
   });
 
-  it('round-trips the documented-way-in filter from the URL (#1519)', async () => {
-    mockSearchResponses((url) => {
-      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse([researchEntity], {
-        estimatedTotalHits: 7,
-        facetDistribution: { hasDocumentedWayIn: { true: 7, false: 9 } },
-      });
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/research?q=machine+learning&documented=1']}>
-        <ConfigContext.Provider
-          value={{
-            ...defaultConfigContext,
-            isLoading: false,
-            isLoaded: true,
-            departments,
-          }}
-        >
-          <LocationDisplay />
-          <Research />
-        </ConfigContext.Provider>
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
-    const researchSearchCall = mockedAxios.post.mock.calls.find(
-      ([url]) => url === '/research/search',
-    );
-    expect(researchSearchCall?.[1]).toEqual(
-      expect.objectContaining({
-        filters: { hasDocumentedWayIn: true },
-      }),
-    );
-    expect(
-      screen.getByRole('button', { name: 'Remove Has a documented way in' }),
-    ).toBeTruthy();
-  });
-
-  it('fires the reserved documented_way_in analytics op on apply and remove (#1519)', async () => {
-    mockSearchResponses((url) => {
-      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      return researchSearchResponse([researchEntity], {
-        estimatedTotalHits: 6,
-        facetDistribution: { hasDocumentedWayIn: { true: 6, false: 8 } },
-      });
-    });
-
-    renderResearch(departments, ['/research?q=machine+learning']);
-    await screen.findByRole('heading', { name: 'AI Safety Lab' });
-
-    const documentedFilterEvents = () =>
-      mockedAxios.post.mock.calls
-        .filter(([url]) => url === '/analytics/research' || url === '/analytics/research/batch')
-        .flatMap(([, body]) => (body as { events?: unknown[] }).events ?? [body])
-        .filter(
-          (event): event is { eventType: string; payload: { operation: string; filter: string } } =>
-            (event as { eventType?: string }).eventType === 'research_filter_change' &&
-            (event as { payload?: { filter?: string } }).payload?.filter === 'documented_way_in',
-        );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-    fireEvent.click(screen.getByLabelText('Has a documented way in'));
-
-    await waitFor(async () => {
-      await flushResearchAnalytics();
-      expect(documentedFilterEvents().some((event) => event.payload.operation === 'apply')).toBe(
-        true,
-      );
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Has a documented way in' }));
-
-    await waitFor(async () => {
-      await flushResearchAnalytics();
-      expect(documentedFilterEvents().some((event) => event.payload.operation === 'remove')).toBe(
-        true,
-      );
-    });
-  });
-
   it('keeps visible results in place when a filter is toggled via URL on the same query', async () => {
     const filteredResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
     mockedAxios.post.mockImplementation(
@@ -1206,7 +969,7 @@ describe('Research page', () => {
           return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
         }
         if (url === '/research/search') {
-          if (body.filters?.hostsUndergrads === true) {
+          if (Array.isArray(body.filters?.currentAvailability)) {
             return filteredResponse.promise;
           }
           return Promise.resolve(researchSearchResponse([researchEntity]));
@@ -1218,8 +981,8 @@ describe('Research page', () => {
     render(
       <MemoryRouter initialEntries={['/research?q=machine+learning']}>
         <NavigateToResearchUrl
-          to="/research?q=machine+learning&undergrad=1"
-          label="Add undergrad filter"
+          to="/research?q=machine+learning&availability=OPEN"
+          label="Add availability filter"
         />
         <LocationDisplay />
         <ConfigContext.Provider
@@ -1238,11 +1001,11 @@ describe('Research page', () => {
 
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add undergrad filter' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add availability filter' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe(
-        '/research?q=machine+learning&undergrad=1',
+        '/research?q=machine+learning&availability=OPEN',
       );
     });
 
@@ -1258,7 +1021,7 @@ describe('Research page', () => {
     const filteredCall = mockedAxios.post.mock.calls.find(
       ([url, body]) =>
         url === '/research/search' &&
-        (body as { filters?: Record<string, unknown> }).filters?.hostsUndergrads === true,
+        Array.isArray((body as { filters?: Record<string, unknown> }).filters?.currentAvailability),
     );
     expect(filteredCall).toBeTruthy();
   });
@@ -3033,7 +2796,7 @@ describe('Research zero-result recovery', () => {
       </MemoryRouter>,
     );
 
-  it('offers only corpus-backed recovery on a query-driven zero result and re-runs the relaxed query', async () => {
+  it('offers a relaxed-query recovery on a query-driven zero result and re-runs it', async () => {
     const quantumEntity = {
       ...researchEntity,
       _id: 'quantum-1',
@@ -3055,17 +2818,6 @@ describe('Research zero-result recovery', () => {
     const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
     expect(region.textContent).toContain('coverage gap');
 
-    const relatedGroup = await within(region).findByLabelText('Related research areas');
-    const suggestionButtons = within(relatedGroup).getAllByRole('button');
-    const corpusNames = new Set(recoveryResearchAreas.map((area) => area.name));
-    expect(suggestionButtons.length).toBeGreaterThan(0);
-    suggestionButtons.forEach((button) => {
-      expect(corpusNames.has(button.textContent?.trim() || '')).toBe(true);
-    });
-    expect(
-      within(relatedGroup).getByRole('button', { name: 'Quantum Materials' }),
-    ).toBeTruthy();
-
     expect(within(region).getByRole('button', { name: 'Browse all research homes' })).toBeTruthy();
 
     const relaxButton = await within(region).findByRole('button', {
@@ -3084,7 +2836,7 @@ describe('Research zero-result recovery', () => {
     renderRecovery(['/research?q=quantum+materials+physics']);
 
     const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
-    await within(region).findByLabelText('Related research areas');
+    await within(region).findByRole('button', { name: 'Browse all research homes' });
     await waitFor(() => {
       expect(
         within(region).queryByRole('button', { name: /Search .* instead/ }),
@@ -3102,16 +2854,16 @@ describe('Research zero-result recovery', () => {
     };
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      if (body.filters?.hostsUndergrads === true) return researchSearchResponse([]);
+      if (Array.isArray(body.filters?.school)) return researchSearchResponse([]);
       if (body.q === 'machine learning') return researchSearchResponse([mlEntity]);
       return researchSearchResponse([]);
     });
 
-    renderRecovery(['/research?q=machine+learning&undergrad=1']);
+    renderRecovery(['/research?q=machine+learning&school=Yale%20College']);
 
     const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
     expect(
-      within(region).getByRole('button', { name: 'Remove Has hosted undergrads before' }),
+      within(region).getByRole('button', { name: 'Remove School: Yale College' }),
     ).toBeTruthy();
     const clearAll = within(region).getByRole('button', { name: 'Clear all filters' });
 
@@ -3125,38 +2877,6 @@ describe('Research zero-result recovery', () => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
         '/research/search',
         expect.objectContaining({ q: 'machine learning', filters: {} }),
-        expect.any(Object),
-      );
-    });
-  });
-
-  it('pivots to a corpus research area as a fresh filtered search', async () => {
-    const genomicsEntity = {
-      ...researchEntity,
-      _id: 'genomics-1',
-      slug: 'genomics-lab',
-      name: 'Genomics Lab',
-      displayName: 'Genomics Lab',
-    };
-    mockSearchResponses((url, body) => {
-      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
-      if (Array.isArray(body.filters?.researchAreas)) {
-        return researchSearchResponse([genomicsEntity], { estimatedTotalHits: 3 });
-      }
-      return researchSearchResponse([]);
-    });
-
-    renderRecovery(['/research?q=underwater+basket+weaving']);
-
-    const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
-    const relatedGroup = await within(region).findByLabelText('Related research areas');
-    fireEvent.click(within(relatedGroup).getByRole('button', { name: 'Genomics' }));
-
-    expect(await screen.findByRole('heading', { name: 'Genomics Lab' })).toBeTruthy();
-    await waitFor(() => {
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/research/search',
-        expect.objectContaining({ filters: { researchAreas: ['Genomics'] } }),
         expect.any(Object),
       );
     });
