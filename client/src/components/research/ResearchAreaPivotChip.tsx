@@ -11,6 +11,8 @@ interface ResearchAreaPivotChipProps {
   interactiveClassName: string;
 }
 
+const CHIP_ALIGNMENT = 'inline-flex items-center';
+
 const ResearchAreaPivotChip = ({
   label,
   staticClassName,
@@ -22,14 +24,14 @@ const ResearchAreaPivotChip = ({
   const canonicalArea = getResearchAreaByName(label)?.name;
 
   if (!canonicalArea) {
-    return <span className={staticClassName}>{displayLabel}</span>;
+    return <span className={`${CHIP_ALIGNMENT} ${staticClassName}`}>{displayLabel}</span>;
   }
 
   return (
     <Link
       to={buildResearchAreaFilterHref(canonicalArea, location.pathname, location.search)}
       aria-label={`Browse ${displayLabel} research homes`}
-      className={interactiveClassName}
+      className={`${CHIP_ALIGNMENT} ${interactiveClassName}`}
       onClick={(event: MouseEvent<HTMLAnchorElement>) => event.stopPropagation()}
     >
       {displayLabel}

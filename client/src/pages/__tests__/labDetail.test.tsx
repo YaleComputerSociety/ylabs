@@ -1899,15 +1899,16 @@ describe('LabDetail page', () => {
       ...basePayload,
       group: {
         ...basePayload.group,
-        methods: ['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
+        methods: ['historical analysis', 'CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
       },
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByText('Methods and techniques')).toBeTruthy();
+    expect(screen.getByText('Historical Analysis')).toBeTruthy();
     expect(screen.getByText('CRISPR-Cas9 Gene Editing')).toBeTruthy();
-    expect(screen.getByText('Single-cell RNA sequencing')).toBeTruthy();
+    expect(screen.getByText('Single-Cell RNA Sequencing')).toBeTruthy();
   });
 
   it('omits the Methods and techniques section when the entity has no methods', async () => {
