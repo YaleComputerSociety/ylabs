@@ -7,6 +7,7 @@ import {
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
+  isReplaceableBareTopicListShort,
   isReplaceableResearchAreaChipEchoShort,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
@@ -1639,6 +1640,44 @@ describe('isReplaceableResearchAreaChipEchoShort (#1680)', () => {
     expect(
       isReplaceableResearchAreaChipEchoShort(short, richDistinctFull, researchAreas, 'FACULTY_RESEARCH_AREA'),
     ).toBe(false);
+  });
+});
+
+describe('isReplaceableBareTopicListShort (#1869)', () => {
+  const richDistinctFull =
+    'The Krauthammer lab develops computational methods for mining electronic health records and biomedical literature, applying natural language processing to surface clinically actionable signals from unstructured text at population scale. Recent work spans pharmacovigilance, phenotyping, and the reproducibility of text-mining pipelines across institutions.';
+
+  it('flags a paraphrased Title-Case tag-list short that never literally matches the chips', () => {
+    const short = 'Studies Environmental Health, Epidemiology, and Exposure Science.';
+    expect(isReplaceableBareTopicListShort(short, richDistinctFull, 'FACULTY_RESEARCH_AREA')).toBe(true);
+    expect(isReplaceableBareTopicListShort(short, richDistinctFull, 'LAB')).toBe(true);
+  });
+
+  it('does not flag a lowercase-item list so genuine prose is preserved', () => {
+    const short = 'Studies econometrics, financial economics, and macroeconomics.';
+    expect(isReplaceableBareTopicListShort(short, richDistinctFull, 'FACULTY_RESEARCH_AREA')).toBe(false);
+  });
+
+  it('does not flag when the fullDescription is too thin to be worth compressing', () => {
+    const short = 'Studies Environmental Health, Epidemiology, and Exposure Science.';
+    expect(isReplaceableBareTopicListShort(short, 'A short bio.', 'FACULTY_RESEARCH_AREA')).toBe(false);
+  });
+
+  it('does not flag for an entityType outside LAB/FACULTY_RESEARCH_AREA', () => {
+    const short = 'Studies Environmental Health, Epidemiology, and Exposure Science.';
+    expect(isReplaceableBareTopicListShort(short, richDistinctFull, 'CENTER')).toBe(false);
+  });
+
+  it('does not flag when the full is itself a bare label list rather than richer prose', () => {
+    const short = 'Studies Environmental Health, Epidemiology, and Exposure Science.';
+    const labelListFull =
+      'Environmental Health; Epidemiology; Exposure Science; Population Health; Biostatistics; Public Health Policy; Global Health; Climate and Health; Occupational Medicine; Toxicology.';
+    expect(isReplaceableBareTopicListShort(short, labelListFull, 'FACULTY_RESEARCH_AREA')).toBe(false);
+  });
+
+  it('does not flag single-clause prose that is not a tag list', () => {
+    const short = 'Studies the molecular basis of neurodegenerative disease.';
+    expect(isReplaceableBareTopicListShort(short, richDistinctFull, 'FACULTY_RESEARCH_AREA')).toBe(false);
   });
 });
 

@@ -11,6 +11,7 @@ import {
   evergreenizeStaleCycleDatePhrase,
   hasContactBlockResidue,
   isBareLabelOrTopicEnumerationText,
+  isBareStudiesTopicListShort,
   isCitationAuthorListDumpText,
   isCtaNewsTickerDumpText,
   isStudiesTemplateGlueMalformed,
@@ -1417,6 +1418,69 @@ describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {
         'Vascular Biology',
       ]),
     ).toBe(false);
+  });
+});
+
+describe('isBareStudiesTopicListShort provenance-independent Title-Case tag restatement (#1869)', () => {
+  it('flags a three-item "Studies <Topic>, <Topic>, and <Topic>." Title-Case list', () => {
+    expect(
+      isBareStudiesTopicListShort(
+        'Studies Environmental Health, Epidemiology, and Exposure Science.',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a four-item Title-Case list with a "Focuses on" synthesis lead', () => {
+    expect(
+      isBareStudiesTopicListShort(
+        'Focuses on Public Policy, Legal Studies, Corporate Finance, and Financial Markets.',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a Title-Case list whose labels carry lowercase function words', () => {
+    expect(
+      isBareStudiesTopicListShort(
+        'Studies Mass Incarceration, Decarceration, Community Health, and Health Impacts on Families and Communities.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a lowercase-item list so the #1680 genuine-prose class is protected', () => {
+    expect(
+      isBareStudiesTopicListShort('Studies econometrics, financial economics, and macroeconomics.'),
+    ).toBe(false);
+  });
+
+  it('keeps a single-clause sentence that is real prose, not a tag list', () => {
+    expect(isBareStudiesTopicListShort('Studies the molecular basis of neurodegenerative disease.')).toBe(
+      false,
+    );
+  });
+
+  it('keeps a sentence whose list is governed by a research-activity verb with an object', () => {
+    expect(
+      isBareStudiesTopicListShort(
+        'Studies how genetic variation shapes cancer, metabolism, and immune response.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag a single-item topic (needs at least two comma/and-joined labels)', () => {
+    expect(isBareStudiesTopicListShort('Studies Environmental Health.')).toBe(false);
+  });
+
+  it('does not flag a multi-sentence description that merely opens with a tag list', () => {
+    expect(
+      isBareStudiesTopicListShort(
+        'Studies Environmental Health, Epidemiology, and Exposure Science. The lab combines field sampling with population cohorts.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag an empty or whitespace-only value', () => {
+    expect(isBareStudiesTopicListShort('')).toBe(false);
+    expect(isBareStudiesTopicListShort('   ')).toBe(false);
   });
 });
 

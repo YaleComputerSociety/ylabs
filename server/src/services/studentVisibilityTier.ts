@@ -4,6 +4,7 @@ import {
 } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import {
+  isBareStudiesTopicListShort,
   isStudiesResearchAreaEchoDescription,
   sanitizeCatalogDescription,
 } from '../utils/descriptionHygiene';
@@ -446,14 +447,18 @@ const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [
 // it as usable let the gate promote a chips-only ghost card the serve DTO
 // blanks, inconsistent with every other served `student_ready` card (#1547
 // serve/quality unification). Only the free-text research fields carry this
-// template; program `description`/`summary` are unaffected.
+// template; program `description`/`summary` are unaffected. A shortDescription
+// also fails here when it is the paraphrased/re-cased bare tag-list shape that
+// never literally matches the stored chips (#1869): the serve DTO blanks that
+// too, so a card whose only prose is such a list is likewise a chips-only ghost.
 const isStudiesResearchAreaEchoField = (record: Record<string, any>, field: string): boolean => {
   if (field !== 'fullDescription' && field !== 'shortDescription') return false;
   const value = record[field];
   if (typeof value !== 'string' || !value.trim()) return false;
   return (
     isStudiesResearchAreaEchoDescription(value, record.researchAreas) ||
-    isStudiesResearchAreaEchoDescription(value, record.profileResearchAreas)
+    isStudiesResearchAreaEchoDescription(value, record.profileResearchAreas) ||
+    (field === 'shortDescription' && isBareStudiesTopicListShort(value))
   );
 };
 

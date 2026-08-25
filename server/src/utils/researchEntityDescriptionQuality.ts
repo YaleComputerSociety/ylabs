@@ -3,6 +3,7 @@ import {
   collapseDoubledSynthesisVerb,
   hasContactBlockResidue,
   isBareLabelOrTopicEnumerationText,
+  isBareStudiesTopicListShort,
   isCitationAuthorListDumpText,
   isConnectedToKeywordListStub,
   isNonSelfContainedShortDescription,
@@ -509,6 +510,36 @@ export function isReplaceableResearchAreaChipEchoShort(
   if (!fields) return false;
   const areas = Array.isArray(researchAreas) ? researchAreas : [];
   if (!isBareResearchAreaChipEnumeration(fields, areas)) return false;
+  if (!full || text.toLowerCase() === full.toLowerCase() || LABEL_LIST_SHORT_PATTERN.test(full)) {
+    return false;
+  }
+  return full.length >= RESEARCH_AREA_CHIP_ECHO_MIN_FULL_LENGTH;
+}
+
+/**
+ * The structural generalization of `isReplaceableResearchAreaChipEchoShort`
+ * (#1869): a `LAB`/`FACULTY_RESEARCH_AREA` short of the bare "Studies <Topic>,
+ * <Topic>, and <Topic>." tag-list shape is worth swapping for a full-derived
+ * sentence whenever a genuinely richer, distinct fullDescription exists to
+ * compress - regardless of whether its items literally equal the entity's own
+ * `researchAreas` chips. #1680's literal-membership guard above only reached the
+ * verbatim-chip subset; the large live residual re-lists the chip row in
+ * paraphrased or re-cased form that never matches the exact chip strings, yet
+ * reads as the identical redundant headline beside the chips already rendered on
+ * the card. `isBareStudiesTopicListShort` detects that shape provenance-
+ * independently (a synthesis-verb lead over nothing but a Title-Case topic list),
+ * leaving genuine lowercase research prose untouched. Like #1680 this only marks
+ * the short *replaceable* - the caller still swaps in a full-derived sentence
+ * only when one clears quality, so a thin full yields no replacement and the
+ * original short is kept, never rejecting the entity.
+ */
+export function isReplaceableBareTopicListShort(
+  text: string,
+  full: string,
+  entityType: unknown,
+): boolean {
+  if (!isTopicLabelListEligibleEntityType(entityType)) return false;
+  if (!isBareStudiesTopicListShort(text)) return false;
   if (!full || text.toLowerCase() === full.toLowerCase() || LABEL_LIST_SHORT_PATTERN.test(full)) {
     return false;
   }

@@ -2,6 +2,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
+  isBareStudiesTopicListShort,
   isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
@@ -387,6 +388,7 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   if (typeof out.shortDescription === 'string') {
     let cleaned = sanitizeResearchEntityShortDescription(out.shortDescription);
     if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    if (isBareStudiesTopicListShort(cleaned)) cleaned = '';
     if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.shortDescription = stripEndowedChairTitles(cleaned);
   }

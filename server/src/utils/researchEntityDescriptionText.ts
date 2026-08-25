@@ -1,5 +1,6 @@
 import {
   hasContactBlockResidue,
+  isBareStudiesTopicListShort,
   isCitationAuthorListDumpText,
   isConnectedToKeywordListStub,
   isInstitutionalCenterBlurbText,
@@ -1333,7 +1334,15 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   });
   if (typeof next.shortDescription === 'string') {
     let cleaned = sanitizeResearchEntityShortDescription(next.shortDescription);
-    if (isStudiesResearchAreaEchoDescription(cleaned, next[SERVED_RESEARCH_AREA_FIELDS[0]])) {
+    // A bare "Studies <A>, <B>, and <C>." tag list re-states the researchArea
+    // chip row already shown beside the card and carries no prose, so it is
+    // blanked here whether it matches the entity's exact chip strings (#1466/
+    // #1532) or only the paraphrased/re-cased tag-list shape (#1869). Blanking
+    // lets the DTO fall through to a full-derived card, never the redundant list.
+    if (
+      isStudiesResearchAreaEchoDescription(cleaned, next[SERVED_RESEARCH_AREA_FIELDS[0]]) ||
+      isBareStudiesTopicListShort(cleaned)
+    ) {
       cleaned = '';
     }
     if (cleaned !== next.shortDescription) {

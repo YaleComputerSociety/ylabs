@@ -5,6 +5,7 @@ import {
   deriveProgramCardShortDescription,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  isReplaceableBareTopicListShort,
   isReplaceableResearchAreaChipEchoShort,
   isVacuousGenericFocusSummary,
   shortDescriptionQuality,
@@ -192,14 +193,21 @@ export interface ResolveServedShortDescriptionInput {
  * sentence and a genuinely richer full exists to compress instead (#1680):
  * that short survives #1616's ungrounded-topic gate (it is faithful to the
  * full), but it still wastes the card headline on a redundant re-listing of
- * the chip row already shown beside it.
+ * the chip row already shown beside it. The same swap also fires when the short
+ * is the paraphrased/re-cased "Studies <Topic>, <Topic>, and <Topic>." tag-list
+ * shape that never literally matches the stored chips (#1869,
+ * `isReplaceableBareTopicListShort`) - #1680's literal-membership guard only
+ * reached the verbatim-chip subset, leaving the large residual live.
  */
 export function resolveServedShortDescription(input: ResolveServedShortDescriptionInput): string {
   const full = textValue(input.fullDescription);
   const researchAreas = Array.isArray(input.researchAreas) ? input.researchAreas : [];
   const cleaned = sanitizeResearchEntityShortDescription(textValue(input.shortDescription));
   if (cleaned) {
-    if (isReplaceableResearchAreaChipEchoShort(cleaned, full, researchAreas, input.entityType)) {
+    if (
+      isReplaceableResearchAreaChipEchoShort(cleaned, full, researchAreas, input.entityType) ||
+      isReplaceableBareTopicListShort(cleaned, full, input.entityType)
+    ) {
       const derivedFromChipEcho = sanitizeResearchEntityShortDescription(
         deriveShortDescriptionFromFullDescription(full),
       );

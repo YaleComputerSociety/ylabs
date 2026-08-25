@@ -1866,6 +1866,102 @@ export function isStudiesResearchAreaEchoDescription(
   return matchedAny;
 }
 
+// Lowercase words that may appear inside a Title-Case topic label without
+// making it read as running prose - articles, conjunctions, and short
+// prepositions ("Health Impacts on Families and Communities", "History of
+// Science"). A lowercase word outside this set is a content word, which means
+// the "label" is really a clause torn out of a sentence, not a standalone tag.
+const TOPIC_LABEL_LOWERCASE_FUNCTION_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'as',
+  'at',
+  'by',
+  'de',
+  'del',
+  'el',
+  'for',
+  'from',
+  'in',
+  'into',
+  'la',
+  'of',
+  'on',
+  'or',
+  'per',
+  'the',
+  'to',
+  'via',
+  'vs',
+  'with',
+]);
+
+/**
+ * A single delimiter-joined item reads as a Title-Case topic label (a chip)
+ * rather than a clause of running prose when it opens on a capital (or digit)
+ * and every content word is capitalized. Lowercase function words are allowed
+ * inside a label ("Maternal-Fetal Medicine", "Health Impacts on Families and
+ * Communities"), but a lowercase *content* word means the item is really
+ * mid-sentence prose torn out of a clause ("Texas from the first", "the
+ * molecular basis of disease") - not a standalone topic.
+ */
+const isTitleCaseTopicLabelField = (field: string): boolean => {
+  const words = field.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 8) return false;
+  if (!/^[\p{Lu}\p{N}]/u.test(words[0])) return false;
+  return words.every((word) => {
+    const bare = word.replace(/[^\p{L}\p{N}]/gu, '');
+    if (!bare) return true;
+    if (TOPIC_LABEL_LOWERCASE_FUNCTION_WORDS.has(bare.toLowerCase())) return true;
+    return /^[\p{Lu}\p{N}]/u.test(bare);
+  });
+};
+
+/**
+ * The provenance-independent sibling of `isStudiesResearchAreaEchoDescription`
+ * for shortDescriptions (#1869): the same bare "Studies <A>, <B>, and <C>."
+ * card-summary shape (`buildResearchAreasCardSummary`), detected structurally
+ * instead of by literal membership in the entity's own `researchAreas` array.
+ * #1680's chip-echo guard only reached a short whose every item exactly equalled
+ * a stored chip, so the large live residual - a short that re-lists the chip row
+ * in paraphrased, re-cased, or differently-vocabularied form ("Studies Public
+ * Policy, Legal Studies, Corporate Finance, and Financial Markets.") that never
+ * traces back to the exact chip strings - passed every serve/gate guard untouched
+ * even though it carries the identical zero-prose tag-list shape. Anchored on two
+ * structural tells rather than chip membership:
+ *
+ *  - a single-sentence synthesis-verb lead ("Studies"/"Investigates"/...), and
+ *  - a body that is nothing but an oxford-joined list of at least two Title-Case
+ *    topic labels.
+ *
+ * Genuine one-line research prose after the same verb runs in lowercase ("Studies
+ * the molecular basis of ...", "Studies econometrics, financial economics, ...")
+ * and so is left untouched, which also keeps #1680's documented lowercase-list
+ * false-positive class protected. As a final safety net it backs off when a
+ * research-activity verb governs an object anywhere in the body, so a real
+ * sentence that merely contains a Title-Case list is never mistaken for a bare
+ * list. Requires no `researchAreas` argument, so it fires on the shape alone.
+ */
+export function isBareStudiesTopicListShort(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (partitionSentencesLossless(normalized).length > 1) return false;
+  if (!studiesLeadSingleSentencePattern.test(normalized)) return false;
+  const body = normalized
+    .replace(synthesisVerbLeadPattern, '')
+    .replace(/[.!?]+$/, '')
+    .trim();
+  if (!body) return false;
+  const fields = body
+    .split(/\s*,\s*(?:and\s+)?|\s+and\s+/i)
+    .map((field) => field.trim())
+    .filter(Boolean);
+  if (fields.length < 2) return false;
+  if (!fields.every(isTitleCaseTopicLabelField)) return false;
+  return !researchActivityVerbWithObjectPattern.test(body);
+}
+
 const LABEL_ENUMERATION_LEAD_PATTERN =
   /^(?:Area(?:s)?\s+of\s+interest|Research\s+interests?|Interests?|Specializ(?:ations?|es?\s+in)|Keywords?)\s*:\s*/i;
 
