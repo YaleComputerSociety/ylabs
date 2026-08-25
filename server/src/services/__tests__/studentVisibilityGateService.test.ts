@@ -245,7 +245,10 @@ describe('studentVisibilityGateService', () => {
           kind: 'lab',
           studentVisibilityTier: 'suppressed',
           websiteUrl: 'https://medicine.yale.edu/lab/flavell/',
-          sourceUrls: ['https://medicine.yale.edu/lab/flavell/', 'https://medicine.yale.edu/about/'],
+          sourceUrls: [
+            'https://medicine.yale.edu/lab/flavell/',
+            'https://medicine.yale.edu/about/',
+          ],
         },
         {
           _id: 'kang-lab',
@@ -386,28 +389,26 @@ describe('studentVisibilityGateService', () => {
   });
 
   it('does not collide unrelated faculty whose sites are wrapped as distinct Outlook safelinks', () => {
-    const ids = selectExactUrlDuplicateRiskEntityIds(
-      [
-        {
-          _id: 'bhagchandani-research',
-          slug: 'dept-one-shakti-bhagchandani',
-          name: 'Shakti Bhagchandani Research',
-          entityType: 'FACULTY_RESEARCH_AREA',
-          websiteUrl:
-            'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.shaktibhagchandani.com%2F&data=05%7C01%7C&sdata=abc&reserved=0',
-          sourceUrls: ['https://example.yale.edu/people/faculty'],
-        },
-        {
-          _id: 'lovelace-research',
-          slug: 'dept-two-ada-lovelace',
-          name: 'Ada Lovelace Research',
-          entityType: 'FACULTY_RESEARCH_AREA',
-          websiteUrl:
-            'https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fadalovelacelab.org%2F&data=05%7C02%7C&sdata=xyz&reserved=0',
-          sourceUrls: ['https://example.yale.edu/people/faculty'],
-        },
-      ],
-    );
+    const ids = selectExactUrlDuplicateRiskEntityIds([
+      {
+        _id: 'bhagchandani-research',
+        slug: 'dept-one-shakti-bhagchandani',
+        name: 'Shakti Bhagchandani Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl:
+          'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.shaktibhagchandani.com%2F&data=05%7C01%7C&sdata=abc&reserved=0',
+        sourceUrls: ['https://example.yale.edu/people/faculty'],
+      },
+      {
+        _id: 'lovelace-research',
+        slug: 'dept-two-ada-lovelace',
+        name: 'Ada Lovelace Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl:
+          'https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fadalovelacelab.org%2F&data=05%7C02%7C&sdata=xyz&reserved=0',
+        sourceUrls: ['https://example.yale.edu/people/faculty'],
+      },
+    ]);
 
     expect([...ids]).toEqual([]);
   });

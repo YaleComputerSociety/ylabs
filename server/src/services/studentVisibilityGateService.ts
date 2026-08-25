@@ -431,7 +431,10 @@ export function accessSignalCreditsActionEvidence(input: {
 }): boolean {
   const { signal, entity } = input;
   if (signal.archived === true) return false;
-  if (typeof signal.type !== 'string' || !(accessSignalTypes as readonly string[]).includes(signal.type)) {
+  if (
+    typeof signal.type !== 'string' ||
+    !(accessSignalTypes as readonly string[]).includes(signal.type)
+  ) {
     return false;
   }
   if (
@@ -910,9 +913,7 @@ export function buildStudentVisibilityGateApplyOps(
   return { researchOps, programOps, queueOps };
 }
 
-async function loadOpenReleaseQueueKeys(
-  plans: StudentVisibilityGatePlan[],
-): Promise<Set<string>> {
+async function loadOpenReleaseQueueKeys(plans: StudentVisibilityGatePlan[]): Promise<Set<string>> {
   const recordIds = Array.from(new Set(plans.map((plan) => plan.recordId)));
   if (recordIds.length === 0) return new Set();
   const openItems = await VisibilityReleaseQueueItem.find({
@@ -954,7 +955,10 @@ export async function applyStudentVisibilityGatePlans(
 }
 
 async function planResearchEntityGateUpdates(
-  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit' | 'staleVersion'>,
+  options: Pick<
+    StudentVisibilityGateOptions,
+    'sourceName' | 'recordIds' | 'limit' | 'staleVersion'
+  >,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: { $ne: true } };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
@@ -1047,7 +1051,9 @@ async function planResearchEntityGateUpdates(
       archived: false,
       'source.url': { $not: /^https?:\/\//i },
     })
-      .select('researchEntityId type archived derivationKey source.url source.evidenceIds source.name')
+      .select(
+        'researchEntityId type archived derivationKey source.url source.evidenceIds source.name',
+      )
       .lean(),
     countResearchEntityAlternateAccessPaths(entityIds),
   ]);
@@ -1200,7 +1206,10 @@ async function planResearchEntityGateUpdates(
 }
 
 async function planProgramGateUpdates(
-  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit' | 'staleVersion'>,
+  options: Pick<
+    StudentVisibilityGateOptions,
+    'sourceName' | 'recordIds' | 'limit' | 'staleVersion'
+  >,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: false };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };

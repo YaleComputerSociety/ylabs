@@ -1302,10 +1302,26 @@ describe('YSM basic-science department roster configs (#1629)', () => {
 
   const expectedYsmBasicScienceConfigs: Array<{ deptKey: string; deptName: string; url: string }> =
     [
-      { deptKey: 'ysm-cell-biology', deptName: 'Cell Biology', url: 'https://medicine.yale.edu/cellbio/people/' },
-      { deptKey: 'ysm-immunobiology', deptName: 'Immunobiology', url: 'https://medicine.yale.edu/immuno/people/' },
-      { deptKey: 'ysm-pharmacology', deptName: 'Pharmacology', url: 'https://medicine.yale.edu/pharm/people/' },
-      { deptKey: 'ysm-genetics', deptName: 'Genetics', url: 'https://medicine.yale.edu/genetics/people/' },
+      {
+        deptKey: 'ysm-cell-biology',
+        deptName: 'Cell Biology',
+        url: 'https://medicine.yale.edu/cellbio/people/',
+      },
+      {
+        deptKey: 'ysm-immunobiology',
+        deptName: 'Immunobiology',
+        url: 'https://medicine.yale.edu/immuno/people/',
+      },
+      {
+        deptKey: 'ysm-pharmacology',
+        deptName: 'Pharmacology',
+        url: 'https://medicine.yale.edu/pharm/people/',
+      },
+      {
+        deptKey: 'ysm-genetics',
+        deptName: 'Genetics',
+        url: 'https://medicine.yale.edu/genetics/people/',
+      },
       {
         deptKey: 'ysm-cellular-molecular-physiology',
         deptName: 'Cellular & Molecular Physiology',
@@ -1321,9 +1337,21 @@ describe('YSM basic-science department roster configs (#1629)', () => {
         deptName: 'Microbial Pathogenesis',
         url: 'https://medicine.yale.edu/micropath/people/research-faculty/',
       },
-      { deptKey: 'ysm-comparative-medicine', deptName: 'Comparative Medicine', url: 'https://medicine.yale.edu/compmed/people/' },
-      { deptKey: 'ysm-pathology', deptName: 'Pathology', url: 'https://medicine.yale.edu/pathology/people/' },
-      { deptKey: 'ysm-neuroscience', deptName: 'Neuroscience', url: 'https://medicine.yale.edu/neuroscience/people/' },
+      {
+        deptKey: 'ysm-comparative-medicine',
+        deptName: 'Comparative Medicine',
+        url: 'https://medicine.yale.edu/compmed/people/',
+      },
+      {
+        deptKey: 'ysm-pathology',
+        deptName: 'Pathology',
+        url: 'https://medicine.yale.edu/pathology/people/',
+      },
+      {
+        deptKey: 'ysm-neuroscience',
+        deptName: 'Neuroscience',
+        url: 'https://medicine.yale.edu/neuroscience/people/',
+      },
       {
         deptKey: 'ysm-biomedical-informatics-data-science',
         deptName: 'Biomedical Informatics & Data Science',

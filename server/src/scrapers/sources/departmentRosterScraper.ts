@@ -708,8 +708,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
     if (!name || !href) return;
 
     const destinationUrl = absolutize(href, ctx.pageUrl);
-    const title =
-      cleanText(card.find('.reference-card__subheading').first().text()) || undefined;
+    const title = cleanText(card.find('.reference-card__subheading').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.reference-card__image').first(), ctx.pageUrl);
     // Mint a research home only when the destination is a lab/home site; a profile
     // page is cited as an official-profile source and left for enrichment/dedup.
@@ -1969,7 +1968,9 @@ function lowerTopicPhrase(value: string): string {
   return cleanText(value)
     .split(/\s+/)
     .map((word) =>
-      shouldPreserveTopicWordCasing(word) ? word : `${word.charAt(0).toLowerCase()}${word.slice(1)}`,
+      shouldPreserveTopicWordCasing(word)
+        ? word
+        : `${word.charAt(0).toLowerCase()}${word.slice(1)}`,
     )
     .join(' ');
 }
@@ -2576,7 +2577,9 @@ function entryToResearchEntityObservations(
     { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
     { ...base, field: 'school', value: dept.schoolName },
-    ...(dept.affiliatesOnly ? [] : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
+    ...(dept.affiliatesOnly
+      ? []
+      : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
     { ...base, field: 'websiteUrl', value: entry.labUrl },
     { ...base, field: 'sourceUrls', value: [sourceUrl, entry.labUrl] },
     {
