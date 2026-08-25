@@ -32,6 +32,7 @@ import { isProgramTitleQualifierDrift, normalizedProgramTitleKey } from '../util
 import {
   collapseDuplicateResearchHomeSuffix,
   normalizeResearchEntityNameDashes,
+  normalizeResearchEntityNameSmartQuotes,
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
@@ -526,9 +527,11 @@ export function materializedFieldValue(
     (field === 'name' || field === 'displayName') &&
     typeof value === 'string'
   ) {
-    return normalizeResearchEntityNameDashes(
-      collapseDuplicateResearchHomeSuffix(
-        stripResearchHomeNamePersonCredentials(stripTrailingResearchHomeDescription(value)),
+    return normalizeResearchEntityNameSmartQuotes(
+      normalizeResearchEntityNameDashes(
+        collapseDuplicateResearchHomeSuffix(
+          stripResearchHomeNamePersonCredentials(stripTrailingResearchHomeDescription(value)),
+        ),
       ),
     );
   }

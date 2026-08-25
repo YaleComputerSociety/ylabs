@@ -4,8 +4,10 @@ import {
   collapseDuplicateResearchHomeSuffix,
   hasDuplicateResearchHomeSuffix,
   hasResearchHomeNamePersonCredentials,
+  hasSmartQuoteVariants,
   hasTrailingResearchHomeDescription,
   normalizeResearchEntityNameDashes,
+  normalizeResearchEntityNameSmartQuotes,
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../researchEntityNameNormalization';
@@ -32,6 +34,57 @@ describe('normalizeResearchEntityNameDashes', () => {
 
   it('collapses doubled spaces left by dash removal but preserves single spacing', () => {
     expect(normalizeResearchEntityNameDashes('Example  —  Research')).toBe('Example - Research');
+  });
+});
+
+describe('normalizeResearchEntityNameSmartQuotes', () => {
+  it('folds a curly single quote to an ASCII apostrophe (#1866)', () => {
+    expect(normalizeResearchEntityNameSmartQuotes('Corey O’Hern Lab')).toBe('Corey O\'Hern Lab');
+    expect(
+      normalizeResearchEntityNameSmartQuotes(
+        'Yale’s Center for the Study of Representative Institutions',
+      ),
+    ).toBe("Yale's Center for the Study of Representative Institutions");
+  });
+
+  it('folds curly double quotes to ASCII double quotes (#1866)', () => {
+    expect(
+      normalizeResearchEntityNameSmartQuotes(
+        'Street Life: The “Cries” in British Visual Culture',
+      ),
+    ).toBe('Street Life: The "Cries" in British Visual Culture');
+  });
+
+  it('folds the low-9 and reversed curly variants', () => {
+    expect(normalizeResearchEntityNameSmartQuotes('‚Example‘ Lab')).toBe("'Example' Lab");
+    expect(normalizeResearchEntityNameSmartQuotes('„Example‟ Center')).toBe(
+      '"Example" Center',
+    );
+  });
+
+  it('leaves ASCII-quote and quote-free names untouched', () => {
+    expect(normalizeResearchEntityNameSmartQuotes("Corey O'Hern Lab")).toBe("Corey O'Hern Lab");
+    expect(normalizeResearchEntityNameSmartQuotes('Example Lab')).toBe('Example Lab');
+  });
+
+  it('collapses doubled spaces left by quote folding but preserves single spacing', () => {
+    expect(normalizeResearchEntityNameSmartQuotes('Yale’s  Center')).toBe("Yale's Center");
+  });
+
+  it('returns non-string input unchanged', () => {
+    expect(normalizeResearchEntityNameSmartQuotes(undefined as unknown as string)).toBe(undefined);
+  });
+});
+
+describe('hasSmartQuoteVariants', () => {
+  it('detects curly-quote names and ignores clean or non-string inputs', () => {
+    expect(hasSmartQuoteVariants('Corey O’Hern Lab')).toBe(true);
+    expect(hasSmartQuoteVariants('Street Life: The “Cries” in British Visual Culture')).toBe(
+      true,
+    );
+    expect(hasSmartQuoteVariants("Corey O'Hern Lab")).toBe(false);
+    expect(hasSmartQuoteVariants('Example Lab')).toBe(false);
+    expect(hasSmartQuoteVariants(undefined as unknown as string)).toBe(false);
   });
 });
 
