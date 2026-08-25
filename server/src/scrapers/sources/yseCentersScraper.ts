@@ -72,7 +72,7 @@ export function inferKind(name: string, url: string): YseEntityKind {
   if (/\binitiatives?\b/.test(haystack)) return 'initiative';
   if (/\bprograms?\b/.test(haystack)) return 'program';
   if (/\b(center|centre)\b/.test(haystack)) return 'center';
-  if (/\b(forum|dialogue)\b/.test(haystack)) return 'group';
+  if (/\b(forum|dialogue)\b/.test(haystack)) return 'initiative';
   return 'center';
 }
 
