@@ -141,6 +141,22 @@ export async function appendObservations(
   return { inserted: result.length, skipped: skippedCount, superseded };
 }
 
+export interface RetireObservationsResult {
+  retired: number;
+}
+
+export async function retireObservations(
+  filter: Record<string, unknown>,
+  reason: string,
+): Promise<RetireObservationsResult> {
+  const result = await Observation.updateMany(
+    { ...filter, superseded: { $ne: true } },
+    { $set: { superseded: true, rollback: { rolledBackAt: new Date(), reason } } },
+  );
+  const modifiedCount = (result as { modifiedCount?: number }).modifiedCount;
+  return { retired: typeof modifiedCount === 'number' ? modifiedCount : 0 };
+}
+
 /**
  * Fields where a source emits exactly ONE current value per (entity, field) per run.
  * Their fingerprint omits `value`, so a new observation supersedes the prior one even when

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Observation } from '../../models/observation';
-import { appendObservations, buildObservationFingerprint } from '../observationStore';
+import {
+  appendObservations,
+  buildObservationFingerprint,
+  retireObservations,
+} from '../observationStore';
 
 describe('buildObservationFingerprint', () => {
   it('makes logistics updates latest-wins within a source but distinct across sources', () => {
@@ -591,5 +595,42 @@ describe('appendObservations', () => {
     expect(insertMany).not.toHaveBeenCalled();
     expect(bulkWrite).not.toHaveBeenCalled();
     expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+});
+
+describe('retireObservations', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('marks matching non-superseded observations superseded with a rollback reason', async () => {
+    const updateMany = vi
+      .spyOn(Observation, 'updateMany')
+      .mockResolvedValue({ modifiedCount: 3 } as any);
+
+    const result = await retireObservations(
+      { entityType: 'researchEntity', entityId: 'abc', field: { $in: ['methods'] } },
+      'orphaned-after-rename',
+    );
+
+    expect(result).toEqual({ retired: 3 });
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    const [filter, update] = updateMany.mock.calls[0] as [any, any];
+    expect(filter).toMatchObject({
+      entityType: 'researchEntity',
+      entityId: 'abc',
+      superseded: { $ne: true },
+    });
+    expect(update.$set.superseded).toBe(true);
+    expect(update.$set.rollback.reason).toBe('orphaned-after-rename');
+    expect(update.$set.rollback.rolledBackAt).toBeInstanceOf(Date);
+  });
+
+  it('reports zero retired when the driver returns no modifiedCount', async () => {
+    vi.spyOn(Observation, 'updateMany').mockResolvedValue({} as any);
+
+    const result = await retireObservations({ entityKey: 'smith-lab' }, 'test');
+
+    expect(result).toEqual({ retired: 0 });
   });
 });
