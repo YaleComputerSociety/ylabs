@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { planYaleStatusCacheBackfill, type YaleStatusCacheDoc } from '../backfillYaleStatusCacheCore';
+import {
+  planYaleStatusCacheBackfill,
+  type YaleStatusCacheDoc,
+} from '../backfillYaleStatusCacheCore';
 
 const baseDoc: YaleStatusCacheDoc = {
   id: 'entity-1',
@@ -11,7 +14,7 @@ const baseDoc: YaleStatusCacheDoc = {
     'Studies eighteenth-century English literature, satire, and the works of Jonathan Swift.',
   fullDescription:
     'Claude Rawson studies eighteenth-century English literature, satire, and the works of Jonathan Swift. Current projects examine the reception of Swift among later satirists.',
-  sourceUrls: ['https://english.yale.edu/people/professors-emeritus/claude-rawson'],
+  sourceUrls: ['https://english.yale.edu/in-memoriam/claude-rawson'],
 };
 
 describe('planYaleStatusCacheBackfill', () => {
@@ -25,27 +28,25 @@ describe('planYaleStatusCacheBackfill', () => {
     expect(plan.flipToSuppressedCount).toBe(0);
   });
 
-  it('plans an emeritus-marked entity to gain the cache value and flip to suppressed', () => {
+  it('plans a departed-marked entity to gain the cache value and flip to suppressed', () => {
     const plan = planYaleStatusCacheBackfill([baseDoc]);
 
     expect(plan.scanned).toBe(1);
     expect(plan.toUpdate).toHaveLength(1);
     expect(plan.toUpdate[0]).toMatchObject({
       id: 'entity-1',
-      reason: 'emeritus',
+      reason: 'deceased',
       previousActiveAtYaleCache: true,
       previousStudentVisibilityTier: 'student_ready',
       nextStudentVisibilityTier: 'suppressed',
       willFlipToSuppressed: true,
     });
-    expect(plan.countsByReason).toEqual({ emeritus: 1 });
+    expect(plan.countsByReason).toEqual({ deceased: 1 });
     expect(plan.flipToSuppressedCount).toBe(1);
   });
 
   it('does not double count an entity that is already suppressed', () => {
-    const plan = planYaleStatusCacheBackfill([
-      { ...baseDoc, studentVisibilityTier: 'suppressed' },
-    ]);
+    const plan = planYaleStatusCacheBackfill([{ ...baseDoc, studentVisibilityTier: 'suppressed' }]);
 
     expect(plan.toUpdate).toHaveLength(1);
     expect(plan.toUpdate[0].willFlipToSuppressed).toBe(false);

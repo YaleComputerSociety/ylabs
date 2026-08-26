@@ -43,28 +43,18 @@ describe('activeAtYaleCache producer gates studentVisibilityTier to suppressed',
     expect(before.tier).toBe('student_ready');
   });
 
-  it('gates an emeritus-marked entity to suppressed once the derived signal is applied', () => {
-    const signal = deriveResearchEntityYaleStatus(otherwiseStudentReadyEntity);
-    expect(signal).toEqual({
-      yaleStatusCache: 'departed',
-      activeAtYaleCache: false,
-      reason: 'emeritus',
-    });
+  it('does not suppress a bare-emeritus Yale faculty entity (#1929)', () => {
+    expect(deriveResearchEntityYaleStatus(otherwiseStudentReadyEntity)).toBeNull();
 
     const after = computeResearchEntityStudentVisibility({
-      entity: {
-        ...otherwiseStudentReadyEntity,
-        yaleStatusCache: signal!.yaleStatusCache,
-        activeAtYaleCache: signal!.activeAtYaleCache,
-      },
+      entity: otherwiseStudentReadyEntity,
       leadMembers: [{ userId: 'user-1', role: 'pi' }],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
     });
 
-    expect(after.tier).toBe('suppressed');
-    expect(after.computedTier).toBe('suppressed');
-    expect(after.reasons).toContain('inactive_at_yale');
+    expect(after.tier).toBe('student_ready');
+    expect(after.reasons).not.toContain('inactive_at_yale');
   });
 
   it('gates a deceased-lead entity to suppressed once the derived signal is applied', () => {

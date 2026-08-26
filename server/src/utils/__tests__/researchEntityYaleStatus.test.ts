@@ -2,27 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { deriveResearchEntityYaleStatus } from '../researchEntityYaleStatus';
 
 describe('deriveResearchEntityYaleStatus', () => {
-  it('flags a professor-emeritus source URL path', () => {
+  it('does not flag a professor-emeritus source URL path as departed', () => {
     const signal = deriveResearchEntityYaleStatus({
       name: 'Claude Rawson',
       sourceUrls: ['https://english.yale.edu/people/professors-emeritus/claude-rawson'],
     });
 
-    expect(signal).toEqual({
-      yaleStatusCache: 'departed',
-      activeAtYaleCache: false,
-      reason: 'emeritus',
-    });
+    expect(signal).toBeNull();
   });
 
-  it('flags an emeritus title mentioned at the start of the description', () => {
+  it('does not flag an emeritus title mentioned at the start of the description as departed', () => {
     const signal = deriveResearchEntityYaleStatus({
       name: 'Jane Doe Lab',
       sourceUrls: ['https://chem.yale.edu/people/jane-doe'],
       fullDescription: 'Jane Doe, Professor Emerita of Chemistry, studies reaction kinetics.',
     });
 
-    expect(signal?.reason).toBe('emeritus');
+    expect(signal).toBeNull();
   });
 
   it('flags an in-memoriam source URL path', () => {
@@ -126,14 +122,24 @@ describe('deriveResearchEntityYaleStatus', () => {
     expect(emeritusFirstAtMit).toBeNull();
   });
 
-  it('still flags emeritus attributed to Yale itself', () => {
+  it('does not flag a bare emeritus title attributed to Yale as departed', () => {
     const signal = deriveResearchEntityYaleStatus({
       name: 'Alex Poe - Research',
       sourceUrls: ['https://philosophy.yale.edu/faculty'],
       fullDescription: 'Alex Poe is Professor Emeritus at Yale, studying logic.',
     });
 
-    expect(signal?.reason).toBe('emeritus');
+    expect(signal).toBeNull();
+  });
+
+  it('still flags a deceased lead even when an emeritus title is present', () => {
+    const signal = deriveResearchEntityYaleStatus({
+      name: 'Pierre Demarque',
+      fullDescription:
+        'Pierre R. Demarque (1932 - 2025), Professor Emeritus of Astronomy, studied stellar evolution.',
+    });
+
+    expect(signal?.reason).toBe('deceased');
   });
 
   it('returns null for a null or undefined entity', () => {

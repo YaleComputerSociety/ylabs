@@ -76,7 +76,7 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
     });
   };
 
-  it('sets activeAtYaleCache=false and yaleStatusCache=departed for an emeritus source-URL marker', async () => {
+  it('does not mark an emeritus source-URL marker as departed (#1929)', async () => {
     await seedEntity();
     await seedObservation('sourceUrls', [
       'https://english.yale.edu/people/professors-emeritus/claude-rawson',
@@ -84,12 +84,12 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
 
-    const persisted = await ResearchEntity.findOne({ slug: 'yale-status-fixture' }).lean<
-      PersistedEntity
-    >();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
 
-    expect(persisted?.activeAtYaleCache).toBe(false);
-    expect(persisted?.yaleStatusCache).toBe('departed');
+    expect(persisted?.activeAtYaleCache).not.toBe(false);
+    expect(persisted?.yaleStatusCache ?? 'unknown').toBe('unknown');
   });
 
   it('sets activeAtYaleCache=false and yaleStatusCache=departed for a deceased-lead description marker', async () => {
@@ -101,9 +101,9 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
 
-    const persisted = await ResearchEntity.findOne({ slug: 'yale-status-fixture' }).lean<
-      PersistedEntity
-    >();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.activeAtYaleCache).toBe(false);
     expect(persisted?.yaleStatusCache).toBe('departed');
@@ -118,11 +118,54 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
 
-    const persisted = await ResearchEntity.findOne({ slug: 'yale-status-fixture' }).lean<
-      PersistedEntity
-    >();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.activeAtYaleCache).not.toBe(false);
     expect(persisted?.yaleStatusCache ?? 'unknown').toBe('unknown');
+  });
+
+  it('self-heals a stale departed cache back to active when no signal remains (#1916)', async () => {
+    await seedEntity({
+      name: 'Brian Weiss Research',
+      activeAtYaleCache: false,
+      yaleStatusCache: 'departed',
+    });
+    await seedObservation(
+      'fullDescription',
+      'The Weiss Lab studies infectious disease epidemiology, with active research opportunities.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.activeAtYaleCache).toBe(true);
+    expect(persisted?.yaleStatusCache).toBe('unknown');
+  });
+
+  it('does not self-heal a manually-locked departed cache (#1916)', async () => {
+    await seedEntity({
+      name: 'Locked Research',
+      activeAtYaleCache: false,
+      yaleStatusCache: 'departed',
+      manuallyLockedFields: ['activeAtYaleCache', 'yaleStatusCache'],
+    });
+    await seedObservation(
+      'fullDescription',
+      'The lab studies reaction kinetics, with active undergraduate research opportunities.',
+    );
+
+    await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.activeAtYaleCache).toBe(false);
+    expect(persisted?.yaleStatusCache).toBe('departed');
   });
 });
