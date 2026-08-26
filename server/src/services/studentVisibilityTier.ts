@@ -12,7 +12,7 @@ import { classifyResearchEntityResearchScope } from './researchEntityResearchSco
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 
-export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v2';
+export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v3';
 
 export function isStudentVisibilityVersionCurrent(version: unknown): boolean {
   return version === STUDENT_VISIBILITY_VERSION;
