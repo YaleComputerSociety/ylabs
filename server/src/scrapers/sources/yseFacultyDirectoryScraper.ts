@@ -343,7 +343,7 @@ export function facultyToResearchEntityObservations(
   fallbackUserKey: string,
 ): ObservationInput[] {
   const hasLab = Boolean(profile.labUrl);
-  if (!hasLab && profile.researchAreas.length === 0) return [];
+  if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab ? `${profile.name} Lab` : `${profile.name} Faculty Research`;

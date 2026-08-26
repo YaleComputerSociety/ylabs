@@ -348,7 +348,7 @@ export function facultyToResearchEntityObservations(
   fallbackUserKey: string,
 ): ObservationInput[] {
   const hasLab = Boolean(profile.labUrl);
-  if (!hasLab && profile.researchAreas.length === 0) return [];
+  if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
 
   const slug = `ysm-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab
@@ -471,7 +471,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       const profile = extractProfile(profileHtml, faculty);
       if (!profile) continue;
       if (looksLikeNonResearchTitle(profile.title)) continue;
-      if (!profile.labUrl && profile.researchAreas.length === 0) continue;
+      if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) continue;
 
       researchersEnriched += 1;
       const { observations: userObs, entityKey } = facultyToUserObservations(profile);
