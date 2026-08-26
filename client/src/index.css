@@ -201,7 +201,7 @@ code {
   }
 
   .yr-fade-in {
-    animation: yr-fade-in-up 220ms ease-out both;
+    animation: yr-fade-in-up 220ms ease-out backwards;
   }
 }
 
