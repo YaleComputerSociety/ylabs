@@ -74,16 +74,6 @@ export const validateNetid = (paramName: string = 'netid') => {
 };
 
 /**
- * Middleware to validate request body exists
- */
-export const requireBody = (req: Request, res: Response, next: NextFunction) => {
-  if (!req.body || Object.keys(req.body).length === 0) {
-    return res.status(400).json({ error: 'Request body is required' });
-  }
-  next();
-};
-
-/**
  * Middleware to validate specific fields exist in request body
  * Usage: requireFields(['name', 'email'])
  */
@@ -123,29 +113,6 @@ export const validatePagination = (req: Request, res: Response, next: NextFuncti
   }
 
   next();
-};
-
-/**
- * Middleware to validate sort parameters
- */
-export const validateSort = (allowedFields: string[]) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const { sortBy, sortOrder } = req.query;
-
-    if (sortBy && !allowedFields.includes(sortBy as string)) {
-      return res.status(400).json({
-        error: `Invalid sortBy field. Allowed: ${allowedFields.join(', ')}`,
-      });
-    }
-
-    if (sortOrder && sortOrder !== '1' && sortOrder !== '-1') {
-      return res.status(400).json({
-        error: 'Invalid sortOrder. Must be "1" (ascending) or "-1" (descending)',
-      });
-    }
-
-    next();
-  };
 };
 
 /**

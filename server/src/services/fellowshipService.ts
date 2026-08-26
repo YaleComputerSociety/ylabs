@@ -435,12 +435,6 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   return publicFellowship;
 };
 
-export const createFellowship = async (data: any) => {
-  const fellowship = new Fellowship(data);
-  await fellowship.save();
-  return fellowship.toObject();
-};
-
 export const readFellowship = async (id: any, options: FellowshipReadOptions = {}) => {
   const safeId = normalizeFellowshipObjectId(id);
   if (safeId) {
@@ -480,14 +474,6 @@ export const readFellowships = async (ids: any[], options: FellowshipReadOptions
   return options.includeNonPublic
     ? rawFellowships
     : rawFellowships.map((fellowship) => publicFellowshipForStudent(fellowship));
-};
-
-export const readAllFellowships = async () => {
-  const fellowships = await Fellowship.find({
-    archived: false,
-    ...publicFellowshipFilter(),
-  });
-  return fellowships.map((fellowship: any) => publicFellowshipForStudent(fellowship.toObject()));
 };
 
 const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
@@ -945,7 +931,3 @@ export const getFilterOptions = async () => {
   };
 };
 
-export const bulkCreateFellowships = async (fellowships: any[]) => {
-  const result = await Fellowship.insertMany(fellowships);
-  return result.map((f: any) => f.toObject());
-};

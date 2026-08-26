@@ -450,19 +450,6 @@ export const readAllListings = async () => {
   return listings.map((listing: any) => listing.toObject());
 };
 
-export const readListing = async (id: any) => {
-  const safeId = normalizeListingObjectId(id);
-  if (safeId) {
-    const listing = await getListingModel().findById(safeId);
-    if (!listing) {
-      throw new NotFoundError('Listing not found');
-    }
-    return listing.toObject();
-  } else {
-    throw new ObjectIdError('Did not received expected id type ObjectId');
-  }
-};
-
 export const readPublicListing = async (id: any) => {
   const safeId = normalizeListingObjectId(id);
   if (safeId) {
@@ -585,16 +572,6 @@ export const updateListing = async (
 
 export const archiveListing = async (id: any, userId: string) => {
   const listing = await updateListing(id, userId, { archived: true }, false, true, true);
-  return listing;
-};
-
-export const confirmListing = async (id: any, userId: string) => {
-  const listing = await updateListing(id, userId, { confirmed: true }, false, true, true);
-  return listing;
-};
-
-export const unconfirmListing = async (id: any, userId: string) => {
-  const listing = await updateListing(id, userId, { confirmed: false }, false, true, true);
   return listing;
 };
 
