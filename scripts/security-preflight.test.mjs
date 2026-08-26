@@ -3688,10 +3688,8 @@ test('accepted-input source fetches are SSRF-guarded and response-size bounded',
 
 test('LLM and profile fetchers use the normalized SSRF-safe URL for axios requests', () => {
   const fetcherFiles = [
-    '../server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts',
     '../server/src/scrapers/sources/centerDirectorLLMExtractor.ts',
     '../server/src/scrapers/sources/centerAffiliationLLMExtractor.ts',
-    '../server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts',
     '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
     '../server/src/scripts/profileDataQualityAudit.ts',
   ];
@@ -3708,6 +3706,42 @@ test('LLM and profile fetchers use the normalized SSRF-safe URL for axios reques
     assert.match(source, /httpAgent: agents\.httpAgent/);
     assert.match(source, /httpsAgent: agents\.httpsAgent/);
     assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
+    assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
+  }
+});
+
+test('shared microsite fetch policy enforces the SSRF guard before requesting untrusted URLs', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/httpFetch.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /import \{ assertPublicHttpUrl, ssrfSafeAgents \} from '\.\.\/\.\.\/utils\/ssrfGuard'/,
+  );
+  assert.match(source, /const assertUrl = options\.assertUrl \?\? assertPublicHttpUrl/);
+  assert.match(source, /const safeUrl = \(await assertUrl\(url\)\)\.toString\(\)/);
+  assert.match(source, /const agents = ssrfSafeAgents\(\)/);
+  assert.match(source, /httpAgent: agents\.httpAgent/);
+  assert.match(source, /httpsAgent: agents\.httpsAgent/);
+  assert.match(source, /request\(safeUrl, config\)/);
+  assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
+});
+
+test('lab-microsite fetchers delegate to the SSRF-guarded shared fetch policy', () => {
+  const fetcherFiles = [
+    '../server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts',
+    '../server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts',
+  ];
+
+  for (const file of fetcherFiles) {
+    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
+
+    assert.match(source, /import \{ fetchPageWithPolicy \} from '\.\.\/utils\/httpFetch'/);
+    assert.match(source, /await fetchPageWithPolicy\(url, \{/);
+    assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
+    assert.doesNotMatch(source, /axios\.get\(safeUrlText,\s*\{/);
     assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
   }
 });
