@@ -323,17 +323,11 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: Number,
       default: 0,
     },
-    accessAcceptanceLevel: {
-      type: String,
-      enum: ['verified', 'likely', 'none'],
-      default: 'none',
-    },
     /**
      * True when the entity carries an undergrad-specific hosting/supervision
      * access signal (PAST_UNDERGRADS / CURRENT_UNDERGRADS /
      * FACULTY_SUPERVISES_STUDENT_PROJECTS), as opposed to a generic
-     * outreach-plausibility signal. Derived from Signal alongside
-     * accessAcceptanceLevel by researchEntityBrowseRankService and mirrored to
+     * outreach-plausibility signal. Derived from Signal by researchEntityBrowseRankService and mirrored to
      * the Meilisearch index as a filterable attribute so the "Has hosted
      * undergrads before" browse filter is truthful. See #1054.
      */
@@ -346,8 +340,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
      * documented-way-in access signal (a posted/recurring opening, application
      * form, explicit contact route, undergraduate participation, or
      * faculty-supervised student projects), excluding the REACH_OUT_PLAUSIBLE
-     * fallback and negative signals. Derived from Signal alongside
-     * accessAcceptanceLevel by researchEntityBrowseRankService and mirrored to
+     * fallback and negative signals. Derived from Signal by researchEntityBrowseRankService and mirrored to
      * the Meilisearch index as a filterable attribute so the "documented way
      * in" browse filter is truthful. See #1519.
      */
@@ -438,7 +431,6 @@ researchEntitySchema.index({ activeAtYaleCache: 1 });
 researchEntitySchema.index({ archived: 1 });
 researchEntitySchema.index({ lastObservedAt: 1 });
 researchEntitySchema.index({ archived: 1, browseRankScore: -1 });
-researchEntitySchema.index({ archived: 1, accessAcceptanceLevel: 1 });
 researchEntitySchema.index({ archived: 1, hasUndergradHostingEvidence: 1 });
 researchEntitySchema.index({ archived: 1, hasDocumentedWayIn: 1 });
 researchEntitySchema.index({ archived: 1, undergraduateCurrentAvailability: 1 });

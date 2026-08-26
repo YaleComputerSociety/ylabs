@@ -5,8 +5,9 @@ This document is the single source of truth for collection shapes and product-mo
 Design rationale, sequencing decisions, and the phased migration history that produced this model live in [`research-model-refactor.md`](./research-model-refactor.md) (historical decision record) and [`research-model-refactor-phase0.md`](./research-model-refactor-phase0.md) (Phase 0 inventory runbook).
 Where an older note, issue, or skill still describes `Person`, `ResearchGroup`/`ResearchGroupMember`, `FacultyMember`, `Paper`/`PaperAuthor`, `EntryPathway`, `ContactRoute`, `PostedOpportunity`, an embedded roster or `discovery` blob, or the legacy access booleans (`acceptingUndergrads`/`openness`/`acceptanceConfidence`/`opennessSignals`) as active, this document wins.
 
-Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](./decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the access-plausibility tier described below - the `Signal` confidence gradient that drives the browse trust filter, the `accessAcceptanceLevel` grade, the `REACH_OUT_PLAUSIBLE` style plausibility signals, and the "Ways in" / "Evidence" / best-next-step framing - is being retired in favor of factual, non-gating signals shown as plain badges.
-This document still describes current runtime because that code has not changed yet; update these sections only when the trust-filter removal lands, not ahead of it.
+Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](./decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the access-plausibility tier is being retired in favor of factual, non-gating signals shown as plain badges.
+Slice 1 has landed: the `accessAcceptanceLevel` grade, the browse trust filter it fed, and access-based browse ranking are removed - signals no longer score or rank access, and visibility is unchanged.
+The `REACH_OUT_PLAUSIBLE` style plausibility signals and the "Ways in" / "Evidence" / best-next-step framing still exist in runtime and are retired in later slices; update those sections only when their removal lands, not ahead of it.
 
 ## What This Solves
 
@@ -39,7 +40,7 @@ See [Legacy `User` Residue](#legacy-user-residue).
 The lab, center, institute, or faculty project: the discovery center.
 [`server/src/models/researchEntity.ts`](../server/src/models/researchEntity.ts) is a clean schema (not the retired `researchGroupSchema`).
 Its roster is **not** embedded: membership lives in canonical `RoleAssignment` rows joined to `Researcher` (see below).
-Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `DIGITAL_HUMANITIES_PROJECT`, `COLLECTIONS_INITIATIVE`, `COURSE_SEQUENCE`, `ARCHIVE_OR_MUSEUM_PROJECT`, `PROGRAM`, `INITIATIVE`, `GROUP`, `INDIVIDUAL_RESEARCH`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, `accessAcceptanceLevel` (`verified` | `likely` | `none`), a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
+Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `DIGITAL_HUMANITIES_PROJECT`, `COLLECTIONS_INITIATIVE`, `COURSE_SEQUENCE`, `ARCHIVE_OR_MUSEUM_PROJECT`, `PROGRAM`, `INITIATIVE`, `GROUP`, `INDIVIDUAL_RESEARCH`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
 It does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact fields, or a paper cache.
 Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are the sole canonical prose pair.
 
@@ -56,7 +57,7 @@ The continuous canonical materializer write path (`entityMaterializer.ts`) is th
 One extensible, source-attributed, typed fact about a research entity.
 [`server/src/models/signal.ts`](../server/src/models/signal.ts) generalizes and absorbs the retired `AccessSignal` and `UndergraduateLogisticsClaim` models.
 Fields: `researchEntityId`, `type` (see `signalTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts)), `value?`, `confidence?`/`confidenceScore?`/`status?`, `expiresAt?`, `source` (`name`, `url`, `evidenceIds[]` referencing `Observation`, `excerpt`), `observedAt`, `review`, and `archived`.
-Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the verified/likely confidence gradient that drives the browse trust-filter is preserved per type rather than collapsed into one value.
+Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the per-type confidence gradient is preserved rather than collapsed into one value.
 Logistics are the former claim types (`STUDENT_LEVEL`, `COMPENSATION`, `TIME_COMMITMENT`, `MODALITY`, `CURRENT_AVAILABILITY`) carried as `Signal.type` with a `status` and a structured `value`.
 Future metrics (wet or dry lab, safety level, and similar) are new `type` values, never new collections.
 Signals stay independent and neutral when unknown; materializer logic must not cross-infer one type from another.
@@ -243,7 +244,7 @@ Pathway-based fellowship matching was removed with `EntryPathway`; `fellowshipMa
 ## Access Signals
 
 Undergraduate-access evidence is stored as `Signal` rows in the `signals` collection (see [`Signal`](#signal-signals) above for the authoritative field shape); the standalone `AccessSignal` model was folded into it.
-Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved because it drives the browse trust-filter.
+Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved as per-signal evidence granularity.
 
 Scrapers should not directly assert product conclusions as final truth. They should emit append-only observations/source evidence, then resolver/materializer logic should derive access `Signal`s. This keeps the raw evidence stable and lets signal logic evolve without rewriting scrape history. Avoid overconfident claims like `acceptingUndergrads: true`.
 
@@ -344,7 +345,7 @@ Examples:
 The student-facing vocabulary for this section should usually be "Best Next Step", not `RecommendedNextStep`.
 
 `accessSummaryService.ts` computes the `accessSummary` for research search/detail payloads so the UI presents Evidence and Best Next Step.
-The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`: access now derives solely from the Signal-backed `accessSummary` and its indexed `accessAcceptanceLevel` grade (`verified`, `likely`, or `none`).
+The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`. The `accessAcceptanceLevel` grade was itself retired by the 2026-08-25 "Simple Directory First" pivot (access plausibility no longer feeds ranking, filtering, or a trust tier); access context now derives solely from the Signal-backed `accessSummary`.
 
 Client API boundaries normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`, and Explore Research cards derive access summaries from `accessSummary`.
 

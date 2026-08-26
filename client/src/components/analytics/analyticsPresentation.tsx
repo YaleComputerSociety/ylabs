@@ -93,15 +93,6 @@ export const formatVisibilityTier = (tier?: string): string => {
   return tier ? tierMap[tier] || tier : 'Unset';
 };
 
-export const formatOpenness = (status?: string): string => {
-  const statusMap: Record<string, string> = {
-    verified: 'Verified accepting',
-    likely: 'Likely accepting',
-    none: 'No access evidence',
-  };
-  return status ? statusMap[status] || status : 'Acceptance not computed';
-};
-
 export const formatNumber = (value?: number | null, digits = 0): string => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return '-';

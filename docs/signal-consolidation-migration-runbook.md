@@ -67,7 +67,7 @@ db.undergraduate_logistics_claims.countDocuments({})
 
 `signals` should contain at least the sum of the two legacy collections' mapped documents, plus any rows written live since the dry-run.
 Spot-check a few migrated documents: access rows carry `type`, `confidence`, `confidenceScore`, and nested `source`; logistics rows carry `type`, `status`, `value`, `expiresAt`, and `derivationKey` of the form `logistics:<type>`.
-Confirm the student research-detail page, browse trust-filter, and admin access review render correctly against the migrated data.
+Confirm the student research-detail page and admin access review render correctly against the migrated data.
 
 ## Step 4: handle stranded saved-pathway account data
 

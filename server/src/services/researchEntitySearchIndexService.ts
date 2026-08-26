@@ -52,7 +52,6 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'schools',
     'departments',
     'researchAreas',
-    'accessAcceptanceLevel',
     'hasUndergradHostingEvidence',
     'hasDocumentedWayIn',
     'undergraduateCurrentAvailability',

@@ -66,7 +66,7 @@ The programs, fellowships, grants, and funding page (a separate adjacent domain)
 - `Paper`/`PaperAuthor` models and their readers retired, no rollback opt-in (publication-mirror half of #207).
 - Legacy `ResearchEntity.description` field retired; `shortDescription`/`fullDescription` standardized (#351).
 - `EntryPathway`/`ContactRoute`/`PostedOpportunity` removed, along with the separate pathway search index and surfaces (#362, #363).
-- Legacy access booleans (`acceptingUndergrads`/`openness`/`acceptanceConfidence`/`opennessSignals`) retired; access derives solely from the graded `Signal`-backed `accessAcceptanceLevel` (#463, closing #208 and #420).
+- Legacy access booleans (`acceptingUndergrads`/`openness`/`acceptanceConfidence`/`opennessSignals`) retired; access derives solely from `Signal`-backed evidence (#463, closing #208 and #420). The `accessAcceptanceLevel` grade that #463 introduced was itself retired by the 2026-08-25 "Simple Directory First" pivot; see [`research-model.md`](./research-model.md).
 - Research-area canonicalization option A: governed `TaxonomyTerm` registry, free-string `researchAreas[]`, never a foreign key (#457, closing the remainder of #208 alongside #354's `OrgUnit` seed).
 - Saved research planning cut over to canonical `ResearchPlan` (#484, commit `34b9fd7e`).
 - Model refactor Phase 4 (#208) closed 2026-08-23; remaining stale-field-value cleanup in existing documents is tracked separately in #725, decoupled from the schema work.

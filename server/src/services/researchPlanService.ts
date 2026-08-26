@@ -59,7 +59,6 @@ export interface SavedResearchEntitySummary {
   shortDescription?: string;
   description?: string;
   undergraduateCurrentAvailability?: string;
-  accessAcceptanceLevel?: string;
   hasUndergradHostingEvidence?: boolean;
 }
 
@@ -112,7 +111,7 @@ export const boundSavedResearchEntitySummaryText = (
 };
 
 const savedResearchEntityProjection =
-  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl undergraduateCurrentAvailability accessAcceptanceLevel hasUndergradHostingEvidence';
+  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl undergraduateCurrentAvailability hasUndergradHostingEvidence';
 
 const exportTextWithoutDirectContact = (value: unknown): string =>
   safeSpreadsheetCell(redactDirectContactInfo(String(value || '')));
@@ -310,25 +309,19 @@ const SERVED_UNDERGRADUATE_AVAILABILITY_VALUES: ReadonlySet<string> = new Set([
   'NOT_CURRENTLY_AVAILABLE',
 ]);
 
-const SERVED_ACCESS_ACCEPTANCE_LEVELS: ReadonlySet<string> = new Set(['verified', 'likely']);
-
 const servedUndergraduateAccessFields = (
   entity: any,
 ): Pick<
   SavedResearchEntitySummary,
-  'undergraduateCurrentAvailability' | 'accessAcceptanceLevel' | 'hasUndergradHostingEvidence'
+  'undergraduateCurrentAvailability' | 'hasUndergradHostingEvidence'
 > => {
   const fields: Pick<
     SavedResearchEntitySummary,
-    'undergraduateCurrentAvailability' | 'accessAcceptanceLevel' | 'hasUndergradHostingEvidence'
+    'undergraduateCurrentAvailability' | 'hasUndergradHostingEvidence'
   > = {};
   const availability = String(entity.undergraduateCurrentAvailability || '');
   if (SERVED_UNDERGRADUATE_AVAILABILITY_VALUES.has(availability)) {
     fields.undergraduateCurrentAvailability = availability;
-  }
-  const acceptance = String(entity.accessAcceptanceLevel || '');
-  if (SERVED_ACCESS_ACCEPTANCE_LEVELS.has(acceptance)) {
-    fields.accessAcceptanceLevel = acceptance;
   }
   if (entity.hasUndergradHostingEvidence === true) {
     fields.hasUndergradHostingEvidence = true;

@@ -2359,11 +2359,6 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
           { $project: { _id: 0, tier: '$_id', count: 1 } },
         ],
-        byOpenness: [
-          activeResearchEntityMatch,
-          { $group: { _id: '$accessAcceptanceLevel', count: { $sum: 1 } } },
-          { $project: { _id: 0, status: '$_id', count: 1 } },
-        ],
         freshness: [
           activeResearchEntityMatch,
           {
@@ -2638,7 +2633,6 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
       },
       byType: researchEntities.byType || [],
       byVisibilityTier: researchEntities.byVisibilityTier || [],
-      byOpenness: researchEntities.byOpenness || [],
       freshness: researchEntities.freshness[0] || {
         observedLast7Days: 0,
         observedLast30Days: 0,

@@ -59,7 +59,7 @@ Progressive disclosure should keep early discovery quiet and move detail into th
   Access context may only break close relevance ties within a bounded server-owned rule.
 - Show at most one sparse, claim-specific, positive planning signal on an entity card.
 - Do not add a parallel results stream, persistent access controls, generic scores, or negative unknown labels.
-- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`; their evidence remains server-owned - the `acceptanceLevel=verified-or-likely` semantics and the `hasDocumentedWayIn` projection that still drives the sparse positive card signal - rather than a persistent access-oriented filter, and neither revives the retired unsupported undergraduate-evidence filter.
+- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`; their evidence remains server-owned - the `hasUndergradHostingEvidence` and `hasDocumentedWayIn` projections that still drive the sparse positive card signal - rather than a persistent access-oriented filter, and neither revives the retired unsupported undergraduate-evidence filter.
 
 ## Status Definitions
 
@@ -92,7 +92,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
   PR `#196` added one adaptive Research filter disclosure, query-scoped positive school and department choices, persistent selected values without invented counts, URL-backed removable chips, clear-one and clear-all actions, independent facet-error handling, a non-modal desktop disclosure, and a focus-contained mobile sheet with focused responsive and accessibility tests.
   Issue `#347` then exposed two already-server-supported browse filters in the same disclosure: a config-sourced research-area multi-select (add-via-dropdown plus removable chips, sourced from `useConfig().researchAreas` rather than Meilisearch facets) and a `Has hosted undergrads before` checkbox mapped to the server `verified-or-likely` acceptance level, both round-tripping through the URL (`researchAreas` CSV and `undergrad=1`), the in-page snapshot restore, the active-filter count, chips, and clear-all.
   The documented-way-in distribution remains separate EF-03 work and is not exposed as a filter.
-- **Subsequent state:** issue `#1884` then retired the research-area and hosts-undergrads browse controls (plus the entity-type filter) from research discovery, removing their state, URL params, chips, and analytics kinds along with the research-area field directory and zero-result area pivot; the server acceptance-level semantics, the `researchAreas` field, and the standalone research-area pages remain. School and department stay the adaptive query-scoped discovery filters, so EF-02 stays Complete.
+- **Subsequent state:** issue `#1884` then retired the research-area and hosts-undergrads browse controls (plus the entity-type filter) from research discovery, removing their state, URL params, chips, and analytics kinds along with the research-area field directory and zero-result area pivot; the `researchAreas` field and the standalone research-area pages remain. School and department stay the adaptive query-scoped discovery filters, so EF-02 stays Complete.
 - **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171), [#196](https://github.com/YaleComputerSociety/ylabs/pull/196), [#1884](https://github.com/YaleComputerSociety/ylabs/issues/1884).
 
 #### EF-03 - Sparse Documented-Way-In Signal

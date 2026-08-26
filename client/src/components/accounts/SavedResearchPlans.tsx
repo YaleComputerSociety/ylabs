@@ -42,7 +42,6 @@ interface SavedResearchEntity {
   school?: string;
   shortDescription?: string;
   undergraduateCurrentAvailability?: string;
-  accessAcceptanceLevel?: string;
   hasUndergradHostingEvidence?: boolean;
 }
 
