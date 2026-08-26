@@ -5,13 +5,74 @@
  * metadata, applies the source's default weight when no override is given, and inserts.
  * Never updates existing rows (appends only — supersession is handled by the resolver).
  */
+import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
+import type { ObservedEntityType } from '../models/observation';
 import { Source } from '../models/source';
 import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isSelfReferentialUrl } from '../utils/urlSafety';
 import { sanitizeObservationField } from './observationFieldSanitizer';
+import {
+  fullDescriptionQuality,
+  shortDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import type { ObservationInput } from './types';
+
+const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
+
+function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): string {
+  return obs.entityId || obs.entityKey || '';
+}
+
+function proseValueIsUseful(field: string, value: unknown, fullContext: string): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  return field === 'shortDescription'
+    ? shortDescriptionQuality(value, fullContext).isUseful
+    : fullDescriptionQuality(value).isUseful;
+}
+
+export function isRegressiveProseRefresh(input: {
+  field: string;
+  incomingValue: unknown;
+  existingValue: unknown;
+  incomingFullContext?: string;
+  existingFullContext?: string;
+}): boolean {
+  if (!QUALITY_GUARDED_PROSE_FIELDS.has(input.field)) return false;
+  if (typeof input.existingValue !== 'string') return false;
+  if (!proseValueIsUseful(input.field, input.existingValue, input.existingFullContext ?? '')) {
+    return false;
+  }
+  return !proseValueIsUseful(input.field, input.incomingValue, input.incomingFullContext ?? '');
+}
+
+export type ActiveProseLoader = (query: {
+  entityType: ObservedEntityType;
+  sourceName: string;
+  entityId?: string;
+  entityKey?: string;
+  field: string;
+}) => Promise<string | undefined>;
+
+const loadActiveProseValue: ActiveProseLoader = async (query) => {
+  // Fail open when no DB connection is available (e.g. unit tests that mock
+  // insertMany): the guard must never hang or block a write, only prevent a
+  // proven regression.
+  if (mongoose.connection.readyState !== 1) return undefined;
+  if (!query.entityId && !query.entityKey) return undefined;
+  const filter: Record<string, unknown> = {
+    entityType: query.entityType,
+    sourceName: query.sourceName,
+    field: query.field,
+    superseded: false,
+  };
+  if (query.entityId) filter.entityId = query.entityId;
+  else filter.entityKey = query.entityKey;
+  const row = await Observation.findOne(filter).select('value').lean();
+  const value = (row as { value?: unknown } | null)?.value;
+  return typeof value === 'string' ? value : undefined;
+};
 
 const ENUM_FIELD_VALIDATORS: Record<string, ReadonlySet<string>> = {
   kind: new Set(researchGroupKinds),
@@ -42,8 +103,10 @@ interface AppendContext {
 export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
+  opts: { loadActiveProse?: ActiveProseLoader } = {},
 ): Promise<{ inserted: number; skipped: number; superseded: number }> {
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
+  const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
 
   const rejectedSelfReferential = inputs.filter((obs) => isSelfReferentialUrl(obs.sourceUrl));
   const candidateInputs = inputs.filter((obs) => !isSelfReferentialUrl(obs.sourceUrl));
@@ -63,13 +126,45 @@ export async function appendObservations(
   const acceptedInputs = sanitizedInputs.filter(
     (obs) => !isObservationValueRejected(obs.field, obs.value),
   );
+  const incomingFullByEntity = new Map<string, string>();
+  for (const obs of acceptedInputs) {
+    if (obs.field === 'fullDescription' && typeof obs.value === 'string') {
+      incomingFullByEntity.set(entityKeyForProse(obs), obs.value);
+    }
+  }
+
+  const keptInputs: ObservationInput[] = [];
+  let regressiveProseGuarded = 0;
+  for (const obs of acceptedInputs) {
+    if (QUALITY_GUARDED_PROSE_FIELDS.has(obs.field)) {
+      const incomingFullContext = incomingFullByEntity.get(entityKeyForProse(obs)) ?? '';
+      if (!proseValueIsUseful(obs.field, obs.value, incomingFullContext)) {
+        const existingValue = await loadActiveProse({
+          entityType: obs.entityType,
+          sourceName: ctx.sourceName,
+          entityId: obs.entityId || undefined,
+          entityKey: obs.entityKey || undefined,
+          field: obs.field,
+        });
+        if (isRegressiveProseRefresh({ field: obs.field, incomingValue: obs.value, existingValue, incomingFullContext })) {
+          regressiveProseGuarded += 1;
+          continue;
+        }
+      }
+    }
+    keptInputs.push(obs);
+  }
+
   const skippedCount =
-    rejectedSelfReferential.length + rejectedFurniture + rejectedInvalidEnum.length;
-  if (acceptedInputs.length === 0) {
+    rejectedSelfReferential.length +
+    rejectedFurniture +
+    rejectedInvalidEnum.length +
+    regressiveProseGuarded;
+  if (keptInputs.length === 0) {
     return { inserted: 0, skipped: skippedCount, superseded: 0 };
   }
 
-  const docs = acceptedInputs.map((obs) => {
+  const docs = keptInputs.map((obs) => {
     const value = normalizeObservationValue(obs.field, obs.value);
     return {
       entityType: obs.entityType,
