@@ -1282,6 +1282,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         'acceptingUndergrads',
         'currentUndergradCount',
         'lastObservedAt',
+        'sourceContentHash',
         'undergradAccessEvidence',
         'undergradEvidenceQuote',
       ].sort(),

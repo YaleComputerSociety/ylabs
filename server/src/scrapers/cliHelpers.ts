@@ -64,6 +64,7 @@ const BOOLEAN_FLAGS = new Set([
   'dry-run',
   'exhaustive',
   'force-disabled',
+  'force-llm',
   'ignore-work-planner',
   'logistics-production',
   'release',
@@ -130,6 +131,7 @@ export function parseScraperOptions(flags: Record<string, string | boolean>): Sc
         : undefined,
     ignoreWorkPlanner: !!flags['ignore-work-planner'],
     exhaustive: !!flags.exhaustive,
+    forceLlm: !!flags['force-llm'],
     logisticsProductionMode: !!flags['logistics-production'],
     since: flags.since ? new Date(String(flags.since)) : undefined,
   };

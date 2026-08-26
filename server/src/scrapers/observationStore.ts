@@ -192,6 +192,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'applicationInformation',
   'applicationMaterials',
   'researchFocused',
+  'sourceContentHash',
 ]);
 
 function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {

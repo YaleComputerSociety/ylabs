@@ -610,6 +610,8 @@ Use these controls before spending cloud or API money:
 - Keep LLM sources gated until the exact target list is accepted.
 - Use `--use-cache` for development reruns only.
 - Complete the WorkPlanner cost-control tasks in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before unattended recurring paid/broad jobs.
+- `lab-microsite-description-llm` and `lab-microsite-undergrad-llm` skip the paid LLM call when a per-entity `sourceContentHash` observation matches the fresh page bytes, so repeat runs (including `--exhaustive` sweeps that bypass WorkPlanner freshness) do not re-pay for unchanged pages.
+  Pass `--force-llm` only when intentionally re-extracting a source whose hash is up to date.
 
 ## Report Checklist
 

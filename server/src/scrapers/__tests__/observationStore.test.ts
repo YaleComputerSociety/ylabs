@@ -53,6 +53,18 @@ describe('buildObservationFingerprint', () => {
     expect(otherSource).not.toBe(extractorSource);
   });
 
+  it('makes sourceContentHash latest-wins so each run supersedes the prior hash', () => {
+    const base = {
+      entityType: 'researchEntity',
+      entityKey: 'smith-lab',
+      sourceName: 'lab-microsite-description-llm',
+      field: 'sourceContentHash',
+    };
+    expect(buildObservationFingerprint({ ...base, value: 'hash-a' })).toBe(
+      buildObservationFingerprint({ ...base, value: 'hash-b' }),
+    );
+  });
+
   it('is stable for same-source equivalent observations', () => {
     const a = buildObservationFingerprint({
       sourceName: 'openalex',
