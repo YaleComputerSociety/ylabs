@@ -307,14 +307,6 @@ router.delete(
   userController.deleteWatchedProgramPlan,
 );
 
-router.get('/researchInterests', isAuthenticated, userController.getResearchInterests);
-router.put(
-  '/researchInterests',
-  writeLimit,
-  isAuthenticated,
-  userController.updateResearchInterests,
-);
-
 router.get('/savedResearchEntityIds', isAuthenticated, userController.getSavedResearchEntityIds);
 router.get('/savedResearchEntities', isAuthenticated, userController.getSavedResearchEntities);
 router.put(
@@ -369,29 +361,6 @@ router.post(
   isAuthenticated,
   validateResearchEntityId('entityId'),
   userController.dismissSavedResearchFollowUp,
-);
-router.get('/savedSearches', isAuthenticated, userController.getSavedSearches);
-router.post('/savedSearches', writeLimit, isAuthenticated, userController.createSavedSearch);
-router.put(
-  '/savedSearches/:id',
-  writeLimit,
-  isAuthenticated,
-  validateObjectId('id'),
-  userController.renameSavedSearch,
-);
-router.post(
-  '/savedSearches/:id/viewed',
-  writeLimit,
-  isAuthenticated,
-  validateObjectId('id'),
-  userController.markSavedSearchViewed,
-);
-router.delete(
-  '/savedSearches/:id',
-  writeLimit,
-  isAuthenticated,
-  validateObjectId('id'),
-  userController.deleteSavedSearch,
 );
 router.get('/listings', isAuthenticated, userController.getUserListings);
 router.put(

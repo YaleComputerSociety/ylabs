@@ -6,7 +6,7 @@
  * watched programs close within a short window, how many of those the student
  * has not started yet, and the approaching deadlines ordered soonest-first.
  *
- * This is the deadline sibling of savedSearchSummary's new-match rollup. It is a
+ * It is a
  * pure surfacing layer over `fellowshipFutureDeadlineDate` (the same future-
  * deadline handling ProgramWatch and the .ics export already use) and the
  * existing ResearchPlan stage, so the dashboard, Program Watch list, and

@@ -12,7 +12,6 @@ import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadin
 import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
-import useSavedSearchNewMatchSummary from '../hooks/useSavedSearchNewMatchSummary';
 import useWatchedDeadlineSummary from '../hooks/useWatchedDeadlineSummary';
 import {
   approachingDeadlineAriaLabel,
@@ -147,9 +146,6 @@ interface ResearchEntitySearchPage {
   page: number;
   pageSize: number;
   facetDistribution: Record<string, Record<string, number>>;
-  personalized: boolean;
-  personalizedByInterests: boolean;
-  personalizedByIntent: boolean;
 }
 
 interface ActiveResearchSearchRequest {
@@ -196,10 +192,6 @@ interface ResearchPageSnapshot {
   defaultSearchPage: number;
   defaultSearchTotal: number;
   defaultSearchExhausted: boolean;
-  browsePersonalized: boolean;
-  browsePersonalizedByInterests: boolean;
-  browsePersonalizedByIntent: boolean;
-  browseStandardOrder: boolean;
   searchError: string;
   hasFacetError: boolean;
   defaultSearchError: string;
@@ -212,7 +204,6 @@ interface ResearchEntitySearchOptions {
   includeSuppressed?: boolean;
   sortBy?: 'name' | 'lastObservedAt';
   sortOrder?: 'asc' | 'desc';
-  standardOrder?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -244,7 +235,6 @@ const searchResearchEntities = async (
         : {}),
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
-      ...(options.standardOrder ? { standardOrder: true } : {}),
     },
     { signal },
   );
@@ -255,9 +245,6 @@ const searchResearchEntities = async (
     page: normalized.page || page,
     pageSize: normalized.pageSize || pageSize,
     facetDistribution: normalized.facetDistribution || {},
-    personalized: normalized.personalized === true,
-    personalizedByInterests: normalized.personalizedByInterests === true,
-    personalizedByIntent: normalized.personalizedByIntent === true,
   };
 };
 
@@ -382,8 +369,6 @@ const Research = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useContext(UserContext);
-  const { totalNewMatches: savedSearchNewMatchCount } =
-    useSavedSearchNewMatchSummary(isAuthenticated);
   const {
     approachingCount: watchedDeadlineApproachingCount,
     notStartedCount: watchedDeadlineNotStartedCount,
@@ -497,11 +482,6 @@ const Research = () => {
     useState<ActiveResearchSearchRequest | null>(
       () => restoredSnapshotRef.current?.activeSearchRequest ?? null,
     );
-  const [isSaveSearchPanelOpen, setIsSaveSearchPanelOpen] = useState(false);
-  const [saveSearchLabel, setSaveSearchLabel] = useState('');
-  const [saveSearchStatus, setSaveSearchStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>(
-    'idle',
-  );
   const [defaultResearchEntities, setDefaultResearchEntities] = useState<ResearchEntity[]>(
     () => restoredSnapshotRef.current?.defaultResearchEntities ?? [],
   );
@@ -514,20 +494,6 @@ const Research = () => {
   const [defaultSearchExhausted, setDefaultSearchExhausted] = useState(
     () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
   );
-  const [browsePersonalized, setBrowsePersonalized] = useState(
-    () => restoredSnapshotRef.current?.browsePersonalized ?? false,
-  );
-  const [browsePersonalizedByInterests, setBrowsePersonalizedByInterests] = useState(
-    () => restoredSnapshotRef.current?.browsePersonalizedByInterests ?? false,
-  );
-  const [browsePersonalizedByIntent, setBrowsePersonalizedByIntent] = useState(
-    () => restoredSnapshotRef.current?.browsePersonalizedByIntent ?? false,
-  );
-  const [browseStandardOrder, setBrowseStandardOrder] = useState(
-    () => restoredSnapshotRef.current?.browseStandardOrder ?? false,
-  );
-  const browseStandardOrderRef = useRef(browseStandardOrder);
-  browseStandardOrderRef.current = browseStandardOrder;
   const fetchedSearchPageRef = useRef(restoredSnapshotRef.current?.searchPage ?? 1);
   const fetchedDefaultSearchPageRef = useRef(restoredSnapshotRef.current?.defaultSearchPage ?? 1);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -731,7 +697,6 @@ const Research = () => {
           qualityFilters: isAdmin && showWeakestProfilesFirst ? qualityFilters : [],
           trustTierFilters: isAdmin ? trustTierFilters : [],
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
-          standardOrder: browseStandardOrderRef.current,
           ...currentSortRequestOptions(),
         },
       );
@@ -745,9 +710,6 @@ const Research = () => {
       );
       if (page === 1) {
         setBrowseFacetDistribution(researchEntitiesPage.facetDistribution);
-        setBrowsePersonalized(researchEntitiesPage.personalized);
-        setBrowsePersonalizedByInterests(researchEntitiesPage.personalizedByInterests);
-        setBrowsePersonalizedByIntent(researchEntitiesPage.personalizedByIntent);
       }
       setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
@@ -1101,42 +1063,6 @@ const Research = () => {
 
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
 
-  const canSaveCurrentSearch = isAuthenticated && Boolean(activeSearchRequest);
-
-  const closeSaveSearchPanel = () => {
-    setIsSaveSearchPanelOpen(false);
-    setSaveSearchLabel('');
-    setSaveSearchStatus('idle');
-  };
-
-  const saveCurrentSearch = async () => {
-    if (!activeSearchRequest) return;
-    setSaveSearchStatus('saving');
-    try {
-      await axios.post('/users/savedSearches', {
-        data: {
-          savedSearch: {
-            label: saveSearchLabel.trim(),
-            queryText: activeSearchRequest.searchQuery,
-            filters: activeSearchRequest.filters,
-            urlParams: searchParams.toString(),
-          },
-        },
-      });
-      setSaveSearchStatus('saved');
-      setSaveSearchLabel('');
-    } catch {
-      console.error('Error saving research search.');
-      setSaveSearchStatus('error');
-    }
-  };
-
-  useEffect(() => {
-    setIsSaveSearchPanelOpen(false);
-    setSaveSearchLabel('');
-    setSaveSearchStatus('idle');
-  }, [activeSearchRequest]);
-
   useEffect(() => {
     const observedSearchParams = searchParams.toString();
     if (pendingSearchParamsRef.current === observedSearchParams) {
@@ -1378,10 +1304,6 @@ const Research = () => {
       defaultSearchPage,
       defaultSearchTotal,
       defaultSearchExhausted,
-      browsePersonalized,
-      browsePersonalizedByInterests,
-      browsePersonalizedByIntent,
-      browseStandardOrder,
       searchError,
       hasFacetError,
       defaultSearchError,
@@ -1414,10 +1336,6 @@ const Research = () => {
     defaultSearchPage,
     defaultSearchTotal,
     defaultSearchExhausted,
-    browsePersonalized,
-    browsePersonalizedByInterests,
-    browsePersonalizedByIntent,
-    browseStandardOrder,
     searchError,
     hasFacetError,
     defaultSearchError,
@@ -1641,17 +1559,6 @@ const Research = () => {
   };
   const toggleResearchSortDirection = () =>
     applyResearchSort(sortBy, sortOrder === 'asc' ? 'desc' : 'asc');
-  const setBrowseStandardOrderPreference = (standardOrder: boolean) => {
-    if (standardOrder === browseStandardOrderRef.current) return;
-    browseStandardOrderRef.current = standardOrder;
-    setBrowseStandardOrder(standardOrder);
-    if (hasSubmittedSearch) return;
-    setDefaultResearchEntities([]);
-    setDefaultSearchPage(1);
-    setDefaultSearchTotal(0);
-    setDefaultSearchExhausted(false);
-    void runDefaultResearchHomeSearchRef.current(1);
-  };
   const exploreHome = useCallback(
     (label: string) => {
       scrollResearchViewportToTop();
@@ -1841,32 +1748,13 @@ const Research = () => {
               </div>
             )}
 
-            {isAuthenticated && savedSearchNewMatchCount > 0 && (
-              <div
-                className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-3 py-2 text-sm leading-relaxed text-blue-900"
-                role="status"
-              >
-                <Link
-                  to="/account?tab=searches"
-                  aria-label={`${savedSearchNewMatchCount} new ${
-                    savedSearchNewMatchCount === 1 ? 'match' : 'matches'
-                  } for your saved searches`}
-                  className="font-semibold underline underline-offset-2 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                >
-                  {savedSearchNewMatchCount} new{' '}
-                  {savedSearchNewMatchCount === 1 ? 'match' : 'matches'}
-                </Link>{' '}
-                for your saved searches.
-              </div>
-            )}
-
             {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
               <div
                 className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
                 role="status"
               >
                 <Link
-                  to="/account?tab=programs"
+                  to="/dashboard?tab=programs"
                   aria-label={approachingDeadlineAriaLabel(
                     watchedDeadlineApproachingCount,
                     watchedDeadlineNotStartedCount,
@@ -1960,39 +1848,6 @@ const Research = () => {
                     )}
                   </div>
                 </div>
-                {browsePersonalized && (
-                  <div
-                    className="mb-4 flex flex-col gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-blue-soft)] p-3 sm:flex-row sm:items-center sm:justify-between"
-                    role="status"
-                  >
-                    <p className="text-sm font-medium text-slate-800">
-                      {browsePersonalizedByInterests && browsePersonalizedByIntent
-                        ? 'Recommended for your interests and goals'
-                        : browsePersonalizedByIntent
-                          ? 'Recommended for your goals'
-                          : 'Recommended for your interests'}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setBrowseStandardOrderPreference(true)}
-                      className="min-h-9 shrink-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                    >
-                      Show the standard order
-                    </button>
-                  </div>
-                )}
-                {browseStandardOrder && !browsePersonalized && (
-                  <div className="mb-4 flex flex-col gap-2 rounded-md border border-dashed border-[var(--yr-line)] p-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-                    <p>Showing the standard order for everyone.</p>
-                    <button
-                      type="button"
-                      onClick={() => setBrowseStandardOrderPreference(false)}
-                      className="min-h-9 shrink-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--yr-blue)] hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                    >
-                      Personalize for my interests
-                    </button>
-                  </div>
-                )}
                 {!isWideFilterLayout && (
                   <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
                     <ResearchFilterDisclosure
@@ -2115,18 +1970,6 @@ const Research = () => {
                     )}
                   </p>
                   <div className="flex shrink-0 items-center gap-2">
-                    {canSaveCurrentSearch && !isSaveSearchPanelOpen && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsSaveSearchPanelOpen(true);
-                          setSaveSearchStatus('idle');
-                        }}
-                        className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                      >
-                        {saveSearchStatus === 'saved' ? 'Saved' : 'Save this search'}
-                      </button>
-                    )}
                     <ResearchSortDropdown
                       sortBy={sortBy}
                       sortOrder={sortOrder}
@@ -2135,82 +1978,6 @@ const Research = () => {
                     />
                   </div>
                 </div>
-
-                {canSaveCurrentSearch && isSaveSearchPanelOpen && (
-                  <div className="yr-card mt-3 rounded-md p-3">
-                    {saveSearchStatus === 'saved' ? (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm font-medium text-slate-800" role="status">
-                          Saved. Find it under Saved Searches on your dashboard.
-                        </p>
-                        <div className="flex gap-2">
-                          <Link
-                            to="/account"
-                            className="inline-flex min-h-11 items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
-                          >
-                            View saved searches
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={closeSaveSearchPanel}
-                            className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-slate-700 hover:border-[var(--yr-line-strong)] hover:text-slate-900"
-                          >
-                            Done
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        <label
-                          htmlFor="save-search-label"
-                          className="text-sm font-semibold text-slate-800"
-                        >
-                          Name this search (optional)
-                        </label>
-                        <input
-                          id="save-search-label"
-                          type="text"
-                          value={saveSearchLabel}
-                          maxLength={120}
-                          placeholder="e.g. CS labs accepting undergrads in ML"
-                          onChange={(event) => setSaveSearchLabel(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              void saveCurrentSearch();
-                            } else if (event.key === 'Escape') {
-                              event.preventDefault();
-                              closeSaveSearchPanel();
-                            }
-                          }}
-                          className="w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                        />
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void saveCurrentSearch()}
-                            disabled={saveSearchStatus === 'saving'}
-                            className="inline-flex min-h-11 items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft disabled:opacity-60"
-                          >
-                            {saveSearchStatus === 'saving' ? 'Saving...' : 'Save search'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={closeSaveSearchPanel}
-                            className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-slate-700 hover:border-[var(--yr-line-strong)] hover:text-slate-900"
-                          >
-                            Cancel
-                          </button>
-                          {saveSearchStatus === 'error' && (
-                            <span className="text-xs text-red-700" role="alert">
-                              Not saved. Check your connection or sign in again, then retry.
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {!isWideFilterLayout && (
                   <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">

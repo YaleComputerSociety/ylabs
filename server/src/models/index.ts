@@ -47,5 +47,4 @@ export * from './evidencePredicateRegistry';
 export * from './sourceDocument';
 export * from './evidenceClaim';
 export * from './researchPlan';
-export * from './savedSearch';
 export * from './reviewDecision';

@@ -13,7 +13,7 @@ import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
 import Login from './pages/login';
 import About from './pages/about';
-import Account from './pages/account';
+import Dashboard from './pages/dashboard';
 import Profile from './pages/profile';
 import Unknown from './pages/unknown';
 import LoginError from './pages/loginError';
@@ -104,8 +104,8 @@ const App = () => {
                         element={<PublicRoute Component={About} unknownBlocked={true} />}
                       />
                       <Route
-                        path="/account"
-                        element={<PrivateRoute Component={Account} unknownBlocked={true} />}
+                        path="/dashboard"
+                        element={<PrivateRoute Component={Dashboard} unknownBlocked={true} />}
                       />
                       <Route
                         path="/profile/:netid"

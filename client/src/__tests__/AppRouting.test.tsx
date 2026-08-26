@@ -55,7 +55,7 @@ vi.mock('../pages/labDetail', () => ({ default: () => null }));
 vi.mock('../pages/opportunityDetail', () => ({ default: () => null }));
 vi.mock('../pages/login', () => ({ default: () => null }));
 vi.mock('../pages/about', () => ({ default: () => null }));
-vi.mock('../pages/account', () => ({ default: () => null }));
+vi.mock('../pages/dashboard', () => ({ default: () => null }));
 vi.mock('../pages/profile', () => ({ default: () => null }));
 vi.mock('../pages/unknown', () => ({ default: () => null }));
 vi.mock('../pages/loginError', () => ({ default: () => null }));

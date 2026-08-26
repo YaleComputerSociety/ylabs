@@ -694,7 +694,7 @@ const Fellowships = () => {
             </div>
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
               <Link
-                to="/account"
+                to="/dashboard?tab=programs"
                 className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 text-sm font-semibold text-[var(--yr-blue)] transition hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               >
                 Saved programs

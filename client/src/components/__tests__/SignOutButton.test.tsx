@@ -43,9 +43,9 @@ describe('SignOutButton', () => {
     vi.stubEnv('VITE_APP_SERVER', 'javascript:alert(1)');
     const locationMock = {
       ...originalLocation,
-      pathname: '/account',
+      pathname: '/dashboard',
       origin: 'http://localhost:3000',
-      href: 'http://localhost:3000/account',
+      href: 'http://localhost:3000/dashboard',
     };
     Object.defineProperty(window, 'location', {
       configurable: true,

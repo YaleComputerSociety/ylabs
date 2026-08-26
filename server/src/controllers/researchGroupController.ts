@@ -14,7 +14,6 @@ import {
   searchResearchGroupsViaMeili,
   type ResearchGroupQualityFilter,
   ResearchGroupSearchSort,
-  type ResearchGroupSearchOptions,
 } from '../services/researchGroupService';
 import { ResearchGroupFilterInput } from '../services/researchGroupFilters';
 import {
@@ -24,8 +23,6 @@ import {
 } from '../models/studentVisibility';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
-import { getStudentResearchInterests } from '../services/studentInterestProfileService';
-import { isActiveEngagementIntent } from '../services/researchInterestPersonalization';
 
 const MAX_PAGE_SIZE = 100;
 const MAX_PAGE = 1000;
@@ -177,26 +174,6 @@ const parsePositiveIntegerParam = (value: unknown, fallback: number): number => 
   return Number.isSafeInteger(parsed) ? parsed : fallback;
 };
 
-const resolveViewerPersonalization = async (
-  currentUser: { netId?: string; netid?: string } | undefined,
-): Promise<ResearchGroupSearchOptions['personalization'] | undefined> => {
-  const netid = currentUser?.netId || currentUser?.netid;
-  if (!netid) return undefined;
-  try {
-    const { researchInterests, lookingFor } = await getStudentResearchInterests(netid);
-    const hasInterests = researchInterests.length > 0;
-    const hasIntent = isActiveEngagementIntent(lookingFor);
-    if (!hasInterests && !hasIntent) return undefined;
-    return {
-      interests: researchInterests,
-      ...(hasIntent ? { lookingFor } : {}),
-    };
-  } catch (error) {
-    console.error('Research interest personalization lookup failed:', sanitizeLogValue(error));
-    return undefined;
-  }
-};
-
 export const searchResearchGroups = async (request: Request, response: Response) => {
   try {
     const body = (request.body || {}) as {
@@ -210,7 +187,6 @@ export const searchResearchGroups = async (request: Request, response: Response)
       includeSuppressed?: boolean;
       browseQuality?: unknown;
       qualityFilters?: unknown;
-      standardOrder?: unknown;
     };
 
     if (isOversizedSearchRequest(body as Record<string, unknown>)) {
@@ -249,17 +225,11 @@ export const searchResearchGroups = async (request: Request, response: Response)
     }
 
     const lowQualityFirst = hasAdminAuthority && body.browseQuality === 'low-first';
-    const isDefaultRecommendedBrowse =
-      q.trim().length === 0 && !sort.sortBy && !lowQualityFirst && body.standardOrder !== true;
-    const personalization = isDefaultRecommendedBrowse
-      ? await resolveViewerPersonalization(currentUser)
-      : undefined;
 
     const result = await searchResearchGroupsViaMeili(q, filters, page, pageSize, sort, {
       includeNonPublic: hasAdminAuthority,
       lowQualityFirst,
       qualityFilters: hasAdminAuthority ? parseQualityFilters(body.qualityFilters) : [],
-      ...(personalization ? { personalization } : {}),
     });
     return response.json(result);
   } catch (error) {

@@ -1,5 +1,5 @@
 /**
- * Account page. Every signed-in account sees the same read view organized into
+ * Dashboard page. Every signed-in account sees the same read view organized into
  * two surfaces:
  *   - Dashboard: the saved research homes an account is tracking (canonical
  *     ResearchPlan RESEARCH_ENTITY targets), with notes and the always-available
@@ -14,12 +14,10 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
-import ResearchInterestsEditor from '../components/accounts/ResearchInterestsEditor';
 import SavedResearchPlans from '../components/accounts/SavedResearchPlans';
-import SavedSearches from '../components/accounts/SavedSearches';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 
-type AccountSurface = 'dashboard' | 'programs' | 'searches' | 'interests';
+type DashboardSurface = 'dashboard' | 'programs';
 
 type ProgramSummary = {
   count: number;
@@ -29,28 +27,24 @@ type ProgramSummary = {
   notStartedCount?: number;
 };
 
-const SURFACES: AccountSurface[] = ['dashboard', 'programs', 'searches', 'interests'];
+const SURFACES: DashboardSurface[] = ['dashboard', 'programs'];
 
-const Account = () => {
+const Dashboard = () => {
   useDocumentTitle('Dashboard');
   const [searchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab') as AccountSurface | null;
-  const [surface, setSurface] = useState<AccountSurface>(
+  const tabParam = searchParams.get('tab') as DashboardSurface | null;
+  const [surface, setSurface] = useState<DashboardSurface>(
     tabParam && SURFACES.includes(tabParam) ? tabParam : 'dashboard',
   );
   const [savedResearchCount, setSavedResearchCount] = useState(0);
   const [savedOpenCount, setSavedOpenCount] = useState(0);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
-  const [savedSearchCount, setSavedSearchCount] = useState(0);
-  const [savedSearchNewMatchCount, setSavedSearchNewMatchCount] = useState(0);
-  const tabRefs = useRef<Record<AccountSurface, HTMLButtonElement | null>>({
+  const tabRefs = useRef<Record<DashboardSurface, HTMLButtonElement | null>>({
     dashboard: null,
     programs: null,
-    searches: null,
-    interests: null,
   });
 
-  const activateSurface = (next: AccountSurface, focusTab = false) => {
+  const activateSurface = (next: DashboardSurface, focusTab = false) => {
     setSurface(next);
     if (focusTab) tabRefs.current[next]?.focus();
   };
@@ -93,8 +87,6 @@ const Account = () => {
           savedOpenCount={savedOpenCount}
           savedFellowshipCount={programSummary.count}
           nextDeadlineLabel={programSummary.nextDeadlineLabel}
-          savedSearchNewMatchCount={savedSearchNewMatchCount}
-          onViewSavedSearches={() => activateSurface('searches', true)}
           watchedDeadlineApproachingCount={programSummary.approachingCount}
           watchedDeadlineNotStartedCount={programSummary.notStartedCount}
           onViewProgramWatch={() => activateSurface('programs', true)}
@@ -104,13 +96,13 @@ const Account = () => {
           <div
             className="yr-card inline-flex overflow-hidden rounded-md"
             role="tablist"
-            aria-label="Account surfaces"
+            aria-label="Dashboard surfaces"
           >
             <button
               type="button"
               role="tab"
-              id="account-dashboard-tab"
-              aria-controls="account-dashboard-panel"
+              id="dashboard-plans-tab"
+              aria-controls="dashboard-plans-panel"
               aria-selected={surface === 'dashboard'}
               tabIndex={surface === 'dashboard' ? 0 : -1}
               ref={(el) => {
@@ -125,8 +117,8 @@ const Account = () => {
             <button
               type="button"
               role="tab"
-              id="account-programs-tab"
-              aria-controls="account-programs-panel"
+              id="dashboard-programs-tab"
+              aria-controls="dashboard-programs-panel"
               aria-selected={surface === 'programs'}
               tabIndex={surface === 'programs' ? 0 : -1}
               ref={(el) => {
@@ -138,45 +130,13 @@ const Account = () => {
             >
               Program Watch ({programSummary.count})
             </button>
-            <button
-              type="button"
-              role="tab"
-              id="account-searches-tab"
-              aria-controls="account-searches-panel"
-              aria-selected={surface === 'searches'}
-              tabIndex={surface === 'searches' ? 0 : -1}
-              ref={(el) => {
-                tabRefs.current.searches = el;
-              }}
-              onClick={() => activateSurface('searches')}
-              onKeyDown={handleTabKeyDown}
-              className={tabClass(surface === 'searches')}
-            >
-              Saved Searches ({savedSearchCount})
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="account-interests-tab"
-              aria-controls="account-interests-panel"
-              aria-selected={surface === 'interests'}
-              tabIndex={surface === 'interests' ? 0 : -1}
-              ref={(el) => {
-                tabRefs.current.interests = el;
-              }}
-              onClick={() => activateSurface('interests')}
-              onKeyDown={handleTabKeyDown}
-              className={tabClass(surface === 'interests')}
-            >
-              Interests
-            </button>
           </div>
         </div>
 
         <div
-          id="account-dashboard-panel"
+          id="dashboard-plans-panel"
           role="tabpanel"
-          aria-labelledby="account-dashboard-tab"
+          aria-labelledby="dashboard-plans-tab"
           tabIndex={0}
           className={surface === 'dashboard' ? '' : 'hidden'}
         >
@@ -186,38 +146,17 @@ const Account = () => {
           />
         </div>
         <div
-          id="account-programs-panel"
+          id="dashboard-programs-panel"
           role="tabpanel"
-          aria-labelledby="account-programs-tab"
+          aria-labelledby="dashboard-programs-tab"
           tabIndex={0}
           className={surface === 'programs' ? '' : 'hidden'}
         >
           <ProgramWatch onSummaryChange={setProgramSummary} />
-        </div>
-        <div
-          id="account-searches-panel"
-          role="tabpanel"
-          aria-labelledby="account-searches-tab"
-          tabIndex={0}
-          className={surface === 'searches' ? '' : 'hidden'}
-        >
-          <SavedSearches
-            onCountChange={setSavedSearchCount}
-            onNewMatchCountChange={setSavedSearchNewMatchCount}
-          />
-        </div>
-        <div
-          id="account-interests-panel"
-          role="tabpanel"
-          aria-labelledby="account-interests-tab"
-          tabIndex={0}
-          className={surface === 'interests' ? '' : 'hidden'}
-        >
-          {surface === 'interests' && <ResearchInterestsEditor />}
         </div>
       </div>
     </div>
   );
 };
 
-export default Account;
+export default Dashboard;

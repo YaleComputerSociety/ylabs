@@ -212,7 +212,7 @@ Legacy active listings may still appear inside public research detail payloads f
 
 Student workflow depth starts with saved research profiles.
 Saved planning is stored in the account-owned, private-by-default `ResearchPlan` collection, keyed on `accountId` plus target `ResearchEntity`, so a student can save a research home even when it has no access evidence.
-The `/account` planning workspace hydrates bounded entity summaries and treats access evidence as optional enrichment.
+The `/dashboard` planning workspace hydrates bounded entity summaries and treats access evidence as optional enrichment.
 
 Current behavior:
 

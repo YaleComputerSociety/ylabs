@@ -19,10 +19,9 @@ const IDLE_STATE: WatchedDeadlineSummaryState = {
 
 /**
  * Fetch-once watched-program deadline summary for surfaces that do not already
- * mount ProgramWatch (the /research landing). Mirrors useSavedSearchNewMatchSummary:
- * gated by `enabled`, fails safe to an empty summary, and reuses the same pure
- * `summarizeWatchedDeadlines` derivation the account page uses so the two
- * surfaces cannot diverge.
+ * mount ProgramWatch (the /research landing). Gated by `enabled`, fails safe to
+ * an empty summary, and reuses the same pure `summarizeWatchedDeadlines`
+ * derivation the dashboard page uses so the two surfaces cannot diverge.
  */
 export const useWatchedDeadlineSummary = (enabled: boolean): WatchedDeadlineSummaryState => {
   const [state, setState] = useState<WatchedDeadlineSummaryState>(IDLE_STATE);

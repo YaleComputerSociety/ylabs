@@ -737,7 +737,7 @@ describe('Programs page', () => {
 
     expect(screen.getByText('Program saved')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open Dashboard' }).getAttribute('href')).toBe(
-      '/account',
+      '/dashboard',
     );
     expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedPrograms', {
       data: { watchedPrograms: ['open'] },

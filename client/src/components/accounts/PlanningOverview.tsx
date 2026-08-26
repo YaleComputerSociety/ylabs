@@ -11,8 +11,6 @@ interface PlanningOverviewProps {
   savedOpenCount?: number;
   savedFellowshipCount: number;
   nextDeadlineLabel?: string;
-  savedSearchNewMatchCount?: number;
-  onViewSavedSearches?: () => void;
   watchedDeadlineApproachingCount?: number;
   watchedDeadlineNotStartedCount?: number;
   onViewProgramWatch?: () => void;
@@ -40,8 +38,6 @@ const PlanningOverview = ({
   savedOpenCount = 0,
   savedFellowshipCount,
   nextDeadlineLabel,
-  savedSearchNewMatchCount = 0,
-  onViewSavedSearches,
   watchedDeadlineApproachingCount = 0,
   watchedDeadlineNotStartedCount = 0,
   onViewProgramWatch,
@@ -61,19 +57,6 @@ const PlanningOverview = ({
           <p className="mt-1 text-sm font-semibold text-emerald-800">
             {openHomesSummary(savedOpenCount)}
           </p>
-        )}
-        {savedSearchNewMatchCount > 0 && onViewSavedSearches && (
-          <button
-            type="button"
-            onClick={onViewSavedSearches}
-            aria-label={`${savedSearchNewMatchCount} new ${
-              savedSearchNewMatchCount === 1 ? 'match' : 'matches'
-            } for your saved searches`}
-            className="mt-1 text-sm font-semibold text-[var(--yr-blue)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-          >
-            {savedSearchNewMatchCount} new {savedSearchNewMatchCount === 1 ? 'match' : 'matches'}{' '}
-            for your saved searches
-          </button>
         )}
         {watchedDeadlineApproachingCount > 0 && onViewProgramWatch && (
           <button

@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   searchResearchGroupsViaMeili: vi.fn(),
   resolveArchivedResearchEntityCanonicalSlug: vi.fn(),
   recordResearchEntityOutreach: vi.fn(),
-  getStudentResearchInterests: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -25,10 +24,6 @@ vi.mock('../../services/adminGrantService', () => ({
   hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
 
-vi.mock('../../services/studentInterestProfileService', () => ({
-  getStudentResearchInterests: mocks.getStudentResearchInterests,
-}));
-
 import {
   getResearchGroupBySlug,
   recordResearchOutreach,
@@ -40,11 +35,6 @@ describe('researchGroupController', () => {
     vi.clearAllMocks();
     mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
     mocks.resolveArchivedResearchEntityCanonicalSlug.mockResolvedValue(null);
-    mocks.getStudentResearchInterests.mockResolvedValue({
-      researchInterests: [],
-      graduationYear: null,
-      lookingFor: 'exploring',
-    });
   });
 
   it('does not leak internal service errors from public research detail failures', async () => {
@@ -213,54 +203,6 @@ describe('researchGroupController', () => {
     });
   });
 
-  it('personalizes the default browse from a viewer engagement intent even without interests (#1655)', async () => {
-    mocks.getStudentResearchInterests.mockResolvedValue({
-      researchInterests: [],
-      graduationYear: null,
-      lookingFor: 'ra-position',
-    });
-    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
-      researchEntities: [],
-      estimatedTotalHits: 0,
-      page: 1,
-      pageSize: 24,
-    });
-    const req = {
-      user: { netId: 'student123', userType: 'student' },
-      body: { q: '' },
-    } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await searchResearchGroups(req, res);
-
-    const options = mocks.searchResearchGroupsViaMeili.mock.calls[0][5];
-    expect(options.personalization).toEqual({ interests: [], lookingFor: 'ra-position' });
-  });
-
-  it('does not personalize the default browse for the exploring intent (#1655)', async () => {
-    mocks.getStudentResearchInterests.mockResolvedValue({
-      researchInterests: [],
-      graduationYear: null,
-      lookingFor: 'exploring',
-    });
-    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
-      researchEntities: [],
-      estimatedTotalHits: 0,
-      page: 1,
-      pageSize: 24,
-    });
-    const req = {
-      user: { netId: 'student123', userType: 'student' },
-      body: { q: '' },
-    } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await searchResearchGroups(req, res);
-
-    const options = mocks.searchResearchGroupsViaMeili.mock.calls[0][5];
-    expect(options.personalization).toBeUndefined();
-  });
-
   it('does not expose nonpublic research results to legacy admin sessions without active authority', async () => {
     mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
     mocks.searchResearchGroupsViaMeili.mockResolvedValue({
@@ -301,7 +243,7 @@ describe('researchGroupController', () => {
     );
   });
 
-  it('serves an unauthenticated visitor only public tiers with no personalization', async () => {
+  it('serves an unauthenticated visitor only public tiers', async () => {
     mocks.searchResearchGroupsViaMeili.mockResolvedValue({
       researchEntities: [],
       estimatedTotalHits: 0,
@@ -325,7 +267,6 @@ describe('researchGroupController', () => {
     await searchResearchGroups(req, res);
 
     expect(mocks.hasAdminAuthorityForUser).toHaveBeenCalledWith(undefined);
-    expect(mocks.getStudentResearchInterests).not.toHaveBeenCalled();
     expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
       '',
       { studentVisibilityTier: ['student_ready'] },
