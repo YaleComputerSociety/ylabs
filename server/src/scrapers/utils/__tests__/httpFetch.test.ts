@@ -1,21 +1,24 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  fetchPageWithPolicy,
-  HostRateLimiter,
-  type HttpRequestFn,
-} from '../httpFetch';
+import { fetchPageWithPolicy, HostRateLimiter, type HttpRequestFn } from '../httpFetch';
 
 const passthroughAssert = async (url: string) => ({ toString: () => url });
 const noSleep = vi.fn(async () => {});
 const noJitter = () => 0;
 
-function ok(data = '<html>ok</html>', finalUrl = 'https://lab.example.edu/x'): ReturnType<HttpRequestFn> {
+function ok(
+  data = '<html>ok</html>',
+  finalUrl = 'https://lab.example.edu/x',
+): ReturnType<HttpRequestFn> {
   return Promise.resolve({ status: 200, data, finalUrl });
 }
 
 describe('HostRateLimiter', () => {
   it('caps concurrency per host', async () => {
-    const limiter = new HostRateLimiter({ maxConcurrency: 1, minIntervalMs: 0, sleep: async () => {} });
+    const limiter = new HostRateLimiter({
+      maxConcurrency: 1,
+      minIntervalMs: 0,
+      sleep: async () => {},
+    });
     let active = 0;
     let peak = 0;
     const task = async () => {
@@ -25,11 +28,7 @@ describe('HostRateLimiter', () => {
       active -= 1;
       return true;
     };
-    await Promise.all([
-      limiter.run('h', task),
-      limiter.run('h', task),
-      limiter.run('h', task),
-    ]);
+    await Promise.all([limiter.run('h', task), limiter.run('h', task), limiter.run('h', task)]);
     expect(peak).toBe(1);
   });
 
@@ -77,7 +76,11 @@ describe('fetchPageWithPolicy', () => {
   it('returns the page body on a 2xx response', async () => {
     const request = vi.fn(() => ok());
     const page = await fetchPageWithPolicy('https://lab.example.edu/x', { ...base, request });
-    expect(page).toEqual({ url: 'https://lab.example.edu/x', html: '<html>ok</html>', status: 200 });
+    expect(page).toEqual({
+      url: 'https://lab.example.edu/x',
+      html: '<html>ok</html>',
+      status: 200,
+    });
     expect(request).toHaveBeenCalledTimes(1);
   });
 
@@ -88,7 +91,11 @@ describe('fetchPageWithPolicy', () => {
       .mockResolvedValueOnce({ status: 403, data: '', finalUrl: 'u' })
       .mockResolvedValueOnce({ status: 403, data: '', finalUrl: 'u' })
       .mockResolvedValueOnce({ status: 200, data: 'body', finalUrl: 'u' });
-    const page = await fetchPageWithPolicy('https://lab.example.edu/x', { ...base, request, sleep });
+    const page = await fetchPageWithPolicy('https://lab.example.edu/x', {
+      ...base,
+      request,
+      sleep,
+    });
     expect(page.html).toBe('body');
     expect(request).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledTimes(2);

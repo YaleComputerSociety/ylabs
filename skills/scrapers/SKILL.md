@@ -42,6 +42,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 - `confidenceResolver.ts` - pure-function aggregator that picks a winning observation value and computes a confidence score (no DB calls, fully testable)
 - `observationRetention.ts` - TTL/cleanup for old observation rows
 - `renderedFetch.ts` - headless-browser fetch helper for JS-rendered pages
+- `utils/httpFetch.ts` - shared SSRF-guarded page fetch (`fetchPageWithPolicy`, wrapping `ssrfGuard`) with a per-host rate limiter and exponential backoff that retries 403/429/5xx and honors `Retry-After`; microsite LLM extractors fetch through it so exhaustive per-entity scrapes stop tripping host WAF 403s
 - `runReport.ts` - structured report for a completed scrape run
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources
