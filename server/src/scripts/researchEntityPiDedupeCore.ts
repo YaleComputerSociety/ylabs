@@ -914,11 +914,7 @@ export function normalizeWebsiteUrlIdentityKey(value: string | undefined): strin
   return `${host}${pathname}`;
 }
 
-const SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'GROUP',
-]);
+const SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA', 'GROUP']);
 
 const SPECIFIC_PROFILE_LAB_URL_PATH = /\/(lab|profile)\/([^/]+)$/i;
 

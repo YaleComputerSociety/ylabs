@@ -2169,7 +2169,8 @@ describe('buildSpecificProfileLabUrlResearchEntityDedupePlan', () => {
             slug: 'ysm-bunick',
             name: 'Bunick Lab',
             entityType: 'LAB',
-            fullDescription: 'The Bunick Lab studies structural biology of skin and circadian proteins.',
+            fullDescription:
+              'The Bunick Lab studies structural biology of skin and circadian proteins.',
           },
           {
             id: 'ysm-faculty-christopher-bunick',
@@ -2204,7 +2205,8 @@ describe('buildSpecificProfileLabUrlResearchEntityDedupePlan', () => {
             slug: 'ysm-bunick',
             name: 'Bunick Lab',
             entityType: 'LAB',
-            fullDescription: 'The Bunick Lab studies structural biology of skin and circadian proteins.',
+            fullDescription:
+              'The Bunick Lab studies structural biology of skin and circadian proteins.',
           },
           {
             id: 'dept-derm-christopher-bunick',
@@ -2235,7 +2237,12 @@ describe('buildSpecificProfileLabUrlResearchEntityDedupePlan', () => {
         {
           url: 'https://medicine.yale.edu/lab/decamilli/',
           entities: [
-            { id: 'ysm-decamilli', slug: 'ysm-decamilli', name: 'De Camilli Lab', entityType: 'LAB' },
+            {
+              id: 'ysm-decamilli',
+              slug: 'ysm-decamilli',
+              name: 'De Camilli Lab',
+              entityType: 'LAB',
+            },
             {
               id: 'ysm-faculty-hanieh-falahati',
               slug: 'ysm-faculty-hanieh-falahati',

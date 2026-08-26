@@ -1156,7 +1156,10 @@ async function loadSpecificProfileLabUrlCandidateRows(
   ]);
 
   const byKey = new Map<string, OfficialLabUrlDedupeRow>();
-  for (const row of rows as Array<{ _id: string; entities: ResearchEntityPiDedupeRow['entities'] }>) {
+  for (const row of rows as Array<{
+    _id: string;
+    entities: ResearchEntityPiDedupeRow['entities'];
+  }>) {
     const key = specificProfileLabUrlIdentityKey(row._id);
     if (!key) continue;
     const existing = byKey.get(key);
@@ -2008,8 +2011,7 @@ async function main() {
   });
   await mongoose.connect(process.env.MONGODBURL);
 
-  const usesNonPiLane =
-    officialLabUrlOnly || profileLabUrlOnly || orgNameOnly || websiteUrlOnly;
+  const usesNonPiLane = officialLabUrlOnly || profileLabUrlOnly || orgNameOnly || websiteUrlOnly;
   const officialLabUrlRows: OfficialLabUrlDedupeRow[] = officialLabUrlOnly
     ? await loadOfficialLabUrlCandidateRows(limit)
     : [];
@@ -2055,10 +2057,10 @@ async function main() {
           : websiteUrlOnly
             ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
             : sharedPersonId
-            ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
-            : fundingOnly
-              ? buildFundingResearchEntityDedupePlan(piRows)
-              : buildResearchEntityPiDedupePlan(piRows),
+              ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+              : fundingOnly
+                ? buildFundingResearchEntityDedupePlan(piRows)
+                : buildResearchEntityPiDedupePlan(piRows),
   );
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
