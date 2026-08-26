@@ -957,10 +957,7 @@ async function syncGatedResearchEntitiesToIndex(researchOps: any[]): Promise<voi
 }
 
 async function planResearchEntityGateUpdates(
-  options: Pick<
-    StudentVisibilityGateOptions,
-    'sourceName' | 'recordIds' | 'limit'
-  >,
+  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: { $ne: true } };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
@@ -1205,10 +1202,7 @@ async function planResearchEntityGateUpdates(
 }
 
 async function planProgramGateUpdates(
-  options: Pick<
-    StudentVisibilityGateOptions,
-    'sourceName' | 'recordIds' | 'limit'
-  >,
+  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: false };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };

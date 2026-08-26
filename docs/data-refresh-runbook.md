@@ -308,11 +308,11 @@ The full command runs every source in the canonical sweep manifest with `--exhau
 `--exhaustive` disables the default candidate caps inside the LLM and backfill scrapers as well as omitting the shared `--limit`.
 This can take hours and can make many paid API calls.
 Only run it after the bounded sample succeeds.
-After the source sweep, the same command projects active faculty into the Account/Researcher model, rebuilds local Development Meilisearch, runs the coverage audit, strict data-quality audit, integrity gate, and strict student trust contract, and finishes with a report-only archived-cleanup stage that lists deletable dedup-residue archived entities without ever deleting them.
-All seven post-run stages execute even when an earlier quality gate fails, so the operator receives every report.
+After the source sweep, the same command projects active faculty into the Account/Researcher model, runs a full-corpus student-visibility gate so gate-logic changes propagate before the index rebuild, rebuilds local Development Meilisearch, runs the coverage audit, strict data-quality audit, integrity gate, and strict student trust contract, and finishes with a report-only archived-cleanup stage that lists deletable dedup-residue archived entities without ever deleting them.
+All eight post-run stages execute even when an earlier quality gate fails, so the operator receives every report.
 The overall command exits nonzero when a source or post-run stage fails.
 The runner prints an output directory under `/tmp`.
-That directory contains one JSON report per source, `summary.json`, the faculty projection report, the search rebuild report, all four coverage and quality reports, and the report-only archived-cleanup report.
+That directory contains one JSON report per source, `summary.json`, the faculty projection report, the student-visibility gate report, the search rebuild report, all four coverage and quality reports, and the report-only archived-cleanup report.
 Each summary row includes observation and entity yield, fetch successes and failures, blocked requests, selector breakages, warnings, and materialization counts.
 Development continues after a source failure so the summary captures every problem, but it exits nonzero when any source failed.
 
@@ -342,6 +342,7 @@ yarn scrape:development:write run \
 The post-run artifacts in the printed sweep directory are:
 
 - `development-faculty-projection.json`
+- `development-visibility-gate.json`
 - `development-search-rebuild.json`
 - `development-coverage.json`
 - `development-data-quality.json`
