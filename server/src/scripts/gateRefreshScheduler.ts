@@ -75,8 +75,3 @@ export function startGateRefreshScheduler(env: NodeJS.ProcessEnv = process.env):
   return true;
 }
 
-export function stopGateRefreshScheduler(): void {
-  if (timer) clearInterval(timer);
-  timer = undefined;
-  running = false;
-}

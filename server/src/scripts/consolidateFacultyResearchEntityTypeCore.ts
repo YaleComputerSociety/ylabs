@@ -6,8 +6,6 @@ export const CANONICAL_FACULTY_RESEARCH_KIND = 'individual';
 
 export const LEGACY_FACULTY_RESEARCH_ENTITY_TYPES = ['INDIVIDUAL_RESEARCH', 'FACULTY_RESEARCH'] as const;
 
-export type LegacyFacultyResearchEntityType = (typeof LEGACY_FACULTY_RESEARCH_ENTITY_TYPES)[number];
-
 const LEGACY_SET = new Set<string>(LEGACY_FACULTY_RESEARCH_ENTITY_TYPES);
 
 const INDIVIDUAL_KINDS = new Set(['individual', 'solo']);

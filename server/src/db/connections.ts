@@ -190,10 +190,3 @@ export function getListingModel(): mongoose.Model<any> {
   return Listing;
 }
 
-export function getMigrationConnection(): Connection | null {
-  return migrationConnection;
-}
-
-export function getProductionConnection(): Connection | null {
-  return productionConnection;
-}

@@ -32,11 +32,6 @@ export type EntityCorrectionReporter = {
   userType?: string;
 };
 
-export type CreateEntityCorrectionReportInput = {
-  category?: unknown;
-  note?: unknown;
-};
-
 type ResearchEntitySnapshot = {
   _id: mongoose.Types.ObjectId;
   slug?: string;

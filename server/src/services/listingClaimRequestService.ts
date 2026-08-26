@@ -68,13 +68,6 @@ export type ListingClaimRequestUser = {
   profileVerified?: boolean;
 };
 
-export type CreateListingClaimRequestInput = {
-  requestType?: string;
-  message?: unknown;
-  proposedChanges?: unknown;
-  evidenceUrls?: unknown;
-};
-
 type ListingClaimSnapshot = {
   title?: string;
   ownerId?: string;

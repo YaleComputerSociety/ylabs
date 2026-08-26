@@ -161,4 +161,3 @@ export function filterCleanupPlanByManualLocks(
   };
 }
 
-export const DIRECTORY_INDEX_DESCRIPTION_FIELDS = DESCRIPTION_FIELDS;

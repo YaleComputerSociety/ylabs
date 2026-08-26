@@ -695,18 +695,6 @@ export async function applyOrcidCrosswalkCsv(
   };
 }
 
-export function buildFellowshipCandidateRows(
-  configs: ProgramConfig[] = DEFAULT_PROGRAM_CONFIGS,
-): Array<Record<string, unknown>> {
-  return configs.map((config) => ({
-    programKey: config.programKey,
-    programName: config.programName,
-    sourceUrl: config.urls[0] || '',
-    status: config.manualUploadRequired ? 'manual-required' : 'review-source',
-    reviewNote: config.skipReason || '',
-  }));
-}
-
 export function buildScholarCandidateRows(
   users: AcceptedInputUser[],
   limit = Infinity,

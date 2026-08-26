@@ -127,7 +127,6 @@ const ANALYTICS_DEDUPE_KEY_RE = /^[A-Za-z0-9:_-]{1,160}$/;
 
 /** Allowed coarse categories for a contact-route click. Never the address. */
 export const CONTACT_METHODS = ['email', 'phone', 'website', 'directory', 'other'] as const;
-export type ContactMethod = (typeof CONTACT_METHODS)[number];
 
 /** Allowed coarse categories for a source-link click. */
 export const SOURCE_CATEGORIES = [
@@ -138,7 +137,6 @@ export const SOURCE_CATEGORIES = [
   'profile',
   'external',
 ] as const;
-export type SourceCategory = (typeof SOURCE_CATEGORIES)[number];
 
 /** Allowed "way in" / best-next-step affordance kinds. */
 export const WAYS_IN_KINDS = [
@@ -150,11 +148,9 @@ export const WAYS_IN_KINDS = [
   'view_courses',
   'other',
 ] as const;
-export type WaysInKind = (typeof WAYS_IN_KINDS)[number];
 
 /** Allowed pathway/save actions and stages (kanban-style tracking). */
 export const PATHWAY_ACTIONS = ['save', 'unsave', 'stage_change'] as const;
-export type PathwayAction = (typeof PATHWAY_ACTIONS)[number];
 
 const MAX_LABEL_LENGTH = 80;
 const EMAIL_REGEX = /[^\s@]+@[^\s@]+\.[^\s@]+/;

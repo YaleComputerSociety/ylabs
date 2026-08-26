@@ -426,9 +426,6 @@ const withOverride = (
   };
 };
 
-export const isPublicStudentVisibilityTier = (tier: unknown): tier is StudentVisibilityTier =>
-  publicStudentVisibilityTiers.includes(tier as StudentVisibilityTier);
-
 export const BLANK_PUBLIC_DESCRIPTION_REASON = 'blank_public_description';
 
 const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [

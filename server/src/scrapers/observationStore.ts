@@ -253,18 +253,3 @@ export async function getSourceByName(name: string): Promise<{
   };
 }
 
-export async function findObservations(
-  entityType: string,
-  entityIdentifier: { entityId?: string; entityKey?: string },
-  field?: string,
-): Promise<any[]> {
-  const filter: any = {
-    entityType,
-    superseded: false,
-  };
-  if (entityIdentifier.entityId) filter.entityId = entityIdentifier.entityId;
-  if (entityIdentifier.entityKey) filter.entityKey = entityIdentifier.entityKey;
-  if (field) filter.field = field;
-
-  return Observation.find(filter).sort({ observedAt: -1 }).lean();
-}

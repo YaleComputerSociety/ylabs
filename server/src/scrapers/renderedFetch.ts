@@ -214,8 +214,6 @@ export function buildFetchAttemptMetrics<TFetchMode extends string = ScraperFetc
   };
 }
 
-export const buildFetchMetric = buildFetchAttemptMetrics;
-
 export function fetchAttemptsToMetrics<TFetchMode extends string = ScraperFetchMode>(
   attempts: ScraperFetchMetric<TFetchMode>[],
 ): ScraperMetrics<TFetchMode> & ScraperFetchMetrics<TFetchMode> {

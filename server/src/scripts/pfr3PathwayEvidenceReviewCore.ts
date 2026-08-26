@@ -107,13 +107,6 @@ export function validateReviewDecisions(
   });
 }
 
-export function pathwayReviewArtifactHash(input: unknown, salt: string): string {
-  if (salt.trim().length < 16) throw new Error('handle salt must contain at least 16 characters');
-  return createHash('sha256')
-    .update(`pfr3-pathway-review-v1:${salt}:${JSON.stringify(input)}`)
-    .digest('hex');
-}
-
 export function assertExecutionGuards(options: {
   target: string;
   execute: boolean;

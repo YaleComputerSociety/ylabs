@@ -173,5 +173,3 @@ export const dismissSavedResearchFollowUp = async (
     { upsert: true },
   );
 };
-
-export const MAX_SAVED_RESEARCH_FOLLOW_UPS = MAX_STUDENT_FOLLOW_UPS;

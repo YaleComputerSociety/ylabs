@@ -196,10 +196,6 @@ export function buildRematerializeFieldChanges(
   return changes;
 }
 
-export const REMATERIALIZE_VISIBILITY_GATE_INPUT_FIELDS = REMATERIALIZE_TRACKED_FIELDS.filter(
-  (field) => field !== 'studentVisibilityTier',
-);
-
 export function rematerializeChangeAffectsVisibilityGate(
   changes: RematerializeFieldChange[],
 ): boolean {

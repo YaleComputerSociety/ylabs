@@ -125,53 +125,6 @@ export function getRecentSeasonCodes(): string[] {
 }
 
 /**
- * Fetch all catalog courses for one CourseTable season.
- * This is used by the independent-study scraper, which needs a season-wide
- * scan instead of a per-professor lookup.
- */
-export async function fetchAllSeasonCourses(
-  season: string,
-): Promise<CourseTableCourse[]> {
-  const safeSeason = normalizeCourseTableSeason(season);
-  if (!safeSeason) return [];
-
-  const cacheKey = `season:${safeSeason}`;
-  const cached = cache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data;
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(`${COURSETABLE_API}/${safeSeason}`, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) return [];
-
-    const data = await response.json();
-    if (!Array.isArray(data)) return [];
-
-    const courses = data
-      .slice(0, MAX_COURSETABLE_COURSES)
-      .flatMap((course: any) => publicCourseTableCourse(course, safeSeason) ?? []);
-
-    cache.set(cacheKey, { data: courses, timestamp: Date.now() });
-    return courses;
-  } catch (err: any) {
-    if (err.name !== 'AbortError') {
-      console.error('CourseTable: Failed to fetch season:', sanitizeLogValue(err));
-    }
-    return [];
-  }
-}
-
-/**
  * Fetch course data for a professor from CourseTable's public API.
  * Returns null if the API is unreachable or no data is found.
  */

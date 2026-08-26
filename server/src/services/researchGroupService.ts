@@ -311,24 +311,12 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   return { group, created };
 }
 
-export async function getResearchGroupById(id: any): Promise<any | null> {
-  const safeId = normalizeResearchGroupObjectId(id);
-  if (!safeId) return null;
-  return ResearchEntity.findById(safeId).lean();
-}
-
 export async function getResearchGroupBySlug(slug: string): Promise<any | null> {
   return ResearchEntity.findOne({
     slug,
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   }).lean();
-}
-
-export async function listMembersOfGroup(groupId: any): Promise<any[]> {
-  const safeGroupId = normalizeResearchGroupObjectId(groupId);
-  if (!safeGroupId) return [];
-  return getResearchEntityRoster(safeGroupId);
 }
 
 export interface ResearchGroupSearchSort {

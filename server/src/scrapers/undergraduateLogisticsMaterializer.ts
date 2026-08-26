@@ -94,8 +94,6 @@ export function currentUndergradAvailabilityFromSignals(
     : 'UNKNOWN';
 }
 
-export const ELIGIBLE_STUDENT_LEVEL_VALUES = STUDENT_LEVELS;
-
 export type EligibleStudentLevel = (typeof STUDENT_LEVELS)[number];
 
 export interface StudentLevelSignalInput {
@@ -182,15 +180,6 @@ type LogisticsValue =
   | { modes: string[] }
   | { minHours?: number; maxHours?: number; period: 'WEEK' }
   | { status: string };
-
-export interface UndergraduateLogisticsObservationValue {
-  schemaVersion: 1;
-  claimType: UndergraduateLogisticsClaimType;
-  value: LogisticsValue;
-  evidenceQuote: string;
-  quoteVerified: true;
-  validThrough?: string;
-}
 
 export interface UndergraduateLogisticsObservationLike {
   _id?: unknown;
