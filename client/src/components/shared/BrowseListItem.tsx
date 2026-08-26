@@ -11,9 +11,7 @@ import {
   getItemSubtitleColor,
   getResearchGroupDisplayName,
   getResearchGroupKindLabel,
-  getResearchEntityBestNextStep,
   getFellowshipJourneySummary,
-  getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
   DEPT_CAP,
@@ -102,8 +100,6 @@ const BrowseListItem = React.memo(
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
-    const researchStatus = getResearchGroupStatus(item);
-    const researchBestNextStep = isResearchGroup ? getResearchEntityBestNextStep(item.data) : null;
     const fellowshipCycleStatus =
       item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
     const fellowshipJourneySummary =
@@ -190,7 +186,7 @@ const BrowseListItem = React.memo(
                 {item.type === 'listing'
                   ? item.data.description
                   : item.type === 'researchGroup'
-                    ? researchBestNextStep || item.data.shortDescription
+                    ? item.data.shortDescription
                     : item.data.bestNextStep ||
                       fellowshipJourneySummary ||
                       item.data.summary ||
@@ -202,19 +198,13 @@ const BrowseListItem = React.memo(
           <div className="col-span-12 md:col-span-2 flex md:flex-col items-center md:items-end gap-2 flex-shrink-0">
             <div className="flex items-center gap-1">
               {hasPrerequisites && <HasPrerequisitesIcon />}
-              {isResearchGroup && researchStatus ? (
-                <span
-                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${researchStatus.className}`}
-                >
-                  {researchStatus.label}
-                </span>
-              ) : fellowshipCycleStatus ? (
+              {fellowshipCycleStatus ? (
                 <span
                   className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
                 >
                   {fellowshipCycleStatus.label}
                 </span>
-              ) : (
+              ) : isResearchGroup ? null : (
                 <StatusBadge isOpen={open} />
               )}
             </div>

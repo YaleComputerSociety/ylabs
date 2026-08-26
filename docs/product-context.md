@@ -159,8 +159,8 @@ yLabs should not imply it has verified an official outreach channel, but it shou
 Student-facing labels should use warmer language than internal model names:
 
 - Planning Context
-- Evidence
-- Best Next Step
+
+The graded "Evidence" and computed "Best Next Step" labels have been retired from the access display (see the direction note above); factual signals now render as plain badges and reaching out is the constant action.
 
 ## Saved Planning And Advising
 

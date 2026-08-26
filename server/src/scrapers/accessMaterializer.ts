@@ -31,8 +31,7 @@ export { isExplicitUndergradUnavailabilityPhrase };
  * Every access-signal type the materializer has a live emission path for. This
  * is the producer contract: the read/serve layer must never derive a status
  * from a signal type absent here, or that status becomes permanently
- * unreachable (see #1303, POSTED_OPENING). Guarded by accessMaterializer tests
- * and by accessSummaryService's status-determining-subset invariant.
+ * unreachable (see #1303, POSTED_OPENING). Guarded by accessMaterializer tests.
  */
 export const MATERIALIZED_ACCESS_SIGNAL_TYPES: readonly AccessSignalType[] = [
   'CREDIT_FORMALIZATION_POSSIBLE',

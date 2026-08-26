@@ -20,8 +20,6 @@ const mocks = vi.hoisted(() => ({
   accessSignalFind: vi.fn(),
   contactRouteFind: vi.fn(),
   postedOpportunityFind: vi.fn(),
-  getAccessSummaryForResearchEntity: vi.fn(),
-  listAccessSummariesForResearchEntities: vi.fn(),
   listPlanningContextsForResearchEntities: vi.fn(),
   getPublicUndergraduateLogistics: vi.fn(),
 }));
@@ -96,11 +94,6 @@ vi.mock('../../models/signal', () => ({
   },
 }));
 
-vi.mock('../accessSummaryService', () => ({
-  getAccessSummaryForResearchEntity: mocks.getAccessSummaryForResearchEntity,
-  listAccessSummariesForResearchEntities: mocks.listAccessSummariesForResearchEntities,
-}));
-
 vi.mock('../planningContextService', () => ({
   listPlanningContextsForResearchEntities: mocks.listPlanningContextsForResearchEntities,
 }));
@@ -173,7 +166,6 @@ beforeEach(() => {
   mocks.listingFind.mockReset();
   mocks.researchEntityFindOne.mockReset();
   mocks.researchEntityFind.mockReset();
-  mocks.listAccessSummariesForResearchEntities.mockReset();
   mocks.listPlanningContextsForResearchEntities.mockReset();
   mocks.getPublicUndergraduateLogistics.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();
@@ -187,7 +179,6 @@ beforeEach(() => {
   mocks.accessSignalFind.mockReset();
   mocks.contactRouteFind.mockReset();
   mocks.postedOpportunityFind.mockReset();
-  mocks.getAccessSummaryForResearchEntity.mockReset();
   mocks.listingDistinct.mockResolvedValue([]);
   mocks.listingFind.mockReturnValue(queryResult([]));
   mocks.researchEntityFind.mockReturnValue(queryResult([]));
@@ -202,8 +193,6 @@ beforeEach(() => {
   mocks.accessSignalFind.mockReturnValue(queryResult([]));
   mocks.contactRouteFind.mockReturnValue(queryResult([]));
   mocks.postedOpportunityFind.mockReturnValue(queryResult([]));
-  mocks.getAccessSummaryForResearchEntity.mockResolvedValue(undefined);
-  mocks.listAccessSummariesForResearchEntities.mockResolvedValue(new Map());
   mocks.listPlanningContextsForResearchEntities.mockResolvedValue(new Map());
   mocks.getPublicUndergraduateLogistics.mockResolvedValue({ status: 'ready', claims: [] });
 });

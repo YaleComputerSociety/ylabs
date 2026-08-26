@@ -4,7 +4,6 @@ import { memo, type MouseEvent } from 'react';
 import {
   buildWayInBadges,
   buildResearchHomeContextLine,
-  getPathwayActionLabel,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import { formatTitleCaseLabel } from '../../utils/displayText';
@@ -53,12 +52,6 @@ const titleCaseContactRole = (role?: string): string => {
   const trimmed = (role || '').trim();
   if (!trimmed) return 'Principal investigator';
   return formatTitleCaseLabel(trimmed);
-};
-
-const directoryFirstPathwayLabel = (label: string): string => {
-  if (label === 'Plan targeted outreach') return 'Review source context';
-  if (label === 'Contact program') return 'Review source route';
-  return label;
 };
 
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
@@ -169,9 +162,6 @@ const ResearchHomeCard = ({
     : topicBadges.slice(mobileTopicCap, desktopTopicCap);
   const mobileMoreCount = topicBadges.length - mobileTopicCap;
   const desktopMoreCount = topicBadges.length - desktopTopicCap;
-  const nextStepLabel = home.pathways[0]
-    ? directoryFirstPathwayLabel(getPathwayActionLabel(home.pathways[0].bestNextStepCategory))
-    : '';
   const description = sanitizeResearchEntityCopy(home.description, home.entities[0]);
   const activePostedOpportunity =
     (home.activePostedOpportunity?.provenance !== 'LISTING_BRIDGED'
@@ -333,11 +323,6 @@ const ResearchHomeCard = ({
           {description}
         </p>
 
-        {nextStepLabel && (
-          <p className="text-xs font-semibold leading-relaxed text-emerald-800">
-            Best next step: {nextStepLabel}
-          </p>
-        )}
         {!isCompact && home.matchReason && (
           <p className="text-sm leading-relaxed text-gray-700">
             <span className="font-semibold text-gray-950">Why it might fit:</span>{' '}

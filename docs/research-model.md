@@ -342,12 +342,13 @@ Examples:
 - lead identity under review -> Review source context
 - no evidence -> Save or check back later
 
-The student-facing vocabulary for this section should usually be "Best Next Step", not `RecommendedNextStep`.
+Following the Simple Directory First slice (see the direction note above), the read-time `accessSummary` payload, the graded "Evidence" chips, and the computed "Best Next Step" label are no longer produced or shown.
+Reaching out by opening the official profile is the constant contact action, and the remaining factual `Signal` rows render as plain badges without confidence stamps or a plausibility verdict.
+The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`.
 
-`accessSummaryService.ts` computes the `accessSummary` for research search/detail payloads so the UI presents Evidence and Best Next Step.
-The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`. The `accessAcceptanceLevel` grade was itself retired by the 2026-08-25 "Simple Directory First" pivot (access plausibility no longer feeds ranking, filtering, or a trust tier); access context now derives solely from the Signal-backed `accessSummary`.
+The `accessAcceptanceLevel` grade was retired by the 2026-08-25 "Simple Directory First" pivot: access plausibility no longer feeds ranking, filtering, or a trust tier, and the read-time `accessSummary` payload is no longer produced.
 
-Client API boundaries normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`, and Explore Research cards derive access summaries from `accessSummary`.
+Client API boundaries normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`.
 
 ## Admin Review
 
@@ -367,9 +368,8 @@ The admin UI can inspect source evidence, update review state, manage locks, and
 
 Use precise internal names in code and schema docs, but use warmer labels in the UI:
 
-- access `Signal`s (ways-in and logistics evidence) -> Evidence
+- access `Signal`s (ways-in and logistics evidence) -> plain factual signal badges (the graded "Evidence" display is retired; see the direction note above)
 - formalization metadata -> Ways to formalize
-- computed CTA / best-next-step logic -> Best Next Step
 
 Use the unified Yale Research surface as the primary student-facing experience. Course credit, fellowship funding, and thesis advising are formalization outcomes after home/mentor fit unless they are attached to a real hosted or mentor-matching program that is its own `ResearchEntity`.
 

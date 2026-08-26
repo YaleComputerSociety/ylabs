@@ -10,8 +10,6 @@ import {
   getItemSubtitleColor,
   getResearchGroupDisplayName,
   getResearchGroupKindLabel,
-  getResearchEntityBestNextStep,
-  getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
   DEPT_CAP,
@@ -93,8 +91,6 @@ const BrowseCard = React.memo(
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
-    const researchStatus = getResearchGroupStatus(item);
-    const researchBestNextStep = isResearchGroup ? getResearchEntityBestNextStep(item.data) : null;
     const fellowshipCycleStatus =
       item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
     const fellowshipNextStep =
@@ -175,13 +171,6 @@ const BrowseCard = React.memo(
                 <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-[var(--yr-blue-soft)] text-blue-700">
                   {getResearchGroupKindLabel(item.data.kind)}
                 </span>
-                {researchStatus && (
-                  <span
-                    className={`text-xs font-semibold px-1.5 py-0.5 rounded ${researchStatus.className}`}
-                  >
-                    {researchStatus.label}
-                  </span>
-                )}
               </div>
 
               <h3 className="text-base font-bold text-gray-900 leading-tight line-clamp-2">
@@ -194,15 +183,6 @@ const BrowseCard = React.memo(
                 <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
                   {item.data.shortDescription}
                 </p>
-              )}
-
-              {researchBestNextStep && !isCompact && (
-                <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-gray-700">
-                  <p>
-                    <span className="font-semibold text-gray-800">Best next step:</span>{' '}
-                    {researchBestNextStep}
-                  </p>
-                </div>
               )}
 
               {tags.length > 0 && !isCompact && (

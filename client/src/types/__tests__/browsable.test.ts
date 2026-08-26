@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  getResearchEntityBestNextStep,
-  getItemTags,
-  isItemOpen,
-  BrowsableItem,
-} from '../browsable';
+import { getItemTags, isItemOpen, BrowsableItem } from '../browsable';
 import { ResearchEntity } from '../researchEntity';
 import { Fellowship } from '../types';
 
@@ -105,69 +100,12 @@ describe('getItemTags fellowship audience', () => {
 });
 
 describe('isItemOpen for research entities', () => {
-  it('does not treat an entity without access evidence as available', () => {
+  it('never surfaces a research entity as open/closed; reaching out is the constant CTA', () => {
     const item: BrowsableItem = {
       type: 'researchGroup',
       data: researchEntity({}),
     };
 
     expect(isItemOpen(item)).toBe(false);
-  });
-
-  it('uses accessSummary evidence for research availability', () => {
-    const item: BrowsableItem = {
-      type: 'researchGroup',
-      data: researchEntity({
-        accessSummary: {
-          status: 'reach-out-plausible',
-          confidence: 0.9,
-          evidence: [],
-          signalTypes: ['REACH_OUT_PLAUSIBLE'],
-          bestNextStep: 'Review the official profile.',
-        },
-      }),
-    };
-
-    expect(isItemOpen(item)).toBe(true);
-  });
-});
-
-describe('research entity best next step', () => {
-  it('hides placeholder next steps from cards', () => {
-    expect(
-      getResearchEntityBestNextStep(
-        researchEntity({
-          accessSummary: {
-            status: 'unknown',
-            confidence: 0,
-            evidence: [],
-            signalTypes: [],
-            bestNextStep: 'Check back later',
-          },
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  it('never suppresses the outreach CTA when access evidence exists (#1304)', () => {
-    expect(
-      getResearchEntityBestNextStep(
-        researchEntity({
-          accessSummary: {
-            status: 'not-currently-available',
-            confidence: 0.8,
-            evidence: [
-              {
-                signalType: 'NOT_CURRENTLY_AVAILABLE',
-                confidence: 'HIGH',
-                excerpt: 'Not accepting undergraduate students at this time.',
-              },
-            ],
-            signalTypes: ['NOT_CURRENTLY_AVAILABLE'],
-            bestNextStep: 'Check back later',
-          },
-        }),
-      ),
-    ).toBe('Reach out to confirm current availability');
   });
 });

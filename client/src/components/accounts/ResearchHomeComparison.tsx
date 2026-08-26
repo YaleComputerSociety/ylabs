@@ -19,11 +19,6 @@ import {
 } from '../../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import {
-  computeAcceptanceVerdict,
-  verdictBadgeStyles,
-  verdictLabel,
-} from '../../utils/undergradAcceptance';
-import {
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
@@ -279,32 +274,6 @@ const ResearchHomeComparison = ({
         <UnknownCell />
       );
     }
-    if (field === 'wayIn') {
-      const { verdict, evidence } = computeAcceptanceVerdict(entity);
-      if (verdict === 'unknown') return <UnknownCell />;
-      const topEvidence = evidence.slice(0, 2);
-      return (
-        <div className="flex flex-col gap-1.5">
-          <span
-            className={`inline-flex w-fit items-center rounded-md px-2 py-0.5 text-xs font-medium ${verdictBadgeStyles(
-              verdict,
-            )}`}
-          >
-            {verdictLabel(verdict)}
-          </span>
-          {topEvidence.length > 0 && (
-            <ul className="text-xs text-gray-600">
-              {topEvidence.map((item) => (
-                <li key={`${item.kind}:${item.label}`}>
-                  {item.label}
-                  {item.detail ? ` ${item.detail}` : ''}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      );
-    }
     if (field === 'description') {
       const description = boundedDescription(entity);
       return description ? (
@@ -352,7 +321,6 @@ const ResearchHomeComparison = ({
     { key: 'school', label: 'School' },
     { key: 'departments', label: 'Department' },
     { key: 'researchAreas', label: 'Research areas' },
-    { key: 'wayIn', label: 'Documented way in' },
     { key: 'description', label: 'What they study' },
     { key: 'links', label: 'Official links' },
   ];
