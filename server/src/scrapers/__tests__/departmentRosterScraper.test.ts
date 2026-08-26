@@ -1841,6 +1841,57 @@ describe('DepartmentRosterScraper.run', () => {
       extractor: profileGridItemExtractor,
       officialProfileOnly: true,
     });
+    expect(configsByKey.get('applied-mathematics')).toMatchObject({
+      deptName: 'Applied Mathematics',
+      url: 'https://applied.math.yale.edu/people/faculty',
+      extractor: viewsTableRowExtractor,
+    });
+    expect(configsByKey.get('history-science-medicine-public-health')).toMatchObject({
+      deptName: 'History of Science, Medicine & Public Health',
+      url: 'https://hshm.yale.edu/people/faculty',
+      extractor: viewsTableRowExtractor,
+    });
+    expect(configsByKey.get('judaic-studies')).toMatchObject({
+      deptName: 'Judaic Studies',
+      url: 'https://judaicstudies.yale.edu/people',
+      extractor: mcdbExtractor,
+    });
+    expect(configsByKey.get('council-east-asian-studies')).toMatchObject({
+      deptName: 'Council on East Asian Studies',
+      url: 'https://macmillan.yale.edu/eastasia/people',
+      extractor: econExtractor,
+      affiliatesOnly: true,
+    });
+    expect(configsByKey.get('ysph-public-health-modeling')).toMatchObject({
+      deptName: 'Public Health Modeling',
+      extractor: profileGridItemExtractor,
+      affiliatesOnly: true,
+    });
+  });
+
+  it('flags a configured source that fetches but yields zero faculty as a breakage', async () => {
+    const emptyExtractor = vi.fn((): FacultyEntry[] => []);
+    const htmlFetcher = vi.fn(async () => '<html><body><main>migrated</main></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://physics.yale.edu/people/faculty',
+        paginated: false,
+        extractor: emptyExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext();
+    const logs: string[] = [];
+    ctx.log = (message: string) => logs.push(message);
+    const result = await scraper.run(ctx);
+
+    expect(result.notes).toContain('physics=empty');
+    expect(
+      logs.some((l) => /WARNING:.*yielded no faculty/.test(l) && l.includes('physics(empty)')),
+    ).toBe(true);
   });
 
   it('emits official-profile person observations without minting a lab entity when officialProfileOnly is set', async () => {
