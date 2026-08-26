@@ -793,7 +793,7 @@ describe('LabDetail page', () => {
         slug: 'department-undergrad-research-molecular-biophysics-and-biochemistry',
         name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
         kind: 'program',
-        entityType: 'PROGRAM',
+        entityType: 'COURSE_SEQUENCE',
         websiteUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
         shortDescription:
           'Supports undergraduate research in molecular biophysics and biochemistry through department guidance.',

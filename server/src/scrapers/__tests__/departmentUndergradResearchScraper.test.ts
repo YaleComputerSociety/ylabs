@@ -363,7 +363,6 @@ describe('departmentUndergradResearchScraper', () => {
       {
         entityKey: 'department-undergrad-research-chemistry',
         kind: 'program',
-        entityType: 'PROGRAM',
         name: 'Chemistry Undergraduate Research',
         undergradAccessEvidence: true,
         contactRole: 'Faculty member for undergraduate research',
@@ -388,7 +387,6 @@ describe('departmentUndergradResearchScraper', () => {
       entityKey: 'department-undergrad-research-molecular-cellular-and-developmental-biology',
       name: 'Molecular, Cellular and Developmental Biology Undergraduate Research',
       kind: 'program',
-      entityType: 'PROGRAM',
       department: 'Molecular, Cellular and Developmental Biology',
       websiteUrl: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
     });
@@ -414,7 +412,6 @@ describe('departmentUndergradResearchScraper', () => {
       {
         entityKey: 'department-undergrad-research-tobin-undergraduate-research-assistantships',
         kind: 'program',
-        entityType: 'PROGRAM',
         department: 'Economics',
         joinPageUrl: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_synthetic',
         contactEmail: 'coordinator@yale.edu',
@@ -476,7 +473,7 @@ describe('departmentUndergradResearchScraper', () => {
     expect(observations.map((observation) => observation.field)).not.toContain('undergradEvidenceQuote');
   });
 
-  it('emits observations that the access materializer can derive pathways from', () => {
+  it('emits fellowship observations for a department program page', () => {
     const [record] = parseGeneralDepartmentResearchPage(CHEM_HTML, {
       key: 'chemistry',
       url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
@@ -487,20 +484,18 @@ describe('departmentUndergradResearchScraper', () => {
     });
     const observations = departmentUndergradResearchRecordsToObservations([record]);
 
+    expect(observations.every((observation) => observation.entityType === 'fellowship')).toBe(true);
     expect(observations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ entityKey: record.entityKey, field: 'acceptingUndergrads', value: true }),
-        expect.objectContaining({
-          entityKey: record.entityKey,
-          field: 'undergradAccessEvidence',
-          value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
-        }),
-        expect.objectContaining({ entityKey: record.entityKey, field: 'undergradEvidenceQuote' }),
+        expect.objectContaining({ entityKey: record.entityKey, field: 'sourceKey', value: record.entityKey }),
+        expect.objectContaining({ entityKey: record.entityKey, field: 'title', value: record.name }),
+        expect.objectContaining({ entityKey: record.entityKey, field: 'programKind' }),
+        expect.objectContaining({ entityKey: record.entityKey, field: 'applicationLink' }),
       ]),
     );
   });
 
-  it('emits general department guidance as entity/access evidence, not posted-opportunity fields', () => {
+  it('emits general department guidance as a program/fellowship, not posted-opportunity fields', () => {
     const [record] = parseGeneralDepartmentResearchPage(CHEM_HTML, {
       key: 'chemistry',
       url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
@@ -515,14 +510,14 @@ describe('departmentUndergradResearchScraper', () => {
 
     expect(fields).toEqual(
       expect.arrayContaining([
-        'name',
-        'kind',
-        'entityType',
-        'departments',
-        'sourceUrls',
-        'undergradAccessEvidence',
-        'undergradEvidenceQuote',
-        'contactRole',
+        'sourceKey',
+        'sourceName',
+        'title',
+        'summary',
+        'description',
+        'programCategory',
+        'programKind',
+        'applicationLink',
       ]),
     );
     expect(fields).not.toEqual(
@@ -565,7 +560,6 @@ describe('departmentUndergradResearchScraper', () => {
         entityKey: 'department-undergrad-research-astronomy',
         name: 'Astronomy Undergraduate Research',
         kind: 'program',
-        entityType: 'PROGRAM',
         sourceUrl: astronomyConfig!.url,
         description: expect.stringContaining('direct supervision of a faculty member'),
         undergradAccessEvidence: true,
@@ -574,7 +568,6 @@ describe('departmentUndergradResearchScraper', () => {
         entityKey: 'department-undergrad-research-ecology-and-evolutionary-biology',
         name: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
         kind: 'program',
-        entityType: 'PROGRAM',
         sourceUrl: eebConfig!.url,
         description: expect.stringContaining('carry out research in the laboratory'),
         undergradAccessEvidence: true,
@@ -584,15 +577,17 @@ describe('departmentUndergradResearchScraper', () => {
       expect.arrayContaining([
         expect.objectContaining({
           entityKey: 'department-undergrad-research-astronomy',
-          field: 'fullDescription',
+          entityType: 'fellowship',
+          field: 'description',
           sourceUrl: astronomyConfig!.url,
           value: expect.stringContaining('undergraduate students'),
         }),
         expect.objectContaining({
           entityKey: 'department-undergrad-research-ecology-and-evolutionary-biology',
-          field: 'undergradAccessEvidence',
+          entityType: 'fellowship',
+          field: 'title',
           sourceUrl: eebConfig!.url,
-          value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
+          value: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
         }),
       ]),
     );
@@ -709,7 +704,6 @@ describe('departmentUndergradResearchScraper', () => {
         expect.objectContaining({
           entityKey: 'department-undergrad-research-neuroscience',
           name: 'Neuroscience Undergraduate Research Opportunities',
-          entityType: 'PROGRAM',
           undergradAccessEvidence: true,
           sourceUrl: 'https://neuroscience.yale.edu/research-opportunities',
         }),
@@ -717,14 +711,12 @@ describe('departmentUndergradResearchScraper', () => {
           entityKey:
             'department-undergrad-research-molecular-biophysics-and-biochemistry',
           name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
-          entityType: 'PROGRAM',
           undergradAccessEvidence: true,
           sourceUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
         }),
         expect.objectContaining({
           entityKey: 'department-undergrad-research-linguistics',
           name: 'Linguistics Undergraduate Research Opportunities',
-          entityType: 'PROGRAM',
           undergradAccessEvidence: true,
           sourceUrl:
             'https://ling.yale.edu/academics/undergraduate/research-opportunities/linguistics-research-opportunities-yale',
@@ -758,7 +750,6 @@ describe('departmentUndergradResearchScraper', () => {
         entityKey: 'department-undergrad-research-computer-science-research-internship-program',
         name: 'Computer Science Research Internship Program',
         kind: 'program',
-        entityType: 'PROGRAM',
         department: 'Computer Science',
         joinPageUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform',
       },
@@ -822,14 +813,12 @@ describe('departmentUndergradResearchScraper', () => {
       {
         entityKey: 'department-undergrad-research-sociology',
         name: 'Sociology Undergraduate Research',
-        entityType: 'PROGRAM',
         undergradAccessEvidence: true,
         description: expect.stringContaining('yearlong program of original research'),
       },
       {
         entityKey: 'department-undergrad-research-biomedical-engineering',
         name: 'Biomedical Engineering Undergraduate Research',
-        entityType: 'PROGRAM',
         undergradAccessEvidence: true,
         description: expect.stringContaining('undergraduate student research projects'),
       },
@@ -888,7 +877,6 @@ describe('departmentUndergradResearchScraper', () => {
     expect(record).toMatchObject({
       entityKey: 'department-undergrad-research-english',
       kind: 'program',
-      entityType: 'PROGRAM',
       department: 'English',
       undergradAccessEvidence: true,
     });
@@ -904,11 +892,7 @@ describe('departmentUndergradResearchScraper', () => {
       (observation) => observation.field,
     );
     expect(fields).toEqual(
-      expect.arrayContaining([
-        'undergradAccessEvidence',
-        'acceptingUndergrads',
-        'undergradEvidenceQuote',
-      ]),
+      expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
     );
     expect(fields).not.toEqual(
       expect.arrayContaining([
@@ -931,7 +915,6 @@ describe('departmentUndergradResearchScraper', () => {
 
     expect(record).toMatchObject({
       entityKey: 'department-undergrad-research-statistics-and-data-science',
-      entityType: 'PROGRAM',
       department: 'Statistics and Data Science',
       undergradAccessEvidence: true,
     });
@@ -941,7 +924,7 @@ describe('departmentUndergradResearchScraper', () => {
     const fields = departmentUndergradResearchRecordsToObservations([record]).map(
       (observation) => observation.field,
     );
-    expect(fields).toContain('undergradEvidenceQuote');
+    expect(fields).toContain('description');
     expect(fields).not.toEqual(
       expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),
     );
@@ -1007,28 +990,24 @@ describe('departmentUndergradResearchScraper', () => {
       {
         entityKey: 'department-undergrad-research-environmental-studies',
         name: 'Environmental Studies Senior Essay Research',
-        entityType: 'PROGRAM',
         undergradAccessEvidence: true,
         description: expect.stringContaining('original research essay'),
       },
       {
         entityKey: 'department-undergrad-research-global-affairs',
         name: 'Global Affairs Undergraduate Capstone Research',
-        entityType: 'PROGRAM',
         undergradAccessEvidence: true,
         description: expect.stringContaining('capstone project'),
       },
       {
         entityKey: 'department-undergrad-research-history-of-art',
         name: 'History of Art Senior Essay Research',
-        entityType: 'PROGRAM',
         undergradAccessEvidence: true,
         description: expect.stringContaining('original research and writing project'),
       },
       {
         entityKey: 'department-undergrad-research-film-and-media-studies',
         name: 'Film and Media Studies Senior Essay Research',
-        entityType: 'PROGRAM',
         undergradAccessEvidence: true,
         description: expect.stringContaining('independent research'),
       },
@@ -1043,7 +1022,7 @@ describe('departmentUndergradResearchScraper', () => {
       (observation) => observation.field,
     );
     expect(fields).toEqual(
-      expect.arrayContaining(['undergradAccessEvidence', 'acceptingUndergrads', 'undergradEvidenceQuote']),
+      expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
     );
     expect(fields).not.toEqual(
       expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),

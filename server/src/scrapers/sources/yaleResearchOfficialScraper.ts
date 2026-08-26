@@ -101,8 +101,7 @@ export function inferResearchYaleKind(name: string): {
   if (/\b(?:center|centre|core|facility)\b/i.test(name)) {
     return { kind: 'center', entityType: 'CENTER' };
   }
-  if (/\bprogram\b/i.test(name)) return { kind: 'program', entityType: 'PROGRAM' };
-  if (/\b(?:project|initiative)\b/i.test(name)) {
+  if (/\b(?:program|project|initiative)\b/i.test(name)) {
     return { kind: 'initiative', entityType: 'INITIATIVE' };
   }
   return { kind: 'group', entityType: 'GROUP' };

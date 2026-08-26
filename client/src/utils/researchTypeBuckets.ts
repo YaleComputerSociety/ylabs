@@ -29,8 +29,8 @@ export const RESEARCH_TYPE_BUCKETS: readonly ResearchTypeBucketDefinition[] = [
   },
   {
     key: 'programs',
-    label: 'Programs & fellowships',
-    entityTypes: ['PROGRAM', 'COURSE_SEQUENCE'],
+    label: 'Course sequences',
+    entityTypes: ['COURSE_SEQUENCE'],
   },
   {
     key: 'collections',

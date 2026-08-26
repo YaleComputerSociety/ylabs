@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { Signal } from '../signal';
-import { mapResearchGroupKindToEntityType } from '../researchAccessTypes';
+import { mapResearchGroupKindToEntityType, researchEntityTypes } from '../researchAccessTypes';
 import { Source } from '../source';
 
 const oid = () => new mongoose.Types.ObjectId();
@@ -13,6 +13,12 @@ describe('research access models', () => {
     expect(mapResearchGroupKindToEntityType('individual')).toBe('FACULTY_RESEARCH_AREA');
     expect(mapResearchGroupKindToEntityType('solo')).toBe('FACULTY_RESEARCH_AREA');
     expect(mapResearchGroupKindToEntityType('unknown')).toBe('LAB');
+  });
+
+  it('does not expose PROGRAM as a research entity type; programs live only on /programs', () => {
+    expect(researchEntityTypes).not.toContain('PROGRAM');
+    expect(mapResearchGroupKindToEntityType('program')).not.toBe('PROGRAM');
+    expect(mapResearchGroupKindToEntityType('program')).toBe('INITIATIVE');
   });
 
   it('validates access signals with source-backed confidence fields', () => {

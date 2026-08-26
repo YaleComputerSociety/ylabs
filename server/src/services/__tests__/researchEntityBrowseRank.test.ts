@@ -91,9 +91,9 @@ describe('computeResearchEntityBrowseRank', () => {
     expect(leafCenter).toBe(lab);
   });
 
-  it('demotes centers more than programs', () => {
+  it('demotes centers more than initiatives', () => {
     expect(__testing.ENTITY_TYPE_RANK_ADJUSTMENT.CENTER!).toBeLessThan(
-      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM!,
+      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.INITIATIVE!,
     );
   });
 
@@ -110,15 +110,6 @@ describe('computeResearchEntityBrowseRank', () => {
     expect(__testing.entityTypeRankAdjustment({ entityType: 'CENTER' }, false)).toBe(0);
     expect(__testing.entityTypeRankAdjustment({ entityType: 'INSTITUTE' }, false)).toBe(0);
     expect(__testing.entityTypeRankAdjustment({ entityType: 'INITIATIVE' }, false)).toBe(0);
-  });
-
-  it('applies the PROGRAM demotion unconditionally', () => {
-    expect(__testing.entityTypeRankAdjustment({ entityType: 'PROGRAM' }, false)).toBe(
-      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM,
-    );
-    expect(__testing.entityTypeRankAdjustment({ entityType: 'PROGRAM' }, true)).toBe(
-      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM,
-    );
   });
 
   it('derives the type adjustment from kind when entityType is absent', () => {

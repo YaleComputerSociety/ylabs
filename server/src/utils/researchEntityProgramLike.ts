@@ -8,7 +8,7 @@
  * specially. Keep this list in sync with the program bucket in
  * `researchAccessTypes` and the client `ENTITY_TYPE_TO_KIND` program mapping.
  */
-const PROGRAM_LIKE_ENTITY_TYPES = new Set(['PROGRAM', 'COURSE_SEQUENCE']);
+const PROGRAM_LIKE_ENTITY_TYPES = new Set(['COURSE_SEQUENCE']);
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';

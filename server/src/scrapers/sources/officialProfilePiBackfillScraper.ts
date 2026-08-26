@@ -118,8 +118,8 @@ export interface OfficialProfileResearchHome {
   name: string;
   rawName: string;
   url: string;
-  kind: 'center' | 'institute' | 'lab' | 'program' | 'initiative';
-  entityType: 'CENTER' | 'INSTITUTE' | 'LAB' | 'PROGRAM' | 'INITIATIVE';
+  kind: 'center' | 'institute' | 'lab' | 'initiative';
+  entityType: 'CENTER' | 'INSTITUTE' | 'LAB' | 'INITIATIVE';
   score: number;
 }
 
@@ -936,8 +936,9 @@ function classifyResearchHome(
   if (/\b(?:lab|laboratory)\b/i.test(text)) return { kind: 'lab', entityType: 'LAB' };
   if (/\bcent(?:er|re)\b/i.test(text)) return { kind: 'center', entityType: 'CENTER' };
   if (/\binstitute\b/i.test(text)) return { kind: 'institute', entityType: 'INSTITUTE' };
-  if (/\bprogram\b/i.test(text)) return { kind: 'program', entityType: 'PROGRAM' };
-  if (/\binitiative\b/i.test(text)) return { kind: 'initiative', entityType: 'INITIATIVE' };
+  if (/\b(?:program|initiative)\b/i.test(text)) {
+    return { kind: 'initiative', entityType: 'INITIATIVE' };
+  }
   return null;
 }
 

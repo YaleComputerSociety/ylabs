@@ -47,7 +47,6 @@ const concreteEntityTypes = new Set([
   'COLLECTIONS_INITIATIVE',
   'COURSE_SEQUENCE',
   'ARCHIVE_OR_MUSEUM_PROJECT',
-  'PROGRAM',
   'INITIATIVE',
   'GROUP',
 ]);

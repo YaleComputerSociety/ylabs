@@ -40,7 +40,7 @@ See [Legacy `User` Residue](#legacy-user-residue).
 The lab, center, institute, or faculty project: the discovery center.
 [`server/src/models/researchEntity.ts`](../server/src/models/researchEntity.ts) is a clean schema (not the retired `researchGroupSchema`).
 Its roster is **not** embedded: membership lives in canonical `RoleAssignment` rows joined to `Researcher` (see below).
-Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `DIGITAL_HUMANITIES_PROJECT`, `COLLECTIONS_INITIATIVE`, `COURSE_SEQUENCE`, `ARCHIVE_OR_MUSEUM_PROJECT`, `PROGRAM`, `INITIATIVE`, `GROUP`, `INDIVIDUAL_RESEARCH`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
+Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `DIGITAL_HUMANITIES_PROJECT`, `COLLECTIONS_INITIATIVE`, `COURSE_SEQUENCE`, `ARCHIVE_OR_MUSEUM_PROJECT`, `INITIATIVE`, `GROUP`, `INDIVIDUAL_RESEARCH`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
 It does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact fields, or a paper cache.
 Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are the sole canonical prose pair.
 
@@ -92,7 +92,7 @@ Historical `paper` observations and source rows are retained as read-only archiv
 [`server/src/models/fellowship.ts`](../server/src/models/fellowship.ts) uses `programCategory` (`FELLOWSHIP` | `CENTER_INTERNSHIP` | `RECURRING_PROGRAM` | `SUMMER_RESEARCH_PROGRAM`), `programKind`, and `entryMode` enums, not a stored reference to any removed model.
 The "program" split-brain is resolved: programs and fellowships live only on the `/programs` surface.
 The Fellowship to `ResearchEntity` projection that mirrored each `Fellowship` into `/research` as an `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` entity was removed, along with those two `entityType` values, the `/research` "Related programs & fellowships" cross-surface module, and the now-dead funding-program topic derivation that only enriched projected programs.
-A scraped `PROGRAM` research home discovered on a Yale department or official page is a first-class `/research` citizen and is unaffected; only the `Fellowship`-derived duplicates were retired.
+The `PROGRAM` `entityType` was then removed entirely (see `docs/decisions.md` 2026-08-26), so no program is a `/research` citizen: every program lives only on `/programs` (backed by `Fellowship`), and department "undergraduate research" pages materialize as `Fellowship` records rather than research homes.
 
 ## Canonicalization
 

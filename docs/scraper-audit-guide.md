@@ -288,7 +288,8 @@ SCRAPER_ENV=development \
 Expected collections after an accepted materialized write:
 
 - `observations`: department-backed research entity, access evidence, contact, and application-route fields.
-- `research_entities`: lab or program-like research homes discovered from official department pages.
+- `research_entities`: per-faculty `LAB` research homes discovered from official department pages.
+- `fellowships`: program records from these pages materialize onto `/programs` as `Fellowship` records, not `PROGRAM` research entities (that entity type no longer exists).
 - access `signals` through access materialization.
 
 Audit focus:

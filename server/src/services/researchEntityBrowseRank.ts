@@ -72,13 +72,11 @@ const resolveEntityType = (entity: Record<string, any>): ResearchEntityType =>
  * The umbrella demotion is applied by behavior, not by name: it only affects an
  * org-type entity that actually hosts affiliated research homes. A leaf entity
  * that happens to be typed CENTER/INSTITUTE/INITIATIVE but hosts nothing is a
- * direct research home and is not demoted. PROGRAM demotion is unconditional
- * because it reflects a program offering rather than a joinable lab.
+ * direct research home and is not demoted.
  */
 const ENTITY_TYPE_RANK_ADJUSTMENT: Partial<Record<ResearchEntityType, number>> = {
   CENTER: -25,
   INSTITUTE: -18,
-  PROGRAM: -10,
   INITIATIVE: -10,
 };
 

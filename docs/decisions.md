@@ -4,6 +4,21 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-26: `PROGRAM` Is Not A Research Entity; Every Program Lives Only On `/programs`
+
+The `PROGRAM` `entityType` is removed from `ResearchEntity`, so a program is never a `/research` citizen.
+This amends the 2026-08-25 decision below, which had kept a scraped `PROGRAM` research home as a first-class `/research` entity.
+A program is an apply-to-a-program surface concept, so it belongs on `/programs` (backed by the `Fellowship` collection), not in the find-a-person-and-reach-out directory.
+Two populations motivated the change: generic department "undergraduate research" pages (`department-undergrad-research-*`), which are recruitment/DUS guidance rather than joinable research homes, and a tail of named programs that were mis-typed as `PROGRAM`.
+All of them move to `/programs` uniformly rather than being re-typed, so the corpus carries no `PROGRAM` entity and no cross-surface duplicate.
+
+Removed: the `PROGRAM` value from `researchEntityTypes` and the `researchGroupKinds.program` to entity-type mapping (the `program` group kind now derives to `INITIATIVE`).
+The `departmentUndergradResearchScraper` program parsers now emit `entityType: 'fellowship'` observations that materialize into `Fellowship` records; its per-faculty physics parser still emits `LAB` research entities.
+The name-keyword classifiers in `yaleResearchOfficialScraper` and `officialProfilePiBackfillScraper` no longer map a `"...Program"` name to `PROGRAM`; a genuine research structure named "Program" now classifies as `INITIATIVE` and stays in `/research`.
+Existing `PROGRAM` entities were migrated by the guarded `programs:migrate-program-entities-to-fellowships` data operation, which mints a deduped `Fellowship` per entity, runs the program visibility gate, and hard-deletes the `ResearchEntity` plus its Meilisearch document, `Signal` rows, and `RoleAssignment` edges.
+`researchPlanTargetKinds`'s `'PROGRAM'` is a research-plan target kind for saving a program and is unrelated to the removed entity type; it is unchanged.
+Future work must not reintroduce a `PROGRAM` `entityType` or route programs into the `/research` corpus.
+
 ## 2026-08-25: Programs And Fellowships Live Only On `/programs`; The Split-Brain Projection Is Removed
 
 The Fellowship to `ResearchEntity` projection is removed, resolving the long-tracked "program split-brain" where a program appeared both as a `Fellowship` on `/programs` and as a projected `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` `ResearchEntity` on `/research`.

@@ -264,7 +264,7 @@ function isGrantOrOrcidSourceUrl(value: string): boolean {
   }
 }
 
-const ORG_ENTITY_TYPES_INCOHERENT_WITH_LAB_NAME = new Set(['CENTER', 'INSTITUTE', 'PROGRAM']);
+const ORG_ENTITY_TYPES_INCOHERENT_WITH_LAB_NAME = new Set(['CENTER', 'INSTITUTE']);
 
 const LAB_NAME_EPONYM_STOPWORDS = new Set([
   'yale',
