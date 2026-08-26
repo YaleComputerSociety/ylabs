@@ -43,6 +43,7 @@ export interface ScraperOptions {
   ignoreWorkPlanner?: boolean;
   exhaustive?: boolean;
   forceLlm?: boolean;
+  sourceConcurrency?: number;
   logisticsProductionMode?: boolean;
   dbReview?: boolean;
   triggeredBy?: 'cli' | 'cron' | 'admin';

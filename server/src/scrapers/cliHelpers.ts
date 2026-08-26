@@ -54,6 +54,7 @@ const VALUE_FLAGS = new Set([
   'run',
   'since',
   'source',
+  'source-concurrency',
 ]);
 
 const BOOLEAN_FLAGS = new Set([
@@ -132,6 +133,10 @@ export function parseScraperOptions(flags: Record<string, string | boolean>): Sc
     ignoreWorkPlanner: !!flags['ignore-work-planner'],
     exhaustive: !!flags.exhaustive,
     forceLlm: !!flags['force-llm'],
+    sourceConcurrency: parseOptionalIntegerFlag(flags, 'source-concurrency', {
+      min: 1,
+      label: 'positive',
+    }),
     logisticsProductionMode: !!flags['logistics-production'],
     since: flags.since ? new Date(String(flags.since)) : undefined,
   };

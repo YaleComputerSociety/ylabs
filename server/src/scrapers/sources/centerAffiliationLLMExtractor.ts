@@ -23,6 +23,11 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   type CenterMember,
@@ -275,7 +280,12 @@ export class CenterAffiliationLLMExtractor implements IScraper {
     let observationCount = 0;
     let entitiesObserved = 0;
 
-    for (const center of candidates) {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+
+    await mapWithConcurrency(candidates, concurrency, async (center) => {
       try {
         let page: { url: string; html: string } | null = null;
         try {
@@ -284,17 +294,17 @@ export class CenterAffiliationLLMExtractor implements IScraper {
           ctx.log(
             `[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`,
           );
-          continue;
+          return;
         }
         const pageText = htmlToText(page?.html || '');
         if (pageText.length < 120) {
           ctx.log(`[${center.slug}] page too small/empty; skipping.`);
-          continue;
+          return;
         }
 
         const extraction = await this.callLLM({
           model: this.model,
-          apiKey: this.apiKey,
+          apiKey: this.apiKey as string,
           centerName: center.name,
           sourceUrl: page?.url || (center.websiteUrl as string),
           pageText,
@@ -305,7 +315,7 @@ export class CenterAffiliationLLMExtractor implements IScraper {
         });
         if (!observations.length) {
           ctx.log(`[${center.slug}] no named faculty extracted.`);
-          continue;
+          return;
         }
         await ctx.emit(observations);
         observationCount += observations.length;
@@ -316,7 +326,7 @@ export class CenterAffiliationLLMExtractor implements IScraper {
       } catch (error) {
         ctx.log(`[${center.slug}] affiliation extraction failed: ${sanitizeLogValue(error)}`);
       }
-    }
+    });
 
     return {
       observationCount,

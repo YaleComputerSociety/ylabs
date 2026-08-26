@@ -8,6 +8,11 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 import { slugify } from '../utils/scraperHelpers';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
@@ -571,14 +576,16 @@ export class YsmMeshKeywordScraper implements IScraper {
     const only = uniqueStrings(ctx.options.only || []);
     const candidates = await this.entityFinder({ only, exhaustive: ctx.options.exhaustive });
 
-    let directory: YsmFacultyDirectory | null = null;
+    let directoryPromise: Promise<YsmFacultyDirectory> | null = null;
     let keywordsEnumerated = 0;
     const loadDirectory = async (): Promise<YsmFacultyDirectory> => {
-      if (!directory) {
-        directory = await this.directoryLoader(ctx);
-        keywordsEnumerated = directory.keywords.length;
+      if (!directoryPromise) {
+        directoryPromise = this.directoryLoader(ctx).then((loaded) => {
+          keywordsEnumerated = loaded.keywords.length;
+          return loaded;
+        });
       }
-      return directory;
+      return directoryPromise;
     };
 
     let observationCount = 0;
@@ -589,20 +596,25 @@ export class YsmMeshKeywordScraper implements IScraper {
       : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
 
-    for (const entity of candidates) {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+
+    await mapWithConcurrency(candidates, concurrency, async (entity) => {
       try {
         if (workPlannerPolicy) {
           if (!idValue(entity._id) && !entity.slug) {
             recordWorkPlannerNoIdentifier(workPlannerMetrics);
-            continue;
+            return;
           }
           const plan = await this.workPlanLoader(entity, workPlannerPolicy, ctx);
           recordWorkPlannerDecision(workPlannerMetrics, plan);
-          if (!plan.shouldFetch) continue;
+          if (!plan.shouldFetch) return;
         }
 
         const profileUrls = await this.resolveProfileUrls(entity, loadDirectory);
-        if (!profileUrls.length) continue;
+        if (!profileUrls.length) return;
         profilesResolved += 1;
 
         let observations: ObservationInput[] = [];
@@ -626,7 +638,7 @@ export class YsmMeshKeywordScraper implements IScraper {
           if (observations.length) break;
         }
 
-        if (!observations.length) continue;
+        if (!observations.length) return;
         await ctx.emit(observations);
         observationCount += observations.length;
         entitiesObserved += 1;
@@ -635,7 +647,7 @@ export class YsmMeshKeywordScraper implements IScraper {
           `[${entity.slug || 'entity'}] skipping MeSH area extraction: ${sanitizeLogValue(error)}`,
         );
       }
-    }
+    });
 
     return {
       observationCount,

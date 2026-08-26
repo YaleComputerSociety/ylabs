@@ -21,6 +21,11 @@ import {
   type ResearchAreaCanonicalizer,
 } from '../researchAreaCanonicalization';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 
 const SOURCE_KEY = 'research-area-source-extractor';
 const MAX_SCAN_CHARS = 40_000;
@@ -478,14 +483,18 @@ export class ResearchAreaSourceExtractor implements IScraper {
       ? undefined
       : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
 
-    for (const entity of candidates) {
+    await mapWithConcurrency(candidates, concurrency, async (entity) => {
       try {
         if (workPlannerPolicy) {
           if (!idValue(entity._id) && !entity.slug) {
             recordWorkPlannerNoIdentifier(workPlannerMetrics);
             ctx.log('[candidate] skipped by WorkPlanner - missing entity identifier.');
-            continue;
+            return;
           }
           const plan = await this.workPlanLoader(entity, workPlannerPolicy, ctx);
           recordWorkPlannerDecision(workPlannerMetrics, plan);
@@ -494,7 +503,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
             ctx.log(
               `[${entity.slug || 'candidate'}] skipped by WorkPlanner - ${reasons || 'fresh'}.`,
             );
-            continue;
+            return;
           }
         }
 
@@ -522,7 +531,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
           if (observations.length) break;
         }
 
-        if (!observations.length) continue;
+        if (!observations.length) return;
         await ctx.emit(observations);
         observationCount += observations.length;
         entitiesObserved += 1;
@@ -531,7 +540,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
           `[${entity.slug || 'candidate'}] skipping area extraction: ${sanitizeLogValue(error)}`,
         );
       }
-    }
+    });
 
     return {
       observationCount,

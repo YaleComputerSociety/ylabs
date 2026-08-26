@@ -68,6 +68,11 @@ import {
   type EntityWorkPlan,
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
@@ -1380,21 +1385,25 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         ? undefined
         : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
 
-    for (const lab of labs) {
+    await mapWithConcurrency(labs, concurrency, async (lab) => {
       processed++;
       if (workPlannerPolicy) {
         if (!lab.slug) {
           recordWorkPlannerNoIdentifier(workPlannerMetrics);
           ctx.log('[candidate] skipped by WorkPlanner — missing slug/entity key.');
-          continue;
+          return;
         }
         const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
         recordWorkPlannerDecision(workPlannerMetrics, plan);
         if (!plan.shouldFetch) {
           const reasons = Array.from(new Set(plan.fields.map((field) => field.reason))).join(',');
           ctx.log(`[${lab.slug}] skipped by WorkPlanner — ${reasons || 'fresh'}.`);
-          continue;
+          return;
         }
       }
 
@@ -1426,7 +1435,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       }
       if (!homePage) {
         fetchFailed++;
-        continue;
+        return;
       }
       const homeText = htmlToPromptText(homePage.html);
 
@@ -1455,7 +1464,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       if (contentUnchanged(storedContentHash, contentHash, ctx.options.forceLlm)) {
         contentUnchangedSkipped += 1;
         ctx.log(`[${lab.slug}] skipped — content unchanged.`);
-        continue;
+        return;
       }
 
       const userPrompt = buildLLMPrompt(
@@ -1494,13 +1503,13 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             model: this.model,
             systemPrompt,
             userPrompt,
-            apiKey: this.apiKey,
+            apiKey: this.apiKey as string,
             responseFormat,
           });
         } catch (err: any) {
           ctx.log(`[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`);
           llmFailed++;
-          continue;
+          return;
         }
         if (ctx.options.useCache && extraction) {
           try {
@@ -1549,7 +1558,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           `progress: ${processed}/${labs.length} labs | ${succeeded} ok | ${fetchFailed} fetch-failed | ${llmFailed} llm-failed | ${totalObs} obs`,
         );
       }
-    }
+    });
 
     ctx.log(
       `Done. processed=${processed}, succeeded=${succeeded}, fetchFailed=${fetchFailed}, llmFailed=${llmFailed}, observations=${totalObs}`,
