@@ -132,6 +132,17 @@ The redirect supersedes the archived-tombstone resurrection guard for the redire
 
 Ambiguous, non-eponymous same-PI clusters are never auto-selected here and continue to rely on the manual review workflow and the gate's existing `duplicate_risk` suppress-in-place fallback.
 
+## Deleting inert merge residue
+
+Once a merge is redirect-backed the archived shell is inert and can be physically deleted, which the `research-entity:cleanup-archived --merge-residue-only` command does under a fail-closed invariant.
+It deletes a shell only when it is archived, carries a `canonicalGroupId`, has a matching `research_entity_redirects` row, and has zero live references across signals, `role_assignments` `target.id`, relationships, members, scholarly links, canonical children, and observations.
+Any candidate that fails the invariant is deferred with a reason (`has_live_references` or `missing_redirect`) rather than deleted, so legacy non-inert residue is left untouched.
+The redirect row is preserved on delete, so a later re-scrape still resolves the source to the surviving canonical through `materializeEntity`.
+
+The command is report-only by default; applying requires `--apply --confirm-archived-entity-cleanup`, an explicit `--limit`, and a `--max-apply` bound, and is env-gated Dev-first through the same `assertScriptApplyAllowed` guard.
+In the sweep, the existing report-only `archived-cleanup` stage (`research-entity:cleanup-archived --merge-residue-only --limit=5000`) runs after the FRA merge stage and only switches to apply mode (`--apply --confirm-archived-entity-cleanup --max-apply=5000`) when `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=1` (or `=true`) is set.
+The flag is OFF by default, so Beta and Prod sweeps only report merge residue until it is deliberately enabled after Dev validation.
+
 ## Environment order and production
 
 Development and Beta are the review environments.

@@ -27,9 +27,7 @@ const RESEARCH_ENTITY_REDIRECTS_COLLECTION = 'research_entity_redirects';
 
 export const SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV = 'SCRAPER_SWEEP_DELETE_MERGE_RESIDUE';
 
-export function isMergeResidueDeletionStageEnabled(
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
+export function isMergeResidueDeletionStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = (env[SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV] || '').trim().toLowerCase();
   return value === '1' || value === 'true';
 }
@@ -323,9 +321,7 @@ async function loadArchivedResearchEntityCandidates(
     ...(entity.name ? { name: String(entity.name) } : {}),
     ...(entity.slug ? { slug: String(entity.slug) } : {}),
     liveReferences: references.get(stringId(entity._id)) || [],
-    ...(redirectPresence
-      ? { redirectPresent: redirectPresence.has(stringId(entity._id)) }
-      : {}),
+    ...(redirectPresence ? { redirectPresent: redirectPresence.has(stringId(entity._id)) } : {}),
   }));
 }
 

@@ -6,7 +6,10 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
         { id: 'a', liveReferences: [] },
-        { id: 'b', liveReferences: [{ collection: 'signals', field: 'researchEntityId', count: 0 }] },
+        {
+          id: 'b',
+          liveReferences: [{ collection: 'signals', field: 'researchEntityId', count: 0 }],
+        },
       ],
     });
     expect(plan).toMatchObject({ scanned: 2, eligibleCount: 2, blockedCount: 0 });
@@ -23,7 +26,9 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
           id: 'b',
           name: 'Blocked Home',
           slug: 'blocked-home',
-          liveReferences: [{ collection: 'posted_opportunities', field: 'researchEntityId', count: 3 }],
+          liveReferences: [
+            { collection: 'posted_opportunities', field: 'researchEntityId', count: 3 },
+          ],
         },
       ],
     });

@@ -55,9 +55,9 @@ describe('cleanupArchivedResearchEntities CLI helpers', () => {
 
   it('gates the merge-residue deletion sweep stage behind an env flag', () => {
     expect(isMergeResidueDeletionStageEnabled({})).toBe(false);
-    expect(isMergeResidueDeletionStageEnabled({ SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: 'false' })).toBe(
-      false,
-    );
+    expect(
+      isMergeResidueDeletionStageEnabled({ SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: 'false' }),
+    ).toBe(false);
     expect(isMergeResidueDeletionStageEnabled({ SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: '1' })).toBe(
       true,
     );
