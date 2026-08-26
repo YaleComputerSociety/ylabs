@@ -134,9 +134,6 @@ describe('planIndexReconcile', () => {
 
     expect(plan.keep).toEqual(['beta_researchentities']);
     expect(plan.retire).toEqual(['beta_listings']);
-    expect(plan.unknown).toEqual([
-      'beta_operator_researchentities',
-      'beta_operator_listings',
-    ]);
+    expect(plan.unknown).toEqual(['beta_operator_researchentities', 'beta_operator_listings']);
   });
 });

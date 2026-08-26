@@ -3,9 +3,7 @@
  */
 import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import {
-  buildResearchEntitySearchIndexDocumentsWithMemberNames,
-} from './researchEntitySearchIndexService';
+import { buildResearchEntitySearchIndexDocumentsWithMemberNames } from './researchEntitySearchIndexService';
 
 export type SyncableEntityType = 'researchEntity';
 type MaybePromise<T> = T | Promise<T>;

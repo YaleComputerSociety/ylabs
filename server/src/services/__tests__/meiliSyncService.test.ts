@@ -170,9 +170,7 @@ describe('syncEntity transform', () => {
 
   it('swallows Meilisearch errors so callers do not break', async () => {
     mocks.addDocuments.mockRejectedValueOnce(new Error('meili down'));
-    await expect(
-      syncEntity('researchEntity', { _id: 'a', name: 't' }),
-    ).resolves.toBeUndefined();
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBeUndefined();
   });
 });
 
