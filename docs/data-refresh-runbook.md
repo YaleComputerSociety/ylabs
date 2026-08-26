@@ -304,7 +304,7 @@ Run the full Development sweep below only for the optional fetch-once-and-mirror
 yarn scrape:development:all:full
 ```
 
-The full command runs every source in the canonical sweep manifest with `--exhaustive`, without cache, bypasses freshness skips for coverage measurement, and materializes each successful run into Atlas Development.
+The full command runs every source in the canonical sweep manifest with `--exhaustive`, reuses the fetch cache with `--use-cache`, bypasses freshness skips for coverage measurement, and materializes each successful run into Atlas Development.
 `--exhaustive` disables the default candidate caps inside the LLM and backfill scrapers as well as omitting the shared `--limit`.
 This can take hours and can make many paid API calls.
 Only run it after the bounded sample succeeds.
@@ -315,6 +315,16 @@ The runner prints an output directory under `/tmp`.
 That directory contains one JSON report per source, `summary.json`, the faculty projection report, the search rebuild report, all four coverage and quality reports, and the report-only archived-cleanup report.
 Each summary row includes observation and entity yield, fetch successes and failures, blocked requests, selector breakages, warnings, and materialization counts.
 Development continues after a source failure so the summary captures every problem, but it exits nonzero when any source failed.
+
+For routine recurring refreshes, run the incremental sweep instead of the full sweep:
+
+```bash
+yarn scrape:development:all:incremental
+```
+
+The incremental command runs the same sources exhaustively, reuses the fetch cache, materializes into Atlas Development, and runs the same post-run stages as the full command.
+It differs by honoring WorkPlanner freshness skips instead of re-fetching every entity, so already-fresh entities are skipped and routine sweeps stay cheap.
+Reserve the full sweep for periodic deep coverage refreshes where you intentionally re-fetch every eligible entity.
 
 Use targeted single-source commands while repairing a failed source:
 
