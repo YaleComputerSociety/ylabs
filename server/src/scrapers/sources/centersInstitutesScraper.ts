@@ -762,8 +762,8 @@ export const jsRenderedStub: CenterExtractor = () => {
 };
 
 // ---------------------------------------------------------------------------
-// Default config — the wired center set (see centersInstitutesRegistry.ts for
-// the full coverage map, including evaluated-but-unwired gaps).
+// Default config — the wired center set (see issue #2040 for the full
+// coverage map, including evaluated-but-unwired gaps).
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [

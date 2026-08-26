@@ -3,8 +3,8 @@
  *
  * Discovery-only scraper for the Yale Beinecke Rare Book & Manuscript Library
  * research fellowship programs, minting `ARCHIVE_OR_MUSEUM_PROJECT` research
- * homes. This closes the last `status: 'gap'` entry in
- * `humanitiesCollectionsSourceRegistry.ts` (after the DHLab pilot #1345 and the
+ * homes. This closes the last humanities/collections coverage gap (tracked in
+ * issue #2040, after the DHLab pilot #1345 and the
  * Peabody producer #1349), reusing the `ARCHIVE_OR_MUSEUM_PROJECT` path proven
  * end-to-end by `peabodyCollectionsResearchScraper`.
  *
