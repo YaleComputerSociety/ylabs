@@ -2952,3 +2952,128 @@ describe('buildSameNameDifferentPersonQuarantine', () => {
     expect(buildSameNameDifferentPersonQuarantine(rows)).toEqual([]);
   });
 });
+
+describe('buildResearchEntityPiDedupePlan center carve-out', () => {
+  it('never selects a CENTER as the canonical survivor of an FRA-shadow merge', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-center-and-lab',
+        normalizedName: 'same-pi:pi-center-and-lab',
+        piFirstName: 'Katherine',
+        piLastName: 'Johnson',
+        entities: [
+          {
+            id: 'johnson-center',
+            slug: 'ysm-johnson-center',
+            name: 'Johnson Center for Orbital Mechanics',
+            kind: 'center',
+            entityType: 'CENTER',
+            websiteUrl: 'https://medicine.yale.edu/johnson-center/',
+            sourceUrls: ['https://medicine.yale.edu/johnson-center/'],
+            departments: ['Astronomy'],
+          },
+          {
+            id: 'johnson-lab',
+            slug: 'ysm-johnson-lab',
+            name: 'Johnson Laboratory',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://medicine.yale.edu/lab/johnson/',
+            sourceUrls: ['https://medicine.yale.edu/lab/johnson/'],
+            departments: ['Astronomy'],
+          },
+          {
+            id: 'johnson-fra-shell',
+            slug: 'faculty-research-area-katherine-johnson',
+            name: 'Katherine Johnson Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.yale.edu/profile/katherine-johnson/'],
+            departments: ['Astronomy'],
+          },
+        ],
+      },
+    ]);
+    const shadowGroup = plan.find(
+      (group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home',
+    );
+    expect(shadowGroup?.canonicalEntityId).toBe('johnson-lab');
+    expect([shadowGroup?.canonicalEntityId, ...(shadowGroup?.duplicateEntityIds || [])]).not.toContain(
+      'johnson-center',
+    );
+  });
+
+  it('does not fold an FRA shell into a same-PI center when there is no lab', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-center-only',
+        normalizedName: 'same-pi:pi-center-only',
+        piFirstName: 'Grace',
+        piLastName: 'Hopper',
+        entities: [
+          {
+            id: 'hopper-center',
+            slug: 'ysm-hopper-center',
+            name: 'Hopper Center for Computing',
+            kind: 'center',
+            entityType: 'CENTER',
+            websiteUrl: 'https://medicine.yale.edu/hopper-center/',
+            sourceUrls: ['https://medicine.yale.edu/hopper-center/'],
+            departments: ['Computer Science'],
+          },
+          {
+            id: 'hopper-fra-shell',
+            slug: 'faculty-research-area-grace-hopper',
+            name: 'Grace Hopper Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.yale.edu/profile/grace-hopper/'],
+            departments: ['Computer Science'],
+          },
+        ],
+      },
+    ]);
+    expect(
+      plan.filter((group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home'),
+    ).toEqual([]);
+  });
+
+  it('never folds a person-named lab shell into a same-PI center that is its only website home', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-center-and-person-named-lab',
+        normalizedName: 'same-pi:pi-center-and-person-named-lab',
+        piFirstName: 'Grace',
+        piLastName: 'Hopper',
+        entities: [
+          {
+            id: 'hopper-center',
+            slug: 'ysm-hopper-center',
+            name: 'Hopper Center for Computing',
+            kind: 'center',
+            entityType: 'CENTER',
+            websiteUrl: 'https://medicine.yale.edu/hopper-center/',
+            sourceUrls: ['https://medicine.yale.edu/hopper-center/'],
+            departments: ['Computer Science'],
+          },
+          {
+            id: 'grace-hopper-lab-stub',
+            slug: 'ysm-grace-hopper-lab',
+            name: 'Grace Hopper Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            sourceUrls: ['https://medicine.yale.edu/profile/grace-hopper/'],
+            departments: ['Computer Science'],
+          },
+        ],
+      },
+    ]);
+    const shadowGroups = plan.filter(
+      (group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home',
+    );
+    expect(shadowGroups).toEqual([]);
+    expect(
+      shadowGroups.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
+    ).not.toContain('hopper-center');
+  });
+});
