@@ -196,7 +196,11 @@ export async function fetchPageWithPolicy(
       return { url: result.finalUrl || safeUrl, html: result.data ?? '', status: result.status };
     }
     if (retryable.has(result.status) && attempt < maxRetries) {
-      await sleep(result.retryAfterMs ?? backoffMs(attempt));
+      const retryDelay =
+        result.retryAfterMs !== undefined
+          ? Math.min(result.retryAfterMs, maxBackoff)
+          : backoffMs(attempt);
+      await sleep(retryDelay);
       continue;
     }
     throw new Error(`Request failed with status code ${result.status}`);
