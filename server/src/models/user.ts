@@ -119,10 +119,6 @@ const userSchema = new mongoose.Schema(
       type: [mongoose.Schema.ObjectId],
       default: [],
     },
-    favListings: {
-      type: [mongoose.Schema.ObjectId],
-      default: [],
-    },
     savedResearchEntities: {
       type: [mongoose.Schema.ObjectId],
       ref: 'ResearchEntity',

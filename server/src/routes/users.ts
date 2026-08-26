@@ -8,11 +8,8 @@ import * as userController from '../controllers/userController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { emitResearchEvent } from '../services/researchAnalytics';
 
 const router = Router();
-const FAVORITE_ANALYTICS_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-const MAX_FAVORITE_ANALYTICS_IDS = 100;
 const PROFILE_UPDATE_ANALYTICS_FIELD_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const MAX_PROFILE_UPDATE_ANALYTICS_FIELDS = 50;
 
@@ -26,58 +23,6 @@ function setPrivateUserCacheHeaders(_req: Request, res: Response, next: NextFunc
 }
 
 router.use(setPrivateUserCacheHeaders);
-
-const normalizeFavoriteAnalyticsIds = (value: unknown): string[] => {
-  if (!value) {
-    return [];
-  }
-
-  const ids: string[] = [];
-  const seen = new Set<string>();
-  const rawIds = Array.isArray(value) ? value : [value];
-
-  for (const rawId of rawIds.slice(0, MAX_FAVORITE_ANALYTICS_IDS)) {
-    if (typeof rawId !== 'string') continue;
-    const id = rawId.trim().toLowerCase();
-    if (!FAVORITE_ANALYTICS_OBJECT_ID_RE.test(id) || seen.has(id)) continue;
-    seen.add(id);
-    ids.push(id);
-  }
-
-  return ids;
-};
-
-const getFavoriteIds = (req: Request, key: string): string[] =>
-  normalizeFavoriteAnalyticsIds(req.body?.data?.[key] ?? req.body?.[key]);
-
-const parseFavoriteAnalyticsResponse = (data: unknown): Record<string, any> | undefined => {
-  if (!data) return undefined;
-  if (Buffer.isBuffer(data)) {
-    return parseFavoriteAnalyticsResponse(data.toString('utf8'));
-  }
-  if (typeof data === 'string') {
-    try {
-      const parsed = JSON.parse(data);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? (parsed as Record<string, any>)
-        : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  return typeof data === 'object' && !Array.isArray(data)
-    ? (data as Record<string, any>)
-    : undefined;
-};
-
-const visibleFavoriteAnalyticsIdsFromResponse = (
-  data: unknown,
-  requestedIds: string[],
-): string[] => {
-  const payload = parseFavoriteAnalyticsResponse(data);
-  const visibleIds = new Set(normalizeFavoriteAnalyticsIds(payload?.user?.favListings));
-  return requestedIds.filter((id) => visibleIds.has(id));
-};
 
 const profileUpdateAnalyticsFields = (value: unknown): string[] => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
@@ -96,71 +41,6 @@ const profileUpdateAnalyticsFields = (value: unknown): string[] => {
   }
 
   return fields;
-};
-
-const logFavoriteEvent = (isFavorite: boolean) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const originalSend = res.send.bind(res);
-
-    res.send = function (data: any) {
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        const currentUser = req.user as { netId?: string; userType: string };
-        const requestedIds = getFavoriteIds(req, 'favListings');
-        const visibleIds = isFavorite
-          ? visibleFavoriteAnalyticsIdsFromResponse(data, requestedIds)
-          : [];
-
-        if (
-          currentUser?.netId &&
-          (visibleIds.length > 0 || (!isFavorite && requestedIds.length > 0))
-        ) {
-          const eventType = isFavorite
-            ? AnalyticsEventType.LISTING_FAVORITE
-            : AnalyticsEventType.LISTING_UNFAVORITE;
-
-          if (!isFavorite && requestedIds.length > 0) {
-            logEvent({
-              eventType,
-              netid: currentUser.netId!,
-              userType: currentUser.userType,
-              metadata: { entityType: 'listing', itemIdsRedacted: true },
-            }).catch((err) =>
-              console.error('Error logging favorite event:', sanitizeLogValue(err)),
-            );
-          }
-
-          const pathwayIds = isFavorite ? visibleIds : requestedIds;
-          pathwayIds.forEach((itemId: string) => {
-            emitResearchEvent({
-              eventType: AnalyticsEventType.PATHWAY_SAVE,
-              entityType: 'listing',
-              entityId: itemId,
-              user: currentUser,
-              payload: { action: isFavorite ? 'save' : 'unsave' },
-            }).catch((err) =>
-              console.error('Error logging pathway save event:', sanitizeLogValue(err)),
-            );
-          });
-
-          visibleIds.forEach((itemId: string) => {
-            logEvent({
-              eventType,
-              netid: currentUser.netId!,
-              userType: currentUser.userType,
-              listingId: itemId,
-              metadata: { entityType: 'listing' },
-            }).catch((err) =>
-              console.error('Error logging favorite event:', sanitizeLogValue(err)),
-            );
-          });
-        }
-      }
-
-      return originalSend(data);
-    };
-
-    next();
-  };
 };
 
 const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunction) => {
@@ -189,22 +69,6 @@ const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunc
 
   next();
 };
-
-router.get('/favListingsIds', isAuthenticated, userController.getFavListingsIds);
-router.put(
-  '/favListings',
-  writeLimit,
-  isAuthenticated,
-  logFavoriteEvent(true),
-  userController.addFavListings,
-);
-router.delete(
-  '/favListings',
-  writeLimit,
-  isAuthenticated,
-  logFavoriteEvent(false),
-  userController.removeFavListings,
-);
 
 router.get('/watchedProgramIds', isAuthenticated, userController.getWatchedProgramIds);
 router.get('/watchedPrograms', isAuthenticated, userController.getWatchedPrograms);

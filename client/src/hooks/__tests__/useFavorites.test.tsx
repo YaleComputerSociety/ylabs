@@ -34,14 +34,14 @@ afterEach(() => {
 });
 
 describe('useFavorites', () => {
-  it('does not block the page with a modal when listing favorites fail to load', async () => {
+  it('does not block the page with a modal when saved favorites fail to load', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mockedAxios.get.mockRejectedValueOnce(new Error('favorites unavailable'));
 
-    const { result } = renderHook(() => useFavorites('listings'));
+    const { result } = renderHook(() => useFavorites('researchPlans'));
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/favListingsIds', {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedResearchEntityIds', {
         withCredentials: true,
       });
     });

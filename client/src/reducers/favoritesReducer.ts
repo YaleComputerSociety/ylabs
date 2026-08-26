@@ -6,15 +6,13 @@
  * (emailed/notes) is still owned by accountTrackingReducer. API calls and modal
  * UI toggles stay in the consuming component.
  */
-import { Listing, Fellowship } from '../types/types';
+import { Fellowship } from '../types/types';
 
 export type FavSortKey = 'name' | 'department' | 'status' | 'dateAdded';
 export type FavStatusFilter = 'all' | 'open' | 'closed' | 'emailed';
 export type DashboardView = 'list' | 'card';
 
 export interface FavoritesState {
-  favListings: Listing[];
-  favListingsIds: string[];
   favFellowships: Fellowship[];
   favFellowshipIds: string[];
   sortKey: FavSortKey;
@@ -28,16 +26,9 @@ export type FavoritesAction =
   | {
       type: 'HYDRATE';
       payload: Partial<
-        Pick<
-          FavoritesState,
-          'favListings' | 'favListingsIds' | 'favFellowships' | 'favFellowshipIds'
-        >
+        Pick<FavoritesState, 'favFellowships' | 'favFellowshipIds'>
       >;
     }
-  | { type: 'SET_FAV_LISTINGS'; favListings: Listing[]; favListingsIds: string[] }
-  | { type: 'ADD_FAV_LISTING'; listing: Listing }
-  | { type: 'REMOVE_FAV_LISTING'; listingId: string }
-  | { type: 'UPDATE_FAV_LISTING'; listing: Listing }
   | { type: 'SET_FAV_FELLOWSHIPS'; favFellowships: Fellowship[]; favFellowshipIds: string[] }
   | { type: 'ADD_FAV_FELLOWSHIP_ID'; fellowshipId: string }
   | { type: 'REMOVE_FAV_FELLOWSHIP'; fellowshipId: string }
@@ -50,8 +41,6 @@ export type FavoritesAction =
 export const createInitialFavoritesState = (
   overrides: Partial<FavoritesState> = {},
 ): FavoritesState => ({
-  favListings: [],
-  favListingsIds: [],
   favFellowships: [],
   favFellowshipIds: [],
   sortKey: 'dateAdded',
@@ -71,38 +60,6 @@ export function favoritesReducer(
   switch (action.type) {
     case 'HYDRATE':
       return { ...state, ...action.payload };
-
-    case 'SET_FAV_LISTINGS':
-      return {
-        ...state,
-        favListings: action.favListings,
-        favListingsIds: action.favListingsIds,
-      };
-
-    case 'ADD_FAV_LISTING': {
-      const id = action.listing.id;
-      if (state.favListingsIds.includes(id)) return state;
-      return {
-        ...state,
-        favListings: [action.listing, ...state.favListings],
-        favListingsIds: [id, ...state.favListingsIds],
-      };
-    }
-
-    case 'REMOVE_FAV_LISTING':
-      return {
-        ...state,
-        favListings: state.favListings.filter((l) => l.id !== action.listingId),
-        favListingsIds: state.favListingsIds.filter((id) => id !== action.listingId),
-      };
-
-    case 'UPDATE_FAV_LISTING':
-      return {
-        ...state,
-        favListings: state.favListings.map((l) =>
-          l.id === action.listing.id ? action.listing : l,
-        ),
-      };
 
     case 'SET_FAV_FELLOWSHIPS':
       return {

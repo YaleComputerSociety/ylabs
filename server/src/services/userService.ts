@@ -5,11 +5,8 @@ import { User } from '../models/index';
 import { NotFoundError } from '../utils/errors';
 import {
   readListing,
-  readPublicListings,
   confirmListing,
   unconfirmListing,
-  addFavorite,
-  removeFavorite,
 } from './listingService';
 import mongoose from 'mongoose';
 import { escapeRegex } from '../utils/regex';
@@ -22,18 +19,6 @@ const MAX_USER_UPDATE_VALUE_OBJECT_KEYS = 200;
 const NETID_LOOKUP_RE = /^[A-Za-z0-9]{2,12}$/;
 const USER_UPDATE_OPERATORS = new Set(['$set', '$unset', '$addToSet']);
 const USER_UPDATE_PATH_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
-type FavoriteObjectIdArrayField = 'favListings';
-
-const recordFavoriteCounterSideEffect = async (
-  label: string,
-  operation: () => Promise<unknown>,
-) => {
-  try {
-    await operation();
-  } catch (error) {
-    console.error(`${label} failed:`, sanitizeLogValue(error));
-  }
-};
 
 const badRequestError = (message: string) => {
   const error: any = new Error(message);
@@ -204,69 +189,6 @@ const storedObjectIdStringsForUserMutation = (values: unknown, fieldName: string
 const userLookupFilterForMutation = (id: any): Record<string, unknown> => {
   const objectId = normalizeUserLookupObjectId(id);
   return objectId ? { _id: objectId } : buildCaseInsensitiveNetidFilter(id);
-};
-
-const addFavoriteObjectIdIfMissing = async (
-  id: any,
-  fieldName: FavoriteObjectIdArrayField,
-  value: mongoose.Types.ObjectId,
-): Promise<{ user: any; added: boolean }> => {
-  const baseFilter = userLookupFilterForMutation(id);
-  const user = await User.findOneAndUpdate(
-    { ...baseFilter, [fieldName]: { $ne: value } },
-    { $addToSet: { [fieldName]: value } },
-    { new: true, runValidators: true },
-  );
-
-  if (user) {
-    return { user: user.toObject(), added: true };
-  }
-
-  const existingUser = await User.findOne(baseFilter);
-  if (!existingUser) {
-    throw new NotFoundError('User not found');
-  }
-  return { user: existingUser.toObject(), added: false };
-};
-
-const removeFavoriteObjectIdIfPresent = async (
-  id: any,
-  fieldName: FavoriteObjectIdArrayField,
-  value: mongoose.Types.ObjectId,
-): Promise<{ user: any; removed: boolean }> => {
-  const baseFilter = userLookupFilterForMutation(id);
-  const user = await User.findOneAndUpdate(
-    { ...baseFilter, [fieldName]: value },
-    { $pull: { [fieldName]: value } },
-    { new: true, runValidators: true },
-  );
-
-  if (user) {
-    return { user: user.toObject(), removed: true };
-  }
-
-  const existingUser = await User.findOne(baseFilter);
-  if (!existingUser) {
-    throw new NotFoundError('User not found');
-  }
-  return { user: existingUser.toObject(), removed: false };
-};
-
-const removeFavoriteObjectIdsWithoutCounters = async (
-  id: any,
-  fieldName: FavoriteObjectIdArrayField,
-  values: mongoose.Types.ObjectId[],
-): Promise<any> => {
-  const baseFilter = userLookupFilterForMutation(id);
-  const user = await User.findOneAndUpdate(
-    baseFilter,
-    { $pull: { [fieldName]: { $in: values } } },
-    { new: true, runValidators: true },
-  );
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
-  return user.toObject();
 };
 
 export const createUser = async (userData: any) => {
@@ -487,53 +409,4 @@ export const clearOwnListings = async (id: any) => {
   return newUser;
 };
 
-export const addFavListings = async (id: any, Listings: [mongoose.Types.ObjectId]) => {
-  const listingIds = normalizeObjectIdsForUserMutation(Listings, 'favListings');
-  const visibleListings = await readPublicListings(listingIds);
-  const visibleListingIds = normalizeObjectIdsForUserMutation(
-    visibleListings.map((listing) => listing._id),
-    'favListings',
-  );
-  let newUser = await readUser(id);
-
-  for (const listingId of visibleListingIds) {
-    const result = await addFavoriteObjectIdIfMissing(id, 'favListings', listingId);
-    newUser = result.user;
-    if (!result.added) continue;
-    await recordFavoriteCounterSideEffect('Listing favorite counter increment', () =>
-      addFavorite(listingId.toHexString(), id),
-    );
-  }
-
-  return newUser;
-};
-
-export const deleteFavListings = async (id: any, removedListings: [mongoose.Types.ObjectId]) => {
-  const listingIds = normalizeObjectIdsForUserMutation(removedListings, 'favListings');
-  const visibleListings = await readPublicListings(listingIds);
-  const visibleListingIds = normalizeObjectIdsForUserMutation(
-    visibleListings.map((listing) => listing._id),
-    'favListings',
-  );
-  let newUser = await readUser(id);
-
-  for (const listingId of visibleListingIds) {
-    const result = await removeFavoriteObjectIdIfPresent(id, 'favListings', listingId);
-    newUser = result.user;
-    if (!result.removed) continue;
-    await recordFavoriteCounterSideEffect('Listing favorite counter decrement', () =>
-      removeFavorite(listingId.toHexString(), id),
-    );
-  }
-
-  newUser = await removeFavoriteObjectIdsWithoutCounters(id, 'favListings', listingIds);
-
-  return newUser;
-};
-
-export const clearFavListings = async (id: any) => {
-  const newUser = await updateUser(id, { favListings: [] });
-
-  return newUser;
-};
 

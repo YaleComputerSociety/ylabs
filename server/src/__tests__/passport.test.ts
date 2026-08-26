@@ -359,7 +359,7 @@ describe('auth environment guards', () => {
     expect(shouldSkipLocalAuthBypass('/logout')).toBe(true);
     expect(shouldSkipLocalAuthBypass('/dev-login')).toBe(true);
     expect(shouldSkipLocalAuthBypass('/check')).toBe(false);
-    expect(shouldSkipLocalAuthBypass('/users/favListingsIds')).toBe(false);
+    expect(shouldSkipLocalAuthBypass('/users/watchedProgramIds')).toBe(false);
   });
 
   it('requires explicit HTTPS CAS base URLs in production', () => {

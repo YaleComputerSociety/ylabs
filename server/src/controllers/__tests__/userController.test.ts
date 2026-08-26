@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  readPublicListings: vi.fn(),
   readUser: vi.fn(),
   updateUser: vi.fn(),
-  addFavListings: vi.fn(),
-  deleteFavListings: vi.fn(),
   normalizeObjectIdsForUserMutation: vi.fn((values: unknown[], fieldName: string) => {
     if (values.length > 100) {
       const error: any = new Error(`Too many ${fieldName} ids`);
@@ -40,15 +37,9 @@ const mocks = vi.hoisted(() => ({
   deleteWatchedProgramPlan: vi.fn(),
 }));
 
-vi.mock('../../services/listingService', () => ({
-  readPublicListings: mocks.readPublicListings,
-}));
-
 vi.mock('../../services/userService', () => ({
   readUser: mocks.readUser,
   updateUser: mocks.updateUser,
-  addFavListings: mocks.addFavListings,
-  deleteFavListings: mocks.deleteFavListings,
   normalizeObjectIdsForUserMutation: mocks.normalizeObjectIdsForUserMutation,
 }));
 
@@ -71,14 +62,11 @@ vi.mock('../../services/researchPlanService', () => ({
 }));
 
 import {
-  addFavListings,
   addSavedResearchEntities,
   deleteSavedResearchEntityPlan,
   exportSavedResearchEntities,
-  getFavListingsIds,
   getSavedResearchEntities,
   getSavedResearchEntityPlans,
-  removeFavListings,
   removeSavedResearchEntities,
   updateCurrentUser,
   updateSavedResearchEntityPlan,
@@ -235,58 +223,6 @@ describe('userController', () => {
     vi.clearAllMocks();
   });
 
-
-  it('does not leak internal service errors when adding favorited listings fails', async () => {
-    mocks.addFavListings.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { favListings: ['64a000000000000000000002'] } },
-    } as any;
-    const res = privateResponseDouble();
-
-    await addFavListings(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update favorite listings' });
-  });
-
-  it('does not leak private ids from account mutation not-found failures', async () => {
-    mocks.addFavListings.mockRejectedValue(
-      Object.assign(new Error('Listing not found with ObjectId: private-listing-id'), {
-        name: 'NotFoundError',
-        status: 404,
-      }),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { favListings: ['private-listing-id'] } },
-    } as any;
-    const res = privateResponseDouble();
-
-    await addFavListings(req, res);
-
-    expect(res.statusCode).toBe(404);
-    expect(res.body).toEqual({ error: 'Not found' });
-  });
-
-  it('does not leak internal service errors when removing favorited listings fails', async () => {
-    mocks.deleteFavListings.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { favListings: ['64a000000000000000000002'] },
-    } as any;
-    const res = privateResponseDouble();
-
-    await removeFavListings(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update favorite listings' });
-  });
 
   it('allowlists watched program payloads for authenticated account readers', async () => {
     mocks.getWatchedPrograms.mockResolvedValue([privateProgram]);
@@ -632,22 +568,6 @@ describe('userController', () => {
       primaryDepartment: 'Public Health',
       departments: ['Public Health', 'Statistics'],
     });
-  });
-
-  it.each([
-    [getFavListingsIds, 'Failed to fetch favorite listing ids'],
-  ])('does not leak internal read errors from account id readers', async (handler, message) => {
-    mocks.readUser.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-
-    await handler(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: message });
   });
 
   it('scopes saved-entity reads and private exports to the authenticated owner', async () => {
