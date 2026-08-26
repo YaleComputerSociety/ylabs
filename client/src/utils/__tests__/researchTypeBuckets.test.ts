@@ -24,10 +24,7 @@ describe('researchTypeBuckets', () => {
 
   describe('entityTypesForResearchTypeBuckets', () => {
     it('flattens the raw entityType enum values for the selected buckets', () => {
-      expect(entityTypesForResearchTypeBuckets(['programs'])).toEqual([
-        'PROGRAM',
-        'COURSE_SEQUENCE',
-      ]);
+      expect(entityTypesForResearchTypeBuckets(['programs'])).toEqual(['COURSE_SEQUENCE']);
     });
 
     it('unions and dedupes across multiple buckets', () => {
@@ -57,12 +54,12 @@ describe('researchTypeBuckets', () => {
           LAB: 10,
           GROUP: 2,
           INDIVIDUAL_RESEARCH: 3,
-          PROGRAM: 4,
+          COURSE_SEQUENCE: 4,
           CENTER: 0,
         }),
       ).toEqual([
         { key: 'labs', label: 'Research groups & labs', count: 15 },
-        { key: 'programs', label: 'Programs & fellowships', count: 4 },
+        { key: 'programs', label: 'Course sequences', count: 4 },
       ]);
     });
 

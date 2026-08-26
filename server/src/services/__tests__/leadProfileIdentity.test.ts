@@ -270,7 +270,6 @@ describe('detectProfileIdentityRisk', () => {
       { entityType: 'INSTITUTE' },
       { entityType: 'INITIATIVE' },
       { entityType: 'CORE_FACILITY' },
-      { entityType: 'PROGRAM' },
       { kind: 'program' },
     ];
     for (const orgFields of orgLikeEntities) {

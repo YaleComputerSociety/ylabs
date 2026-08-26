@@ -423,8 +423,8 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
 
   it('drops a director biography served as a non-person entity description (#806)', () => {
     const program = {
-      entityType: 'PROGRAM',
-      kind: 'program',
+      entityType: 'CENTER',
+      kind: 'center',
       fullDescription: PROGRAM_DIRECTOR_BIO,
       shortDescription: 'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication.',
     };
@@ -450,7 +450,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
 
   it('blanks a researcher-voice "Studies <topic>" shortDescription on a funding-program entity (#1555)', () => {
     const raProgram = {
-      entityType: 'PROGRAM',
+      entityType: 'COURSE_SEQUENCE',
       fullDescription:
         'The Impulsivity and Impulse Control Disorder Research Program funds undergraduate research assistantships in psychiatry, neuroscience, psychology, and developmental biology.',
       shortDescription: 'Studies Psychiatry, Neuroscience, Psychology, and Developmental Biology.',

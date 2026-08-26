@@ -272,7 +272,6 @@ const ORGANIZATIONAL_OR_PROGRAM_ENTITY_TYPES = new Set([
   'INSTITUTE',
   'INITIATIVE',
   'CORE_FACILITY',
-  'PROGRAM',
 ]);
 
 const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');

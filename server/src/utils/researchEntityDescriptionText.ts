@@ -287,7 +287,6 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
 }
 
 const NON_PERSON_ORG_ENTITY_TYPES = new Set([
-  'PROGRAM',
   'COURSE_SEQUENCE',
   'CENTER',
   'INSTITUTE',
@@ -1143,7 +1142,6 @@ const RESEARCH_HOME_SELF_NOUNS_BY_TYPE: Record<string, string> = {
   ARCHIVE_OR_MUSEUM_PROJECT: 'project',
   GROUP: 'group',
   CORE_FACILITY: 'core facility',
-  PROGRAM: 'program',
   COURSE_SEQUENCE: 'program',
 };
 

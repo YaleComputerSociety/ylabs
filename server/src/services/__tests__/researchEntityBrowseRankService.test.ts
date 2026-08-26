@@ -83,16 +83,14 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await scoreOf(archivedOnlyCenter._id)).toBe(await scoreOf(lab._id));
   });
 
-  it('demotes a program that hosts nothing because the program demotion is unconditional', async () => {
+  it('does not demote a leaf initiative that hosts nothing', async () => {
     const lab = await createEntity('lab-c', 'LAB');
-    const program = await createEntity('program-leaf', 'PROGRAM');
+    const initiative = await createEntity('initiative-leaf', 'INITIATIVE');
 
-    const ids = [lab._id, program._id];
+    const ids = [lab._id, initiative._id];
     await recomputeBrowseRankForEntities(ids, { sync: false });
 
-    const labScore = await scoreOf(lab._id);
-    expect(await scoreOf(program._id)).toBe(labScore + ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM!);
-    expect(ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM!).toBeLessThan(0);
+    expect(await scoreOf(initiative._id)).toBe(await scoreOf(lab._id));
   });
 
   it('persists hasUndergradHostingEvidence only for undergrad-specific signals, not generic outreach (#1054)', async () => {

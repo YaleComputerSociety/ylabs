@@ -160,7 +160,7 @@ describe('materializeEntity blanks a program fullDescription that is byte-identi
       slug: 'program-restatement-fixture',
       name: 'Schmidt Program on AI',
       kind: 'program',
-      entityType: 'PROGRAM',
+      entityType: 'COURSE_SEQUENCE',
       studentVisibilityTier: 'operator_review',
       archived: false,
       shortDescription: PROGRAM_SINGLE_SENTENCE_TEXT,

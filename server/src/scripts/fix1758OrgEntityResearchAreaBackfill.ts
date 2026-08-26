@@ -66,7 +66,7 @@ async function main(): Promise<void> {
     _id: { $in: IN_SCOPE_RECORD_IDS.map((id) => new mongoose.Types.ObjectId(id)) },
     archived: { $ne: true },
     studentVisibilityTier: 'student_ready',
-    entityType: { $in: ['CENTER', 'INSTITUTE', 'PROGRAM'] },
+    entityType: { $in: ['CENTER', 'INSTITUTE'] },
     $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }],
   })
     .select('_id slug name entityType departments researchAreas shortDescription fullDescription')

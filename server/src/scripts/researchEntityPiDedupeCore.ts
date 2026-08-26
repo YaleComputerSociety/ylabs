@@ -1056,7 +1056,6 @@ export const ORG_NAME_DEDUPE_ENTITY_TYPES = [
   'INSTITUTE',
   'INITIATIVE',
   'CORE_FACILITY',
-  'PROGRAM',
 ] as const;
 
 const ORG_NAME_STOPWORDS = new Set([

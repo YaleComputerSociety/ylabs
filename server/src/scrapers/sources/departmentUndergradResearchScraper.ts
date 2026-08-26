@@ -20,6 +20,7 @@ import {
 } from '../../utils/descriptionHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
+import { classifyProgram } from '../../services/programClassifier';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -44,7 +45,7 @@ export interface DepartmentUndergradResearchRecord {
   entityKey: string;
   name: string;
   kind: Exclude<ResearchGroupKind, 'solo'>;
-  entityType: ResearchEntityType;
+  entityType?: ResearchEntityType;
   department: string;
   school: string;
   sourceUrl: string;
@@ -559,7 +560,6 @@ export function parseGeneralDepartmentResearchPage(
       entityKey: departmentEntityKey(config),
       name: title,
       kind: 'program',
-      entityType: 'PROGRAM',
       department: config.department,
       school: config.school,
       sourceUrl: config.url,
@@ -595,7 +595,6 @@ export function parseStructuredOpportunityPage(
       entityKey: structuredEntityKey(title),
       name: title,
       kind: 'program',
-      entityType: 'PROGRAM',
       department: config.department,
       school: config.school,
       sourceUrl: config.url,
@@ -620,10 +619,52 @@ function parsePage(
   return parseGeneralDepartmentResearchPage(html, config);
 }
 
+function programRecordToFellowshipObservations(
+  record: DepartmentUndergradResearchRecord,
+): ObservationInput[] {
+  const base = {
+    entityType: 'fellowship' as const,
+    entityKey: record.entityKey,
+    sourceUrl: record.sourceUrl,
+  };
+  const summary = record.shortDescription || record.description;
+  const classification = classifyProgram({
+    title: record.name,
+    summary,
+    description: record.description,
+    sourceUrl: record.sourceUrl,
+  });
+  const observations: ObservationInput[] = [
+    { ...base, field: 'sourceKey', value: record.entityKey },
+    { ...base, field: 'sourceName', value: DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE },
+    { ...base, field: 'title', value: record.name },
+    { ...base, field: 'summary', value: summary },
+    { ...base, field: 'description', value: record.description },
+    { ...base, field: 'programCategory', value: classification.programCategory },
+    { ...base, field: 'programKind', value: classification.programKind },
+    { ...base, field: 'entryMode', value: classification.entryMode },
+    { ...base, field: 'studentFacingCategory', value: classification.studentFacingCategory },
+    { ...base, field: 'requiresMentorBeforeApply', value: classification.requiresMentorBeforeApply },
+    { ...base, field: 'mentorMatching', value: classification.mentorMatching },
+    { ...base, field: 'undergraduateOnly', value: classification.undergraduateOnly ?? true },
+    { ...base, field: 'bestNextStep', value: classification.bestNextStep },
+    { ...base, field: 'prepSteps', value: classification.prepSteps },
+    { ...base, field: 'applicationLink', value: record.joinPageUrl || record.websiteUrl || record.sourceUrl },
+    { ...base, field: 'archived', value: false },
+  ];
+  if (record.contactEmail) {
+    observations.push({ ...base, field: 'contactEmail', value: record.contactEmail, confidenceOverride: 0.75 });
+  }
+  return observations;
+}
+
 export function departmentUndergradResearchRecordsToObservations(
   records: DepartmentUndergradResearchRecord[],
 ): ObservationInput[] {
   return records.flatMap((record) => {
+    if (record.kind === 'program') {
+      return programRecordToFellowshipObservations(record);
+    }
     const base = {
       entityType: 'researchEntity' as const,
       entityKey: record.entityKey,
@@ -636,7 +677,7 @@ export function departmentUndergradResearchRecordsToObservations(
       { ...base, field: 'slug', value: record.entityKey },
       { ...base, field: 'name', value: record.name },
       { ...base, field: 'kind', value: record.kind },
-      { ...base, field: 'entityType', value: record.entityType },
+      { ...base, field: 'entityType', value: record.entityType ?? 'LAB' },
       { ...base, field: 'school', value: record.school },
       { ...base, field: 'departments', value: [record.department] },
       { ...base, field: 'websiteUrl', value: record.websiteUrl || record.sourceUrl },
