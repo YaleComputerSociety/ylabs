@@ -225,13 +225,13 @@ Current behavior:
 
 The `favPathways` saving feature was removed (#363): the `/users/favPathways*` endpoints and the client saved-pathways section are gone, and saving is covered entirely by saved research entities and their plans.
 The embedded `User.favPathways` field declaration has since been dropped from the schema as well.
+The `favListings` listing-favorites feature was likewise removed (#2010): its `/users/favListings*` endpoints, the generic favorite-objectid helper chain and `logFavoriteEvent` middleware, the client `useFavorites` listings kind and `favoritesReducer` listing state, and the `User.favListings` field are all gone; the live Listing model, `/listings` endpoints, and `LISTING_*` analytics enums are untouched.
 All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; nothing consumes the embedded planning fields (`User.savedResearchEntities`, `User.savedPrograms`) at runtime.
 Those fields are intentionally left in the `User` schema only so their legacy data survives the pending, human-gated backfill onto `ResearchPlan` tracked in #725; they are stale residue, not an open design question.
 The former `User.savedResearchEntityPlans`, `User.savedResearchEntityPlanMigrationConflicts`, and `User.savedPathwayPlans` declarations were dropped once the canonical `ResearchPlan` cutover shipped and their Development backfill completed; the Dev-only `retire:stale-saved-plan-fields` script clears any stale stored values.
 
 Program watching (the account Program Watch surface and the `/programs` watch affordance) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.
 
-Keep saved-entity planning separate from the legacy listing favorites.
 Entity plans support user-owned intent, stage, note, checklist state and history, target deadline, acted-on date, and follow-up interval.
 Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
 

@@ -2,7 +2,6 @@
  * Controller for user operations: favorites, listings, and profile updates.
  */
 import { Request, Response, NextFunction } from 'express';
-import mongoose from 'mongoose';
 import {
   readUser,
   updateUser,

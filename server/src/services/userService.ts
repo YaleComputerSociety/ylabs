@@ -1,5 +1,5 @@
 /**
- * Service layer for user account CRUD and favorites management.
+ * Service layer for user account CRUD and owned-listing management.
  */
 import { User } from '../models/index';
 import { NotFoundError } from '../utils/errors';
@@ -10,7 +10,6 @@ import {
 } from './listingService';
 import mongoose from 'mongoose';
 import { escapeRegex } from '../utils/regex';
-import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const MAX_ACCOUNT_MUTATION_IDS = 100;
 const MAX_USER_UPDATE_VALUE_DEPTH = 20;
@@ -185,11 +184,6 @@ const removeStoredObjectIdsForUserMutation = (
 
 const storedObjectIdStringsForUserMutation = (values: unknown, fieldName: string): string[] =>
   normalizeStoredObjectIdsForUserMutation(values, fieldName).map((value) => value.toHexString());
-
-const userLookupFilterForMutation = (id: any): Record<string, unknown> => {
-  const objectId = normalizeUserLookupObjectId(id);
-  return objectId ? { _id: objectId } : buildCaseInsensitiveNetidFilter(id);
-};
 
 export const createUser = async (userData: any) => {
   const user = new User(userData);
