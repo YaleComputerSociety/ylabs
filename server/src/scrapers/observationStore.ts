@@ -25,26 +25,38 @@ function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): stri
   return obs.entityId || obs.entityKey || '';
 }
 
-function proseValueIsUseful(field: string, value: unknown, fullContext: string): boolean {
+interface ProseQualityContext {
+  fullContext?: string;
+  researchAreas?: unknown;
+  entityType?: unknown;
+}
+
+function proseValueIsUseful(
+  field: string,
+  value: unknown,
+  context: ProseQualityContext = {},
+): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
   return field === 'shortDescription'
-    ? shortDescriptionQuality(value, fullContext).isUseful
-    : fullDescriptionQuality(value).isUseful;
+    ? shortDescriptionQuality(value, context.fullContext ?? '', context.researchAreas, {
+        entityType: context.entityType,
+      }).isUseful
+    : fullDescriptionQuality(value, context.researchAreas, context.entityType).isUseful;
 }
 
 export function isRegressiveProseRefresh(input: {
   field: string;
   incomingValue: unknown;
   existingValue: unknown;
-  incomingFullContext?: string;
-  existingFullContext?: string;
+  incomingContext?: ProseQualityContext;
+  existingContext?: ProseQualityContext;
 }): boolean {
   if (!QUALITY_GUARDED_PROSE_FIELDS.has(input.field)) return false;
   if (typeof input.existingValue !== 'string') return false;
-  if (!proseValueIsUseful(input.field, input.existingValue, input.existingFullContext ?? '')) {
+  if (!proseValueIsUseful(input.field, input.existingValue, input.existingContext)) {
     return false;
   }
-  return !proseValueIsUseful(input.field, input.incomingValue, input.incomingFullContext ?? '');
+  return !proseValueIsUseful(input.field, input.incomingValue, input.incomingContext);
 }
 
 export type ActiveProseLoader = (query: {
@@ -127,9 +139,13 @@ export async function appendObservations(
     (obs) => !isObservationValueRejected(obs.field, obs.value),
   );
   const incomingFullByEntity = new Map<string, string>();
+  const incomingResearchAreasByEntity = new Map<string, unknown>();
   for (const obs of acceptedInputs) {
     if (obs.field === 'fullDescription' && typeof obs.value === 'string') {
       incomingFullByEntity.set(entityKeyForProse(obs), obs.value);
+    }
+    if (obs.field === 'researchAreas') {
+      incomingResearchAreasByEntity.set(entityKeyForProse(obs), obs.value);
     }
   }
 
@@ -137,8 +153,16 @@ export async function appendObservations(
   let regressiveProseGuarded = 0;
   for (const obs of acceptedInputs) {
     if (QUALITY_GUARDED_PROSE_FIELDS.has(obs.field)) {
-      const incomingFullContext = incomingFullByEntity.get(entityKeyForProse(obs)) ?? '';
-      if (!proseValueIsUseful(obs.field, obs.value, incomingFullContext)) {
+      const entityKey = entityKeyForProse(obs);
+      const incomingResearchAreas = incomingResearchAreasByEntity.get(entityKey);
+      const incomingContext: ProseQualityContext = {
+        researchAreas: incomingResearchAreas,
+        entityType: obs.entityType,
+      };
+      if (obs.field === 'shortDescription') {
+        incomingContext.fullContext = incomingFullByEntity.get(entityKey);
+      }
+      if (!proseValueIsUseful(obs.field, obs.value, incomingContext)) {
         const existingValue = await loadActiveProse({
           entityType: obs.entityType,
           sourceName: ctx.sourceName,
@@ -146,7 +170,29 @@ export async function appendObservations(
           entityKey: obs.entityKey || undefined,
           field: obs.field,
         });
-        if (isRegressiveProseRefresh({ field: obs.field, incomingValue: obs.value, existingValue, incomingFullContext })) {
+        const existingContext: ProseQualityContext = {};
+        if (obs.field === 'shortDescription') {
+          const existingFullContext = await loadActiveProse({
+            entityType: obs.entityType,
+            sourceName: ctx.sourceName,
+            entityId: obs.entityId || undefined,
+            entityKey: obs.entityKey || undefined,
+            field: 'fullDescription',
+          });
+          existingContext.fullContext = existingFullContext;
+          if (!incomingContext.fullContext) {
+            incomingContext.fullContext = existingFullContext;
+          }
+        }
+        if (
+          isRegressiveProseRefresh({
+            field: obs.field,
+            incomingValue: obs.value,
+            existingValue,
+            incomingContext,
+            existingContext,
+          })
+        ) {
           regressiveProseGuarded += 1;
           continue;
         }

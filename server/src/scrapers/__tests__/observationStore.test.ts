@@ -6,11 +6,17 @@ import {
   isRegressiveProseRefresh,
   retireObservations,
 } from '../observationStore';
-import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
+import {
+  fullDescriptionQuality,
+  shortDescriptionQuality,
+} from '../../utils/researchEntityDescriptionQuality';
 
 const USEFUL_DESCRIPTION =
   'The reachable lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.';
 const DEGRADED_DESCRIPTION = 'Our lab studies things.';
+const USEFUL_SHORT_DESCRIPTION =
+  'Studies cellular signaling and translational biomarkers to improve immune-related patient care.';
+const DEGRADED_SHORT_DESCRIPTION = 'Our lab studies things.';
 
 describe('buildObservationFingerprint', () => {
   it('makes logistics updates latest-wins within a source but distinct across sources', () => {
@@ -273,6 +279,58 @@ describe('isRegressiveProseRefresh', () => {
       }),
     ).toBe(false);
   });
+
+  it('uses shortDescription fixtures whose usefulness matches the shared quality gate', () => {
+    expect(shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, USEFUL_DESCRIPTION).isUseful).toBe(true);
+    expect(shortDescriptionQuality(DEGRADED_SHORT_DESCRIPTION, USEFUL_DESCRIPTION).isUseful).toBe(
+      false,
+    );
+  });
+
+  it('drops a degraded short refresh once the existing short is judged with its paired full', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'shortDescription',
+        incomingValue: DEGRADED_SHORT_DESCRIPTION,
+        existingValue: USEFUL_SHORT_DESCRIPTION,
+        incomingContext: { fullContext: USEFUL_DESCRIPTION },
+        existingContext: { fullContext: USEFUL_DESCRIPTION },
+      }),
+    ).toBe(true);
+  });
+
+  it('allows a clean-to-clean short refresh', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'shortDescription',
+        incomingValue: USEFUL_SHORT_DESCRIPTION,
+        existingValue: USEFUL_SHORT_DESCRIPTION,
+        incomingContext: { fullContext: USEFUL_DESCRIPTION },
+        existingContext: { fullContext: USEFUL_DESCRIPTION },
+      }),
+    ).toBe(false);
+  });
+
+  it('flags a research-area-echo full only when researchAreas context is supplied', () => {
+    const areaEcho =
+      'The Chen Lab studies machine learning, robotics, and computer vision to advance autonomous systems research.';
+    const researchAreas = ['machine learning', 'robotics', 'computer vision'];
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: areaEcho,
+        existingValue: USEFUL_DESCRIPTION,
+      }),
+    ).toBe(false);
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: areaEcho,
+        existingValue: USEFUL_DESCRIPTION,
+        incomingContext: { researchAreas, entityType: 'researchEntity' },
+      }),
+    ).toBe(true);
+  });
 });
 
 describe('appendObservations', () => {
@@ -299,6 +357,34 @@ describe('appendObservations', () => {
         dryRun: false,
       },
       { loadActiveProse: async () => USEFUL_DESCRIPTION },
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
+  it('does not persist a degraded short that would supersede a clean same-source one', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'shortDescription',
+          value: DEGRADED_SHORT_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      {
+        loadActiveProse: async (query) =>
+          query.field === 'fullDescription' ? USEFUL_DESCRIPTION : USEFUL_SHORT_DESCRIPTION,
+      },
     );
 
     expect(insertMany).not.toHaveBeenCalled();
