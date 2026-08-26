@@ -5,7 +5,6 @@ import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from '../util
 import { addOwnListings, deleteOwnListings, userExists, createUser } from './userService';
 import { fetchYalie } from './yaliesService';
 import mongoose from 'mongoose';
-import { getMeiliIndex } from '../utils/meiliClient';
 import { getListingModel } from '../db/connections';
 import { processListingTitle, isCustomTitle, generateSmartTitle } from '../utils/smartTitle';
 import * as itemOps from './itemOperations';
@@ -15,7 +14,6 @@ import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignmen
 import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
 import { resolveResearcherIdForLegacyUser } from './researchEntityMembershipAccessor';
 import { buildListingResearchEntityProfilePatch } from './listingResearchEntityProfile';
-import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
@@ -25,20 +23,6 @@ const MAX_LISTING_ID_READS = 100;
 const PUBLIC_LISTING_MUTATION_FILTER = {
   archived: false,
   confirmed: true,
-};
-
-const prepareListingForMeili = (doc: any) => {
-  const id = serializedDocumentId(doc._id) || serializedDocumentId(doc.id);
-  if (!id) return null;
-
-  const meiliDoc = { ...doc, id };
-  delete meiliDoc._id;
-  delete meiliDoc.__v;
-  delete meiliDoc.embedding;
-  if (meiliDoc.evidence && typeof meiliDoc.evidence === 'object') {
-    delete meiliDoc.evidence.internalNotes;
-  }
-  return meiliDoc;
 };
 
 export function normalizeListingObjectId(value: unknown): string | undefined {
@@ -455,17 +439,6 @@ export const createListing = async (data: any, owner: any) => {
 
   await listing.save();
 
-  try {
-    const doc = listing.toObject();
-    const meiliDoc = prepareListingForMeili(doc);
-    if (meiliDoc) {
-      const index = await getMeiliIndex('listings');
-      await index.addDocuments([meiliDoc]);
-    }
-  } catch (error) {
-    console.error('Failed to sync new listing to Meilisearch:', sanitizeLogValue(error));
-  }
-
   const savedListing = listing.toObject();
   await syncResearchEntityProfileFromListing(savedListing);
 
@@ -601,17 +574,6 @@ export const updateListing = async (
       await addOwnListings(id, [listingId]);
     }
 
-    try {
-      const doc = listing.toObject();
-      const meiliDoc = prepareListingForMeili(doc);
-      if (meiliDoc) {
-        const index = await getMeiliIndex('listings');
-        await index.updateDocuments([meiliDoc]);
-      }
-    } catch (error) {
-      console.error('Failed to sync updated listing to Meilisearch:', sanitizeLogValue(error));
-    }
-
     const updatedListing = listing.toObject();
     await syncResearchEntityProfileFromListing(updatedListing);
 
@@ -657,13 +619,6 @@ export const deleteListing = async (id: any) => {
     }
 
     await getListingModel().findByIdAndDelete(safeId);
-
-    try {
-      const index = await getMeiliIndex('listings');
-      await index.deleteDocument(safeId);
-    } catch (error) {
-      console.error('Failed to delete listing from Meilisearch:', sanitizeLogValue(error));
-    }
 
     const oldListingId = listing._id;
     const oldProfessorIds = listing.professorIds;

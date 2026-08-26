@@ -3159,11 +3159,6 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
     source,
     /export function normalizeListingObjectId\(value: unknown\): string \| undefined/,
   );
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(
-    source,
-    /const id = serializedDocumentId\(doc\._id\) \|\| serializedDocumentId\(doc\.id\)/,
-  );
   assert.match(source, /typeof value === 'string'/);
   assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
   assert.match(source, /return LISTING_OBJECT_ID_RE\.test\(id\) \? id : undefined/);
@@ -3183,7 +3178,6 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /getListingModel\(\)\.findById\(safeId\)/);
   assert.match(source, /getListingModel\(\)\.findByIdAndUpdate\(safeId, safeData/);
   assert.match(source, /getListingModel\(\)\.findByIdAndDelete\(safeId\)/);
-  assert.match(source, /index\.deleteDocument\(safeId\)/);
   assert.match(source, /MAX_SELF_SERVICE_LISTING_DESCRIPTION_LENGTH/);
   assert.match(source, /MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS/);
   assert.match(source, /MAX_SELF_SERVICE_LISTING_WEBSITES/);
@@ -6691,11 +6685,6 @@ test('research entity search index documents omit direct contact fields', () => 
   assert.match(
     searchIndexSource,
     /for \(const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS\) \{\s*delete out\[field\];\s*\}/,
-  );
-  assert.match(syncSource, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(
-    syncSource,
-    /const id = serializedDocumentId\(doc\?\._id\) \|\| serializedDocumentId\(doc\?\.id\)/,
   );
   assert.doesNotMatch(syncSource, /String\(doc\._id\)/);
   assert.match(

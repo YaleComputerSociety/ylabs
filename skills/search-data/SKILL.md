@@ -35,6 +35,8 @@ Relevant config:
 | `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |
 
 Documents sync via `meiliSyncService.ts` after upserts.
+`researchEntity` is the only syncable type; the legacy `listings` and `papers` indexes are retired.
+After copying Mongo data into Beta or Prod, run `reindex:meili` inside that Render service to rebuild the prefixed `researchentities` index and delete any retired prefixed indexes.
 Rebuild scripts do full repopulation.
 The `researchentities` index prioritizes name, professor, research-area, and `studentSearchTerms` attributes before summary or description text.
 Its settings also include curated synonyms and typo guards for short aliases such as `ai`, `ml`, `nlp`, and `cv`, so rebuild or sync the index after changing alias or relevance settings.

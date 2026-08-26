@@ -68,13 +68,13 @@ beforeEach(() => {
 });
 
 describe('isSyncableEntityType', () => {
-  it('accepts the registered entity types', () => {
-    expect(isSyncableEntityType('listing')).toBe(true);
+  it('accepts the only registered entity type', () => {
     expect(isSyncableEntityType('researchEntity')).toBe(true);
-    expect(isSyncableEntityType('paper')).toBe(true);
   });
 
-  it('rejects unknown entity types', () => {
+  it('rejects retired and unknown entity types', () => {
+    expect(isSyncableEntityType('listing')).toBe(false);
+    expect(isSyncableEntityType('paper')).toBe(false);
     expect(isSyncableEntityType('user')).toBe(false);
     expect(isSyncableEntityType('observation')).toBe(false);
     expect(isSyncableEntityType('')).toBe(false);
@@ -82,32 +82,6 @@ describe('isSyncableEntityType', () => {
 });
 
 describe('syncEntity transform', () => {
-  it('strips _id, __v, embedding and sets serialized id for listings', async () => {
-    const doc = {
-      _id: 'listing-id-1',
-      __v: 7,
-      embedding: [0.1, 0.2, 0.3],
-      title: 'Quantum Photonics Listing',
-      departments: ['Physics'],
-    };
-
-    await syncEntity('listing', doc);
-
-    expect(mocks.getMeiliIndex).toHaveBeenCalledWith('listings');
-    expect(mocks.addDocuments).toHaveBeenCalledTimes(1);
-    const [docs, opts] = mocks.addDocuments.mock.calls[0];
-    expect(opts).toEqual({ primaryKey: 'id' });
-    expect(docs).toHaveLength(1);
-    expect(docs[0]).toEqual({
-      id: 'listing-id-1',
-      title: 'Quantum Photonics Listing',
-      departments: ['Physics'],
-    });
-    expect(docs[0]).not.toHaveProperty('_id');
-    expect(docs[0]).not.toHaveProperty('__v');
-    expect(docs[0]).not.toHaveProperty('embedding');
-  });
-
   it('strips _id, __v, embedding and sets serialized id for researchEntities', async () => {
     const doc = {
       _id: 'rg-id-42',
@@ -176,47 +150,9 @@ describe('syncEntity transform', () => {
     });
   });
 
-  it('strips _id, __v, embedding and sets serialized id for papers', async () => {
-    const doc = {
-      _id: 'paper-id-99',
-      __v: 3,
-      embedding: [0.9, 0.1],
-      title: 'On Folding',
-      abstract: 'an abstract',
-      yaleAuthorNetIds: ['abc123'],
-    };
-
-    await syncEntity('paper', doc);
-
-    expect(mocks.getMeiliIndex).toHaveBeenCalledWith('papers');
-    const [docs] = mocks.addDocuments.mock.calls[0];
-    expect(docs[0]).toEqual({
-      id: 'paper-id-99',
-      title: 'On Folding',
-      abstract: 'an abstract',
-      yaleAuthorNetIds: ['abc123'],
-    });
-  });
-
-  it('uses an existing string id when _id is absent', async () => {
-    const doc = { id: 'pre-set-id', title: 'No _id' };
-    await syncEntity('listing', doc);
-    const [docs] = mocks.addDocuments.mock.calls[0];
-    expect(docs[0].id).toBe('pre-set-id');
-  });
-
-  it('skips index documents with object-shaped ids without coercion', async () => {
-    const unsafeId = {
-      toString: () => {
-        throw new Error('stringified arbitrary Meili document id');
-      },
-      toHexString: () => {
-        throw new Error('called arbitrary Meili document id toHexString');
-      },
-    };
-
-    await syncEntity('listing', { _id: unsafeId, title: 'Unsafe Listing' });
-
+  it('no-ops on retired entity types', async () => {
+    await syncEntity('listing', { _id: 'listing-id-1', title: 'Retired Listing' });
+    await syncEntity('paper', { _id: 'paper-id-99', title: 'Retired Paper' });
     expect(mocks.getMeiliIndex).not.toHaveBeenCalled();
     expect(mocks.addDocuments).not.toHaveBeenCalled();
   });
@@ -228,13 +164,13 @@ describe('syncEntity transform', () => {
   });
 
   it('no-ops on null doc', async () => {
-    await syncEntity('listing', null);
+    await syncEntity('researchEntity', null);
     expect(mocks.addDocuments).not.toHaveBeenCalled();
   });
 
   it('swallows Meilisearch errors so callers do not break', async () => {
     mocks.addDocuments.mockRejectedValueOnce(new Error('meili down'));
-    await expect(syncEntity('listing', { _id: 'a', title: 't' })).resolves.toBeUndefined();
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBeUndefined();
   });
 });
 
@@ -258,35 +194,37 @@ describe('syncEntities', () => {
   });
 
   it('no-ops on empty array', async () => {
-    await syncEntities('listing', []);
+    await syncEntities('researchEntity', []);
     expect(mocks.getMeiliIndex).not.toHaveBeenCalled();
   });
 
-  it('no-ops on unknown entity type', async () => {
-    await syncEntities('user', [{ _id: 'x' }]);
+  it('no-ops on retired and unknown entity types', async () => {
+    await syncEntities('listing', [{ _id: 'x' }]);
+    await syncEntities('user', [{ _id: 'y' }]);
     expect(mocks.getMeiliIndex).not.toHaveBeenCalled();
   });
 });
 
 describe('deleteFromIndex', () => {
   it('routes to the correct index and deletes by id', async () => {
-    await deleteFromIndex('paper', 'paper-id-1');
-    expect(mocks.getMeiliIndex).toHaveBeenCalledWith('papers');
-    expect(mocks.deleteDocument).toHaveBeenCalledWith('paper-id-1');
+    await deleteFromIndex('researchEntity', 'rg-id-1');
+    expect(mocks.getMeiliIndex).toHaveBeenCalledWith('researchentities');
+    expect(mocks.deleteDocument).toHaveBeenCalledWith('rg-id-1');
   });
 
-  it('no-ops on unknown entity type', async () => {
+  it('no-ops on retired and unknown entity types', async () => {
+    await deleteFromIndex('paper', 'paper-id-1');
     await deleteFromIndex('user', 'x');
     expect(mocks.deleteDocument).not.toHaveBeenCalled();
   });
 
   it('no-ops on missing id', async () => {
-    await deleteFromIndex('listing', '');
+    await deleteFromIndex('researchEntity', '');
     expect(mocks.deleteDocument).not.toHaveBeenCalled();
   });
 
   it('swallows Meilisearch errors', async () => {
     mocks.deleteDocument.mockRejectedValueOnce(new Error('boom'));
-    await expect(deleteFromIndex('listing', 'id-1')).resolves.toBeUndefined();
+    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBeUndefined();
   });
 });
