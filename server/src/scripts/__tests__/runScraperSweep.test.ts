@@ -111,6 +111,7 @@ describe('runScraperSweep', () => {
   it('builds the complete Development post-run quality pipeline', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
     expect(stages.map((stage) => stage.name)).toEqual([
+      'faculty-projection',
       'search-rebuild',
       'coverage-audit',
       'data-quality',
@@ -119,6 +120,9 @@ describe('runScraperSweep', () => {
     ]);
     expect(stages.every((stage) => stage.artifactPath.startsWith('/tmp/development-sweep/'))).toBe(
       true,
+    );
+    expect(stages.find((stage) => stage.name === 'faculty-projection')?.args).toEqual(
+      expect.arrayContaining(['--apply', '--confirm-faculty-projection']),
     );
     expect(stages.find((stage) => stage.name === 'data-quality')?.args).toEqual(
       expect.arrayContaining(['--strict', '--include-samples', '--progress']),

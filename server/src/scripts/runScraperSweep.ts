@@ -111,7 +111,13 @@ export interface ScraperSweepRunRow {
 }
 
 export interface DevelopmentPostRunStage {
-  name: 'search-rebuild' | 'coverage-audit' | 'data-quality' | 'integrity-gate' | 'trust-contract';
+  name:
+    | 'faculty-projection'
+    | 'search-rebuild'
+    | 'coverage-audit'
+    | 'data-quality'
+    | 'integrity-gate'
+    | 'trust-contract';
   status: 'succeeded' | 'failed';
   artifactPath: string;
   exitCode: number;
@@ -440,6 +446,12 @@ export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
   };
 
   return [
+    stage(
+      'faculty-projection',
+      'research-entity:project-faculty',
+      ['--apply', '--confirm-faculty-projection'],
+      'development-faculty-projection.json',
+    ),
     stage(
       'search-rebuild',
       'meili:rebuild-research-entities',

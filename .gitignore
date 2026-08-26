@@ -58,7 +58,6 @@ client/dist/
 
 #Scraper and enricher tools
 web-scraper/
-yale-faculty-enricher/
 
 #MongoDB local backup
 backup
