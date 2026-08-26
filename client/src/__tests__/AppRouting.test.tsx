@@ -121,6 +121,16 @@ describe('App routing', () => {
     });
   });
 
+  it('redirects the renamed /account URL to /dashboard', async () => {
+    window.history.pushState({}, '', '/account');
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/dashboard');
+    });
+  });
+
   it('does not keep the retired practical-routes URL as a product surface', async () => {
     const retiredPath = `/${'pathways'}`;
     window.history.pushState({}, '', retiredPath);

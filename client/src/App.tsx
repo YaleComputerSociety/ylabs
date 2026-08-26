@@ -32,6 +32,7 @@ const Analytics = lazy(() => import('./pages/analytics'));
 const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
 const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
 const RetiredPersonRedirect = () => <Navigate to="/research" replace />;
+const RetiredAccountRedirect = () => <Navigate to="/dashboard" replace />;
 
 const RouteFade = ({ children }: { children: ReactNode }) => {
   const { pathname } = useLocation();
@@ -102,6 +103,12 @@ const App = () => {
                       <Route
                         path="/about"
                         element={<PublicRoute Component={About} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/account"
+                        element={
+                          <PrivateRoute Component={RetiredAccountRedirect} unknownBlocked={true} />
+                        }
                       />
                       <Route
                         path="/dashboard"
