@@ -405,6 +405,16 @@ describe('entityMaterializer post-materialization metrics', () => {
     ]);
   });
 
+  it('ignores sourceContentHash bookkeeping observations for entity materialization', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'sourceContentHash',
+        sourceName: 'lab-microsite-description-llm',
+        value: 'abc123',
+      }),
+    ).toBe(true);
+  });
+
   it('ignores official-profile bio observations that are address or page chrome', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {

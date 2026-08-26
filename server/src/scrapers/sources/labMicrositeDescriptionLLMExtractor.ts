@@ -40,6 +40,12 @@ import {
   type CardSynthesisLLMFn,
 } from '../../utils/groundedCardSynthesis';
 import { groundMethods } from '../utils/methodGrounding';
+import {
+  computeContentHash,
+  contentHashObservation,
+  contentUnchanged,
+  loadStoredContentHash,
+} from '../contentHashGate';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -757,6 +763,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       .slice(offset, offset + limit);
     let observationCount = 0;
     let entitiesObserved = 0;
+    let contentUnchangedSkipped = 0;
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
       : getWorkPlannerSourcePolicy(this.name);
@@ -814,6 +821,26 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           );
           continue;
         }
+
+        // Raw HTML covers both extraction paths below: the visible-text LLM path
+        // and the deterministic embedded-JSON official-prose path (which reads
+        // script-tag payloads htmlToText strips). Hashing raw HTML ensures an
+        // embedded-prose-only change still re-runs extraction.
+        const entityRef = {
+          entityType: 'researchEntity' as const,
+          entityId: serializedDocumentId(lab._id) || undefined,
+          entityKey: lab.slug,
+        };
+        const contentHash = computeContentHash(page.html);
+        const storedContentHash = ctx.options.forceLlm
+          ? undefined
+          : await loadStoredContentHash(this.name, entityRef);
+        if (contentUnchanged(storedContentHash, contentHash, ctx.options.forceLlm)) {
+          contentUnchangedSkipped += 1;
+          ctx.log(`[${lab.slug || 'candidate'}] skipping description extraction: content unchanged.`);
+          continue;
+        }
+        const hashObservation = contentHashObservation(entityRef, page.url, contentHash);
 
         // Fast, faithful path: many Yale pages (medicine.yale.edu /lab and
         // /profile, etc.) are JS-rendered, so the visible-text LLM path sees an
@@ -905,15 +932,17 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               field: 'methods',
               value: methods,
             };
-            await ctx.emit([methodsObservation]);
+            await ctx.emit([methodsObservation, hashObservation]);
             observationCount += 1;
             entitiesObserved += 1;
+          } else {
+            await ctx.emit([hashObservation]);
           }
           continue;
         }
 
         const withCard = await this.withSynthesizedCard(observations);
-        await ctx.emit(withCard);
+        await ctx.emit([...withCard, hashObservation]);
         observationCount += withCard.length;
         entitiesObserved += 1;
       } catch (error) {
@@ -925,7 +954,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     return {
       observationCount,
       entitiesObserved,
-      notes: `Extracted source-backed descriptions for ${entitiesObserved} research entities.`,
+      notes: `Extracted source-backed descriptions for ${entitiesObserved} research entities (${contentUnchangedSkipped} content-unchanged skipped).`,
       metrics: { workPlanner: workPlannerMetrics },
     };
   }

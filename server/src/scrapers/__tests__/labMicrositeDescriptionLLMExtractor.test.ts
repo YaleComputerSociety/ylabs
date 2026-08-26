@@ -522,7 +522,14 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     expect(callLLM).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
-    expect(emitted).toEqual([]);
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        field: 'sourceContentHash',
+        entityId: 'hallucination-1',
+        entityKey: 'weather-lab',
+        sourceUrl: 'https://medicine.yale.edu/lab/weather/',
+      }),
+    ]);
   });
 
   it('normalizes known acronym splits in emitted descriptions', () => {

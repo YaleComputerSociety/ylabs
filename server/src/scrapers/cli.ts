@@ -89,6 +89,7 @@ Run flags:
   --ignore-work-planner
                        Bypass freshness skips for full audit/backfill runs
   --exhaustive         Process every eligible entity instead of source safety defaults
+  --force-llm          Re-run paid LLM extraction even when source content is unchanged
   --logistics-production
                        Allow lab-microsite-undergrad-llm to emit corpus-wide
                        undergraduate logistics claims outside the staging allowlist.

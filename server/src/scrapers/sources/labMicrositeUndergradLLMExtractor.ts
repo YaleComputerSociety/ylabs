@@ -46,6 +46,12 @@ import {
   type RenderedFetchResult,
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  computeContentHash,
+  contentHashObservation,
+  contentUnchanged,
+  loadStoredContentHash,
+} from '../contentHashGate';
 import type {
   IScraper,
   ObservationInput,
@@ -1362,6 +1368,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let succeeded = 0;
     let fetchFailed = 0;
     let llmFailed = 0;
+    let contentUnchangedSkipped = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     // Staging curation (a manually-named <=25-lab --only allowlist) always force-fetches so an
     // operator iterating on a specific lab sees the LLM's latest read. Confirmed production mode
@@ -1437,6 +1444,19 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         subPages.push({ url: fetched.url, text });
       }
       const [primarySubPage, ...additionalSubPages] = subPages;
+
+      const entityRef = { entityType: 'researchEntity' as const, entityKey: lab.slug };
+      const contentHash = computeContentHash(
+        [homeText, ...subPages.map((page) => page.text)].join('\n'),
+      );
+      const storedContentHash = ctx.options.forceLlm
+        ? undefined
+        : await loadStoredContentHash(this.name, entityRef);
+      if (contentUnchanged(storedContentHash, contentHash, ctx.options.forceLlm)) {
+        contentUnchangedSkipped += 1;
+        ctx.log(`[${lab.slug}] skipped — content unchanged.`);
+        continue;
+      }
 
       const userPrompt = buildLLMPrompt(
         lab.name,
@@ -1521,6 +1541,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         await ctx.emit(observations);
         totalObs += observations.length;
       }
+      await ctx.emit([contentHashObservation(entityRef, homePage.url, contentHash)]);
       succeeded++;
 
       if (processed % 25 === 0 || processed === labs.length) {
@@ -1537,7 +1558,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: succeeded,
-      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
+      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
       metrics: {
         workPlanner: workPlannerMetrics,
       },
