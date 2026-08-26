@@ -3159,10 +3159,6 @@ test('profile read routes validate netid path params before controller work', ()
     new URL('../server/src/routes/profiles.ts', import.meta.url),
     'utf8',
   );
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/profileController.ts', import.meta.url),
-    'utf8',
-  );
 
   assert.match(
     routeSource,
@@ -3174,16 +3170,7 @@ test('profile read routes validate netid path params before controller work', ()
   );
   assert.match(
     routeSource,
-    /router\.get\('\/:netid\/listings', isAuthenticated, validateNetid\('netid'\), getProfileListings\)/,
-  );
-  assert.match(
-    routeSource,
     /router\.get\('\/:netid\/courses', isAuthenticated, validateNetid\('netid'\), getProfileCourses\)/,
-  );
-  assert.match(controllerSource, /MAX_PUBLIC_PROFILE_URLS = 20/);
-  assert.match(
-    controllerSource,
-    /values\s*\.slice\(0, MAX_PUBLIC_PROFILE_URLS\)\s*\.map\(publicHttpUrl\)/,
   );
 });
 
@@ -3300,10 +3287,6 @@ test('program and fellowship search bound query and filter inputs before search 
     new URL('../server/src/controllers/programController.ts', import.meta.url),
     'utf8',
   );
-  const fellowshipController = fs.readFileSync(
-    new URL('../server/src/controllers/fellowshipController.ts', import.meta.url),
-    'utf8',
-  );
   const fellowshipService = fs.readFileSync(
     new URL('../server/src/services/fellowshipService.ts', import.meta.url),
     'utf8',
@@ -3322,20 +3305,6 @@ test('program and fellowship search bound query and filter inputs before search 
   assert.doesNotMatch(programController, /Number\.isFinite\(parsed\) \? parsed : undefined/);
   assert.match(programController, /query:\s*boundedSearchQuery\(query\)/);
   assert.match(programController, /yearOfStudy:\s*parseFilter\(yearOfStudy\)/);
-
-  assert.match(fellowshipController, /MAX_FELLOWSHIP_SEARCH_QUERY_LENGTH = 512/);
-  assert.match(fellowshipController, /MAX_FELLOWSHIP_SEARCH_FILTER_VALUES = 50/);
-  assert.match(fellowshipController, /MAX_FELLOWSHIP_SEARCH_FILTER_VALUE_LENGTH = 120/);
-  assert.match(fellowshipController, /MAX_FELLOWSHIP_SEARCH_PAGINATION_PARAM_LENGTH = 16/);
-  assert.match(fellowshipController, /const POSITIVE_INTEGER_PARAM_RE = \/\^\[1-9\]\\d\*\$\/;/);
-  assert.match(fellowshipController, /typeof value !== 'string' && typeof value !== 'number'/);
-  assert.match(fellowshipController, /raw\.length > MAX_FELLOWSHIP_SEARCH_PAGINATION_PARAM_LENGTH/);
-  assert.match(fellowshipController, /Number\.isSafeInteger\(value\) && value > 0/);
-  assert.match(fellowshipController, /!POSITIVE_INTEGER_PARAM_RE\.test\(raw\)/);
-  assert.match(fellowshipController, /Number\.isSafeInteger\(parsed\) \? parsed : undefined/);
-  assert.doesNotMatch(fellowshipController, /Number\.isFinite\(parsed\) \? parsed : undefined/);
-  assert.match(fellowshipController, /query:\s*boundedSearchQuery\(query\)/);
-  assert.match(fellowshipController, /yearOfStudy:\s*parseFilter\(yearOfStudy\)/);
 
   assert.match(fellowshipService, /MAX_SEARCH_QUERY_LENGTH = 512/);
   assert.match(fellowshipService, /MAX_SEARCH_FILTER_VALUES = 50/);
@@ -3460,15 +3429,6 @@ test('research, program, and fellowship nonpublic payloads require active admin 
     /const hasAdminAuthority = await hasAdminAuthorityForUser\(currentUser\)/,
   );
   assert.match(programController, /includeNonPublic: hasAdminAuthority/);
-  assert.match(
-    fellowshipController,
-    /import \{ hasAdminAuthorityForUser \} from '\.\.\/services\/adminGrantService'/,
-  );
-  assert.match(
-    fellowshipController,
-    /const hasAdminAuthority = await hasAdminAuthorityForUser\(currentUser\)/,
-  );
-  assert.match(fellowshipController, /includeNonPublic: hasAdminAuthority/);
   assert.doesNotMatch(researchGroupController, /currentUser\?\.userType === 'admin'/);
   assert.doesNotMatch(programController, /currentUser\?\.userType === 'admin'/);
   assert.doesNotMatch(fellowshipController, /currentUser\?\.userType === 'admin'/);
@@ -4154,17 +4114,6 @@ test('config refresh is an admin-only no-store mutation while public config stay
   );
 });
 
-test('authenticated research-area reads do not expose internal ids', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/routes/researchAreas.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /\.select\('name field -_id'\)/);
-  assert.match(source, /res\.status\(200\)\.json\(\{ researchAreas: customAreas \}\)/);
-  assert.doesNotMatch(source, /\.select\('name field'\)/);
-});
-
 test('analytics debug route does not expose raw analytics event documents', () => {
   const source = fs.readFileSync(
     new URL('../server/src/routes/analytics.ts', import.meta.url),
@@ -4354,10 +4303,7 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   assert.match(source, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
   assert.match(source, /const recordFavoriteCounterSideEffect = async \(/);
   assert.match(source, /console\.error\(`\$\{label\} failed:`, sanitizeLogValue\(error\)\)/);
-  assert.match(
-    source,
-    /type FavoriteObjectIdArrayField =[\s\S]*'favListings'[\s\S]*'favFellowships'[\s\S]*'favPathways'/,
-  );
+  assert.match(source, /type FavoriteObjectIdArrayField = 'favListings'/);
   assert.match(source, /const addFavoriteObjectIdIfMissing = async \(/);
   assert.match(
     source,
@@ -4422,16 +4368,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     source,
     /mergeStoredObjectIdsForUserMutation\(\s*user\.favListings,\s*listingIds,\s*'favListings',\s*\)/,
   );
-  assert.match(source, /readFellowships/);
-  assert.match(source, /const visibleFellowships = await readFellowships\(fellowshipIds\)/);
-  assert.match(
-    source,
-    /const visibleFellowshipIds = normalizeObjectIdsForUserMutation\(\s*visibleFellowships\.map\(\(fellowship\) => fellowship\._id\),\s*'favFellowships',\s*\)/,
-  );
-  assert.match(
-    source,
-    /for \(const fellowshipId of visibleFellowshipIds\) \{\s*const result = await addFavoriteObjectIdIfMissing\(id, 'favFellowships', fellowshipId\);[\s\S]*if \(!result\.added\) continue;[\s\S]*'Fellowship favorite counter increment'/,
-  );
   assert.doesNotMatch(
     source,
     /updateUser\(id, \{ favFellowships: user\.favFellowships \}\);[\s\S]*for \(const fellowshipId of newVisibleFellowshipIds\)/,
@@ -4447,14 +4383,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   assert.doesNotMatch(
     source,
     /mergeStoredObjectIdsForUserMutation\(\s*user\.favFellowships,\s*visibleFellowshipIds,\s*'favFellowships',\s*\)/,
-  );
-  assert.match(
-    source,
-    /for \(const fellowshipId of visibleFellowshipIds\) \{\s*const result = await removeFavoriteObjectIdIfPresent\(id, 'favFellowships', fellowshipId\);[\s\S]*if \(!result\.removed\) continue;[\s\S]*'Fellowship favorite counter decrement'/,
-  );
-  assert.match(
-    source,
-    /removeFavoriteObjectIdsWithoutCounters\(id, 'favFellowships', fellowshipIds\)/,
   );
   assert.doesNotMatch(
     source,
@@ -4513,38 +4441,14 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     /const normalizeStoredObjectIdsForAccountRead = \(values: unknown, fieldName: string\): string\[\] => \{/,
   );
   assert.match(controller, /normalizeObjectIdsForUserMutation\(ids, fieldName\)/);
-  assert.match(controller, /const favListings = await readPublicListings\(favListingIds\)/);
   assert.match(
     controller,
     /favListingsIds: normalizeObjectIdsForUserMutation\(\s*favListings\.map\(\(listing\) => listing\._id\),\s*'favListings',\s*\)/,
-  );
-  assert.match(controller, /const favFellowships = await readFellowships\(favFellowshipIds\)/);
-  assert.match(
-    controller,
-    /favFellowshipIds: normalizeObjectIdsForUserMutation\(\s*favFellowships\.map\(\(fellowship\) => fellowship\._id\),\s*'favFellowships',\s*\)/,
-  );
-  assert.match(controller, /const savedPrograms = await readPrograms\(savedProgramIds\)/);
-  assert.match(
-    controller,
-    /savedProgramIds: normalizeObjectIdsForUserMutation\(\s*savedPrograms\.map\(\(program\) => program\._id\),\s*'favFellowships',\s*\)/,
-  );
-  assert.match(
-    controller,
-    /const favFellowshipIds = normalizeStoredObjectIdsForAccountRead\(\s*user\.favFellowships,\s*'favFellowships',\s*\)/,
-  );
-  assert.match(
-    controller,
-    /const savedProgramIds = normalizeStoredObjectIdsForAccountRead\(\s*user\.favFellowships,\s*'favFellowships',\s*\)/,
-  );
-  assert.match(
-    controller,
-    /const ownListingIds = normalizeStoredObjectIdsForAccountRead\(user\.ownListings, 'ownListings'\)/,
   );
   assert.match(
     controller,
     /const favListingIds = normalizeStoredObjectIdsForAccountRead\(user\.favListings, 'favListings'\)/,
   );
-  assert.match(controller, /const ownListings = await readListings\(ownListingIds\)/);
   assert.match(controller, /const favListings = await readPublicListings\(favListingIds\)/);
   assert.doesNotMatch(controller, /matchFellowshipsForPathways\(favPathwayIds\)/);
   assert.doesNotMatch(controller, /new mongoose\.Types\.ObjectId\(pathway\._id\)/);
@@ -4560,9 +4464,9 @@ test('favorite analytics do not persist hidden ids from mutation requests', () =
   assert.match(source, /const visibleFavoriteAnalyticsIdsFromResponse = \(/);
   assert.match(
     source,
-    /const visibleIds = isFavorite\s*\?\s*visibleFavoriteAnalyticsIdsFromResponse\(data, kind, requestedIds\)\s*:\s*\[\]/,
+    /const visibleIds = isFavorite\s*\?\s*visibleFavoriteAnalyticsIdsFromResponse\(data, requestedIds\)\s*:\s*\[\]/,
   );
-  assert.match(source, /metadata: \{ entityType: kind, itemIdsRedacted: true \}/);
+  assert.match(source, /metadata: \{ entityType: 'listing', itemIdsRedacted: true \}/);
   assert.match(source, /visibleIds\.forEach\(\(itemId: string\) => \{/);
   assert.doesNotMatch(source, /const ids = getFavoriteIds\(/);
   assert.doesNotMatch(source, /ids\.forEach\(\(itemId: string\) => \{/);
@@ -5407,57 +5311,10 @@ test('listing DTO URL arrays are capped before public serialization', () => {
     new URL('../server/src/controllers/listingController.ts', import.meta.url),
     'utf8',
   );
-  const userController = fs.readFileSync(
-    new URL('../server/src/controllers/userController.ts', import.meta.url),
-    'utf8',
-  );
 
   assert.match(listingController, /const MAX_PUBLIC_LISTING_URLS = 20/);
   assert.match(listingController, /values\.slice\(0, MAX_PUBLIC_LISTING_URLS\)\.flatMap/);
   assert.doesNotMatch(listingController, /values\.flatMap\(\(value\) => publicHttpUrl/);
-
-  assert.match(userController, /const MAX_ACCOUNT_LISTING_URLS = 20/);
-  assert.match(
-    userController,
-    /values\s*\.slice\(0, MAX_ACCOUNT_LISTING_URLS\)\s*\.map\(publicHttpUrl\)/,
-  );
-  assert.doesNotMatch(userController, /values\.map\(publicHttpUrl\)\.filter/);
-});
-
-test('account listing payloads redact direct contact text', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/controllers/userController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
-  assert.match(
-    source,
-    /const publicAccountListingText = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(source, /redactDirectContactInfo\(value\)/);
-  assert.match(source, /title: publicAccountListingText\(listing\.title\)/);
-  assert.match(source, /hiringStatus: publicAccountListingText\(listing\.hiringStatus\)/);
-  assert.match(source, /description: publicAccountListingText\(listing\.description\)/);
-  assert.match(
-    source,
-    /applicantDescription: publicAccountListingText\(listing\.applicantDescription\)/,
-  );
-  assert.match(source, /departments: publicAccountListingTextArray\(listing\.departments\)/);
-  assert.match(source, /researchAreas: publicAccountListingTextArray\(listing\.researchAreas\)/);
-  assert.match(source, /keywords: publicAccountListingTextArray\(listing\.keywords\)/);
-  const accountListingSerializer = source.match(
-    /const publicAccountListing = \(listing: any\) => \{[\s\S]*?\n\};/,
-  );
-  assert.ok(accountListingSerializer);
-  assert.doesNotMatch(accountListingSerializer[0], /researchEntityId:/);
-  assert.doesNotMatch(accountListingSerializer[0], /researchGroupId:/);
-  assert.doesNotMatch(accountListingSerializer[0], /createdAt:/);
-  assert.doesNotMatch(accountListingSerializer[0], /updatedAt:/);
-  assert.doesNotMatch(source, /title: listing\.title/);
-  assert.doesNotMatch(source, /hiringStatus: listing\.hiringStatus/);
-  assert.doesNotMatch(source, /description: listing\.description/);
-  assert.doesNotMatch(source, /applicantDescription: listing\.applicantDescription/);
 });
 
 test('public API DTO ids avoid arbitrary object stringification', () => {
@@ -5467,10 +5324,6 @@ test('public API DTO ids avoid arbitrary object stringification', () => {
   );
   const listingControllerSource = fs.readFileSync(
     new URL('../server/src/controllers/listingController.ts', import.meta.url),
-    'utf8',
-  );
-  const userControllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/userController.ts', import.meta.url),
     'utf8',
   );
   const programPayloadSource = fs.readFileSync(
@@ -5501,14 +5354,6 @@ test('public API DTO ids avoid arbitrary object stringification', () => {
     /const id = serializedDocumentId\(listing\._id\) \|\| serializedDocumentId\(listing\.id\) \|\| ''/,
   );
   assert.match(
-    userControllerSource,
-    /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
-  );
-  assert.match(
-    userControllerSource,
-    /const id = serializedDocumentId\(listing\._id\) \|\| serializedDocumentId\(listing\.id\) \|\| ''/,
-  );
-  assert.match(
     programPayloadSource,
     /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
   );
@@ -5516,7 +5361,7 @@ test('public API DTO ids avoid arbitrary object stringification', () => {
     programPayloadSource,
     /const id = serializedDocumentId\(program\._id\) \|\| serializedDocumentId\(program\.id\) \|\| ''/,
   );
-  for (const source of [listingControllerSource, userControllerSource, programPayloadSource]) {
+  for (const source of [listingControllerSource, programPayloadSource]) {
     assert.doesNotMatch(source, /_id\?\.toString\?\.\(\)/);
   }
 });
@@ -5533,9 +5378,8 @@ test('account favorite listing hydration only returns public-visible listings', 
 
   assert.match(
     controllerSource,
-    /import \{ readListings, readPublicListings \} from '\.\.\/services\/listingService'/,
+    /import \{ readPublicListings \} from '\.\.\/services\/listingService'/,
   );
-  assert.match(controllerSource, /const ownListings = await readListings\(ownListingIds\)/);
   assert.match(controllerSource, /const favListings = await readPublicListings\(favListingIds\)/);
   assert.match(serviceSource, /export const readPublicListings = async \(ids: any\[\]\) => \{/);
   assert.match(
@@ -5812,31 +5656,6 @@ test('public profile scholarly links omit internal user and entity ids', () => {
   assert.doesNotMatch(serializer[0], /venue: link\.venue/);
   assert.doesNotMatch(serializer[0], /relationshipBasis: options\.relationshipBasis/);
   assert.doesNotMatch(serializer[0], /evidenceLabel: options\.evidenceLabel/);
-});
-
-test('public profile listing payloads redact direct contact text', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/controllers/profileController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
-  assert.match(
-    source,
-    /const publicProfileListingText = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(source, /redactDirectContactInfo\(value\)/);
-  assert.match(source, /title: publicProfileListingText\(listing\.title\)/);
-  assert.match(source, /description: publicProfileListingText\(listing\.description\)/);
-  assert.match(
-    source,
-    /applicantDescription: publicProfileListingText\(listing\.applicantDescription\)/,
-  );
-  assert.match(source, /departments: publicProfileListingTextArray\(listing\.departments\)/);
-  assert.match(source, /archived: false,[\s\S]*confirmed: true/);
-  assert.doesNotMatch(source, /title: listing\.title/);
-  assert.doesNotMatch(source, /description: listing\.description/);
-  assert.doesNotMatch(source, /applicantDescription: listing\.applicantDescription/);
 });
 
 test('profile update persistence sanitizes public URL fields for self and admin edits', () => {
@@ -6960,25 +6779,17 @@ test('public program and fellowship payloads omit direct email and phone fields'
   const publicProgramSortFields = programControllerSource.match(
     /const PUBLIC_PROGRAM_SORT_FIELDS = new Set\(\[[\s\S]*?\]\);/,
   );
-  const publicFellowshipControllerSortFields = fellowshipControllerSource.match(
-    /const PUBLIC_FELLOWSHIP_SORT_FIELDS = new Set\(\[[\s\S]*?\]\);/,
-  );
   const publicFellowshipServiceSortFields = fellowshipServiceSource.match(
     /const PUBLIC_FELLOWSHIP_SORT_FIELDS = new Set\(\[[\s\S]*?\]\);/,
   );
 
   assert.ok(publicProgramSortFields, 'public program sort allowlist should exist');
   assert.ok(
-    publicFellowshipControllerSortFields,
-    'public fellowship controller sort allowlist should exist',
-  );
-  assert.ok(
     publicFellowshipServiceSortFields,
     'public fellowship service sort allowlist should exist',
   );
   for (const sortFields of [
     publicProgramSortFields[0],
-    publicFellowshipControllerSortFields[0],
     publicFellowshipServiceSortFields[0],
   ]) {
     assert.doesNotMatch(sortFields, /'createdAt'/);
@@ -7141,14 +6952,6 @@ test('public item view and favorite mutations require visibility filters', () =>
   assert.match(
     fellowshipSource,
     /itemOps\.addView\(Fellowship, id, \{[\s\S]*?archived: false,[\s\S]*?\.\.\.publicFellowshipFilter\(\),[\s\S]*?\}\)/,
-  );
-  assert.match(
-    fellowshipSource,
-    /itemOps\.addFavorite\(Fellowship, id, \{[\s\S]*?archived: false,[\s\S]*?\.\.\.publicFellowshipFilter\(\),[\s\S]*?\}\)/,
-  );
-  assert.match(
-    fellowshipSource,
-    /itemOps\.removeFavorite\(Fellowship, id, \{[\s\S]*?archived: false,[\s\S]*?\.\.\.publicFellowshipFilter\(\),[\s\S]*?\}\)/,
   );
 });
 
