@@ -143,6 +143,11 @@ export async function runScraperCron(
           })
         : undefined;
     if (materializationResult.errors === 0) {
+      await deps.runStudentVisibilityGate({
+        collection: 'all',
+        mode: 'apply',
+        staleVersion: true,
+      });
       await deps.markSourceCrawled(input.sourceName, input.now ?? new Date());
     }
     const report = await deps.getScrapeRunReport(runId);

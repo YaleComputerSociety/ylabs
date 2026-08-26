@@ -42,6 +42,7 @@ const safePlan = (
   recordId: 'entity-safe',
   label: 'Safe Lab',
   currentTier: 'operator_review',
+  currentVersion: STUDENT_VISIBILITY_VERSION,
   computedTier: 'student_ready',
   tier: 'student_ready',
   reasons: ['source_backed_description', 'concrete_next_step'],
@@ -57,6 +58,7 @@ const heldPlan = (
   recordId: 'entity-held',
   label: 'Held Lab',
   currentTier: 'operator_review',
+  currentVersion: STUDENT_VISIBILITY_VERSION,
   computedTier: 'operator_review',
   tier: 'operator_review',
   reasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
@@ -770,6 +772,40 @@ describe('buildStudentVisibilityGateApplyOps', () => {
       recordId: 'entity-held',
       blockerReasons: ['missing_description'],
     });
+  });
+
+  it('stamps the current version on a version-stale entity that did not materially change', () => {
+    const plan = alreadyPublicPlan({ currentVersion: 'student-visibility-v1' });
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-safe']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(1);
+    expect(researchOps[0].updateOne.update.$set).toMatchObject({
+      studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
+    });
+  });
+
+  it('leaves an unchanged already-current entity unwritten so the sweep converges', () => {
+    const plan = heldPlan({
+      currentTier: 'operator_review',
+      currentComputedTier: 'operator_review',
+      currentReasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
+      currentVersion: STUDENT_VISIBILITY_VERSION,
+    });
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-held']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
   });
 
   it('suppresses an orphaned open queue item for a suppressed entity', () => {
