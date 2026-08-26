@@ -434,13 +434,15 @@ describe('runScraperSweep', () => {
   });
 
   it('derives the post-run plan from the stage registry in a single source of truth', () => {
-    const registryNames = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.map((definition) => definition.name);
+    const registryNames = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.map(
+      (definition) => definition.name,
+    );
     const alwaysOnNames = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
       definition.isEnabled({}),
     ).map((definition) => definition.name);
-    expect(buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name)).toEqual(
-      alwaysOnNames,
-    );
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
+    ).toEqual(alwaysOnNames);
     expect(registryNames).toContain('visibility-gate');
     expect(new Set(DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.map((d) => d.artifactName)).size).toBe(
       registryNames.length,
