@@ -281,7 +281,9 @@ describe('isRegressiveProseRefresh', () => {
   });
 
   it('uses shortDescription fixtures whose usefulness matches the shared quality gate', () => {
-    expect(shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, USEFUL_DESCRIPTION).isUseful).toBe(true);
+    expect(shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, USEFUL_DESCRIPTION).isUseful).toBe(
+      true,
+    );
     expect(shortDescriptionQuality(DEGRADED_SHORT_DESCRIPTION, USEFUL_DESCRIPTION).isUseful).toBe(
       false,
     );
@@ -392,9 +394,9 @@ describe('appendObservations', () => {
   });
 
   it('persists a degraded description when no clean same-source value exists', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:desc' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:desc' }] as any);
     vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
 
     const result = await appendObservations(
@@ -564,9 +566,11 @@ describe('appendObservations', () => {
   });
 
   it('rejects observations sourced from our own site so it never becomes provenance', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:name' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([
+        { _id: 'new-1', observationFingerprint: 'fp:researchEntity:name' },
+      ] as any);
     const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
       modifiedCount: 0,
     } as any);
@@ -636,9 +640,11 @@ describe('appendObservations', () => {
   });
 
   it('coerces a bare-string sourceUrls value into a single-element array before insert (#observation-array-integrity)', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:sourceUrls' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([
+        { _id: 'new-1', observationFingerprint: 'fp:researchEntity:sourceUrls' },
+      ] as any);
     vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
 
     const result = await appendObservations(
@@ -719,9 +725,9 @@ describe('appendObservations', () => {
   });
 
   it('rejects a furniture-shaped person title at ingest and stores the sanitized name (#1375)', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:user:name' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:user:name' }] as any);
     vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
 
     const result = await appendObservations(
@@ -755,9 +761,11 @@ describe('appendObservations', () => {
   });
 
   it('stores a chrome-stripped, contact-redacted description at ingest (#1375)', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:fullDescription' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([
+        { _id: 'new-1', observationFingerprint: 'fp:researchEntity:fullDescription' },
+      ] as any);
     vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
 
     await appendObservations(
