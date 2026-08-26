@@ -10,6 +10,7 @@ import {
   isOrgEngagementSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
+  officialProfileMirrorKey,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
   resolveOutreachOfficialSource,
@@ -357,6 +358,74 @@ describe('buildResearchDetailSources', () => {
     expect(sources[0].url).toBe('https://lab.example.yale.edu/join');
   });
 
+  it('collapses one person profile mirrored across department path prefixes into a single row', () => {
+    const canonicalProfile = 'https://medicine.yale.edu/profile/zeynep-erson/';
+    const labMirror = 'https://medicine.yale.edu/lab/erson/profile/zeynep-erson/';
+    const cancerMirror = 'https://medicine.yale.edu/cancer/profile/zeynep-erson/';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://ersonlab.org/',
+        sourceUrls: [labMirror, cancerMirror, canonicalProfile, 'https://ersonlab.org/'],
+      },
+      accessSignals: [
+        {
+          signalType: 'CURRENT_UNDERGRADS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.55,
+          sourceUrl: canonicalProfile,
+        },
+        {
+          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+          confidence: 'HIGH',
+          confidenceScore: 0.86,
+          sourceUrl: canonicalProfile,
+        },
+      ],
+    });
+
+    const profileRows = sources.filter((source) => source.label === 'Zeynep Erson page');
+    expect(profileRows).toHaveLength(1);
+    expect(profileRows[0].url).toBe('https://medicine.yale.edu/profile/zeynep-erson');
+    expect(profileRows[0].contexts).toEqual(
+      expect.arrayContaining([
+        'Profile source',
+        'Current Undergrads evidence',
+        'Contact Instructions Exist evidence',
+      ]),
+    );
+  });
+
+  it('prefers the shortest-path profile mirror as the canonical displayed URL', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [
+          'https://medicine.yale.edu/lab/erson/profile/zeynep-erson/',
+          'https://medicine.yale.edu/profile/zeynep-erson/',
+        ],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([
+      'https://medicine.yale.edu/profile/zeynep-erson',
+    ]);
+  });
+
+  it('keeps distinct people apart even when their profiles share a host', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/zeynep-erson/',
+          'https://medicine.yale.edu/lab/other/profile/other-person/',
+        ],
+      },
+    });
+
+    expect(sources).toHaveLength(2);
+  });
+
   it('dedupes known logistics evidence into the official source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
@@ -646,9 +715,9 @@ describe('isUnavailableResearchWebsiteCtaUrl (#934)', () => {
   });
 
   it('does not flag when there is no matching health entry or no health data', () => {
-    expect(
-      isUnavailableResearchWebsiteCtaUrl('https://example-lab.example.org/', health),
-    ).toBe(false);
+    expect(isUnavailableResearchWebsiteCtaUrl('https://example-lab.example.org/', health)).toBe(
+      false,
+    );
     expect(
       isUnavailableResearchWebsiteCtaUrl(
         'https://jackson.yale.edu/leitner-program-on-effective-democratic-governance/',
@@ -1032,6 +1101,28 @@ describe('isLikelyOfficialPersonProfileUrl (#646)', () => {
 
   it('rejects a non-Yale profile host', () => {
     expect(isLikelyOfficialPersonProfileUrl('https://example.com/profile/someone')).toBe(false);
+  });
+});
+
+describe('officialProfileMirrorKey', () => {
+  it('maps mirrored profiles of one person on a host to the same key', () => {
+    const key = officialProfileMirrorKey('https://medicine.yale.edu/profile/zeynep-erson/');
+    expect(key).not.toBeNull();
+    expect(
+      officialProfileMirrorKey('https://medicine.yale.edu/lab/erson/profile/zeynep-erson/'),
+    ).toBe(key);
+    expect(
+      officialProfileMirrorKey('https://www.medicine.yale.edu/cancer/profile/zeynep-erson'),
+    ).toBe(key);
+  });
+
+  it('separates different people and roster or index leaves', () => {
+    expect(officialProfileMirrorKey('https://medicine.yale.edu/profile/zeynep-erson/')).not.toBe(
+      officialProfileMirrorKey('https://medicine.yale.edu/profile/other-person/'),
+    );
+    expect(officialProfileMirrorKey('https://medicine.yale.edu/people/faculty')).toBeNull();
+    expect(officialProfileMirrorKey('https://medicine.yale.edu/lab/erson/join')).toBeNull();
+    expect(officialProfileMirrorKey('https://orcid.org/0000-0000-0000-0000')).toBeNull();
   });
 });
 
