@@ -261,13 +261,32 @@ describe('facultyToResearchEntityObservations', () => {
     expect(byField.sourceUrls).toEqual([SLOAN.profileUrl]);
   });
 
-  it('mints nothing when a faculty has neither a lab site nor research areas', () => {
+  it('mints nothing when a faculty has neither a lab site, research areas, nor a research description', () => {
     const profile = extractProfile(
       profileHtml({ fullName: 'Avery Sloan', includeResearchSection: false }),
       SLOAN,
     )!;
     const obs = facultyToResearchEntityObservations(profile, 'ysm:avery-sloan');
     expect(obs).toEqual([]);
+  });
+
+  it('mints a FACULTY_RESEARCH_AREA from a research description even without governed areas (#1933)', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Avery Sloan',
+        researchDescription:
+          'Studies the immunology of chronic viral infection and T-cell exhaustion.',
+      }),
+      SLOAN,
+    )!;
+    const obs = facultyToResearchEntityObservations(profile, 'ysm:avery-sloan');
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.kind).toBe('individual');
+    expect(String(byField.name)).toContain('Faculty Research');
+    expect(byField.websiteUrl).toBeUndefined();
+    expect(byField.researchAreas).toBeUndefined();
+    expect(String(byField.fullDescription)).toContain('T-cell exhaustion');
   });
 
   it('never cites the directory root as a source', () => {

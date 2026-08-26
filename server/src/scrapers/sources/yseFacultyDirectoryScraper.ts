@@ -15,8 +15,9 @@
  *     research home. Loader endpoints and the directory root are rejected
  *     listings and are never cited (issues #510/#516/#529/#549).
  *
- * A profile with research areas seeds a FACULTY_RESEARCH_AREA research home even
- * when the faculty has no lab microsite; a profile that links its own lab/personal
+ * A profile with research areas or a research description seeds a
+ * FACULTY_RESEARCH_AREA research home even when the faculty has no lab microsite;
+ * a profile that links its own lab/personal
  * research site seeds a LAB home with that site as the websiteUrl. Contact is
  * fail-closed: emails derive stable Researcher identity and key the lead PI to
  * the canonical Yale User, and are redacted from public payloads at read time.
@@ -33,7 +34,6 @@ import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
   normalizeName,
-  slugify,
   splitName,
 } from '../utils/scraperHelpers';
 
@@ -328,9 +328,11 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
 /**
  * ResearchEntity observations. A profile that links its own lab/personal research
  * site seeds a LAB home with that site as the websiteUrl; otherwise a profile with
- * research areas seeds a FACULTY_RESEARCH_AREA home whose only cited source is the
+ * research areas or a research description seeds a FACULTY_RESEARCH_AREA home whose
+ * only cited source is the
  * profile page (the profile page is not a research-home websiteUrl). Returns [] for
- * a profile with neither a lab site nor research areas so nothing empty is minted.
+ * a profile with no lab site, no research areas, and no research description so
+ * nothing empty is minted.
  *
  * The lead PI is keyed on the person-specific email when present: YSE profile
  * emails are firstname.lastname aliases, not netids, and the materializer
@@ -343,7 +345,7 @@ export function facultyToResearchEntityObservations(
   fallbackUserKey: string,
 ): ObservationInput[] {
   const hasLab = Boolean(profile.labUrl);
-  if (!hasLab && profile.researchAreas.length === 0) return [];
+  if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab ? `${profile.name} Lab` : `${profile.name} Faculty Research`;

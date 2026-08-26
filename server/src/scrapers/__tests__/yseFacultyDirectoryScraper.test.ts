@@ -275,13 +275,30 @@ describe('facultyToResearchEntityObservations', () => {
     expect(byField.researchAreas).toEqual(['Climate Policy']);
   });
 
-  it('mints nothing when a faculty has neither a lab site nor research areas', () => {
+  it('mints nothing when a faculty has neither a lab site, research areas, nor a research description', () => {
     const bare = extractProfile(PROFILE_NO_LAB, MEADOW);
     const obs = facultyToResearchEntityObservations(
-      { ...bare, researchAreas: [], labUrl: undefined },
+      { ...bare, researchAreas: [], labUrl: undefined, description: undefined },
       'netid:avery.sloan',
     );
     expect(obs).toEqual([]);
+  });
+
+  it('mints a FACULTY_RESEARCH_AREA from a research description even without governed areas (#1933)', () => {
+    const bare = extractProfile(PROFILE_NO_LAB, MEADOW);
+    const obs = facultyToResearchEntityObservations(
+      {
+        ...bare,
+        researchAreas: [],
+        labUrl: undefined,
+        description: 'Studies wetland carbon dynamics and climate feedbacks.',
+      },
+      'netid:avery.sloan',
+    );
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.researchAreas).toBeUndefined();
+    expect(String(byField.fullDescription)).toContain('wetland carbon');
   });
 
   it('never cites the directory root as a source', () => {
