@@ -16,6 +16,7 @@ describe('cleanupArchivedResearchEntities CLI helpers', () => {
       limit: 100,
       limitProvided: false,
       maxApply: 25,
+      mergeResidueOnly: false,
     });
     expect(
       parseCleanupArchivedResearchEntitiesArgs([
@@ -23,6 +24,7 @@ describe('cleanupArchivedResearchEntities CLI helpers', () => {
         '--confirm-archived-entity-cleanup',
         '--limit=200',
         '--max-apply=200',
+        '--merge-residue-only',
       ]),
     ).toEqual({
       apply: true,
@@ -30,6 +32,7 @@ describe('cleanupArchivedResearchEntities CLI helpers', () => {
       limit: 200,
       limitProvided: true,
       maxApply: 200,
+      mergeResidueOnly: true,
     });
   });
 
@@ -43,6 +46,9 @@ describe('cleanupArchivedResearchEntities CLI helpers', () => {
     expect(() =>
       parseCleanupArchivedResearchEntitiesArgs(['--confirm-archived-entity-cleanup=1']),
     ).toThrow(/does not accept a value/);
+    expect(() => parseCleanupArchivedResearchEntitiesArgs(['--merge-residue-only=1'])).toThrow(
+      /does not accept a value/,
+    );
   });
 
   it('requires --limit and confirmation when applying, and enforces --max-apply', () => {
@@ -207,5 +213,32 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(0);
     await expect(ResearchEntity.countDocuments({ _id: blockedId })).resolves.toBe(1);
     await expect(mongoose.connection.db!.collection('signals').countDocuments({})).resolves.toBe(1);
+  });
+
+  it('scopes to merge residue when mergeResidueOnly is set', async () => {
+    const canonicalId = new mongoose.Types.ObjectId();
+    const suppressionId = await insertArchivedEntity('Suppression Hold');
+    const mergeResidueId = new mongoose.Types.ObjectId();
+    await ResearchEntity.collection.insertOne({
+      _id: mergeResidueId,
+      name: 'Merge Residue Home',
+      slug: 'merge-residue-home',
+      archived: true,
+      canonicalGroupId: canonicalId,
+    });
+
+    const scoped = await cleanupArchivedResearchEntities({
+      apply: false,
+      limit: 100,
+      mergeResidueOnly: true,
+    });
+    expect(scoped.plan.scanned).toBe(1);
+    expect(scoped.plan.eligible).toEqual([String(mergeResidueId)]);
+
+    const unscoped = await cleanupArchivedResearchEntities({ apply: false, limit: 100 });
+    expect(unscoped.plan.scanned).toBe(2);
+    expect(new Set(unscoped.plan.eligible)).toEqual(
+      new Set([String(mergeResidueId), String(suppressionId)]),
+    );
   });
 });

@@ -117,7 +117,8 @@ export interface DevelopmentPostRunStage {
     | 'coverage-audit'
     | 'data-quality'
     | 'integrity-gate'
-    | 'trust-contract';
+    | 'trust-contract'
+    | 'archived-cleanup';
   status: 'succeeded' | 'failed';
   artifactPath: string;
   exitCode: number;
@@ -487,6 +488,12 @@ export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
         '--strict',
       ],
       'development-trust-contract.json',
+    ),
+    stage(
+      'archived-cleanup',
+      'research-entity:cleanup-archived',
+      ['--merge-residue-only', '--limit=5000'],
+      'development-archived-cleanup.json',
     ),
   ];
 }
