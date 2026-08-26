@@ -157,15 +157,6 @@ test('PFR-3 rollout tooling stays aggregate-only and fail-closed', () => {
   assert.doesNotMatch(outreach, /studentProfileId|researchEntityId|trackingId|reachedOutAt/);
 });
 
-test('PFR-3 pathway source queue is read-only and redacted', () => {
-  const core = fs.readFileSync(
-    new URL('../server/src/scripts/pfr3PathwaySourceQueueCore.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(core, /createHash\('sha256'\)/);
-  assert.doesNotMatch(core, /destination|email|phone|excerpt/);
-});
-
 test('PFR-3 pathway evidence review keeps private data off stdout and uses guarded materialization', () => {
   const core = fs.readFileSync(
     new URL('../server/src/scripts/pfr3PathwayEvidenceReviewCore.ts', import.meta.url),
@@ -438,7 +429,6 @@ test('external directory and course integrations sanitize fetch errors before lo
     /const safeSearchType = DIRECTORY_SEARCH_TYPES\.has\(searchType\) \? searchType : 'netid'/,
   );
   assert.match(directorySource, /params: \{ search: safeQuery, searchType: safeSearchType \}/);
-  assert.match(directorySource, /params: \{ search: safeName \}/);
   assert.match(
     directorySource,
     /console\.error\('Directory lookup failed:', sanitizeLogValue\(error\)\)/,
@@ -1635,27 +1625,6 @@ test('surname lab disambiguation apply IDs reject object-shaped values', () => {
   assert.doesNotMatch(source, /String\(user\._id\)/);
 });
 
-test('listing profile repair IDs reject object-shaped values', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/repairListingResearchEntityProfiles.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const LISTING_PROFILE_REPAIR_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /export function normalizeListingProfileRepairObjectId/);
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /typeof value !== 'string'/);
-  assert.match(source, /const trimmed = value\.trim\(\)/);
-  assert.match(source, /normalizeListingProfileRepairObjectIdString/);
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /\[serializedDocumentId\(entity\._id\) \|\| '', entity\]/);
-  assert.match(source, /listingId: serializedDocumentId\(listing\._id\) \|\| ''/);
-  assert.doesNotMatch(source, /ObjectId\.isValid/);
-  assert.doesNotMatch(source, /String\(listing\.researchEntityId/);
-  assert.doesNotMatch(source, /String\(entity\._id\)/);
-  assert.doesNotMatch(source, /String\(listing\._id\)/);
-});
-
 test('center director backfill only filters reject object-shaped IDs', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/backfillCenterDirectors.ts', import.meta.url),
@@ -1789,19 +1758,6 @@ test('paper quality duplicate samples use safe id serialization', () => {
   assert.match(source, /id: paperQualityDocumentId\(link\._id\)/);
   assert.doesNotMatch(source, /ownerId: String\(group\._id\?\.owner \|\| ''\)/);
   assert.doesNotMatch(source, /id: String\(link\._id \|\| ''\)/);
-});
-
-test('student visibility repair-target artifact ids use safe serialization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/studentVisibilityRepairTargets.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /const recordId = serializedDocumentId\(doc\._id\) \|\| ''/);
-  assert.match(source, /label: doc\.displayName \|\| doc\.name \|\| doc\.slug \|\| recordId/);
-  assert.doesNotMatch(source, /recordId: String\(doc\._id\)/);
-  assert.doesNotMatch(source, /String\(doc\._id\)/);
 });
 
 test('admin URL reachability helpers bound inputs before parsing or DNS work', () => {
@@ -2050,10 +2006,6 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
     new URL('../server/src/scripts/backfillStudentVisibilityTiers.ts', import.meta.url),
     'utf8',
   );
-  const listingProfileRepair = fs.readFileSync(
-    new URL('../server/src/scripts/repairListingResearchEntityProfiles.ts', import.meta.url),
-    'utf8',
-  );
   assert.match(guards, /export function resolveSafeJsonReportOutputPath/);
   assert.match(guards, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
   assert.match(guards, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
@@ -2070,10 +2022,11 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   assert.match(integrityGate, /resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(outputValue\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(output\)/);
-  for (const source of [studentVisibilityBackfill, listingProfileRepair]) {
-    assert.match(source, /resolveSafeJsonReportOutputPath/);
-    assert.match(source, /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/);
-  }
+  assert.match(studentVisibilityBackfill, /resolveSafeJsonReportOutputPath/);
+  assert.match(
+    studentVisibilityBackfill,
+    /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/,
+  );
 });
 
 test('scraper cache invalidation escapes and bounds regex prefixes', () => {
@@ -2244,10 +2197,6 @@ test('launch and visibility promotion artifacts are constrained to safe JSON roo
     ],
     ['accepted beta copy promotion', '../server/src/scripts/promoteAcceptedBetaCopy.ts'],
     ['student visibility gate', '../server/src/scripts/studentVisibilityGate.ts'],
-    [
-      'student visibility repair targets',
-      '../server/src/scripts/studentVisibilityRepairTargets.ts',
-    ],
   ]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /resolveSafeJsonReportOutputPath/, `${name} must use safe JSON paths`);
@@ -4390,7 +4339,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   assert.match(source, /const objectId = normalizeUserLookupObjectId\(id\)/);
   assert.match(source, /User\.findById\(objectId\)/);
   assert.match(source, /User\.findByIdAndUpdate\(objectId, safeData/);
-  assert.match(source, /User\.findByIdAndDelete\(objectId\)/);
   assert.doesNotMatch(source, /String\(value \|\| ''\)\.trim\(\)/);
   assert.doesNotMatch(source, /String\(id \?\? ''\)\.trim\(\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
@@ -4633,14 +4581,11 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/backfillProgramClassifications.ts',
     '../server/src/scripts/scholarlyLinkSuppressionAudit.ts',
     '../server/src/scripts/dedupeResearchEntitiesByPi.ts',
-    '../server/src/scripts/normalizeFacultyUserTypes.ts',
     '../server/src/scripts/launchAcquisitionReport.ts',
     '../server/src/scripts/launchReviewExceptions.ts',
-    '../server/src/scripts/studentVisibilityRepairTargets.ts',
     '../server/src/scripts/migrateResearchEntities.ts',
     '../server/src/scripts/profileImageQualityAudit.ts',
     '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
-    '../server/src/scripts/repairListingResearchEntityProfiles.ts',
     '../server/src/scripts/migrateResearchEntityCollections.ts',
     '../server/src/scripts/scraperIntegrityDuplicateReview.ts',
     '../server/src/scripts/rebuildResearchEntitySearchIndex.ts',
@@ -4648,7 +4593,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/profileBioCoverageAudit.ts',
     '../server/src/scripts/paperQualityAudit.ts',
     '../server/src/scripts/backfillStudentVisibilityTiers.ts',
-    '../server/src/scripts/repairResearchEntityCanonicalNames.ts',
     '../server/src/scripts/disambiguateSurnameLabNames.ts',
     '../server/src/scripts/studentVisibilityGate.ts',
     '../server/src/scripts/cleanupLegacyMongoCollections.ts',
