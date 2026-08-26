@@ -1,10 +1,17 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 import { buildOrchestrator } from '../../scrapers/registry';
 import {
+  DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
   SCRAPER_SWEEP_SOURCES,
   buildDevelopmentPostRunStages,
   buildScraperSweepChildArgs,
   orderedScraperSweepPhases,
+  parseDevelopmentPostRunStageResult,
+  parseEponymousFraMergeResult,
+  parseResearcherDedupeResult,
   parseScraperSweepArgs,
   resolvePhaseConcurrency,
   runWithBoundedConcurrency,
@@ -424,5 +431,73 @@ describe('runScraperSweep', () => {
         ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
       }),
     ).toThrow(/SCRAPER_ENV=beta/);
+  });
+
+  it('derives the post-run plan from the stage registry in a single source of truth', () => {
+    const registryNames = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.map(
+      (definition) => definition.name,
+    );
+    const alwaysOnNames = DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
+      definition.isEnabled({}),
+    ).map((definition) => definition.name);
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
+    ).toEqual(alwaysOnNames);
+    expect(registryNames).toContain('visibility-gate');
+    expect(new Set(DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.map((d) => d.artifactName)).size).toBe(
+      registryNames.length,
+    );
+    const withOptional = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      dedupeResearchers: true,
+      autoMergeEponymousFra: true,
+      sinceIso: '2026-08-26T00:00:00.000Z',
+    }).map((stage) => stage.name);
+    expect(withOptional).toEqual(registryNames);
+  });
+
+  it('extracts the eponymous merge delta and fails loud when it is absent', () => {
+    expect(parseEponymousFraMergeResult({ mergeDelta: { merged: 3 } })).toEqual({
+      mergeDelta: { merged: 3 },
+    });
+    expect(() => parseEponymousFraMergeResult({})).toThrow(/missing a mergeDelta/);
+    expect(() => parseEponymousFraMergeResult(null)).toThrow(/missing a mergeDelta/);
+  });
+
+  it('extracts the researcher dedupe delta and fails loud when byReason is absent', () => {
+    const delta = parseResearcherDedupeResult({
+      byReason: { same_name_account: 2 },
+      shellsMerged: 2,
+      roleAssignmentsRepointed: 4,
+      roleAssignmentsArchivedRedundant: 1,
+      attributeUnion: { profileLinksAppended: 5 },
+    });
+    expect(delta.researcherDedupeDelta).toMatchObject({
+      shellsMerged: 2,
+      roleAssignmentsRepointed: 4,
+      roleAssignmentsArchivedRedundant: 1,
+      profileLinksAppended: 5,
+    });
+    expect(() => parseResearcherDedupeResult({})).toThrow(/missing byReason/);
+  });
+
+  it('reads a stage result artifact and fails loud on a missing or invalid file', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-sweep-result-'));
+    const goodPath = path.join(directory, 'good.json');
+    fs.writeFileSync(goodPath, JSON.stringify({ mergeDelta: { merged: 1 } }));
+    expect(parseDevelopmentPostRunStageResult(goodPath, parseEponymousFraMergeResult)).toEqual({
+      mergeDelta: { merged: 1 },
+    });
+    expect(() =>
+      parseDevelopmentPostRunStageResult(
+        path.join(directory, 'missing.json'),
+        parseEponymousFraMergeResult,
+      ),
+    ).toThrow(/was not written/);
+    const badPath = path.join(directory, 'bad.json');
+    fs.writeFileSync(badPath, 'not json');
+    expect(() => parseDevelopmentPostRunStageResult(badPath, parseEponymousFraMergeResult)).toThrow(
+      /not valid JSON/,
+    );
+    fs.rmSync(directory, { recursive: true, force: true });
   });
 });

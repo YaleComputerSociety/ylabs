@@ -575,6 +575,174 @@ function spawnChild(
   });
 }
 
+interface PostRunStageDelta {
+  mergeDelta?: EponymousFraLabMergeDelta;
+  researcherDedupeDelta?: ResearcherDedupeStageDelta;
+}
+
+interface PostRunStageDefinition {
+  name: DevelopmentPostRunStage['name'];
+  command: string;
+  artifactName: string;
+  buildArgs: (options: DevelopmentPostRunStageOptions) => string[];
+  isEnabled: (options: DevelopmentPostRunStageOptions) => boolean;
+  parseResult?: (artifact: unknown) => PostRunStageDelta;
+}
+
+export function parseEponymousFraMergeResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  const mergeDelta = record?.mergeDelta;
+  if (!mergeDelta || typeof mergeDelta !== 'object') {
+    throw new Error('eponymous-fra-merge result is missing a mergeDelta object');
+  }
+  return { mergeDelta: mergeDelta as EponymousFraLabMergeDelta };
+}
+
+export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  if (!record || typeof record !== 'object' || record.byReason === undefined) {
+    throw new Error('researcher-dedupe result is missing byReason totals');
+  }
+  const attributeUnion = (record.attributeUnion as { profileLinksAppended?: unknown }) ?? {};
+  return {
+    researcherDedupeDelta: {
+      byReason: record.byReason as ResearcherDedupeStageDelta['byReason'],
+      shellsMerged: Number(record.shellsMerged ?? 0),
+      roleAssignmentsRepointed: Number(record.roleAssignmentsRepointed ?? 0),
+      roleAssignmentsArchivedRedundant: Number(record.roleAssignmentsArchivedRedundant ?? 0),
+      profileLinksAppended: Number(attributeUnion.profileLinksAppended ?? 0),
+    },
+  };
+}
+
+export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = [
+  {
+    name: 'faculty-projection',
+    command: 'research-entity:project-faculty',
+    artifactName: 'development-faculty-projection.json',
+    buildArgs: () => ['--apply', '--confirm-faculty-projection', '--concurrency', '12'],
+    isEnabled: () => true,
+  },
+  {
+    name: 'researcher-dedupe',
+    command: 'researchers:dedupe-accountless-shells',
+    artifactName: 'development-researcher-dedupe.json',
+    buildArgs: () => ['--apply', '--confirm-dedupe-accountless-researcher-shells'],
+    isEnabled: (options) => Boolean(options.dedupeResearchers),
+    parseResult: parseResearcherDedupeResult,
+  },
+  {
+    name: 'eponymous-fra-merge',
+    command: 'research-entity:merge-eponymous-fra',
+    artifactName: 'development-eponymous-fra-merge.json',
+    buildArgs: (options) => [
+      '--apply',
+      '--confirm-auto-merge-eponymous-fra',
+      '--since',
+      options.sinceIso as string,
+      '--max-merges',
+      String(options.maxMerges ?? DEFAULT_EPONYMOUS_FRA_MERGE_MAX),
+    ],
+    isEnabled: (options) => Boolean(options.autoMergeEponymousFra && options.sinceIso),
+    parseResult: parseEponymousFraMergeResult,
+  },
+  {
+    name: 'visibility-gate',
+    command: 'student-visibility:gate',
+    artifactName: 'development-visibility-gate.json',
+    buildArgs: () => [
+      '--collection=all',
+      '--apply',
+      '--confirm-student-visibility-apply',
+      '--max-apply=100000',
+    ],
+    isEnabled: () => true,
+  },
+  {
+    name: 'search-rebuild',
+    command: 'meili:rebuild-research-entities',
+    artifactName: 'development-search-rebuild.json',
+    buildArgs: () => ['--clear', '--confirm-meili-rebuild'],
+    isEnabled: () => true,
+  },
+  {
+    name: 'coverage-audit',
+    command: 'research-entity:coverage-audit',
+    artifactName: 'development-coverage.json',
+    buildArgs: () => ['--all'],
+    isEnabled: () => true,
+  },
+  {
+    name: 'data-quality',
+    command: 'beta:data-quality',
+    artifactName: 'development-data-quality.json',
+    buildArgs: () => ['--strict', '--include-samples', '--progress'],
+    isEnabled: () => true,
+  },
+  {
+    name: 'integrity-gate',
+    command: 'scraper:integrity-gate',
+    artifactName: 'development-integrity.json',
+    buildArgs: () => ['--include-samples', '--include-claim-gate'],
+    isEnabled: () => true,
+  },
+  {
+    name: 'trust-contract',
+    command: 'launch:trust-contract',
+    artifactName: 'development-trust-contract.json',
+    buildArgs: () => [
+      '--collection=all',
+      '--mode=student-ready-only',
+      '--include-research-activity',
+      '--include-paper-quality',
+      '--strict',
+    ],
+    isEnabled: () => true,
+  },
+  {
+    name: 'archived-cleanup',
+    command: 'research-entity:cleanup-archived',
+    artifactName: 'development-archived-cleanup.json',
+    buildArgs: (options) => [
+      '--merge-residue-only',
+      '--limit=5000',
+      ...(options.deleteMergeResidue ? MERGE_RESIDUE_DELETION_STAGE_ARGS : []),
+    ],
+    isEnabled: () => true,
+  },
+];
+
+interface PlannedPostRunStage {
+  definition: PostRunStageDefinition;
+  name: DevelopmentPostRunStage['name'];
+  artifactPath: string;
+  args: string[];
+}
+
+function planDevelopmentPostRunStages(
+  outputDirectory: string,
+  options: DevelopmentPostRunStageOptions,
+): PlannedPostRunStage[] {
+  return DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
+    definition.isEnabled(options),
+  ).map((definition) => {
+    const artifactPath = path.join(outputDirectory, definition.artifactName);
+    return {
+      definition,
+      name: definition.name,
+      artifactPath,
+      args: [
+        '--cwd',
+        'server',
+        definition.command,
+        ...definition.buildArgs(options),
+        '--output',
+        artifactPath,
+      ],
+    };
+  });
+}
+
 export function buildDevelopmentPostRunStages(
   outputDirectory: string,
   options: DevelopmentPostRunStageOptions = {},
@@ -583,143 +751,28 @@ export function buildDevelopmentPostRunStages(
   artifactPath: string;
   args: string[];
 }> {
-  const stage = (
-    name: DevelopmentPostRunStage['name'],
-    command: string,
-    commandArgs: string[],
-    artifactName: string,
-  ) => {
-    const artifactPath = path.join(outputDirectory, artifactName);
-    return {
-      name,
-      artifactPath,
-      args: ['--cwd', 'server', command, ...commandArgs, '--output', artifactPath],
-    };
-  };
-
-  const researcherDedupeStages = options.dedupeResearchers
-    ? [
-        stage(
-          'researcher-dedupe',
-          'researchers:dedupe-accountless-shells',
-          ['--apply', '--confirm-dedupe-accountless-researcher-shells'],
-          'development-researcher-dedupe.json',
-        ),
-      ]
-    : [];
-
-  const eponymousFraMergeStages =
-    options.autoMergeEponymousFra && options.sinceIso
-      ? [
-          stage(
-            'eponymous-fra-merge',
-            'research-entity:merge-eponymous-fra',
-            [
-              '--apply',
-              '--confirm-auto-merge-eponymous-fra',
-              '--since',
-              options.sinceIso,
-              '--max-merges',
-              String(options.maxMerges ?? DEFAULT_EPONYMOUS_FRA_MERGE_MAX),
-            ],
-            'development-eponymous-fra-merge.json',
-          ),
-        ]
-      : [];
-
-  return [
-    stage(
-      'faculty-projection',
-      'research-entity:project-faculty',
-      ['--apply', '--confirm-faculty-projection', '--concurrency', '12'],
-      'development-faculty-projection.json',
-    ),
-    ...researcherDedupeStages,
-    ...eponymousFraMergeStages,
-    stage(
-      'visibility-gate',
-      'student-visibility:gate',
-      ['--collection=all', '--apply', '--confirm-student-visibility-apply', '--max-apply=100000'],
-      'development-visibility-gate.json',
-    ),
-    stage(
-      'search-rebuild',
-      'meili:rebuild-research-entities',
-      ['--clear', '--confirm-meili-rebuild'],
-      'development-search-rebuild.json',
-    ),
-    stage(
-      'coverage-audit',
-      'research-entity:coverage-audit',
-      ['--all'],
-      'development-coverage.json',
-    ),
-    stage(
-      'data-quality',
-      'beta:data-quality',
-      ['--strict', '--include-samples', '--progress'],
-      'development-data-quality.json',
-    ),
-    stage(
-      'integrity-gate',
-      'scraper:integrity-gate',
-      ['--include-samples', '--include-claim-gate'],
-      'development-integrity.json',
-    ),
-    stage(
-      'trust-contract',
-      'launch:trust-contract',
-      [
-        '--collection=all',
-        '--mode=student-ready-only',
-        '--include-research-activity',
-        '--include-paper-quality',
-        '--strict',
-      ],
-      'development-trust-contract.json',
-    ),
-    stage(
-      'archived-cleanup',
-      'research-entity:cleanup-archived',
-      [
-        '--merge-residue-only',
-        '--limit=5000',
-        ...(options.deleteMergeResidue ? MERGE_RESIDUE_DELETION_STAGE_ARGS : []),
-      ],
-      'development-archived-cleanup.json',
-    ),
-  ];
+  return planDevelopmentPostRunStages(outputDirectory, options).map(
+    ({ name, artifactPath, args }) => ({ name, artifactPath, args }),
+  );
 }
 
-function readEponymousFraMergeDelta(artifactPath: string): EponymousFraLabMergeDelta | undefined {
+export function parseDevelopmentPostRunStageResult(
+  artifactPath: string,
+  parseResult: (artifact: unknown) => PostRunStageDelta,
+): PostRunStageDelta {
+  let raw: string;
   try {
-    const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8')) as Record<string, unknown>;
-    const mergeDelta = artifact.mergeDelta;
-    return mergeDelta && typeof mergeDelta === 'object'
-      ? (mergeDelta as EponymousFraLabMergeDelta)
-      : undefined;
+    raw = fs.readFileSync(artifactPath, 'utf8');
   } catch {
-    return undefined;
+    throw new Error(`result artifact was not written at ${artifactPath}`);
   }
-}
-
-function readResearcherDedupeDelta(artifactPath: string): ResearcherDedupeStageDelta | undefined {
+  let parsed: unknown;
   try {
-    const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8')) as Record<string, unknown>;
-    if (!artifact || typeof artifact !== 'object' || artifact.byReason === undefined) {
-      return undefined;
-    }
-    const attributeUnion = (artifact.attributeUnion as { profileLinksAppended?: unknown }) ?? {};
-    return {
-      byReason: artifact.byReason as ResearcherDedupeStageDelta['byReason'],
-      shellsMerged: Number(artifact.shellsMerged ?? 0),
-      roleAssignmentsRepointed: Number(artifact.roleAssignmentsRepointed ?? 0),
-      roleAssignmentsArchivedRedundant: Number(artifact.roleAssignmentsArchivedRedundant ?? 0),
-      profileLinksAppended: Number(attributeUnion.profileLinksAppended ?? 0),
-    };
+    parsed = JSON.parse(raw);
   } catch {
-    return undefined;
+    throw new Error(`result artifact at ${artifactPath} is not valid JSON`);
   }
+  return parseResult(parsed);
 }
 
 async function runDevelopmentPostRunStages(
@@ -729,33 +782,36 @@ async function runDevelopmentPostRunStages(
   options: DevelopmentPostRunStageOptions = {},
 ): Promise<ScraperSweepSummary['postRun']> {
   const stages: DevelopmentPostRunStage[] = [];
-  for (const stage of buildDevelopmentPostRunStages(outputDirectory, options)) {
-    console.log(`\n[post-run] ${stage.name}`);
-    const child = await childRunner('yarn', stage.args, {
+  for (const planned of planDevelopmentPostRunStages(outputDirectory, options)) {
+    console.log(`\n[post-run] ${planned.name}`);
+    const child = await childRunner('yarn', planned.args, {
       cwd: repoRoot,
       env: process.env,
     });
     const exitCode = child.status ?? 1;
-    const error =
+    let error =
       child.error || exitCode !== 0
-        ? sanitizeLogValue(child.error || `${stage.name} exited with status ${exitCode}`)
+        ? sanitizeLogValue(child.error || `${planned.name} exited with status ${exitCode}`)
         : undefined;
-    const mergeDelta =
-      !error && stage.name === 'eponymous-fra-merge'
-        ? readEponymousFraMergeDelta(stage.artifactPath)
-        : undefined;
-    const researcherDedupeDelta =
-      !error && stage.name === 'researcher-dedupe'
-        ? readResearcherDedupeDelta(stage.artifactPath)
-        : undefined;
+    let delta: PostRunStageDelta = {};
+    if (!error && planned.definition.parseResult) {
+      try {
+        delta = parseDevelopmentPostRunStageResult(
+          planned.artifactPath,
+          planned.definition.parseResult,
+        );
+      } catch (contractError) {
+        error = sanitizeLogValue(contractError);
+        console.error(`[post-run] ${planned.name} result contract failed: ${error}`);
+      }
+    }
     stages.push({
-      name: stage.name,
+      name: planned.name,
       status: error ? 'failed' : 'succeeded',
-      artifactPath: stage.artifactPath,
+      artifactPath: planned.artifactPath,
       exitCode,
       ...(error ? { error } : {}),
-      ...(mergeDelta ? { mergeDelta } : {}),
-      ...(researcherDedupeDelta ? { researcherDedupeDelta } : {}),
+      ...delta,
     });
   }
   return {
