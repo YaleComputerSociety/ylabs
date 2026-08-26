@@ -283,6 +283,7 @@ export const officialProfileMirrorKey = (url?: string | null): string | null => 
   try {
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    if (!host.endsWith('yale.edu')) return null;
     const match = parsed.pathname.replace(/\/+$/, '').match(PERSON_PROFILE_MIRROR_PATH);
     if (!match) return null;
     const profileType = match[1].toLowerCase();
@@ -524,12 +525,12 @@ export const buildResearchDetailSources = ({
   sourceLinkHealth = [],
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
-  const healthByKey = new Map<string, { healthStatus?: string; httpStatusCode?: number }>();
+  const healthByLedgerKey = new Map<string, { healthStatus?: string; httpStatusCode?: number }>();
 
   sourceLinkHealth.forEach((entry) => {
-    const key = sourceDedupeKey(entry.url);
+    const key = sourceLedgerKey(entry.url);
     if (!key) return;
-    healthByKey.set(key, {
+    healthByLedgerKey.set(key, {
       healthStatus: entry.healthStatus,
       httpStatusCode: entry.httpStatusCode,
     });
@@ -556,16 +557,11 @@ export const buildResearchDetailSources = ({
       return;
     }
 
-    const health = healthByKey.get(key);
     sources.set(key, {
       url: normalized,
       label: context === 'Profile website' ? 'Research website' : sourceLabelForUrl(normalized),
       contexts: [context],
-      ...(health?.healthStatus ? { healthStatus: health.healthStatus } : {}),
-      ...(typeof health?.httpStatusCode === 'number'
-        ? { httpStatusCode: health.httpStatusCode }
-        : {}),
-      isLikelyUnavailable: isLikelyUnavailableSourceLink(health),
+      isLikelyUnavailable: false,
     });
   };
 
@@ -585,7 +581,17 @@ export const buildResearchDetailSources = ({
     );
   });
 
-  return Array.from(sources.values()).sort(
-    (left, right) => Number(left.isLikelyUnavailable) - Number(right.isLikelyUnavailable),
-  );
+  return Array.from(sources.values())
+    .map((source) => {
+      const health = healthByLedgerKey.get(sourceLedgerKey(source.url) || '');
+      return {
+        ...source,
+        ...(health?.healthStatus ? { healthStatus: health.healthStatus } : {}),
+        ...(typeof health?.httpStatusCode === 'number'
+          ? { httpStatusCode: health.httpStatusCode }
+          : {}),
+        isLikelyUnavailable: isLikelyUnavailableSourceLink(health),
+      };
+    })
+    .sort((left, right) => Number(left.isLikelyUnavailable) - Number(right.isLikelyUnavailable));
 };
