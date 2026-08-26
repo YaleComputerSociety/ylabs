@@ -31,8 +31,8 @@ import {
   type ArchivedEntityArtifactType,
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { deleteFromIndex } from '../services/meiliSyncService';
+import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -2013,10 +2013,12 @@ async function main() {
 
   // Anti-stale safety net: merging duplicates and retiring members changes the
   // canonical survivor's lead/evidence, which would otherwise leave a stale
-  // student-visibility tier until the next full gate run. Recompute the tier for
-  // the affected canonical entities immediately so reads never serve a stale
-  // tier after a dedupe.
+  // student-visibility tier and stale member names in the search index until the
+  // next full gate run. Recompute the tier and force a canonical Meili re-sync for
+  // the affected canonical entities immediately so reads never serve a stale tier
+  // or stale member/lead names after a dedupe.
   let visibilityRecomputed = 0;
+  let canonicalEntitiesResynced = 0;
   if (apply) {
     const canonicalIds = Array.from(
       new Set(
@@ -2025,14 +2027,9 @@ async function main() {
           .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
       ),
     );
-    if (canonicalIds.length > 0) {
-      const gateResult = await runStudentVisibilityGate({
-        collection: 'research',
-        mode: 'apply',
-        recordIds: canonicalIds,
-      });
-      visibilityRecomputed = gateResult.counts.scanned;
-    }
+    const repair = await recomputeVisibilityAndResyncCanonicals(canonicalIds);
+    visibilityRecomputed = repair.visibilityRecomputed;
+    canonicalEntitiesResynced = repair.canonicalEntitiesResynced;
   }
 
   writeResearchEntityPiDedupeDecisionTemplate(
@@ -2068,6 +2065,7 @@ async function main() {
     applied,
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
+    canonicalEntitiesResynced,
   };
 
   const outputReport = buildResearchEntityPiDedupeOutput(report, {

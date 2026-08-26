@@ -94,6 +94,15 @@ export function isProfileAreaShellEntity(
   );
 }
 
+const centerOrInstituteEntityTypes = new Set(['CENTER', 'INSTITUTE']);
+const centerOrInstituteKinds = new Set(['center', 'institute']);
+
+export function isCenterOrInstituteEntity(entity: ProfileAreaDuplicateEntity): boolean {
+  const entityType = (entity.entityType || '').toUpperCase();
+  const kind = (entity.kind || '').toLowerCase();
+  return centerOrInstituteEntityTypes.has(entityType) || centerOrInstituteKinds.has(kind);
+}
+
 export function isConcreteResearchHomeEntity(entity: ProfileAreaDuplicateEntity): boolean {
   if (isProfileAreaShellEntity(entity)) return false;
   const kind = (entity.kind || '').toLowerCase();
