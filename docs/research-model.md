@@ -138,9 +138,7 @@ Same-email rows with different names are a review queue, not automatic merge evi
 
 The heavy governed evidence claim-graph is deferred; the lightweight `Observation` to `Signal` (and `Observation` to `RoleAssignment`) pipeline covers the product.
 `EvidenceClaim`, `SourceDocument`, and `ReviewDecision` exist as versioned, unwired, do-not-build-on schema contracts (Phase 1 foundation work): no current scraper or public read path writes or consumes them.
-[`canonicalDomainLoaders.ts`](../server/src/services/canonicalDomainLoaders.ts) (bounded read-only loaders for public identity, roles, organizations, taxonomy terms, evidence metadata, and research plans) and [`canonicalPublicProjections.ts`](../server/src/services/canonicalPublicProjections.ts) (a bounded public person projection and `ResearchEntity.discovery` cache shape) are likewise unwired to live routes, Meilisearch, or materializer writes.
 [`phase2IdentityMigrationPlannerCore.ts`](../server/src/scripts/phase2IdentityMigrationPlannerCore.ts)/[`phase2IdentityMigrationPlan.ts`](../server/src/scripts/phase2IdentityMigrationPlan.ts) produce a read-only, dry-run identity-reconciliation artifact (`model-refactor:identity-plan`) and never write canonical collections or redirect runtime readers.
-[`legacyResearchRecordClassification.ts`](../server/src/services/legacyResearchRecordClassification.ts) is a bounded, deterministic one-time classification planner for legacy `Listing`/`Fellowship` records that produces `PENDING`-review suggestions only, with no persistence capability and no authorization to write.
 None of these unwire until a later, separately gated cutover; do not build new runtime behavior on top of them.
 
 ## Canonical Schema Versions And Database Validators
@@ -239,7 +237,7 @@ Keep these notes private to the owning account unless a future advising-share fl
 Saved research cards include route-specific checklist templates keyed by planning intent.
 Checklist state uses stable item ids so copy edits do not erase checked state.
 
-Pathway-based fellowship matching was removed with `EntryPathway`; `fellowshipMatchingService` is now a stub that always returns no matches, and fellowship discovery lives on the programs and funding surface.
+Pathway-based fellowship matching was removed with `EntryPathway`, and fellowship discovery lives on the programs and funding surface.
 
 ## Access Signals
 
