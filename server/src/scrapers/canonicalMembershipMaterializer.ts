@@ -399,6 +399,14 @@ async function resolveOrCreateResearcherId(
   }
 
   if (!displayName) return undefined;
+  return resolveOrCreateNameOnlyResearcherId(displayName);
+}
+
+const nameOnlyResolutionLocks = new Map<string, Promise<mongoose.Types.ObjectId | undefined>>();
+
+async function findOrCreateNameOnlyResearcherId(
+  displayName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
   const nameOnlyFilter = {
     displayName,
     archived: { $ne: true },
@@ -416,6 +424,23 @@ async function resolveOrCreateResearcherId(
       return toObjectId((fallback as { _id?: unknown } | null)?._id);
     }
     throw error;
+  }
+}
+
+async function resolveOrCreateNameOnlyResearcherId(
+  displayName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const previous = nameOnlyResolutionLocks.get(displayName) ?? Promise.resolve(undefined);
+  const current = previous
+    .catch(() => undefined)
+    .then(() => findOrCreateNameOnlyResearcherId(displayName));
+  nameOnlyResolutionLocks.set(displayName, current);
+  try {
+    return await current;
+  } finally {
+    if (nameOnlyResolutionLocks.get(displayName) === current) {
+      nameOnlyResolutionLocks.delete(displayName);
+    }
   }
 }
 
