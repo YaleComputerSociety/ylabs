@@ -616,12 +616,6 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
   },
   {
     collection: 'users',
-    field: 'favPathways',
-    meaning: 'Legacy saved-pathway array',
-    target: 'ResearchPlan',
-  },
-  {
-    collection: 'users',
     field: 'savedPathwayPlans',
     meaning: 'Legacy saved-pathway plan map',
     target: 'ResearchPlan',

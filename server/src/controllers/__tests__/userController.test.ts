@@ -1,16 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  readFellowships: vi.fn(),
-  readListings: vi.fn(),
   readPublicListings: vi.fn(),
-  readPrograms: vi.fn(),
   readUser: vi.fn(),
   updateUser: vi.fn(),
   addFavListings: vi.fn(),
   deleteFavListings: vi.fn(),
-  addFavFellowships: vi.fn(),
-  deleteFavFellowships: vi.fn(),
   normalizeObjectIdsForUserMutation: vi.fn((values: unknown[], fieldName: string) => {
     if (values.length > 100) {
       const error: any = new Error(`Too many ${fieldName} ids`);
@@ -46,16 +41,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../services/listingService', () => ({
-  readListings: mocks.readListings,
   readPublicListings: mocks.readPublicListings,
-}));
-
-vi.mock('../../services/fellowshipService', () => ({
-  readFellowships: mocks.readFellowships,
-}));
-
-vi.mock('../../services/programService', () => ({
-  readPrograms: mocks.readPrograms,
 }));
 
 vi.mock('../../services/userService', () => ({
@@ -63,8 +49,6 @@ vi.mock('../../services/userService', () => ({
   updateUser: mocks.updateUser,
   addFavListings: mocks.addFavListings,
   deleteFavListings: mocks.deleteFavListings,
-  addFavFellowships: mocks.addFavFellowships,
-  deleteFavFellowships: mocks.deleteFavFellowships,
   normalizeObjectIdsForUserMutation: mocks.normalizeObjectIdsForUserMutation,
 }));
 
@@ -87,23 +71,14 @@ vi.mock('../../services/researchPlanService', () => ({
 }));
 
 import {
-  addFavFellowships,
   addFavListings,
-  addSavedPrograms,
   addSavedResearchEntities,
   deleteSavedResearchEntityPlan,
   exportSavedResearchEntities,
-  getFavFellowshipIds,
-  getFavFellowships,
   getFavListingsIds,
-  getSavedProgramIds,
   getSavedResearchEntities,
   getSavedResearchEntityPlans,
-  getSavedPrograms,
-  getUserListings,
-  removeFavFellowships,
   removeFavListings,
-  removeSavedPrograms,
   removeSavedResearchEntities,
   updateCurrentUser,
   updateSavedResearchEntityPlan,
@@ -260,190 +235,6 @@ describe('userController', () => {
     vi.clearAllMocks();
   });
 
-  it('allowlists account listing payloads for both owned and favorited listings', async () => {
-    const ownListing = {
-      _id: '64a000000000000000000001',
-      id: '64a000000000000000000001',
-      ownerId: 'owner123',
-      ownerEmail: 'owner123@yale.edu',
-      title: 'Own listing',
-      hiringStatus: 'Hiring now; email owner123@yale.edu before applying.',
-      description: 'Private owner draft details.',
-      applicantDescription: 'Students will help with experiments.',
-      websites: [
-        'https://owner.example.yale.edu/apply',
-        'https://user:pass@owner.example.yale.edu/private',
-        'javascript:alert(document.cookie)',
-      ],
-      departments: ['Molecular Biology'],
-      researchAreas: ['Genetics'],
-      keywords: ['genetics'],
-      type: 'Research Assistant',
-      commitment: '8 hours/week',
-      compensationType: 'Paid',
-      expiresAt: new Date('2026-09-01T00:00:00.000Z'),
-      professorIds: ['collab123'],
-      professorNames: ['Collaborator Professor'],
-      emails: ['collab123@yale.edu'],
-      createdByUserId: '64a000000000000000000004',
-      views: 12,
-      favorites: ['student456'],
-      archived: false,
-      confirmed: true,
-      audited: true,
-      embedding: [0.5, 0.7],
-    };
-    const favListing = {
-      _id: '64a000000000000000000002',
-      id: '64a000000000000000000002',
-      title: 'Favorited listing',
-      hiringStatus: 'Open; call 203-555-0199 first.',
-      description: 'Help with a project.',
-      applicantDescription: 'Students will learn methods.',
-      websites: [
-        'https://example.yale.edu/apply',
-        'https://user:pass@example.yale.edu/private',
-        'javascript:alert(document.cookie)',
-        'mailto:otherprof@yale.edu',
-      ],
-      departments: ['Computer Science'],
-      researchAreas: ['Systems'],
-      keywords: ['systems'],
-      type: 'Research Assistant',
-      commitment: '5 hours/week',
-      compensationType: 'Paid',
-      expiresAt: new Date('2026-08-01T00:00:00.000Z'),
-      ownerId: 'otherprof',
-      ownerEmail: 'otherprof@yale.edu',
-      ownerFirstName: 'Other',
-      ownerLastName: 'Professor',
-      professorIds: ['victim123'],
-      professorNames: ['Victim Professor'],
-      emails: ['victim123@yale.edu'],
-      createdByUserId: '64a000000000000000000003',
-      views: 42,
-      favorites: ['student123'],
-      archived: false,
-      confirmed: true,
-      audited: true,
-      embedding: [0.1, 0.2],
-    };
-    mocks.readUser.mockResolvedValue({
-      ownListings: ['64a000000000000000000001'],
-      favListings: ['64a000000000000000000002'],
-    });
-    mocks.readListings.mockResolvedValue([ownListing]);
-    mocks.readPublicListings.mockResolvedValue([favListing]);
-    mocks.updateUser.mockResolvedValue({});
-
-    const req = {
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    } as any;
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as any;
-
-    await getUserListings(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
-    expect(body.ownListings[0]).toMatchObject({
-      _id: '64a000000000000000000001',
-      id: '64a000000000000000000001',
-      title: 'Own listing',
-      hiringStatus: expect.any(String),
-      description: 'Private owner draft details.',
-      applicantDescription: 'Students will help with experiments.',
-      websites: ['https://owner.example.yale.edu/apply'],
-      departments: ['Molecular Biology'],
-      researchAreas: ['Genetics'],
-      keywords: ['genetics'],
-      type: 'Research Assistant',
-      commitment: '8 hours/week',
-      compensationType: 'Paid',
-      expiresAt: new Date('2026-09-01T00:00:00.000Z'),
-    });
-    expect(body.ownListings[0].hiringStatus).not.toContain('owner123@yale.edu');
-    expect(body.ownListings[0]).not.toHaveProperty('ownerId');
-    expect(body.ownListings[0]).not.toHaveProperty('ownerEmail');
-    expect(body.ownListings[0]).not.toHaveProperty('professorIds');
-    expect(body.ownListings[0]).not.toHaveProperty('professorNames');
-    expect(body.ownListings[0]).not.toHaveProperty('emails');
-    expect(body.ownListings[0]).not.toHaveProperty('createdByUserId');
-    expect(body.ownListings[0]).not.toHaveProperty('views');
-    expect(body.ownListings[0]).not.toHaveProperty('favorites');
-    expect(body.ownListings[0]).not.toHaveProperty('archived');
-    expect(body.ownListings[0]).not.toHaveProperty('confirmed');
-    expect(body.ownListings[0]).not.toHaveProperty('audited');
-    expect(body.ownListings[0]).not.toHaveProperty('embedding');
-    expect(body.favListings[0]).toMatchObject({
-      _id: '64a000000000000000000002',
-      id: '64a000000000000000000002',
-      title: 'Favorited listing',
-      hiringStatus: expect.any(String),
-      description: 'Help with a project.',
-      applicantDescription: 'Students will learn methods.',
-      websites: ['https://example.yale.edu/apply'],
-      departments: ['Computer Science'],
-      researchAreas: ['Systems'],
-      keywords: ['systems'],
-      type: 'Research Assistant',
-      commitment: '5 hours/week',
-      compensationType: 'Paid',
-      expiresAt: new Date('2026-08-01T00:00:00.000Z'),
-    });
-    expect(body.favListings[0].hiringStatus).not.toContain('203-555-0199');
-    expect(body.favListings[0]).not.toHaveProperty('ownerId');
-    expect(body.favListings[0]).not.toHaveProperty('ownerEmail');
-    expect(body.favListings[0]).not.toHaveProperty('professorIds');
-    expect(body.favListings[0]).not.toHaveProperty('professorNames');
-    expect(body.favListings[0]).not.toHaveProperty('emails');
-    expect(body.favListings[0]).not.toHaveProperty('createdByUserId');
-    expect(body.favListings[0]).not.toHaveProperty('views');
-    expect(body.favListings[0]).not.toHaveProperty('favorites');
-    expect(body.favListings[0]).not.toHaveProperty('archived');
-    expect(body.favListings[0]).not.toHaveProperty('confirmed');
-    expect(body.favListings[0]).not.toHaveProperty('audited');
-    expect(body.favListings[0]).not.toHaveProperty('embedding');
-  });
-
-  it('does not leak internal service errors from account listing readers', async () => {
-    mocks.readUser.mockResolvedValue({
-      ownListings: ['64a000000000000000000001'],
-      favListings: ['64a000000000000000000002'],
-    });
-    mocks.readListings.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
-
-    const req = {
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-
-    await getUserListings(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch account listings' });
-  });
-
-  it('validates stored listing ids before account listing fan-out', async () => {
-    mocks.readUser.mockResolvedValue({
-      ownListings: ['not-an-object-id'],
-      favListings: ['64a000000000000000000002'],
-    });
-
-    const req = {
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-
-    await getUserListings(req, res);
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Bad request' });
-    expect(mocks.readListings).not.toHaveBeenCalled();
-    expect(mocks.updateUser).not.toHaveBeenCalled();
-  });
 
   it('does not leak internal service errors when adding favorited listings fails', async () => {
     mocks.addFavListings.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
@@ -495,114 +286,6 @@ describe('userController', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to update favorite listings' });
-  });
-
-  it('allowlists saved program payloads for authenticated account readers', async () => {
-    mocks.readUser.mockResolvedValue({
-      favFellowships: ['64a000000000000000000010'],
-    });
-    mocks.readPrograms.mockResolvedValue([privateProgram]);
-    mocks.updateUser.mockResolvedValue({});
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as any;
-
-    await getSavedPrograms(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
-    expectPublicProgram(body.savedPrograms[0]);
-  });
-
-  it('allowlists saved fellowship payloads for legacy authenticated account readers', async () => {
-    mocks.readUser.mockResolvedValue({
-      favFellowships: ['64a000000000000000000010'],
-    });
-    mocks.readFellowships.mockResolvedValue([privateProgram]);
-    mocks.updateUser.mockResolvedValue({});
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as any;
-
-    await getFavFellowships(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
-    expectPublicProgram(body.favFellowships[0]);
-  });
-
-  it('does not echo private account fields when saving programs', async () => {
-    mocks.addFavFellowships.mockResolvedValue({
-      _id: '64a000000000000000000020',
-      netid: 'student123',
-      email: 'student123@yale.edu',
-      userType: 'undergraduate',
-      userConfirmed: true,
-      website: 'javascript:alert(document.cookie)',
-      profileUrls: {
-        yale: 'https://example.yale.edu/student123',
-        personal: 'mailto:student123@yale.edu',
-      },
-      favFellowships: ['64a000000000000000000010'],
-      savedPathwayPlans: {
-        '64a000000000000000000030': {
-          note: 'private advising note',
-          checklist: { emailed: true },
-        },
-      },
-      googleScholarId: 'private-scholar-id',
-      confidenceByField: { email: 0.99 },
-      manuallyLockedFields: ['email'],
-      lastLoginAt: new Date('2026-01-01T00:00:00.000Z'),
-      archived: false,
-      dedupedIntoUserId: '64a000000000000000000099',
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { savedPrograms: ['64a000000000000000000010'] } },
-    } as any;
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as any;
-
-    await addSavedPrograms(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
-    expect(body.user).toMatchObject({
-      _id: '64a000000000000000000020',
-      netid: 'student123',
-      userType: 'undergraduate',
-      userConfirmed: true,
-      profileUrls: {
-        yale: 'https://example.yale.edu/student123',
-      },
-    });
-    expect(body.user).not.toHaveProperty('website');
-    expect(body.user).not.toHaveProperty('email');
-    expect(body.user).not.toHaveProperty('ownListings');
-    expect(body.user).not.toHaveProperty('favListings');
-    expect(body.user).not.toHaveProperty('favFellowships');
-    expect(body.user).not.toHaveProperty('favPathways');
-    expect(body.user).not.toHaveProperty('savedPathwayPlans');
-    expect(body.user).not.toHaveProperty('googleScholarId');
-    expect(body.user).not.toHaveProperty('confidenceByField');
-    expect(body.user).not.toHaveProperty('manuallyLockedFields');
-    expect(body.user).not.toHaveProperty('lastLoginAt');
-    expect(body.user).not.toHaveProperty('archived');
-    expect(body.user).not.toHaveProperty('dedupedIntoUserId');
   });
 
   it('allowlists watched program payloads for authenticated account readers', async () => {
@@ -681,96 +364,6 @@ describe('userController', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to fetch watched programs' });
-  });
-
-  it('does not leak internal service errors when saving programs fails', async () => {
-    mocks.addFavFellowships.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { savedPrograms: ['64a000000000000000000010'] } },
-    } as any;
-    const res = {
-      statusCode: 200,
-      body: undefined as unknown,
-      status: vi.fn(function (this: any, code: number) {
-        this.statusCode = code;
-        return this;
-      }),
-      json: vi.fn(function (this: any, body: unknown) {
-        this.body = body;
-        return this;
-      }),
-    } as any;
-
-    await addSavedPrograms(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to save programs' });
-  });
-
-  it('does not leak internal service errors when adding favorite programs fails', async () => {
-    mocks.addFavFellowships.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { favFellowships: ['64a000000000000000000010'] } },
-    } as any;
-    const res = privateResponseDouble();
-
-    await addFavFellowships(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update favorite programs' });
-  });
-
-  it('does not leak internal service errors when removing saved programs fails', async () => {
-    mocks.deleteFavFellowships.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { savedPrograms: ['64a000000000000000000010'] },
-    } as any;
-    const res = {
-      statusCode: 200,
-      body: undefined as unknown,
-      status: vi.fn(function (this: any, code: number) {
-        this.statusCode = code;
-        return this;
-      }),
-      json: vi.fn(function (this: any, body: unknown) {
-        this.body = body;
-        return this;
-      }),
-    } as any;
-
-    await removeSavedPrograms(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to remove saved programs' });
-  });
-
-  it('does not leak internal service errors when removing favorite programs fails', async () => {
-    mocks.deleteFavFellowships.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { favFellowships: ['64a000000000000000000010'] },
-    } as any;
-    const res = privateResponseDouble();
-
-    await removeFavFellowships(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update favorite programs' });
   });
 
   it('does not leak internal service errors when updating the current user fails', async () => {
@@ -1043,8 +636,6 @@ describe('userController', () => {
 
   it.each([
     [getFavListingsIds, 'Failed to fetch favorite listing ids'],
-    [getFavFellowshipIds, 'Failed to fetch favorite program ids'],
-    [getSavedProgramIds, 'Failed to fetch saved program ids'],
   ])('does not leak internal read errors from account id readers', async (handler, message) => {
     mocks.readUser.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
 
@@ -1057,46 +648,6 @@ describe('userController', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: message });
-  });
-
-  it.each([
-    [getFavFellowships, 'Failed to fetch favorite programs'],
-    [getSavedPrograms, 'Failed to fetch saved programs'],
-  ])(
-    'does not leak internal read errors from hydrated account readers',
-    async (handler, message) => {
-      mocks.readUser.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
-
-      const req = {
-        user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      } as any;
-      const res = privateResponseDouble();
-
-      await handler(req, res);
-
-      expect(res.statusCode).toBe(500);
-      expect(res.body).toEqual({ error: message });
-    },
-  );
-
-  it('bounds stored program ids before program reader fan-out', async () => {
-    mocks.readUser.mockResolvedValue({
-      favFellowships: Array.from({ length: 101 }, (_, index) =>
-        index.toString(16).padStart(24, '0'),
-      ),
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-
-    await getFavFellowships(req, res);
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Bad request' });
-    expect(mocks.readFellowships).not.toHaveBeenCalled();
-    expect(mocks.updateUser).not.toHaveBeenCalled();
   });
 
   it('scopes saved-entity reads and private exports to the authenticated owner', async () => {

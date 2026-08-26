@@ -432,7 +432,7 @@ describe('app security runtime classification', () => {
       let sessionCookie: string | undefined;
 
       for (let attempt = 0; attempt < 51; attempt += 1) {
-        const response = await fetch(`http://127.0.0.1:${address.port}/api/users/savedPrograms`, {
+        const response = await fetch(`http://127.0.0.1:${address.port}/api/users/watchedPrograms`, {
           method: 'PUT',
           headers: {
             origin: 'https://yalelabs.io',
@@ -440,7 +440,7 @@ describe('app security runtime classification', () => {
             'x-forwarded-proto': 'https',
             ...(sessionCookie ? { cookie: sessionCookie } : {}),
           },
-          body: JSON.stringify({ data: { savedPrograms: ['64a000000000000000000030'] } }),
+          body: JSON.stringify({ data: { watchedPrograms: ['64a000000000000000000030'] } }),
         });
         if (!sessionCookie) {
           sessionCookie = response.headers
@@ -538,20 +538,27 @@ describe('app security runtime classification', () => {
       let sessionCookie: string | undefined;
 
       for (let attempt = 0; attempt < 51; attempt += 1) {
-        const response = await fetch(`http://127.0.0.1:${address.port}/api/analytics/research`, {
-          method: 'POST',
-          headers: {
-            origin: 'https://yalelabs.io',
-            'content-type': 'application/json',
-            'x-forwarded-proto': 'https',
-            ...(sessionCookie ? { cookie: sessionCookie } : {}),
+        const response = await fetch(
+          `http://127.0.0.1:${address.port}/api/analytics/research/batch`,
+          {
+            method: 'POST',
+            headers: {
+              origin: 'https://yalelabs.io',
+              'content-type': 'application/json',
+              'x-forwarded-proto': 'https',
+              ...(sessionCookie ? { cookie: sessionCookie } : {}),
+            },
+            body: JSON.stringify({
+              events: [
+                {
+                  eventType: 'research_entity_impression',
+                  entityType: 'research_entity',
+                  entityId: '64a000000000000000000030',
+                },
+              ],
+            }),
           },
-          body: JSON.stringify({
-            eventType: 'research_entity_impression',
-            entityType: 'research_entity',
-            entityId: '64a000000000000000000030',
-          }),
-        });
+        );
         if (!sessionCookie) {
           sessionCookie = response.headers
             .getSetCookie()

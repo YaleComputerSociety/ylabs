@@ -123,14 +123,6 @@ const userSchema = new mongoose.Schema(
       type: [mongoose.Schema.ObjectId],
       default: [],
     },
-    favFellowships: {
-      type: [mongoose.Schema.ObjectId],
-      default: [],
-    },
-    favPathways: {
-      type: [mongoose.Schema.ObjectId],
-      default: [],
-    },
     savedResearchEntities: {
       type: [mongoose.Schema.ObjectId],
       ref: 'ResearchEntity',
@@ -139,10 +131,6 @@ const userSchema = new mongoose.Schema(
     savedResearchEntityMigrationCompleted: {
       type: Boolean,
       default: false,
-    },
-    savedProgramTracking: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
     },
     publications: {
       type: [publicationSchema],

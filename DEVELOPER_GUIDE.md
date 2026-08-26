@@ -365,7 +365,7 @@ The canonical research-student journey uses claim-specific events for terminal s
 The complete event and payload contract is documented in [`docs/research-journey-analytics.md`](docs/research-journey-analytics.md).
 Legacy `research_view`, `pathway_save`, `ways_in_click`, `contact_route_click`, and `source_link_click` events remain for older profile, listing, and fellowship instrumentation, but they are not access conversions.
 
-Client interactions are sent to `POST /api/analytics/research` for authenticated users.
+Client interactions are sent to `POST /api/analytics/research/batch` for authenticated users.
 Journey payloads use event-specific allowlists of bounded enums and count buckets, and the server validates canonical entity identifiers before persistence.
 They never retain raw query text, URLs, hostnames, direct contact destinations, private notes, plan contents, filter values, or client-supplied cross-event search identifiers.
 Every interaction uses a bounded idempotency key with per-actor server uniqueness, and client tracking is fire-and-forget so analytics failures cannot change student behavior.
@@ -415,14 +415,14 @@ All mount under `/api`.
 | Prefix            | Description                                                                               | Auth                                                   |
 | ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment   | Varies                                                 |
-| `/programs`       | Programs & Fellowships browse/search and saved-program support                            | Varies                                                 |
+| `/programs`       | Programs & Fellowships browse/search                                                      | Varies                                                 |
 | `/listings`       | Legacy authenticated reads, outreach, claims, and view tracking; authoring is retired    | Authenticated                                          |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
 | `/users`          | User CRUD                                                                                 | Yes                                                    |
 | `/profiles`       | Public faculty profile reads (admin curation lives under `/admin/profiles/:netid`)        | Authenticated                                          |
 | `/analytics`      | Analytics dashboard + research event writes                                               | Admin for dashboard, authenticated for research writes |
 | `/config`         | Departments + research areas                                                              | No                                                     |
-| `/research-areas` | Research area CRUD                                                                        | Admin for writes                                       |
+| `/research-areas` | Custom research area creation                                                             | Admin for writes                                       |
 | `/admin`          | Admin operations                                                                          | Admin                                                  |
 | `/seed`           | Dev seeding routes                                                                        | Dev mode only                                          |
 

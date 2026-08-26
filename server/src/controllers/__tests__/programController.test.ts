@@ -3,9 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   searchPrograms: vi.fn(),
   readProgram: vi.fn(),
-  addProgramView: vi.fn(),
-  addProgramFavorite: vi.fn(),
-  removeProgramFavorite: vi.fn(),
   hasAdminAuthorityForUser: vi.fn(),
 }));
 
@@ -13,22 +10,13 @@ vi.mock('../../services/programService', () => ({
   searchPrograms: mocks.searchPrograms,
   getProgramFilterOptions: vi.fn(),
   readProgram: mocks.readProgram,
-  addProgramView: mocks.addProgramView,
-  addProgramFavorite: mocks.addProgramFavorite,
-  removeProgramFavorite: mocks.removeProgramFavorite,
 }));
 
 vi.mock('../../services/adminGrantService', () => ({
   hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
 
-import {
-  addFavoriteToProgram,
-  addViewToProgram,
-  getProgramById,
-  removeFavoriteFromProgram,
-  searchProgramsController,
-} from '../programController';
+import { getProgramById, searchProgramsController } from '../programController';
 
 const response = () => {
   const res = {
@@ -143,9 +131,6 @@ describe('programController search visibility', () => {
       totalPages: 0,
     });
     mocks.readProgram.mockReset();
-    mocks.addProgramView.mockReset();
-    mocks.addProgramFavorite.mockReset();
-    mocks.removeProgramFavorite.mockReset();
     mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
   });
 
@@ -570,41 +555,5 @@ describe('programController search visibility', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'Program not found' });
-  });
-
-  it('allowlists public program view payloads for normal readers', async () => {
-    const res = response();
-    mocks.addProgramView.mockResolvedValue(privateProgram);
-
-    await addViewToProgram({ params: { id: '64a000000000000000000010' } } as any, res as any);
-
-    const body = res.json.mock.calls[0][0];
-    expectPublicProgram(body.program);
-    expectPublicProgram(body.fellowship);
-  });
-
-  it('allowlists public program favorite payloads for normal readers', async () => {
-    const res = response();
-    mocks.addProgramFavorite.mockResolvedValue(privateProgram);
-
-    await addFavoriteToProgram({ params: { id: '64a000000000000000000010' } } as any, res as any);
-
-    const body = res.json.mock.calls[0][0];
-    expectPublicProgram(body.program);
-    expectPublicProgram(body.fellowship);
-  });
-
-  it('allowlists public program unfavorite payloads for normal readers', async () => {
-    const res = response();
-    mocks.removeProgramFavorite.mockResolvedValue(privateProgram);
-
-    await removeFavoriteFromProgram(
-      { params: { id: '64a000000000000000000010' } } as any,
-      res as any,
-    );
-
-    const body = res.json.mock.calls[0][0];
-    expectPublicProgram(body.program);
-    expectPublicProgram(body.fellowship);
   });
 });

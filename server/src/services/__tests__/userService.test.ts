@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import mongoose from 'mongoose';
 import {
-  MAX_SAVED_PROGRAM_NOTE_LENGTH,
   buildCaseInsensitiveNetidFilter,
   normalizeObjectIdStringForUserMutation,
   normalizeObjectIdsForUserMutation,
   normalizeUserLookupObjectId,
-  sanitizeSavedProgramTrackingForResponse,
 } from '../userService';
 describe('buildCaseInsensitiveNetidFilter', () => {
   it('rejects malformed netids before building regex filters', () => {
@@ -45,44 +43,6 @@ describe('normalizeUserLookupObjectId', () => {
         toString: () => '665f0b0c0b0c0b0c0b0c0b0c',
       }),
     ).toBeNull();
-  });
-});
-
-describe('sanitizeSavedProgramTrackingForResponse', () => {
-  it('returns only bounded records keyed by canonical program ids', () => {
-    const id = '665f0b0c0b0c0b0c0b0c0b0c';
-    expect(
-      sanitizeSavedProgramTrackingForResponse({
-        [id]: {
-          note: 'x'.repeat(MAX_SAVED_PROGRAM_NOTE_LENGTH + 20),
-          stage: 'applied',
-          revision: 4,
-          updatedAt: '2026-07-11T12:00:00.000Z',
-        },
-        '__proto__.bad': { note: 'private', stage: 'applied' },
-      }),
-    ).toEqual({
-      [id]: {
-        note: 'x'.repeat(MAX_SAVED_PROGRAM_NOTE_LENGTH),
-        stage: 'applied',
-        revision: 4,
-        updatedAt: '2026-07-11T12:00:00.000Z',
-      },
-    });
-  });
-
-  it('normalizes malformed stored metadata without exposing extra fields', () => {
-    const id = '665f0b0c0b0c0b0c0b0c0b0c';
-    expect(
-      sanitizeSavedProgramTrackingForResponse({
-        [id]: { note: 12, stage: 'admin', revision: -1, updatedAt: 'bad', secret: 'no' },
-      })[id],
-    ).toEqual({
-      note: '',
-      stage: 'not_applied',
-      revision: 0,
-      updatedAt: new Date(0).toISOString(),
-    });
   });
 });
 

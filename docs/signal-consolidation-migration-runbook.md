@@ -71,7 +71,7 @@ Confirm the student research-detail page and admin access review render correctl
 
 ## Step 4: handle stranded saved-pathway account data
 
-The favPathways feature was removed, but the `favPathways` field on `users` was intentionally left in place so no account data is destroyed by the code cutover.
+The favPathways feature was removed, and the `favPathways` declaration has since been dropped from the User schema; dropping the declaration does not unset the field on existing `users` documents, so any stranded account data still needs the cleanup below.
 The `savedPathwayPlans` declaration was later dropped from the User schema; clearing its stale stored values is owned by the Dev-only `retire:stale-saved-plan-fields` script, not this runbook.
 Decide per environment whether to drop `favPathways` or backfill it into saved research entities before dropping the `entry_pathways` collection.
 Dropping the field is the default when no product decision requires preserving legacy saved pathways.

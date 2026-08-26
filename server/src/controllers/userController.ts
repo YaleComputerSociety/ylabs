@@ -3,19 +3,13 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import { readListings, readPublicListings } from '../services/listingService';
-import { readFellowships } from '../services/fellowshipService';
-import { readPrograms } from '../services/programService';
+import { readPublicListings } from '../services/listingService';
 import {
   readUser,
   updateUser,
   addFavListings as addFavListingsService,
   deleteFavListings as deleteFavListingsService,
-  addFavFellowships as addFavFellowshipsService,
-  deleteFavFellowships as deleteFavFellowshipsService,
   normalizeObjectIdsForUserMutation,
-  getSavedProgramTracking as getSavedProgramTrackingService,
-  updateSavedProgramTracking as updateSavedProgramTrackingService,
 } from '../services/userService';
 import {
   getSavedResearchEntities as getSavedResearchEntitiesService,
@@ -41,8 +35,6 @@ import {
 import { publicProgramForReader } from './programPayload';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { serializedDocumentId } from '../utils/idSerialization';
 
 const publicHttpUrl = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -57,15 +49,6 @@ const publicHttpUrl = (value: unknown): string | undefined => {
   }
 };
 
-const publicHttpUrls = (values: unknown): string[] =>
-  Array.isArray(values)
-    ? values
-        .slice(0, MAX_ACCOUNT_LISTING_URLS)
-        .map(publicHttpUrl)
-        .filter((value): value is string => Boolean(value))
-    : [];
-
-const MAX_ACCOUNT_LISTING_URLS = 20;
 const MAX_CURRENT_USER_PROFILE_URLS = 20;
 const MAX_CURRENT_USER_PROFILE_URL_KEY_LENGTH = 80;
 const MAX_CURRENT_USER_PROFILE_URL_LENGTH = 2048;
@@ -105,33 +88,6 @@ const boundedAccountStringArray = (value: unknown): string[] | undefined => {
       return normalized ? [normalized] : [];
     })
     .slice(0, MAX_CURRENT_USER_ARRAY_ITEMS);
-};
-
-const publicAccountListingText = (value: unknown): string | undefined =>
-  typeof value === 'string' ? redactDirectContactInfo(value) : undefined;
-
-const publicAccountListingTextArray = (values: unknown): string[] =>
-  Array.isArray(values) ? values.flatMap((value) => publicAccountListingText(value) ?? []) : [];
-
-const publicAccountListing = (listing: any) => {
-  const id = serializedDocumentId(listing._id) || serializedDocumentId(listing.id) || '';
-  return {
-    _id: id,
-    id,
-    title: publicAccountListingText(listing.title),
-    hiringStatus: publicAccountListingText(listing.hiringStatus),
-    websites: publicHttpUrls(listing.websites),
-    description: publicAccountListingText(listing.description),
-    applicantDescription: publicAccountListingText(listing.applicantDescription),
-    researchAreas: publicAccountListingTextArray(listing.researchAreas),
-    keywords: publicAccountListingTextArray(listing.keywords),
-    established: listing.established,
-    departments: publicAccountListingTextArray(listing.departments),
-    type: publicAccountListingText(listing.type),
-    commitment: publicAccountListingText(listing.commitment),
-    compensationType: publicAccountListingText(listing.compensationType),
-    expiresAt: listing.expiresAt,
-  };
 };
 
 const normalizeStoredObjectIdsForAccountRead = (values: unknown, fieldName: string): string[] => {
@@ -380,243 +336,6 @@ export const removeFavListings = async (request: Request, response: Response) =>
   } catch (error: any) {
     console.error('Favorite listing removal failed:', sanitizeLogValue(error));
     sendAccountMutationError(response, error, 'Failed to update favorite listings');
-  }
-};
-
-export const getFavFellowshipIds = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-    const user = await readUser(currentUser.netId);
-    const favFellowshipIds = normalizeStoredObjectIdsForAccountRead(
-      user.favFellowships,
-      'favFellowships',
-    );
-    const favFellowships = await readFellowships(favFellowshipIds);
-    response.status(200).json({
-      favFellowshipIds: normalizeObjectIdsForUserMutation(
-        favFellowships.map((fellowship) => fellowship._id),
-        'favFellowships',
-      ),
-    });
-  } catch (error: any) {
-    console.error('Favorite program id fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch favorite program ids');
-  }
-};
-
-export const getSavedProgramIds = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-    const user = await readUser(currentUser.netId);
-    const savedProgramIds = normalizeStoredObjectIdsForAccountRead(
-      user.favFellowships,
-      'favFellowships',
-    );
-    const savedPrograms = await readPrograms(savedProgramIds);
-    response.status(200).json({
-      savedProgramIds: normalizeObjectIdsForUserMutation(
-        savedPrograms.map((program) => program._id),
-        'favFellowships',
-      ),
-    });
-  } catch (error: any) {
-    console.error('Saved program id fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch saved program ids');
-  }
-};
-
-export const getFavFellowships = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-    const user = await readUser(currentUser.netId);
-    const favFellowshipIds = normalizeStoredObjectIdsForAccountRead(
-      user.favFellowships,
-      'favFellowships',
-    );
-    const favFellowships = await readFellowships(favFellowshipIds);
-
-    const validIds: mongoose.Types.ObjectId[] = [];
-    for (const fellowship of favFellowships) {
-      validIds.push(fellowship._id);
-    }
-
-    await updateUser(currentUser.netId, { favFellowships: validIds });
-    response.status(200).json({ favFellowships: favFellowships.map(publicProgramForReader) });
-  } catch (error: any) {
-    console.error('Favorite program fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch favorite programs');
-  }
-};
-
-export const getSavedPrograms = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-    const user = await readUser(currentUser.netId);
-    const savedProgramIds = normalizeStoredObjectIdsForAccountRead(
-      user.favFellowships,
-      'favFellowships',
-    );
-    const savedPrograms = await readPrograms(savedProgramIds);
-
-    const validIds: mongoose.Types.ObjectId[] = [];
-    for (const program of savedPrograms) {
-      validIds.push(program._id);
-    }
-
-    await updateUser(currentUser.netId, { favFellowships: validIds });
-    response.status(200).json({ savedPrograms: savedPrograms.map(publicProgramForReader) });
-  } catch (error: any) {
-    console.error('Saved program fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch saved programs');
-  }
-};
-
-export const addFavFellowships = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-
-    if (!request.body.data?.favFellowships) {
-      const error: any = new Error('No favFellowships provided');
-      error.status = 400;
-      throw error;
-    }
-
-    const favFellowshipsArray = Array.isArray(request.body.data.favFellowships)
-      ? request.body.data.favFellowships
-      : [request.body.data.favFellowships];
-
-    const user = await addFavFellowshipsService(currentUser.netId, favFellowshipsArray);
-    response.status(200).json({ user: publicCurrentUserForResponse(user) });
-  } catch (error: any) {
-    console.error('Favorite program mutation failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to update favorite programs');
-  }
-};
-
-export const addSavedPrograms = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-    const ids = request.body.data?.savedPrograms ?? request.body.data?.favFellowships;
-
-    if (!ids) {
-      const error: any = new Error('No savedPrograms provided');
-      error.status = 400;
-      throw error;
-    }
-
-    const savedProgramsArray = Array.isArray(ids) ? ids : [ids];
-    const user = await addFavFellowshipsService(currentUser.netId, savedProgramsArray);
-    response.status(200).json({ user: publicCurrentUserForResponse(user) });
-  } catch (error: any) {
-    console.error('Saved program mutation failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to save programs');
-  }
-};
-
-export const removeFavFellowships = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-
-    if (!request.body.favFellowships) {
-      const error: any = new Error('No favFellowships provided');
-      error.status = 400;
-      throw error;
-    }
-
-    const favFellowshipsArray = Array.isArray(request.body.favFellowships)
-      ? request.body.favFellowships
-      : [request.body.favFellowships];
-
-    const user = await deleteFavFellowshipsService(currentUser.netId, favFellowshipsArray);
-    response.status(200).json({ user: publicCurrentUserForResponse(user) });
-  } catch (error: any) {
-    console.error('Favorite program removal failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to update favorite programs');
-  }
-};
-
-export const removeSavedPrograms = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-    const ids = request.body.savedPrograms ?? request.body.favFellowships;
-
-    if (!ids) {
-      const error: any = new Error('No savedPrograms provided');
-      error.status = 400;
-      throw error;
-    }
-
-    const savedProgramsArray = Array.isArray(ids) ? ids : [ids];
-    const user = await deleteFavFellowshipsService(currentUser.netId, savedProgramsArray);
-    response.status(200).json({ user: publicCurrentUserForResponse(user) });
-  } catch (error: any) {
-    console.error('Saved program removal failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to remove saved programs');
-  }
-};
-
-export const getSavedProgramTracking = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    const savedProgramTracking = await getSavedProgramTrackingService(currentUser.netId);
-    setPrivateAccountResponseHeaders(response);
-    response.status(200).json({ savedProgramTracking });
-  } catch (error: any) {
-    console.error('Saved program tracking fetch failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to fetch saved program tracking');
-  }
-};
-
-export const updateSavedProgramTracking = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    const tracking = await updateSavedProgramTrackingService(
-      currentUser.netId,
-      request.params.programId,
-      request.body?.data?.tracking || request.body?.tracking || {},
-    );
-    setPrivateAccountResponseHeaders(response);
-    response.status(200).json({ tracking });
-  } catch (error: any) {
-    console.error('Saved program tracking update failed:', sanitizeLogValue(error));
-    if (error?.status === 409 && error.current) {
-      setPrivateAccountResponseHeaders(response);
-      response.status(409).json({ error: error.message, current: error.current });
-      return;
-    }
-    sendPrivateAccountError(response, error, 'Failed to update saved program tracking');
   }
 };
 
@@ -876,40 +595,6 @@ export const exportSavedResearchEntities = async (request: Request, response: Re
   } catch (error) {
     console.error('Saved research entity export failed:', sanitizeLogValue(error));
     sendPrivateAccountError(response, error, 'Failed to export saved research entities');
-  }
-};
-
-export const getUserListings = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-    const user = await readUser(currentUser.netId);
-    const ownListingIds = normalizeStoredObjectIdsForAccountRead(user.ownListings, 'ownListings');
-    const favListingIds = normalizeStoredObjectIdsForAccountRead(user.favListings, 'favListings');
-    const ownListings = await readListings(ownListingIds);
-    const favListings = await readPublicListings(favListingIds);
-
-    const ownIds: mongoose.Types.ObjectId[] = [];
-    for (const listing of ownListings) {
-      ownIds.push(listing._id);
-    }
-
-    const favIds: mongoose.Types.ObjectId[] = [];
-    for (const listing of favListings) {
-      favIds.push(listing._id);
-    }
-
-    await updateUser(currentUser.netId, { ownListings: ownIds, favListings: favIds });
-    response.status(200).json({
-      ownListings: ownListings.map(publicAccountListing),
-      favListings: favListings.map(publicAccountListing),
-    });
-  } catch (error: any) {
-    console.error('Account listing fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch account listings');
   }
 };
 

@@ -6,9 +6,6 @@ import {
   readProgram,
   searchPrograms,
   getProgramFilterOptions as readProgramFilterOptions,
-  addProgramView,
-  addProgramFavorite,
-  removeProgramFavorite,
 } from '../services/programService';
 import { isStudentVisibilityTier, type StudentVisibilityTier } from '../models/studentVisibility';
 import { publicProgramForReader } from './programPayload';
@@ -195,32 +192,3 @@ export const getProgramFilterOptions = async (_request: Request, response: Respo
   }
 };
 
-export const addViewToProgram = async (request: Request, response: Response) => {
-  try {
-    const program = await addProgramView(request.params.id);
-    const publicProgram = publicProgramForReader(program);
-    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
-  } catch (error: any) {
-    sendProgramError(response, error, 'Failed to update program view count');
-  }
-};
-
-export const addFavoriteToProgram = async (request: Request, response: Response) => {
-  try {
-    const program = await addProgramFavorite(request.params.id);
-    const publicProgram = publicProgramForReader(program);
-    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
-  } catch (error: any) {
-    sendProgramError(response, error, 'Failed to favorite program');
-  }
-};
-
-export const removeFavoriteFromProgram = async (request: Request, response: Response) => {
-  try {
-    const program = await removeProgramFavorite(request.params.id);
-    const publicProgram = publicProgramForReader(program);
-    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
-  } catch (error: any) {
-    sendProgramError(response, error, 'Failed to remove program favorite');
-  }
-};

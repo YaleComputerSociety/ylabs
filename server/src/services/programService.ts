@@ -5,8 +5,6 @@
  * public contract for fellowships, center internships, and recurring programs.
  */
 import {
-  addFavorite,
-  addView,
   archiveFellowship,
   bulkCreateFellowships,
   createFellowship,
@@ -15,7 +13,6 @@ import {
   readAllFellowships,
   readFellowship,
   readFellowships,
-  removeFavorite,
   searchFellowships,
   unarchiveFellowship,
   updateFellowship,
@@ -29,9 +26,6 @@ export const updateProgram = updateFellowship;
 export const archiveProgram = archiveFellowship;
 export const unarchiveProgram = unarchiveFellowship;
 export const deleteProgram = deleteFellowship;
-export const addProgramView = addView;
-export const addProgramFavorite = addFavorite;
-export const removeProgramFavorite = removeFavorite;
 export const bulkCreatePrograms = bulkCreateFellowships;
 export const getProgramFilterOptions = getFilterOptions;
 

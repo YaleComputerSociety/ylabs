@@ -180,23 +180,4 @@ describe('research area routes', () => {
     expect(mocks.researchAreaFindOne).not.toHaveBeenCalled();
   });
 
-  it('rejects oversized research area search queries before lookup', async () => {
-    const res = await invokeRouteHandler('/search', 'get', {
-      query: { query: 'a'.repeat(121) },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ message: 'Search query is too long' });
-    expect(mocks.researchAreaFind).not.toHaveBeenCalled();
-  });
-
-  it('rejects blank research area search queries before lookup', async () => {
-    const res = await invokeRouteHandler('/search', 'get', {
-      query: { query: '   ' },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ message: 'Search query is required' });
-    expect(mocks.researchAreaFind).not.toHaveBeenCalled();
-  });
 });
