@@ -647,6 +647,7 @@ function programRecordToFellowshipObservations(
     { ...base, field: 'requiresMentorBeforeApply', value: classification.requiresMentorBeforeApply },
     { ...base, field: 'mentorMatching', value: classification.mentorMatching },
     { ...base, field: 'undergraduateOnly', value: classification.undergraduateOnly ?? true },
+    { ...base, field: 'researchFocused', value: true },
     { ...base, field: 'bestNextStep', value: classification.bestNextStep },
     { ...base, field: 'prepSteps', value: classification.prepSteps },
     { ...base, field: 'applicationLink', value: record.joinPageUrl || record.websiteUrl || record.sourceUrl },

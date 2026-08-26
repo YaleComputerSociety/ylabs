@@ -106,18 +106,29 @@ async function planMigration(limit?: number): Promise<MigrationPlan> {
   if (Number.isFinite(limit) && (limit as number) > 0) query.limit(limit as number);
   const entities = (await query) as unknown as ProgramEntityRow[];
 
+  const existingFellowships = (await Fellowship.find({}).select('_id title sourceKey').lean()) as Array<{
+    _id: unknown;
+    title?: string;
+    sourceKey?: string;
+  }>;
+  const fellowshipBySourceKey = new Map<string, { _id: unknown }>();
+  const fellowshipByNormalizedTitle = new Map<string, { _id: unknown }>();
+  for (const fellowship of existingFellowships) {
+    if (fellowship.sourceKey) fellowshipBySourceKey.set(fellowship.sourceKey, fellowship);
+    const normalizedTitle = normalizeTitle(fellowship.title);
+    if (normalizedTitle && !fellowshipByNormalizedTitle.has(normalizedTitle)) {
+      fellowshipByNormalizedTitle.set(normalizedTitle, fellowship);
+    }
+  }
+
   const rows: PlanRow[] = [];
   for (const entity of entities) {
     const title = firstNonEmpty(entity.name, entity.slug);
     const sourceKey = entity.slug;
     const entityId = String(entity._id);
 
-    const bySourceKey = await Fellowship.findOne({ sourceKey }).select('_id').lean();
-    const byTitle = bySourceKey
-      ? null
-      : (
-          await Fellowship.find({}).select('_id title sourceKey').lean()
-        ).find((f: any) => normalizeTitle(f.title) === normalizeTitle(title));
+    const bySourceKey = fellowshipBySourceKey.get(sourceKey);
+    const byTitle = bySourceKey ? null : fellowshipByNormalizedTitle.get(normalizeTitle(title));
 
     let disposition: Disposition = 'created';
     let existingFellowshipId: string | undefined;
@@ -154,7 +165,7 @@ function buildFellowshipDoc(entity: ProgramEntityRow): Record<string, unknown> {
   const summary = firstNonEmpty(entity.shortDescription, entity.fullDescription);
   const sourceUrl = firstNonEmpty(entity.officialUrl, entity.primaryUrl, entity.websiteUrl);
   const applicationLink = firstNonEmpty(entity.joinPageUrl, entity.primaryUrl, sourceUrl);
-  const undergraduateOnly = entity.slug.startsWith('department-undergrad-research-');
+  const departmentUndergradResearch = entity.slug.startsWith('department-undergrad-research-');
 
   const classification = classifyProgram({ title, summary, description, sourceUrl });
 
@@ -165,7 +176,8 @@ function buildFellowshipDoc(entity: ProgramEntityRow): Record<string, unknown> {
     description,
     sourceUrl,
     applicationLink,
-    undergraduateOnly: undergraduateOnly || Boolean(classification.undergraduateOnly),
+    undergraduateOnly: departmentUndergradResearch || Boolean(classification.undergraduateOnly),
+    researchFocused: departmentUndergradResearch,
     programCategory: classification.programCategory,
     programKind: classification.programKind,
     entryMode: classification.entryMode,
