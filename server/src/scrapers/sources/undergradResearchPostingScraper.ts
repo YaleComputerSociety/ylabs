@@ -23,6 +23,11 @@ import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
 import { slugify } from '../utils/scraperHelpers';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 export const UNDERGRAD_RESEARCH_POSTING_SOURCE = 'undergrad-research-posting';
@@ -299,7 +304,11 @@ export class UndergradResearchPostingScraper implements IScraper {
     const summaries: string[] = [];
 
     const pages = this.pageConfigs.filter((page) => !only || only.has(page.key.toLowerCase()));
-    for (const page of pages) {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+    await mapWithConcurrency(pages, concurrency, async (page) => {
       ctx.log(`Fetching ${page.url}`);
       const html = await this.fetchHtml(page.url, ctx.options.useCache);
       const postings = parseUndergradResearchPostingsPage(html, page, this.now());
@@ -318,7 +327,7 @@ export class UndergradResearchPostingScraper implements IScraper {
         totalEntities += 1;
       }
       summaries.push(`${page.key}=${emitted}`);
-    }
+    });
 
     return {
       observationCount: totalObs,

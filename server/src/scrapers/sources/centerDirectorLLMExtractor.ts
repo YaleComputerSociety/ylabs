@@ -37,6 +37,11 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { normalizeName, splitName } from '../utils/scraperHelpers';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 
 const SOURCE_KEY = 'center-director-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -433,12 +438,16 @@ export class CenterDirectorLLMExtractor implements IScraper {
     let observationCount = 0;
     let entitiesObserved = 0;
 
-    for (const center of candidates) {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+    await mapWithConcurrency(candidates, concurrency, async (center) => {
       try {
         const result = await this.extractDirectorForCenter(center, ctx.log);
         if (!result) {
           ctx.log(`[${center.slug}] no director named on leadership pages.`);
-          continue;
+          return;
         }
         await ctx.emit(result.observations);
         observationCount += result.observations.length;
@@ -447,7 +456,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
       } catch (error) {
         ctx.log(`[${center.slug}] director extraction failed: ${sanitizeLogValue(error)}`);
       }
-    }
+    });
 
     return {
       observationCount,

@@ -24,6 +24,11 @@ import {
   type EntityWorkPlan,
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
@@ -769,20 +774,24 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
 
-    for (const lab of candidates) {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+    await mapWithConcurrency(candidates, concurrency, async (lab) => {
       try {
         if (workPlannerPolicy) {
           if (!idValue(lab._id) && !lab.slug) {
             recordWorkPlannerNoIdentifier(workPlannerMetrics);
             ctx.log('[candidate] skipped by WorkPlanner — missing entity identifier.');
-            continue;
+            return;
           }
           const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
           recordWorkPlannerDecision(workPlannerMetrics, plan);
           if (!plan.shouldFetch) {
             const reasons = Array.from(new Set(plan.fields.map((field) => field.reason))).join(',');
             ctx.log(`[${lab.slug || 'candidate'}] skipped by WorkPlanner — ${reasons || 'fresh'}.`);
-            continue;
+            return;
           }
         }
         const urls = uniqueStrings([lab.websiteUrl, ...(lab.sourceUrls || [])]).filter(
@@ -810,7 +819,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             `[${lab.slug || 'candidate'}] skipping description extraction: ${lastFetchError}`,
           );
         }
-        if (!page?.html) continue;
+        if (!page?.html) return;
 
         // A candidate URL can redirect to a different professor's page; re-check
         // the resolved URL so a redirect never keys a description onto the wrong
@@ -819,7 +828,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           ctx.log(
             `[${lab.slug || 'candidate'}] skipping description extraction: resolved source ${page.url} names a different person than the entity.`,
           );
-          continue;
+          return;
         }
 
         // Raw HTML covers both extraction paths below: the visible-text LLM path
@@ -840,7 +849,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           ctx.log(
             `[${lab.slug || 'candidate'}] skipping description extraction: content unchanged.`,
           );
-          continue;
+          return;
         }
         const hashObservation = contentHashObservation(entityRef, page.url, contentHash);
 
@@ -870,7 +879,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           pageText.length >= 120
             ? await this.callLLM({
                 model: this.model,
-                apiKey: this.apiKey,
+                apiKey: this.apiKey as string,
                 labName: lab.name,
                 sourceUrl: page.url,
                 pageText,
@@ -888,7 +897,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         if (methods.length === 0 && storedDescription.length >= 120) {
           const descExtraction = await this.callLLM({
             model: this.model,
-            apiKey: this.apiKey,
+            apiKey: this.apiKey as string,
             labName: lab.name,
             sourceUrl: page.url,
             pageText: storedDescription,
@@ -940,7 +949,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           } else {
             await ctx.emit([hashObservation]);
           }
-          continue;
+          return;
         }
 
         const withCard = await this.withSynthesizedCard(observations);
@@ -951,7 +960,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const message = sanitizeLogValue(error);
         ctx.log(`[${lab.slug || 'candidate'}] skipping description extraction: ${message}`);
       }
-    }
+    });
 
     return {
       observationCount,
