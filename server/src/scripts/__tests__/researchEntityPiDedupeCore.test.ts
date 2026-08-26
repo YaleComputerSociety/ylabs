@@ -3037,4 +3037,43 @@ describe('buildResearchEntityPiDedupePlan center carve-out', () => {
       plan.filter((group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home'),
     ).toEqual([]);
   });
+
+  it('never folds a person-named lab shell into a same-PI center that is its only website home', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-center-and-person-named-lab',
+        normalizedName: 'same-pi:pi-center-and-person-named-lab',
+        piFirstName: 'Grace',
+        piLastName: 'Hopper',
+        entities: [
+          {
+            id: 'hopper-center',
+            slug: 'ysm-hopper-center',
+            name: 'Hopper Center for Computing',
+            kind: 'center',
+            entityType: 'CENTER',
+            websiteUrl: 'https://medicine.yale.edu/hopper-center/',
+            sourceUrls: ['https://medicine.yale.edu/hopper-center/'],
+            departments: ['Computer Science'],
+          },
+          {
+            id: 'grace-hopper-lab-stub',
+            slug: 'ysm-grace-hopper-lab',
+            name: 'Grace Hopper Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            sourceUrls: ['https://medicine.yale.edu/profile/grace-hopper/'],
+            departments: ['Computer Science'],
+          },
+        ],
+      },
+    ]);
+    const shadowGroups = plan.filter(
+      (group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home',
+    );
+    expect(shadowGroups).toEqual([]);
+    expect(
+      shadowGroups.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
+    ).not.toContain('hopper-center');
+  });
 });
