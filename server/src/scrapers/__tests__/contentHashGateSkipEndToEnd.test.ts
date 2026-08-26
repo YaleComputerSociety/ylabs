@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as contentHashGate from '../contentHashGate';
 import {
   LabMicrositeDescriptionLLMExtractor,
+  type CallDescriptionLLMFn,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
+import type { CardSynthesisLLMFn } from '../../utils/groundedCardSynthesis';
 import {
   LabMicrositeUndergradLLMExtractor,
+  type CallLLMFn,
   type LLMExtraction,
   type WorkPlanLoaderFn,
 } from '../sources/labMicrositeUndergradLLMExtractor';
@@ -71,8 +74,8 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       url: 'https://medicine.yale.edu/lab/ashford/',
       html: pageHtml,
     });
-    const callLLM = vi.fn<any>();
-    const callCardLLM = vi.fn<any>();
+    const callLLM = vi.fn<CallDescriptionLLMFn>();
+    const callCardLLM = vi.fn<CardSynthesisLLMFn>();
 
     const scraper = new LabMicrositeDescriptionLLMExtractor({
       apiKey: 'test-key',
@@ -216,7 +219,7 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       }
       return null;
     });
-    const callLLM = vi.fn<any>();
+    const callLLM = vi.fn<CallLLMFn>();
     const scraper = new LabMicrositeUndergradLLMExtractor({
       apiKey: 'sk-test',
       workPlanLoader: alwaysFetchWorkPlan,
