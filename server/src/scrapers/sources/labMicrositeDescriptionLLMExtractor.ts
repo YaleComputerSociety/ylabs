@@ -837,7 +837,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           : await loadStoredContentHash(this.name, entityRef);
         if (contentUnchanged(storedContentHash, contentHash, ctx.options.forceLlm)) {
           contentUnchangedSkipped += 1;
-          ctx.log(`[${lab.slug || 'candidate'}] skipping description extraction: content unchanged.`);
+          ctx.log(
+            `[${lab.slug || 'candidate'}] skipping description extraction: content unchanged.`,
+          );
           continue;
         }
         const hashObservation = contentHashObservation(entityRef, page.url, contentHash);
