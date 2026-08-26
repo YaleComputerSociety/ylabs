@@ -1318,7 +1318,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     schoolName: 'Yale Faculty of Arts and Sciences',
     url: 'https://physics.yale.edu/people/faculty',
     paginated: false,
-    extractor: psychExtractor,
+    extractor: mcdbExtractor,
   },
   {
     deptKey: 'statistics',
@@ -1429,9 +1429,9 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     deptKey: 'global-affairs',
     deptName: 'Global Affairs',
     schoolName: 'Jackson School of Global Affairs',
-    url: 'https://jackson.yale.edu/about/meet-us/faculty/lecturers/',
+    url: 'https://jackson.yale.edu/faculty-research/lecturers-visiting-faculty',
     paginated: false,
-    extractor: jacksonPersonCardExtractor,
+    extractor: jacksonProfileComponentExtractor,
     emitPersonalResearchEntities: false,
   },
   {
