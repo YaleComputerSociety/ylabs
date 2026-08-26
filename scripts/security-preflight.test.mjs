@@ -1345,10 +1345,6 @@ test('mounted API routes sanitize caught errors before logging', () => {
 test('account mutation analytics logs bounded normalized request fields', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/users.ts', import.meta.url), 'utf8');
 
-  assert.match(source, /const FAVORITE_ANALYTICS_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /const MAX_FAVORITE_ANALYTICS_IDS = 100/);
-  assert.match(source, /rawIds\.slice\(0, MAX_FAVORITE_ANALYTICS_IDS\)/);
-  assert.match(source, /!FAVORITE_ANALYTICS_OBJECT_ID_RE\.test\(id\) \|\| seen\.has\(id\)/);
   assert.match(
     source,
     new RegExp(String.raw`const PROFILE_UPDATE_ANALYTICS_FIELD_RE = /\^\[A-Za-z0-9_-\]\{1,80\}\$/`),
@@ -4300,32 +4296,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     source,
     /const storedObjectIdStringsForUserMutation = \(values: unknown, fieldName: string\): string\[\] =>/,
   );
-  assert.match(source, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
-  assert.match(source, /const recordFavoriteCounterSideEffect = async \(/);
-  assert.match(source, /console\.error\(`\$\{label\} failed:`, sanitizeLogValue\(error\)\)/);
-  assert.match(source, /type FavoriteObjectIdArrayField = 'favListings'/);
-  assert.match(source, /const addFavoriteObjectIdIfMissing = async \(/);
-  assert.match(
-    source,
-    /User\.findOneAndUpdate\(\s*\{ \.\.\.baseFilter, \[fieldName\]: \{ \$ne: value \} \},\s*\{ \$addToSet: \{ \[fieldName\]: value \} \}/,
-  );
-  assert.match(source, /const removeFavoriteObjectIdIfPresent = async \(/);
-  assert.match(
-    source,
-    /User\.findOneAndUpdate\(\s*\{ \.\.\.baseFilter, \[fieldName\]: value \},\s*\{ \$pull: \{ \[fieldName\]: value \} \}/,
-  );
-  assert.match(source, /const removeFavoriteObjectIdsWithoutCounters = async \(/);
-  assert.match(source, /\{ \$pull: \{ \[fieldName\]: \{ \$in: values \} \} \}/);
-  assert.match(source, /readPublicListings/);
-  assert.match(source, /const visibleListings = await readPublicListings\(listingIds\)/);
-  assert.match(
-    source,
-    /const visibleListingIds = normalizeObjectIdsForUserMutation\(\s*visibleListings\.map\(\(listing\) => listing\._id\),\s*'favListings',\s*\)/,
-  );
-  assert.match(
-    source,
-    /for \(const listingId of visibleListingIds\) \{\s*const result = await addFavoriteObjectIdIfMissing\(id, 'favListings', listingId\);[\s\S]*if \(!result\.added\) continue;[\s\S]*'Listing favorite counter increment'/,
-  );
   assert.doesNotMatch(
     source,
     /updateUser\(id, \{ favListings: user\.favListings \}\);[\s\S]*for \(const listingId of newVisibleListingIds\)/,
@@ -4342,11 +4312,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     source,
     /mergeStoredObjectIdsForUserMutation\(\s*user\.favListings,\s*visibleListingIds,\s*'favListings',\s*\)/,
   );
-  assert.match(
-    source,
-    /for \(const listingId of visibleListingIds\) \{\s*const result = await removeFavoriteObjectIdIfPresent\(id, 'favListings', listingId\);[\s\S]*if \(!result\.removed\) continue;[\s\S]*'Listing favorite counter decrement'/,
-  );
-  assert.match(source, /removeFavoriteObjectIdsWithoutCounters\(id, 'favListings', listingIds\)/);
   assert.doesNotMatch(
     source,
     /const existingListingIds = new Set\(storedObjectIdStringsForUserMutation\(user\.favListings, 'favListings'\)\)/,
@@ -4435,41 +4400,8 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   );
   assert.doesNotMatch(source, /user\.favFellowships\.map\(\(f: any\) => f\.toString\(\)\)/);
   assert.doesNotMatch(source, /user\.favPathways\.map\(\(p: any\) => p\.toString\(\)\)/);
-  assert.match(controller, /normalizeObjectIdsForUserMutation/);
-  assert.match(
-    controller,
-    /const normalizeStoredObjectIdsForAccountRead = \(values: unknown, fieldName: string\): string\[\] => \{/,
-  );
-  assert.match(controller, /normalizeObjectIdsForUserMutation\(ids, fieldName\)/);
-  assert.match(
-    controller,
-    /favListingsIds: normalizeObjectIdsForUserMutation\(\s*favListings\.map\(\(listing\) => listing\._id\),\s*'favListings',\s*\)/,
-  );
-  assert.match(
-    controller,
-    /const favListingIds = normalizeStoredObjectIdsForAccountRead\(user\.favListings, 'favListings'\)/,
-  );
-  assert.match(controller, /const favListings = await readPublicListings\(favListingIds\)/);
   assert.doesNotMatch(controller, /matchFellowshipsForPathways\(favPathwayIds\)/);
   assert.doesNotMatch(controller, /new mongoose\.Types\.ObjectId\(pathway\._id\)/);
-});
-
-test('favorite analytics do not persist hidden ids from mutation requests', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/users.ts', import.meta.url), 'utf8');
-
-  assert.match(
-    source,
-    /const normalizeFavoriteAnalyticsIds = \(value: unknown\): string\[\] => \{/,
-  );
-  assert.match(source, /const visibleFavoriteAnalyticsIdsFromResponse = \(/);
-  assert.match(
-    source,
-    /const visibleIds = isFavorite\s*\?\s*visibleFavoriteAnalyticsIdsFromResponse\(data, requestedIds\)\s*:\s*\[\]/,
-  );
-  assert.match(source, /metadata: \{ entityType: 'listing', itemIdsRedacted: true \}/);
-  assert.match(source, /visibleIds\.forEach\(\(itemId: string\) => \{/);
-  assert.doesNotMatch(source, /const ids = getFavoriteIds\(/);
-  assert.doesNotMatch(source, /ids\.forEach\(\(itemId: string\) => \{/);
 });
 
 test('saved research-plan exports redact system-derived direct contact details', () => {
@@ -5364,29 +5296,6 @@ test('public API DTO ids avoid arbitrary object stringification', () => {
   for (const source of [listingControllerSource, programPayloadSource]) {
     assert.doesNotMatch(source, /_id\?\.toString\?\.\(\)/);
   }
-});
-
-test('account favorite listing hydration only returns public-visible listings', () => {
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/userController.ts', import.meta.url),
-    'utf8',
-  );
-  const serviceSource = fs.readFileSync(
-    new URL('../server/src/services/listingService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    controllerSource,
-    /import \{ readPublicListings \} from '\.\.\/services\/listingService'/,
-  );
-  assert.match(controllerSource, /const favListings = await readPublicListings\(favListingIds\)/);
-  assert.match(serviceSource, /export const readPublicListings = async \(ids: any\[\]\) => \{/);
-  assert.match(
-    serviceSource,
-    /getListingModel\(\)\.findOne\(\{\s*_id: safeId,[\s\S]*?\.\.\.PUBLIC_LISTING_MUTATION_FILTER,[\s\S]*?\}\)/,
-  );
-  assert.doesNotMatch(controllerSource, /const favListings = await readListings\(favListingIds\)/);
 });
 
 test('profile surfaces render only safe HTTP(S) profile URLs and images', () => {

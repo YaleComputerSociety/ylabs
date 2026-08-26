@@ -83,7 +83,7 @@ Research page language rule: `/research` should lead with research homes, profil
 
 Purpose: temporary compatibility surface for professor-created posted roles and old direct listing links.
 
-The page should answer: "Which specific posted roles exist right now?" It should not be the default student home or primary navigation item. Keep it available at `/listings` while professor workflows and saved listing behavior still depend on legacy APIs, but frame it as Posted Roles and point students back to Yale Research.
+The page should answer: "Which specific posted roles exist right now?" It should not be the default student home or primary navigation item. Keep it available at `/listings` while professor workflows still depend on legacy APIs, but frame it as Posted Roles and point students back to Yale Research.
 
 ### `/research/:slug`
 

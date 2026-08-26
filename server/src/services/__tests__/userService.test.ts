@@ -69,15 +69,15 @@ describe('normalizeObjectIdsForUserMutation', () => {
       toString: () => '665f0b0c0b0c0b0c0b0c0b0c',
     };
 
-    expect(() => normalizeObjectIdsForUserMutation([objectIdLike], 'favListings')).toThrow(
-      /Invalid favListings id/,
+    expect(() => normalizeObjectIdsForUserMutation([objectIdLike], 'ownListings')).toThrow(
+      /Invalid ownListings id/,
     );
   });
 
   it('rejects non-array account mutation batches before per-id work', () => {
     expect(() =>
-      normalizeObjectIdsForUserMutation({ 0: '665f0b0c0b0c0b0c0b0c0b0c' } as any, 'favListings'),
-    ).toThrow(/Invalid favListings ids/);
+      normalizeObjectIdsForUserMutation({ 0: '665f0b0c0b0c0b0c0b0c0b0c' } as any, 'ownListings'),
+    ).toThrow(/Invalid ownListings ids/);
   });
 
   it('rejects malformed ids before they reach Mongo update paths', () => {

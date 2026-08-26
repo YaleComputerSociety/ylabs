@@ -66,7 +66,6 @@ const ACCOUNT_STATE_USER_FIELDS = [
   'buildingDesk',
   'mailingAddress',
   'ownListings',
-  'favListings',
   'savedResearchEntities',
   'savedResearchEntityMigrationCompleted',
   'savedResearchEntityPlans',

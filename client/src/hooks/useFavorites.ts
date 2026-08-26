@@ -10,7 +10,7 @@ import {
   trackResearchEvent,
 } from '../utils/researchAnalytics';
 
-type FavoritesKind = 'listings' | 'researchPlans' | 'watchedPrograms';
+type FavoritesKind = 'researchPlans' | 'watchedPrograms';
 
 interface Endpoints {
   load: string;
@@ -22,14 +22,6 @@ interface Endpoints {
 }
 
 const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
-  listings: {
-    load: '/users/favListingsIds',
-    responseKey: 'favListingsIds',
-    collectionPath: '/users/favListings',
-    payloadKey: 'favListings',
-    warnOnLoadError: false,
-    warnOnMutationError: true,
-  },
   researchPlans: {
     load: '/users/savedResearchEntityIds',
     responseKey: 'savedResearchEntityIds',

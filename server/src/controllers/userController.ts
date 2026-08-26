@@ -2,14 +2,9 @@
  * Controller for user operations: favorites, listings, and profile updates.
  */
 import { Request, Response, NextFunction } from 'express';
-import mongoose from 'mongoose';
-import { readPublicListings } from '../services/listingService';
 import {
   readUser,
   updateUser,
-  addFavListings as addFavListingsService,
-  deleteFavListings as deleteFavListingsService,
-  normalizeObjectIdsForUserMutation,
 } from '../services/userService';
 import {
   getSavedResearchEntities as getSavedResearchEntitiesService,
@@ -88,11 +83,6 @@ const boundedAccountStringArray = (value: unknown): string[] | undefined => {
       return normalized ? [normalized] : [];
     })
     .slice(0, MAX_CURRENT_USER_ARRAY_ITEMS);
-};
-
-const normalizeStoredObjectIdsForAccountRead = (values: unknown, fieldName: string): string[] => {
-  const ids = Array.isArray(values) ? values : [];
-  return normalizeObjectIdsForUserMutation(ids, fieldName).map((id) => id.toString());
 };
 
 const CURRENT_USER_RESPONSE_FIELDS = [
@@ -263,80 +253,6 @@ const sendAccountMutationError = (response: Response, error: any, fallbackMessag
 const sendPrivateAccountError = (response: Response, error: any, fallbackMessage: string) => {
   setPrivateAccountResponseHeaders(response);
   return sendAccountMutationError(response, error, fallbackMessage);
-};
-
-export const getFavListingsIds = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-    const user = await readUser(currentUser.netId);
-    const favListingIds = normalizeStoredObjectIdsForAccountRead(user.favListings, 'favListings');
-    const favListings = await readPublicListings(favListingIds);
-    response.status(200).json({
-      favListingsIds: normalizeObjectIdsForUserMutation(
-        favListings.map((listing) => listing._id),
-        'favListings',
-      ),
-    });
-  } catch (error: any) {
-    console.error('Favorite listing id fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch favorite listing ids');
-  }
-};
-
-export const addFavListings = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-
-    if (!request.body.data?.favListings) {
-      const error: any = new Error('No favListings provided');
-      error.status = 400;
-      throw error;
-    }
-
-    const favListingsArray = Array.isArray(request.body.data.favListings)
-      ? request.body.data.favListings
-      : [request.body.data.favListings];
-
-    const user = await addFavListingsService(currentUser.netId, favListingsArray);
-    response.status(200).json({ user: publicCurrentUserForResponse(user) });
-  } catch (error: any) {
-    console.error('Favorite listing mutation failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to update favorite listings');
-  }
-};
-
-export const removeFavListings = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-
-    if (!request.body.favListings) {
-      const error: any = new Error('No favListings provided');
-      error.status = 400;
-      throw error;
-    }
-
-    const favListingsArray = Array.isArray(request.body.favListings)
-      ? request.body.favListings
-      : [request.body.favListings];
-
-    const user = await deleteFavListingsService(currentUser.netId, favListingsArray);
-    response.status(200).json({ user: publicCurrentUserForResponse(user) });
-  } catch (error: any) {
-    console.error('Favorite listing removal failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to update favorite listings');
-  }
 };
 
 export const getSavedResearchEntityIds = async (request: Request, response: Response) => {

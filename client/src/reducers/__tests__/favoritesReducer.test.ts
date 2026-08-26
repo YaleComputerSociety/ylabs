@@ -1,40 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  FavoritesState,
   createInitialFavoritesState,
   favoritesReducer,
 } from '../favoritesReducer';
-import { Fellowship, Listing } from '../../types/types';
-
-const makeListing = (overrides: Partial<Listing> = {}): Listing =>
-  ({
-    id: 'L1',
-    ownerId: 'u1',
-    ownerFirstName: 'Test',
-    ownerLastName: 'Owner',
-    ownerEmail: 'owner@example.test',
-    professorIds: [],
-    professorNames: [],
-    title: 'Fixture Listing',
-    departments: ['Neuroscience'],
-    emails: [],
-    websites: [],
-    description: '',
-    applicantDescription: '',
-    keywords: [],
-    researchAreas: [],
-    established: '',
-    views: 0,
-    favorites: 0,
-    hiringStatus: 1,
-    archived: false,
-    updatedAt: '',
-    createdAt: '',
-    confirmed: true,
-    audited: false,
-    ...overrides,
-  }) as Listing;
+import { Fellowship } from '../../types/types';
 
 const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship =>
   ({
@@ -88,8 +58,6 @@ describe('favoritesReducer', () => {
   describe('initial state', () => {
     it('starts empty with dateAdded ascending sort', () => {
       const state = createInitialFavoritesState();
-      expect(state.favListings).toEqual([]);
-      expect(state.favListingsIds).toEqual([]);
       expect(state.favFellowships).toEqual([]);
       expect(state.favFellowshipIds).toEqual([]);
       expect(state.sortKey).toBe('dateAdded');
@@ -103,91 +71,6 @@ describe('favoritesReducer', () => {
       const state = createInitialFavoritesState({ statusFilter: 'open', dashboardView: 'card' });
       expect(state.statusFilter).toBe('open');
       expect(state.dashboardView).toBe('card');
-    });
-  });
-
-  describe('HYDRATE', () => {
-    it('replaces only the provided fields', () => {
-      const listing = makeListing();
-      const base: FavoritesState = createInitialFavoritesState({
-        statusFilter: 'emailed',
-        sortKey: 'name',
-      });
-      const next = favoritesReducer(base, {
-        type: 'HYDRATE',
-        payload: { favListings: [listing], favListingsIds: [listing.id] },
-      });
-      expect(next.favListings).toEqual([listing]);
-      expect(next.favListingsIds).toEqual([listing.id]);
-      // sort/filter state unchanged
-      expect(next.statusFilter).toBe('emailed');
-      expect(next.sortKey).toBe('name');
-    });
-  });
-
-  describe('ADD_FAV_LISTING', () => {
-    it('prepends the listing and its id', () => {
-      const existing = makeListing({ id: 'L0' });
-      const state = createInitialFavoritesState({
-        favListings: [existing],
-        favListingsIds: ['L0'],
-      });
-      const incoming = makeListing({ id: 'L1' });
-      const next = favoritesReducer(state, { type: 'ADD_FAV_LISTING', listing: incoming });
-      expect(next.favListings.map((l) => l.id)).toEqual(['L1', 'L0']);
-      expect(next.favListingsIds).toEqual(['L1', 'L0']);
-    });
-
-    it('is a no-op if the id is already favorited', () => {
-      const existing = makeListing({ id: 'L1' });
-      const state = createInitialFavoritesState({
-        favListings: [existing],
-        favListingsIds: ['L1'],
-      });
-      const next = favoritesReducer(state, { type: 'ADD_FAV_LISTING', listing: existing });
-      expect(next).toBe(state);
-    });
-  });
-
-  describe('REMOVE_FAV_LISTING', () => {
-    it('removes the listing and its id', () => {
-      const a = makeListing({ id: 'L1' });
-      const b = makeListing({ id: 'L2' });
-      const state = createInitialFavoritesState({
-        favListings: [a, b],
-        favListingsIds: ['L1', 'L2'],
-      });
-      const next = favoritesReducer(state, { type: 'REMOVE_FAV_LISTING', listingId: 'L1' });
-      expect(next.favListings.map((l) => l.id)).toEqual(['L2']);
-      expect(next.favListingsIds).toEqual(['L2']);
-    });
-
-    it('is a no-op for an unknown id', () => {
-      const a = makeListing({ id: 'L1' });
-      const state = createInitialFavoritesState({
-        favListings: [a],
-        favListingsIds: ['L1'],
-      });
-      const next = favoritesReducer(state, { type: 'REMOVE_FAV_LISTING', listingId: 'nope' });
-      expect(next.favListings).toEqual(state.favListings);
-      expect(next.favListingsIds).toEqual(state.favListingsIds);
-    });
-  });
-
-  describe('UPDATE_FAV_LISTING', () => {
-    it('replaces the listing with the same id without touching others', () => {
-      const a = makeListing({ id: 'L1', title: 'Old' });
-      const b = makeListing({ id: 'L2', title: 'B' });
-      const state = createInitialFavoritesState({
-        favListings: [a, b],
-        favListingsIds: ['L1', 'L2'],
-      });
-      const updated = makeListing({ id: 'L1', title: 'New' });
-      const next = favoritesReducer(state, { type: 'UPDATE_FAV_LISTING', listing: updated });
-      expect(next.favListings[0].title).toBe('New');
-      expect(next.favListings[1]).toBe(b);
-      // id list untouched
-      expect(next.favListingsIds).toBe(state.favListingsIds);
     });
   });
 
