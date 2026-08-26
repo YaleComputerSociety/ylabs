@@ -774,7 +774,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
 
-    const concurrency = resolveSourceConcurrency(ctx.options.sourceConcurrency, DEFAULT_SOURCE_CONCURRENCY);
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
     await mapWithConcurrency(candidates, concurrency, async (lab) => {
       try {
         if (workPlannerPolicy) {

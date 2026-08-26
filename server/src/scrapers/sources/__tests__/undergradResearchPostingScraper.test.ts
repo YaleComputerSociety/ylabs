@@ -131,3 +131,78 @@ describe('UndergradResearchPostingScraper.run', () => {
     expect(emitted).toEqual([]);
   });
 });
+
+describe('UndergradResearchPostingScraper.run source concurrency', () => {
+  const labFor = (index: number) => `Lab ${index}`;
+
+  const htmlForLab = (labName: string) =>
+    COMPLETE_POSTING_HTML.replace('Lab: Smith Lab', `Lab: ${labName}`);
+
+  const pageConfigs = Array.from({ length: 6 }, (_, index) => ({
+    key: `board-${index}`,
+    url: `https://science.yalecollege.yale.edu/board-${index}`,
+    blockSelector: 'article',
+  }));
+
+  const urlToLab = new Map(pageConfigs.map((page, index) => [page.url, labFor(index)]));
+
+  const makeCtx = (emitted: ObservationInput[][], sourceConcurrency: number): ScraperContext =>
+    ({
+      scrapeRunId: 'run',
+      sourceId: 'src',
+      sourceName: 'undergrad-research-posting',
+      sourceWeight: 1,
+      options: { dryRun: true, useCache: false, release: false, sourceConcurrency },
+      emit: vi.fn(async (obs: ObservationInput | ObservationInput[]) => {
+        emitted.push(Array.isArray(obs) ? obs : [obs]);
+      }),
+      log: vi.fn(),
+    }) as unknown as ScraperContext;
+
+  const runWithConcurrency = async (sourceConcurrency: number) => {
+    let active = 0;
+    let peak = 0;
+    const emitted: ObservationInput[][] = [];
+    const scraper = new UndergradResearchPostingScraper({
+      pageConfigs,
+      fetchHtml: async (url: string) => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        const labName = urlToLab.get(url);
+        if (!labName) throw new Error(`unexpected url ${url}`);
+        return htmlForLab(labName);
+      },
+      resolveHiringHome: async (name) => ({
+        entityId: `id-${name}`,
+        slug: name.toLowerCase().replace(/\s+/g, '-'),
+        name,
+      }),
+      now: () => NOW,
+    });
+    const result = await scraper.run(makeCtx(emitted, sourceConcurrency));
+    const emittedKeys = emitted
+      .flat()
+      .filter((o) => o.field === 'postedOpening')
+      .map((o) => o.entityKey)
+      .sort();
+    return { result, peak, emittedKeys };
+  };
+
+  it('emits the same observations serially and in parallel, and actually parallelizes', async () => {
+    const serial = await runWithConcurrency(1);
+    const parallel = await runWithConcurrency(6);
+
+    expect(serial.peak).toBe(1);
+    expect(parallel.peak).toBeGreaterThan(1);
+
+    const expectedKeys = pageConfigs
+      .map((_, index) => labFor(index).toLowerCase().replace(/\s+/g, '-'))
+      .sort();
+    expect(serial.emittedKeys).toEqual(expectedKeys);
+    expect(parallel.emittedKeys).toEqual(serial.emittedKeys);
+    expect(parallel.result.entitiesObserved).toBe(serial.result.entitiesObserved);
+    expect(parallel.result.observationCount).toBe(serial.result.observationCount);
+  });
+});
