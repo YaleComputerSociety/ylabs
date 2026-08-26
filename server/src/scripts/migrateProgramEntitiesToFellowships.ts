@@ -11,7 +11,6 @@ import { Fellowship } from '../models/fellowship';
 import { classifyProgram } from '../services/programClassifier';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { deleteFromIndex } from '../services/meiliSyncService';
-import { slugify } from '../scrapers/utils/scraperHelpers';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
