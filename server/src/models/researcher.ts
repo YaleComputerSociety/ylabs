@@ -53,6 +53,8 @@ export interface ResearcherRecord {
   profile?: ResearcherDisplayProfile;
   status: ResearcherStatus;
   archived: boolean;
+  dedupedIntoResearcherId?: mongoose.Types.ObjectId;
+  dedupedAt?: Date;
 }
 
 const PROFILE_LINK_PURPOSE_BY_KIND: Record<
@@ -270,6 +272,15 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
     archived: {
       type: Boolean,
       default: false,
+    },
+    dedupedIntoResearcherId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Researcher',
+      required: false,
+    },
+    dedupedAt: {
+      type: Date,
+      required: false,
     },
   },
   {

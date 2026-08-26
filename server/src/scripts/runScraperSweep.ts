@@ -17,6 +17,10 @@ import {
   isEponymousFraLabMergeStageEnabled,
   type EponymousFraLabMergeDelta,
 } from './researchEntityEponymousMergeStage';
+import {
+  isResearcherDedupeStageEnabled,
+  type ResearcherDedupeStageDelta,
+} from './dedupeAccountlessResearcherShells';
 
 export type ScraperSweepMode =
   | 'development-plan'
@@ -129,6 +133,7 @@ export interface ScraperSweepRunRow {
 export interface DevelopmentPostRunStage {
   name:
     | 'faculty-projection'
+    | 'researcher-dedupe'
     | 'eponymous-fra-merge'
     | 'search-rebuild'
     | 'coverage-audit'
@@ -141,10 +146,12 @@ export interface DevelopmentPostRunStage {
   exitCode: number;
   error?: string;
   mergeDelta?: EponymousFraLabMergeDelta;
+  researcherDedupeDelta?: ResearcherDedupeStageDelta;
 }
 
 export interface DevelopmentPostRunStageOptions {
   autoMergeEponymousFra?: boolean;
+  dedupeResearchers?: boolean;
   sinceIso?: string;
   maxMerges?: number;
 }
@@ -569,6 +576,17 @@ export function buildDevelopmentPostRunStages(
     };
   };
 
+  const researcherDedupeStages = options.dedupeResearchers
+    ? [
+        stage(
+          'researcher-dedupe',
+          'researchers:dedupe-accountless-shells',
+          ['--apply', '--confirm-dedupe-accountless-researcher-shells'],
+          'development-researcher-dedupe.json',
+        ),
+      ]
+    : [];
+
   const eponymousFraMergeStages =
     options.autoMergeEponymousFra && options.sinceIso
       ? [
@@ -595,6 +613,7 @@ export function buildDevelopmentPostRunStages(
       ['--apply', '--confirm-faculty-projection', '--concurrency', '12'],
       'development-faculty-projection.json',
     ),
+    ...researcherDedupeStages,
     ...eponymousFraMergeStages,
     stage(
       'search-rebuild',
@@ -653,6 +672,25 @@ function readEponymousFraMergeDelta(artifactPath: string): EponymousFraLabMergeD
   }
 }
 
+function readResearcherDedupeDelta(artifactPath: string): ResearcherDedupeStageDelta | undefined {
+  try {
+    const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8')) as Record<string, unknown>;
+    if (!artifact || typeof artifact !== 'object' || artifact.byReason === undefined) {
+      return undefined;
+    }
+    const attributeUnion = (artifact.attributeUnion as { profileLinksAppended?: unknown }) ?? {};
+    return {
+      byReason: artifact.byReason as ResearcherDedupeStageDelta['byReason'],
+      shellsMerged: Number(artifact.shellsMerged ?? 0),
+      roleAssignmentsRepointed: Number(artifact.roleAssignmentsRepointed ?? 0),
+      roleAssignmentsArchivedRedundant: Number(artifact.roleAssignmentsArchivedRedundant ?? 0),
+      profileLinksAppended: Number(attributeUnion.profileLinksAppended ?? 0),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 async function runDevelopmentPostRunStages(
   outputDirectory: string,
   repoRoot: string,
@@ -675,6 +713,10 @@ async function runDevelopmentPostRunStages(
       !error && stage.name === 'eponymous-fra-merge'
         ? readEponymousFraMergeDelta(stage.artifactPath)
         : undefined;
+    const researcherDedupeDelta =
+      !error && stage.name === 'researcher-dedupe'
+        ? readResearcherDedupeDelta(stage.artifactPath)
+        : undefined;
     stages.push({
       name: stage.name,
       status: error ? 'failed' : 'succeeded',
@@ -682,6 +724,7 @@ async function runDevelopmentPostRunStages(
       exitCode,
       ...(error ? { error } : {}),
       ...(mergeDelta ? { mergeDelta } : {}),
+      ...(researcherDedupeDelta ? { researcherDedupeDelta } : {}),
     });
   }
   return {
@@ -810,6 +853,7 @@ export async function runScraperSweep(
     options.mode === 'development-full'
       ? await runDevelopmentPostRunStages(outputDirectory, repoRoot, childRunner, {
           autoMergeEponymousFra: isEponymousFraLabMergeStageEnabled(process.env),
+          dedupeResearchers: isResearcherDedupeStageEnabled(process.env),
           sinceIso: startedAt.toISOString(),
         })
       : undefined;
