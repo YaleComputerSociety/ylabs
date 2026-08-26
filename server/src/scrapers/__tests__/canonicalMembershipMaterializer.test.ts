@@ -16,6 +16,7 @@ import {
   identityIsOrganizationalMailbox,
   materializeCanonicalMembership,
   resolveCanonicalResearcherId,
+  resolveOrCreateResearcherIdForIdentity,
 } from '../canonicalMembershipMaterializer';
 import { getResearchEntityRoster } from '../../services/researchEntityMembershipAccessor';
 
@@ -380,6 +381,17 @@ describe('canonical membership materialization (integration)', () => {
     );
     expect(await Researcher.countDocuments({ displayName: 'Delta Four' })).toBe(1);
     expect(await RoleAssignment.countDocuments({})).toBe(1);
+  });
+
+  it('creates only one name-only researcher when the same identity resolves concurrently', async () => {
+    const identity = { displayName: 'Concurrent Name-Only Person' };
+    const ids = await Promise.all(
+      Array.from({ length: 16 }, () => resolveOrCreateResearcherIdForIdentity(identity)),
+    );
+    const resolved = ids.filter(Boolean).map((id) => id!.toString());
+    expect(resolved).toHaveLength(16);
+    expect(new Set(resolved).size).toBe(1);
+    expect(await Researcher.countDocuments({ displayName: 'Concurrent Name-Only Person' })).toBe(1);
   });
 
   it('does not create a new researcher on each run when a name-only member collides with an identified one', async () => {
