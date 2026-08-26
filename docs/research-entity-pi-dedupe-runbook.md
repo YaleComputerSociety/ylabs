@@ -119,12 +119,22 @@ The stage is idempotent.
 The scope loader excludes archived entities, so a merged shell never re-enters the plan, and `materializeEntity` short-circuits (skipped `merged-into-canonical`) when it re-resolves an archived shell that carries a `canonicalGroupId`, so re-scraping the shell's source never re-activates it or re-indexes it into Meilisearch.
 A second sweep pass over the same data therefore performs zero additional merges and leaves the archived shell archived.
 
+## Durable canonical redirect (permanent, delete-safe merge)
+
+Every merge also records a durable redirect in the dedicated `research_entity_redirects` collection: one row per collapsed shell mapping the shell's stable source identifiers (`mergedSlug` and `mergedEntityId`) to the surviving `canonicalEntityId` (with `canonicalGroupId`, `mergedAt`, and a `reason` such as `eponymous_fra_lab_merge`).
+Because this mapping lives in its own collection rather than on the shell row, it survives deletion of the shell.
+The redirect is written from the shared merge primitive (`applyResearchEntityDedupeMergeGroup`), so both the pipeline stage and the manual `research-entity:dedupe-by-pi` CLI produce it, and re-recording the same merge upserts the same row (keyed on the globally unique `mergedSlug`), so it stays idempotent.
+
+`materializeEntity` consults the redirect before minting: when a re-scrape resolves a source whose slug or original id has a redirect, it resolves straight to the live canonical entity, following `canonicalGroupId` and redirect chains, and materializes the observations into the canonical rather than re-creating the shell.
+This resolution works whether or not the shell row still exists, which makes the merge permanent and lets the shell be deleted safely.
+The redirect supersedes the archived-tombstone resurrection guard for the redirected case; the tombstone guard still covers pre-redirect merges whose shells are only archived.
+
 Ambiguous, non-eponymous same-PI clusters are never auto-selected here and continue to rely on the manual review workflow and the gate's existing `duplicate_risk` suppress-in-place fallback.
 
 ## Environment order and production
 
 Development and Beta are the review environments.
 A production run uses the same command under `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`, and only inside a promotion lane that has recorded a fresh Atlas restore point.
-Rollback for archive-mode dedupe is unarchiving the affected duplicates and clearing their `canonicalGroupId`, or restoring the target database from the pre-run backup for delete mode.
+Rollback for archive-mode dedupe is unarchiving the affected duplicates, clearing their `canonicalGroupId`, and removing the matching `research_entity_redirects` rows, or restoring the target database from the pre-run backup for delete mode.
 
 See the promotion lanes and copy-set details in [`scraper-deployment-runbook.md`](scraper-deployment-runbook.md) and the control-plane repair posture in [`research-data-pipeline.md`](research-data-pipeline.md).
