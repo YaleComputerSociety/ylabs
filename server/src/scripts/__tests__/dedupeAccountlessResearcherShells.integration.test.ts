@@ -25,7 +25,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
 
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
-    await mongoose.connect(server.getUri());
+    await mongoose.connect(server.getUri(), { autoIndex: false });
   }, 60000);
 
   afterAll(async () => {
@@ -198,7 +198,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
 
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
-    await mongoose.connect(server.getUri());
+    await mongoose.connect(server.getUri(), { autoIndex: false });
     await Researcher.syncIndexes();
   }, 60000);
 
