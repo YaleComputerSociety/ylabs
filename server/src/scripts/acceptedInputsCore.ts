@@ -3,10 +3,7 @@ import path from 'path';
 import { User } from '../models/user';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import {
-  DEFAULT_PROGRAM_CONFIGS,
-  type ProgramConfig,
-} from '../scrapers/sources/undergradFellowshipRecipientScraper';
+import { DEFAULT_PROGRAM_CONFIGS } from '../scrapers/sources/undergradFellowshipRecipientScraper';
 
 export const DEFAULT_ACCEPTED_INPUT_ROOT = '/tmp/ylabs-accepted-inputs';
 export const ACCEPTED_INPUT_SOURCE = 'accepted-inputs';

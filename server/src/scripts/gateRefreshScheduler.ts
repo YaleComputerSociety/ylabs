@@ -74,4 +74,3 @@ export function startGateRefreshScheduler(env: NodeJS.ProcessEnv = process.env):
   timer.unref?.();
   return true;
 }
-

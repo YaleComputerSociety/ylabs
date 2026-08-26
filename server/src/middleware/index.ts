@@ -1,12 +1,7 @@
 /**
  * Authentication and authorization middleware exports.
  */
-export {
-  isAuthenticated,
-  canSubmitListingClaimRequest,
-  isAdmin,
-  isProfessor,
-} from './auth';
+export { isAuthenticated, canSubmitListingClaimRequest, isAdmin, isProfessor } from './auth';
 
 export {
   validateObjectId,

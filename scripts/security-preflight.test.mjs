@@ -6641,10 +6641,7 @@ test('public program and fellowship payloads omit direct email and phone fields'
     publicFellowshipServiceSortFields,
     'public fellowship service sort allowlist should exist',
   );
-  for (const sortFields of [
-    publicProgramSortFields[0],
-    publicFellowshipServiceSortFields[0],
-  ]) {
+  for (const sortFields of [publicProgramSortFields[0], publicFellowshipServiceSortFields[0]]) {
     assert.doesNotMatch(sortFields, /'createdAt'/);
     assert.doesNotMatch(sortFields, /'updatedAt'/);
   }

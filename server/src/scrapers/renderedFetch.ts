@@ -18,10 +18,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MIN_RENDERED_FETCH_TIMEOUT_MS = 1_000;
 const MAX_RENDERED_FETCH_TIMEOUT_MS = 30_000;
-const DEFAULT_BRIDGE_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  'scraplingBridge.py',
-);
+const DEFAULT_BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'scraplingBridge.py');
 const SCRAPER_DIR = dirname(fileURLToPath(import.meta.url));
 const PYTHON_COMMAND_RE = /^python(?:3(?:\.\d{1,2})?)?$/;
 const RENDERED_FETCH_MODES = new Set(['dynamic', 'stealthy']);
@@ -39,7 +36,11 @@ const normalizeRenderedPythonCommand = (value: string): string => {
 
 const normalizeRenderedFetchBridgePath = (value: string): string => {
   const rawPath = value.trim();
-  const bridgePath = rawPath ? (isAbsolute(rawPath) ? resolve(rawPath) : resolve(SCRAPER_DIR, rawPath)) : DEFAULT_BRIDGE_PATH;
+  const bridgePath = rawPath
+    ? isAbsolute(rawPath)
+      ? resolve(rawPath)
+      : resolve(SCRAPER_DIR, rawPath)
+    : DEFAULT_BRIDGE_PATH;
   const scraperRoot = resolve(SCRAPER_DIR);
   if (bridgePath !== DEFAULT_BRIDGE_PATH && !bridgePath.startsWith(`${scraperRoot}/`)) {
     throw new Error('Invalid rendered fetch bridge path');
@@ -59,7 +60,9 @@ const normalizeRenderedFetchMode = (value: unknown): 'dynamic' | 'stealthy' => {
 const normalizeRenderedFetchSelector = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const selector = value.trim();
-  return selector.length > 0 && selector.length <= MAX_RENDERED_FETCH_SELECTOR_LENGTH ? selector : undefined;
+  return selector.length > 0 && selector.length <= MAX_RENDERED_FETCH_SELECTOR_LENGTH
+    ? selector
+    : undefined;
 };
 
 export interface RenderedFetchMetricOverrides {
@@ -100,10 +103,7 @@ export interface ScraplingRenderedFetcherOptions {
 const isHttpRedirectStatus = (statusCode: number | undefined): boolean =>
   typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400;
 
-const defaultRenderedSeedRedirectCheck = (
-  url: URL,
-  timeoutMs: number,
-): Promise<boolean> =>
+const defaultRenderedSeedRedirectCheck = (url: URL, timeoutMs: number): Promise<boolean> =>
   new Promise((resolvePromise, reject) => {
     const client = url.protocol === 'https:' ? https : http;
     const agents = ssrfSafeAgents();
@@ -258,8 +258,7 @@ export function fetchAttemptsToMetrics<TFetchMode extends string = ScraperFetchM
       blocked: attempts.filter((attempt) => attempt.blocked).length,
       selectorBreakages: attempts.filter((attempt) => attempt.selectorBreakage).length,
       averageLatencyMs: average(attempts.map((attempt) => attempt.latencyMs)),
-      averageMemoryDeltaBytes:
-        memoryDeltas.length > 0 ? average(memoryDeltas) : undefined,
+      averageMemoryDeltaBytes: memoryDeltas.length > 0 ? average(memoryDeltas) : undefined,
       byMode,
     },
   };
@@ -270,9 +269,8 @@ export const summarizeFetchMetrics = fetchAttemptsToMetrics;
 function boundedRenderedFetchTimeout(value: unknown, fallback: number): number {
   const parsed = Number(value);
   const fallbackParsed = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackParsed) && fallbackParsed > 0
-    ? fallbackParsed
-    : DEFAULT_TIMEOUT_MS;
+  const safeFallback =
+    Number.isFinite(fallbackParsed) && fallbackParsed > 0 ? fallbackParsed : DEFAULT_TIMEOUT_MS;
   const candidate = Number.isFinite(parsed) && parsed > 0 ? parsed : safeFallback;
   return Math.min(
     Math.max(Math.floor(candidate), MIN_RENDERED_FETCH_TIMEOUT_MS),
@@ -292,13 +290,11 @@ export function createScraplingRenderedFetcher(
   const bridgePath = normalizeRenderedFetchBridgePath(
     options.bridgePath || process.env.SCRAPLING_BRIDGE_PATH || DEFAULT_BRIDGE_PATH,
   );
-  const defaultMode =
-    options.mode || normalizeRenderedFetchMode(process.env.SCRAPLING_FETCH_MODE);
-  const defaultTimeoutMs =
-    boundedRenderedFetchTimeout(
-      options.timeoutMs || numberFromEnv(process.env.SCRAPLING_TIMEOUT_MS),
-      DEFAULT_TIMEOUT_MS,
-    );
+  const defaultMode = options.mode || normalizeRenderedFetchMode(process.env.SCRAPLING_FETCH_MODE);
+  const defaultTimeoutMs = boundedRenderedFetchTimeout(
+    options.timeoutMs || numberFromEnv(process.env.SCRAPLING_TIMEOUT_MS),
+    DEFAULT_TIMEOUT_MS,
+  );
   const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
 
   return async (request) => {

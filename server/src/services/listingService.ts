@@ -2,7 +2,7 @@
  * Service layer for listing CRUD, view tracking, and favorites.
  */
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from '../utils/errors';
-import { addOwnListings, deleteOwnListings, userExists, createUser, readUser } from './userService';
+import { addOwnListings, deleteOwnListings, userExists, createUser } from './userService';
 import { fetchYalie } from './yaliesService';
 import mongoose from 'mongoose';
 import { getMeiliIndex } from '../utils/meiliClient';

@@ -323,9 +323,7 @@ export const applyListingClaimRequestDecision = async (
 
   const body = normalizeRequestBody(input);
   if (body.confirmApply !== true) {
-    throw new BadRequestError(
-      'Explicit confirmation is required to apply canonical data changes',
-    );
+    throw new BadRequestError('Explicit confirmation is required to apply canonical data changes');
   }
 
   const request = await ListingClaimRequest.findById(id);

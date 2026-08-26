@@ -66,4 +66,3 @@ export const ResearchEntityRelationship =
     researchEntityRelationshipSchema,
     'research_entity_relationships',
   );
-

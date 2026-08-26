@@ -53,7 +53,9 @@ export async function fetchFromDirectory(
   searchType: 'netid' | 'name' = 'netid',
 ): Promise<DirectoryPerson | null> {
   const safeQuery =
-    typeof query === 'string' ? query.trim().replace(/\s+/g, ' ').slice(0, MAX_DIRECTORY_QUERY_LENGTH) : '';
+    typeof query === 'string'
+      ? query.trim().replace(/\s+/g, ' ').slice(0, MAX_DIRECTORY_QUERY_LENGTH)
+      : '';
   const safeSearchType = DIRECTORY_SEARCH_TYPES.has(searchType) ? searchType : 'netid';
   if (!safeQuery) return null;
 
@@ -103,4 +105,3 @@ export async function fetchFromDirectory(
     return null;
   }
 }
-

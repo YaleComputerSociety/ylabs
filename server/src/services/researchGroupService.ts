@@ -563,9 +563,7 @@ const sanitizeResearchGroupSearchFilters = (
   currentAvailability: boundedResearchFilterValues(filters.currentAvailability).filter(
     isCurrentAvailabilityFilterInput,
   ),
-  compensation: boundedResearchFilterValues(filters.compensation).filter(
-    isCompensationFilterInput,
-  ),
+  compensation: boundedResearchFilterValues(filters.compensation).filter(isCompensationFilterInput),
   eligibleStudentLevels: boundedResearchFilterValues(filters.eligibleStudentLevels).filter(
     isEligibleStudentLevelFilterInput,
   ),
@@ -851,9 +849,7 @@ const hitIsCoincidentalTypoOnlyMatch = (hit: any): boolean => {
  * exact match before a keyword hit counts, rather than trusting the blended
  * score cutoff alone. See #1015.
  */
-export const dropCoincidentalTypoOnlyHits = <T>(
-  hits: T[],
-): { hits: T[]; dropped: number } => {
+export const dropCoincidentalTypoOnlyHits = <T>(hits: T[]): { hits: T[]; dropped: number } => {
   if (!Array.isArray(hits) || hits.length === 0) return { hits, dropped: 0 };
   const kept = hits.filter((hit) => !hitIsCoincidentalTypoOnlyMatch(hit));
   return { hits: kept, dropped: hits.length - kept.length };
@@ -873,7 +869,9 @@ const hitStringFieldValues = (hit: any, field: string): string[] =>
     : [];
 
 const hitHasExactAliasValue = (hit: any, field: string, aliasTermSet: Set<string>): boolean =>
-  hitStringFieldValues(hit, field).some((value) => aliasTermSet.has(normalizeExactMatchValue(value)));
+  hitStringFieldValues(hit, field).some((value) =>
+    aliasTermSet.has(normalizeExactMatchValue(value)),
+  );
 
 /**
  * Alias-expanded queries (`STUDENT_QUERY_ALIASES`, e.g. `psych`/`neuro`) hand
@@ -886,10 +884,7 @@ const hitHasExactAliasValue = (hit: any, field: string, aliasTermSet: Set<string
  * Meilisearch's order within each tier. Engages only when at least one exact
  * match exists, so ordinary alias result sets keep native ordering. #983.
  */
-export const promoteExactAliasFieldMatches = <T>(
-  hits: T[],
-  aliasTerms: string[] | null,
-): T[] => {
+export const promoteExactAliasFieldMatches = <T>(hits: T[], aliasTerms: string[] | null): T[] => {
   if (!Array.isArray(hits) || hits.length < 2 || !aliasTerms || aliasTerms.length === 0) {
     return hits;
   }
@@ -1270,10 +1265,7 @@ export async function searchResearchGroupsViaMeili(
         };
       }
     } catch (error) {
-      console.error(
-        'Optional exhaustive hybrid total-hits count failed:',
-        sanitizeLogValue(error),
-      );
+      console.error('Optional exhaustive hybrid total-hits count failed:', sanitizeLogValue(error));
     }
   }
 
@@ -2385,7 +2377,9 @@ export async function listSimilarResearchEntities(
       .trim()
       .toLowerCase();
     if ((hitId && exclusionKeys.has(hitId)) || (hitSlug && exclusionKeys.has(hitSlug))) continue;
-    const dto = toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(hit));
+    const dto = toPublicResearchEntitySummaryDto(
+      sanitizeResearchEntityPublicDescriptionFields(hit),
+    );
     const canonicalKey = (dto.slug || dto.id || '').toLowerCase();
     if (!canonicalKey || seenCanonicalKeys.has(canonicalKey)) continue;
     seenCanonicalKeys.add(canonicalKey);

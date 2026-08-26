@@ -55,9 +55,7 @@ export async function appendObservations(
       rejectedFurniture += 1;
       continue;
     }
-    sanitizedInputs.push(
-      sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value },
-    );
+    sanitizedInputs.push(sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value });
   }
   const rejectedInvalidEnum = sanitizedInputs.filter((obs) =>
     isObservationValueRejected(obs.field, obs.value),
@@ -252,4 +250,3 @@ export async function getSourceByName(name: string): Promise<{
     defaultWeight: (src as any).defaultWeight,
   };
 }
-

@@ -4,8 +4,6 @@ import {
   stripResearchAreaSourceChrome,
 } from '../scrapers/researchAreaCanonicalization';
 
-const DESCRIPTION_FIELDS = ['fullDescription', 'shortDescription'] as const;
-
 export interface DirectoryIndexEntityInput {
   id: string;
   slug?: string;
@@ -160,4 +158,3 @@ export function filterCleanupPlanByManualLocks(
     hasWrites: Object.keys(set).length > 0,
   };
 }
-

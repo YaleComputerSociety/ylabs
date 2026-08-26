@@ -1,5 +1,3 @@
-import { publicContactEmail } from './contactEmail';
-import { redactDirectContactInfo } from './contactRedaction';
 import { isPublicHttpUrl } from './urlSafety';
 
 export const publicAccessHttpUrl = (value: unknown): string | undefined => {
@@ -13,4 +11,3 @@ export const publicAccessHttpUrl = (value: unknown): string | undefined => {
     return undefined;
   }
 };
-

@@ -3,11 +3,6 @@
  */
 import { User } from '../models/index';
 import { NotFoundError } from '../utils/errors';
-import {
-  readListing,
-  confirmListing,
-  unconfirmListing,
-} from './listingService';
 import mongoose from 'mongoose';
 import { escapeRegex } from '../utils/regex';
 
@@ -182,9 +177,6 @@ const removeStoredObjectIdsForUserMutation = (
   );
 };
 
-const storedObjectIdStringsForUserMutation = (values: unknown, fieldName: string): string[] =>
-  normalizeStoredObjectIdsForUserMutation(values, fieldName).map((value) => value.toHexString());
-
 export const createUser = async (userData: any) => {
   const user = new User(userData);
   await user.save();
@@ -319,5 +311,3 @@ export const deleteOwnListings = async (id: any, removedListings: [mongoose.Type
 
   return newUser;
 };
-
-

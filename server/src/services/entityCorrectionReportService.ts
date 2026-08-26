@@ -41,7 +41,9 @@ type ResearchEntitySnapshot = {
   entityType?: string;
 };
 
-export const deriveReporterRole = (userType: unknown): 'student' | 'faculty' | 'staff' | 'other' => {
+export const deriveReporterRole = (
+  userType: unknown,
+): 'student' | 'faculty' | 'staff' | 'other' => {
   const normalized = typeof userType === 'string' ? userType.trim().toLowerCase() : '';
   if (STUDENT_USER_TYPES.has(normalized)) return 'student';
   if (FACULTY_USER_TYPES.has(normalized)) return 'faculty';
@@ -56,7 +58,10 @@ const normalizeRequestBody = (input: unknown): Record<string, unknown> => {
 
 export const sanitizeReportNote = (value: unknown, maxLength = MAX_NOTE_LENGTH): string => {
   if (typeof value !== 'string') return '';
-  return replaceAsciiControls(value, ' ').replace(/[ \t]{2,}/g, ' ').trim().slice(0, maxLength);
+  return replaceAsciiControls(value, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+    .slice(0, maxLength);
 };
 
 export const createEntityCorrectionReport = async (

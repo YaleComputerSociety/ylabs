@@ -48,17 +48,11 @@ const publicCourseTableText = (value: unknown, maxLength = MAX_COURSETABLE_TEXT_
 };
 
 const publicCourseTableTextArray = (value: unknown): string[] => {
-  const values = Array.isArray(value)
-    ? value
-    : typeof value === 'string'
-      ? value.split('')
-      : [];
-  return values
-    .slice(0, MAX_COURSETABLE_ARRAY_ITEMS)
-    .flatMap((item) => {
-      const text = publicCourseTableText(item, MAX_COURSETABLE_ARRAY_TEXT_LENGTH);
-      return text ? [text] : [];
-    });
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split('') : [];
+  return values.slice(0, MAX_COURSETABLE_ARRAY_ITEMS).flatMap((item) => {
+    const text = publicCourseTableText(item, MAX_COURSETABLE_ARRAY_TEXT_LENGTH);
+    return text ? [text] : [];
+  });
 };
 
 const publicCourseTableCredits = (value: unknown): number | undefined => {

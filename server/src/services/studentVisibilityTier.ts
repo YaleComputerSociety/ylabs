@@ -1,7 +1,4 @@
-import {
-  publicStudentVisibilityTiers,
-  type StudentVisibilityTier,
-} from '../models/studentVisibility';
+import { type StudentVisibilityTier } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import {
   isStudiesResearchAreaEchoDescription,
