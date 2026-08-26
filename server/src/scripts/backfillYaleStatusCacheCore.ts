@@ -1,4 +1,3 @@
-import { STUDENT_VISIBILITY_VERSION } from '../services/studentVisibilityTier';
 import { classifyResearchEntityResearchScope } from '../services/researchEntityResearchScope';
 import {
   deriveResearchEntityYaleStatus,
@@ -109,5 +108,3 @@ export function planYaleStatusCacheBackfill(docs: YaleStatusCacheDoc[]): YaleSta
 
   return { scanned: docs.length, toUpdate, countsByReason, flipToSuppressedCount };
 }
-
-export { STUDENT_VISIBILITY_VERSION };

@@ -15,7 +15,6 @@ import {
 } from './scriptWriteGuards';
 import {
   planYaleStatusCacheBackfill,
-  STUDENT_VISIBILITY_VERSION,
   type YaleStatusCacheDoc,
 } from './backfillYaleStatusCacheCore';
 
@@ -144,7 +143,6 @@ async function main() {
             studentVisibilityComputedTier: target.nextStudentVisibilityComputedTier,
             studentVisibilityReasons: target.nextStudentVisibilityReasons,
             studentVisibilityComputedAt: new Date(),
-            studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
           },
         },
       );

@@ -15,7 +15,6 @@ import {
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
   hasProfileAreaShellDuplicateRisk,
-  STUDENT_VISIBILITY_VERSION,
 } from '../services/studentVisibilityTier';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { officialProfileUrlFromRosterEntry } from '../services/leadProfileIdentity';
@@ -450,7 +449,6 @@ async function applyResearchUpdates(updates: PlannedTierUpdate[]) {
           studentVisibilityComputedTier: update.computedTier,
           studentVisibilityReasons: update.reasons,
           studentVisibilityComputedAt: new Date(),
-          studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
         },
       },
     );
@@ -467,7 +465,6 @@ async function applyProgramUpdates(updates: PlannedTierUpdate[]) {
           studentVisibilityComputedTier: update.computedTier,
           studentVisibilityReasons: update.reasons,
           studentVisibilityComputedAt: new Date(),
-          studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
         },
       },
     );
@@ -529,7 +526,6 @@ async function main() {
     {
       mode: options.apply ? 'apply' : 'dry-run',
       collection: options.collection,
-      version: STUDENT_VISIBILITY_VERSION,
       scanned: {
         research: research.length,
         programs: programs.length,
