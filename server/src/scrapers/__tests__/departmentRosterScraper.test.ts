@@ -1811,6 +1811,36 @@ describe('DepartmentRosterScraper.run', () => {
       url: 'https://physics.yale.edu/people/faculty',
       extractor: mcdbExtractor,
     });
+    expect(configsByKey.get('ysm-ophthalmology')).toMatchObject({
+      deptName: 'Ophthalmology & Visual Science',
+      url: 'https://medicine.yale.edu/eyes/people/',
+      extractor: profileGridItemExtractor,
+      officialProfileOnly: true,
+    });
+    expect(configsByKey.get('ysm-radiology-biomedical-imaging')).toMatchObject({
+      deptName: 'Radiology & Biomedical Imaging',
+      url: 'https://medicine.yale.edu/radiology-biomedical-imaging/faculty-and-staff/clinical-faculty-by-section/',
+      extractor: profileGridItemExtractor,
+      officialProfileOnly: true,
+    });
+    expect(configsByKey.get('ysm-surgery')).toMatchObject({
+      deptName: 'Surgery',
+      url: 'https://medicine.yale.edu/surgery/directory/',
+      extractor: ysphDirectoryExtractor,
+      officialProfileOnly: true,
+    });
+    expect(configsByKey.get('ysm-internal-medicine')).toMatchObject({
+      deptName: 'Internal Medicine',
+      url: 'https://medicine.yale.edu/internal-medicine/people/faculty/',
+      extractor: ysphDirectoryExtractor,
+      officialProfileOnly: true,
+    });
+    expect(configsByKey.get('ysph-social-behavioral-sciences')).toMatchObject({
+      deptName: 'Social & Behavioral Sciences',
+      url: 'https://ysph.yale.edu/school-of-public-health-faculty/social-behavioral-sciences/',
+      extractor: profileGridItemExtractor,
+      officialProfileOnly: true,
+    });
   });
 
   it('emits official-profile person observations without minting a lab entity when officialProfileOnly is set', async () => {
