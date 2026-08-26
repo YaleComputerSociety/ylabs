@@ -4,7 +4,10 @@ import {
   SCRAPER_SWEEP_SOURCES,
   buildDevelopmentPostRunStages,
   buildScraperSweepChildArgs,
+  orderedScraperSweepPhases,
   parseScraperSweepArgs,
+  resolvePhaseConcurrency,
+  runWithBoundedConcurrency,
   scraperSweepArtifactError,
   validateScraperSweepEnvironment,
   validateScraperSweepManifest,
@@ -47,6 +50,78 @@ describe('runScraperSweep', () => {
     expect(
       parseScraperSweepArgs(['--mode=beta-fetch', '--confirm-beta-release-candidate']).mode,
     ).toBe('beta-fetch');
+  });
+
+  it('parses an optional positive-integer concurrency and rejects invalid values', () => {
+    expect(
+      parseScraperSweepArgs(['--mode=development-full', '--confirm-development-full-sweep'])
+        .concurrency,
+    ).toBeUndefined();
+    expect(
+      parseScraperSweepArgs([
+        '--mode=development-full',
+        '--confirm-development-full-sweep',
+        '--concurrency=6',
+      ]).concurrency,
+    ).toBe(6);
+    expect(
+      parseScraperSweepArgs([
+        '--mode=development-full',
+        '--confirm-development-full-sweep',
+        '--concurrency',
+        '3',
+      ]).concurrency,
+    ).toBe(3);
+    expect(() =>
+      parseScraperSweepArgs([
+        '--mode=development-full',
+        '--confirm-development-full-sweep',
+        '--concurrency=0',
+      ]),
+    ).toThrow(/positive integer/);
+    expect(() =>
+      parseScraperSweepArgs([
+        '--mode=development-full',
+        '--confirm-development-full-sweep',
+        '--concurrency=two',
+      ]),
+    ).toThrow(/positive integer/);
+  });
+
+  it('orders phases by first declared appearance', () => {
+    expect(orderedScraperSweepPhases()).toEqual([
+      'identity',
+      'discovery',
+      'funding',
+      'relationships',
+      'content-access',
+    ]);
+  });
+
+  it('caps LLM phases, honors an override, and never drops below one', () => {
+    expect(resolvePhaseConcurrency('development-full', 'discovery')).toBe(4);
+    expect(resolvePhaseConcurrency('development-full', 'discovery', 8)).toBe(8);
+    expect(resolvePhaseConcurrency('development-full', 'content-access', 8)).toBe(2);
+    expect(resolvePhaseConcurrency('development-full', 'relationships', 8)).toBe(2);
+    expect(resolvePhaseConcurrency('beta-fetch', 'discovery')).toBe(1);
+    expect(resolvePhaseConcurrency('development-full', 'discovery', 1)).toBe(1);
+  });
+
+  it('runs every item without exceeding the concurrency limit', async () => {
+    const items = Array.from({ length: 20 }, (_, index) => index);
+    const completed: number[] = [];
+    let inFlight = 0;
+    let peak = 0;
+    await runWithBoundedConcurrency(items, 4, async (item) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      completed.push(item);
+    });
+    expect(completed.sort((a, b) => a - b)).toEqual(items);
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(peak).toBeGreaterThan(1);
   });
 
   it('builds bounded plan arguments and exhaustive full-sweep arguments', () => {
