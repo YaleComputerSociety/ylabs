@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { planYaleStatusCacheBackfill, type YaleStatusCacheDoc } from '../backfillYaleStatusCacheCore';
+import {
+  planYaleStatusCacheBackfill,
+  type YaleStatusCacheDoc,
+} from '../backfillYaleStatusCacheCore';
 
 const baseDoc: YaleStatusCacheDoc = {
   id: 'entity-1',
@@ -43,9 +46,7 @@ describe('planYaleStatusCacheBackfill', () => {
   });
 
   it('does not double count an entity that is already suppressed', () => {
-    const plan = planYaleStatusCacheBackfill([
-      { ...baseDoc, studentVisibilityTier: 'suppressed' },
-    ]);
+    const plan = planYaleStatusCacheBackfill([{ ...baseDoc, studentVisibilityTier: 'suppressed' }]);
 
     expect(plan.toUpdate).toHaveLength(1);
     expect(plan.toUpdate[0].willFlipToSuppressed).toBe(false);

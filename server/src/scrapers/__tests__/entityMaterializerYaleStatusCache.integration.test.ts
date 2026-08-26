@@ -84,9 +84,9 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
 
-    const persisted = await ResearchEntity.findOne({ slug: 'yale-status-fixture' }).lean<
-      PersistedEntity
-    >();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.activeAtYaleCache).not.toBe(false);
     expect(persisted?.yaleStatusCache ?? 'unknown').toBe('unknown');
@@ -101,9 +101,9 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
 
-    const persisted = await ResearchEntity.findOne({ slug: 'yale-status-fixture' }).lean<
-      PersistedEntity
-    >();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.activeAtYaleCache).toBe(false);
     expect(persisted?.yaleStatusCache).toBe('departed');
@@ -118,9 +118,9 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
 
-    const persisted = await ResearchEntity.findOne({ slug: 'yale-status-fixture' }).lean<
-      PersistedEntity
-    >();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.activeAtYaleCache).not.toBe(false);
     expect(persisted?.yaleStatusCache ?? 'unknown').toBe('unknown');
@@ -139,9 +139,9 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
 
-    const persisted = await ResearchEntity.findOne({ slug: 'yale-status-fixture' }).lean<
-      PersistedEntity
-    >();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.activeAtYaleCache).toBe(true);
     expect(persisted?.yaleStatusCache).toBe('unknown');
@@ -161,9 +161,9 @@ describe('materializeEntity derives activeAtYaleCache/yaleStatusCache from inges
 
     await materializeEntity('researchEntity', { entityKey: 'yale-status-fixture' });
 
-    const persisted = await ResearchEntity.findOne({ slug: 'yale-status-fixture' }).lean<
-      PersistedEntity
-    >();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'yale-status-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.activeAtYaleCache).toBe(false);
     expect(persisted?.yaleStatusCache).toBe('departed');
