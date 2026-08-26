@@ -119,7 +119,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                     | Operator board, access review, and admin grants.                     |
 | `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts`                                          | Student visibility tiering and repair queue.                         |
-| `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts`                                    | Cycle evidence and program classification (`fellowshipMatchingService` is a stub retained only for compilation; pathway-based matching was removed with `EntryPathway`, #363). |
+| `programClassifier.ts`                                                                                                                      | Program classification.                                              |
 | `listingResearchEntityProfile.ts`                                                                                                           | Keeps legacy listings synced to ResearchEntity profiles.             |
 | `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                        | External integrations.                                               |
 
