@@ -16,14 +16,16 @@
  *     home. The directory root and any listing/facet page are rejected
  *     listings and are never cited (issues #510/#516/#529/#549).
  *   - A profile is only processed further when its own "research" section
- *     carries a lab website or governed MeSH research areas; the directory
+ *     carries a lab website, governed MeSH research areas, or a research
+ *     description; the directory
  *     lists many non-research staff and trainees whose profile has no
  *     research section at all, and those are skipped without emitting any
  *     observation (identity roster maintenance for the wider community is
  *     `yale-directory`'s job, not this per-PI enrichment pass).
  *
  * A profile with its own lab website seeds a LAB research home with that site
- * as the websiteUrl; a profile with governed research areas but no lab site
+ * as the websiteUrl; a profile with governed research areas or a research
+ * description but no lab site
  * seeds a FACULTY_RESEARCH_AREA home instead. Contact is fail-closed: emails
  * derive stable Researcher identity and key the lead PI to the canonical Yale
  * User, and are redacted from public payloads at read time. The lead PI is
@@ -334,9 +336,10 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
 /**
  * ResearchEntity observations. A profile whose own research section links a
  * lab website seeds a LAB home with that site as the websiteUrl; otherwise a
- * profile with governed research areas seeds a FACULTY_RESEARCH_AREA home
+ * profile with governed research areas or a research description seeds a
+ * FACULTY_RESEARCH_AREA home
  * whose only cited source is the profile page. Returns [] for a profile with
- * neither so nothing empty is minted.
+ * none of those so nothing empty is minted.
  *
  * The lead PI is keyed on the person-specific email when present, mirroring
  * yseFacultyDirectoryScraper: identity here comes from the person's own
