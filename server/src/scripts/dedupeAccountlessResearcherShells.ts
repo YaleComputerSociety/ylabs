@@ -13,6 +13,7 @@ import {
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
   roleAssignmentEdgeKey,
+  RESEARCHER_UNIQUE_IDENTIFIER_FIELDS,
   type ResearcherAttributeSnapshot,
   type ShellMergeReason,
 } from './dedupeAccountlessResearcherShellsCore';
@@ -331,16 +332,27 @@ export async function dedupeAccountlessResearcherShells(options: {
       profileFieldsFilled: Object.keys(plan.profileGapFills),
     });
 
+    const shellArchiveUpdate: Record<string, unknown> = {
+      $set: {
+        archived: true,
+        dedupedIntoResearcherId: new mongoose.Types.ObjectId(canonicalId),
+        dedupedAt,
+      },
+    };
+    const transferredUniqueIdentifierUnsets: Record<string, ''> = {};
+    for (const field of Object.keys(plan.identifierGapFills)) {
+      if (RESEARCHER_UNIQUE_IDENTIFIER_FIELDS.has(field)) {
+        transferredUniqueIdentifierUnsets[`identifiers.${field}`] = '';
+      }
+    }
+    if (Object.keys(transferredUniqueIdentifierUnsets).length) {
+      shellArchiveUpdate.$unset = transferredUniqueIdentifierUnsets;
+    }
+
     researcherOps.push({
       updateOne: {
         filter: { _id: new mongoose.Types.ObjectId(shellId) },
-        update: {
-          $set: {
-            archived: true,
-            dedupedIntoResearcherId: new mongoose.Types.ObjectId(canonicalId),
-            dedupedAt,
-          },
-        },
+        update: shellArchiveUpdate,
       },
     });
   }
@@ -366,9 +378,9 @@ export async function dedupeAccountlessResearcherShells(options: {
   }
 
   if (options.apply) {
+    if (researcherOps.length) await Researcher.bulkWrite(researcherOps, { ordered: false });
     if (canonicalUnionOps.length) await Researcher.bulkWrite(canonicalUnionOps, { ordered: false });
     if (roleAssignmentOps.length) await RoleAssignment.bulkWrite(roleAssignmentOps, { ordered: false });
-    if (researcherOps.length) await Researcher.bulkWrite(researcherOps, { ordered: false });
   }
 
   return {

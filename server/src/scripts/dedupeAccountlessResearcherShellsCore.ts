@@ -94,6 +94,7 @@ export interface ResearcherAttributeSnapshot {
 }
 
 export const RESEARCHER_UNION_IDENTIFIER_FIELDS = ['orcid', 'googleScholarId'] as const;
+export const RESEARCHER_UNIQUE_IDENTIFIER_FIELDS: ReadonlySet<string> = new Set(['orcid']);
 export const RESEARCHER_UNION_PROFILE_FIELDS = [
   'title',
   'primaryDepartment',

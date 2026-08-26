@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Researcher } from '../../models/researcher';
 import { dedupeAccountlessResearcherShells } from '../dedupeAccountlessResearcherShells';
 
 const canonicalId = new mongoose.Types.ObjectId();
@@ -189,5 +190,59 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
     expect(canonical!.profileLinks as unknown[]).toHaveLength(1);
     const uniqueEdge = await db.collection('role_assignments').findOne({ _id: uniqueEdgeId });
     expect(String(uniqueEdge!.personId)).toBe(String(shellId));
+  });
+});
+
+describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () => {
+  let server: MongoMemoryServer;
+
+  beforeAll(async () => {
+    server = await MongoMemoryServer.create();
+    await mongoose.connect(server.getUri());
+    await Researcher.syncIndexes();
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await server.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    await db.collection('researchers').deleteMany({});
+    await db.collection('role_assignments').deleteMany({});
+  });
+
+  it('gap-fills the canonical ORCID from the shell without violating the unique index', async () => {
+    const canonicalOnly = new mongoose.Types.ObjectId();
+    const orcidShell = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').insertMany([
+      {
+        _id: canonicalOnly,
+        displayName: 'Rosa Vega',
+        accountId: new mongoose.Types.ObjectId(),
+        archived: false,
+        identifiers: {},
+      },
+      {
+        _id: orcidShell,
+        displayName: 'Rosa Vega',
+        archived: false,
+        identifiers: { orcid: '0000-0003-1111-2222' },
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.byReason.MERGEABLE).toBe(1);
+    expect(result.attributeUnion.identifiersFilled.orcid).toBe(1);
+
+    const canonical = await db.collection('researchers').findOne({ _id: canonicalOnly });
+    expect(canonical!.identifiers).toMatchObject({ orcid: '0000-0003-1111-2222' });
+
+    const shell = await db.collection('researchers').findOne({ _id: orcidShell });
+    expect(shell!.archived).toBe(true);
+    expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
   });
 });
