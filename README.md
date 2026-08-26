@@ -1,6 +1,6 @@
 # Yale Research
 
-A research-discovery app for Yale students. It helps students find research homes, source-backed access evidence, and the best next step toward a specific Yale research context.
+A research-discovery app for Yale students. It helps students find research homes, source-backed access evidence, and a clear way to reach out to a specific Yale research context.
 
 **Live:** [yalelabs.io](https://yalelabs.io/) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 

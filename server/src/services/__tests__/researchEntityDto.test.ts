@@ -329,12 +329,6 @@ describe('researchEntityDto', () => {
         bestNextStep: 'Email hidden@example.edu after reading the source.',
         reasons: ['Call 203-555-1212 before outreach.'],
       },
-      accessSummary: {
-        route: {
-          label: 'Professor hidden@example.edu',
-          rationale: 'Use 203-555-1212 for urgent questions.',
-        },
-      },
       waysIn: [{ label: 'Email hidden@example.edu to ask about openings.' }],
       searchMatch: { snippet: 'Contact hidden@example.edu or 203-555-1212.' },
     });
@@ -347,12 +341,6 @@ describe('researchEntityDto', () => {
     expect(dto.planningContext).toEqual({
       bestNextStep: 'Email [email redacted] after reading the source.',
       reasons: ['Call [phone redacted] before outreach.'],
-    });
-    expect(dto.accessSummary).toEqual({
-      route: {
-        label: 'Professor [email redacted]',
-        rationale: 'Use [phone redacted] for urgent questions.',
-      },
     });
     expect(dto.waysIn).toEqual([{ label: 'Email [email redacted] to ask about openings.' }]);
     expect(dto.searchMatch).toEqual({ snippet: 'Contact [email redacted] or [phone redacted].' });

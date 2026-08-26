@@ -4,7 +4,6 @@ import { memo, type MouseEvent } from 'react';
 import {
   buildWayInBadges,
   buildResearchHomeContextLine,
-  getPathwayActionLabel,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import { formatTitleCaseLabel } from '../../utils/displayText';
@@ -35,17 +34,6 @@ const contextLabelClass = (state?: string): string => {
   }
 };
 
-const evidenceStatusClass = (state?: string): string => {
-  switch (state) {
-    case 'publications':
-      return 'yr-pill-blue';
-    case 'review':
-      return 'yr-pill-gold';
-    default:
-      return '';
-  }
-};
-
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
 
@@ -53,12 +41,6 @@ const titleCaseContactRole = (role?: string): string => {
   const trimmed = (role || '').trim();
   if (!trimmed) return 'Principal investigator';
   return formatTitleCaseLabel(trimmed);
-};
-
-const directoryFirstPathwayLabel = (label: string): string => {
-  if (label === 'Plan targeted outreach') return 'Review source context';
-  if (label === 'Contact program') return 'Review source route';
-  return label;
 };
 
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
@@ -169,9 +151,6 @@ const ResearchHomeCard = ({
     : topicBadges.slice(mobileTopicCap, desktopTopicCap);
   const mobileMoreCount = topicBadges.length - mobileTopicCap;
   const desktopMoreCount = topicBadges.length - desktopTopicCap;
-  const nextStepLabel = home.pathways[0]
-    ? directoryFirstPathwayLabel(getPathwayActionLabel(home.pathways[0].bestNextStepCategory))
-    : '';
   const description = sanitizeResearchEntityCopy(home.description, home.entities[0]);
   const activePostedOpportunity =
     (home.activePostedOpportunity?.provenance !== 'LISTING_BRIDGED'
@@ -185,8 +164,7 @@ const ResearchHomeCard = ({
   const primaryProfileUrl = primaryLinkedEntity ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}` : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
-  const showEvidenceFooter =
-    !isCompact && (Boolean(primaryEvidenceUrl) || Boolean(home.evidenceStatus));
+  const showEvidenceFooter = !isCompact && Boolean(primaryEvidenceUrl);
   const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
   const leadName = leadEntity?.contactName?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
@@ -320,24 +298,12 @@ const ResearchHomeCard = ({
               {home.contextLabel}
             </span>
           )}
-          {home.evidenceStatus && (
-            <span
-              className={`yr-pill min-h-0 rounded px-2 py-0.5 ${evidenceStatusClass(home.evidenceStatus.state)}`}
-            >
-              {home.evidenceStatus.label}
-            </span>
-          )}
         </div>
 
         <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-gray-600`}>
           {description}
         </p>
 
-        {nextStepLabel && (
-          <p className="text-xs font-semibold leading-relaxed text-emerald-800">
-            Best next step: {nextStepLabel}
-          </p>
-        )}
         {!isCompact && home.matchReason && (
           <p className="text-sm leading-relaxed text-gray-700">
             <span className="font-semibold text-gray-950">Why it might fit:</span>{' '}
@@ -436,7 +402,6 @@ const ResearchHomeCard = ({
             Evidence
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-            {home.evidenceStatus && <span>{home.evidenceStatus.label}</span>}
             {primaryEvidenceUrl && (
               <a
                 href={primaryEvidenceUrl}

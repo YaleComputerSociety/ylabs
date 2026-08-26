@@ -49,12 +49,6 @@ import { composeStudentIntroEmailDraft } from '../utils/introEmailComposer';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
 import { formatTitleCaseLabel } from '../utils/displayText';
 import {
-  computeAcceptanceVerdict,
-  describeEvidenceFreshness,
-  EvidenceItem,
-  REACH_OUT_PLAUSIBLE_LABEL,
-} from '../utils/undergradAcceptance';
-import {
   decisionHeadingLabel,
   isFacultyResearchEntity,
   relationshipTypeLabel,
@@ -453,55 +447,6 @@ const formatPastAdvisees = (group: any): string | null => {
   }`;
 };
 
-const EvidenceChip = ({ item }: { item: EvidenceItem }) => {
-  const tone =
-    item.strength === 'strong'
-      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-      : 'bg-[var(--yr-blue-soft)] text-blue-700 border-blue-100';
-  const negativeTone = 'bg-red-50 text-red-700 border-red-100';
-  const isNegative = item.kind === 'closed-toggle' || item.kind === 'closed-evidence';
-  const cls = isNegative ? negativeTone : tone;
-  const freshness = describeEvidenceFreshness(item.observedAt);
-  return (
-    <span
-      title={item.detail}
-      className={`inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 ${cls} ${
-        freshness?.isStale ? 'opacity-70' : ''
-      }`}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        {isNegative ? (
-          <>
-            <circle cx="12" cy="12" r="10" />
-            <line x1="15" y1="9" x2="9" y2="15" />
-            <line x1="9" y1="9" x2="15" y2="15" />
-          </>
-        ) : (
-          <polyline points="20 6 9 17 4 12" />
-        )}
-      </svg>
-      <span>{item.label}</span>
-      {freshness && (
-        <span className="font-normal text-current opacity-80">
-          · {freshness.label}
-          {freshness.isStale ? ' (may be out of date)' : ''}
-        </span>
-      )}
-    </span>
-  );
-};
-
 interface DecisionOutreachContext {
   websiteUrl?: string;
   piEmail?: string;
@@ -561,7 +506,6 @@ const DecisionSummary = ({
       ),
     );
   }, [description, group._id, group.slug]);
-  const { evidence } = computeAcceptanceVerdict(group);
   const grantSummary = formatGrantSummary(group);
   const pastAdvisees = formatPastAdvisees(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
@@ -586,7 +530,6 @@ const DecisionSummary = ({
     entityName: researchEntityTitle(group),
     leadName: piName,
     researchAreas: topics,
-    bestNextStep: group.accessSummary?.bestNextStep,
   });
   const piMailtoHref = safeMailtoHref(piEmail, {
     subject: introEmailDraft.subject,
@@ -604,11 +547,7 @@ const DecisionSummary = ({
   };
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
-  const visibleEvidence = hasActionablePath
-    ? evidence
-    : evidence.filter((item) => item.label !== REACH_OUT_PLAUSIBLE_LABEL);
-  const hasEvidenceDetail =
-    visibleEvidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
+  const hasEvidenceDetail = Boolean(grantSummary) || Boolean(pastAdvisees);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const showsWebsiteCta = decisionSummaryShowsWebsiteCta({
@@ -691,20 +630,10 @@ const DecisionSummary = ({
 
         <div className="divide-y divide-[var(--yr-line)] rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
           {hasEvidenceDetail && (
-            <div
-              className="py-4 first:pt-0 last:pb-0"
-              aria-label="Evidence supporting the acceptance signal"
-            >
+            <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Evidence
               </p>
-              {visibleEvidence.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {visibleEvidence.slice(0, 4).map((item, i) => (
-                    <EvidenceChip key={`${item.kind}-${i}`} item={item} />
-                  ))}
-                </div>
-              )}
               {(grantSummary || pastAdvisees) && (
                 <ul className="mt-3 space-y-1 text-xs text-gray-600">
                   {grantSummary && <li>• {grantSummary}</li>}

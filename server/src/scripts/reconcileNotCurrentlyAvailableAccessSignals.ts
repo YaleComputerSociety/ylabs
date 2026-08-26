@@ -7,10 +7,6 @@ import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { deriveAccessArtifactsForResearchGroup } from '../scrapers/accessMaterializer';
 import {
-  listAccessSummariesForResearchEntities,
-  type AccessSummaryStatus,
-} from '../services/accessSummaryService';
-import {
   assertOperatorEnvironmentMatchesDatabase,
   databaseNameFromMongoUrl,
 } from './operatorDatabaseEnvironment';
@@ -23,7 +19,6 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'access-signals:reconcile-not-currently-available';
-const ACCESS_SUMMARY_BATCH_SIZE = 100;
 
 export interface ReconcileNotCurrentlyAvailableArgs {
   apply: boolean;
@@ -215,26 +210,6 @@ async function applyPlans(plans: StaleSignalPlan[]): Promise<{ archivedSignals: 
   return { archivedSignals: result.modifiedCount || 0 };
 }
 
-function tallyStatuses(summaries: Map<string, { status: AccessSummaryStatus }>) {
-  const counts: Record<string, number> = {};
-  for (const summary of summaries.values()) {
-    counts[summary.status] = (counts[summary.status] || 0) + 1;
-  }
-  return counts;
-}
-
-async function summariesForEntities(
-  entityIds: string[],
-): Promise<Map<string, { status: AccessSummaryStatus }>> {
-  const merged = new Map<string, { status: AccessSummaryStatus }>();
-  for (let start = 0; start < entityIds.length; start += ACCESS_SUMMARY_BATCH_SIZE) {
-    const batch = entityIds.slice(start, start + ACCESS_SUMMARY_BATCH_SIZE);
-    const summaries = await listAccessSummariesForResearchEntities(batch);
-    for (const [id, summary] of summaries) merged.set(id, summary);
-  }
-  return merged;
-}
-
 function writeOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
@@ -264,15 +239,8 @@ async function main(): Promise<void> {
   });
 
   const affectedEntityIds = plans.map((plan) => plan.researchEntityId);
-  const beforeSummaries = await summariesForEntities(affectedEntityIds);
-  const beforeStatusCounts = tallyStatuses(beforeSummaries);
 
   const applied = options.apply ? await applyPlans(plans) : { archivedSignals: 0 };
-
-  const afterSummaries = options.apply
-    ? await summariesForEntities(affectedEntityIds)
-    : beforeSummaries;
-  const afterStatusCounts = options.apply ? tallyStatuses(afterSummaries) : beforeStatusCounts;
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -286,8 +254,6 @@ async function main(): Promise<void> {
     reviewLockedSkipped: lockedSkipped.length,
     plannedWrites: plans.length,
     applied,
-    beforeStatusCounts,
-    afterStatusCounts,
     staleEntityIds: affectedEntityIds,
     lockedSkippedEntityIds: lockedSkipped.map((plan) => plan.researchEntityId),
   };

@@ -31,25 +31,6 @@ export type ResearchEntityType =
   | 'GROUP'
   | 'INDIVIDUAL_RESEARCH';
 
-export interface AccessSummary {
-  status:
-    | 'posted-opening'
-    | 'evidence-backed'
-    | 'reach-out-plausible'
-    | 'not-currently-available'
-    | 'unknown';
-  confidence: number;
-  evidence: Array<{
-    signalType: string;
-    confidence: string;
-    excerpt?: string;
-    sourceUrl?: string;
-    observedAt?: string;
-  }>;
-  signalTypes: string[];
-  bestNextStep: string;
-}
-
 export interface ResearchPlanningContext {
   category: 'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';
   label: string;
@@ -175,7 +156,6 @@ export interface ResearchGroup {
    * not include it.
    */
   hasActiveListing?: boolean;
-  accessSummary?: AccessSummary;
   planningContext?: ResearchPlanningContext;
   studentDecisionExplanation?: StudentDecisionExplanation;
   leadIdentityStatus?: 'verified' | 'under_review';

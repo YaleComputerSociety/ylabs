@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPathwayEvidenceRows,
   buildGroupedSearchResults,
-  buildResearchHomeEvidenceStatus,
   buildResearchHomeContextLine,
   buildIdentityConfidenceRecords,
   formatSourceLabel,
@@ -12,7 +11,6 @@ import {
   parseQueryInterpretationChips,
 } from '../researchDiscoveryAdapters';
 import type { ResearchEntity } from '../../types/researchEntity';
-import type { AccessSummary } from '../../types/researchGroup';
 import type { PathwaySearchHit } from '../../types/pathway';
 
 const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
@@ -84,7 +82,7 @@ describe('pathway display helpers', () => {
 
   it('normalizes pathway type and evidence labels without raw enums', () => {
     expect(getPathwayTypeLabel('POSTED_ROLE')).toBe('Posted opening');
-    expect(getPathwayTypeLabel('REACH_OUT_PLAUSIBLE')).toBe('Exploratory outreach');
+    expect(getPathwayTypeLabel('EXPLORATORY_CONTACT')).toBe('Exploratory outreach');
 
     const evidenceRows = buildPathwayEvidenceRows(pathway());
 
@@ -104,65 +102,6 @@ describe('pathway display helpers', () => {
     expect(formatSourceLabel('https://medicine.yale.edu/profile/example')).toBe(
       'medicine.yale.edu',
     );
-
-    expect(
-      buildResearchHomeEvidenceStatus(
-        entity({
-          sourceUrls: ['https://operator:secret@medicine.yale.edu/profile/example'],
-        }),
-      ),
-    ).toBeUndefined();
-    expect(
-      buildResearchHomeEvidenceStatus(
-        entity({
-          sourceUrls: ['https://medicine.yale.edu/profile/example'],
-        }),
-      ),
-    ).toBeUndefined();
-  });
-});
-
-describe('buildResearchHomeEvidenceStatus', () => {
-  const accessSummary = (overrides: Partial<AccessSummary> = {}): AccessSummary => ({
-    status: overrides.status || 'unknown',
-    confidence: overrides.confidence ?? 0,
-    evidence: overrides.evidence || [],
-    signalTypes: overrides.signalTypes || [],
-    bestNextStep: overrides.bestNextStep || '',
-  });
-
-  it('omits a status when there is no meaningful evidence signal', () => {
-    expect(buildResearchHomeEvidenceStatus(undefined)).toBeUndefined();
-    expect(buildResearchHomeEvidenceStatus(entity({}))).toBeUndefined();
-  });
-
-  it('omits a status for available homes even when evidence rows exist', () => {
-    expect(
-      buildResearchHomeEvidenceStatus(
-        entity({
-          accessSummary: accessSummary({
-            status: 'evidence-backed',
-            evidence: [{ signalType: 'PAST_UNDERGRADS', confidence: 'HIGH' }],
-            signalTypes: ['PAST_UNDERGRADS'],
-          }),
-        }),
-      ),
-    ).toBeUndefined();
-  });
-
-  it('flags homes that are not currently available for review', () => {
-    expect(
-      buildResearchHomeEvidenceStatus(
-        entity({ accessSummary: accessSummary({ status: 'not-currently-available' }) }),
-      ),
-    ).toEqual({ label: 'Needs review', state: 'review' });
-    expect(
-      buildResearchHomeEvidenceStatus(
-        entity({
-          accessSummary: accessSummary({ signalTypes: ['NOT_CURRENTLY_AVAILABLE'] }),
-        }),
-      ),
-    ).toEqual({ label: 'Needs review', state: 'review' });
   });
 });
 

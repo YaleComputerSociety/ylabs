@@ -37,7 +37,6 @@ export interface ResearchIdentityInput {
 }
 
 export type ResearchHomeContextState = 'complete' | 'sparse';
-export type ResearchHomeEvidenceState = 'review' | 'publications';
 
 export interface ResearchHomeContextInput {
   shortDescription?: string | null;
@@ -54,11 +53,6 @@ export interface ResearchHomeContextSummary {
   text: string;
   state: ResearchHomeContextState;
   label: string;
-}
-
-export interface ResearchHomeEvidenceStatus {
-  label: 'Needs review' | 'Publications found' | 'Recent research activity';
-  state: ResearchHomeEvidenceState;
 }
 
 export interface ResearchIdentityConfidence {
@@ -87,7 +81,6 @@ export interface ResearchCluster {
   contextState?: ResearchHomeContextState;
   contextLabel?: string;
   contextLine?: string;
-  evidenceStatus?: ResearchHomeEvidenceStatus;
   matchReason: string;
   entityCount: number;
   pathwayCount: number;
@@ -155,7 +148,6 @@ export const getStudentFacingPathwayLabel = (value?: string): string => {
     case 'POSTED_ROLE':
       return 'Posted opening';
     case 'EXPLORATORY_CONTACT':
-    case 'REACH_OUT_PLAUSIBLE':
       return 'Exploratory outreach';
     case 'VOLUNTEER_OUTREACH':
       return 'Volunteer outreach';
@@ -453,10 +445,7 @@ export const buildWayInBadges = (
   entity: ResearchEntity | undefined,
   pathways: PathwaySearchHit[],
 ): string[] => {
-  const signalTypes = [
-    ...(entity?.accessSummary?.signalTypes || []),
-    ...pathwayEvidenceTypes(pathways),
-  ];
+  const signalTypes = pathwayEvidenceTypes(pathways);
   const badges: string[] = [];
   const addBadge = (label: string, condition: boolean) => {
     if (condition && !badges.includes(label)) badges.push(label);
@@ -480,18 +469,6 @@ export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined)
   return uniq([...getUniqueDepartmentLabels(entity.departments), resolveEntitySchool(entity)])
     .slice(0, 3)
     .join(' · ');
-};
-
-export const buildResearchHomeEvidenceStatus = (
-  entity: ResearchEntity | undefined,
-): ResearchHomeEvidenceStatus | undefined => {
-  if (
-    entity?.accessSummary?.status === 'not-currently-available' ||
-    entity?.accessSummary?.signalTypes?.includes('NOT_CURRENTLY_AVAILABLE')
-  ) {
-    return { label: 'Needs review', state: 'review' };
-  }
-  return undefined;
 };
 
 const normalizeDisplayKeyPart = (value?: string): string =>
@@ -567,8 +544,7 @@ const hasPersonContextForDiscovery = (entity: ResearchEntity): boolean =>
   (entity.contactRole || '').trim().length > 0 ||
   (entity.contactEmail || '').trim().length > 0 ||
   (entity.sourceUrls || []).length > 0 ||
-  (entity.departments || []).length > 0 ||
-  (entity.accessSummary?.evidence || []).length > 0;
+  (entity.departments || []).length > 0;
 
 const buildProfileDiscoveryClusters = (
   entities: ResearchEntity[],
@@ -593,7 +569,6 @@ const buildProfileDiscoveryClusters = (
     const conceptTags = meaningfulMetadata(entity.searchMatch?.concepts || []);
     const pathways = pathwaysForEntities(options.pathways || [], [entity]);
     const activePostedOpportunity = pathways.find(hasCanonicalPostedOpportunity)?.activePostedOpportunity;
-    const evidenceStatus = buildResearchHomeEvidenceStatus(entity);
 
     return {
       id: entity.slug || entity.id || entity._id || slugify(displayName),
@@ -602,7 +577,6 @@ const buildProfileDiscoveryClusters = (
       contextState: contextSummary.state,
       contextLabel: contextSummary.label,
       contextLine: buildResearchHomeContextLine(entity),
-      evidenceStatus,
       matchReason,
       entityCount: 1,
       pathwayCount: pathways.length,
@@ -745,10 +719,7 @@ const identitiesFromResearchEntities = (
           profileUrl: netid ? `/profile/${netid}` : undefined,
           labName: entityDisplayName(entity),
           labSlug: entity.slug,
-          sourceCount:
-            (entity.sourceUrls || []).length ||
-            entity.accessSummary?.evidence?.length ||
-            1,
+          sourceCount: (entity.sourceUrls || []).length || 1,
           matchLabel: 'Research profile match: metadata',
           sourceContext: entityDisplayName(entity),
           evidence: [

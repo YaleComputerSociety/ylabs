@@ -4129,10 +4129,6 @@ test('legacy research group public DTO ids use safe serialization', () => {
     source,
     /hasActiveListing: activeListingGroupIdSet\.has\(researchGroupDocumentId\(entity\._id\)\)/,
   );
-  assert.match(
-    source,
-    /accessSummary: accessSummaries\.get\(researchGroupDocumentId\(entity\._id\)\)/,
-  );
   assert.match(source, /_id: researchGroupDocumentId\(listing\._id\)/);
   assert.match(source, /id: researchGroupDocumentId\(listing\._id\)/);
   assert.match(source, /leadMembersByEntityId\.get\(researchGroupDocumentId\(entity\._id\)\)/);
@@ -4686,31 +4682,6 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
   assert.match(source, /value\s*\.slice\(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS\)\s*\.flatMap/);
   assert.match(source, /dto\[field\] = publicTextValue\(group\[field\]\)/);
   assert.doesNotMatch(source, /dto\[field\] = group\[field\]/);
-});
-
-test('public access summaries bound evidence text and avoid arbitrary object coercion', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/accessSummaryService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_ACCESS_SUMMARY_ENTITY_IDS = 100/);
-  assert.match(source, /MAX_ACCESS_SUMMARY_TEXT_LENGTH = 2000/);
-  assert.match(source, /MAX_ACCESS_SUMMARY_URL_LENGTH = 2048/);
-  assert.match(source, /const ACCESS_SUMMARY_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /const id = serializedDocumentId\(value\)/);
-  assert.match(source, /typeof value !== 'string'/);
-  assert.match(source, /value\.slice\(0, maxLength\)\.trim\(\)/);
-  assert.match(source, /researchEntityIds\s*\.slice\(0, MAX_ACCESS_SUMMARY_ENTITY_IDS\)/);
-  assert.match(source, /accessSummaryEntityId\(signal\.researchEntityId\)/);
-  assert.match(source, /boundedString\(signal\.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH\)/);
-  assert.match(source, /publicText\(signal\.source\?\.excerpt\)/);
-  assert.match(source, /publicHttpUrl\(signal\.source\?\.url\)/);
-  assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
-  assert.doesNotMatch(source, /String\(signal\.researchEntityId\)/);
-  assert.doesNotMatch(source, /String\(pathway\.researchEntityId\)/);
-  assert.doesNotMatch(source, /String\(opportunity\.researchEntityId\)/);
 });
 
 test('public research detail subdocuments omit persistence metadata', () => {

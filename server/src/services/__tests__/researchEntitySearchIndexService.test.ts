@@ -89,7 +89,7 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc?.shortDescription).toBe('');
   });
 
-  it('strips retired legacy access fields while preserving the graded access signal', () => {
+  it('strips retired legacy access fields', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-access',
       name: 'Access Signal Lab',
@@ -102,12 +102,10 @@ describe('researchEntitySearchIndexService', () => {
       opennessExplanationCache: 'Has a posted opening.',
       opennessComputedAt: '2026-01-01T00:00:00.000Z',
       opennessLastSignalAt: '2026-01-01T00:00:00.000Z',
-      accessSummary: { status: 'reach-out-plausible', confidence: 0.9 },
     });
 
     expect(doc).toMatchObject({
       id: 'entity-access',
-      accessSummary: { status: 'reach-out-plausible', confidence: 0.9 },
     });
     expect(doc).not.toHaveProperty('openness');
     expect(doc).not.toHaveProperty('acceptingUndergrads');

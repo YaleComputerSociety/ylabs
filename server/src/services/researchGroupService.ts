@@ -52,10 +52,6 @@ import {
   invalidateAdminAccessReviewProjection,
   refreshAdminAccessReviewProjection,
 } from './adminAccessReviewProjectionService';
-import {
-  getAccessSummaryForResearchEntity,
-  listAccessSummariesForResearchEntities,
-} from './accessSummaryService';
 import { buildResearchGroupFilterString, ResearchGroupFilterInput } from './researchGroupFilters';
 import {
   buildResearchEntityQualitySummary,
@@ -1067,17 +1063,13 @@ export async function searchResearchGroupsViaMeili(
     const activeListingGroupIdSet = new Set(
       activeListingGroupIds.map((id: any) => researchGroupDocumentId(id)).filter(Boolean),
     );
-    const [accessSummaries, planningContextResult] = await Promise.all([
-      listAccessSummariesForResearchEntities(pageEntityIds),
-      optionalPlanningContexts(pageEntityIds),
-    ]);
+    const planningContextResult = await optionalPlanningContexts(pageEntityIds);
     return addResearchEntitySearchAliases(
       {
         hits: pageEntities.map((entity) => ({
           ...entity,
           _id: researchGroupDocumentId(entity._id),
           hasActiveListing: activeListingGroupIdSet.has(researchGroupDocumentId(entity._id)),
-          accessSummary: accessSummaries.get(researchGroupDocumentId(entity._id)),
           planningContext: planningContextResult.contexts.get(researchGroupDocumentId(entity._id)),
         })),
         estimatedTotalHits: filteredCandidates.length,
@@ -1522,10 +1514,7 @@ export async function searchResearchGroupsViaMeili(
   );
 
   // Map Meilisearch's `id` back to `_id` for client backward compatibility.
-  const [accessSummaries, planningContextResult] = await Promise.all([
-    listAccessSummariesForResearchEntities(visibleHitIds),
-    optionalPlanningContexts(visibleHitIds),
-  ]);
+  const planningContextResult = await optionalPlanningContexts(visibleHitIds);
   const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
@@ -1535,7 +1524,6 @@ export async function searchResearchGroupsViaMeili(
       ...entity,
       _id: id,
       hasActiveListing: activeListingGroupIdSet.has(entityId),
-      accessSummary: accessSummaries.get(entityId),
       planningContext: planningContextResult.contexts.get(entityId),
       ...(hit.searchMatch ? { searchMatch: hit.searchMatch } : {}),
     };
@@ -1786,15 +1774,12 @@ const searchResearchGroupsViaMongoFallback = async (
   const activeListingGroupIdSet = new Set(
     activeListingGroupIds.map((id: any) => researchGroupDocumentId(id)).filter(Boolean),
   );
-  const accessSummaries = await listAccessSummariesForResearchEntities(pageEntityIds);
-
   return addResearchEntitySearchAliases(
     {
       hits: pageEntities.map((entity) => ({
         ...entity,
         _id: researchGroupDocumentId(entity._id),
         hasActiveListing: activeListingGroupIdSet.has(researchGroupDocumentId(entity._id)),
-        accessSummary: accessSummaries.get(researchGroupDocumentId(entity._id)),
       })),
       estimatedTotalHits: sortedCandidates.length,
       page: safePage,
@@ -3253,7 +3238,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     attributedScholarlyLinks,
     activeListingsRaw,
     accessSignals,
-    accessSummary,
     planningContexts,
     undergraduateLogistics,
   ] = await Promise.all([
@@ -3285,7 +3269,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .sort({ observedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
       .lean(),
-    getAccessSummaryForResearchEntity((group as any)._id),
     optionalPlanningContexts([(group as any)._id]),
     optionalUndergraduateLogistics((group as any)._id),
   ]);
@@ -3348,7 +3331,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     group: {
       ...publicGroupForResponse,
       ...leadIdentity,
-      accessSummary,
       planningContext: planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
     },
     members,

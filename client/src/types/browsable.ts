@@ -8,11 +8,6 @@ import {
   getDepartmentAbbreviation,
   getUniqueDepartmentLabels,
 } from '../utils/departmentNames';
-import {
-  computeAcceptanceVerdict,
-  verdictBadgeStyles,
-  verdictLabel,
-} from '../utils/undergradAcceptance';
 import { getFellowshipCycleStatus, getFellowshipDeadlineSubtitle } from '../utils/fellowshipCycle';
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../utils/programJourney';
@@ -94,22 +89,12 @@ export function getResearchGroupDisplayName(group: ResearchGroup): string {
   );
 }
 
-export function getResearchEntityBestNextStep(group: ResearchGroup): string | null {
-  const bestNextStep = group.accessSummary?.bestNextStep?.trim();
-  const hasAccessEvidence = (group.accessSummary?.evidence?.length ?? 0) > 0;
-  if (!bestNextStep || bestNextStep === 'Check back later') {
-    return hasAccessEvidence ? 'Reach out to confirm current availability' : null;
-  }
-  return bestNextStep;
-}
-
 export function isItemOpen(item: BrowsableItem): boolean {
   if (item.type === 'listing') {
     return item.data.hiringStatus >= 0;
   }
   if (item.type === 'researchGroup') {
-    const { verdict } = computeAcceptanceVerdict(item.data);
-    return verdict === 'verified-accepting' || verdict === 'likely-accepting';
+    return false;
   }
   return getFellowshipApplicationStatus(item.data).isApplicationWindowOpen;
 }
@@ -243,14 +228,3 @@ export function getDaysUntilDeadline(item: BrowsableItem): number | null {
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
-export function getResearchGroupStatus(item: BrowsableItem): {
-  label: string;
-  className: string;
-} | null {
-  if (item.type !== 'researchGroup') return null;
-  const { verdict } = computeAcceptanceVerdict(item.data);
-  return {
-    label: verdictLabel(verdict),
-    className: verdictBadgeStyles(verdict),
-  };
-}

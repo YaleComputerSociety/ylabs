@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -155,21 +155,5 @@ describe('ResearchHomeComparison', () => {
     await screen.findByRole('link', { name: 'Lab A' });
     fireEvent.click(screen.getByRole('button', { name: 'Close comparison' }));
     expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows a documented way-in verdict only when the entity has evidence', async () => {
-    mockDetailBySlug({ 'lab-a': entityA, 'lab-b': entityB });
-
-    render(
-      <MemoryRouter>
-        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={() => {}} />
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      const wayInRow = screen.getByText('Documented way in').closest('tr') as HTMLElement;
-      expect(within(wayInRow).getByText('Some evidence')).toBeTruthy();
-      expect(within(wayInRow).getByText('Unknown')).toBeTruthy();
-    });
   });
 });
