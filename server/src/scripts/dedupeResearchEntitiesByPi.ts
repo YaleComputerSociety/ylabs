@@ -1147,7 +1147,10 @@ async function loadSpecificProfileLabUrlCandidateRows(
     { $project: { url: '$urls', entity: 1 } },
     {
       $match: {
-        url: { $regex: '^https?://([a-z0-9-]+\\.)*yale\\.edu/(lab|profile)/[^/]+/?$', $options: 'i' },
+        url: {
+          $regex: '^https?://([a-z0-9-]+\\.)*yale\\.edu/(lab|profile)/[^/]+/?$',
+          $options: 'i',
+        },
       },
     },
     {
