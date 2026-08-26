@@ -206,6 +206,7 @@ Expected report shape:
 
 - `accessSignals` should be `0`.
 - `researchEntity` and `user` observation counts should be nonzero.
+- Any configured source that fetched but yielded zero faculty is flagged: it carries an `empty` status in the `Departments:` notes summary and is named in a `WARNING: ... yielded no faculty` log line, signalling a likely site migration or renamed layout whose URL and extractor need re-verification.
 
 Project impact:
 

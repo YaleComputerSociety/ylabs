@@ -1889,9 +1889,9 @@ describe('DepartmentRosterScraper.run', () => {
     const result = await scraper.run(ctx);
 
     expect(result.notes).toContain('physics=empty');
-    expect(logs.some((l) => /WARNING:.*yielded no faculty/.test(l) && l.includes('physics(empty)'))).toBe(
-      true,
-    );
+    expect(
+      logs.some((l) => /WARNING:.*yielded no faculty/.test(l) && l.includes('physics(empty)')),
+    ).toBe(true);
   });
 
   it('emits official-profile person observations without minting a lab entity when officialProfileOnly is set', async () => {

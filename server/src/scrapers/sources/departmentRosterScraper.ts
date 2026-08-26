@@ -3104,7 +3104,11 @@ export class DepartmentRosterScraper implements IScraper {
         deptCount += processed.faculty;
 
         ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} rendered page(s)`);
-        perDept.push({ deptKey: dept.deptKey, count: deptCount, status: deptCount === 0 ? 'empty' : 'ok' });
+        perDept.push({
+          deptKey: dept.deptKey,
+          count: deptCount,
+          status: deptCount === 0 ? 'empty' : 'ok',
+        });
         continue;
       }
 
@@ -3143,7 +3147,11 @@ export class DepartmentRosterScraper implements IScraper {
       }
 
       ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} page(s)`);
-      perDept.push({ deptKey: dept.deptKey, count: deptCount, status: deptCount === 0 ? 'empty' : 'ok' });
+      perDept.push({
+        deptKey: dept.deptKey,
+        count: deptCount,
+        status: deptCount === 0 ? 'empty' : 'ok',
+      });
     }
 
     const summary = perDept
