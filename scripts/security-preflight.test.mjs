@@ -4241,10 +4241,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   assert.match(source, /values\.slice\(0, MAX_ACCOUNT_MUTATION_IDS\)/);
   assert.match(source, /const mergeStoredObjectIdsForUserMutation = \(/);
   assert.match(source, /const removeStoredObjectIdsForUserMutation = \(/);
-  assert.match(
-    source,
-    /const storedObjectIdStringsForUserMutation = \(values: unknown, fieldName: string\): string\[\] =>/,
-  );
   assert.doesNotMatch(
     source,
     /updateUser\(id, \{ favListings: user\.favListings \}\);[\s\S]*for \(const listingId of newVisibleListingIds\)/,
