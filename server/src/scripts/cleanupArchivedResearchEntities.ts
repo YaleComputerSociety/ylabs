@@ -76,6 +76,7 @@ export interface CleanupArchivedResearchEntitiesCliOptions {
   limit: number;
   limitProvided: boolean;
   maxApply: number;
+  mergeResidueOnly: boolean;
   output?: string;
 }
 
@@ -100,6 +101,7 @@ export function parseCleanupArchivedResearchEntitiesArgs(
     limit: 100,
     limitProvided: false,
     maxApply: 25,
+    mergeResidueOnly: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -115,6 +117,13 @@ export function parseCleanupArchivedResearchEntitiesArgs(
     }
     if (arg.startsWith('--confirm-archived-entity-cleanup=')) {
       throw new Error('--confirm-archived-entity-cleanup does not accept a value');
+    }
+    if (arg === '--merge-residue-only') {
+      options.mergeResidueOnly = true;
+      continue;
+    }
+    if (arg.startsWith('--merge-residue-only=')) {
+      throw new Error('--merge-residue-only does not accept a value');
     }
     if (arg === '--mode=dry-run' || arg === '--dry-run') {
       options.apply = false;
@@ -258,8 +267,13 @@ async function collectionExists(collectionName: string): Promise<boolean> {
 
 async function loadArchivedResearchEntityCandidates(
   limit: number,
+  mergeResidueOnly = false,
 ): Promise<ArchivedResearchEntityCandidate[]> {
-  const archivedEntities = await ResearchEntity.find({ archived: true })
+  const query: Record<string, unknown> = { archived: true };
+  if (mergeResidueOnly) {
+    query.canonicalGroupId = { $exists: true, $ne: null };
+  }
+  const archivedEntities = await ResearchEntity.find(query)
     .select('_id name slug')
     .limit(limit)
     .lean();
@@ -344,9 +358,13 @@ export interface CleanupArchivedResearchEntitiesResult {
 export async function cleanupArchivedResearchEntities(options: {
   apply: boolean;
   limit: number;
+  mergeResidueOnly?: boolean;
   getIndex?: typeof getMeiliIndex;
 }): Promise<CleanupArchivedResearchEntitiesResult> {
-  const candidates = await loadArchivedResearchEntityCandidates(options.limit);
+  const candidates = await loadArchivedResearchEntityCandidates(
+    options.limit,
+    options.mergeResidueOnly,
+  );
   const plan = buildArchivedResearchEntityCleanupPlan({ candidates });
 
   let deletedResearchEntities = 0;
@@ -398,7 +416,10 @@ async function main() {
   });
 
   await initializeConnections();
-  const candidates = await loadArchivedResearchEntityCandidates(options.limit);
+  const candidates = await loadArchivedResearchEntityCandidates(
+    options.limit,
+    options.mergeResidueOnly,
+  );
   const plan = buildArchivedResearchEntityCleanupPlan({ candidates });
   assertCleanupArchivedResearchEntitiesApplyAllowed({
     apply: options.apply,
@@ -411,6 +432,7 @@ async function main() {
   const result = await cleanupArchivedResearchEntities({
     apply: options.apply,
     limit: options.limit,
+    mergeResidueOnly: options.mergeResidueOnly,
   });
 
   const report = buildCleanupArchivedResearchEntitiesOutput(
