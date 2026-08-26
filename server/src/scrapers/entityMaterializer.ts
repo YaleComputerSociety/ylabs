@@ -2998,6 +2998,13 @@ export async function materializeEntity(
         if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
         set.yaleStatusCache = yaleStatusSignal.yaleStatusCache;
         set.activeAtYaleCache = yaleStatusSignal.activeAtYaleCache;
+      } else if (
+        entityDoc?.activeAtYaleCache === false ||
+        entityDoc?.yaleStatusCache === 'departed'
+      ) {
+        set.yaleStatusCache = 'unknown';
+        set.activeAtYaleCache = true;
+        fieldsWritten++;
       }
     }
     // Root-cause fix (issue #1802): a discovered entity always carries its
