@@ -224,7 +224,8 @@ Current behavior:
 - Saved profile cards link back to `/research/:slug` rather than introducing a separate planning-detail route.
 
 The `favPathways` saving feature was removed (#363): the `/users/favPathways*` endpoints and the client saved-pathways section are gone, and saving is covered entirely by saved research entities and their plans.
-All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; nothing consumes the embedded planning fields (`User.favPathways`, `User.savedResearchEntities`, `User.savedPrograms`) at runtime.
+The embedded `User.favPathways` field declaration has since been dropped from the schema as well.
+All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; nothing consumes the embedded planning fields (`User.savedResearchEntities`, `User.savedPrograms`) at runtime.
 Those fields are intentionally left in the `User` schema only so their legacy data survives the pending, human-gated backfill onto `ResearchPlan` tracked in #725; they are stale residue, not an open design question.
 The former `User.savedResearchEntityPlans`, `User.savedResearchEntityPlanMigrationConflicts`, and `User.savedPathwayPlans` declarations were dropped once the canonical `ResearchPlan` cutover shipped and their Development backfill completed; the Dev-only `retire:stale-saved-plan-fields` script clears any stale stored values.
 

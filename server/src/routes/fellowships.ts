@@ -1,5 +1,5 @@
 /**
- * Express routes for fellowship browsing, search, and CRUD.
+ * Express routes for fellowship view telemetry, a legacy compatibility surface.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { isAuthenticated, validateObjectId } from '../middleware/index';

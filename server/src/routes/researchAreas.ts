@@ -1,5 +1,5 @@
 /**
- * Express routes for research area CRUD operations.
+ * Express routes for custom research area creation.
  */
 import { Router, Request, Response, type NextFunction } from 'express';
 import { isAuthenticated, isProfessor } from '../middleware/index';
