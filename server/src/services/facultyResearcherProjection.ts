@@ -39,7 +39,9 @@ export interface FacultyProjectionDeps {
 
 const trimmedString = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
-export function buildFacultyMemberIdentity(user: FacultyUserIdentityInput): CanonicalMemberIdentity {
+export function buildFacultyMemberIdentity(
+  user: FacultyUserIdentityInput,
+): CanonicalMemberIdentity {
   const displayName = [trimmedString(user.fname), trimmedString(user.lname)]
     .filter(Boolean)
     .join(' ');

@@ -38,7 +38,8 @@ export function parseFacultyProjectionArgs(argv: string[]): FacultyProjectionCli
     if (arg === '--apply' || arg === '--mode=apply') options.dryRun = false;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-faculty-projection') options.confirm = true;
-    else if (arg.startsWith('--limit=')) options.limit = parsePositiveInt(arg.slice('--limit='.length));
+    else if (arg.startsWith('--limit='))
+      options.limit = parsePositiveInt(arg.slice('--limit='.length));
     else if (arg === '--limit') {
       options.limit = parsePositiveInt(argv[i + 1]);
       i += 1;
