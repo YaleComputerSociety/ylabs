@@ -1005,4 +1005,33 @@ describe('stale student-visibility-version sweep selector', () => {
     expect(isStudentVisibilityVersionCurrent(undefined)).toBe(false);
     expect(isStudentVisibilityVersionCurrent(null)).toBe(false);
   });
+
+  it('re-gates the v2 corpus by treating the prior v2 marker as drifted (#1920)', () => {
+    expect(STUDENT_VISIBILITY_VERSION).toBe('student-visibility-v3');
+    expect(isStudentVisibilityVersionCurrent('student-visibility-v2')).toBe(false);
+    expect(staleStudentVisibilityVersionClause()).toEqual({
+      studentVisibilityVersion: { $ne: 'student-visibility-v3' },
+    });
+  });
+
+  it('re-stamps a v2-marked #1919 SOM faculty entity to the current version even when unchanged (#1920)', () => {
+    const plan = safePlan({
+      currentTier: 'student_ready',
+      currentComputedTier: 'student_ready',
+      currentReasons: ['source_backed_description', 'concrete_next_step'],
+      currentVersion: 'student-visibility-v2',
+    });
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-safe']),
+      new Date('2026-08-26T00:00:00.000Z'),
+    );
+
+    expect(researchOps).toHaveLength(1);
+    expect(researchOps[0].updateOne.update.$set).toMatchObject({
+      studentVisibilityVersion: 'student-visibility-v3',
+    });
+  });
 });
