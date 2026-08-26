@@ -37,7 +37,6 @@ export interface ResearchIdentityInput {
 }
 
 export type ResearchHomeContextState = 'complete' | 'sparse';
-export type ResearchHomeEvidenceState = 'review' | 'publications';
 
 export interface ResearchHomeContextInput {
   shortDescription?: string | null;
@@ -54,11 +53,6 @@ export interface ResearchHomeContextSummary {
   text: string;
   state: ResearchHomeContextState;
   label: string;
-}
-
-export interface ResearchHomeEvidenceStatus {
-  label: 'Needs review' | 'Publications found' | 'Recent research activity';
-  state: ResearchHomeEvidenceState;
 }
 
 export interface ResearchIdentityConfidence {
@@ -87,7 +81,6 @@ export interface ResearchCluster {
   contextState?: ResearchHomeContextState;
   contextLabel?: string;
   contextLine?: string;
-  evidenceStatus?: ResearchHomeEvidenceStatus;
   matchReason: string;
   entityCount: number;
   pathwayCount: number;

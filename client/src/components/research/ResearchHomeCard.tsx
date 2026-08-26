@@ -34,17 +34,6 @@ const contextLabelClass = (state?: string): string => {
   }
 };
 
-const evidenceStatusClass = (state?: string): string => {
-  switch (state) {
-    case 'publications':
-      return 'yr-pill-blue';
-    case 'review':
-      return 'yr-pill-gold';
-    default:
-      return '';
-  }
-};
-
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
 
@@ -175,8 +164,7 @@ const ResearchHomeCard = ({
   const primaryProfileUrl = primaryLinkedEntity ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}` : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
-  const showEvidenceFooter =
-    !isCompact && (Boolean(primaryEvidenceUrl) || Boolean(home.evidenceStatus));
+  const showEvidenceFooter = !isCompact && Boolean(primaryEvidenceUrl);
   const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
   const leadName = leadEntity?.contactName?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
@@ -310,13 +298,6 @@ const ResearchHomeCard = ({
               {home.contextLabel}
             </span>
           )}
-          {home.evidenceStatus && (
-            <span
-              className={`yr-pill min-h-0 rounded px-2 py-0.5 ${evidenceStatusClass(home.evidenceStatus.state)}`}
-            >
-              {home.evidenceStatus.label}
-            </span>
-          )}
         </div>
 
         <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-gray-600`}>
@@ -421,7 +402,6 @@ const ResearchHomeCard = ({
             Evidence
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-            {home.evidenceStatus && <span>{home.evidenceStatus.label}</span>}
             {primaryEvidenceUrl && (
               <a
                 href={primaryEvidenceUrl}

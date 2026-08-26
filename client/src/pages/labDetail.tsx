@@ -632,7 +632,7 @@ const DecisionSummary = ({
           {hasEvidenceDetail && (
             <div
               className="py-4 first:pt-0 last:pb-0"
-              aria-label="Evidence supporting the acceptance signal"
+              aria-label="Research activity evidence"
             >
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Evidence

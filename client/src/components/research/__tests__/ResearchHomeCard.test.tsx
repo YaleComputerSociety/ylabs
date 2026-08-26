@@ -427,20 +427,6 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).toContain('Computer Science');
   });
 
-  it('renders a needs-review evidence status when the home is flagged', () => {
-    const { container } = render(
-      <MemoryRouter>
-        <ResearchHomeCard
-          home={researchHome({
-            evidenceStatus: { label: 'Needs review', state: 'review' },
-          })}
-        />
-      </MemoryRouter>,
-    );
-
-    expect(container.textContent).toContain('Needs review');
-  });
-
   it('searches a browse-only area with a student-facing CTA', () => {
     const onSelect = vi.fn();
     render(
