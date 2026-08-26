@@ -630,10 +630,7 @@ const DecisionSummary = ({
 
         <div className="divide-y divide-[var(--yr-line)] rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
           {hasEvidenceDetail && (
-            <div
-              className="py-4 first:pt-0 last:pb-0"
-              aria-label="Research activity evidence"
-            >
+            <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Evidence
               </p>

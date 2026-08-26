@@ -195,9 +195,9 @@ Discovery and browse run on the `researchentities` Meilisearch index; the detail
 
 Current behavior:
 
-- Research search and detail payloads use entity type, departments, research areas, access `Signal`s, and a computed best-next-step category as enrichment.
+- Research search and detail payloads use entity type, departments, research areas, and access `Signal`s as enrichment.
 - Student-facing browse status counts matching research homes and people.
-- Detail payloads join a small number of supporting access `Signal` rows as Evidence.
+- Detail payloads join a small number of supporting access `Signal` rows, rendered as plain factual signal badges.
 - Contact is derived at read time, never stored: public payloads expose only the official-profile link-out and never non-public scraped emails.
 
 Public research detail payloads derive `leadIdentityStatus` and the optional `leadProfessorPublicKey` on the server from canonical identity checks and a unique match between entity-owned official-profile evidence and a lead member.
