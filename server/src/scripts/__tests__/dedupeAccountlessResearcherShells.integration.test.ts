@@ -57,7 +57,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
           { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
           { kind: 'YALE_OFFICIAL', url: 'https://shell.yale.edu' },
         ],
-        identifiers: { orcid: '0000-0002-1825-0097', googleScholarId: 'abc' },
+        identifiers: { orcid: '0000-0001-2222-3333', googleScholarId: 'abc' },
         profile: {
           title: 'Adjunct',
           primaryDepartment: 'Immunobiology',
@@ -84,7 +84,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
         displayName: 'Kim Lee',
         accountId: new mongoose.Types.ObjectId(),
         archived: false,
-        identifiers: { orcid: '0000-0002-1825-0097' },
+        identifiers: { orcid: '0000-0001-2222-3333' },
       },
       {
         _id: conflictShellId,
@@ -142,7 +142,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
     );
     expect(canonicalLinks.some((link) => link.kind === 'GOOGLE_SCHOLAR')).toBe(true);
     expect(canonical!.identifiers).toMatchObject({
-      orcid: '0000-0002-1825-0097',
+      orcid: '0000-0001-2222-3333',
       googleScholarId: 'abc',
     });
     expect(canonical!.profile).toEqual({
@@ -183,7 +183,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
     const canonical = await db.collection('researchers').findOne({ _id: canonicalId });
     expect(canonical!.profileLinks as unknown[]).toHaveLength(2);
     expect(canonical!.identifiers).toMatchObject({
-      orcid: '0000-0002-1825-0097',
+      orcid: '0000-0001-2222-3333',
       googleScholarId: 'abc',
     });
   });

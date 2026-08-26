@@ -22,7 +22,7 @@ describe('normalizeResearcherName', () => {
 
 describe('decideShellMerge', () => {
   const index = buildCanonicalNameIndex([
-    { id: 'canonical-roe', displayName: 'Jane Roe', orcid: '0000-0002-1825-0097' },
+    { id: 'canonical-roe', displayName: 'Jane Roe', orcid: '0000-0001-2222-3333' },
     { id: 'canonical-doe', displayName: 'John Doe' },
     { id: 'namesake-a', displayName: 'Sam Twin' },
     { id: 'namesake-b', displayName: 'Sam Twin' },
@@ -38,7 +38,7 @@ describe('decideShellMerge', () => {
 
   it('merges when shell orcid matches the canonical orcid', () => {
     expect(
-      decideShellMerge({ displayName: 'Jane Roe', orcid: '0000-0002-1825-0097' }, index),
+      decideShellMerge({ displayName: 'Jane Roe', orcid: '0000-0001-2222-3333' }, index),
     ).toMatchObject({ merge: true, reason: 'MERGEABLE' });
   });
 
@@ -96,14 +96,14 @@ describe('planResearcherAttributeUnion', () => {
         profileLinks: [
           { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
         ],
-        identifiers: { orcid: '0000-0002-1825-0097', googleScholarId: 'abc' },
+        identifiers: { orcid: '0000-0001-2222-3333', googleScholarId: 'abc' },
         profile: { title: 'Adjunct', primaryDepartment: 'Immunobiology', imageUrl: 'https://i/x' },
       },
     );
 
     expect(plan.profileLinksToAppend.map((link) => link.kind)).toEqual(['GOOGLE_SCHOLAR']);
     expect(plan.identifierGapFills).toEqual({
-      orcid: '0000-0002-1825-0097',
+      orcid: '0000-0001-2222-3333',
       googleScholarId: 'abc',
     });
     expect(plan.profileGapFills).toEqual({
@@ -116,7 +116,7 @@ describe('planResearcherAttributeUnion', () => {
     const plan = planResearcherAttributeUnion(
       {
         profileLinks: [{ kind: 'YALE_OFFICIAL', url: 'https://canonical.yale.edu' }],
-        identifiers: { orcid: '0000-0002-1825-0097' },
+        identifiers: { orcid: '0000-0001-2222-3333' },
         profile: { title: 'Professor', primaryDepartment: 'Physics' },
       },
       {
@@ -132,8 +132,8 @@ describe('planResearcherAttributeUnion', () => {
   it('applies a plan into an evolving snapshot so a second shell sees prior fills', () => {
     const canonical = { profileLinks: [], identifiers: {}, profile: {} };
     const firstPlan = planResearcherAttributeUnion(canonical, {
-      profileLinks: [{ kind: 'ORCID', url: 'https://orcid.org/0000-0002-1825-0097' }],
-      identifiers: { orcid: '0000-0002-1825-0097' },
+      profileLinks: [{ kind: 'ORCID', url: 'https://orcid.org/0000-0001-2222-3333' }],
+      identifiers: { orcid: '0000-0001-2222-3333' },
     });
     const evolved = applyUnionPlanToSnapshot(canonical, firstPlan);
 
