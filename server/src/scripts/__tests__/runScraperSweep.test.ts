@@ -259,6 +259,31 @@ describe('runScraperSweep', () => {
     );
   });
 
+  it('keeps the archived-cleanup stage report-only unless merge-residue deletion is enabled', () => {
+    const reportOnly = buildDevelopmentPostRunStages('/tmp/development-sweep');
+    const reportOnlyArgs = reportOnly.find((stage) => stage.name === 'archived-cleanup')?.args;
+    expect(reportOnlyArgs).toEqual(
+      expect.arrayContaining(['research-entity:cleanup-archived', '--merge-residue-only']),
+    );
+    expect(reportOnlyArgs).not.toContain('--apply');
+    expect(reportOnlyArgs).not.toContain('--confirm-archived-entity-cleanup');
+
+    const deleting = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      deleteMergeResidue: true,
+    });
+    const deletingArgs = deleting.find((stage) => stage.name === 'archived-cleanup')?.args;
+    expect(deletingArgs).toEqual(
+      expect.arrayContaining([
+        'research-entity:cleanup-archived',
+        '--merge-residue-only',
+        '--apply',
+        '--confirm-archived-entity-cleanup',
+        '--max-apply=5000',
+      ]),
+    );
+    expect(deleting.map((stage) => stage.name).at(-1)).toBe('archived-cleanup');
+  });
+
   it('omits the eponymous FRA merge stage by default (flag off)', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
     expect(stages.map((stage) => stage.name)).not.toContain('eponymous-fra-merge');

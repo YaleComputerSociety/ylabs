@@ -23,6 +23,14 @@ const __filename = fileURLToPath(import.meta.url);
 const CLEANUP_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const BLOCKED_SAMPLE_LIMIT = 50;
 const ELIGIBLE_SAMPLE_LIMIT = 50;
+const RESEARCH_ENTITY_REDIRECTS_COLLECTION = 'research_entity_redirects';
+
+export const SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV = 'SCRAPER_SWEEP_DELETE_MERGE_RESIDUE';
+
+export function isMergeResidueDeletionStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = (env[SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV] || '').trim().toLowerCase();
+  return value === '1' || value === 'true';
+}
 
 interface LiveReferenceSpec {
   collection: string;
@@ -37,6 +45,7 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
     filter: { isCurrentMember: { $ne: false } },
   },
   { collection: 'signals', field: 'researchEntityId', filter: { archived: { $ne: true } } },
+  { collection: 'role_assignments', field: 'target.id', filter: { archived: { $ne: true } } },
   {
     collection: 'research_scholarly_links',
     field: 'researchEntityId',
@@ -303,12 +312,59 @@ async function loadArchivedResearchEntityCandidates(
     }
   }
 
+  const redirectPresence = mergeResidueOnly
+    ? await loadRedirectPresence(archivedEntities, archivedIdMatchValues)
+    : undefined;
+
   return archivedEntities.map((entity: any) => ({
     id: stringId(entity._id),
     ...(entity.name ? { name: String(entity.name) } : {}),
     ...(entity.slug ? { slug: String(entity.slug) } : {}),
     liveReferences: references.get(stringId(entity._id)) || [],
+    ...(redirectPresence ? { redirectPresent: redirectPresence.has(stringId(entity._id)) } : {}),
   }));
+}
+
+async function loadRedirectPresence(
+  archivedEntities: Array<{ _id: unknown; slug?: unknown }>,
+  archivedIdMatchValues: (mongoose.Types.ObjectId | string)[],
+): Promise<Set<string>> {
+  const withRedirect = new Set<string>();
+  const db = mongoose.connection.db;
+  if (!db || archivedEntities.length === 0) return withRedirect;
+  if (!(await collectionExists(RESEARCH_ENTITY_REDIRECTS_COLLECTION))) return withRedirect;
+
+  const slugByEntityId = new Map<string, string>();
+  const slugToEntityIds = new Map<string, string[]>();
+  for (const entity of archivedEntities) {
+    const id = stringId(entity._id);
+    const slug = typeof entity.slug === 'string' ? entity.slug.trim() : '';
+    if (!slug) continue;
+    slugByEntityId.set(id, slug);
+    const bucket = slugToEntityIds.get(slug) || [];
+    bucket.push(id);
+    slugToEntityIds.set(slug, bucket);
+  }
+
+  const redirectRows = await db
+    .collection(RESEARCH_ENTITY_REDIRECTS_COLLECTION)
+    .find({
+      $or: [
+        { mergedEntityId: { $in: archivedIdMatchValues } },
+        ...(slugToEntityIds.size > 0 ? [{ mergedSlug: { $in: [...slugToEntityIds.keys()] } }] : []),
+      ],
+    })
+    .project({ mergedEntityId: 1, mergedSlug: 1 })
+    .toArray();
+
+  for (const row of redirectRows) {
+    const mergedEntityId = stringId(row.mergedEntityId);
+    if (mergedEntityId) withRedirect.add(mergedEntityId);
+    const mergedSlug = typeof row.mergedSlug === 'string' ? row.mergedSlug.trim() : '';
+    for (const id of slugToEntityIds.get(mergedSlug) || []) withRedirect.add(id);
+  }
+
+  return withRedirect;
 }
 
 async function deleteDependentArtifacts(eligibleIds: string[]): Promise<Record<string, number>> {
@@ -365,7 +421,10 @@ export async function cleanupArchivedResearchEntities(options: {
     options.limit,
     options.mergeResidueOnly,
   );
-  const plan = buildArchivedResearchEntityCleanupPlan({ candidates });
+  const plan = buildArchivedResearchEntityCleanupPlan({
+    candidates,
+    requireRedirect: options.mergeResidueOnly === true,
+  });
 
   let deletedResearchEntities = 0;
   let deletedDependents: Record<string, number> = {};
@@ -420,7 +479,10 @@ async function main() {
     options.limit,
     options.mergeResidueOnly,
   );
-  const plan = buildArchivedResearchEntityCleanupPlan({ candidates });
+  const plan = buildArchivedResearchEntityCleanupPlan({
+    candidates,
+    requireRedirect: options.mergeResidueOnly === true,
+  });
   assertCleanupArchivedResearchEntitiesApplyAllowed({
     apply: options.apply,
     confirmArchivedEntityCleanup: options.confirmArchivedEntityCleanup,
@@ -446,6 +508,7 @@ async function main() {
       scanned: result.plan.scanned,
       eligibleCount: result.plan.eligibleCount,
       blockedCount: result.plan.blockedCount,
+      deferredByReason: result.plan.deferredByReason,
       plannedDeletes: result.plannedDeletes,
       eligibleSample: result.eligibleSample,
       blockedSample: result.blockedSample,
