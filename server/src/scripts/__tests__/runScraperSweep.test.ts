@@ -262,6 +262,50 @@ describe('runScraperSweep', () => {
     expect(stages.map((stage) => stage.name)).not.toContain('eponymous-fra-merge');
   });
 
+  it('omits the researcher dedupe stage by default (flag off)', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
+    expect(stages.map((stage) => stage.name)).not.toContain('researcher-dedupe');
+  });
+
+  it('inserts the researcher dedupe stage before the eponymous FRA merge when enabled', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      dedupeResearchers: true,
+      autoMergeEponymousFra: true,
+      sinceIso: '2026-08-26T00:00:00.000Z',
+      maxMerges: 20,
+    });
+    const names = stages.map((stage) => stage.name);
+    expect(names).toEqual([
+      'faculty-projection',
+      'researcher-dedupe',
+      'eponymous-fra-merge',
+      'search-rebuild',
+      'coverage-audit',
+      'data-quality',
+      'integrity-gate',
+      'trust-contract',
+      'archived-cleanup',
+    ]);
+    expect(names.indexOf('researcher-dedupe')).toBeLessThan(names.indexOf('eponymous-fra-merge'));
+    expect(stages.find((stage) => stage.name === 'researcher-dedupe')?.args).toEqual(
+      expect.arrayContaining([
+        'researchers:dedupe-accountless-shells',
+        '--apply',
+        '--confirm-dedupe-accountless-researcher-shells',
+      ]),
+    );
+  });
+
+  it('runs the researcher dedupe stage even when the eponymous merge is off', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      dedupeResearchers: true,
+    });
+    const names = stages.map((stage) => stage.name);
+    expect(names).toContain('researcher-dedupe');
+    expect(names).not.toContain('eponymous-fra-merge');
+    expect(names.indexOf('researcher-dedupe')).toBe(1);
+  });
+
   it('requires an exact Development database and local unprefixed Meilisearch for writes', () => {
     expect(() =>
       validateScraperSweepEnvironment('development-full', {
