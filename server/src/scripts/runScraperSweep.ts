@@ -17,6 +17,7 @@ import {
   isEponymousFraLabMergeStageEnabled,
   type EponymousFraLabMergeDelta,
 } from './researchEntityEponymousMergeStage';
+import { isMergeResidueDeletionStageEnabled } from './cleanupArchivedResearchEntities';
 import {
   isResearcherDedupeStageEnabled,
   type ResearcherDedupeStageDelta,
@@ -153,9 +154,16 @@ export interface DevelopmentPostRunStage {
 export interface DevelopmentPostRunStageOptions {
   autoMergeEponymousFra?: boolean;
   dedupeResearchers?: boolean;
+  deleteMergeResidue?: boolean;
   sinceIso?: string;
   maxMerges?: number;
 }
+
+const MERGE_RESIDUE_DELETION_STAGE_ARGS = [
+  '--apply',
+  '--confirm-archived-entity-cleanup',
+  '--max-apply=5000',
+];
 
 export interface ScraperSweepSummary {
   mode: ScraperSweepMode;
@@ -666,7 +674,11 @@ export function buildDevelopmentPostRunStages(
     stage(
       'archived-cleanup',
       'research-entity:cleanup-archived',
-      ['--merge-residue-only', '--limit=5000'],
+      [
+        '--merge-residue-only',
+        '--limit=5000',
+        ...(options.deleteMergeResidue ? MERGE_RESIDUE_DELETION_STAGE_ARGS : []),
+      ],
       'development-archived-cleanup.json',
     ),
   ];
@@ -866,6 +878,7 @@ export async function runScraperSweep(
       ? await runDevelopmentPostRunStages(outputDirectory, repoRoot, childRunner, {
           autoMergeEponymousFra: isEponymousFraLabMergeStageEnabled(process.env),
           dedupeResearchers: isResearcherDedupeStageEnabled(process.env),
+          deleteMergeResidue: isMergeResidueDeletionStageEnabled(process.env),
           sinceIso: startedAt.toISOString(),
         })
       : undefined;
