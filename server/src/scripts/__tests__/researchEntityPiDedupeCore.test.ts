@@ -11,8 +11,10 @@ import {
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
+  buildSpecificProfileLabUrlResearchEntityDedupePlan,
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
+  specificProfileLabUrlIdentityKey,
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
@@ -1265,6 +1267,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
       orgNameOnly: false,
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
@@ -1281,6 +1284,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
       orgNameOnly: false,
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
@@ -1303,6 +1307,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
       orgNameOnly: false,
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: true,
@@ -1319,6 +1324,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: true,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
       orgNameOnly: false,
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
@@ -1844,6 +1850,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: true,
       fullPlan: false,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
       orgNameOnly: false,
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
@@ -1933,6 +1940,343 @@ describe('buildOfficialLabUrlResearchEntityDedupePlan', () => {
           entities: [
             { id: 'ysm-one', slug: 'ysm-one', name: 'One Lab' },
             { id: 'ysm-two', slug: 'ysm-two', name: 'Two Lab' },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('specificProfileLabUrlIdentityKey', () => {
+  it('keys a /lab/ or /profile/ path on a yale.edu host, scheme/slash/www-agnostic', () => {
+    expect(specificProfileLabUrlIdentityKey('https://medicine.yale.edu/lab/pierce/')).toBe(
+      'medicine.yale.edu/lab/pierce',
+    );
+    expect(specificProfileLabUrlIdentityKey('http://www.medicine.yale.edu/profile/jack-tsai')).toBe(
+      'medicine.yale.edu/profile/jack-tsai',
+    );
+  });
+
+  it('returns empty for non-yale hosts, generic paths, and unparseable values', () => {
+    expect(specificProfileLabUrlIdentityKey('https://example.com/lab/pierce')).toBe('');
+    expect(specificProfileLabUrlIdentityKey('https://medicine.yale.edu/about/a-to-z-index/')).toBe(
+      '',
+    );
+    expect(specificProfileLabUrlIdentityKey('https://medicine.yale.edu/lab/')).toBe('');
+    expect(specificProfileLabUrlIdentityKey('not a url')).toBe('');
+  });
+});
+
+describe('buildSpecificProfileLabUrlResearchEntityDedupePlan', () => {
+  it('folds a FACULTY_RESEARCH_AREA facet into the concrete LAB sharing a profile URL', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/profile/jack-tsai/',
+        entities: [
+          {
+            id: 'ysm-tsai',
+            slug: 'ysm-tsai',
+            name: 'Tsai Lab',
+            entityType: 'LAB',
+            fullDescription:
+              'The Tsai Lab studies homelessness, veteran mental health, and community reintegration across health systems.',
+            sourceUrls: ['https://medicine.yale.edu/profile/jack-tsai/'],
+            researchAreas: ['Homelessness'],
+          },
+          {
+            id: 'ysm-faculty-jack-tsai',
+            slug: 'ysm-faculty-jack-tsai',
+            name: 'Jack Tsai Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.yale.edu/profile/jack-tsai/'],
+            researchAreas: ['Veteran Mental Health', 'Community Reintegration'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('ysm-tsai');
+    expect(plan[0].duplicateEntityIds).toEqual(['ysm-faculty-jack-tsai']);
+    expect(plan[0].mergedResearchAreas).toEqual(
+      expect.arrayContaining(['Homelessness', 'Veteran Mental Health', 'Community Reintegration']),
+    );
+  });
+
+  it('merges two lab slugs on a shared lab URL when the surname agrees', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/pierce/',
+        entities: [
+          {
+            id: 'ysm-pierce',
+            slug: 'ysm-pierce',
+            name: 'Pierce Lab',
+            entityType: 'LAB',
+            fullDescription: 'The Pierce Lab investigates airway epithelial biology and repair.',
+            websiteUrl: 'https://medicine.yale.edu/lab/pierce/',
+          },
+          {
+            id: 'ysm-faculty-richard-pierce',
+            slug: 'ysm-faculty-richard-pierce',
+            name: 'Pierce Lab',
+            entityType: 'LAB',
+            fullDescription:
+              'The Pierce Lab investigates airway epithelial biology, mucosal immunity, and tissue repair across models.',
+            sourceUrls: ['https://medicine.yale.edu/lab/pierce/'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(new Set([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds])).toEqual(
+      new Set(['ysm-pierce', 'ysm-faculty-richard-pierce']),
+    );
+  });
+
+  it('does not merge different people who share a surname on the same URL', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/smith/',
+        entities: [
+          {
+            id: 'ysm-faculty-john-smith',
+            slug: 'ysm-faculty-john-smith',
+            name: 'John Smith Lab',
+            entityType: 'LAB',
+            fullDescription: 'The John Smith Lab studies cardiac electrophysiology.',
+          },
+          {
+            id: 'ysm-faculty-jane-smith',
+            slug: 'ysm-faculty-jane-smith',
+            name: 'Jane Smith Lab',
+            entityType: 'LAB',
+            fullDescription: 'The Jane Smith Lab studies developmental neuroscience.',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('excludes a CENTER the person merely belongs to and funding shells', () => {
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/lab/reed/',
+          entities: [
+            { id: 'ysm-reed', slug: 'ysm-reed', name: 'Reed Lab', entityType: 'LAB' },
+            {
+              id: 'center-reed',
+              slug: 'center-reed',
+              name: 'Reed Center',
+              entityType: 'CENTER',
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/lab/reed/',
+          entities: [
+            { id: 'ysm-reed', slug: 'ysm-reed', name: 'Reed Lab', entityType: 'LAB' },
+            {
+              id: 'nih-pi-reed',
+              slug: 'nih-pi-reed',
+              name: 'Reed Lab',
+              entityType: 'LAB',
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('does not let a bare-surname node bridge two conflicting first names into one merge', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/smith/',
+        entities: [
+          {
+            id: 'ysm-faculty-john-smith',
+            slug: 'ysm-faculty-john-smith',
+            name: 'John Smith Lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'ysm-faculty-robert-smith',
+            slug: 'ysm-faculty-robert-smith',
+            name: 'Robert Smith Lab',
+            entityType: 'LAB',
+          },
+          { id: 'ysm-smith', slug: 'ysm-smith', name: 'Smith Lab', entityType: 'LAB' },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('merges a same-person multi-member cluster into one canonical', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/menon/',
+        entities: [
+          {
+            id: 'ysm-menon',
+            slug: 'ysm-menon',
+            name: 'Menon Lab',
+            entityType: 'LAB',
+            fullDescription: 'The Menon Lab studies transplant immunology and kidney disease.',
+            researchAreas: ['Transplant Immunology'],
+          },
+          {
+            id: 'ysm-faculty-madhav-menon',
+            slug: 'ysm-faculty-madhav-menon',
+            name: 'Menon Lab',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            researchAreas: ['Kidney Disease'],
+          },
+          {
+            id: 'ysm-faculty-gcb27',
+            slug: 'ysm-faculty-gcb27',
+            name: 'Menon',
+            entityType: 'FACULTY_RESEARCH_AREA',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('ysm-menon');
+    expect(new Set(plan[0].duplicateEntityIds)).toEqual(
+      new Set(['ysm-faculty-madhav-menon', 'ysm-faculty-gcb27']),
+    );
+  });
+
+  it('keeps the namesake merge but drops a lab member mislabeled under the lab name', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/bunick/',
+        entities: [
+          {
+            id: 'ysm-bunick',
+            slug: 'ysm-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+            fullDescription:
+              'The Bunick Lab studies structural biology of skin and circadian proteins.',
+          },
+          {
+            id: 'ysm-faculty-christopher-bunick',
+            slug: 'ysm-faculty-christopher-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'ysm-faculty-ivan-lomakin',
+            slug: 'ysm-faculty-ivan-lomakin',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    const members = new Set([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds]);
+    expect(members).toEqual(new Set(['ysm-bunick', 'ysm-faculty-christopher-bunick']));
+    expect(members.has('ysm-faculty-ivan-lomakin')).toBe(false);
+    expect(plan[0].canonicalEntityId).toBe('ysm-bunick');
+  });
+
+  it('drops a dept-slug lab member mislabeled under the lab name', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/bunick/',
+        entities: [
+          {
+            id: 'ysm-bunick',
+            slug: 'ysm-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+            fullDescription:
+              'The Bunick Lab studies structural biology of skin and circadian proteins.',
+          },
+          {
+            id: 'dept-derm-christopher-bunick',
+            slug: 'dept-derm-christopher-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'dept-neuro-ivan-lomakin',
+            slug: 'dept-neuro-ivan-lomakin',
+            name: 'Bunick Lab',
+            entityType: 'FACULTY_RESEARCH_AREA',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    const members = new Set([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds]);
+    expect(members).toEqual(new Set(['ysm-bunick', 'dept-derm-christopher-bunick']));
+    expect(members.has('dept-neuro-ivan-lomakin')).toBe(false);
+    expect(plan[0].canonicalEntityId).toBe('ysm-bunick');
+  });
+
+  it('does not merge when the only counterpart is a differently-named lab member', () => {
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/lab/decamilli/',
+          entities: [
+            {
+              id: 'ysm-decamilli',
+              slug: 'ysm-decamilli',
+              name: 'De Camilli Lab',
+              entityType: 'LAB',
+            },
+            {
+              id: 'ysm-faculty-hanieh-falahati',
+              slug: 'ysm-faculty-hanieh-falahati',
+              name: 'De Camilli Lab',
+              entityType: 'FACULTY_RESEARCH_AREA',
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('excludes a cluster when any member has an unresolved entityType', () => {
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/lab/reed/',
+          entities: [
+            { id: 'ysm-reed', slug: 'ysm-reed', name: 'Reed Lab', entityType: 'LAB' },
+            { id: 'ysm-reed-2', slug: 'ysm-reed-2', name: 'Reed Lab', entityType: undefined },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('ignores a generic non-lab/profile shared URL', () => {
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/about/a-to-z-index/',
+          entities: [
+            { id: 'ysm-one', slug: 'ysm-one', name: 'One Lab', entityType: 'LAB' },
+            { id: 'ysm-two', slug: 'ysm-two', name: 'Two Lab', entityType: 'LAB' },
           ],
         },
       ]),

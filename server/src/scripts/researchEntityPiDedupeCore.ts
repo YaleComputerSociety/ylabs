@@ -914,6 +914,144 @@ export function normalizeWebsiteUrlIdentityKey(value: string | undefined): strin
   return `${host}${pathname}`;
 }
 
+const SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA', 'GROUP']);
+
+const SPECIFIC_PROFILE_LAB_URL_PATH = /\/(lab|profile)\/([^/]+)$/i;
+
+export function specificProfileLabUrlIdentityKey(value: string | undefined): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return '';
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  if (!(host === 'yale.edu' || host.endsWith('.yale.edu'))) return '';
+  const match = parsed.pathname.replace(/\/+$/, '').match(SPECIFIC_PROFILE_LAB_URL_PATH);
+  if (!match) return '';
+  return `${host}/${match[1].toLowerCase()}/${match[2].toLowerCase()}`;
+}
+
+const PERSON_SLUG_NAME = /(?:^|-)(?:faculty|dept-[a-z]+)-([a-z]+(?:-[a-z]+)+)$/;
+
+/**
+ * The surname a person-derived slug (`...faculty-<first>-<last>` or
+ * `dept-<dept>-<first>-<last>`) encodes, or '' for
+ * a clean lab slug (`ysm-<labname>`) or a bare-netid slug (`ysm-faculty-gcb27`) that
+ * names no person. Used to keep a lab member whose own profile was minted under the
+ * lab's name and URL ("Braddock Lab" on `ysm-faculty-hajime-kato`) from folding into
+ * the namesake's lab: the names agree but the slugs name different people.
+ */
+function slugPersonSurname(slug: string | undefined): string {
+  const match = (slug || '').toLowerCase().match(PERSON_SLUG_NAME);
+  if (!match) return '';
+  const parts = match[1].split('-');
+  return parts[parts.length - 1];
+}
+
+function sharedNameSurname(entities: ResearchEntityPiDedupeRow['entities']): string {
+  for (const entity of entities) {
+    const tokens = personLeadNameTokens(entity.name);
+    if (tokens.length > 0) return tokens[tokens.length - 1];
+  }
+  return '';
+}
+
+const specificProfileLabUrlCanonicalScore = (
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+): number =>
+  canonicalScore(entity) +
+  (entity.entityType === 'LAB' ? 40 : 0) +
+  (slugPersonSurname(entity.slug) === '' ? 15 : 0);
+
+/**
+ * `clusterEntitiesBySharedLeadPersonName` unions transitively, so a bare-surname
+ * node ("Smith Lab") can bridge two entities with explicit, conflicting first
+ * names ("John Smith Lab" and "Robert Smith Lab") into one cluster even though the
+ * two people never share a name directly. Merging that cluster would collapse two
+ * different people, so reject any cluster that still contains a first-name conflict
+ * after union-find: some pair shares the surname but carries disjoint, non-empty
+ * first-name sets.
+ */
+function clusterHasConflictingLeadFirstNames(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): boolean {
+  for (let i = 0; i < entities.length; i += 1) {
+    for (let j = i + 1; j < entities.length; j += 1) {
+      const tokensA = personLeadNameTokens(entities[i].name);
+      const tokensB = personLeadNameTokens(entities[j].name);
+      if (tokensA.length === 0 || tokensB.length === 0) continue;
+      if (tokensA[tokensA.length - 1] !== tokensB[tokensB.length - 1]) continue;
+      const firstNamesA = new Set(tokensA.slice(0, -1));
+      const firstNamesB = new Set(tokensB.slice(0, -1));
+      if (firstNamesA.size === 0 || firstNamesB.size === 0) continue;
+      let shareFirstName = false;
+      for (const token of firstNamesA) {
+        if (firstNamesB.has(token)) {
+          shareFirstName = true;
+          break;
+        }
+      }
+      if (!shareFirstName) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Clusters entities that share a specific per-entity Yale page - a `/lab/<x>` or
+ * `/profile/<x>` path - and folds them into one research home. The shared URL is a
+ * strong same-entity key (one lab per lab page, one person per profile page), but a
+ * URL match alone must not collapse two DIFFERENT people who happen to share a
+ * surname or co-cite a page, so the same `clusterEntitiesBySharedLeadPersonName`
+ * lead-name guard the websiteUrl lane uses still applies: "John Smith Lab" and
+ * "Jane Smith Lab" stay split. A concrete LAB is preferred as canonical so a
+ * FACULTY_RESEARCH_AREA facet on the same profile folds into the lab rather than the
+ * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA, GROUP} types (a CENTER
+ * or CORE_FACILITY the person merely belongs to) are excluded from this lane.
+ */
+export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
+  rows: OfficialLabUrlDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  const groups: ResearchEntityPiDedupeGroup[] = [];
+  for (const row of rows) {
+    const key = specificProfileLabUrlIdentityKey(row.url);
+    if (!key) continue;
+    const entities = row.entities.filter((entity) => entity.id);
+    if (entities.length <= 1) continue;
+    if (entities.some((entity) => isFundingShellSlug(entity.slug))) continue;
+    if (
+      !entities.every((entity) =>
+        SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES.has(entity.entityType || ''),
+      )
+    ) {
+      continue;
+    }
+    for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
+      if (clusterHasConflictingLeadFirstNames(cluster)) continue;
+      const identitySurname = sharedNameSurname(cluster);
+      const identityConsistent = cluster.filter((entity) => {
+        const personSurname = slugPersonSurname(entity.slug);
+        return !personSurname || personSurname === identitySurname;
+      });
+      if (identityConsistent.length <= 1) continue;
+      const group = buildGroupFromCluster(
+        {
+          userId: `profile-lab-url:${key}`,
+          normalizedName: `profile-lab-url:${key}`,
+          entities: identityConsistent,
+        },
+        identityConsistent,
+        specificProfileLabUrlCanonicalScore,
+      );
+      if (group) groups.push(group);
+    }
+  }
+  return dedupePlanGroupsByEntitySet(groups);
+}
+
 function personLeadNameTokens(name: string | undefined): string[] {
   return (name || '')
     .toLowerCase()
