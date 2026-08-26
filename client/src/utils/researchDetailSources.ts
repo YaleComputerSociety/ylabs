@@ -270,6 +270,48 @@ export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean =
   }
 };
 
+const PERSON_PROFILE_MIRROR_PATH =
+  /\/(profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
+
+export const officialProfileMirrorKey = (url?: string | null): string | null => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return null;
+  if (isIdentifierOrGrantDbSourceUrl(normalized)) return null;
+  if (isDirectoryRosterRootUrl(normalized)) return null;
+  if (isDepartmentRosterProvenanceUrl(normalized)) return null;
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    const match = parsed.pathname.replace(/\/+$/, '').match(PERSON_PROFILE_MIRROR_PATH);
+    if (!match) return null;
+    const profileType = match[1].toLowerCase();
+    const slug = match[2].toLowerCase();
+    if (NON_PERSON_PROFILE_LEAF.test(slug)) return null;
+    return `${host} ${profileType} ${slug}`;
+  } catch {
+    return null;
+  }
+};
+
+const sourceDedupeKey = (url?: string | null): string | null =>
+  officialProfileMirrorKey(url) || sourceLedgerKey(url);
+
+const pathSegmentCount = (url: string): number => {
+  try {
+    return new URL(url).pathname.split('/').filter(Boolean).length;
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+};
+
+const isMoreCanonicalSourceUrl = (candidate: string, current: string): boolean => {
+  const candidateIsHttps = candidate.startsWith('https://');
+  const currentIsHttps = current.startsWith('https://');
+  if (candidateIsHttps !== currentIsHttps) return candidateIsHttps;
+  return pathSegmentCount(candidate) < pathSegmentCount(current);
+};
+
 const ORG_ENGAGEMENT_PATH =
   /(^|[-/])(get[-_]?involved|join(?:[-_]us)?|involvement|participate|membership|become[-_]a[-_]member|connect|contact(?:[-_]us)?|volunteer|opportunities)([-/]|$)/i;
 
@@ -485,7 +527,7 @@ export const buildResearchDetailSources = ({
   const healthByKey = new Map<string, { healthStatus?: string; httpStatusCode?: number }>();
 
   sourceLinkHealth.forEach((entry) => {
-    const key = sourceLedgerKey(entry.url);
+    const key = sourceDedupeKey(entry.url);
     if (!key) return;
     healthByKey.set(key, {
       healthStatus: entry.healthStatus,
@@ -502,13 +544,13 @@ export const buildResearchDetailSources = ({
     if (isBoilerplatePlatformSourceUrl(normalized)) return;
     if (isRawDataApiSourceUrl(normalized)) return;
 
-    const key = sourceLedgerKey(normalized);
+    const key = sourceDedupeKey(normalized);
     if (!key) return;
 
     const existing = sources.get(key);
     if (existing) {
       if (!existing.contexts.includes(context)) existing.contexts.push(context);
-      if (existing.url.startsWith('http://') && normalized.startsWith('https://')) {
+      if (isMoreCanonicalSourceUrl(normalized, existing.url)) {
         existing.url = normalized;
       }
       return;
