@@ -295,7 +295,7 @@ const runUiSmoke = async () => {
       ['/research', 'student-research'],
       [researchPath, 'student-research-detail'],
       ['/programs', 'student-programs'],
-      ['/account', 'student-account'],
+      ['/dashboard', 'student-dashboard'],
     ];
     if (report.discovered.opportunityId) {
       studentRoutes.splice(2, 0, [
