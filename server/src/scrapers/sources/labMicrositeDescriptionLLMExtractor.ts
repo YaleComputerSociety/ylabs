@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -528,19 +528,13 @@ export function descriptionExtractionToObservations(
 }
 
 async function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
-  // SSRF guard: url is a DB-sourced lab websiteUrl — block private/metadata hosts and validate
-  // redirect hops at connect time.
-  const safeUrl = await assertPublicHttpUrl(url);
-  const safeUrlText = safeUrl.toString();
-  const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 10_000,
+  // SSRF guard, per-host rate limiting, and retry-on-403 live in fetchPageWithPolicy.
+  // It throws after retries are exhausted so the caller advances to the next candidate URL.
+  const page = await fetchPageWithPolicy(url, {
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
+    timeoutMs: 10_000,
   });
-  return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
+  return { url: page.url, html: page.html };
 }
 
 async function defaultCallLLM(input: {

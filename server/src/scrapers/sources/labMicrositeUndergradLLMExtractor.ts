@@ -29,7 +29,7 @@
  */
 import axios from 'axios';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
@@ -1159,28 +1159,14 @@ export interface FetchedPage {
 export type FetchPageFn = (url: string) => Promise<FetchedPage | null>;
 
 export const defaultFetchPage: FetchPageFn = async (url) => {
+  // SSRF guard, per-host rate limiting, and retry-on-403 live in fetchPageWithPolicy;
+  // preserve this path's null-on-failure contract by mapping any final error to null.
   try {
-    // SSRF guard: the URL is a DB-sourced lab websiteUrl. Reject private/metadata hosts before
-    // fetching, and use connect-time-validating agents so redirect hops can't reach internal IPs.
-    const safeUrl = await assertPublicHttpUrl(url);
-    const safeUrlText = safeUrl.toString();
-    const agents = ssrfSafeAgents();
-    const res = await axios.get(safeUrlText, {
-      timeout: FETCH_TIMEOUT_MS,
+    const page = await fetchPageWithPolicy(url, {
       headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
-      maxRedirects: 5,
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-      validateStatus: (s) => s >= 200 && s < 300,
-      responseType: 'text',
-      transitional: { clarifyTimeoutError: true } as any,
+      timeoutMs: FETCH_TIMEOUT_MS,
     });
-    const responseUrl =
-      typeof res.request?.res?.responseUrl === 'string' ? res.request.res.responseUrl : url;
-    return {
-      url: responseUrl,
-      html: typeof res.data === 'string' ? res.data : String(res.data ?? ''),
-    };
+    return { url: page.url, html: page.html };
   } catch {
     return null;
   }
