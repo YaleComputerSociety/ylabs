@@ -2662,48 +2662,6 @@ describe('Research page', () => {
   });
 });
 
-describe('Research landing saved-search new-match signal', () => {
-  const mockSavedSearchNewMatches = (savedSearches: Array<{ newMatchCount: number | null }>) => {
-    mockedAxios.get.mockReset();
-    mockedAxios.get.mockImplementation((url: string) =>
-      url === '/users/savedSearches'
-        ? Promise.resolve({ data: { savedSearches } })
-        : Promise.resolve({ data: { suggestions: [] } }),
-    );
-  };
-
-  it('shows the aggregate new-match count for a signed-in student and links to Saved Searches', async () => {
-    mockSavedSearchNewMatches([{ newMatchCount: 2 }, { newMatchCount: 3 }]);
-
-    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
-
-    const cta = await screen.findByRole('link', { name: '5 new matches for your saved searches' });
-    expect(cta).toHaveAttribute('href', '/account?tab=searches');
-  });
-
-  it('stays silent when the student has no new saved-search matches', async () => {
-    mockSavedSearchNewMatches([{ newMatchCount: 0 }]);
-
-    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
-
-    await waitFor(() =>
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedSearches', {
-        withCredentials: true,
-      }),
-    );
-    expect(screen.queryByText(/new matches for your saved searches/)).toBeNull();
-  });
-
-  it('stays silent for a guest, never fetching saved searches', async () => {
-    mockSavedSearchNewMatches([{ newMatchCount: 5 }]);
-
-    renderResearch(departments, ['/research']);
-
-    expect(screen.getByText(/browsing as a guest/i)).toBeTruthy();
-    expect(mockedAxios.get).not.toHaveBeenCalledWith('/users/savedSearches', expect.anything());
-  });
-});
-
 describe('Research landing watched-deadline urgency signal', () => {
   const inWindow = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
   const beyondWindow = new Date(Date.now() + 40 * 24 * 60 * 60 * 1000).toISOString();
@@ -2719,9 +2677,6 @@ describe('Research landing watched-deadline urgency signal', () => {
       }
       if (url === '/users/watchedProgramPlans') {
         return Promise.resolve({ data: { watchedProgramPlans } });
-      }
-      if (url === '/users/savedSearches') {
-        return Promise.resolve({ data: { savedSearches: [] } });
       }
       return Promise.resolve({ data: { suggestions: [] } });
     });
@@ -2741,7 +2696,7 @@ describe('Research landing watched-deadline urgency signal', () => {
     const cta = await screen.findByRole('link', {
       name: '1 watched program closes within 2 weeks, 1 not started',
     });
-    expect(cta).toHaveAttribute('href', '/account?tab=programs');
+    expect(cta).toHaveAttribute('href', '/dashboard?tab=programs');
   });
 
   it('stays silent when no watched deadline is approaching', async () => {
@@ -2876,56 +2831,4 @@ describe('Research zero-result recovery', () => {
     });
   });
 
-  it('lets a signed-in student save the current search from the browse loop', async () => {
-    const savedPayloads: Array<Record<string, unknown>> = [];
-    mockedAxios.post.mockImplementation((url: string, body: Record<string, unknown>) => {
-      if (url === '/analytics/research' || url === '/analytics/research/batch') {
-        return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
-      }
-      if (url === '/research/search') {
-        return Promise.resolve(researchSearchResponse([researchEntity], { estimatedTotalHits: 5 }));
-      }
-      if (url === '/users/savedSearches') {
-        savedPayloads.push(body);
-        return Promise.resolve({ data: { savedSearches: [] } });
-      }
-      return Promise.reject(unexpectedSearchEndpoint(url));
-    });
-
-    renderResearch(departments, ['/research?q=machine+learning'], {
-      netId: 'abc123',
-      userType: 'student',
-    });
-    await screen.findByRole('heading', { name: 'AI Safety Lab' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save this search' }));
-    fireEvent.change(screen.getByLabelText('Name this search (optional)'), {
-      target: { value: 'CS labs in ML' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save search' }));
-
-    await waitFor(() => expect(savedPayloads.length).toBe(1));
-    const payload = savedPayloads[0].data as { savedSearch: Record<string, unknown> };
-    expect(payload.savedSearch.label).toBe('CS labs in ML');
-    expect(payload.savedSearch.queryText).toBe('machine learning');
-    expect(String(payload.savedSearch.urlParams)).toContain('q=machine+learning');
-    expect(await screen.findByText(/Find it under Saved Searches/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View saved searches' })).toHaveAttribute(
-      'href',
-      '/account',
-    );
-  });
-
-  it('does not offer to save the search when signed out', async () => {
-    mockSearchResponses((url) =>
-      url === '/research/search'
-        ? researchSearchResponse([researchEntity], { estimatedTotalHits: 5 })
-        : unexpectedSearchEndpoint(url),
-    );
-
-    renderResearch(departments, ['/research?q=machine+learning']);
-    await screen.findByRole('heading', { name: 'AI Safety Lab' });
-
-    expect(screen.queryByRole('button', { name: 'Save this search' })).toBeNull();
-  });
 });

@@ -81,12 +81,12 @@ describe('Login', () => {
     ).toBeTruthy();
   });
 
-  it('keeps account context on the CAS gate', () => {
-    renderLogin('/account');
+  it('keeps dashboard context on the CAS gate', () => {
+    renderLogin('/dashboard');
 
-    expect(screen.getByRole('heading', { name: /continue to your account/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to your dashboard/i })).toBeTruthy();
     expect(
-      screen.getByText(/manage saved research plans, profile details, and program planning/i),
+      screen.getByText(/manage saved research plans and program planning/i),
     ).toBeTruthy();
   });
 

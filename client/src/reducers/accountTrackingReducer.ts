@@ -3,7 +3,7 @@
  *
  * Covers the kanban-style "where am I in the process" state for saved labs
  * and fellowships: stage per item, free-form notes per item, and which note
- * is currently being edited. Extracted from pages/account.tsx so the semantic
+ * is currently being edited. Extracted from pages/dashboard.tsx so the semantic
  * transitions (toggle emailed, clear stage, edit/cancel note) are testable.
  *
  * LocalStorage persistence and hydration stay in the page component — this

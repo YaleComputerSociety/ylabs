@@ -224,8 +224,8 @@ await step('a signed-in student saves the entity and it persists', async () => {
 });
 await screenshot('04-detail-saved');
 
-await step('the saved entity appears on the account dashboard', async () => {
-  await page.goto(`${baseUrl}/account`, { waitUntil: 'domcontentloaded' });
+await step('the saved entity appears on the dashboard', async () => {
+  await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded' });
   await settleResearchPage();
   await page.getByRole('tab', { name: /^Dashboard/ }).click();
   await page

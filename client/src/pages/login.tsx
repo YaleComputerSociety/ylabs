@@ -40,10 +40,10 @@ const Login = () => {
         description: 'Use your Yale account to view research interests, activity, and Yale Research context.',
       };
     }
-    if (returnPath.startsWith('/account')) {
+    if (returnPath.startsWith('/dashboard')) {
       return {
-        heading: 'Continue to Your Account',
-        description: 'Use your Yale account to manage saved research plans, profile details, and program planning.',
+        heading: 'Continue to Your Dashboard',
+        description: 'Use your Yale account to manage saved research plans and program planning.',
       };
     }
     if (returnPath.startsWith('/about')) {
@@ -60,7 +60,7 @@ const Login = () => {
 
   const getRedirectPath = () => {
     if (user?.userType === 'professor') {
-      return '/account';
+      return '/dashboard';
     }
     return '/';
   };

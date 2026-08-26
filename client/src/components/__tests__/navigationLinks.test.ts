@@ -12,7 +12,7 @@ describe('primaryNavLinks', () => {
     expect(primaryNavLinks.map((link) => link.to)).toEqual([
       '/research',
       '/programs',
-      '/account',
+      '/dashboard',
     ]);
     expect(primaryNavLinks.some((link) => link.label === 'Listings')).toBe(false);
     expect(primaryNavLinks.some((link) => link.label === 'Find Pathways')).toBe(false);

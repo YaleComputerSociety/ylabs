@@ -35,17 +35,6 @@ import {
   deleteWatchedProgramPlan as deleteWatchedProgramPlanService,
 } from '../services/researchPlanService';
 import {
-  listSavedSearches as listSavedSearchesService,
-  createSavedSearch as createSavedSearchService,
-  renameSavedSearch as renameSavedSearchService,
-  markSavedSearchViewed as markSavedSearchViewedService,
-  deleteSavedSearch as deleteSavedSearchService,
-} from '../services/savedSearchService';
-import {
-  getStudentResearchInterests as getStudentResearchInterestsService,
-  setStudentResearchInterests as setStudentResearchInterestsService,
-} from '../services/studentInterestProfileService';
-import {
   getSavedResearchFollowUps as getSavedResearchFollowUpsService,
   dismissSavedResearchFollowUp as dismissSavedResearchFollowUpService,
 } from '../services/studentFollowUpService';
@@ -631,37 +620,6 @@ export const updateSavedProgramTracking = async (request: Request, response: Res
   }
 };
 
-export const getResearchInterests = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    response.status(200).json(await getStudentResearchInterestsService(currentUser.netId));
-  } catch (error) {
-    console.error('Research interest fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch research interests');
-  }
-};
-
-export const updateResearchInterests = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    const payload = (request.body?.data ?? request.body ?? {}) as {
-      researchInterests?: unknown;
-      graduationYear?: unknown;
-      lookingFor?: unknown;
-    };
-    response.status(200).json(
-      await setStudentResearchInterestsService(currentUser.netId, {
-        researchInterests: payload.researchInterests,
-        graduationYear: payload.graduationYear,
-        lookingFor: payload.lookingFor,
-      }),
-    );
-  } catch (error) {
-    console.error('Research interest update failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to update research interests');
-  }
-};
-
 export const getSavedResearchEntityIds = async (request: Request, response: Response) => {
   try {
     const currentUser = request.user as { netId?: string };
@@ -902,72 +860,6 @@ export const deleteWatchedProgramPlan = async (request: Request, response: Respo
   }
 };
 
-export const getSavedSearches = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    setPrivateAccountResponseHeaders(response);
-    response.status(200).json({
-      savedSearches: await listSavedSearchesService(currentUser.netId),
-    });
-  } catch (error) {
-    console.error('Saved search fetch failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to fetch saved searches');
-  }
-};
-
-export const createSavedSearch = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    const input = request.body?.data?.savedSearch || request.body?.savedSearch || request.body || {};
-    const savedSearches = await createSavedSearchService(currentUser.netId, input);
-    setPrivateAccountResponseHeaders(response);
-    response.status(201).json({ savedSearches });
-  } catch (error) {
-    console.error('Saved search create failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to save search');
-  }
-};
-
-export const renameSavedSearch = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    const label = request.body?.data?.label ?? request.body?.label;
-    const savedSearches = await renameSavedSearchService(
-      currentUser.netId,
-      request.params.id,
-      label,
-    );
-    setPrivateAccountResponseHeaders(response);
-    response.status(200).json({ savedSearches });
-  } catch (error) {
-    console.error('Saved search rename failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to rename saved search');
-  }
-};
-
-export const markSavedSearchViewed = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    const savedSearches = await markSavedSearchViewedService(currentUser.netId, request.params.id);
-    setPrivateAccountResponseHeaders(response);
-    response.status(200).json({ savedSearches });
-  } catch (error) {
-    console.error('Saved search view mark failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to update saved search');
-  }
-};
-
-export const deleteSavedSearch = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string };
-    const savedSearches = await deleteSavedSearchService(currentUser.netId, request.params.id);
-    setPrivateAccountResponseHeaders(response);
-    response.status(200).json({ savedSearches });
-  } catch (error) {
-    console.error('Saved search delete failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to delete saved search');
-  }
-};
 
 export const exportSavedResearchEntities = async (request: Request, response: Response) => {
   try {

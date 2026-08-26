@@ -13,7 +13,7 @@ import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
 import Login from './pages/login';
 import About from './pages/about';
-import Account from './pages/account';
+import Dashboard from './pages/dashboard';
 import Profile from './pages/profile';
 import Unknown from './pages/unknown';
 import LoginError from './pages/loginError';
@@ -32,6 +32,7 @@ const Analytics = lazy(() => import('./pages/analytics'));
 const RetiredListingsRedirect = () => <Navigate to="/research" replace />;
 const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
 const RetiredPersonRedirect = () => <Navigate to="/research" replace />;
+const RetiredAccountRedirect = () => <Navigate to="/dashboard" replace />;
 
 const RouteFade = ({ children }: { children: ReactNode }) => {
   const { pathname } = useLocation();
@@ -105,7 +106,13 @@ const App = () => {
                       />
                       <Route
                         path="/account"
-                        element={<PrivateRoute Component={Account} unknownBlocked={true} />}
+                        element={
+                          <PrivateRoute Component={RetiredAccountRedirect} unknownBlocked={true} />
+                        }
+                      />
+                      <Route
+                        path="/dashboard"
+                        element={<PrivateRoute Component={Dashboard} unknownBlocked={true} />}
                       />
                       <Route
                         path="/profile/:netid"

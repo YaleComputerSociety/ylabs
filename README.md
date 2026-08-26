@@ -37,7 +37,7 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 
 - `/research`: Yale Research, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
 - `/programs`: Programs & Fellowships, the structured application and planning surface for open cycles, closing-soon deadlines, likely next cycles, center internships, fellowships, and recurring research programs.
-- `/account`: the private, read-only saved-planning workspace split into two surfaces: a Dashboard of saved research homes with notes and next steps, and a Program Watch of watched programs with deadlines, accepting status, and eligibility.
+- `/dashboard`: the private, read-only saved-planning workspace split into two surfaces: a Dashboard of saved research homes with notes and next steps, and a Program Watch of watched programs with deadlines, accepting status, and eligibility.
 - `/research/:slug`: research-home detail pages with source-backed evidence signals, a constant prompt to reach out and get involved, source-verified current team context when available, sources, and saved research-plan actions.
 
 The old Listings board and public Pathways page are retired. `/listings` redirects to `/research`; the standalone practical-routes and posted-opportunity URLs are gone and should resolve as not found; `/fellowships` redirects to `/programs`. New work should use `ResearchEntity`, `Signal`, and `ResearchEntityRelationship` concepts instead of recreating listing-style flows.
