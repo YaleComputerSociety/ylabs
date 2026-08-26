@@ -715,9 +715,9 @@ describe('isUnavailableResearchWebsiteCtaUrl (#934)', () => {
   });
 
   it('does not flag when there is no matching health entry or no health data', () => {
-    expect(
-      isUnavailableResearchWebsiteCtaUrl('https://example-lab.example.org/', health),
-    ).toBe(false);
+    expect(isUnavailableResearchWebsiteCtaUrl('https://example-lab.example.org/', health)).toBe(
+      false,
+    );
     expect(
       isUnavailableResearchWebsiteCtaUrl(
         'https://jackson.yale.edu/leitner-program-on-effective-democratic-governance/',
@@ -1108,12 +1108,12 @@ describe('officialProfileMirrorKey', () => {
   it('maps mirrored profiles of one person on a host to the same key', () => {
     const key = officialProfileMirrorKey('https://medicine.yale.edu/profile/zeynep-erson/');
     expect(key).not.toBeNull();
-    expect(officialProfileMirrorKey('https://medicine.yale.edu/lab/erson/profile/zeynep-erson/')).toBe(
-      key,
-    );
-    expect(officialProfileMirrorKey('https://www.medicine.yale.edu/cancer/profile/zeynep-erson')).toBe(
-      key,
-    );
+    expect(
+      officialProfileMirrorKey('https://medicine.yale.edu/lab/erson/profile/zeynep-erson/'),
+    ).toBe(key);
+    expect(
+      officialProfileMirrorKey('https://www.medicine.yale.edu/cancer/profile/zeynep-erson'),
+    ).toBe(key);
   });
 
   it('separates different people and roster or index leaves', () => {
