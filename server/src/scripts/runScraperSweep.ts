@@ -1,4 +1,4 @@
-import { spawnSync, type SpawnSyncReturns } from 'child_process';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -74,12 +74,23 @@ interface ScraperSweepModeConfig {
   stopOnFailure: boolean;
   scraperFlags: string[];
   confirmationFlag?: string;
+  defaultConcurrency: number;
 }
 
 export interface ScraperSweepCliOptions {
   mode: ScraperSweepMode;
   confirmations: Set<string>;
+  concurrency?: number;
 }
+
+export type ScraperSweepPhase = ScraperSweepSource['phase'];
+
+const LLM_PHASE_CONCURRENCY_CAP = 2;
+
+const PHASE_CONCURRENCY_CAPS: Partial<Record<ScraperSweepPhase, number>> = {
+  relationships: LLM_PHASE_CONCURRENCY_CAP,
+  'content-access': LLM_PHASE_CONCURRENCY_CAP,
+};
 
 export interface ScraperSweepRunRow {
   sourceName: string;
@@ -151,6 +162,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     autoMaterialize: false,
     stopOnFailure: false,
     scraperFlags: ['--limit', '100', '--use-cache', '--dry-run'],
+    defaultConcurrency: 4,
   },
   'development-sample': {
     environment: 'development',
@@ -159,6 +171,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     autoMaterialize: true,
     stopOnFailure: false,
     scraperFlags: ['--limit', '100', '--use-cache', '--auto-materialize'],
+    defaultConcurrency: 4,
   },
   'development-full': {
     environment: 'development',
@@ -168,6 +181,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     stopOnFailure: false,
     scraperFlags: ['--ignore-work-planner', '--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-development-full-sweep',
+    defaultConcurrency: 4,
   },
   'beta-plan': {
     environment: 'beta',
@@ -176,6 +190,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     autoMaterialize: false,
     stopOnFailure: true,
     scraperFlags: ['--limit', '100', '--dry-run'],
+    defaultConcurrency: 1,
   },
   'beta-fetch': {
     environment: 'beta',
@@ -185,18 +200,37 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     stopOnFailure: true,
     scraperFlags: ['--ignore-work-planner', '--exhaustive'],
     confirmationFlag: '--confirm-beta-release-candidate',
+    defaultConcurrency: 1,
   },
 };
 
 const SWEEP_MODE_VALUES = new Set(Object.keys(MODE_CONFIG));
 const LOCAL_MEILI_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
+function parseConcurrencyValue(raw: string): number {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`--concurrency requires a positive integer; received ${raw}`);
+  }
+  return value;
+}
+
 export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
   let mode: ScraperSweepMode | undefined;
+  let concurrency: number | undefined;
   const confirmations = new Set<string>();
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg.startsWith('--concurrency=')) {
+      concurrency = parseConcurrencyValue(arg.slice('--concurrency='.length));
+      continue;
+    }
+    if (arg === '--concurrency') {
+      concurrency = parseConcurrencyValue(argv[index + 1] ?? '');
+      index += 1;
+      continue;
+    }
     if (arg.startsWith('--mode=')) {
       const value = arg.slice('--mode='.length);
       if (!SWEEP_MODE_VALUES.has(value)) {
@@ -228,7 +262,49 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
   if (requiredConfirmation && !confirmations.has(requiredConfirmation)) {
     throw new Error(`${mode} requires ${requiredConfirmation}`);
   }
-  return { mode, confirmations };
+  return { mode, confirmations, ...(concurrency ? { concurrency } : {}) };
+}
+
+export function orderedScraperSweepPhases(
+  sources: ScraperSweepSource[] = SCRAPER_SWEEP_SOURCES,
+): ScraperSweepPhase[] {
+  const seen = new Set<ScraperSweepPhase>();
+  const phases: ScraperSweepPhase[] = [];
+  for (const source of sources) {
+    if (!seen.has(source.phase)) {
+      seen.add(source.phase);
+      phases.push(source.phase);
+    }
+  }
+  return phases;
+}
+
+export function resolvePhaseConcurrency(
+  mode: ScraperSweepMode,
+  phase: ScraperSweepPhase,
+  requested?: number,
+): number {
+  const base = requested ?? MODE_CONFIG[mode].defaultConcurrency;
+  const cap = PHASE_CONCURRENCY_CAPS[phase];
+  return Math.max(1, cap ? Math.min(base, cap) : base);
+}
+
+export async function runWithBoundedConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () =>
+    (async () => {
+      for (;;) {
+        const next = queue.shift();
+        if (next === undefined) return;
+        await worker(next);
+      }
+    })(),
+  );
+  await Promise.all(runners);
 }
 
 export function validateScraperSweepManifest(registeredNames: string[]): void {
@@ -417,15 +493,46 @@ export function defaultScraperSweepOutputDirectory(
   return path.join(os.tmpdir(), `ylabs-${mode}-sweep-${sweepTimestamp(date)}`);
 }
 
+export interface ScraperSweepChildResult {
+  status: number | null;
+  error?: Error;
+}
+
+interface ChildRunnerOptions {
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  logPath?: string;
+}
+
 type ChildRunner = (
   command: string,
   args: string[],
-  options: {
-    cwd: string;
-    env: NodeJS.ProcessEnv;
-    stdio: 'inherit';
-  },
-) => SpawnSyncReturns<Buffer>;
+  options: ChildRunnerOptions,
+) => Promise<ScraperSweepChildResult>;
+
+function spawnChild(
+  command: string,
+  args: string[],
+  options: ChildRunnerOptions,
+): Promise<ScraperSweepChildResult> {
+  return new Promise((resolve) => {
+    const logFd = options.logPath ? fs.openSync(options.logPath, 'a') : undefined;
+    let settled = false;
+    const finish = (result: ScraperSweepChildResult) => {
+      if (settled) return;
+      settled = true;
+      if (logFd !== undefined) fs.closeSync(logFd);
+      resolve(result);
+    };
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: logFd === undefined ? 'inherit' : ['ignore', logFd, logFd],
+    });
+    child.on('error', (error) => finish({ status: null, error }));
+    child.on('close', (code) => finish({ status: code }));
+  });
+}
 
 export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
   name: DevelopmentPostRunStage['name'];
@@ -498,18 +605,17 @@ export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
   ];
 }
 
-function runDevelopmentPostRunStages(
+async function runDevelopmentPostRunStages(
   outputDirectory: string,
   repoRoot: string,
   childRunner: ChildRunner,
-): ScraperSweepSummary['postRun'] {
+): Promise<ScraperSweepSummary['postRun']> {
   const stages: DevelopmentPostRunStage[] = [];
   for (const stage of buildDevelopmentPostRunStages(outputDirectory)) {
     console.log(`\n[post-run] ${stage.name}`);
-    const child = childRunner('yarn', stage.args, {
+    const child = await childRunner('yarn', stage.args, {
       cwd: repoRoot,
       env: process.env,
-      stdio: 'inherit',
     });
     const exitCode = child.status ?? 1;
     const error =
@@ -550,47 +656,52 @@ export async function runScraperSweep(
   const outputDirectory = defaultScraperSweepOutputDirectory(options.mode, startedAt);
   fs.mkdirSync(outputDirectory, { recursive: true });
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-  const childRunner = dependencies.childRunner || spawnSync;
-  const rows: ScraperSweepRunRow[] = [];
+  const childRunner = dependencies.childRunner || spawnChild;
+  const rows = new Array<ScraperSweepRunRow>(SCRAPER_SWEEP_SOURCES.length);
   let stopped = false;
 
-  for (const [index, source] of SCRAPER_SWEEP_SOURCES.entries()) {
-    const artifactPath = path.join(
-      outputDirectory,
-      `${String(index + 1).padStart(2, '0')}-${source.name}.json`,
-    );
-    if (stopped) {
-      rows.push({
-        sourceName: source.name,
-        phase: source.phase,
-        status: 'not-run',
-        artifactPath,
-      });
-      continue;
-    }
+  const artifactPathFor = (source: ScraperSweepSource, index: number): string =>
+    path.join(outputDirectory, `${String(index + 1).padStart(2, '0')}-${source.name}.json`);
 
-    console.log(`\n[${index + 1}/${SCRAPER_SWEEP_SOURCES.length}] ${source.phase}: ${source.name}`);
-    const child = childRunner(
+  const notRunRow = (source: ScraperSweepSource, index: number): ScraperSweepRunRow => ({
+    sourceName: source.name,
+    phase: source.phase,
+    status: 'not-run',
+    artifactPath: artifactPathFor(source, index),
+  });
+
+  const runSource = async (
+    source: ScraperSweepSource,
+    index: number,
+    phaseConcurrency: number,
+  ): Promise<void> => {
+    const artifactPath = artifactPathFor(source, index);
+    if (stopped) {
+      rows[index] = notRunRow(source, index);
+      return;
+    }
+    const logPath = phaseConcurrency > 1 ? `${artifactPath}.log` : undefined;
+    console.log(
+      `\n[${index + 1}/${SCRAPER_SWEEP_SOURCES.length}] ${source.phase}: ${source.name}` +
+        (logPath ? ` (logs -> ${logPath})` : ''),
+    );
+    const child = await childRunner(
       'yarn',
       buildScraperSweepChildArgs(options.mode, source.name, artifactPath),
-      {
-        cwd: repoRoot,
-        env: process.env,
-        stdio: 'inherit',
-      },
+      { cwd: repoRoot, env: process.env, logPath },
     );
     const exitCode = child.status ?? 1;
     if (child.error || exitCode !== 0 || !fs.existsSync(artifactPath)) {
-      rows.push({
+      rows[index] = {
         sourceName: source.name,
         phase: source.phase,
         status: 'failed',
         artifactPath,
         exitCode,
         error: sanitizeLogValue(child.error || `scraper exited with status ${exitCode}`),
-      });
+      };
       if (config.stopOnFailure) stopped = true;
-      continue;
+      return;
     }
 
     try {
@@ -607,24 +718,43 @@ export async function runScraperSweep(
       if (!artifactError && options.mode === 'beta-fetch' && artifact.runId) {
         row.betaRenderCommands = betaRenderCommands(source.name, artifact.runId);
       }
-      rows.push(row);
+      rows[index] = row;
       if (artifactError && config.stopOnFailure) stopped = true;
     } catch (error) {
-      rows.push({
+      rows[index] = {
         sourceName: source.name,
         phase: source.phase,
         status: 'failed',
         artifactPath,
         exitCode,
         error: sanitizeLogValue(error),
-      });
+      };
       if (config.stopOnFailure) stopped = true;
     }
+  };
+
+  const globalEntries = SCRAPER_SWEEP_SOURCES.map((source, index) => ({ source, index }));
+  for (const phase of orderedScraperSweepPhases()) {
+    const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
+    if (stopped) {
+      for (const { source, index } of phaseEntries) {
+        rows[index] = notRunRow(source, index);
+      }
+      continue;
+    }
+    const phaseConcurrency = resolvePhaseConcurrency(options.mode, phase, options.concurrency);
+    await runWithBoundedConcurrency(phaseEntries, phaseConcurrency, ({ source, index }) =>
+      runSource(source, index, phaseConcurrency),
+    );
+  }
+
+  for (const [index, source] of SCRAPER_SWEEP_SOURCES.entries()) {
+    if (!rows[index]) rows[index] = notRunRow(source, index);
   }
 
   const postRun =
     options.mode === 'development-full'
-      ? runDevelopmentPostRunStages(outputDirectory, repoRoot, childRunner)
+      ? await runDevelopmentPostRunStages(outputDirectory, repoRoot, childRunner)
       : undefined;
   const summary: ScraperSweepSummary = {
     mode: options.mode,
