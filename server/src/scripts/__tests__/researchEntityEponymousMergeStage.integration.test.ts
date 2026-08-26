@@ -110,7 +110,10 @@ describe('runEponymousFraLabMergeStage idempotency (DB-backed)', () => {
         labSlug: 'ysm-roe-lab',
       },
     ]);
-    expect(meiliMocks.deleteFromIndex).toHaveBeenCalledWith('researchEntity', shellId.toHexString());
+    expect(meiliMocks.deleteFromIndex).toHaveBeenCalledWith(
+      'researchEntity',
+      shellId.toHexString(),
+    );
 
     const afterFirst = await shellDoc();
     expect(afterFirst?.archived).toBe(true);

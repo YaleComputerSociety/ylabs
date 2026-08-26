@@ -28,7 +28,10 @@ const DEFAULT_SCOPE_LIMIT = 10000;
 const CONFIRM_FLAG = '--confirm-auto-merge-eponymous-fra';
 const SCRIPT_NAME = 'research-entity:merge-eponymous-fra';
 
-const FACULTY_RESEARCH_AREA_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'INDIVIDUAL_RESEARCH']);
+const FACULTY_RESEARCH_AREA_ENTITY_TYPES = new Set([
+  'FACULTY_RESEARCH_AREA',
+  'INDIVIDUAL_RESEARCH',
+]);
 
 type ScopeEntity = ResearchEntityPiDedupeRow['entities'][number];
 
@@ -164,8 +167,13 @@ export interface RunEponymousFraLabMergeStageOptions {
   maxMerges: number;
   sinceIso: string;
   limit?: number;
-  loadRows?: (options: { sinceIso: string; limit?: number }) => Promise<ResearchEntityPiDedupeRow[]>;
-  applyMergeGroup?: (group: { canonicalEntityId: string }) => Promise<{ canonicalEntityId?: string }>;
+  loadRows?: (options: {
+    sinceIso: string;
+    limit?: number;
+  }) => Promise<ResearchEntityPiDedupeRow[]>;
+  applyMergeGroup?: (group: {
+    canonicalEntityId: string;
+  }) => Promise<{ canonicalEntityId?: string }>;
 }
 
 export async function runEponymousFraLabMergeStage(

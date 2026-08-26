@@ -11,7 +11,11 @@ vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
     '../../services/meiliSyncService',
   );
-  return { ...actual, syncEntity: meiliMocks.syncEntity, deleteFromIndex: meiliMocks.deleteFromIndex };
+  return {
+    ...actual,
+    syncEntity: meiliMocks.syncEntity,
+    deleteFromIndex: meiliMocks.deleteFromIndex,
+  };
 });
 
 vi.mock('../../services/researchEntityBrowseRankService', async () => {
@@ -102,7 +106,10 @@ describe('materializeEntity does not resurrect a merged FRA shell', () => {
       kind: 'individual',
       archived: true,
     });
-    await seedNameObservation('faculty-research-area-departed-scholar', 'Departed Scholar Research');
+    await seedNameObservation(
+      'faculty-research-area-departed-scholar',
+      'Departed Scholar Research',
+    );
 
     const result = await materializeEntity('researchEntity', {
       entityKey: 'faculty-research-area-departed-scholar',
