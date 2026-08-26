@@ -60,7 +60,7 @@ Future work must not reintroduce a person page or cite a researcher-profile read
 Yale Research is a discovery product, so its top-of-funnel pages are readable without a Yale CAS login rather than gated behind it.
 A logged-out visitor can browse and search `/research`, open any public `/research/:slug`, and read `/about`, seeing only the public student-visibility tiers already served to authenticated students.
 Anonymous requests carry no authenticated principal, so the read controllers grant no operator authority and apply no personalization; logged-out browsing always uses the global Recommended order and never exposes non-public tiers or operator/admin fields.
-Every write and account surface stays behind auth: saved plans, private notes, compare, outreach tracking and drafting, interest personalization, program watch, profiles, analytics, admin, and the seed routes.
+Every write and account surface stays behind auth: saved plans, private notes, compare, outreach tracking and drafting, program watch, profiles, analytics, admin, and the seed routes.
 On the public surfaces, save and outreach affordances are replaced with a Yale CAS login call to action, and journey analytics stays off for guests.
 The read endpoints keep the existing global rate limit and unchanged SSRF, CORS, and CSRF posture.
 This resolves the `Decide logged-out discovery` roadmap P0 in favor of public read-only discovery; the alternative of staying Yale-only was rejected because gating the entire corpus behind login is the largest limitation at the top of the discovery funnel.
