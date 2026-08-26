@@ -930,4 +930,3 @@ export const getFilterOptions = async () => {
     subjects: PROGRAM_TOPIC_TAXONOMY.map((topic) => topic.subject),
   };
 };
-

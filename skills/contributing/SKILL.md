@@ -19,7 +19,7 @@ The server follows a layered architecture: **Routes -> Middleware -> Controllers
 
 Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated`, `isAdmin`, `isProfessor` (professor/faculty/admin), `isTrustworthy`, and `isConfirmed`.
 
-Validation middleware: `validateObjectId(paramName?)`, `validateNetid(paramName?)`, `requireBody()`, `requireFields(fields[])`, `validatePagination()`, `validateSort(allowedFields[])`, `validateQuery(allowedParams[])`.
+Validation middleware: `validateObjectId(paramName?)`, `validateNetid(paramName?)`, `requireFields(fields[])`, `validatePagination()`, `validateQuery(allowedParams[])`.
 
 The `asyncHandler` wrapper catches promise rejections in route handlers.
 
