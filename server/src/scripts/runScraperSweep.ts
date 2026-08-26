@@ -449,7 +449,7 @@ export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
     stage(
       'faculty-projection',
       'research-entity:project-faculty',
-      ['--apply', '--confirm-faculty-projection'],
+      ['--apply', '--confirm-faculty-projection', '--concurrency', '12'],
       'development-faculty-projection.json',
     ),
     stage(

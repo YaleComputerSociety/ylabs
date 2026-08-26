@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildFacultyMemberIdentity,
+  clampProjectionConcurrency,
+  DEFAULT_PROJECTION_CONCURRENCY,
   emptyFacultyProjectionSummary,
+  forEachWithConcurrency,
+  MAX_PROJECTION_CONCURRENCY,
   projectSingleFacultyIdentity,
   type FacultyProjectionDeps,
 } from '../facultyResearcherProjection';
+
+async function* asyncRange(count: number): AsyncGenerator<number> {
+  for (let i = 0; i < count; i += 1) yield i;
+}
+
+const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const makeDeps = (overrides: Partial<FacultyProjectionDeps> = {}): FacultyProjectionDeps => ({
   isOrganizationalMailbox: () => false,
@@ -102,5 +112,56 @@ describe('projectSingleFacultyIdentity', () => {
     );
     expect(summary.alreadyLinked).toBe(1);
     expect(summary.created).toBe(0);
+  });
+});
+
+describe('clampProjectionConcurrency', () => {
+  it('falls back to the default for missing or invalid values', () => {
+    expect(clampProjectionConcurrency(undefined)).toBe(DEFAULT_PROJECTION_CONCURRENCY);
+    expect(clampProjectionConcurrency(0)).toBe(DEFAULT_PROJECTION_CONCURRENCY);
+    expect(clampProjectionConcurrency(-5)).toBe(DEFAULT_PROJECTION_CONCURRENCY);
+    expect(clampProjectionConcurrency(Number.NaN)).toBe(DEFAULT_PROJECTION_CONCURRENCY);
+  });
+
+  it('floors fractional values and caps at the maximum', () => {
+    expect(clampProjectionConcurrency(4.9)).toBe(4);
+    expect(clampProjectionConcurrency(MAX_PROJECTION_CONCURRENCY + 100)).toBe(
+      MAX_PROJECTION_CONCURRENCY,
+    );
+  });
+});
+
+describe('forEachWithConcurrency', () => {
+  it('processes every item exactly once', async () => {
+    const seen: number[] = [];
+    await forEachWithConcurrency(asyncRange(50), 8, async (item) => {
+      await nextTick();
+      seen.push(item);
+    });
+    expect(seen.sort((a, b) => a - b)).toEqual(Array.from({ length: 50 }, (_, i) => i));
+  });
+
+  it('never exceeds the concurrency limit in flight', async () => {
+    let active = 0;
+    let peak = 0;
+    await forEachWithConcurrency(asyncRange(50), 8, async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await nextTick();
+      active -= 1;
+    });
+    expect(peak).toBe(8);
+  });
+
+  it('runs fewer than the limit when there are fewer items', async () => {
+    let peak = 0;
+    let active = 0;
+    await forEachWithConcurrency(asyncRange(3), 8, async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await nextTick();
+      active -= 1;
+    });
+    expect(peak).toBe(3);
   });
 });

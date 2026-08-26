@@ -18,15 +18,16 @@ export interface FacultyProjectionCliOptions {
   dryRun: boolean;
   confirm: boolean;
   limit?: number;
+  concurrency?: number;
   output?: string;
 }
 
-function parsePositiveInt(value: string | undefined): number {
+function parsePositiveInt(value: string | undefined, flag: string): number {
   if (!value || value.startsWith('--') || !/^[1-9]\d*$/.test(value)) {
-    throw new Error('--limit must be a positive integer');
+    throw new Error(`${flag} must be a positive integer`);
   }
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) throw new Error('--limit must be a positive integer');
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${flag} must be a positive integer`);
   return parsed;
 }
 
@@ -39,9 +40,14 @@ export function parseFacultyProjectionArgs(argv: string[]): FacultyProjectionCli
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-faculty-projection') options.confirm = true;
     else if (arg.startsWith('--limit='))
-      options.limit = parsePositiveInt(arg.slice('--limit='.length));
+      options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
     else if (arg === '--limit') {
-      options.limit = parsePositiveInt(argv[i + 1]);
+      options.limit = parsePositiveInt(argv[i + 1], '--limit');
+      i += 1;
+    } else if (arg.startsWith('--concurrency='))
+      options.concurrency = parsePositiveInt(arg.slice('--concurrency='.length), '--concurrency');
+    else if (arg === '--concurrency') {
+      options.concurrency = parsePositiveInt(argv[i + 1], '--concurrency');
       i += 1;
     } else if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
@@ -82,12 +88,13 @@ async function main(): Promise<void> {
     const result = await projectActiveFacultyToResearchModel({
       dryRun: options.dryRun,
       limit: options.limit,
+      concurrency: options.concurrency,
     });
     const payload = {
       generatedAt: new Date().toISOString(),
       environment: guard.environment,
       db: guard.dbLabel,
-      options: { dryRun: options.dryRun, limit: options.limit },
+      options: { dryRun: options.dryRun, limit: options.limit, concurrency: options.concurrency },
       result,
     };
     if (options.output) {

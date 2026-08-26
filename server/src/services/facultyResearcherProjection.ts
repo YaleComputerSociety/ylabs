@@ -95,11 +95,40 @@ const defaultProjectionDeps: FacultyProjectionDeps = {
   resolveOrCreate: resolveOrCreateResearcherIdForIdentity,
 };
 
+export const DEFAULT_PROJECTION_CONCURRENCY = 10;
+export const MAX_PROJECTION_CONCURRENCY = 32;
+
+export function clampProjectionConcurrency(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
+    return DEFAULT_PROJECTION_CONCURRENCY;
+  }
+  return Math.min(Math.floor(value), MAX_PROJECTION_CONCURRENCY);
+}
+
+export async function forEachWithConcurrency<T>(
+  source: AsyncIterable<T>,
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  const inFlight = new Set<Promise<void>>();
+  for await (const item of source) {
+    const task = worker(item).finally(() => {
+      inFlight.delete(task);
+    });
+    inFlight.add(task);
+    if (inFlight.size >= limit) {
+      await Promise.race(inFlight);
+    }
+  }
+  await Promise.all(inFlight);
+}
+
 export async function projectActiveFacultyToResearchModel(
-  options: { dryRun: boolean; limit?: number },
+  options: { dryRun: boolean; limit?: number; concurrency?: number },
   deps: FacultyProjectionDeps = defaultProjectionDeps,
 ): Promise<FacultyProjectionSummary> {
   const summary = emptyFacultyProjectionSummary(options.dryRun);
+  const concurrency = clampProjectionConcurrency(options.concurrency);
   const query = User.find(ACTIVE_FACULTY_PROJECTION_FILTER, {
     netid: 1,
     email: 1,
@@ -110,7 +139,7 @@ export async function projectActiveFacultyToResearchModel(
   if (options.limit) query.limit(options.limit);
 
   const cursor = query.lean().cursor();
-  for await (const user of cursor) {
+  await forEachWithConcurrency(cursor, concurrency, async (user) => {
     summary.scanned += 1;
     const identity = buildFacultyMemberIdentity(user as FacultyUserIdentityInput);
     try {
@@ -119,6 +148,6 @@ export async function projectActiveFacultyToResearchModel(
       summary.errors += 1;
       console.error('faculty new-model projection failed:', sanitizeLogValue(error));
     }
-  }
+  });
   return summary;
 }

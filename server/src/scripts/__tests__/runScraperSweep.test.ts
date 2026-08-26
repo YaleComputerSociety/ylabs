@@ -122,7 +122,7 @@ describe('runScraperSweep', () => {
       true,
     );
     expect(stages.find((stage) => stage.name === 'faculty-projection')?.args).toEqual(
-      expect.arrayContaining(['--apply', '--confirm-faculty-projection']),
+      expect.arrayContaining(['--apply', '--confirm-faculty-projection', '--concurrency', '12']),
     );
     expect(stages.find((stage) => stage.name === 'data-quality')?.args).toEqual(
       expect.arrayContaining(['--strict', '--include-samples', '--progress']),
