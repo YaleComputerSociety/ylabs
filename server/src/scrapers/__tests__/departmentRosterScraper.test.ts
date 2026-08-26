@@ -1789,8 +1789,8 @@ describe('DepartmentRosterScraper.run', () => {
     });
     expect(configsByKey.get('global-affairs')).toMatchObject({
       deptName: 'Global Affairs',
-      url: 'https://jackson.yale.edu/about/meet-us/faculty/lecturers/',
-      extractor: jacksonPersonCardExtractor,
+      url: 'https://jackson.yale.edu/faculty-research/lecturers-visiting-faculty',
+      extractor: jacksonProfileComponentExtractor,
       emitPersonalResearchEntities: false,
     });
     expect(configsByKey.get('tdps')).toMatchObject({
@@ -1805,6 +1805,11 @@ describe('DepartmentRosterScraper.run', () => {
       extractor: fieldCollectionPersonExtractor,
       officialProfileOnly: true,
       affiliatesOnly: true,
+    });
+    expect(configsByKey.get('physics')).toMatchObject({
+      deptName: 'Physics',
+      url: 'https://physics.yale.edu/people/faculty',
+      extractor: mcdbExtractor,
     });
   });
 
