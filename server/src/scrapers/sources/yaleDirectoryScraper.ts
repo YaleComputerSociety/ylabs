@@ -2,10 +2,9 @@
  * YaleDirectoryScraper
  *
  * Maintains the User collection (faculty roster) by paginating Yale faculty/staff
- * records from the Yalies API (https://api.yalies.io/v2/people). The legacy bootstrap
- * (`scripts/importFaculty.ts`) reads a static enriched JSON file once; this scraper
- * is the live equivalent — it can be re-run on a cadence so that new appointments,
- * title changes, and email/phone updates flow through the observation pipeline.
+ * records from the Yalies API (https://api.yalies.io/v2/people). It can be re-run on a
+ * cadence so that new appointments, title changes, and email/phone updates flow through
+ * the observation pipeline.
  *
  * Source choice: the public web directory at https://directory.yale.edu sits behind a
  * search UI (autocomplete + login wall for full records), so it is not a viable bulk

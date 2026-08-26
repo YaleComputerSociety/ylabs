@@ -39,7 +39,6 @@ data-migration/tmp/
 
 # Existing raw/scraper workspaces and generated source snapshots
 web-scraper/
-yale-faculty-enricher/
 faculty_data.json
 yale_*_faculty*.json
 yale_*_people*.json

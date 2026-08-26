@@ -130,7 +130,6 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
     '../server/src/scripts/promoteAcceptedBetaCopy.ts',
     '../server/src/scripts/staleObservationConflictReview.ts',
     '../server/src/scripts/duplicateEntityNameReview.ts',
-    '../server/src/scripts/importFaculty.ts',
     '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
     '../server/src/scripts/pfr3StudentOutreachReport.ts',
   ];
@@ -2718,26 +2717,6 @@ test('audit planning and source seed artifacts are constrained to safe JSON root
   }
 });
 
-test('faculty import input JSON is constrained before database import reads', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/importFaculty.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import os from 'os'/);
-  assert.match(source, /MAX_FACULTY_IMPORT_JSON_BYTES = 25 \* 1024 \* 1024/);
-  assert.match(source, /function resolveSafeFacultyImportJsonPath\(value: string\): string/);
-  assert.match(source, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
-  assert.match(source, /const repoRoot = path\.resolve\(__dirname, '\.\.\/\.\.\/\.\.'\)/);
-  assert.match(source, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
-  assert.match(source, /const projectTmpRoot = path\.resolve\(repoRoot, 'tmp'\)/);
-  assert.match(source, /fs\.existsSync\(resolved\)/);
-  assert.match(source, /stat\.size > MAX_FACULTY_IMPORT_JSON_BYTES/);
-  assert.match(source, /const jsonPath = resolveSafeFacultyImportJsonPath\(rawJsonPath\)/);
-  assert.match(source, /fs\.readFileSync\(jsonPath, 'utf-8'\)/);
-  assert.doesNotMatch(source, /JSON\.parse\(fs\.readFileSync\(process\.argv\[2\]/);
-});
-
 test('accepted-input CSV and TXT command artifacts stay under safe roots', () => {
   const cliSource = fs.readFileSync(
     new URL('../server/src/scripts/acceptedInputs.ts', import.meta.url),
@@ -4802,7 +4781,7 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/scraperIntegrityGate.ts',
     '../server/src/scripts/claimGate.ts',
     '../server/src/scripts/cleanDepartments.ts',
-    '../server/src/scripts/importFaculty.ts',
+    '../server/src/scripts/projectActiveFacultyToResearchModel.ts',
     '../server/src/scripts/migrateMongoNaming.ts',
     '../server/src/scripts/betaSeedEnvironment.ts',
     '../server/src/scripts/backfillResearchHomeOfficialUrls.ts',
