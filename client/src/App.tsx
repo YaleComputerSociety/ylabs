@@ -63,70 +63,73 @@ const App = () => {
                 <HttpStatusNotifier />
                 <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
                   <RouteFade>
-                  <Routes>
-                    <Route
-                      path="/"
-                      element={<PublicRoute Component={RootRedirect} unknownBlocked={true} />}
-                    />
-                    <Route
-                      path="/listings"
-                      element={
-                        <PrivateRoute Component={RetiredListingsRedirect} unknownBlocked={true} />
-                      }
-                    />
-                    <Route
-                      path="/fellowships"
-                      element={
-                        <PrivateRoute
-                          Component={RetiredFellowshipsRedirect}
-                          unknownBlocked={true}
-                        />
-                      }
-                    />
-                    <Route
-                      path="/programs"
-                      element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
-                    />
-                    <Route
-                      path="/research"
-                      element={<PublicRoute Component={Research} unknownBlocked={true} />}
-                    />
-                    <Route path="/research/person/:publicKey" element={<RetiredPersonRedirect />} />
-                    <Route
-                      path="/research/:slug"
-                      element={<PublicRoute Component={ResearchDetail} unknownBlocked={true} />}
-                    />
-                    <Route
-                      path="/about"
-                      element={<PublicRoute Component={About} unknownBlocked={true} />}
-                    />
-                    <Route
-                      path="/account"
-                      element={<PrivateRoute Component={Account} unknownBlocked={true} />}
-                    />
-                    <Route
-                      path="/profile/:netid"
-                      element={<PrivateRoute Component={Profile} unknownBlocked={true} />}
-                    />
-                    <Route
-                      path="/analytics"
-                      element={
-                        <Suspense fallback={<LoadingSpinner size="lg" />}>
-                          <AdminRoute Component={Analytics} />
-                        </Suspense>
-                      }
-                    />
-                    <Route path="/login" element={<Login />} />
-                    <Route
-                      path="/login-error"
-                      element={<UnprivateRoute Component={LoginError} />}
-                    />
-                    <Route
-                      path="/unknown"
-                      element={<PrivateRoute Component={Unknown} knownBlocked={true} />}
-                    />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
+                    <Routes>
+                      <Route
+                        path="/"
+                        element={<PublicRoute Component={RootRedirect} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/listings"
+                        element={
+                          <PrivateRoute Component={RetiredListingsRedirect} unknownBlocked={true} />
+                        }
+                      />
+                      <Route
+                        path="/fellowships"
+                        element={
+                          <PrivateRoute
+                            Component={RetiredFellowshipsRedirect}
+                            unknownBlocked={true}
+                          />
+                        }
+                      />
+                      <Route
+                        path="/programs"
+                        element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/research"
+                        element={<PublicRoute Component={Research} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/research/person/:publicKey"
+                        element={<RetiredPersonRedirect />}
+                      />
+                      <Route
+                        path="/research/:slug"
+                        element={<PublicRoute Component={ResearchDetail} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/about"
+                        element={<PublicRoute Component={About} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/account"
+                        element={<PrivateRoute Component={Account} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/profile/:netid"
+                        element={<PrivateRoute Component={Profile} unknownBlocked={true} />}
+                      />
+                      <Route
+                        path="/analytics"
+                        element={
+                          <Suspense fallback={<LoadingSpinner size="lg" />}>
+                            <AdminRoute Component={Analytics} />
+                          </Suspense>
+                        }
+                      />
+                      <Route path="/login" element={<Login />} />
+                      <Route
+                        path="/login-error"
+                        element={<UnprivateRoute Component={LoginError} />}
+                      />
+                      <Route
+                        path="/unknown"
+                        element={<PrivateRoute Component={Unknown} knownBlocked={true} />}
+                      />
+                      <Route path="*" element={<NotFound />} />
+                    </Routes>
                   </RouteFade>
                 </main>
                 <Footer />
