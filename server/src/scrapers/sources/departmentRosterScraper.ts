@@ -2073,6 +2073,100 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: profileGridItemExtractor,
     officialProfileOnly: true,
   },
+  {
+    deptKey: 'applied-mathematics',
+    deptName: 'Applied Mathematics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://applied.math.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsTableRowExtractor,
+  },
+  {
+    deptKey: 'history-science-medicine-public-health',
+    deptName: 'History of Science, Medicine & Public Health',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://hshm.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsTableRowExtractor,
+  },
+  {
+    deptKey: 'judaic-studies',
+    deptName: 'Judaic Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://judaicstudies.yale.edu/people',
+    paginated: false,
+    extractor: mcdbExtractor,
+  },
+  {
+    deptKey: 'council-east-asian-studies',
+    deptName: 'Council on East Asian Studies',
+    schoolName: 'MacMillan Center for International and Area Studies at Yale',
+    url: 'https://macmillan.yale.edu/eastasia/people',
+    paginated: false,
+    extractor: econExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'south-asian-studies-council',
+    deptName: 'South Asian Studies Council',
+    schoolName: 'MacMillan Center for International and Area Studies at Yale',
+    url: 'https://macmillan.yale.edu/southasia/people?person_type=80&departments_target_id=All&academic_year_id=All',
+    paginated: false,
+    extractor: econExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'ysph-climate-change-and-health',
+    deptName: 'Climate Change and Health',
+    schoolName: 'Yale School of Public Health',
+    url: 'https://ysph.yale.edu/school-of-public-health-faculty/climate-change-and-health-concentration/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'ysph-implementation-science',
+    deptName: 'Implementation Science',
+    schoolName: 'Yale School of Public Health',
+    url: 'https://ysph.yale.edu/school-of-public-health-faculty/implementation-science-concentration/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'ysph-maternal-child-health-promotion',
+    deptName: 'Maternal and Child Health Promotion',
+    schoolName: 'Yale School of Public Health',
+    url: 'https://ysph.yale.edu/school-of-public-health-faculty/maternal-child-health-promotion-track/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'ysph-public-health-modeling',
+    deptName: 'Public Health Modeling',
+    schoolName: 'Yale School of Public Health',
+    url: 'https://ysph.yale.edu/school-of-public-health-faculty/public-health-modeling/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'ysph-us-health-justice',
+    deptName: 'U.S. Health Justice',
+    schoolName: 'Yale School of Public Health',
+    url: 'https://ysph.yale.edu/school-of-public-health-faculty/us-health-justice-concentration/',
+    paginated: false,
+    extractor: profileGridItemExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -3010,7 +3104,7 @@ export class DepartmentRosterScraper implements IScraper {
         deptCount += processed.faculty;
 
         ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} rendered page(s)`);
-        perDept.push({ deptKey: dept.deptKey, count: deptCount, status: 'ok' });
+        perDept.push({ deptKey: dept.deptKey, count: deptCount, status: deptCount === 0 ? 'empty' : 'ok' });
         continue;
       }
 
@@ -3049,7 +3143,7 @@ export class DepartmentRosterScraper implements IScraper {
       }
 
       ctx.log(`[${dept.deptKey}] ${deptCount} faculty across ${pagesFetched} page(s)`);
-      perDept.push({ deptKey: dept.deptKey, count: deptCount, status: 'ok' });
+      perDept.push({ deptKey: dept.deptKey, count: deptCount, status: deptCount === 0 ? 'empty' : 'ok' });
     }
 
     const summary = perDept
@@ -3058,6 +3152,16 @@ export class DepartmentRosterScraper implements IScraper {
     ctx.log(
       `Emitted ${totalObs} observations across ${totalFaculty} faculty / ${totalLabs} labs (${summary})`,
     );
+
+    const breakageStatuses = new Set(['empty', 'rendered-extractor-error']);
+    const brokenSources = perDept.filter((d) => breakageStatuses.has(d.status));
+    if (brokenSources.length > 0) {
+      ctx.log(
+        `WARNING: ${brokenSources.length} configured roster source(s) fetched but yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
+          .map((d) => `${d.deptKey}(${d.status})`)
+          .join(', ')}`,
+      );
+    }
 
     return {
       observationCount: totalObs,
