@@ -193,6 +193,7 @@ export async function runEponymousFraLabMergeStage(
         applyResearchEntityDedupeMergeGroup(group as any, {
           deleteDuplicates: false,
           relinkReferences: true,
+          redirectReason: 'eponymous_fra_lab_merge',
         }));
     const result = await applyResearchEntityMergeGroupsWithCanonicalResync(cappedGroups, {
       applyMergeGroup,

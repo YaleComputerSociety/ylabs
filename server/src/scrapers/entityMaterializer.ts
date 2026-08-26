@@ -43,6 +43,7 @@ import {
   ResolvedField,
 } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
+import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -204,7 +205,9 @@ export async function resolveMaterializedShortDescription(
   input: MaterializedShortDescriptionInput,
 ): Promise<string | null> {
   if (input.manuallyLocked) return null;
-  const shortQuality = input.isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
+  const shortQuality = input.isProgramLike
+    ? programCardShortDescriptionQuality
+    : shortDescriptionQuality;
   const current =
     typeof input.currentShortDescription === 'string' ? input.currentShortDescription.trim() : '';
   const isBareResearchAreasFallback =
@@ -391,10 +394,7 @@ async function applyDescriptionResearchAreaDerivation(
   entityDoc: Record<string, unknown> | null,
 ): Promise<void> {
   const entityType = set.entityType ?? entityDoc?.entityType;
-  if (
-    typeof entityType !== 'string' ||
-    !DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)
-  ) {
+  if (typeof entityType !== 'string' || !DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)) {
     return;
   }
   if (hasNonEmptyStringArray(set.researchAreas, entityDoc?.researchAreas)) return;
@@ -670,7 +670,10 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       !isBoilerplatePlatformHostUrl(url),
   );
   if (!entityIdentity) return kept;
-  const entityForMatch: ResearchEntityIdentity = { ...entityIdentity, sourceUrls: kept as string[] };
+  const entityForMatch: ResearchEntityIdentity = {
+    ...entityIdentity,
+    sourceUrls: kept as string[],
+  };
   return kept.filter((url) => personProfileSourceMatchesEntity(url, entityForMatch));
 }
 
@@ -2621,6 +2624,24 @@ export async function materializeEntity(
   entityDoc = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
   if (entityDoc) entityIdString = String(entityDoc._id);
 
+  // A durable merge redirect (issue #1957, PR 3) supersedes the shell-bound
+  // canonicalGroupId tombstone below: it resolves the merged source's stable
+  // identifiers (slug and original id) straight to the live canonical entity and
+  // materializes the observations INTO it, whether or not the shell row still
+  // exists. This keeps a re-scrape from re-minting the shell even after the shell
+  // has been deleted (PR 4), while the tombstone guard still covers pre-redirect
+  // merges whose shells are only archived.
+  if (isResearchEntityObservationType(entityType)) {
+    const redirectCanonical = await resolveResearchEntityMergeRedirectCanonical({
+      slug: identifier.entityKey || textValue(entityDoc?.slug) || undefined,
+      entityId: identifier.entityId || (entityDoc?._id ? String(entityDoc._id) : undefined),
+    });
+    if (redirectCanonical) {
+      entityDoc = redirectCanonical;
+      entityIdString = String(redirectCanonical._id);
+    }
+  }
+
   // A research entity archived into a canonical survivor by the eponymous FRA->lab
   // merge (issue #1957) carries a canonicalGroupId tombstone and was removed from
   // Meilisearch. findEntityDocByIdentifier resolves by slug without an archived
@@ -2711,7 +2732,11 @@ export async function materializeEntity(
         const candidate = resolved[shellGatedField];
         if (
           candidate &&
-          resolvedFieldSourcedOnlyFromPersonProfilePages(shellGatedField, candidate, materializationObs)
+          resolvedFieldSourcedOnlyFromPersonProfilePages(
+            shellGatedField,
+            candidate,
+            materializationObs,
+          )
         ) {
           delete resolved[shellGatedField];
           if (shellGatedField === 'fullDescription') fullDescriptionShellGated = true;
@@ -2789,7 +2814,10 @@ export async function materializeEntity(
       const winnerFullUseful =
         !!winnerFull &&
         fullDescriptionQuality(winnerFull).isUseful &&
-        !isFullDescriptionRestatementOfShortDescription(winnerFull, currentShortForFullDistinctness);
+        !isFullDescriptionRestatementOfShortDescription(
+          winnerFull,
+          currentShortForFullDistinctness,
+        );
       if (!winnerFullUseful) {
         const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
           manuallyLockedFields,
@@ -2831,7 +2859,10 @@ export async function materializeEntity(
       const finalFullText = textValue(set.fullDescription);
       if (
         finalFullText &&
-        isFullDescriptionRestatementOfShortDescription(finalFullText, currentShortForFullDistinctness)
+        isFullDescriptionRestatementOfShortDescription(
+          finalFullText,
+          currentShortForFullDistinctness,
+        )
       ) {
         set.fullDescription = '';
         fieldsWritten++;
@@ -2856,7 +2887,7 @@ export async function materializeEntity(
       // fixed full (issue #1595).
       currentShortDescription: fullDescriptionShellGated
         ? undefined
-        : set.shortDescription ?? entityDoc?.shortDescription,
+        : (set.shortDescription ?? entityDoc?.shortDescription),
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeEntity,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
@@ -2909,7 +2940,10 @@ export async function materializeEntity(
     ].filter((url): url is string => typeof url === 'string');
     await applyDescriptionResearchAreaDerivation(set, entityDoc);
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc, orgUnitProfileUrls);
-    await applyResearchEntityResearchAreaCanonicalization(set, set.departments ?? entityDoc?.departments);
+    await applyResearchEntityResearchAreaCanonicalization(
+      set,
+      set.departments ?? entityDoc?.departments,
+    );
     if (!manuallyLockedFields.includes('websiteUrl')) {
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
       if (websiteResolution.action === 'set') {

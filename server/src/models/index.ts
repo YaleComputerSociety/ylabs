@@ -24,6 +24,7 @@ export { Grant } from './grant';
 export { ResearchScholarlyLink } from './researchScholarlyLink';
 export { ResearchScholarlyAttribution } from './researchScholarlyAttribution';
 export { ResearchEntity } from './researchEntity';
+export { ResearchEntityRedirect } from './researchEntityRedirect';
 export { ResearchEntityRelationship } from './researchEntityRelationship';
 export { Signal } from './signal';
 export { ScrapeJobLock } from './scrapeJobLock';

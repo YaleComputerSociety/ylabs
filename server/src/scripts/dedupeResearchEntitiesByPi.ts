@@ -33,6 +33,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { deleteFromIndex } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
+import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -1666,7 +1667,7 @@ async function countRemainingDuplicateReferences(
 
 export async function applyResearchEntityDedupeMergeGroup(
   group: ResearchEntityDedupeMergeGroup,
-  options: { deleteDuplicates: boolean; relinkReferences?: boolean },
+  options: { deleteDuplicates: boolean; relinkReferences?: boolean; redirectReason?: string },
 ) {
   const canonicalId = objectId(group.canonicalEntityId);
   const duplicateIds = group.duplicateEntityIds
@@ -1693,6 +1694,20 @@ export async function applyResearchEntityDedupeMergeGroup(
     };
   }
   const now = new Date();
+
+  const duplicateSlugDocs = await ResearchEntity.find({ _id: { $in: duplicateIds } })
+    .select('_id slug')
+    .lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
+  const duplicateSlugById = new Map(duplicateSlugDocs.map((doc) => [String(doc._id), doc.slug]));
+  await recordResearchEntityMergeRedirects({
+    canonicalEntityId: canonicalId,
+    mergedShells: duplicateIds.map((id) => ({
+      entityId: id,
+      slug: duplicateSlugById.get(String(id)),
+    })),
+    reason: options.redirectReason,
+    mergedAt: now,
+  });
 
   const canonicalIdentitySet: Record<string, unknown> = { lastObservedAt: new Date() };
   const carriedName = String(group.canonicalName || '').trim();
@@ -1823,9 +1838,7 @@ export async function applyResearchEntityDedupeMergeGroup(
   // when deleteDuplicates left the duplicates untouched due to remaining refs.
   const idsToRemoveFromIndex =
     options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : group.duplicateEntityIds;
-  await Promise.all(
-    idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)),
-  );
+  await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
 
   return {
     canonicalEntityId: group.canonicalEntityId,
