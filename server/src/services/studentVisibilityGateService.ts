@@ -23,6 +23,7 @@ import {
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
   isStudentReadySoftSignalReason,
+  isStudentVisibilityVersionCurrent,
   STUDENT_VISIBILITY_VERSION,
 } from './studentVisibilityTier';
 import {
@@ -83,6 +84,7 @@ export interface StudentVisibilityGatePlan {
   currentTier?: string;
   currentComputedTier?: string;
   currentReasons?: string[];
+  currentVersion?: string;
   computedTier: StudentVisibilityTier;
   tier: StudentVisibilityTier;
   reasons: string[];
@@ -189,7 +191,7 @@ const suppressionRepairReasons = new Set([
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilityVersion';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
@@ -817,7 +819,8 @@ export function buildStudentVisibilityGateApplyOps(
 
   for (const plan of plans) {
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
-    if (materiallyChanged) {
+    const versionStale = !isStudentVisibilityVersionCurrent(plan.currentVersion);
+    if (materiallyChanged || versionStale) {
       const visibilityUpdate = {
         studentVisibilityTier: plan.tier,
         studentVisibilityComputedTier: plan.computedTier,
@@ -1210,6 +1213,7 @@ async function planResearchEntityGateUpdates(
       currentReasons: Array.isArray(entity.studentVisibilityReasons)
         ? entity.studentVisibilityReasons
         : [],
+      currentVersion: entity.studentVisibilityVersion,
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,
@@ -1248,6 +1252,7 @@ async function planProgramGateUpdates(
       currentReasons: Array.isArray(program.studentVisibilityReasons)
         ? program.studentVisibilityReasons
         : [],
+      currentVersion: program.studentVisibilityVersion,
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,

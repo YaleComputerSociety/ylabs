@@ -148,8 +148,6 @@ export async function runScraperCron(
         mode: 'apply',
         staleVersion: true,
       });
-    }
-    if (materializationResult.errors === 0) {
       await deps.markSourceCrawled(input.sourceName, input.now ?? new Date());
     }
     const report = await deps.getScrapeRunReport(runId);
