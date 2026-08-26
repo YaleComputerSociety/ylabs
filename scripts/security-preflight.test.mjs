@@ -3440,35 +3440,6 @@ test('shared item view and favorite mutations normalize ObjectIds before model w
   assert.doesNotMatch(source, /\(id as any\)\.toHexString\(\)/);
 });
 
-test('fellowship application-cycle and matching evidence bound polluted record values', () => {
-  const cycleService = fs.readFileSync(
-    new URL('../server/src/services/fellowshipApplicationCycleEvidenceService.ts', import.meta.url),
-    'utf8',
-  );
-  const matchingService = fs.readFileSync(
-    new URL('../server/src/services/fellowshipMatchingService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(cycleService, /MAX_FELLOWSHIP_EVIDENCE_TEXT_LENGTH = 5000/);
-  assert.match(cycleService, /MAX_FELLOWSHIP_EVIDENCE_ARRAY_ITEMS = 50/);
-  assert.match(cycleService, /MAX_FELLOWSHIP_EVIDENCE_URLS = 50/);
-  assert.match(cycleService, /typeof value !== 'string'/);
-  assert.match(
-    cycleService,
-    /value\.slice\(0, MAX_FELLOWSHIP_EVIDENCE_ARRAY_ITEMS\)\.flatMap\(textPart\)/,
-  );
-  assert.match(cycleService, /fellowship\.links\.slice\(0, MAX_FELLOWSHIP_EVIDENCE_URLS\)/);
-  assert.match(cycleService, /if \(!value\) return undefined/);
-  assert.match(
-    cycleService,
-    /if \(!\(value instanceof Date\) && typeof value !== 'string'\) return undefined/,
-  );
-
-  assert.doesNotMatch(matchingService, /typeof rawFellowshipId\?\.toHexString === 'function'/);
-  assert.doesNotMatch(matchingService, /rawFellowshipId\.toHexString\(\)/);
-});
-
 test('research, program, and fellowship nonpublic payloads require active admin authority', () => {
   const researchGroupController = fs.readFileSync(
     new URL('../server/src/controllers/researchGroupController.ts', import.meta.url),

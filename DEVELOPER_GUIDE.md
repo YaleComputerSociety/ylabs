@@ -18,9 +18,6 @@ React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
 
 The server follows: **Routes → Middleware → Controllers → Services → Models**
 
-Phase 1 canonical readers are isolated in `server/src/services/canonicalDomainLoaders.ts`, and their bounded public DTO contracts are in `server/src/services/canonicalPublicProjections.ts`.
-They intentionally do not power live REST routes or Meilisearch until the vertical cutover phases replace the corresponding legacy readers.
-
 ### Tech Stack
 
 | Layer           | Technology                                                                                       |
