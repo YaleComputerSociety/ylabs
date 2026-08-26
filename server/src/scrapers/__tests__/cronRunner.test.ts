@@ -155,13 +155,8 @@ describe('runScraperCron', () => {
     expect(deps.runStudentVisibilityGate).toHaveBeenCalledWith({
       collection: 'all',
       mode: 'apply',
-      sourceName: 'openalex',
     });
-    expect(deps.runStudentVisibilityGate).toHaveBeenCalledWith({
-      collection: 'all',
-      mode: 'apply',
-      staleVersion: true,
-    });
+    expect(deps.runStudentVisibilityGate).toHaveBeenCalledTimes(1);
     expect(
       (deps.reclaimInferredPiLeads as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
     ).toBeLessThan(
@@ -247,11 +242,10 @@ describe('runScraperCron', () => {
       exitCode: 0,
       inferredPiLeadReclaimResult: undefined,
     });
-    expect(deps.runStudentVisibilityGate).toHaveBeenCalledTimes(2);
+    expect(deps.runStudentVisibilityGate).toHaveBeenCalledTimes(1);
     expect(deps.runStudentVisibilityGate).toHaveBeenCalledWith({
       collection: 'all',
       mode: 'apply',
-      staleVersion: true,
     });
     expect(deps.markSourceCrawled).toHaveBeenCalledWith('openalex', NOW);
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(

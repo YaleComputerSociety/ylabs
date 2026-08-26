@@ -440,8 +440,9 @@ The cron command:
 - When the run's materialization reports no errors, runs a corpus-wide inferred-PI lead reclaim before the visibility gate so entities whose PI evidence a prior or partial run recorded but never materialized get a lead attached in the same locked cycle.
 The reclaim is idempotent and best-effort: it skips already-linked and unresolvable entities, and a reclaim failure is logged without failing the primary scrape (it retries next cycle).
 This makes the standalone `data:materialize-inferred-pi-leads --all` backfill a manual recovery tool rather than a recurring necessity.
-- After the source-scoped visibility gate, runs a corpus-wide stale-version re-gate that re-evaluates only records stamped with a non-current `STUDENT_VISIBILITY_VERSION`, so a gate-logic version bump self-applies on the next scheduled run instead of needing a manual `student-visibility:gate --stale-version` op.
-The sweep re-stamps every record it scans, so it converges to a no-op once the corpus is current, and its gate sync keeps Meilisearch in step.
+- When the run's materialization reports no errors, runs a single unconditional corpus-wide visibility gate (`{ collection: 'all', mode: 'apply' }`).
+The gate is a handful of batched Mongo reads with no LLM calls, writes only records whose computed tier or reasons actually changed, and syncs only those to Meilisearch, so it converges to a near no-op once the corpus is current.
+Because the re-gate is corpus-wide and unconditional, a gate-logic change self-applies on the next scheduled per-source run with no version bump and no manual `student-visibility:gate` op.
 - Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
 
 Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional inferred-PI lead reclaim result, optional visibility-gate result, and ScrapeRun report.

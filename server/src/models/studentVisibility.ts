@@ -46,10 +46,6 @@ export const studentVisibilityFields = {
     type: Date,
     required: false,
   },
-  studentVisibilityVersion: {
-    type: String,
-    default: '',
-  },
   studentVisibilityReviewedAt: {
     type: Date,
     required: false,

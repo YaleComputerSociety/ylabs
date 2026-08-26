@@ -19,7 +19,6 @@ import { officialProfileUrlFromRosterEntry } from '../services/leadProfileIdenti
 import { countResearchEntityAlternateAccessPaths } from '../services/researchEntityAlternateAccessPath';
 import {
   computeResearchEntityStudentVisibility,
-  STUDENT_VISIBILITY_VERSION,
 } from '../services/studentVisibilityTier';
 import { syncEntities } from '../services/meiliSyncService';
 import {
@@ -392,7 +391,6 @@ async function main(): Promise<void> {
               studentVisibilityComputedTier: result.computedTier,
               studentVisibilityReasons: result.reasons,
               studentVisibilityComputedAt: new Date(),
-              studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
             },
           },
         );

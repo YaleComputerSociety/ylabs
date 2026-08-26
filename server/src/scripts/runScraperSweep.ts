@@ -137,6 +137,7 @@ export interface DevelopmentPostRunStage {
     | 'faculty-projection'
     | 'researcher-dedupe'
     | 'eponymous-fra-merge'
+    | 'visibility-gate'
     | 'search-rebuild'
     | 'coverage-audit'
     | 'data-quality'
@@ -635,6 +636,12 @@ export function buildDevelopmentPostRunStages(
     ),
     ...researcherDedupeStages,
     ...eponymousFraMergeStages,
+    stage(
+      'visibility-gate',
+      'student-visibility:gate',
+      ['--collection=all', '--apply', '--confirm-student-visibility-apply', '--max-apply=100000'],
+      'development-visibility-gate.json',
+    ),
     stage(
       'search-rebuild',
       'meili:rebuild-research-entities',

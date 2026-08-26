@@ -25,14 +25,9 @@ import {
   researchEntityGateProjection,
   runStudentVisibilityGateForPlans,
   selectExactUrlDuplicateRiskEntityIds,
-  staleStudentVisibilityVersionClause,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
-import {
-  computeResearchEntityStudentVisibility,
-  isStudentVisibilityVersionCurrent,
-  STUDENT_VISIBILITY_VERSION,
-} from '../studentVisibilityTier';
+import { computeResearchEntityStudentVisibility } from '../studentVisibilityTier';
 import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../accessAcceptanceLevel';
 
 const safePlan = (
@@ -42,7 +37,6 @@ const safePlan = (
   recordId: 'entity-safe',
   label: 'Safe Lab',
   currentTier: 'operator_review',
-  currentVersion: STUDENT_VISIBILITY_VERSION,
   computedTier: 'student_ready',
   tier: 'student_ready',
   reasons: ['source_backed_description', 'concrete_next_step'],
@@ -58,7 +52,6 @@ const heldPlan = (
   recordId: 'entity-held',
   label: 'Held Lab',
   currentTier: 'operator_review',
-  currentVersion: STUDENT_VISIBILITY_VERSION,
   computedTier: 'operator_review',
   tier: 'operator_review',
   reasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
@@ -774,28 +767,11 @@ describe('buildStudentVisibilityGateApplyOps', () => {
     });
   });
 
-  it('stamps the current version on a version-stale entity that did not materially change', () => {
-    const plan = alreadyPublicPlan({ currentVersion: 'student-visibility-v1' });
-    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
-
-    const { researchOps } = buildStudentVisibilityGateApplyOps(
-      [plan],
-      new Set(['research:entity-safe']),
-      now,
-    );
-
-    expect(researchOps).toHaveLength(1);
-    expect(researchOps[0].updateOne.update.$set).toMatchObject({
-      studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
-    });
-  });
-
-  it('leaves an unchanged already-current entity unwritten so the sweep converges', () => {
+  it('leaves an unchanged entity unwritten so the sweep converges', () => {
     const plan = heldPlan({
       currentTier: 'operator_review',
       currentComputedTier: 'operator_review',
       currentReasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
-      currentVersion: STUDENT_VISIBILITY_VERSION,
     });
     expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
 
@@ -992,36 +968,17 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
   });
 });
 
-describe('stale student-visibility-version sweep selector', () => {
-  it('selects records whose stored gate-logic version differs from the current one', () => {
-    expect(staleStudentVisibilityVersionClause()).toEqual({
-      studentVisibilityVersion: { $ne: STUDENT_VISIBILITY_VERSION },
-    });
-  });
-
-  it('treats the current version as fresh and any other version or a missing one as drifted', () => {
-    expect(isStudentVisibilityVersionCurrent(STUDENT_VISIBILITY_VERSION)).toBe(true);
-    expect(isStudentVisibilityVersionCurrent('student-visibility-v1')).toBe(false);
-    expect(isStudentVisibilityVersionCurrent(undefined)).toBe(false);
-    expect(isStudentVisibilityVersionCurrent(null)).toBe(false);
-  });
-
-  it('re-gates the v2 corpus by treating the prior v2 marker as drifted (#1920)', () => {
-    expect(STUDENT_VISIBILITY_VERSION).toBe('student-visibility-v3');
-    expect(isStudentVisibilityVersionCurrent('student-visibility-v2')).toBe(false);
-    expect(staleStudentVisibilityVersionClause()).toEqual({
-      studentVisibilityVersion: { $ne: 'student-visibility-v3' },
-    });
-  });
-
-  it('re-stamps a v2-marked #1919 SOM faculty entity to the current version even when unchanged (#1920)', () => {
+describe('gate apply convergence without a version stamp', () => {
+  it('re-gates a materially-changed entity and never writes a version stamp', () => {
     const plan = safePlan({
-      currentTier: 'student_ready',
-      currentComputedTier: 'student_ready',
-      currentReasons: ['source_backed_description', 'concrete_next_step'],
-      currentVersion: 'student-visibility-v2',
+      currentTier: 'operator_review',
+      currentComputedTier: 'operator_review',
+      currentReasons: ['missing_action_evidence'],
+      computedTier: 'student_ready',
+      tier: 'student_ready',
+      reasons: ['source_backed_description', 'concrete_next_step'],
     });
-    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(true);
 
     const { researchOps } = buildStudentVisibilityGateApplyOps(
       [plan],
@@ -1030,8 +987,9 @@ describe('stale student-visibility-version sweep selector', () => {
     );
 
     expect(researchOps).toHaveLength(1);
+    expect(researchOps[0].updateOne.update.$set).not.toHaveProperty('studentVisibilityVersion');
     expect(researchOps[0].updateOne.update.$set).toMatchObject({
-      studentVisibilityVersion: 'student-visibility-v3',
+      studentVisibilityTier: 'student_ready',
     });
   });
 });

@@ -23,8 +23,6 @@ import {
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
   isStudentReadySoftSignalReason,
-  isStudentVisibilityVersionCurrent,
-  STUDENT_VISIBILITY_VERSION,
 } from './studentVisibilityTier';
 import {
   selectSamePiDuplicateRiskEntityIds,
@@ -65,16 +63,6 @@ export interface StudentVisibilityGateOptions {
   sourceName?: string;
   recordIds?: string[];
   limit?: number;
-  staleVersion?: boolean;
-}
-
-// A stale-version sweep targets records whose stored gate-logic generation no
-// longer matches the current one - including never-gated records (no stored
-// version) - so a gate-logic change (#1405) can be re-applied corpus-wide
-// without a full unconditional rescan. Only honored when no explicit record or
-// source scope is set, which always take precedence.
-export function staleStudentVisibilityVersionClause(): Record<string, any> {
-  return { studentVisibilityVersion: { $ne: STUDENT_VISIBILITY_VERSION } };
 }
 
 export interface StudentVisibilityGatePlan {
@@ -84,7 +72,6 @@ export interface StudentVisibilityGatePlan {
   currentTier?: string;
   currentComputedTier?: string;
   currentReasons?: string[];
-  currentVersion?: string;
   computedTier: StudentVisibilityTier;
   tier: StudentVisibilityTier;
   reasons: string[];
@@ -191,7 +178,7 @@ const suppressionRepairReasons = new Set([
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilityVersion';
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
@@ -745,7 +732,6 @@ export async function runStudentVisibilityGateForPlans(
       studentVisibilityComputedTier: plan.computedTier,
       studentVisibilityReasons: plan.reasons,
       studentVisibilityComputedAt: new Date(),
-      studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
     });
 
     if (publicSafe) {
@@ -819,14 +805,12 @@ export function buildStudentVisibilityGateApplyOps(
 
   for (const plan of plans) {
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
-    const versionStale = !isStudentVisibilityVersionCurrent(plan.currentVersion);
-    if (materiallyChanged || versionStale) {
+    if (materiallyChanged) {
       const visibilityUpdate = {
         studentVisibilityTier: plan.tier,
         studentVisibilityComputedTier: plan.computedTier,
         studentVisibilityReasons: plan.reasons,
         studentVisibilityComputedAt: now,
-        studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
       };
       const recordOp = {
         updateOne: {
@@ -973,16 +957,10 @@ async function syncGatedResearchEntitiesToIndex(researchOps: any[]): Promise<voi
 }
 
 async function planResearchEntityGateUpdates(
-  options: Pick<
-    StudentVisibilityGateOptions,
-    'sourceName' | 'recordIds' | 'limit' | 'staleVersion'
-  >,
+  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: { $ne: true } };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
-  if (options.staleVersion && !options.recordIds?.length && !options.sourceName) {
-    Object.assign(match, staleStudentVisibilityVersionClause());
-  }
   if (options.sourceName) {
     const [accessEntityIds, observationEntityIds, observationEntityKeys] = await Promise.all([
       Signal.distinct('researchEntityId', {
@@ -1213,7 +1191,6 @@ async function planResearchEntityGateUpdates(
       currentReasons: Array.isArray(entity.studentVisibilityReasons)
         ? entity.studentVisibilityReasons
         : [],
-      currentVersion: entity.studentVisibilityVersion,
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,
@@ -1225,16 +1202,10 @@ async function planResearchEntityGateUpdates(
 }
 
 async function planProgramGateUpdates(
-  options: Pick<
-    StudentVisibilityGateOptions,
-    'sourceName' | 'recordIds' | 'limit' | 'staleVersion'
-  >,
+  options: Pick<StudentVisibilityGateOptions, 'sourceName' | 'recordIds' | 'limit'>,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: false };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
-  if (options.staleVersion && !options.recordIds?.length && !options.sourceName) {
-    Object.assign(match, staleStudentVisibilityVersionClause());
-  }
   if (options.sourceName) match.sourceName = options.sourceName;
   const query = Fellowship.find(match).sort({ title: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
@@ -1252,7 +1223,6 @@ async function planProgramGateUpdates(
       currentReasons: Array.isArray(program.studentVisibilityReasons)
         ? program.studentVisibilityReasons
         : [],
-      currentVersion: program.studentVisibilityVersion,
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,

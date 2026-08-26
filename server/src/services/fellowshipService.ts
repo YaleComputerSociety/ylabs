@@ -539,7 +539,6 @@ const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
   'studentVisibilityReasons',
   'studentVisibilitySuppressionReason',
   'studentVisibilityComputedAt',
-  'studentVisibilityVersion',
   'studentVisibilityReviewedAt',
   'studentVisibilityReviewedByUserId',
   'archived',
@@ -579,7 +578,6 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
     'sourceKey',
     'sourceFingerprint',
     'studentVisibilitySuppressionReason',
-    'studentVisibilityVersion',
   ]) {
     if (field in update) {
       const text = adminFellowshipText(update[field]);

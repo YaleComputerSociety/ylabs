@@ -32,25 +32,6 @@ describe('studentVisibilityGate CLI helpers', () => {
     });
   });
 
-  it('parses the stale-version sweep flag', () => {
-    expect(
-      parseStudentVisibilityGateArgs([
-        '--collection=research',
-        '--stale-version',
-        '--apply',
-        '--confirm-student-visibility-apply',
-        '--max-apply=500',
-      ]),
-    ).toMatchObject({
-      collection: 'research',
-      mode: 'apply',
-      staleVersion: true,
-      confirmStudentVisibilityApply: true,
-      maxApply: 500,
-    });
-    expect(parseStudentVisibilityGateArgs(['--collection=research']).staleVersion).toBeUndefined();
-  });
-
   it('parses max apply for student visibility gate apply bounds', () => {
     expect(
       parseStudentVisibilityGateArgs([

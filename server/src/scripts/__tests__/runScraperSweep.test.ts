@@ -226,6 +226,7 @@ describe('runScraperSweep', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
     expect(stages.map((stage) => stage.name)).toEqual([
       'faculty-projection',
+      'visibility-gate',
       'search-rebuild',
       'coverage-audit',
       'data-quality',
@@ -233,6 +234,15 @@ describe('runScraperSweep', () => {
       'trust-contract',
       'archived-cleanup',
     ]);
+    expect(stages.find((stage) => stage.name === 'visibility-gate')?.args).toEqual(
+      expect.arrayContaining([
+        'student-visibility:gate',
+        '--collection=all',
+        '--apply',
+        '--confirm-student-visibility-apply',
+        '--max-apply=100000',
+      ]),
+    );
     expect(stages.every((stage) => stage.artifactPath.startsWith('/tmp/development-sweep/'))).toBe(
       true,
     );
@@ -299,6 +309,7 @@ describe('runScraperSweep', () => {
     expect(names).toEqual([
       'faculty-projection',
       'eponymous-fra-merge',
+      'visibility-gate',
       'search-rebuild',
       'coverage-audit',
       'data-quality',
@@ -343,6 +354,7 @@ describe('runScraperSweep', () => {
       'faculty-projection',
       'researcher-dedupe',
       'eponymous-fra-merge',
+      'visibility-gate',
       'search-rebuild',
       'coverage-audit',
       'data-quality',
