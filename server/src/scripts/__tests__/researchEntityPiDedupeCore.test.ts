@@ -2194,6 +2194,41 @@ describe('buildSpecificProfileLabUrlResearchEntityDedupePlan', () => {
     expect(plan[0].canonicalEntityId).toBe('ysm-bunick');
   });
 
+  it('drops a dept-slug lab member mislabeled under the lab name', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/bunick/',
+        entities: [
+          {
+            id: 'ysm-bunick',
+            slug: 'ysm-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+            fullDescription: 'The Bunick Lab studies structural biology of skin and circadian proteins.',
+          },
+          {
+            id: 'dept-derm-christopher-bunick',
+            slug: 'dept-derm-christopher-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'dept-neuro-ivan-lomakin',
+            slug: 'dept-neuro-ivan-lomakin',
+            name: 'Bunick Lab',
+            entityType: 'FACULTY_RESEARCH_AREA',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    const members = new Set([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds]);
+    expect(members).toEqual(new Set(['ysm-bunick', 'dept-derm-christopher-bunick']));
+    expect(members.has('dept-neuro-ivan-lomakin')).toBe(false);
+    expect(plan[0].canonicalEntityId).toBe('ysm-bunick');
+  });
+
   it('does not merge when the only counterpart is a differently-named lab member', () => {
     expect(
       buildSpecificProfileLabUrlResearchEntityDedupePlan([

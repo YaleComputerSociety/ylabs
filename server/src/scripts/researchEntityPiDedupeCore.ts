@@ -938,10 +938,11 @@ export function specificProfileLabUrlIdentityKey(value: string | undefined): str
   return `${host}/${match[1].toLowerCase()}/${match[2].toLowerCase()}`;
 }
 
-const PERSON_SLUG_NAME = /faculty-([a-z]+(?:-[a-z]+)+)$/;
+const PERSON_SLUG_NAME = /(?:^|-)(?:faculty|dept-[a-z]+)-([a-z]+(?:-[a-z]+)+)$/;
 
 /**
- * The surname a person-derived slug (`...faculty-<first>-<last>`) encodes, or '' for
+ * The surname a person-derived slug (`...faculty-<first>-<last>` or
+ * `dept-<dept>-<first>-<last>`) encodes, or '' for
  * a clean lab slug (`ysm-<labname>`) or a bare-netid slug (`ysm-faculty-gcb27`) that
  * names no person. Used to keep a lab member whose own profile was minted under the
  * lab's name and URL ("Braddock Lab" on `ysm-faculty-hajime-kato`) from folding into

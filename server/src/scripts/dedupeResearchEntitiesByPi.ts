@@ -1152,7 +1152,6 @@ async function loadSpecificProfileLabUrlCandidateRows(
         entities: { $addToSet: '$entity' },
       },
     },
-    { $match: { 'entities.1': { $exists: true } } },
     { $sort: { _id: 1 } },
   ]);
 
