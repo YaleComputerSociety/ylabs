@@ -2984,15 +2984,25 @@ export async function materializeEntity(
       !manuallyLockedFields.includes('activeAtYaleCache') &&
       !manuallyLockedFields.includes('yaleStatusCache')
     ) {
+      const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
+        if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
+        if (Array.isArray(setValue)) return setValue.length > 0 ? setValue : docValue;
+        return setValue ?? docValue;
+      };
       const yaleStatusSignal = deriveResearchEntityYaleStatus({
-        sourceUrls: set.sourceUrls ?? entityDoc?.sourceUrls,
-        websiteUrl: set.websiteUrl ?? entityDoc?.websiteUrl,
-        name: set.name ?? entityDoc?.name,
-        displayName: set.displayName ?? entityDoc?.displayName,
-        fullDescription: set.fullDescription ?? entityDoc?.fullDescription,
-        shortDescription: set.shortDescription ?? entityDoc?.shortDescription,
-        profileSynthesisDescription:
-          set.profileSynthesisDescription ?? entityDoc?.profileSynthesisDescription,
+        sourceUrls: populatedYaleStatusField(set.sourceUrls, entityDoc?.sourceUrls),
+        websiteUrl: populatedYaleStatusField(set.websiteUrl, entityDoc?.websiteUrl),
+        name: populatedYaleStatusField(set.name, entityDoc?.name),
+        displayName: populatedYaleStatusField(set.displayName, entityDoc?.displayName),
+        fullDescription: populatedYaleStatusField(set.fullDescription, entityDoc?.fullDescription),
+        shortDescription: populatedYaleStatusField(
+          set.shortDescription,
+          entityDoc?.shortDescription,
+        ),
+        profileSynthesisDescription: populatedYaleStatusField(
+          set.profileSynthesisDescription,
+          entityDoc?.profileSynthesisDescription,
+        ),
       });
       if (yaleStatusSignal) {
         if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
