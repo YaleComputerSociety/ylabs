@@ -220,6 +220,48 @@ describe('runScraperSweep', () => {
     );
   });
 
+  it('omits the eponymous FRA merge stage by default (flag off)', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
+    expect(stages.map((stage) => stage.name)).not.toContain('eponymous-fra-merge');
+  });
+
+  it('inserts the eponymous FRA merge stage after materialization and before search-rebuild when enabled', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      autoMergeEponymousFra: true,
+      sinceIso: '2026-08-26T00:00:00.000Z',
+      maxMerges: 20,
+    });
+    const names = stages.map((stage) => stage.name);
+    expect(names).toEqual([
+      'faculty-projection',
+      'eponymous-fra-merge',
+      'search-rebuild',
+      'coverage-audit',
+      'data-quality',
+      'integrity-gate',
+      'trust-contract',
+      'archived-cleanup',
+    ]);
+    expect(stages.find((stage) => stage.name === 'eponymous-fra-merge')?.args).toEqual(
+      expect.arrayContaining([
+        'research-entity:merge-eponymous-fra',
+        '--apply',
+        '--confirm-auto-merge-eponymous-fra',
+        '--since',
+        '2026-08-26T00:00:00.000Z',
+        '--max-merges',
+        '20',
+      ]),
+    );
+  });
+
+  it('omits the eponymous FRA merge stage when enabled without a since window', () => {
+    const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      autoMergeEponymousFra: true,
+    });
+    expect(stages.map((stage) => stage.name)).not.toContain('eponymous-fra-merge');
+  });
+
   it('requires an exact Development database and local unprefixed Meilisearch for writes', () => {
     expect(() =>
       validateScraperSweepEnvironment('development-full', {

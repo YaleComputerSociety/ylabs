@@ -12,6 +12,11 @@ import {
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  DEFAULT_EPONYMOUS_FRA_MERGE_MAX,
+  isEponymousFraLabMergeStageEnabled,
+  type EponymousFraLabMergeDelta,
+} from './researchEntityEponymousMergeStage';
 
 export type ScraperSweepMode =
   | 'development-plan'
@@ -124,6 +129,7 @@ export interface ScraperSweepRunRow {
 export interface DevelopmentPostRunStage {
   name:
     | 'faculty-projection'
+    | 'eponymous-fra-merge'
     | 'search-rebuild'
     | 'coverage-audit'
     | 'data-quality'
@@ -134,6 +140,13 @@ export interface DevelopmentPostRunStage {
   artifactPath: string;
   exitCode: number;
   error?: string;
+  mergeDelta?: EponymousFraLabMergeDelta;
+}
+
+export interface DevelopmentPostRunStageOptions {
+  autoMergeEponymousFra?: boolean;
+  sinceIso?: string;
+  maxMerges?: number;
 }
 
 export interface ScraperSweepSummary {
@@ -534,7 +547,10 @@ function spawnChild(
   });
 }
 
-export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
+export function buildDevelopmentPostRunStages(
+  outputDirectory: string,
+  options: DevelopmentPostRunStageOptions = {},
+): Array<{
   name: DevelopmentPostRunStage['name'];
   artifactPath: string;
   args: string[];
@@ -553,6 +569,25 @@ export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
     };
   };
 
+  const eponymousFraMergeStages =
+    options.autoMergeEponymousFra && options.sinceIso
+      ? [
+          stage(
+            'eponymous-fra-merge',
+            'research-entity:merge-eponymous-fra',
+            [
+              '--apply',
+              '--confirm-auto-merge-eponymous-fra',
+              '--since',
+              options.sinceIso,
+              '--max-merges',
+              String(options.maxMerges ?? DEFAULT_EPONYMOUS_FRA_MERGE_MAX),
+            ],
+            'development-eponymous-fra-merge.json',
+          ),
+        ]
+      : [];
+
   return [
     stage(
       'faculty-projection',
@@ -560,6 +595,7 @@ export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
       ['--apply', '--confirm-faculty-projection', '--concurrency', '12'],
       'development-faculty-projection.json',
     ),
+    ...eponymousFraMergeStages,
     stage(
       'search-rebuild',
       'meili:rebuild-research-entities',
@@ -605,13 +641,26 @@ export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
   ];
 }
 
+function readEponymousFraMergeDelta(artifactPath: string): EponymousFraLabMergeDelta | undefined {
+  try {
+    const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8')) as Record<string, unknown>;
+    const mergeDelta = artifact.mergeDelta;
+    return mergeDelta && typeof mergeDelta === 'object'
+      ? (mergeDelta as EponymousFraLabMergeDelta)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function runDevelopmentPostRunStages(
   outputDirectory: string,
   repoRoot: string,
   childRunner: ChildRunner,
+  options: DevelopmentPostRunStageOptions = {},
 ): Promise<ScraperSweepSummary['postRun']> {
   const stages: DevelopmentPostRunStage[] = [];
-  for (const stage of buildDevelopmentPostRunStages(outputDirectory)) {
+  for (const stage of buildDevelopmentPostRunStages(outputDirectory, options)) {
     console.log(`\n[post-run] ${stage.name}`);
     const child = await childRunner('yarn', stage.args, {
       cwd: repoRoot,
@@ -622,12 +671,17 @@ async function runDevelopmentPostRunStages(
       child.error || exitCode !== 0
         ? sanitizeLogValue(child.error || `${stage.name} exited with status ${exitCode}`)
         : undefined;
+    const mergeDelta =
+      !error && stage.name === 'eponymous-fra-merge'
+        ? readEponymousFraMergeDelta(stage.artifactPath)
+        : undefined;
     stages.push({
       name: stage.name,
       status: error ? 'failed' : 'succeeded',
       artifactPath: stage.artifactPath,
       exitCode,
       ...(error ? { error } : {}),
+      ...(mergeDelta ? { mergeDelta } : {}),
     });
   }
   return {
@@ -754,7 +808,10 @@ export async function runScraperSweep(
 
   const postRun =
     options.mode === 'development-full'
-      ? await runDevelopmentPostRunStages(outputDirectory, repoRoot, childRunner)
+      ? await runDevelopmentPostRunStages(outputDirectory, repoRoot, childRunner, {
+          autoMergeEponymousFra: isEponymousFraLabMergeStageEnabled(process.env),
+          sinceIso: startedAt.toISOString(),
+        })
       : undefined;
   const summary: ScraperSweepSummary = {
     mode: options.mode,
