@@ -60,10 +60,8 @@ Exported from `server/src/middleware/`:
 
 - `validateObjectId(paramName?)`
 - `validateNetid(paramName?)`
-- `requireBody()`
 - `requireFields(fields[])`
 - `validatePagination()`
-- `validateSort(allowedFields[])`
 - `validateQuery(allowedParams[])`
 
 ## Security middleware
