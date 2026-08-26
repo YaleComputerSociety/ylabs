@@ -196,6 +196,20 @@ describe('runScraperSweep', () => {
       }),
     ).toMatch(/materialization reported 1 errors/);
     expect(
+      scraperSweepArtifactError('development-incremental', {
+        runId: 'run-incremental',
+        runStatus: 'success',
+        materializationErrors: 2,
+      }),
+    ).toMatch(/materialization reported 2 errors/);
+    expect(
+      scraperSweepArtifactError('beta-fetch', {
+        runId: 'run-2',
+        runStatus: 'success',
+        materializationErrors: 3,
+      }),
+    ).toBeUndefined();
+    expect(
       scraperSweepArtifactError('beta-fetch', {
         runId: 'run-2',
         runStatus: 'success',

@@ -509,7 +509,7 @@ export function scraperSweepArtifactError(
     return `ScrapeRun status is ${artifact.runStatus || 'missing'}, expected success`;
   }
   if (
-    (mode === 'development-sample' || mode === 'development-full') &&
+    MODE_CONFIG[mode].autoMaterialize &&
     (artifact.materializationErrors || 0) > 0
   ) {
     return `Development materialization reported ${artifact.materializationErrors} errors`;
