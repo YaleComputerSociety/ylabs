@@ -1145,15 +1145,18 @@ async function loadSpecificProfileLabUrlCandidateRows(
     },
     { $unwind: '$urls' },
     { $project: { url: '$urls', entity: 1 } },
-    { $match: { url: { $type: 'string' } } },
+    {
+      $match: {
+        url: { $regex: '^https?://([a-z0-9-]+\\.)*yale\\.edu/(lab|profile)/[^/]+/?$', $options: 'i' },
+      },
+    },
     {
       $group: {
         _id: '$url',
         entities: { $addToSet: '$entity' },
       },
     },
-    { $sort: { _id: 1 } },
-  ]);
+  ]).allowDiskUse(true);
 
   const byKey = new Map<string, OfficialLabUrlDedupeRow>();
   for (const row of rows as Array<{
@@ -1175,6 +1178,7 @@ async function loadSpecificProfileLabUrlCandidateRows(
 
   return Array.from(byKey.values())
     .filter((row) => row.entities.length > 1)
+    .sort((a, b) => a.url.localeCompare(b.url))
     .slice(0, limit);
 }
 
