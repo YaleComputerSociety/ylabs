@@ -3,8 +3,20 @@ import { Observation } from '../../models/observation';
 import {
   appendObservations,
   buildObservationFingerprint,
+  isRegressiveProseRefresh,
   retireObservations,
 } from '../observationStore';
+import {
+  fullDescriptionQuality,
+  shortDescriptionQuality,
+} from '../../utils/researchEntityDescriptionQuality';
+
+const USEFUL_DESCRIPTION =
+  'The reachable lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.';
+const DEGRADED_DESCRIPTION = 'Our lab studies things.';
+const USEFUL_SHORT_DESCRIPTION =
+  'Studies cellular signaling and translational biomarkers to improve immune-related patient care.';
+const DEGRADED_SHORT_DESCRIPTION = 'Our lab studies things.';
 
 describe('buildObservationFingerprint', () => {
   it('makes logistics updates latest-wins within a source but distinct across sources', () => {
@@ -212,9 +224,202 @@ describe('buildObservationFingerprint', () => {
   });
 });
 
+describe('isRegressiveProseRefresh', () => {
+  it('uses fixtures whose usefulness matches the shared quality gate', () => {
+    expect(fullDescriptionQuality(USEFUL_DESCRIPTION).isUseful).toBe(true);
+    expect(fullDescriptionQuality(DEGRADED_DESCRIPTION).isUseful).toBe(false);
+  });
+
+  it('drops a degraded refresh that would supersede a clean same-source value', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: DEGRADED_DESCRIPTION,
+        existingValue: USEFUL_DESCRIPTION,
+      }),
+    ).toBe(true);
+  });
+
+  it('allows a clean-to-clean refresh (latest-wins preserved)', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: USEFUL_DESCRIPTION,
+        existingValue: USEFUL_DESCRIPTION,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not guard when the existing value is itself not useful', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: DEGRADED_DESCRIPTION,
+        existingValue: DEGRADED_DESCRIPTION,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not guard when there is no existing value', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: DEGRADED_DESCRIPTION,
+        existingValue: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not guard non-prose fields', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'name',
+        incomingValue: '',
+        existingValue: USEFUL_DESCRIPTION,
+      }),
+    ).toBe(false);
+  });
+
+  it('uses shortDescription fixtures whose usefulness matches the shared quality gate', () => {
+    expect(shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, USEFUL_DESCRIPTION).isUseful).toBe(
+      true,
+    );
+    expect(shortDescriptionQuality(DEGRADED_SHORT_DESCRIPTION, USEFUL_DESCRIPTION).isUseful).toBe(
+      false,
+    );
+  });
+
+  it('drops a degraded short refresh once the existing short is judged with its paired full', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'shortDescription',
+        incomingValue: DEGRADED_SHORT_DESCRIPTION,
+        existingValue: USEFUL_SHORT_DESCRIPTION,
+        incomingContext: { fullContext: USEFUL_DESCRIPTION },
+        existingContext: { fullContext: USEFUL_DESCRIPTION },
+      }),
+    ).toBe(true);
+  });
+
+  it('allows a clean-to-clean short refresh', () => {
+    expect(
+      isRegressiveProseRefresh({
+        field: 'shortDescription',
+        incomingValue: USEFUL_SHORT_DESCRIPTION,
+        existingValue: USEFUL_SHORT_DESCRIPTION,
+        incomingContext: { fullContext: USEFUL_DESCRIPTION },
+        existingContext: { fullContext: USEFUL_DESCRIPTION },
+      }),
+    ).toBe(false);
+  });
+
+  it('flags a research-area-echo full only when researchAreas context is supplied', () => {
+    const areaEcho =
+      'The Chen Lab studies machine learning, robotics, and computer vision to advance autonomous systems research.';
+    const researchAreas = ['machine learning', 'robotics', 'computer vision'];
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: areaEcho,
+        existingValue: USEFUL_DESCRIPTION,
+      }),
+    ).toBe(false);
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: areaEcho,
+        existingValue: USEFUL_DESCRIPTION,
+        incomingContext: { researchAreas, entityType: 'researchEntity' },
+      }),
+    ).toBe(true);
+  });
+});
+
 describe('appendObservations', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('does not persist a degraded description that would supersede a clean same-source one', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'fullDescription',
+          value: DEGRADED_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      { loadActiveProse: async () => USEFUL_DESCRIPTION },
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
+  it('does not persist a degraded short that would supersede a clean same-source one', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'shortDescription',
+          value: DEGRADED_SHORT_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      {
+        loadActiveProse: async (query) =>
+          query.field === 'fullDescription' ? USEFUL_DESCRIPTION : USEFUL_SHORT_DESCRIPTION,
+      },
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
+  it('persists a degraded description when no clean same-source value exists', async () => {
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:desc' }] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'fullDescription',
+          value: DEGRADED_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      { loadActiveProse: async () => undefined },
+    );
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    expect(result.inserted).toBe(1);
   });
 
   it('inserts new observations and supersedes older same-source duplicates', async () => {
@@ -361,9 +566,11 @@ describe('appendObservations', () => {
   });
 
   it('rejects observations sourced from our own site so it never becomes provenance', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:name' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([
+        { _id: 'new-1', observationFingerprint: 'fp:researchEntity:name' },
+      ] as any);
     const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
       modifiedCount: 0,
     } as any);
@@ -433,9 +640,11 @@ describe('appendObservations', () => {
   });
 
   it('coerces a bare-string sourceUrls value into a single-element array before insert (#observation-array-integrity)', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:sourceUrls' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([
+        { _id: 'new-1', observationFingerprint: 'fp:researchEntity:sourceUrls' },
+      ] as any);
     vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
 
     const result = await appendObservations(
@@ -516,9 +725,9 @@ describe('appendObservations', () => {
   });
 
   it('rejects a furniture-shaped person title at ingest and stores the sanitized name (#1375)', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:user:name' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:user:name' }] as any);
     vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
 
     const result = await appendObservations(
@@ -552,9 +761,11 @@ describe('appendObservations', () => {
   });
 
   it('stores a chrome-stripped, contact-redacted description at ingest (#1375)', async () => {
-    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
-      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:fullDescription' },
-    ] as any);
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([
+        { _id: 'new-1', observationFingerprint: 'fp:researchEntity:fullDescription' },
+      ] as any);
     vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
 
     await appendObservations(
