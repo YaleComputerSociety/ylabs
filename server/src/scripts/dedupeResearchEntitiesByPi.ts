@@ -810,7 +810,13 @@ function isFullPersonLabName(normalizedName: string): boolean {
   return /\s+lab$/i.test(normalizedName) && tokens.length >= 2;
 }
 
-async function loadSamePiCandidateRows(limit: number, options: { includeRetiredMembers: boolean }) {
+export async function loadSamePiCandidateRows(
+  limit: number,
+  options: {
+    includeRetiredMembers: boolean;
+    personIds?: Array<string | mongoose.Types.ObjectId>;
+  },
+) {
   const assignmentMatch: Record<string, unknown> = {
     'target.kind': 'RESEARCH_ENTITY',
     role: 'PI',
@@ -819,6 +825,13 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
     archived: { $ne: true },
   };
   if (!options.includeRetiredMembers) assignmentMatch.state = { $ne: 'HISTORICAL' };
+  if (options.personIds) {
+    const scopedPersonIds = options.personIds
+      .map((personId) => normalizeResearchEntityPiDedupeObjectId(personId))
+      .filter((personId): personId is mongoose.Types.ObjectId => Boolean(personId));
+    if (scopedPersonIds.length === 0) return [];
+    assignmentMatch.personId = { $in: scopedPersonIds };
+  }
 
   const rows = await RoleAssignment.aggregate([
     { $match: assignmentMatch },

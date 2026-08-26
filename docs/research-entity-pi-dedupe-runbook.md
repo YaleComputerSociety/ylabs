@@ -103,6 +103,24 @@ SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi \
 
 6. After a Beta apply, rebuild or verify Meilisearch so browse stops surfacing the archived duplicates, then re-run the read-only launch and visibility audits.
 
+## Automatic eponymous FRA to lab merge in the sweep
+
+The high-confidence eponymous subset of same-PI dedupe (a `faculty-research-area-*` shell that shadows the SAME PI's own concrete lab, guarded against CENTER/INSTITUTE canonicals) can run automatically inside the scraper sweep instead of the manual review workflow above.
+It is exposed as the `research-entity:merge-eponymous-fra` stage, wired into the `development-full` post-run pipeline immediately after `faculty-projection` (materialization) and before `search-rebuild`, so the student-visibility gate and the search index evaluate the merged canonical.
+
+The stage is flag-gated OFF by default.
+It only runs when `SCRAPER_SWEEP_AUTO_MERGE_FRA=1` (or `=true`) is set in the sweep environment; with the flag unset the stage is not added, so Beta and Prod sweeps are unaffected until the flag is deliberately enabled after Dev validation.
+
+The stage is scoped and capped, not a full-corpus scan.
+It merges only PIs whose entities were materialized during the current sweep (`--since <sweep start ISO>` resolves the affected entities via `lastObservedAt`, then their PI role assignments), and `--max-merges` (default 250) bounds the number of merges applied per run, deferring any overflow to a later sweep.
+Each run emits a merge-delta summary into the sweep report (`postRun.stages[].mergeDelta`): the FRA-to-lab pairs merged, the planned, applied, and cap-deferred counts, and a center-guarded PI count.
+
+The stage is idempotent.
+The scope loader excludes archived entities, so a merged shell never re-enters the plan, and `materializeEntity` short-circuits (skipped `merged-into-canonical`) when it re-resolves an archived shell that carries a `canonicalGroupId`, so re-scraping the shell's source never re-activates it or re-indexes it into Meilisearch.
+A second sweep pass over the same data therefore performs zero additional merges and leaves the archived shell archived.
+
+Ambiguous, non-eponymous same-PI clusters are never auto-selected here and continue to rely on the manual review workflow and the gate's existing `duplicate_risk` suppress-in-place fallback.
+
 ## Environment order and production
 
 Development and Beta are the review environments.

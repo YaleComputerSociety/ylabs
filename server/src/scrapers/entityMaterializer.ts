@@ -2621,6 +2621,30 @@ export async function materializeEntity(
   entityDoc = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
   if (entityDoc) entityIdString = String(entityDoc._id);
 
+  // A research entity archived into a canonical survivor by the eponymous FRA->lab
+  // merge (issue #1957) carries a canonicalGroupId tombstone and was removed from
+  // Meilisearch. findEntityDocByIdentifier resolves by slug without an archived
+  // filter, so a later sweep re-scraping its source would otherwise write to and
+  // re-sync the merged shell - resurrecting it and undoing the merge. Treat it as a
+  // no-op so a second sweep pass neither re-activates nor re-indexes the shell.
+  if (
+    isResearchEntityObservationType(entityType) &&
+    entityDoc &&
+    entityDoc.archived === true &&
+    entityDoc.canonicalGroupId
+  ) {
+    return {
+      entityType,
+      entityId: materializerDocumentId(entityDoc._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      skipped: 'merged-into-canonical',
+    };
+  }
+
   if (!identifier.entityId && entityIdString) {
     const excludedObs = await entityIdAnchoredObservationsExcludedByEntityKeyScope(
       entityType,
