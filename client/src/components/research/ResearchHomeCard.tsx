@@ -186,7 +186,7 @@ const ResearchHomeCard = ({
 
   return (
     <article
-      className={`yr-card-interactive rounded-md ${
+      className={`yr-card-interactive yr-fade-in rounded-md ${
         isCompact ? 'p-3 sm:p-4' : 'p-4'
       } ${isCardClickable ? 'cursor-pointer' : ''}`}
       onClick={activateCardFromClick}
@@ -421,7 +421,7 @@ const ResearchHomeCard = ({
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
-            className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+            className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
               isCompact
                 ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-brand-navy'
                 : 'border border-blue-200 bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]'
@@ -433,7 +433,7 @@ const ResearchHomeCard = ({
           {activePostedOpportunity?._id && (
             <Link
               to={`/opportunities/${safeRouteSegment(activePostedOpportunity._id)}`}
-              className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy"
+              className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white transition active:scale-[0.98] hover:bg-brand-navy"
               onClick={(event) => event.stopPropagation()}
             >
               View posted opportunity
@@ -445,7 +445,7 @@ const ResearchHomeCard = ({
           <button
             type="button"
             onClick={() => onSelect(home.label)}
-            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition-colors hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]"
+            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition active:scale-[0.98] hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]"
           >
             Search this area
           </button>
