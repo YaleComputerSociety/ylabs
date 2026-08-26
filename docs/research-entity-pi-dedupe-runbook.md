@@ -106,7 +106,8 @@ SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi \
 ## Automatic eponymous FRA to lab merge in the sweep
 
 The high-confidence eponymous subset of same-PI dedupe (a `faculty-research-area-*` shell that shadows the SAME PI's own concrete lab, guarded against CENTER/INSTITUTE canonicals) can run automatically inside the scraper sweep instead of the manual review workflow above.
-It is exposed as the `research-entity:merge-eponymous-fra` stage, wired into the `development-full` post-run pipeline immediately after `faculty-projection` (materialization) and before `search-rebuild`, so the student-visibility gate and the search index evaluate the merged canonical.
+It is exposed as the `research-entity:merge-eponymous-fra` stage, wired into the `development-full` post-run pipeline after `faculty-projection` (materialization) and before `search-rebuild`, so the student-visibility gate and the search index evaluate the merged canonical.
+When the sibling accountless-researcher-shell dedupe stage is also enabled (`SCRAPER_SWEEP_DEDUPE_RESEARCHERS=1`, exposed as `researchers:dedupe-accountless-shells`), it runs between `faculty-projection` and this FRA merge so researchers are unified into their account-linked canonical before entities are merged.
 
 The stage is flag-gated OFF by default.
 It only runs when `SCRAPER_SWEEP_AUTO_MERGE_FRA=1` (or `=true`) is set in the sweep environment; with the flag unset the stage is not added, so Beta and Prod sweeps are unaffected until the flag is deliberately enabled after Dev validation.

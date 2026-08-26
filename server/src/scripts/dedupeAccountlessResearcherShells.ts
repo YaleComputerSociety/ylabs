@@ -184,7 +184,10 @@ export async function dedupeAccountlessResearcherShells(options: {
   });
 
   const shellDocs = shellObjectIds.length
-    ? await Researcher.find({ _id: { $in: shellObjectIds } }, { projection: attributeProjection }).toArray()
+    ? await Researcher.find(
+        { _id: { $in: shellObjectIds } },
+        { projection: attributeProjection },
+      ).toArray()
     : [];
   const canonicalDocs = canonicalObjectIds.length
     ? await Researcher.find(
@@ -288,11 +291,13 @@ export async function dedupeAccountlessResearcherShells(options: {
       });
     }
 
-    const canonicalState =
-      canonicalMergeState.get(canonicalId) ??
+    const canonicalState = canonicalMergeState.get(canonicalId) ??
       canonicalSnapshotById.get(canonicalId) ?? { profileLinks: [], identifiers: {}, profile: {} };
-    const shellSnapshot =
-      shellSnapshotById.get(shellId) ?? { profileLinks: [], identifiers: {}, profile: {} };
+    const shellSnapshot = shellSnapshotById.get(shellId) ?? {
+      profileLinks: [],
+      identifiers: {},
+      profile: {},
+    };
     const plan = planResearcherAttributeUnion(canonicalState, shellSnapshot);
 
     if (!researcherAttributeUnionIsEmpty(plan)) {
@@ -314,8 +319,7 @@ export async function dedupeAccountlessResearcherShells(options: {
 
     attributeUnion.profileLinksAppended += plan.profileLinksToAppend.length;
     for (const field of Object.keys(plan.identifierGapFills)) {
-      attributeUnion.identifiersFilled[field] =
-        (attributeUnion.identifiersFilled[field] ?? 0) + 1;
+      attributeUnion.identifiersFilled[field] = (attributeUnion.identifiersFilled[field] ?? 0) + 1;
     }
     for (const field of Object.keys(plan.profileGapFills)) {
       attributeUnion.profileFieldsFilled[field] =
@@ -380,7 +384,8 @@ export async function dedupeAccountlessResearcherShells(options: {
   if (options.apply) {
     if (researcherOps.length) await Researcher.bulkWrite(researcherOps, { ordered: false });
     if (canonicalUnionOps.length) await Researcher.bulkWrite(canonicalUnionOps, { ordered: false });
-    if (roleAssignmentOps.length) await RoleAssignment.bulkWrite(roleAssignmentOps, { ordered: false });
+    if (roleAssignmentOps.length)
+      await RoleAssignment.bulkWrite(roleAssignmentOps, { ordered: false });
   }
 
   return {

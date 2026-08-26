@@ -65,8 +65,18 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
           websiteUrl: 'https://w/x',
         },
       },
-      { _id: twinCanonicalA, displayName: 'Sam Twin', accountId: new mongoose.Types.ObjectId(), archived: false },
-      { _id: twinCanonicalB, displayName: 'Sam Twin', accountId: new mongoose.Types.ObjectId(), archived: false },
+      {
+        _id: twinCanonicalA,
+        displayName: 'Sam Twin',
+        accountId: new mongoose.Types.ObjectId(),
+        archived: false,
+      },
+      {
+        _id: twinCanonicalB,
+        displayName: 'Sam Twin',
+        accountId: new mongoose.Types.ObjectId(),
+        archived: false,
+      },
       { _id: twinShellId, displayName: 'Sam Twin', archived: false },
       { _id: soloShellId, displayName: 'Solo Person', archived: false },
       {
