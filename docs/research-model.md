@@ -5,8 +5,9 @@ This document is the single source of truth for collection shapes and product-mo
 Design rationale, sequencing decisions, and the phased migration history that produced this model live in [`research-model-refactor.md`](./research-model-refactor.md) (historical decision record) and [`research-model-refactor-phase0.md`](./research-model-refactor-phase0.md) (Phase 0 inventory runbook).
 Where an older note, issue, or skill still describes `Person`, `ResearchGroup`/`ResearchGroupMember`, `FacultyMember`, `Paper`/`PaperAuthor`, `EntryPathway`, `ContactRoute`, `PostedOpportunity`, an embedded roster or `discovery` blob, or the legacy access booleans (`acceptingUndergrads`/`openness`/`acceptanceConfidence`/`opennessSignals`) as active, this document wins.
 
-Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](./decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the access-plausibility tier described below - the `Signal` confidence gradient that drives the browse trust filter, the `accessAcceptanceLevel` grade, the `REACH_OUT_PLAUSIBLE` style plausibility signals, and the "Ways in" / "Evidence" / best-next-step framing - is being retired in favor of factual, non-gating signals shown as plain badges.
-This document still describes current runtime because that code has not changed yet; update these sections only when the trust-filter removal lands, not ahead of it.
+Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](./decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the access-plausibility tier is being retired in favor of factual, non-gating signals shown as plain badges.
+Slice 1 has landed: the `accessAcceptanceLevel` grade, the browse trust filter it fed, and access-based browse ranking are removed - signals no longer score or rank access, and visibility is unchanged.
+The `REACH_OUT_PLAUSIBLE` style plausibility signals and the "Ways in" / "Evidence" / best-next-step framing still exist in runtime and are retired in later slices; update those sections only when their removal lands, not ahead of it.
 
 ## What This Solves
 
@@ -56,7 +57,7 @@ The continuous canonical materializer write path (`entityMaterializer.ts`) is th
 One extensible, source-attributed, typed fact about a research entity.
 [`server/src/models/signal.ts`](../server/src/models/signal.ts) generalizes and absorbs the retired `AccessSignal` and `UndergraduateLogisticsClaim` models.
 Fields: `researchEntityId`, `type` (see `signalTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts)), `value?`, `confidence?`/`confidenceScore?`/`status?`, `expiresAt?`, `source` (`name`, `url`, `evidenceIds[]` referencing `Observation`, `excerpt`), `observedAt`, `review`, and `archived`.
-Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the verified/likely confidence gradient that drives the browse trust-filter is preserved per type rather than collapsed into one value.
+Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the per-type confidence gradient is preserved rather than collapsed into one value.
 Logistics are the former claim types (`STUDENT_LEVEL`, `COMPENSATION`, `TIME_COMMITMENT`, `MODALITY`, `CURRENT_AVAILABILITY`) carried as `Signal.type` with a `status` and a structured `value`.
 Future metrics (wet or dry lab, safety level, and similar) are new `type` values, never new collections.
 Signals stay independent and neutral when unknown; materializer logic must not cross-infer one type from another.
@@ -243,7 +244,7 @@ Pathway-based fellowship matching was removed with `EntryPathway`; `fellowshipMa
 ## Access Signals
 
 Undergraduate-access evidence is stored as `Signal` rows in the `signals` collection (see [`Signal`](#signal-signals) above for the authoritative field shape); the standalone `AccessSignal` model was folded into it.
-Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved because it drives the browse trust-filter.
+Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved as per-signal evidence granularity.
 
 Scrapers should not directly assert product conclusions as final truth. They should emit append-only observations/source evidence, then resolver/materializer logic should derive access `Signal`s. This keeps the raw evidence stable and lets signal logic evolve without rewriting scrape history. Avoid overconfident claims like `acceptingUndergrads: true`.
 

@@ -57,7 +57,7 @@ It enriches the bounded page with listing presence, access summaries, and planni
 
 ### Declared indexes and settings
 
-The Meilisearch settings in `researchEntitySearchIndexService.ts` declare the filterable attributes used here, including visibility, kind, school, departments, research areas, and the Signal-derived `accessAcceptanceLevel`.
+The Meilisearch settings in `researchEntitySearchIndexService.ts` declare the filterable attributes used here, including visibility, kind, school, departments, research areas, and the Signal-derived `hasUndergradHostingEvidence`, `hasDocumentedWayIn`, and `undergraduateCurrentAvailability`.
 They declare `browseRankScore`, `lastObservedAt`, `name`, `createdAt`, and `updatedAt` as sortable.
 The `research_entities` schema declares single-field indexes for the common browse filters and a compound `{ studentVisibilityTier: 1, archived: 1 }` index.
 It also declares `{ archived: 1, browseRankScore: -1 }`, which does not match the public visibility predicate plus the two-key browse order as one compound index.
