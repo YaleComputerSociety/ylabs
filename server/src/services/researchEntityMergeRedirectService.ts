@@ -82,7 +82,8 @@ export interface ResearchEntityRedirectLookup {
 export async function resolveResearchEntityMergeRedirectCanonical(
   lookup: ResearchEntityRedirectLookup,
 ): Promise<any | null> {
-  const slug = typeof lookup.slug === 'string' && lookup.slug.trim() ? lookup.slug.trim() : undefined;
+  const slug =
+    typeof lookup.slug === 'string' && lookup.slug.trim() ? lookup.slug.trim() : undefined;
   const entityId = toObjectId(lookup.entityId);
   if (!slug && !entityId) return null;
 
@@ -101,7 +102,9 @@ export async function resolveResearchEntityMergeRedirectCanonical(
     if (visited.has(nextKey)) return null;
     visited.add(nextKey);
 
-    const candidate = (await ResearchEntity.findById(nextId).lean()) as ResearchEntityChainNode | null;
+    const candidate = (await ResearchEntity.findById(
+      nextId,
+    ).lean()) as ResearchEntityChainNode | null;
     if (candidate && candidate.archived !== true) return candidate;
     if (candidate?.canonicalGroupId) {
       nextId = candidate.canonicalGroupId;

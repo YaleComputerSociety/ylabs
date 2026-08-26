@@ -1698,9 +1698,7 @@ export async function applyResearchEntityDedupeMergeGroup(
   const duplicateSlugDocs = await ResearchEntity.find({ _id: { $in: duplicateIds } })
     .select('_id slug')
     .lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
-  const duplicateSlugById = new Map(
-    duplicateSlugDocs.map((doc) => [String(doc._id), doc.slug]),
-  );
+  const duplicateSlugById = new Map(duplicateSlugDocs.map((doc) => [String(doc._id), doc.slug]));
   await recordResearchEntityMergeRedirects({
     canonicalEntityId: canonicalId,
     mergedShells: duplicateIds.map((id) => ({
@@ -1840,9 +1838,7 @@ export async function applyResearchEntityDedupeMergeGroup(
   // when deleteDuplicates left the duplicates untouched due to remaining refs.
   const idsToRemoveFromIndex =
     options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : group.duplicateEntityIds;
-  await Promise.all(
-    idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)),
-  );
+  await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
 
   return {
     canonicalEntityId: group.canonicalEntityId,

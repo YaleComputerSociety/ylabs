@@ -56,7 +56,10 @@ describe('dedupe merge persists a durable canonical redirect', () => {
     }
   });
 
-  const seedLabAndShell = async (labId: mongoose.Types.ObjectId, shellId: mongoose.Types.ObjectId) => {
+  const seedLabAndShell = async (
+    labId: mongoose.Types.ObjectId,
+    shellId: mongoose.Types.ObjectId,
+  ) => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     await db.collection('research_entities').insertMany([
@@ -94,7 +97,11 @@ describe('dedupe merge persists a durable canonical redirect', () => {
         mergedResearchAreas: [],
         mergedSourceUrls: [],
       },
-      { deleteDuplicates: false, relinkReferences: true, redirectReason: 'eponymous_fra_lab_merge' },
+      {
+        deleteDuplicates: false,
+        relinkReferences: true,
+        redirectReason: 'eponymous_fra_lab_merge',
+      },
     );
 
     const redirect = await ResearchEntityRedirect.findOne({ mergedEntityId: shellId }).lean<{
@@ -114,7 +121,11 @@ describe('dedupe merge persists a durable canonical redirect', () => {
         mergedResearchAreas: [],
         mergedSourceUrls: [],
       },
-      { deleteDuplicates: false, relinkReferences: true, redirectReason: 'eponymous_fra_lab_merge' },
+      {
+        deleteDuplicates: false,
+        relinkReferences: true,
+        redirectReason: 'eponymous_fra_lab_merge',
+      },
     );
     expect(await ResearchEntityRedirect.countDocuments({ mergedEntityId: shellId })).toBe(1);
   });
@@ -139,7 +150,11 @@ describe('dedupe merge persists a durable canonical redirect', () => {
       archived: false,
     });
 
-    const delta = await runEponymousFraLabMergeStage({ apply: true, maxMerges: 50, sinceIso: SINCE });
+    const delta = await runEponymousFraLabMergeStage({
+      apply: true,
+      maxMerges: 50,
+      sinceIso: SINCE,
+    });
     expect(delta.appliedMergeCount).toBe(1);
 
     const redirect = await ResearchEntityRedirect.findOne({ mergedEntityId: shellId }).lean<{

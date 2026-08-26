@@ -205,7 +205,9 @@ export async function resolveMaterializedShortDescription(
   input: MaterializedShortDescriptionInput,
 ): Promise<string | null> {
   if (input.manuallyLocked) return null;
-  const shortQuality = input.isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
+  const shortQuality = input.isProgramLike
+    ? programCardShortDescriptionQuality
+    : shortDescriptionQuality;
   const current =
     typeof input.currentShortDescription === 'string' ? input.currentShortDescription.trim() : '';
   const isBareResearchAreasFallback =
@@ -392,10 +394,7 @@ async function applyDescriptionResearchAreaDerivation(
   entityDoc: Record<string, unknown> | null,
 ): Promise<void> {
   const entityType = set.entityType ?? entityDoc?.entityType;
-  if (
-    typeof entityType !== 'string' ||
-    !DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)
-  ) {
+  if (typeof entityType !== 'string' || !DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)) {
     return;
   }
   if (hasNonEmptyStringArray(set.researchAreas, entityDoc?.researchAreas)) return;
@@ -671,7 +670,10 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       !isBoilerplatePlatformHostUrl(url),
   );
   if (!entityIdentity) return kept;
-  const entityForMatch: ResearchEntityIdentity = { ...entityIdentity, sourceUrls: kept as string[] };
+  const entityForMatch: ResearchEntityIdentity = {
+    ...entityIdentity,
+    sourceUrls: kept as string[],
+  };
   return kept.filter((url) => personProfileSourceMatchesEntity(url, entityForMatch));
 }
 
@@ -2730,7 +2732,11 @@ export async function materializeEntity(
         const candidate = resolved[shellGatedField];
         if (
           candidate &&
-          resolvedFieldSourcedOnlyFromPersonProfilePages(shellGatedField, candidate, materializationObs)
+          resolvedFieldSourcedOnlyFromPersonProfilePages(
+            shellGatedField,
+            candidate,
+            materializationObs,
+          )
         ) {
           delete resolved[shellGatedField];
           if (shellGatedField === 'fullDescription') fullDescriptionShellGated = true;
@@ -2808,7 +2814,10 @@ export async function materializeEntity(
       const winnerFullUseful =
         !!winnerFull &&
         fullDescriptionQuality(winnerFull).isUseful &&
-        !isFullDescriptionRestatementOfShortDescription(winnerFull, currentShortForFullDistinctness);
+        !isFullDescriptionRestatementOfShortDescription(
+          winnerFull,
+          currentShortForFullDistinctness,
+        );
       if (!winnerFullUseful) {
         const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
           manuallyLockedFields,
@@ -2850,7 +2859,10 @@ export async function materializeEntity(
       const finalFullText = textValue(set.fullDescription);
       if (
         finalFullText &&
-        isFullDescriptionRestatementOfShortDescription(finalFullText, currentShortForFullDistinctness)
+        isFullDescriptionRestatementOfShortDescription(
+          finalFullText,
+          currentShortForFullDistinctness,
+        )
       ) {
         set.fullDescription = '';
         fieldsWritten++;
@@ -2875,7 +2887,7 @@ export async function materializeEntity(
       // fixed full (issue #1595).
       currentShortDescription: fullDescriptionShellGated
         ? undefined
-        : set.shortDescription ?? entityDoc?.shortDescription,
+        : (set.shortDescription ?? entityDoc?.shortDescription),
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeEntity,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
@@ -2928,7 +2940,10 @@ export async function materializeEntity(
     ].filter((url): url is string => typeof url === 'string');
     await applyDescriptionResearchAreaDerivation(set, entityDoc);
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc, orgUnitProfileUrls);
-    await applyResearchEntityResearchAreaCanonicalization(set, set.departments ?? entityDoc?.departments);
+    await applyResearchEntityResearchAreaCanonicalization(
+      set,
+      set.departments ?? entityDoc?.departments,
+    );
     if (!manuallyLockedFields.includes('websiteUrl')) {
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
       if (websiteResolution.action === 'set') {

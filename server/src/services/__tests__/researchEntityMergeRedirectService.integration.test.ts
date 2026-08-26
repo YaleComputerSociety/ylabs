@@ -71,8 +71,14 @@ describe('researchEntityMergeRedirectService', () => {
     const canonicalId = new mongoose.Types.ObjectId();
     const shellId = new mongoose.Types.ObjectId();
     const shell = { entityId: shellId, slug: 'faculty-research-area-jane-roe' };
-    await recordResearchEntityMergeRedirects({ canonicalEntityId: canonicalId, mergedShells: [shell] });
-    await recordResearchEntityMergeRedirects({ canonicalEntityId: canonicalId, mergedShells: [shell] });
+    await recordResearchEntityMergeRedirects({
+      canonicalEntityId: canonicalId,
+      mergedShells: [shell],
+    });
+    await recordResearchEntityMergeRedirects({
+      canonicalEntityId: canonicalId,
+      mergedShells: [shell],
+    });
     expect(await ResearchEntityRedirect.countDocuments({ mergedEntityId: shellId })).toBe(1);
   });
 
