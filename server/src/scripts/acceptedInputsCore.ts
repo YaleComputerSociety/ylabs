@@ -3,10 +3,7 @@ import path from 'path';
 import { User } from '../models/user';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import {
-  DEFAULT_PROGRAM_CONFIGS,
-  type ProgramConfig,
-} from '../scrapers/sources/undergradFellowshipRecipientScraper';
+import { DEFAULT_PROGRAM_CONFIGS } from '../scrapers/sources/undergradFellowshipRecipientScraper';
 
 export const DEFAULT_ACCEPTED_INPUT_ROOT = '/tmp/ylabs-accepted-inputs';
 export const ACCEPTED_INPUT_SOURCE = 'accepted-inputs';
@@ -693,18 +690,6 @@ export async function applyOrcidCrosswalkCsv(
     issues,
     updates,
   };
-}
-
-export function buildFellowshipCandidateRows(
-  configs: ProgramConfig[] = DEFAULT_PROGRAM_CONFIGS,
-): Array<Record<string, unknown>> {
-  return configs.map((config) => ({
-    programKey: config.programKey,
-    programName: config.programName,
-    sourceUrl: config.urls[0] || '',
-    status: config.manualUploadRequired ? 'manual-required' : 'review-source',
-    reviewNote: config.skipReason || '',
-  }));
 }
 
 export function buildScholarCandidateRows(

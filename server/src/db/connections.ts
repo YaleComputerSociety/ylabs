@@ -4,7 +4,6 @@
 import mongoose, { Connection } from 'mongoose';
 import { listingSchema, Listing } from '../models/listing';
 
-let productionConnection: Connection | null = null;
 let migrationConnection: Connection | null = null;
 
 let MigrationListing: mongoose.Model<any> | null = null;
@@ -74,13 +73,11 @@ export function triggerReconnect(): Promise<void> {
       if (mode === 'productionMigration') {
         const migrationUrl = process.env.MONGODBURL_MIGRATION;
         if (!migrationUrl) return;
-        await Promise.allSettled([
-          mongoose.disconnect(),
-          migrationConnection?.close(),
-        ]);
+        await Promise.allSettled([mongoose.disconnect(), migrationConnection?.close()]);
         await mongoose.connect(primaryUrl, mongoOptions);
-        productionConnection = mongoose.connection;
-        migrationConnection = await mongoose.createConnection(migrationUrl, mongoOptions).asPromise();
+        migrationConnection = await mongoose
+          .createConnection(migrationUrl, mongoOptions)
+          .asPromise();
         MigrationListing = migrationConnection.model('Listing', listingSchema, 'listings');
         console.log('MongoDB: productionMigration reconnected');
       } else {
@@ -160,7 +157,6 @@ export async function initializeConnections(): Promise<void> {
     }
 
     await mongoose.connect(primaryUrl, mongoOptions);
-    productionConnection = mongoose.connection;
     console.log('Connected to primary database (default) 🚀');
 
     migrationConnection = await mongoose.createConnection(migrationUrl, mongoOptions).asPromise();
@@ -188,12 +184,4 @@ export function getListingModel(): mongoose.Model<any> {
   }
 
   return Listing;
-}
-
-export function getMigrationConnection(): Connection | null {
-  return migrationConnection;
-}
-
-export function getProductionConnection(): Connection | null {
-  return productionConnection;
 }

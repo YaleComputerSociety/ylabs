@@ -7,9 +7,6 @@ export const researchEntityRelationshipTypes = [
   'HOSTED_PROGRAM',
 ] as const;
 
-export type ResearchEntityRelationshipType =
-  (typeof researchEntityRelationshipTypes)[number];
-
 const researchEntityRelationshipSchema = new mongoose.Schema(
   {
     sourceResearchEntityId: {
@@ -69,4 +66,3 @@ export const ResearchEntityRelationship =
     researchEntityRelationshipSchema,
     'research_entity_relationships',
   );
-

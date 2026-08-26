@@ -94,8 +94,6 @@ export function currentUndergradAvailabilityFromSignals(
     : 'UNKNOWN';
 }
 
-export const ELIGIBLE_STUDENT_LEVEL_VALUES = STUDENT_LEVELS;
-
 export type EligibleStudentLevel = (typeof STUDENT_LEVELS)[number];
 
 export interface StudentLevelSignalInput {
@@ -182,15 +180,6 @@ type LogisticsValue =
   | { modes: string[] }
   | { minHours?: number; maxHours?: number; period: 'WEEK' }
   | { status: string };
-
-export interface UndergraduateLogisticsObservationValue {
-  schemaVersion: 1;
-  claimType: UndergraduateLogisticsClaimType;
-  value: LogisticsValue;
-  evidenceQuote: string;
-  quoteVerified: true;
-  validThrough?: string;
-}
 
 export interface UndergraduateLogisticsObservationLike {
   _id?: unknown;
@@ -719,7 +708,10 @@ function quoteSupportsClaim(
     };
     const modalityPolicy =
       /\b(?:work|works|working|role|position|research|activities?)\b.{0,40}\b(?:in[- ]person|on[- ]site|in the lab|hybrid|remote(?:ly)?|virtual(?:ly)?)\b|\b(?:in[- ]person|on[- ]site|hybrid|remote|virtual)\s+(?:work|role|position|option|arrangement)\s+(?:is|are)\s+(?:available|offered|allowed|required)\b|\b(?:this|the|it)\s+(?:is|will\s+be)\s+(?:a\s+)?(?:fully\s+|primarily\s+|entirely\s+|mostly\s+)?(?:in[- ]person|on[- ]site|hybrid|remote(?:ly)?|virtual(?:ly)?)\s+(?:work|role|position|job|opportunity|arrangement)\b/i;
-    const modalityClauses = undergraduateClaimClauses(quote, quoteHasUndergraduateOrNeutralPopulation);
+    const modalityClauses = undergraduateClaimClauses(
+      quote,
+      quoteHasUndergraduateOrNeutralPopulation,
+    );
     return modes.every((mode) =>
       modalityClauses.some((clause) => {
         if (

@@ -2,7 +2,7 @@
  * Service layer for listing CRUD, view tracking, and favorites.
  */
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from '../utils/errors';
-import { addOwnListings, deleteOwnListings, userExists, createUser, readUser } from './userService';
+import { addOwnListings, deleteOwnListings, userExists, createUser } from './userService';
 import { fetchYalie } from './yaliesService';
 import mongoose from 'mongoose';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -506,26 +506,6 @@ export const readPublicListing = async (id: any) => {
   }
 };
 
-export const getSkeletonListing = async (userId: string) => {
-  const user = await readUser(userId);
-  const departments = [user.primaryDepartment, ...(user.secondaryDepartments || [])].filter(
-    Boolean,
-  );
-  return {
-    _id: 'create',
-    ownerId: userId,
-    ownerFirstName: user.fname,
-    ownerLastName: user.lname,
-    ownerEmail: user.email,
-    ownerTitle: user.title || '',
-    ownerPrimaryDepartment: user.primaryDepartment || '',
-    departments,
-    researchAreas: user.researchInterests || [],
-    keywords: user.researchInterests || [],
-    confirmed: user.userConfirmed,
-  };
-};
-
 export const readListings = async (ids: any[]) => {
   const listings = [];
   const requestedIds = Array.isArray(ids) ? ids : [];
@@ -539,37 +519,6 @@ export const readListings = async (ids: any[]) => {
     }
   }
   return listings;
-};
-
-export const readPublicListings = async (ids: any[]) => {
-  const listings = [];
-  const requestedIds = Array.isArray(ids) ? ids : [];
-  for (const id of requestedIds.slice(0, MAX_LISTING_ID_READS)) {
-    const safeId = normalizeListingObjectId(id);
-    if (safeId) {
-      const listing = await getListingModel().findOne({
-        _id: safeId,
-        ...PUBLIC_LISTING_MUTATION_FILTER,
-      });
-      if (listing) {
-        listings.push(listing.toObject());
-      }
-    }
-  }
-  return listings;
-};
-
-export const listingExists = async (id: any) => {
-  const safeId = normalizeListingObjectId(id);
-  if (safeId) {
-    const listing = await getListingModel().findById(safeId);
-    if (!listing) {
-      return false;
-    }
-    return true;
-  } else {
-    throw new ObjectIdError('Did not received expected id type ObjectId');
-  }
 };
 
 export const updateListing = async (
@@ -674,11 +623,6 @@ export const updateListing = async (
 
 export const archiveListing = async (id: any, userId: string) => {
   const listing = await updateListing(id, userId, { archived: true }, false, true, true);
-  return listing;
-};
-
-export const unarchiveListing = async (id: any, userId: string) => {
-  const listing = await updateListing(id, userId, { archived: false }, false, true, true);
   return listing;
 };
 

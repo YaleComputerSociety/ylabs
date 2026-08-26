@@ -3,11 +3,6 @@
  */
 import { User } from '../models/index';
 import { NotFoundError } from '../utils/errors';
-import {
-  readListing,
-  confirmListing,
-  unconfirmListing,
-} from './listingService';
 import mongoose from 'mongoose';
 import { escapeRegex } from '../utils/regex';
 
@@ -182,18 +177,10 @@ const removeStoredObjectIdsForUserMutation = (
   );
 };
 
-const storedObjectIdStringsForUserMutation = (values: unknown, fieldName: string): string[] =>
-  normalizeStoredObjectIdsForUserMutation(values, fieldName).map((value) => value.toHexString());
-
 export const createUser = async (userData: any) => {
   const user = new User(userData);
   await user.save();
   return user.toObject();
-};
-
-export const readAllUsers = async () => {
-  const users = await User.find();
-  return users.map((user: any) => user.toObject());
 };
 
 export const buildCaseInsensitiveNetidFilter = (id: unknown) => ({
@@ -295,78 +282,6 @@ export const updateUser = async (id: any, data: any) => {
   }
 };
 
-export const confirmUser = async (id: any) => {
-  const user = await updateUser(id, { userConfirmed: true });
-  for (const listingId of storedObjectIdStringsForUserMutation(user.ownListings, 'ownListings')) {
-    const listing = await readListing(listingId);
-    if (listing && listing.ownerId === user.netid) {
-      await confirmListing(listingId, user.netid);
-    }
-  }
-  return user;
-};
-
-export const unconfirmUser = async (id: any) => {
-  const user = await updateUser(id, { userConfirmed: false });
-  for (const listingId of storedObjectIdStringsForUserMutation(user.ownListings, 'ownListings')) {
-    const listing = await readListing(listingId);
-    if (listing && listing.ownerId === user.netid) {
-      await unconfirmListing(listingId, user.netid);
-    }
-  }
-  return user;
-};
-
-export const deleteUser = async (id: any) => {
-  const objectId = normalizeUserLookupObjectId(id);
-  if (objectId) {
-    const user = await User.findById(objectId);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    await User.findByIdAndDelete(objectId);
-
-    return user.toObject();
-  } else {
-    const netidFilter = buildCaseInsensitiveNetidFilter(id);
-    const user = await User.findOne(netidFilter);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-    await User.findOneAndDelete(netidFilter);
-  }
-};
-
-export const addDepartments = async (id: any, newDepartments: [string]) => {
-  const user = await readUser(id);
-
-  user.departments.unshift(...newDepartments);
-  user.departments = Array.from(new Set(user.departments));
-
-  const newUser = await updateUser(id, { departments: user.departments });
-
-  return newUser;
-};
-
-export const deleteDepartments = async (id: any, removedDepartments: [string]) => {
-  const user = await readUser(id);
-
-  user.departments = user.departments.filter(
-    (department: string) => removedDepartments.indexOf(department) < 0,
-  );
-
-  const newUser = await updateUser(id, { departments: user.departments });
-
-  return newUser;
-};
-
-export const clearDepartments = async (id: any) => {
-  const newUser = await updateUser(id, { departments: [] });
-
-  return newUser;
-};
-
 export const addOwnListings = async (id: any, Listings: [mongoose.Types.ObjectId]) => {
   const user = await readUser(id);
   const listingIds = normalizeObjectIdsForUserMutation(Listings, 'ownListings');
@@ -396,11 +311,3 @@ export const deleteOwnListings = async (id: any, removedListings: [mongoose.Type
 
   return newUser;
 };
-
-export const clearOwnListings = async (id: any) => {
-  const newUser = await updateUser(id, { ownListings: [] });
-
-  return newUser;
-};
-
-

@@ -20,11 +20,6 @@ export const RETIRED_RESEARCH_ENTITY_FIELDS = [
   'lastPaperAtCache',
 ] as const;
 
-export interface ScholarlyLinkCounts {
-  officialProfile: number;
-  nonOfficial: number;
-}
-
 export interface RetireBibliographicMirrorInvariantInput {
   officialProfileLinksBefore: number;
   officialProfileLinksAfter: number;

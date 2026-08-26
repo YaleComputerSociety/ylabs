@@ -68,13 +68,6 @@ export type ListingClaimRequestUser = {
   profileVerified?: boolean;
 };
 
-export type CreateListingClaimRequestInput = {
-  requestType?: string;
-  message?: unknown;
-  proposedChanges?: unknown;
-  evidenceUrls?: unknown;
-};
-
 type ListingClaimSnapshot = {
   title?: string;
   ownerId?: string;
@@ -330,9 +323,7 @@ export const applyListingClaimRequestDecision = async (
 
   const body = normalizeRequestBody(input);
   if (body.confirmApply !== true) {
-    throw new BadRequestError(
-      'Explicit confirmation is required to apply canonical data changes',
-    );
+    throw new BadRequestError('Explicit confirmation is required to apply canonical data changes');
   }
 
   const request = await ListingClaimRequest.findById(id);

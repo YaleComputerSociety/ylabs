@@ -490,16 +490,6 @@ export const readAllFellowships = async () => {
   return fellowships.map((fellowship: any) => publicFellowshipForStudent(fellowship.toObject()));
 };
 
-export const fellowshipExists = async (id: any) => {
-  const safeId = normalizeFellowshipObjectId(id);
-  if (safeId) {
-    const fellowship = await Fellowship.findById(safeId);
-    return !!fellowship;
-  } else {
-    throw new ObjectIdError('Did not receive expected id type ObjectId');
-  }
-};
-
 const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
   'title',
   'programCategory',

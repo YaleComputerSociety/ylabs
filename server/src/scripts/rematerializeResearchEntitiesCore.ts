@@ -106,7 +106,9 @@ export function parseRematerializeResearchEntitiesArgs(
       continue;
     }
     if (arg.startsWith('--reclaim-stranded=')) {
-      args.reclaimStrandedField = parseReclaimStrandedField(arg.slice('--reclaim-stranded='.length));
+      args.reclaimStrandedField = parseReclaimStrandedField(
+        arg.slice('--reclaim-stranded='.length),
+      );
       continue;
     }
     if (arg === '--reclaim-stranded') {
@@ -169,7 +171,9 @@ function normalizeForComparison(value: unknown): unknown {
 }
 
 function valuesEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(normalizeForComparison(left)) === JSON.stringify(normalizeForComparison(right));
+  return (
+    JSON.stringify(normalizeForComparison(left)) === JSON.stringify(normalizeForComparison(right))
+  );
 }
 
 export function buildRematerializeFieldChanges(
@@ -195,10 +199,6 @@ export function buildRematerializeFieldChanges(
   }
   return changes;
 }
-
-export const REMATERIALIZE_VISIBILITY_GATE_INPUT_FIELDS = REMATERIALIZE_TRACKED_FIELDS.filter(
-  (field) => field !== 'studentVisibilityTier',
-);
 
 export function rematerializeChangeAffectsVisibilityGate(
   changes: RematerializeFieldChange[],
@@ -233,7 +233,9 @@ export function researchEntityFieldIsStranded(value: unknown): boolean {
 
 export function observationValueIsMaterializable(value: unknown): boolean {
   if (Array.isArray(value)) {
-    return value.some((entry) => (typeof entry === 'string' ? entry.trim().length > 0 : entry != null));
+    return value.some((entry) =>
+      typeof entry === 'string' ? entry.trim().length > 0 : entry != null,
+    );
   }
   if (typeof value === 'string') return value.trim().length > 0;
   return value != null;

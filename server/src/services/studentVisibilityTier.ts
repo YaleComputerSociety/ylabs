@@ -1,7 +1,4 @@
-import {
-  publicStudentVisibilityTiers,
-  type StudentVisibilityTier,
-} from '../models/studentVisibility';
+import { type StudentVisibilityTier } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import {
   isStudiesResearchAreaEchoDescription,
@@ -425,9 +422,6 @@ const withOverride = (
     reasons: Array.from(new Set([...reasons, 'operator_override'])),
   };
 };
-
-export const isPublicStudentVisibilityTier = (tier: unknown): tier is StudentVisibilityTier =>
-  publicStudentVisibilityTiers.includes(tier as StudentVisibilityTier);
 
 export const BLANK_PUBLIC_DESCRIPTION_REASON = 'blank_public_description';
 

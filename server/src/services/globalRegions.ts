@@ -8,8 +8,6 @@ export const TOP_LEVEL_GLOBAL_REGIONS = [
   'Oceania',
 ] as const;
 
-export type TopLevelGlobalRegion = (typeof TOP_LEVEL_GLOBAL_REGIONS)[number];
-
 const topLevelGlobalRegionSet: ReadonlySet<string> = new Set(TOP_LEVEL_GLOBAL_REGIONS);
 
 export function distinctGlobalRegions(regions: readonly string[] | undefined): string[] {

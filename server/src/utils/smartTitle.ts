@@ -279,15 +279,6 @@ export async function getDepartmentLookup(): Promise<Map<string, DepartmentDoc>>
 }
 
 /**
- * Invalidates the department lookup cache.
- * Call this when departments are updated.
- */
-export function invalidateDepartmentLookupCache(): void {
-  departmentLookupCache = null;
-  cacheTimestamp = 0;
-}
-
-/**
  * Generates a smart title based on the owner's last name and department categories.
  *
  * @param lastName - Owner's last name

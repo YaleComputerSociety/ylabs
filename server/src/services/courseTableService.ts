@@ -48,17 +48,11 @@ const publicCourseTableText = (value: unknown, maxLength = MAX_COURSETABLE_TEXT_
 };
 
 const publicCourseTableTextArray = (value: unknown): string[] => {
-  const values = Array.isArray(value)
-    ? value
-    : typeof value === 'string'
-      ? value.split('')
-      : [];
-  return values
-    .slice(0, MAX_COURSETABLE_ARRAY_ITEMS)
-    .flatMap((item) => {
-      const text = publicCourseTableText(item, MAX_COURSETABLE_ARRAY_TEXT_LENGTH);
-      return text ? [text] : [];
-    });
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split('') : [];
+  return values.slice(0, MAX_COURSETABLE_ARRAY_ITEMS).flatMap((item) => {
+    const text = publicCourseTableText(item, MAX_COURSETABLE_ARRAY_TEXT_LENGTH);
+    return text ? [text] : [];
+  });
 };
 
 const publicCourseTableCredits = (value: unknown): number | undefined => {
@@ -122,53 +116,6 @@ export function getRecentSeasonCodes(): string[] {
   }
 
   return seasons;
-}
-
-/**
- * Fetch all catalog courses for one CourseTable season.
- * This is used by the independent-study scraper, which needs a season-wide
- * scan instead of a per-professor lookup.
- */
-export async function fetchAllSeasonCourses(
-  season: string,
-): Promise<CourseTableCourse[]> {
-  const safeSeason = normalizeCourseTableSeason(season);
-  if (!safeSeason) return [];
-
-  const cacheKey = `season:${safeSeason}`;
-  const cached = cache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data;
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(`${COURSETABLE_API}/${safeSeason}`, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) return [];
-
-    const data = await response.json();
-    if (!Array.isArray(data)) return [];
-
-    const courses = data
-      .slice(0, MAX_COURSETABLE_COURSES)
-      .flatMap((course: any) => publicCourseTableCourse(course, safeSeason) ?? []);
-
-    cache.set(cacheKey, { data: courses, timestamp: Date.now() });
-    return courses;
-  } catch (err: any) {
-    if (err.name !== 'AbortError') {
-      console.error('CourseTable: Failed to fetch season:', sanitizeLogValue(err));
-    }
-    return [];
-  }
 }
 
 /**

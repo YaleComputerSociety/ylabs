@@ -29,15 +29,6 @@ export interface CanonicalOverridePlan {
   addedSourceUrls: string[];
 }
 
-export const CANONICAL_OVERRIDE_LOCKABLE_FIELDS = [
-  'name',
-  'displayName',
-  'website',
-  'websiteUrl',
-  'shortDescription',
-  'fullDescription',
-] as const;
-
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 export function isHttpUrl(value: unknown): boolean {

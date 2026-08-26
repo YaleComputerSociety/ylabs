@@ -55,9 +55,7 @@ export async function appendObservations(
       rejectedFurniture += 1;
       continue;
     }
-    sanitizedInputs.push(
-      sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value },
-    );
+    sanitizedInputs.push(sanitized.value === obs.value ? obs : { ...obs, value: sanitized.value });
   }
   const rejectedInvalidEnum = sanitizedInputs.filter((obs) =>
     isObservationValueRejected(obs.field, obs.value),
@@ -251,20 +249,4 @@ export async function getSourceByName(name: string): Promise<{
     name: (src as any).name,
     defaultWeight: (src as any).defaultWeight,
   };
-}
-
-export async function findObservations(
-  entityType: string,
-  entityIdentifier: { entityId?: string; entityKey?: string },
-  field?: string,
-): Promise<any[]> {
-  const filter: any = {
-    entityType,
-    superseded: false,
-  };
-  if (entityIdentifier.entityId) filter.entityId = entityIdentifier.entityId;
-  if (entityIdentifier.entityKey) filter.entityKey = entityIdentifier.entityKey;
-  if (field) filter.field = field;
-
-  return Observation.find(filter).sort({ observedAt: -1 }).lean();
 }

@@ -6,7 +6,6 @@ import {
   TERMINAL_OUTREACH_OUTCOMES,
   daysSinceOutreach,
   isStaleUnansweredOutreach,
-  MAX_STUDENT_FOLLOW_UPS,
   STUDENT_FOLLOW_UP_TEMPLATE_VERSION,
 } from './studentFollowUpEligibility';
 import { NotFoundError } from '../utils/errors';
@@ -38,20 +37,16 @@ const coerceDate = (value: unknown): Date | null => {
   return null;
 };
 
-const resolveStudentProfileId = async (
-  netid: unknown,
-): Promise<mongoose.Types.ObjectId | null> => {
+const resolveStudentProfileId = async (netid: unknown): Promise<mongoose.Types.ObjectId | null> => {
   const normalized = typeof netid === 'string' ? netid.trim().toLowerCase() : '';
   if (!normalized) return null;
-  const profile = (await StudentProfile.findOne({ netid: normalized })
-    .select('_id')
-    .lean()) as { _id?: mongoose.Types.ObjectId } | null;
+  const profile = (await StudentProfile.findOne({ netid: normalized }).select('_id').lean()) as {
+    _id?: mongoose.Types.ObjectId;
+  } | null;
   return profile?._id ? new mongoose.Types.ObjectId(profile._id) : null;
 };
 
-const rollUpOutreachByEntity = (
-  rows: Array<Record<string, any>>,
-): Map<string, OutreachRollup> => {
+const rollUpOutreachByEntity = (rows: Array<Record<string, any>>): Map<string, OutreachRollup> => {
   const byEntity = new Map<string, OutreachRollup>();
   for (const row of rows) {
     const entityId = String(row.researchEntityId ?? '').toLowerCase();
@@ -173,5 +168,3 @@ export const dismissSavedResearchFollowUp = async (
     { upsert: true },
   );
 };
-
-export const MAX_SAVED_RESEARCH_FOLLOW_UPS = MAX_STUDENT_FOLLOW_UPS;
