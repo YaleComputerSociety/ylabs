@@ -33,6 +33,7 @@
     "scrape:development:all:plan": "node scripts/run-data-profile.mjs development -- yarn --cwd server scrape:sweep --mode=development-plan",
     "scrape:development:all:sample": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server scrape:sweep --mode=development-sample",
     "scrape:development:all:full": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server scrape:sweep --mode=development-full --confirm-development-full-sweep",
+    "scrape:development:all:incremental": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server scrape:sweep --mode=development-incremental --confirm-development-incremental-sweep",
     "scrape:beta": "node scripts/run-data-profile.mjs beta-operator -- yarn --cwd server scrape",
     "scrape:beta:write": "node scripts/run-data-profile.mjs beta-operator --write -- yarn --cwd server scrape",
     "scrape:beta:all:plan": "node scripts/run-data-profile.mjs beta-operator -- yarn --cwd server scrape:sweep --mode=beta-plan",

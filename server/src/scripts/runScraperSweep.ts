@@ -26,6 +26,7 @@ export type ScraperSweepMode =
   | 'development-plan'
   | 'development-sample'
   | 'development-full'
+  | 'development-incremental'
   | 'beta-plan'
   | 'beta-fetch';
 
@@ -199,8 +200,18 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     writes: true,
     autoMaterialize: true,
     stopOnFailure: false,
-    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--auto-materialize'],
+    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--use-cache', '--auto-materialize'],
     confirmationFlag: '--confirm-development-full-sweep',
+    defaultConcurrency: 4,
+  },
+  'development-incremental': {
+    environment: 'development',
+    database: 'Development',
+    writes: true,
+    autoMaterialize: true,
+    stopOnFailure: false,
+    scraperFlags: ['--exhaustive', '--use-cache', '--auto-materialize'],
+    confirmationFlag: '--confirm-development-incremental-sweep',
     defaultConcurrency: 4,
   },
   'beta-plan': {
@@ -268,7 +279,11 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
       index += 1;
       continue;
     }
-    if (arg === '--confirm-development-full-sweep' || arg === '--confirm-beta-release-candidate') {
+    if (
+      arg === '--confirm-development-full-sweep' ||
+      arg === '--confirm-development-incremental-sweep' ||
+      arg === '--confirm-beta-release-candidate'
+    ) {
       confirmations.add(arg);
       continue;
     }
@@ -850,7 +865,7 @@ export async function runScraperSweep(
   }
 
   const postRun =
-    options.mode === 'development-full'
+    options.mode === 'development-full' || options.mode === 'development-incremental'
       ? await runDevelopmentPostRunStages(outputDirectory, repoRoot, childRunner, {
           autoMergeEponymousFra: isEponymousFraLabMergeStageEnabled(process.env),
           dedupeResearchers: isResearcherDedupeStageEnabled(process.env),

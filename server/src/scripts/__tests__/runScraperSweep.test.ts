@@ -52,6 +52,18 @@ describe('runScraperSweep', () => {
     ).toBe('beta-fetch');
   });
 
+  it('requires explicit confirmation for the incremental Development sweep', () => {
+    expect(() => parseScraperSweepArgs(['--mode=development-incremental'])).toThrow(
+      /confirm-development-incremental-sweep/,
+    );
+    expect(
+      parseScraperSweepArgs([
+        '--mode=development-incremental',
+        '--confirm-development-incremental-sweep',
+      ]).mode,
+    ).toBe('development-incremental');
+  });
+
   it('parses an optional positive-integer concurrency and rejects invalid values', () => {
     expect(
       parseScraperSweepArgs(['--mode=development-full', '--confirm-development-full-sweep'])
@@ -160,6 +172,19 @@ describe('runScraperSweep', () => {
     expect(developmentArgs).toContain('--exhaustive');
     expect(developmentArgs).not.toContain('--limit');
     expect(developmentArgs).toContain('--auto-materialize');
+    expect(developmentArgs).toContain('--use-cache');
+    expect(developmentArgs).toContain('--ignore-work-planner');
+
+    const incrementalArgs = buildScraperSweepChildArgs(
+      'development-incremental',
+      'yale-directory',
+      '/tmp/yale-directory.json',
+    );
+    expect(incrementalArgs).toContain('--exhaustive');
+    expect(incrementalArgs).toContain('--use-cache');
+    expect(incrementalArgs).toContain('--auto-materialize');
+    expect(incrementalArgs).not.toContain('--ignore-work-planner');
+    expect(incrementalArgs).not.toContain('--limit');
   });
 
   it('rejects incomplete runs and Development materialization errors', () => {
