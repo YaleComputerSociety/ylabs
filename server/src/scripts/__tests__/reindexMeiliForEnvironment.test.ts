@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   assertReindexMeiliEnvironment,
   parseReindexMeiliArgs,
+  planIndexReconcile,
 } from '../reindexMeiliForEnvironment';
 
 const BETA_ENV = {
@@ -74,6 +75,19 @@ describe('assertReindexMeiliEnvironment', () => {
     ).toThrow('requires Mongo database "Beta"');
   });
 
+  it('accepts a coherent production target', () => {
+    expect(
+      assertReindexMeiliEnvironment({
+        env: {
+          SCRAPER_ENV: 'production',
+          MEILISEARCH_HOST: 'http://meili-prod:7700',
+          MEILISEARCH_INDEX_PREFIX: 'prod',
+          MONGODBURL: 'mongodb+srv://user:pass@cluster.example.net/Production',
+        },
+      }).environment,
+    ).toBe('production');
+  });
+
   it('honors overridden expected database names', () => {
     expect(
       assertReindexMeiliEnvironment({
@@ -86,5 +100,43 @@ describe('assertReindexMeiliEnvironment', () => {
         },
       }).database,
     ).toBe('ProdRestore');
+  });
+});
+
+describe('planIndexReconcile', () => {
+  it('keeps the model index, retires listings/papers, reports unknown', () => {
+    const plan = planIndexReconcile({
+      allIndexUids: [
+        'prod_researchentities',
+        'prod_listings',
+        'prod_papers',
+        'prod_legacyquux',
+        'beta_researchentities',
+      ],
+      prefix: 'prod',
+    });
+
+    expect(plan.keep).toEqual(['prod_researchentities']);
+    expect(plan.retire).toEqual(['prod_listings', 'prod_papers']);
+    expect(plan.unknown).toEqual(['prod_legacyquux']);
+  });
+
+  it('only touches indexes carrying the exact prefix, never a nested prefix', () => {
+    const plan = planIndexReconcile({
+      allIndexUids: [
+        'beta_researchentities',
+        'beta_listings',
+        'beta_operator_researchentities',
+        'beta_operator_listings',
+      ],
+      prefix: 'beta',
+    });
+
+    expect(plan.keep).toEqual(['beta_researchentities']);
+    expect(plan.retire).toEqual(['beta_listings']);
+    expect(plan.unknown).toEqual([
+      'beta_operator_researchentities',
+      'beta_operator_listings',
+    ]);
   });
 });

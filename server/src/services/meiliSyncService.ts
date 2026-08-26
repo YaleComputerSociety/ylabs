@@ -1,14 +1,13 @@
 /**
- * Syncs entities (listings, research entities, papers, ...) to Meilisearch.
+ * Syncs research entities to Meilisearch.
  */
 import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { serializedDocumentId } from '../utils/idSerialization';
 import {
   buildResearchEntitySearchIndexDocumentsWithMemberNames,
 } from './researchEntitySearchIndexService';
 
-export type SyncableEntityType = 'listing' | 'researchEntity' | 'paper';
+export type SyncableEntityType = 'researchEntity';
 type MaybePromise<T> = T | Promise<T>;
 
 interface EntityIndexConfig {
@@ -18,33 +17,13 @@ interface EntityIndexConfig {
   transformMany?: (docs: any[]) => Promise<Record<string, any>[]>;
 }
 
-const stripInternalFields = (doc: any): Record<string, any> | null => {
-  const id = serializedDocumentId(doc?._id) || serializedDocumentId(doc?.id);
-  if (!id) return null;
-  const out: Record<string, any> = { ...doc, id };
-  delete out._id;
-  delete out.__v;
-  delete out.embedding;
-  return out;
-};
-
 const ENTITY_REGISTRY: Record<SyncableEntityType, EntityIndexConfig> = {
-  listing: {
-    indexName: 'listings',
-    primaryKey: 'id',
-    transform: stripInternalFields,
-  },
   researchEntity: {
     indexName: 'researchentities',
     primaryKey: 'id',
     transform: async (doc: any) =>
       (await buildResearchEntitySearchIndexDocumentsWithMemberNames([doc]))[0] || null,
     transformMany: buildResearchEntitySearchIndexDocumentsWithMemberNames,
-  },
-  paper: {
-    indexName: 'papers',
-    primaryKey: 'id',
-    transform: stripInternalFields,
   },
 };
 

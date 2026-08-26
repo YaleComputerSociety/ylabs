@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { rebuildResearchEntitySearchIndex } from '../services/researchEntitySearchIndexService';
+import { getMeiliClient } from '../utils/meiliClient';
 import {
   assertScraperEnvironmentMatchesMongoTarget,
   resolveMongoDatabaseName,
@@ -34,6 +35,47 @@ export interface ReindexMeiliPreflight {
   meiliHost: string;
   indexPrefix: string;
   database: string;
+}
+
+export const MODEL_INDEX_BASE_NAMES = ['researchentities'] as const;
+export const RETIRED_INDEX_BASE_NAMES = ['listings', 'papers'] as const;
+
+export interface IndexReconcilePlan {
+  prefix: string;
+  keep: string[];
+  retire: string[];
+  unknown: string[];
+}
+
+export function planIndexReconcile(args: {
+  allIndexUids: string[];
+  prefix: string;
+}): IndexReconcilePlan {
+  const ownedPrefix = `${args.prefix}_`;
+  const owned = args.allIndexUids.filter((uid) => uid.startsWith(ownedPrefix));
+  const modelUids = new Set(MODEL_INDEX_BASE_NAMES.map((base) => `${ownedPrefix}${base}`));
+  const retiredUids = new Set(RETIRED_INDEX_BASE_NAMES.map((base) => `${ownedPrefix}${base}`));
+
+  return {
+    prefix: args.prefix,
+    keep: owned.filter((uid) => modelUids.has(uid)),
+    retire: owned.filter((uid) => retiredUids.has(uid)),
+    unknown: owned.filter((uid) => !modelUids.has(uid) && !retiredUids.has(uid)),
+  };
+}
+
+async function listMeiliIndexUids(): Promise<string[]> {
+  const client = await getMeiliClient();
+  const response = await client.getIndexes({ limit: 1000 });
+  const results = Array.isArray(response?.results) ? response.results : [];
+  return results
+    .map((index: any) => index?.uid)
+    .filter((uid: unknown): uid is string => typeof uid === 'string');
+}
+
+async function deleteMeiliIndex(uid: string): Promise<void> {
+  const client = await getMeiliClient();
+  await client.deleteIndex(uid);
 }
 
 export function parseReindexMeiliArgs(argv: string[]): ReindexMeiliCliOptions {
@@ -134,8 +176,21 @@ async function main() {
     );
   }
 
+  const reconcile = planIndexReconcile({
+    allIndexUids: await listMeiliIndexUids(),
+    prefix: preflight.indexPrefix,
+  });
+  console.log(JSON.stringify({ reconcile }, null, 2));
+  if (reconcile.unknown.length > 0) {
+    console.warn(
+      `Leaving ${reconcile.unknown.length} unrecognized prefixed index(es) in place for manual review: ${reconcile.unknown.join(', ')}`,
+    );
+  }
+
   if (!options.confirm) {
-    console.log('Dry run. Re-run with --confirm to clear and rebuild the index.');
+    console.log(
+      'Dry run. Re-run with --confirm to clear and rebuild the model index and delete retired indexes.',
+    );
     return;
   }
 
@@ -148,13 +203,22 @@ async function main() {
   const guard = assertRebuildResearchEntitySearchIndexAllowed({ confirmMeiliRebuild: true });
 
   const result = await rebuildResearchEntitySearchIndex(rebuildOptions);
+
+  for (const uid of reconcile.retire) {
+    await deleteMeiliIndex(uid);
+    console.log(`Deleted retired index ${uid}.`);
+  }
+
   const output = buildRebuildResearchEntitySearchIndexOutput(result, {
     environment: guard.environment,
     db: database,
     options: rebuildOptions,
   });
-  console.log(JSON.stringify(output, null, 2));
-  writeRebuildResearchEntitySearchIndexOutput(output, options.output);
+  console.log(JSON.stringify({ ...output, retiredIndexes: reconcile.retire }, null, 2));
+  writeRebuildResearchEntitySearchIndexOutput(
+    { ...output, retiredIndexes: reconcile.retire },
+    options.output,
+  );
 }
 
 const isDirectRun = process.argv[1]

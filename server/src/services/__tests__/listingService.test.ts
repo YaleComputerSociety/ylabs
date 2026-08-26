@@ -53,7 +53,6 @@ const mocks = vi.hoisted(() => {
     deleteOwnListings: vi.fn(),
     fetchYalie: vi.fn(),
     findOrCreateForOwner: vi.fn(),
-    getMeiliIndex: vi.fn(),
     materializePostedOpportunityFromListing: vi.fn(),
     mutateProjection: vi.fn(),
     processListingTitle: vi.fn(async (title: string) => title),
@@ -85,10 +84,6 @@ vi.mock('../../models/roleAssignment', () => ({
 
 vi.mock('../researchEntityMembershipAccessor', () => ({
   resolveResearcherIdForLegacyUser: mocks.resolveResearcherIdForLegacyUser,
-}));
-
-vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: mocks.getMeiliIndex,
 }));
 
 vi.mock('../../utils/smartTitle', () => ({
@@ -145,7 +140,6 @@ describe('listingService', () => {
     mocks.deleteOwnListings.mockReset();
     mocks.fetchYalie.mockReset();
     mocks.findOrCreateForOwner.mockReset();
-    mocks.getMeiliIndex.mockReset();
     mocks.materializePostedOpportunityFromListing.mockReset();
     mocks.mutateProjection.mockReset();
     mocks.mutateProjection.mockImplementation(
@@ -163,11 +157,6 @@ describe('listingService', () => {
     });
     mocks.userExists.mockReset();
 
-    mocks.getMeiliIndex.mockResolvedValue({
-      addDocuments: vi.fn(),
-      updateDocuments: vi.fn(),
-      deleteDocument: vi.fn(),
-    });
     mocks.researchEntityFindById.mockImplementation((id: string) => ({
       lean: async () => ({ _id: id, name: 'Entity' }),
     }));
@@ -226,43 +215,6 @@ describe('listingService', () => {
         toString: () => id,
       }),
     ).toBeUndefined();
-  });
-
-  it('skips listing Meili sync when saved listing ids are object-shaped', async () => {
-    const ownerEntityId = '64a000000000000000000013';
-    const ownerUserId = '64a000000000000000000014';
-    const unsafeId = {
-      toString: () => {
-        throw new Error('listing Meili sync stringified arbitrary id');
-      },
-      toHexString: () => {
-        throw new Error('listing Meili sync called arbitrary id toHexString');
-      },
-    };
-    mocks.state.nextListingId = unsafeId as any;
-    mocks.findOrCreateForOwner.mockResolvedValue({
-      group: { _id: ownerEntityId },
-      created: false,
-    });
-
-    await createListing(
-      {
-        title: 'Research assistant',
-        description: 'Help with a research project.',
-        professorIds: [],
-      },
-      {
-        _id: ownerUserId,
-        netid: 'safe123',
-        email: 'safe123@yale.edu',
-        fname: 'Safe',
-        lname: 'Owner',
-        userConfirmed: true,
-      },
-    );
-
-    expect(mocks.getMeiliIndex).not.toHaveBeenCalled();
-    mocks.state.nextListingId = '64a000000000000000000099';
   });
 
   it('ignores non-array bulk listing reads before per-id work', async () => {
