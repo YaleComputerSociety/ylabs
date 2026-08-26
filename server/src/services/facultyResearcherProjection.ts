@@ -8,7 +8,7 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 export const ACTIVE_FACULTY_PROJECTION_FILTER = {
-  userType: 'professor',
+  userType: { $in: ['professor', 'faculty'] },
   archived: { $ne: true },
   dedupedIntoUserId: { $exists: false },
 } as const;
