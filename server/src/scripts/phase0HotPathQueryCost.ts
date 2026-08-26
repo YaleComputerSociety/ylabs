@@ -469,13 +469,7 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
         $project: {
           netid: 1,
           savedResearchEntities: { $slice: [{ $ifNull: ['$savedResearchEntities', []] }, 100] },
-          favPathways: { $slice: [{ $ifNull: ['$favPathways', []] }, 100] },
-          _saveCount: {
-            $max: [
-              { $size: { $ifNull: ['$savedResearchEntities', []] } },
-              { $size: { $ifNull: ['$favPathways', []] } },
-            ],
-          },
+          _saveCount: { $size: { $ifNull: ['$savedResearchEntities', []] } },
         },
       },
       { $match: { netid: { $type: 'string', $regex: /^[A-Za-z0-9]{2,12}$/ } } },
@@ -511,7 +505,7 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
             fixtureClass,
             netid: row.netid,
             savedResearchEntityIds: objectArray(row.savedResearchEntities),
-            pathwayIds: objectArray(row.favPathways),
+            pathwayIds: [],
           },
         ]
       : [],

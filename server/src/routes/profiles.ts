@@ -3,11 +3,7 @@
  */
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { isAuthenticated, validateNetid } from '../middleware/index';
-import {
-  getProfile,
-  getProfileListings,
-  getProfileCourses,
-} from '../controllers/profileController';
+import { getProfile, getProfileCourses } from '../controllers/profileController';
 import { AnalyticsEventType } from '../models/index';
 import { logResearchEventOnSuccess } from '../services/researchAnalytics';
 
@@ -31,7 +27,6 @@ router.get(
   logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'profile', (req) => req.params.netid),
   getProfile,
 );
-router.get('/:netid/listings', isAuthenticated, validateNetid('netid'), getProfileListings);
 router.get('/:netid/courses', isAuthenticated, validateNetid('netid'), getProfileCourses);
 
 export default router;

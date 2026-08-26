@@ -72,12 +72,10 @@ const parseFavoriteAnalyticsResponse = (data: unknown): Record<string, any> | un
 
 const visibleFavoriteAnalyticsIdsFromResponse = (
   data: unknown,
-  kind: 'listing' | 'fellowship' | 'program',
   requestedIds: string[],
 ): string[] => {
   const payload = parseFavoriteAnalyticsResponse(data);
-  const favoriteField = kind === 'listing' ? 'favListings' : 'favFellowships';
-  const visibleIds = new Set(normalizeFavoriteAnalyticsIds(payload?.user?.[favoriteField]));
+  const visibleIds = new Set(normalizeFavoriteAnalyticsIds(payload?.user?.favListings));
   return requestedIds.filter((id) => visibleIds.has(id));
 };
 
@@ -100,55 +98,42 @@ const profileUpdateAnalyticsFields = (value: unknown): string[] => {
   return fields;
 };
 
-const logFavoriteEvent = (
-  isFavorite: boolean,
-  kind: 'listing' | 'fellowship' | 'program' = 'listing',
-  payloadKey?: string,
-) => {
+const logFavoriteEvent = (isFavorite: boolean) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const originalSend = res.send.bind(res);
 
     res.send = function (data: any) {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         const currentUser = req.user as { netId?: string; userType: string };
-        const requestedIds = getFavoriteIds(
-          req,
-          payloadKey || (kind === 'listing' ? 'favListings' : 'favFellowships'),
-        );
+        const requestedIds = getFavoriteIds(req, 'favListings');
         const visibleIds = isFavorite
-          ? visibleFavoriteAnalyticsIdsFromResponse(data, kind, requestedIds)
+          ? visibleFavoriteAnalyticsIdsFromResponse(data, requestedIds)
           : [];
 
         if (
           currentUser?.netId &&
           (visibleIds.length > 0 || (!isFavorite && requestedIds.length > 0))
         ) {
-          const eventType =
-            kind === 'listing'
-              ? isFavorite
-                ? AnalyticsEventType.LISTING_FAVORITE
-                : AnalyticsEventType.LISTING_UNFAVORITE
-              : isFavorite
-                ? AnalyticsEventType.FELLOWSHIP_FAVORITE
-                : AnalyticsEventType.FELLOWSHIP_UNFAVORITE;
+          const eventType = isFavorite
+            ? AnalyticsEventType.LISTING_FAVORITE
+            : AnalyticsEventType.LISTING_UNFAVORITE;
 
           if (!isFavorite && requestedIds.length > 0) {
             logEvent({
               eventType,
               netid: currentUser.netId!,
               userType: currentUser.userType,
-              metadata: { entityType: kind, itemIdsRedacted: true },
+              metadata: { entityType: 'listing', itemIdsRedacted: true },
             }).catch((err) =>
               console.error('Error logging favorite event:', sanitizeLogValue(err)),
             );
           }
 
-          const researchEntityType = kind === 'listing' ? 'listing' : 'fellowship';
           const pathwayIds = isFavorite ? visibleIds : requestedIds;
           pathwayIds.forEach((itemId: string) => {
             emitResearchEvent({
               eventType: AnalyticsEventType.PATHWAY_SAVE,
-              entityType: researchEntityType,
+              entityType: 'listing',
               entityId: itemId,
               user: currentUser,
               payload: { action: isFavorite ? 'save' : 'unsave' },
@@ -162,9 +147,8 @@ const logFavoriteEvent = (
               eventType,
               netid: currentUser.netId!,
               userType: currentUser.userType,
-              listingId: kind === 'listing' ? itemId : undefined,
-              fellowshipId: kind !== 'listing' ? itemId : undefined,
-              metadata: { entityType: kind },
+              listingId: itemId,
+              metadata: { entityType: 'listing' },
             }).catch((err) =>
               console.error('Error logging favorite event:', sanitizeLogValue(err)),
             );
@@ -177,12 +161,6 @@ const logFavoriteEvent = (
 
     next();
   };
-};
-
-const deprecateFavFellowshipEndpoint = (_req: Request, res: Response, next: NextFunction) => {
-  res.setHeader('Deprecation', 'true');
-  res.setHeader('Link', '</api/users/savedPrograms>; rel="successor-version"');
-  next();
 };
 
 const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunction) => {
@@ -226,60 +204,6 @@ router.delete(
   isAuthenticated,
   logFavoriteEvent(false),
   userController.removeFavListings,
-);
-
-router.get('/savedProgramIds', isAuthenticated, userController.getSavedProgramIds);
-router.get('/savedPrograms', isAuthenticated, userController.getSavedPrograms);
-router.get('/savedProgramTracking', isAuthenticated, userController.getSavedProgramTracking);
-router.put(
-  '/savedProgramTracking/:programId',
-  writeLimit,
-  isAuthenticated,
-  validateObjectId('programId'),
-  userController.updateSavedProgramTracking,
-);
-router.put(
-  '/savedPrograms',
-  writeLimit,
-  isAuthenticated,
-  logFavoriteEvent(true, 'program', 'savedPrograms'),
-  userController.addSavedPrograms,
-);
-router.delete(
-  '/savedPrograms',
-  writeLimit,
-  isAuthenticated,
-  logFavoriteEvent(false, 'program', 'savedPrograms'),
-  userController.removeSavedPrograms,
-);
-
-router.get(
-  '/favFellowshipIds',
-  isAuthenticated,
-  deprecateFavFellowshipEndpoint,
-  userController.getFavFellowshipIds,
-);
-router.get(
-  '/favFellowships',
-  isAuthenticated,
-  deprecateFavFellowshipEndpoint,
-  userController.getFavFellowships,
-);
-router.put(
-  '/favFellowships',
-  writeLimit,
-  isAuthenticated,
-  deprecateFavFellowshipEndpoint,
-  logFavoriteEvent(true, 'fellowship'),
-  userController.addFavFellowships,
-);
-router.delete(
-  '/favFellowships',
-  writeLimit,
-  isAuthenticated,
-  deprecateFavFellowshipEndpoint,
-  logFavoriteEvent(false, 'fellowship'),
-  userController.removeFavFellowships,
 );
 
 router.get('/watchedProgramIds', isAuthenticated, userController.getWatchedProgramIds);
@@ -362,7 +286,6 @@ router.post(
   validateResearchEntityId('entityId'),
   userController.dismissSavedResearchFollowUp,
 );
-router.get('/listings', isAuthenticated, userController.getUserListings);
 router.put(
   '/',
   writeLimit,

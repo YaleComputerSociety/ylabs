@@ -719,24 +719,6 @@ export const addView = async (id: any) => {
   );
 };
 
-export const addFavorite = async (id: any) => {
-  return publicFellowshipForStudent(
-    await itemOps.addFavorite(Fellowship, id, {
-      archived: false,
-      ...publicFellowshipFilter(),
-    }),
-  );
-};
-
-export const removeFavorite = async (id: any) => {
-  return publicFellowshipForStudent(
-    await itemOps.removeFavorite(Fellowship, id, {
-      archived: false,
-      ...publicFellowshipFilter(),
-    }),
-  );
-};
-
 export const deleteFellowship = async (id: any) => {
   const safeId = normalizeFellowshipObjectId(id);
   if (safeId) {

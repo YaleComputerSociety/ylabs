@@ -53,48 +53,6 @@ router.use(setPrivateAnalyticsCacheHeaders);
 
 class AnalyticsRequestError extends Error {}
 
-router.post(
-  '/research',
-  isAuthenticated,
-  asyncHandler(async (request: Request, response: Response) => {
-    const { eventType, entityType, entityId, payload, dedupeKey } = request.body || {};
-
-    if (!isResearchEventType(eventType)) {
-      return response.status(400).json({ error: 'Invalid research analytics eventType' });
-    }
-
-    const requiresEntity =
-      !isResearchJourneyEventType(eventType) || researchJourneyEventRequiresEntity(eventType);
-
-    if (requiresEntity && !isResearchEntityType(entityType)) {
-      return response.status(400).json({ error: 'Invalid research analytics entityType' });
-    }
-
-    if (requiresEntity && (typeof entityId !== 'string' || entityId.trim() === '')) {
-      return response.status(400).json({ error: 'Invalid research analytics entityId' });
-    }
-
-    if (requiresEntity && !(await researchEntityExists(entityType, entityId))) {
-      return response.status(404).json({ error: 'Research analytics entity not found' });
-    }
-
-    const emitted = await emitResearchEvent({
-      eventType,
-      entityType,
-      entityId,
-      payload,
-      dedupeKey,
-      user: request.user as { netId?: string; userType?: string },
-    });
-
-    if (!emitted) {
-      return response.status(400).json({ error: 'Unable to record research analytics event' });
-    }
-
-    return response.status(202).json({ ok: true });
-  }),
-);
-
 const MAX_RESEARCH_EVENT_BATCH = 50;
 
 const acceptResearchEvent = async (

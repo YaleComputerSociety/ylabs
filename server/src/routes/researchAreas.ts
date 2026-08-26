@@ -5,7 +5,7 @@ import { Router, Request, Response, type NextFunction } from 'express';
 import { isAuthenticated, isProfessor } from '../middleware/index';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { invalidateConfigCache } from '../services/configService';
-import { escapeRegex, buildSafeSearchRegex } from '../utils/regex';
+import { escapeRegex } from '../utils/regex';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { replaceAsciiControls } from '../utils/asciiControl';
@@ -13,7 +13,6 @@ import { writeLimit } from '../middleware/rateLimiters';
 
 const router = Router();
 const MAX_RESEARCH_AREA_NAME_LENGTH = 120;
-const MAX_RESEARCH_AREA_SEARCH_QUERY_LENGTH = 120;
 
 const normalizeResearchAreaLabel = (value: string): string =>
   replaceAsciiControls(value, ' ').replace(/\s+/g, ' ').trim();
@@ -30,20 +29,6 @@ function setPrivateResearchAreaCacheHeaders(_req: Request, res: Response, next: 
 }
 
 router.use(setPrivateResearchAreaCacheHeaders);
-
-router.get('/', isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const customAreas = await ResearchArea.find({ isDefault: false })
-      .select('name field -_id')
-      .sort({ name: 1 })
-      .lean();
-
-    res.status(200).json({ researchAreas: customAreas });
-  } catch (error) {
-    console.error('Error fetching research areas:', sanitizeLogValue(error));
-    res.status(500).json({ message: 'Error fetching research areas' });
-  }
-});
 
 router.post('/', writeLimit, isAuthenticated, isProfessor, async (req: Request, res: Response) => {
   try {
@@ -106,38 +91,6 @@ router.post('/', writeLimit, isAuthenticated, isProfessor, async (req: Request, 
   } catch (error) {
     console.error('Error adding research area:', sanitizeLogValue(error));
     res.status(500).json({ message: 'Error adding research area' });
-  }
-});
-
-router.get('/search', isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const { query } = req.query;
-
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ message: 'Search query is required' });
-    }
-
-    const trimmedQuery = query.trim();
-    if (!trimmedQuery) {
-      return res.status(400).json({ message: 'Search query is required' });
-    }
-
-    if (trimmedQuery.length > MAX_RESEARCH_AREA_SEARCH_QUERY_LENGTH) {
-      return res.status(400).json({ message: 'Search query is too long' });
-    }
-
-    const customAreas = await ResearchArea.find({
-      name: buildSafeSearchRegex(trimmedQuery),
-      isDefault: false,
-    })
-      .select('name field -_id')
-      .limit(20)
-      .lean();
-
-    res.status(200).json({ researchAreas: customAreas });
-  } catch (error) {
-    console.error('Error searching research areas:', sanitizeLogValue(error));
-    res.status(500).json({ message: 'Error searching research areas' });
   }
 });
 

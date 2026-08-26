@@ -1,15 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  listingFind: vi.fn(),
   getProfileByNetid: vi.fn(),
   userFindOne: vi.fn(),
-}));
-
-vi.mock('../../db/connections', () => ({
-  getListingModel: () => ({
-    find: mocks.listingFind,
-  }),
 }));
 
 vi.mock('../../services/profileService', async () => {
@@ -34,7 +27,7 @@ vi.mock('../../services/courseTableService', () => ({
 }));
 
 import { fetchCourseTableData } from '../../services/courseTableService';
-import { getProfile, getProfileCourses, getProfileListings } from '../profileController';
+import { getProfile, getProfileCourses } from '../profileController';
 
 const mockTargetUser = (user: Record<string, unknown> | undefined) => {
   mocks.userFindOne.mockReturnValue({
@@ -46,119 +39,6 @@ const mockTargetUser = (user: Record<string, unknown> | undefined) => {
 describe('profileController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('allowlists profile listing payloads for authenticated readers', async () => {
-    const listing = {
-      _id: 'listing-1',
-      title: 'Research assistant',
-      description: 'Help with a research project.',
-      applicantDescription: 'Students will learn methods.',
-      websites: [
-        'https://example.yale.edu/apply',
-        'https://user:pass@example.yale.edu/private',
-        'javascript:alert(document.cookie)',
-        'mailto:owner123@yale.edu',
-      ],
-      departments: ['Computer Science'],
-      researchAreas: ['Systems'],
-      keywords: ['systems'],
-      type: 'Research Assistant',
-      commitment: '5 hours/week',
-      compensationType: 'Paid',
-      expiresAt: new Date('2026-08-01T00:00:00.000Z'),
-      ownerId: 'owner123',
-      ownerEmail: 'owner123@yale.edu',
-      ownerFirstName: 'Owner',
-      ownerLastName: 'Professor',
-      professorIds: ['victim123'],
-      professorNames: ['Victim Professor'],
-      emails: ['victim123@yale.edu'],
-      createdByUserId: '64a000000000000000000001',
-      views: 42,
-      favorites: ['student123'],
-      archived: false,
-      confirmed: true,
-      audited: true,
-      embedding: [0.1, 0.2],
-    };
-    mocks.listingFind.mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      sort: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([listing]),
-    });
-    mockTargetUser({ userType: 'professor' });
-
-    const req = { params: { netid: 'owner123' } } as any;
-    const res = {
-      json: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-    } as any;
-
-    await getProfileListings(req, res);
-
-    expect(res.json).toHaveBeenCalledWith({
-      listings: [
-        {
-          _id: 'listing-1',
-          title: 'Research assistant',
-          description: 'Help with a research project.',
-          applicantDescription: 'Students will learn methods.',
-          websites: ['https://example.yale.edu/apply'],
-          departments: ['Computer Science'],
-          researchAreas: ['Systems'],
-          keywords: ['systems'],
-          type: 'Research Assistant',
-          commitment: '5 hours/week',
-          compensationType: 'Paid',
-          expiresAt: new Date('2026-08-01T00:00:00.000Z'),
-        },
-      ],
-    });
-    const payload = res.json.mock.calls[0][0].listings[0];
-    expect(payload).not.toHaveProperty('ownerId');
-    expect(payload).not.toHaveProperty('ownerEmail');
-    expect(payload).not.toHaveProperty('professorIds');
-    expect(payload).not.toHaveProperty('professorNames');
-    expect(payload).not.toHaveProperty('emails');
-    expect(payload).not.toHaveProperty('createdByUserId');
-    expect(payload).not.toHaveProperty('views');
-    expect(payload).not.toHaveProperty('favorites');
-    expect(payload).not.toHaveProperty('archived');
-    expect(payload).not.toHaveProperty('confirmed');
-    expect(payload).not.toHaveProperty('audited');
-    expect(payload).not.toHaveProperty('embedding');
-  });
-
-  it('404s listings for a non-faculty netid instead of leaking listing data', async () => {
-    mockTargetUser({ userType: 'undergraduate' });
-
-    const req = { params: { netid: 'student123' } } as any;
-    const res = {
-      json: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-    } as any;
-
-    await getProfileListings(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Profile not found' });
-    expect(mocks.listingFind).not.toHaveBeenCalled();
-  });
-
-  it('404s listings for a nonexistent netid', async () => {
-    mockTargetUser(undefined);
-
-    const req = { params: { netid: 'ghost123' } } as any;
-    const res = {
-      json: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-    } as any;
-
-    await getProfileListings(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(mocks.listingFind).not.toHaveBeenCalled();
   });
 
   it('forwards the already-normalized profile (research homes + interest tags) without re-normalizing', async () => {
