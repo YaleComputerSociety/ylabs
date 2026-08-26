@@ -125,7 +125,9 @@ describe('runScraperSweep', () => {
     expect(stages.find((stage) => stage.name === 'archived-cleanup')?.args).toEqual(
       expect.arrayContaining(['research-entity:cleanup-archived', '--merge-residue-only']),
     );
-    expect(stages.find((stage) => stage.name === 'archived-cleanup')?.args).not.toContain('--apply');
+    expect(stages.find((stage) => stage.name === 'archived-cleanup')?.args).not.toContain(
+      '--apply',
+    );
     expect(stages.find((stage) => stage.name === 'faculty-projection')?.args).toEqual(
       expect.arrayContaining(['--apply', '--confirm-faculty-projection']),
     );

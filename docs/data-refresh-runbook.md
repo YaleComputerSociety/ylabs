@@ -308,11 +308,11 @@ The full command runs every source in the canonical sweep manifest with `--exhau
 `--exhaustive` disables the default candidate caps inside the LLM and backfill scrapers as well as omitting the shared `--limit`.
 This can take hours and can make many paid API calls.
 Only run it after the bounded sample succeeds.
-After the source sweep, the same command projects active faculty into the Account/Researcher model, rebuilds local Development Meilisearch, and runs the coverage audit, strict data-quality audit, integrity gate, and strict student trust contract.
-All six post-run stages execute even when an earlier quality gate fails, so the operator receives every report.
+After the source sweep, the same command projects active faculty into the Account/Researcher model, rebuilds local Development Meilisearch, runs the coverage audit, strict data-quality audit, integrity gate, and strict student trust contract, and finishes with a report-only archived-cleanup stage that lists deletable dedup-residue archived entities without ever deleting them.
+All seven post-run stages execute even when an earlier quality gate fails, so the operator receives every report.
 The overall command exits nonzero when a source or post-run stage fails.
 The runner prints an output directory under `/tmp`.
-That directory contains one JSON report per source, `summary.json`, the faculty projection report, the search rebuild report, and all four coverage and quality reports.
+That directory contains one JSON report per source, `summary.json`, the faculty projection report, the search rebuild report, all four coverage and quality reports, and the report-only archived-cleanup report.
 Each summary row includes observation and entity yield, fetch successes and failures, blocked requests, selector breakages, warnings, and materialization counts.
 Development continues after a source failure so the summary captures every problem, but it exits nonzero when any source failed.
 
@@ -337,6 +337,7 @@ The post-run artifacts in the printed sweep directory are:
 - `development-data-quality.json`
 - `development-integrity.json`
 - `development-trust-contract.json`
+- `development-archived-cleanup.json`
 
 Coverage is not a claim of absolute Yale ground truth.
 Compare source discovery counts, eligible candidate counts, observations, materialized entities, field coverage, and quality failures with the last accepted Beta baseline.

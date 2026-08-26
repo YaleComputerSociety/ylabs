@@ -46,9 +46,9 @@ describe('cleanupArchivedResearchEntities CLI helpers', () => {
     expect(() =>
       parseCleanupArchivedResearchEntitiesArgs(['--confirm-archived-entity-cleanup=1']),
     ).toThrow(/does not accept a value/);
-    expect(() =>
-      parseCleanupArchivedResearchEntitiesArgs(['--merge-residue-only=1']),
-    ).toThrow(/does not accept a value/);
+    expect(() => parseCleanupArchivedResearchEntitiesArgs(['--merge-residue-only=1'])).toThrow(
+      /does not accept a value/,
+    );
   });
 
   it('requires --limit and confirmation when applying, and enforces --max-apply', () => {
