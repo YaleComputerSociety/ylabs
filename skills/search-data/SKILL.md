@@ -47,6 +47,7 @@ Short-alias queries restrict `attributesToSearchOn` to topic fields that actuall
 | Command                                                 | Effect                                                               |
 | ------------------------------------------------------- | -------------------------------------------------------------------- |
 | `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index.                                    |
+| `yarn --cwd server reindex:meili`                       | Guarded post-copy rebuild for beta/production; verifies `SCRAPER_ENV`, `MEILISEARCH_HOST`, non-empty `MEILISEARCH_INDEX_PREFIX`, and a matching Mongo database with non-archived documents before clearing; dry-run default, apply requires `--confirm`. |
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Inventory refactor-relevant MongoDB state without writes. |
 | `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |
