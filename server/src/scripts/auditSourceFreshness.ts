@@ -1,5 +1,5 @@
 /**
- * scrapers:audit-freshness - recency analogue of the coverage-gap registries (#1705).
+ * scrapers:audit-freshness - recency analogue of the coverage-gap backlog (#1705, migrated to #2040).
  *
  * Read-only: never mutates Source rows. Prints an impact-ranked re-crawl worklist plus a
  * fresh/due-soon/overdue/never-crawled summary, mirroring `auditProgramCatalogFreshness.ts`.

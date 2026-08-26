@@ -1,7 +1,7 @@
 /**
- * Recency analogue of the coverage-gap registries (#1705): the coverage
- * registries (`facultyDirectoryRegistry.ts` and siblings) answer "what has
- * never been covered", this answers "what was covered but has gone stale".
+ * Recency analogue of the coverage-gap backlog (#1705, migrated to #2040):
+ * that backlog answers "what has never been covered", this answers "what was
+ * covered but has gone stale".
  */
 import type { SourceCoverageTier } from '../models/sourceCoverageTypes';
 
