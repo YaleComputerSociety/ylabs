@@ -105,4 +105,78 @@ describe('runStudentVisibilityGate apply guard', () => {
     expect(report.mode).toBe('apply');
     expect(mocks.bulkWrite).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps duplicate_risk on a scoped recompute whose same-PI twin is outside the requested set (#1911)', async () => {
+    const scopedShell = {
+      _id: 'som-barrios',
+      name: 'John Manuel Barrios',
+      slug: 'dept-som-john-manuel-barrios',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'faculty_research_area',
+      websiteUrl: 'https://som.yale.edu/faculty-research/faculty-directory/john-manuel-barrios',
+      fullDescription: '',
+      shortDescription: '',
+      sourceUrls: [],
+      departments: ['Economics'],
+      researchAreas: [],
+    };
+    const concreteTwin = {
+      _id: 'econ-barrios',
+      name: 'John Manuel Barrios',
+      slug: 'dept-econ-john-manuel-barrios',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'faculty_research_area',
+      websiteUrl: 'https://johnmbarrios.com',
+      fullDescription:
+        'John Manuel Barrios studies corporate finance, entrepreneurship, and the real effects of financial reporting, drawing on large administrative datasets to trace how firms respond to regulation.',
+      shortDescription: 'Corporate finance and entrepreneurship research.',
+      sourceUrls: ['https://johnmbarrios.com'],
+      departments: ['Economics'],
+      researchAreas: ['Corporate finance'],
+    };
+
+    const chainFor = (rows: unknown[]) => ({
+      select: vi.fn().mockReturnThis(),
+      sort: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(rows),
+    });
+    mocks.find.mockImplementation((filter: any) => {
+      if (filter?.name?.$in) return chainFor([]);
+      if (filter?.archived && filter?._id?.$in) return chainFor([scopedShell]);
+      if (filter?.archived) return chainFor([scopedShell, concreteTwin]);
+      return chainFor([]);
+    });
+
+    const leadFor = (researchEntityId: string) => ({
+      researchEntityId,
+      personId: 'pi-barrios',
+      role: 'pi',
+      state: 'ACTIVE',
+      name: 'John Manuel Barrios',
+      netid: 'jmb-fixture',
+    });
+    mocks.roster.mockImplementation((ids: unknown[]) => {
+      const idSet = new Set(ids.map(String));
+      const byEntity = new Map<string, unknown[]>();
+      byEntity.set('som-barrios', [leadFor('som-barrios')]);
+      if (idSet.has('econ-barrios')) byEntity.set('econ-barrios', [leadFor('econ-barrios')]);
+      return Promise.resolve(byEntity);
+    });
+
+    await runStudentVisibilityGate({
+      collection: 'research',
+      mode: 'apply',
+      recordIds: ['som-barrios'],
+    });
+
+    expect(mocks.roster).toHaveBeenCalledWith(
+      expect.arrayContaining(['som-barrios', 'econ-barrios']),
+    );
+    const researchOps = mocks.bulkWrite.mock.calls[0]?.[0] || [];
+    const scopedOp = researchOps.find((op: any) => op?.updateOne?.filter?._id === 'som-barrios');
+    expect(scopedOp).toBeDefined();
+    expect(scopedOp.updateOne.update.$set.studentVisibilityReasons).toContain('duplicate_risk');
+    expect(scopedOp.updateOne.update.$set.studentVisibilityTier).not.toBe('student_ready');
+  });
 });
