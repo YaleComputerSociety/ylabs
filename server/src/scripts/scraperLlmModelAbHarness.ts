@@ -174,7 +174,9 @@ async function main(): Promise<void> {
           if (alnum.includes(alphanumericOnly(quote))) tally.cosmeticMisses += 1;
           else tally.genuineMisses += 1;
         }
-        row.push(`${model}:${openness}/${String(result.parsed.currentUndergradCount ?? '?')}${misses ? ` !${misses}` : ''}`);
+        row.push(
+          `${model}:${openness}/${String(result.parsed.currentUndergradCount ?? '?')}${misses ? ` !${misses}` : ''}`,
+        );
       } catch {
         tally.errors += 1;
         row.push(`${model}:ERR`);
