@@ -32,6 +32,38 @@ export interface ResearcherTombstoneRow {
 const text = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
+const asString = (value: unknown): string | null => {
+  if (value === undefined || value === null) return null;
+  return String(value);
+};
+
+export function redirectRowFromDoc(doc: Record<string, unknown>): RedirectRow {
+  return {
+    mergedSlug: asString(doc.mergedSlug),
+    mergedEntityId: asString(doc.mergedEntityId),
+    canonicalEntityId: asString(doc.canonicalEntityId),
+  };
+}
+
+export function userTombstoneRowFromDoc(doc: Record<string, unknown>): UserTombstoneRow {
+  return {
+    _id: String(doc._id),
+    dedupedIntoUserId: asString(doc.dedupedIntoUserId),
+    netid: asString(doc.netid),
+    email: asString(doc.email),
+    orcid: asString(doc.orcid),
+  };
+}
+
+export function researcherTombstoneRowFromDoc(doc: Record<string, unknown>): ResearcherTombstoneRow {
+  const identifiers = doc.identifiers as { orcid?: unknown } | undefined;
+  return {
+    _id: String(doc._id),
+    dedupedIntoResearcherId: asString(doc.dedupedIntoResearcherId),
+    orcid: asString(identifiers?.orcid),
+  };
+}
+
 export function planCanonicalAliasesFromRedirects(rows: RedirectRow[]): PlannedCanonicalAlias[] {
   const planned: PlannedCanonicalAlias[] = [];
   for (const row of rows) {

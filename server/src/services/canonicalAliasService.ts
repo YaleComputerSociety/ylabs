@@ -7,6 +7,13 @@ import { Fellowship } from '../models/fellowship';
 
 export const MAX_CANONICAL_ALIAS_HOPS = 10;
 
+export function normalizeAliasValue(aliasNs: string, value: string): string {
+  const trimmed = value.trim();
+  if (aliasNs === 'email') return trimmed.toLowerCase();
+  if (aliasNs === 'orcid') return trimmed.toUpperCase();
+  return trimmed;
+}
+
 function toObjectId(value: unknown): mongoose.Types.ObjectId | undefined {
   if (value instanceof mongoose.Types.ObjectId) return value;
   if (typeof value !== 'string') return undefined;
@@ -27,8 +34,9 @@ export interface RecordCanonicalAliasInput {
 
 export async function recordCanonicalAlias(input: RecordCanonicalAliasInput): Promise<boolean> {
   const canonicalId = toObjectId(input.canonicalId);
-  const aliasValue = typeof input.aliasValue === 'string' ? input.aliasValue.trim() : '';
   const aliasNs = typeof input.aliasNs === 'string' ? input.aliasNs.trim() : '';
+  const aliasValue =
+    typeof input.aliasValue === 'string' ? normalizeAliasValue(aliasNs, input.aliasValue) : '';
   if (!canonicalId || !aliasValue || !aliasNs) return false;
   await CanonicalAlias.updateOne(
     { type: input.type, aliasNs, aliasValue },
@@ -100,7 +108,7 @@ export async function resolveCanonicalAlias(
   aliasNs: string,
   aliasValue: string,
 ): Promise<mongoose.Types.ObjectId | null> {
-  const value = typeof aliasValue === 'string' ? aliasValue.trim() : '';
+  const value = typeof aliasValue === 'string' ? normalizeAliasValue(aliasNs, aliasValue) : '';
   if (!value) return null;
   const alias = (await CanonicalAlias.findOne({ type, aliasNs, aliasValue: value, active: true })
     .select('canonicalId canonicalType')

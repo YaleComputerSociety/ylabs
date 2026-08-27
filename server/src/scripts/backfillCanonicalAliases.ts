@@ -14,6 +14,9 @@ import {
   planCanonicalAliasesFromRedirects,
   planCanonicalAliasesFromResearcherTombstones,
   planCanonicalAliasesFromUserTombstones,
+  redirectRowFromDoc,
+  researcherTombstoneRowFromDoc,
+  userTombstoneRowFromDoc,
   type PlannedCanonicalAlias,
 } from './backfillCanonicalAliasesCore';
 
@@ -33,11 +36,6 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
-const asString = (value: unknown): string | undefined => {
-  if (value === undefined || value === null) return undefined;
-  return String(value);
-};
-
 async function loadPlannedAliases(): Promise<PlannedCanonicalAlias[]> {
   const redirects = (await ResearchEntityRedirect.find({})
     .select('mergedSlug mergedEntityId canonicalEntityId')
@@ -46,32 +44,14 @@ async function loadPlannedAliases(): Promise<PlannedCanonicalAlias[]> {
     .select('dedupedIntoUserId netid email orcid')
     .lean()) as Record<string, unknown>[];
   const researcherTombstones = (await Researcher.find({ dedupedIntoResearcherId: { $ne: null } })
-    .select('dedupedIntoResearcherId orcid')
+    .select('dedupedIntoResearcherId identifiers.orcid')
     .lean()) as Record<string, unknown>[];
 
   const planned = [
-    ...planCanonicalAliasesFromRedirects(
-      redirects.map((row) => ({
-        mergedSlug: asString(row.mergedSlug),
-        mergedEntityId: asString(row.mergedEntityId),
-        canonicalEntityId: asString(row.canonicalEntityId),
-      })),
-    ),
-    ...planCanonicalAliasesFromUserTombstones(
-      userTombstones.map((row) => ({
-        _id: String(row._id),
-        dedupedIntoUserId: asString(row.dedupedIntoUserId),
-        netid: asString(row.netid),
-        email: asString(row.email),
-        orcid: asString(row.orcid),
-      })),
-    ),
+    ...planCanonicalAliasesFromRedirects(redirects.map(redirectRowFromDoc)),
+    ...planCanonicalAliasesFromUserTombstones(userTombstones.map(userTombstoneRowFromDoc)),
     ...planCanonicalAliasesFromResearcherTombstones(
-      researcherTombstones.map((row) => ({
-        _id: String(row._id),
-        dedupedIntoResearcherId: asString(row.dedupedIntoResearcherId),
-        orcid: asString(row.orcid),
-      })),
+      researcherTombstones.map(researcherTombstoneRowFromDoc),
     ),
   ];
   return dedupePlannedAliases(planned);

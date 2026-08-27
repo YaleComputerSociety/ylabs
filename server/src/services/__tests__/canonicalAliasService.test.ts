@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { walkCanonicalAliasChain } from '../canonicalAliasService';
+import { normalizeAliasValue, walkCanonicalAliasChain } from '../canonicalAliasService';
 
 function chain(edges: Record<string, string | null>, live: Set<string>) {
   return {
@@ -7,6 +7,24 @@ function chain(edges: Record<string, string | null>, live: Set<string>) {
     nextCanonical: async (id: string) => edges[id] ?? null,
   };
 }
+
+describe('normalizeAliasValue', () => {
+  it('lowercases and trims email so a mixed-case lookup matches the stored value', () => {
+    expect(normalizeAliasValue('email', '  Test.Person@Example.Test ')).toBe(
+      'test.person@example.test',
+    );
+  });
+
+  it('uppercases and trims orcid so a lowercased lookup matches the stored value', () => {
+    expect(normalizeAliasValue('orcid', ' 0000-0002-1825-009x ')).toBe('0000-0002-1825-009X');
+  });
+
+  it('only trims values for identity-preserving namespaces like id, slug, and netid', () => {
+    expect(normalizeAliasValue('id', '  abc123  ')).toBe('abc123');
+    expect(normalizeAliasValue('slug', '  Old-Lab-Slug  ')).toBe('Old-Lab-Slug');
+    expect(normalizeAliasValue('netid', '  AbC123  ')).toBe('AbC123');
+  });
+});
 
 describe('walkCanonicalAliasChain', () => {
   it('returns the start id when it is already a live canonical', async () => {

@@ -4,6 +4,8 @@ import {
   planCanonicalAliasesFromRedirects,
   planCanonicalAliasesFromResearcherTombstones,
   planCanonicalAliasesFromUserTombstones,
+  researcherTombstoneRowFromDoc,
+  userTombstoneRowFromDoc,
 } from '../backfillCanonicalAliasesCore';
 
 describe('planCanonicalAliasesFromRedirects', () => {
@@ -44,6 +46,47 @@ describe('planCanonicalAliasesFromResearcherTombstones', () => {
       'id:rShell',
       'orcid:1111-2222-3333-4444',
     ]);
+  });
+});
+
+describe('researcherTombstoneRowFromDoc', () => {
+  it('reads orcid from the nested identifiers subdocument, not a top-level field', () => {
+    const row = researcherTombstoneRowFromDoc({
+      _id: 'rShell',
+      dedupedIntoResearcherId: 'rCanon',
+      identifiers: { orcid: '1111-2222-3333-4444' },
+    });
+    expect(row.orcid).toBe('1111-2222-3333-4444');
+  });
+
+  it('produces an orcid alias when a deduped researcher doc carries identifiers.orcid', () => {
+    const planned = planCanonicalAliasesFromResearcherTombstones([
+      researcherTombstoneRowFromDoc({
+        _id: 'rShell',
+        dedupedIntoResearcherId: 'rCanon',
+        identifiers: { orcid: '1111-2222-3333-4444' },
+      }),
+    ]);
+    expect(planned.map((a) => `${a.aliasNs}:${a.aliasValue}`)).toEqual([
+      'id:rShell',
+      'orcid:1111-2222-3333-4444',
+    ]);
+  });
+
+  it('leaves orcid null when the researcher has no identifiers subdocument', () => {
+    const row = researcherTombstoneRowFromDoc({ _id: 'rShell', dedupedIntoResearcherId: 'rCanon' });
+    expect(row.orcid).toBeNull();
+  });
+});
+
+describe('userTombstoneRowFromDoc', () => {
+  it('reads the user top-level orcid field', () => {
+    const row = userTombstoneRowFromDoc({
+      _id: 'shell1',
+      dedupedIntoUserId: 'canonUser',
+      orcid: '9999-8888-7777-6666',
+    });
+    expect(row.orcid).toBe('9999-8888-7777-6666');
   });
 });
 
