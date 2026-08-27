@@ -140,15 +140,9 @@ describe('runScraperSweep', () => {
   });
 
   it('never lets an operator override loosen the per-host bound', () => {
-    expect(
-      resolveSweepChildPerHostConcurrency(1, { SCRAPER_PER_HOST_CONCURRENCY: '2' }),
-    ).toBe(2);
-    expect(
-      resolveSweepChildPerHostConcurrency(8, { SCRAPER_PER_HOST_CONCURRENCY: '16' }),
-    ).toBe(1);
-    expect(
-      resolveSweepChildPerHostConcurrency(2, { SCRAPER_PER_HOST_CONCURRENCY: 'x' }),
-    ).toBe(2);
+    expect(resolveSweepChildPerHostConcurrency(1, { SCRAPER_PER_HOST_CONCURRENCY: '2' })).toBe(2);
+    expect(resolveSweepChildPerHostConcurrency(8, { SCRAPER_PER_HOST_CONCURRENCY: '16' })).toBe(1);
+    expect(resolveSweepChildPerHostConcurrency(2, { SCRAPER_PER_HOST_CONCURRENCY: 'x' })).toBe(2);
   });
 
   it('runs every item without exceeding the concurrency limit', async () => {

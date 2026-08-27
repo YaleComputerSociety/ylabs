@@ -10,12 +10,18 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('resolvePerHostConcurrency', () => {
   it('reads a positive integer from the env', () => {
-    expect(resolvePerHostConcurrency({ SCRAPER_PER_HOST_CONCURRENCY: '6' } as NodeJS.ProcessEnv)).toBe(6);
+    expect(
+      resolvePerHostConcurrency({ SCRAPER_PER_HOST_CONCURRENCY: '6' } as NodeJS.ProcessEnv),
+    ).toBe(6);
   });
   it('falls back to the default on missing/invalid values', () => {
     expect(resolvePerHostConcurrency({} as NodeJS.ProcessEnv)).toBe(4);
-    expect(resolvePerHostConcurrency({ SCRAPER_PER_HOST_CONCURRENCY: 'x' } as NodeJS.ProcessEnv)).toBe(4);
-    expect(resolvePerHostConcurrency({ SCRAPER_PER_HOST_CONCURRENCY: '0' } as NodeJS.ProcessEnv)).toBe(4);
+    expect(
+      resolvePerHostConcurrency({ SCRAPER_PER_HOST_CONCURRENCY: 'x' } as NodeJS.ProcessEnv),
+    ).toBe(4);
+    expect(
+      resolvePerHostConcurrency({ SCRAPER_PER_HOST_CONCURRENCY: '0' } as NodeJS.ProcessEnv),
+    ).toBe(4);
   });
 });
 
@@ -83,9 +89,13 @@ describe('HostConcurrencyLimiter', () => {
   it('releases the slot even when the work throws', async () => {
     const limiter = new HostConcurrencyLimiter(1);
     await expect(
-      withHostSlot('https://host.example/y', async () => {
-        throw new Error('boom');
-      }, limiter),
+      withHostSlot(
+        'https://host.example/y',
+        async () => {
+          throw new Error('boom');
+        },
+        limiter,
+      ),
     ).rejects.toThrow('boom');
     expect(limiter.activeCount('host.example')).toBe(0);
     const release = await limiter.acquire('host.example');
