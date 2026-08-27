@@ -13,6 +13,7 @@ import {
   parseEponymousFraMergeResult,
   parseResearcherDedupeResult,
   parseScraperSweepArgs,
+  resolveDevelopmentPostRunOptions,
   resolvePhaseConcurrency,
   runWithBoundedConcurrency,
   scraperSweepArtifactError,
@@ -388,6 +389,109 @@ describe('runScraperSweep', () => {
     expect(names).not.toContain('eponymous-fra-merge');
     expect(names.indexOf('researcher-dedupe')).toBe(1);
   });
+
+  const sinceIso = '2026-08-26T00:00:00.000Z';
+
+  it.each(['development-full', 'development-incremental'] as const)(
+    'defaults every dedup stage on for the %s sweep with no env set',
+    (mode) => {
+      const options = resolveDevelopmentPostRunOptions(mode, {}, sinceIso);
+      expect(options).toMatchObject({
+        autoMergeEponymousFra: true,
+        dedupeResearchers: true,
+        deleteMergeResidue: true,
+        sinceIso,
+      });
+      const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', options);
+      const names = stages.map((stage) => stage.name);
+      expect(names).toContain('researcher-dedupe');
+      expect(names).toContain('eponymous-fra-merge');
+      expect(names.indexOf('researcher-dedupe')).toBeLessThan(names.indexOf('eponymous-fra-merge'));
+      expect(stages.find((stage) => stage.name === 'archived-cleanup')?.args).toEqual(
+        expect.arrayContaining([
+          'research-entity:cleanup-archived',
+          '--merge-residue-only',
+          '--apply',
+          '--confirm-archived-entity-cleanup',
+          '--max-apply=5000',
+        ]),
+      );
+    },
+  );
+
+  it('disables only the researcher dedupe stage when its env var is explicitly false', () => {
+    const options = resolveDevelopmentPostRunOptions(
+      'development-full',
+      { SCRAPER_SWEEP_DEDUPE_RESEARCHERS: '0' },
+      sinceIso,
+    );
+    expect(options).toMatchObject({
+      autoMergeEponymousFra: true,
+      dedupeResearchers: false,
+      deleteMergeResidue: true,
+    });
+    const names = buildDevelopmentPostRunStages('/tmp/development-sweep', options).map(
+      (stage) => stage.name,
+    );
+    expect(names).not.toContain('researcher-dedupe');
+    expect(names).toContain('eponymous-fra-merge');
+  });
+
+  it('disables only the eponymous FRA merge stage when its env var is explicitly false', () => {
+    const options = resolveDevelopmentPostRunOptions(
+      'development-incremental',
+      { SCRAPER_SWEEP_AUTO_MERGE_FRA: 'false' },
+      sinceIso,
+    );
+    expect(options).toMatchObject({
+      autoMergeEponymousFra: false,
+      dedupeResearchers: true,
+      deleteMergeResidue: true,
+    });
+    const names = buildDevelopmentPostRunStages('/tmp/development-sweep', options).map(
+      (stage) => stage.name,
+    );
+    expect(names).not.toContain('eponymous-fra-merge');
+    expect(names).toContain('researcher-dedupe');
+  });
+
+  it('keeps the archived-cleanup stage report-only when merge-residue deletion is disabled', () => {
+    const options = resolveDevelopmentPostRunOptions(
+      'development-full',
+      { SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: '0' },
+      sinceIso,
+    );
+    expect(options?.deleteMergeResidue).toBe(false);
+    const cleanupArgs = buildDevelopmentPostRunStages('/tmp/development-sweep', options).find(
+      (stage) => stage.name === 'archived-cleanup',
+    )?.args;
+    expect(cleanupArgs).not.toContain('--apply');
+    expect(cleanupArgs).not.toContain('--confirm-archived-entity-cleanup');
+  });
+
+  it.each(['off', 'no', 'disabled'] as const)(
+    'keeps the archived-cleanup stage report-only when merge-residue deletion is %s',
+    (disableValue) => {
+      const options = resolveDevelopmentPostRunOptions(
+        'development-full',
+        { SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: disableValue },
+        sinceIso,
+      );
+      expect(options?.deleteMergeResidue).toBe(false);
+      const cleanupArgs = buildDevelopmentPostRunStages('/tmp/development-sweep', options).find(
+        (stage) => stage.name === 'archived-cleanup',
+      )?.args;
+      expect(cleanupArgs).not.toContain('--apply');
+      expect(cleanupArgs).not.toContain('--confirm-archived-entity-cleanup');
+    },
+  );
+
+  it.each(['beta-plan', 'beta-fetch', 'development-plan', 'development-sample'] as const)(
+    'produces no post-run stage options for the %s mode',
+    (mode) => {
+      expect(resolveDevelopmentPostRunOptions(mode, {}, sinceIso)).toBeUndefined();
+    },
+  );
 
   it('requires an exact Development database and local unprefixed Meilisearch for writes', () => {
     expect(() =>

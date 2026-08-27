@@ -109,10 +109,10 @@ SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi \
 
 The high-confidence eponymous subset of same-PI dedupe (a `faculty-research-area-*` shell that shadows the SAME PI's own concrete lab, guarded against CENTER/INSTITUTE canonicals) can run automatically inside the scraper sweep instead of the manual review workflow above.
 It is exposed as the `research-entity:merge-eponymous-fra` stage, wired into the `development-full` post-run pipeline after `faculty-projection` (materialization) and before `search-rebuild`, so the student-visibility gate and the search index evaluate the merged canonical.
-When the sibling accountless-researcher-shell dedupe stage is also enabled (`SCRAPER_SWEEP_DEDUPE_RESEARCHERS=1`, exposed as `researchers:dedupe-accountless-shells`), it runs between `faculty-projection` and this FRA merge so researchers are unified into their account-linked canonical before entities are merged.
+The sibling accountless-researcher-shell dedupe stage (`researchers:dedupe-accountless-shells`) runs by default between `faculty-projection` and this FRA merge so researchers are unified into their account-linked canonical before entities are merged; disable it with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`.
 
-The stage is flag-gated OFF by default.
-It only runs when `SCRAPER_SWEEP_AUTO_MERGE_FRA=1` (or `=true`) is set in the sweep environment; with the flag unset the stage is not added, so Beta and Prod sweeps are unaffected until the flag is deliberately enabled after Dev validation.
+The stage runs by default on the two exhaustive Development modes so the Dev pipeline auto-merges every run.
+Disable it by setting `SCRAPER_SWEEP_AUTO_MERGE_FRA` to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`) in the sweep environment; the post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
 
 The stage is scoped and capped, not a full-corpus scan.
 It merges only PIs whose entities were materialized during the current sweep (`--since <sweep start ISO>` resolves the affected entities via `lastObservedAt`, then their PI role assignments), and `--max-merges` (default 250) bounds the number of merges applied per run, deferring any overflow to a later sweep.
@@ -142,8 +142,8 @@ Any candidate that fails the invariant is deferred with a reason (`has_live_refe
 The redirect row is preserved on delete, so a later re-scrape still resolves the source to the surviving canonical through `materializeEntity`.
 
 The command is report-only by default; applying requires `--apply --confirm-archived-entity-cleanup`, an explicit `--limit`, and a `--max-apply` bound, and is env-gated Dev-first through the same `assertScriptApplyAllowed` guard.
-In the sweep, the existing report-only `archived-cleanup` stage (`research-entity:cleanup-archived --merge-residue-only --limit=5000`) runs after the FRA merge stage and only switches to apply mode (`--apply --confirm-archived-entity-cleanup --max-apply=5000`) when `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=1` (or `=true`) is set.
-The flag is OFF by default, so Beta and Prod sweeps only report merge residue until it is deliberately enabled after Dev validation.
+In the sweep, the `archived-cleanup` stage (`research-entity:cleanup-archived --merge-residue-only --limit=5000`) runs after the FRA merge stage and, on the two exhaustive Development modes, switches to apply mode (`--apply --confirm-archived-entity-cleanup --max-apply=5000`) by default so the Dev pipeline deletes inert residue every run.
+Disable the delete by setting `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE` to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`); the post-run stages never run on Beta or Prod sweeps, so those paths only ever report merge residue.
 
 ## Environment order and production
 
