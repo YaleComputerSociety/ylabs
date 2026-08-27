@@ -63,13 +63,15 @@ describe('Login', () => {
     ).toBeTruthy();
   });
 
-  it('keeps opportunity detail context on the CAS gate', () => {
+  it('falls back to default Yale Research context for the retired opportunities route', () => {
     renderLogin('/opportunities/example-id');
 
-    expect(screen.getByRole('heading', { name: /continue to opportunity details/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
+    expect(screen.getByText(/open the research discovery workspace/i)).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: /continue to opportunity details/i })).toBeNull();
     expect(
-      screen.getByText(/review the evidence, deadline, and application next step/i),
-    ).toBeTruthy();
+      screen.queryByText(/review the evidence, deadline, and application next step/i),
+    ).toBeNull();
   });
 
   it('keeps profile context on the CAS gate', () => {

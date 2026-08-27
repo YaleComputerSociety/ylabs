@@ -46,21 +46,18 @@ const titleCaseContactRole = (role?: string): string => {
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   'Undergrad evidence': 'Has hosted undergraduate researchers',
   'Student project evidence': 'Supervises student projects',
-  'Posted route': 'Posted opportunity',
   'Contact route': 'Open to inquiries',
 };
 
 const ACCESS_SIGNAL_PRIORITY = [
   'Undergrad evidence',
   'Student project evidence',
-  'Posted route',
   'Contact route',
 ];
 
 const ELEVATED_ACCESS_SIGNALS = new Set([
   'Undergrad evidence',
   'Student project evidence',
-  'Posted route',
 ]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
@@ -152,15 +149,6 @@ const ResearchHomeCard = ({
   const mobileMoreCount = topicBadges.length - mobileTopicCap;
   const desktopMoreCount = topicBadges.length - desktopTopicCap;
   const description = sanitizeResearchEntityCopy(home.description, home.entities[0]);
-  const activePostedOpportunity =
-    (home.activePostedOpportunity?.provenance !== 'LISTING_BRIDGED'
-      ? home.activePostedOpportunity
-      : undefined) ||
-    home.pathways.find(
-      (pathway) =>
-        pathway.activePostedOpportunity &&
-        pathway.activePostedOpportunity.provenance !== 'LISTING_BRIDGED',
-    )?.activePostedOpportunity;
   const primaryProfileUrl = primaryLinkedEntity ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}` : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
@@ -430,15 +418,6 @@ const ResearchHomeCard = ({
           >
             View profile →
           </Link>
-          {activePostedOpportunity?._id && (
-            <Link
-              to={`/opportunities/${safeRouteSegment(activePostedOpportunity._id)}`}
-              className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white transition active:scale-[0.98] hover:bg-brand-navy"
-              onClick={(event) => event.stopPropagation()}
-            >
-              View posted opportunity
-            </Link>
-          )}
         </div>
       ) : !primaryLinkedEntity && onSelect ? (
         <div className="mt-4">

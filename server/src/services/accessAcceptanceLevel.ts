@@ -109,9 +109,9 @@ export function hasUndergradHostingEvidenceFromSignals(
 // join a research home: a posted or recurring opening, an application form, an
 // explicit contact route (lab/program manager or contact instructions), prior
 // or current undergraduate participation, or faculty-supervised student
-// projects. These back the "Posted route" / "Contact route" / "Undergrad
-// evidence" / "Student project evidence" discovery badges and the
-// documented-way-in browse filter.
+// projects. These back the "Contact route" / "Undergrad evidence" /
+// "Student project evidence" discovery badges and the documented-way-in
+// browse filter.
 //
 // The near-uninformative identified-lead fallback (REACH_OUT_PLAUSIBLE) and the
 // negative signals (NOT_CURRENTLY_AVAILABLE, NO_EVIDENCE) are intentionally
