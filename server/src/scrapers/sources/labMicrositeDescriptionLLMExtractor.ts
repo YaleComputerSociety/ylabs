@@ -41,11 +41,12 @@ import {
 } from '../../utils/officialResearchDescription';
 import {
   CARD_SYNTHESIS_MODEL,
-  CARD_SYNTHESIS_PROMPT_VERSION,
+  CARD_SYNTHESIS_PROMPT_HASH,
   defaultCardSynthesisLLM,
   synthesizeGroundedCardDescription,
   type CardSynthesisLLMFn,
 } from '../../utils/groundedCardSynthesis';
+import { DESCRIPTION_EXTRACTION_PROMPT, DESCRIPTION_EXTRACTION_PROMPT_HASH } from '../prompts';
 import { groundMethods } from '../utils/methodGrounding';
 import {
   computeVersionedContentHash,
@@ -57,10 +58,11 @@ import {
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
 
-// Bump when the description-extraction prompt/contract changes so the
-// content-hash gate re-extracts affected entities instead of serving output
-// produced by the prior prompt. See contentHashGate.computeVersionedContentHash.
-export const DESCRIPTION_EXTRACTION_PROMPT_VERSION = 'v1';
+// The prompt text lives in server/src/scrapers/prompts/micrositeDescriptionExtraction.md
+// and the content-hash gate keys on DESCRIPTION_EXTRACTION_PROMPT_HASH (sha256 of
+// that file), so editing the .md re-extracts affected entities with no manual bump.
+export const DESCRIPTION_EXTRACTION_SYSTEM_PROMPT = DESCRIPTION_EXTRACTION_PROMPT;
+export { DESCRIPTION_EXTRACTION_PROMPT_HASH };
 const MAX_PROMPT_CHARS = 40_000;
 // The lab's own microsite is the authoritative source of its real name, so its
 // name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
@@ -562,8 +564,7 @@ async function defaultCallLLM(input: {
       messages: [
         {
           role: 'system',
-          content:
-            'You are an extractor, not a writer. Copy the research entity\'s own description verbatim from the provided page text. Never paraphrase, summarize, translate, combine non-adjacent sentences, reword, fix grammar or punctuation, change capitalization, add or remove surrounding quotation marks or brackets, normalize spacing, or invent wording. Never stitch text from different places together with an ellipsis (...) or by deleting words from the middle. Every returned description must be an exact, contiguous substring of the page text, copied character-for-character. If the page contains no such description, return an empty string for that field. Do not extract access, contact, openings, or application claims.',
+          content: DESCRIPTION_EXTRACTION_SYSTEM_PROMPT,
         },
         {
           role: 'user',
@@ -843,10 +844,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         };
         const contentHash = computeVersionedContentHash(
           page.html,
-          DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+          DESCRIPTION_EXTRACTION_PROMPT_HASH,
           this.model,
           this.cardModel,
-          CARD_SYNTHESIS_PROMPT_VERSION,
+          CARD_SYNTHESIS_PROMPT_HASH,
         );
         const storedContentHash = ctx.options.forceLlm
           ? undefined
