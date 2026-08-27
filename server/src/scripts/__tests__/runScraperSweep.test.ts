@@ -587,7 +587,9 @@ describe('runScraperSweep', () => {
       mergeUrlIdentityDuplicates: true,
       maxUrlIdentityMerges: 300,
     }).map((stage) => stage.name);
-    expect(names.indexOf('url-identity-dedupe')).toBeGreaterThan(names.indexOf('faculty-projection'));
+    expect(names.indexOf('url-identity-dedupe')).toBeGreaterThan(
+      names.indexOf('faculty-projection'),
+    );
     expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('search-rebuild'));
     const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       mergeUrlIdentityDuplicates: true,

@@ -1769,7 +1769,12 @@ const STUDENT_VISIBILITY_TIER_RANK: Record<string, number> = {
   operator_review: 1,
   suppressed: 0,
 };
-const STUDENT_VISIBILITY_RANK_TIER = ['suppressed', 'operator_review', 'limited_but_safe', 'student_ready'];
+const STUDENT_VISIBILITY_RANK_TIER = [
+  'suppressed',
+  'operator_review',
+  'limited_but_safe',
+  'student_ready',
+];
 const mergeTierRank = (tier: unknown): number =>
   STUDENT_VISIBILITY_TIER_RANK[String(tier ?? '')] ?? STUDENT_VISIBILITY_TIER_RANK.operator_review;
 
@@ -1793,10 +1798,7 @@ function renderLeadMembersFromRoster(
     }));
 }
 
-function pickBestUsefulText(
-  values: string[],
-  isUseful: (value: string) => boolean,
-): string {
+function pickBestUsefulText(values: string[], isUseful: (value: string) => boolean): string {
   const cleaned = values.map((value) => (value || '').trim()).filter(Boolean);
   const useful = cleaned.filter(isUseful);
   const pool = useful.length > 0 ? useful : cleaned;
@@ -1830,7 +1832,9 @@ export async function resolveNonDemotingMerge(
   duplicateIds: mongoose.Types.ObjectId[],
 ): Promise<NonDemotingMergeResolution> {
   const allIds = [preferredCanonicalId, ...duplicateIds];
-  const docs = await ResearchEntity.find({ _id: { $in: allIds } }).lean<Array<Record<string, any>>>();
+  const docs = await ResearchEntity.find({ _id: { $in: allIds } }).lean<
+    Array<Record<string, any>>
+  >();
   const docById = new Map(docs.map((doc) => [String(doc._id), doc]));
   const bestInputRank = Math.max(
     ...allIds.map((id) => mergeTierRank(docById.get(String(id))?.studentVisibilityTier)),
@@ -1957,7 +1961,11 @@ export async function applyResearchEntityDedupeMergeGroup(
   if (options.neverDemote) {
     const resolution = await resolveNonDemotingMerge(requestedCanonicalId, requestedDuplicateIds);
     if (resolution.defer) {
-      return { ...zeroedResult(), deferredAsWouldDemote: true, bestInputTier: resolution.bestInputTier };
+      return {
+        ...zeroedResult(),
+        deferredAsWouldDemote: true,
+        bestInputTier: resolution.bestInputTier,
+      };
     }
     canonicalId = resolution.canonicalId;
     duplicateIds = resolution.duplicateIds;

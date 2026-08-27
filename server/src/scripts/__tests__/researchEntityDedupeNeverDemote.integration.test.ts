@@ -20,7 +20,8 @@ import { applyResearchEntityDedupeMergeGroup } from '../dedupeResearchEntitiesBy
 
 const READY_FULL =
   'The Roe Laboratory investigates the molecular mechanisms of immune regulation and cancer immunotherapy, focusing on how T cells recognize and respond to the tumor microenvironment, and develops single-cell and spatial approaches to map the signaling circuits that shape durable anti-tumor responses.';
-const READY_SHORT = 'Studies immune regulation and cancer immunotherapy in the tumor microenvironment.';
+const READY_SHORT =
+  'Studies immune regulation and cancer immunotherapy in the tumor microenvironment.';
 const SHARED_URL = 'https://medicine.yale.edu/lab/roe/';
 
 type PersistedEntity = { archived?: boolean; fullDescription?: string; shortDescription?: string };
@@ -57,7 +58,9 @@ describe('never-demote merge guard', () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     const personId = new mongoose.Types.ObjectId();
-    await db.collection('researchers').insertOne({ _id: personId, displayName: 'Jane Roe', archived: false });
+    await db
+      .collection('researchers')
+      .insertOne({ _id: personId, displayName: 'Jane Roe', archived: false });
     await db.collection('role_assignments').insertOne({
       personId,
       target: { kind: 'RESEARCH_ENTITY', id: entityId },
