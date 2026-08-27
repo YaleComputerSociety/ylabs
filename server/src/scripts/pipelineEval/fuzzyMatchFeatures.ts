@@ -113,7 +113,11 @@ export interface SoftTfIdfOptions {
   defaultIdf?: number;
 }
 
-function tfIdfWeights(tokens: string[], idf: Map<string, number>, defaultIdf: number): Map<string, number> {
+function tfIdfWeights(
+  tokens: string[],
+  idf: Map<string, number>,
+  defaultIdf: number,
+): Map<string, number> {
   const unique = [...new Set(tokens)];
   const raw = new Map<string, number>();
   let norm = 0;
@@ -202,7 +206,8 @@ export function metaphone(name: string, useAlternate = false): string {
         } else code += 'K';
         break;
       case 'D':
-        if (next === 'G' && (at(i + 2) === 'E' || at(i + 2) === 'I' || at(i + 2) === 'Y')) code += 'J';
+        if (next === 'G' && (at(i + 2) === 'E' || at(i + 2) === 'I' || at(i + 2) === 'Y'))
+          code += 'J';
         else code += 'T';
         break;
       case 'G':
@@ -297,8 +302,12 @@ export function firstNameCompatibility(a: unknown, b: unknown): FirstNameCompati
 }
 
 export function jaccard(a: Iterable<string>, b: Iterable<string>): number {
-  const setA = new Set([...a].map((value) => normalizeToken(value)).filter((value) => value.length > 0));
-  const setB = new Set([...b].map((value) => normalizeToken(value)).filter((value) => value.length > 0));
+  const setA = new Set(
+    [...a].map((value) => normalizeToken(value)).filter((value) => value.length > 0),
+  );
+  const setB = new Set(
+    [...b].map((value) => normalizeToken(value)).filter((value) => value.length > 0),
+  );
   if (setA.size === 0 && setB.size === 0) return 0;
   let intersection = 0;
   for (const value of setA) if (setB.has(value)) intersection += 1;
@@ -322,13 +331,15 @@ function piRoleWeight(role: PiRoleLike): number {
 export function piOverlap(a: PiRoleLike[], b: PiRoleLike[]): number {
   const weightsA = new Map<string, number>();
   for (const role of a) {
-    const id = role.personId === undefined || role.personId === null ? '' : String(role.personId).trim();
+    const id =
+      role.personId === undefined || role.personId === null ? '' : String(role.personId).trim();
     if (!id) continue;
     weightsA.set(id, Math.max(weightsA.get(id) ?? 0, piRoleWeight(role)));
   }
   let best = 0;
   for (const role of b) {
-    const id = role.personId === undefined || role.personId === null ? '' : String(role.personId).trim();
+    const id =
+      role.personId === undefined || role.personId === null ? '' : String(role.personId).trim();
     if (!id) continue;
     const weightA = weightsA.get(id);
     if (weightA === undefined) continue;
@@ -388,12 +399,14 @@ export interface EntityFeatureVector {
 }
 
 function asStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter((entry): entry is string => typeof entry === 'string');
+  if (Array.isArray(value))
+    return value.filter((entry): entry is string => typeof entry === 'string');
   return [];
 }
 
 function asNumberArray(value: unknown): number[] {
-  if (Array.isArray(value)) return value.filter((entry): entry is number => typeof entry === 'number');
+  if (Array.isArray(value))
+    return value.filter((entry): entry is number => typeof entry === 'number');
   return [];
 }
 
