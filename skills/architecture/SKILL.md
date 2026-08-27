@@ -99,7 +99,6 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `/listings`       | `listings.ts`       | Legacy read and claim routes; authoring is retired. |
 | `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
 | `/users`          | `users.ts`          | Auth required.                                      |
-| `/profiles`       | `profiles.ts`       | Varies.                                             |
 | `/analytics`      | `analytics.ts`      | Admin.                                              |
 | `/config`         | `config.ts`         | Public.                                             |
 | `/research-areas` | `researchAreas.ts`  | Admin for writes.                                   |
@@ -121,7 +120,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts`                                          | Student visibility tiering and repair queue.                         |
 | `programClassifier.ts`                                                                                                                      | Program classification.                                              |
 | `listingResearchEntityProfile.ts`                                                                                                           | Keeps legacy listings synced to ResearchEntity profiles.             |
-| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                        | External integrations.                                               |
+| `directoryService.ts` / `yaliesService.ts`                                                                                                  | External integrations.                                               |
 
 ## Naming conventions
 
@@ -160,6 +159,5 @@ Use `docs/data-refresh-runbook.md` for the canonical commands.
 | Yale CAS SSO   | Authentication                                         | `passport.ts`                                  |
 | Yalies API     | Student and graduate data lookup                       | `yaliesService.ts`                             |
 | Yale Directory | Faculty data lookup                                    | `directoryService.ts`                          |
-| CourseTable    | Professor course data                                  | `courseTableService.ts`                        |
 | Meilisearch    | Hybrid search                                          | `meiliClient.ts`                               |
 | OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |

@@ -13,7 +13,7 @@ Yale Research is a **Yale research discovery platform**. Students discover Yale 
 ```
 React (Vite) → Express (Passport.js) → MongoDB Atlas + Meilisearch
                     ↓
-            External APIs: Yale CAS, Yalies, Yale Directory, CourseTable, OpenAI (via Meilisearch)
+            External APIs: Yale CAS, Yalies, Yale Directory, OpenAI (via Meilisearch)
 ```
 
 The server follows: **Routes → Middleware → Controllers → Services → Models**
@@ -418,7 +418,6 @@ All mount under `/api`.
 | `/listings`       | Legacy authenticated reads, outreach, claims, and view tracking; authoring is retired    | Authenticated                                          |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
 | `/users`          | User CRUD                                                                                 | Yes                                                    |
-| `/profiles`       | Public faculty profile reads (admin curation lives under `/admin/profiles/:netid`)        | Authenticated                                          |
 | `/analytics`      | Analytics dashboard + research event writes                                               | Admin for dashboard, authenticated for research writes |
 | `/config`         | Departments + research areas                                                              | No                                                     |
 | `/research-areas` | Custom research area creation                                                             | Admin for writes                                       |

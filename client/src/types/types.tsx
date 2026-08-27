@@ -1,8 +1,6 @@
 /**
  * Core TypeScript interfaces for listings, fellowships, and user profiles.
  */
-import type { LabScholarlyLink } from './labDetail';
-
 export type Listing = {
   id: string;
   ownerId: string;
