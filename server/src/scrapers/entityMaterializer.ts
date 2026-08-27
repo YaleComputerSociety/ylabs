@@ -3073,9 +3073,10 @@ async function findEntityCandidatesByKey(
 ): Promise<CandidateEntity[]> {
   if (resolverType === 'fellowship') {
     if (key.ns !== 'source-key') return [];
-    const doc = (await Fellowship.findOne({ sourceKey: key.value })
-      .select('_id title')
-      .lean()) as { _id: unknown; title?: string } | null;
+    const doc = (await Fellowship.findOne({ sourceKey: key.value }).select('_id title').lean()) as {
+      _id: unknown;
+      title?: string;
+    } | null;
     return doc ? [{ id: String(doc._id), name: doc.title }] : [];
   }
   // Non-normalized keys (website-url, profile-lab-url, org-name) are resolved via

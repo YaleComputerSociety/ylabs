@@ -11,7 +11,11 @@ vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
     '../../services/meiliSyncService',
   );
-  return { ...actual, syncEntity: meiliMocks.syncEntity, deleteFromIndex: meiliMocks.deleteFromIndex };
+  return {
+    ...actual,
+    syncEntity: meiliMocks.syncEntity,
+    deleteFromIndex: meiliMocks.deleteFromIndex,
+  };
 });
 
 import { Observation } from '../../models/observation';

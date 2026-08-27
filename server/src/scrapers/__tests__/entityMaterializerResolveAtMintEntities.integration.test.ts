@@ -11,7 +11,11 @@ vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
     '../../services/meiliSyncService',
   );
-  return { ...actual, syncEntity: meiliMocks.syncEntity, deleteFromIndex: meiliMocks.deleteFromIndex };
+  return {
+    ...actual,
+    syncEntity: meiliMocks.syncEntity,
+    deleteFromIndex: meiliMocks.deleteFromIndex,
+  };
 });
 
 vi.mock('../../services/researchEntityBrowseRankService', async () => {
@@ -112,7 +116,11 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
 });
 
 describe('resolveCanonical guards (pure)', () => {
-  const strongUrlKey: CanonicalKey = { ns: 'website-url', value: 'smithlab.example.edu', strength: 'strong' };
+  const strongUrlKey: CanonicalKey = {
+    ns: 'website-url',
+    value: 'smithlab.example.edu',
+    strength: 'strong',
+  };
   const noAlias = { resolveAlias: async () => null };
 
   it('returns ambiguous when a strong key selects more than one candidate', async () => {
