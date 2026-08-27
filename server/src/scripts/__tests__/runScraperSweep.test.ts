@@ -15,6 +15,7 @@ import {
   parseScraperSweepArgs,
   resolveDevelopmentPostRunOptions,
   resolvePhaseConcurrency,
+  resolveSweepChildPerHostConcurrency,
   runWithBoundedConcurrency,
   scraperSweepArtifactError,
   validateScraperSweepEnvironment,
@@ -119,12 +120,30 @@ describe('runScraperSweep', () => {
   });
 
   it('caps LLM phases, honors an override, and never drops below one', () => {
-    expect(resolvePhaseConcurrency('development-full', 'discovery')).toBe(4);
-    expect(resolvePhaseConcurrency('development-full', 'discovery', 8)).toBe(8);
+    expect(resolvePhaseConcurrency('development-full', 'discovery')).toBe(8);
+    expect(resolvePhaseConcurrency('development-full', 'discovery', 12)).toBe(12);
     expect(resolvePhaseConcurrency('development-full', 'content-access', 8)).toBe(2);
     expect(resolvePhaseConcurrency('development-full', 'relationships', 8)).toBe(2);
     expect(resolvePhaseConcurrency('beta-fetch', 'discovery')).toBe(1);
     expect(resolvePhaseConcurrency('development-full', 'discovery', 1)).toBe(1);
+  });
+
+  it('shrinks the child per-host cap as cross-source concurrency rises so shared hosts stay bounded', () => {
+    expect(resolveSweepChildPerHostConcurrency(1, {})).toBe(4);
+    expect(resolveSweepChildPerHostConcurrency(2, {})).toBe(2);
+    expect(resolveSweepChildPerHostConcurrency(4, {})).toBe(1);
+    expect(resolveSweepChildPerHostConcurrency(8, {})).toBe(1);
+    for (const concurrency of [1, 2, 4, 8, 12]) {
+      const cap = resolveSweepChildPerHostConcurrency(concurrency, {});
+      expect(cap * concurrency).toBeLessThanOrEqual(Math.max(4, concurrency));
+      expect(cap).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('never lets an operator override loosen the per-host bound', () => {
+    expect(resolveSweepChildPerHostConcurrency(1, { SCRAPER_PER_HOST_CONCURRENCY: '2' })).toBe(2);
+    expect(resolveSweepChildPerHostConcurrency(8, { SCRAPER_PER_HOST_CONCURRENCY: '16' })).toBe(1);
+    expect(resolveSweepChildPerHostConcurrency(2, { SCRAPER_PER_HOST_CONCURRENCY: 'x' })).toBe(2);
   });
 
   it('runs every item without exceeding the concurrency limit', async () => {
