@@ -38,7 +38,8 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-const SELECT = 'slug name entityType departments researchAreas methods websiteUrl inferredPiUserId embedding';
+const SELECT =
+  'slug name entityType departments researchAreas methods websiteUrl inferredPiUserId embedding';
 
 function buildInScopeQuarantines(entities: MatcherEntity[]): SameNameQuarantineLike[] {
   const byName = new Map<string, Array<{ id: string; personId?: unknown }>>();
@@ -55,7 +56,9 @@ function buildInScopeQuarantines(entities: MatcherEntity[]): SameNameQuarantineL
 }
 
 function toMatcherEntity(doc: Record<string, any>): MatcherEntity {
-  const pi = doc.inferredPiUserId ? [{ personId: String(doc.inferredPiUserId), confidence: 1 }] : [];
+  const pi = doc.inferredPiUserId
+    ? [{ personId: String(doc.inferredPiUserId), confidence: 1 }]
+    : [];
   return {
     id: String(doc._id),
     name: doc.name,
@@ -93,7 +96,10 @@ async function main() {
   const loadedIds = new Set(entities.map((e) => e.id));
 
   const groundTruth = await loadFuzzyGroundTruth();
-  const positiveClusters = buildGroundTruthClusters(groundTruth.redirects, groundTruth.canonicalGroupRows);
+  const positiveClusters = buildGroundTruthClusters(
+    groundTruth.redirects,
+    groundTruth.canonicalGroupRows,
+  );
   const allPositives = clusterPairs(positiveClusters);
   const inScopePositives = new Set(
     [...allPositives].filter((key) => {
@@ -105,13 +111,19 @@ async function main() {
   const inScopeNegatives = buildLabeledNegatives(buildInScopeQuarantines(entities));
 
   const { plan, candidatePairs } = buildFuzzyResidualPlan(entities);
-  const autoPairs = new Set(plan.filter((e) => e.band === 'auto').map((e) => pairKey(e.pair[0], e.pair[1])));
+  const autoPairs = new Set(
+    plan.filter((e) => e.band === 'auto').map((e) => pairKey(e.pair[0], e.pair[1])),
+  );
   const reviewPairs = plan.filter((e) => e.band === 'review').length;
 
   const report = {
     generatedAt: new Date().toISOString(),
     db: dbLabel,
-    selection: args.sample ? `random-sample:${args.sample}` : args.limit ? `first:${args.limit}` : 'all',
+    selection: args.sample
+      ? `random-sample:${args.sample}`
+      : args.limit
+        ? `first:${args.limit}`
+        : 'all',
     includeArchived: args.includeArchived,
     entitiesLoaded: entities.length,
     candidatePairs: candidatePairs.size,

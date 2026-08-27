@@ -30,4 +30,19 @@ yarn fuzzy:labeled-set
 
 The CLI builds the ground-truth clusters from the durable merge records (redirects plus the `canonicalGroupId` transitive closure, with researcher-dedupe records kept in a separate namespace) and prints a JSON report of cluster counts, positive within-cluster pairs, and a cluster-size histogram.
 
-`fuzzyMatchMetrics.ts` holds the pure, dependency-free primitives the report and the coming matcher share: `buildGroundTruthClusters` and `clusterPairs` for labeled positives, `buildLabeledNegatives` for same-name-different-person hard negatives drawn from the quarantines, and `pairwiseMetrics` (precision, recall, F1), `pairCompleteness`, and `clusterBcubed` for scoring predictions.
+`fuzzyMatchMetrics.ts` holds the pure, dependency-free primitives the report and the matcher share: `buildGroundTruthClusters` and `clusterPairs` for labeled positives, `buildLabeledNegatives` for same-name-different-person hard negatives drawn from the quarantines, and `pairwiseMetrics` (precision, recall, F1), `pairCompleteness`, and `clusterBcubed` for scoring predictions.
+
+## Fuzzy residual matcher
+
+Report-only matcher that breaks the 0.60 blocking-recall ceiling with loose candidate generation plus a Fellegi-Sunter-style scorer.
+It is additive and never auto-merges; nothing is written to live collections.
+
+```bash
+yarn fuzzy:residual-report --sample=800
+```
+
+Flags: `--sample=<N>` draws a random sample, `--limit=<N>` takes the first N, and `--include-archived` includes archived entities for a truer recall estimate since merge losers are often archived.
+
+`fuzzyResidualMatcher.ts` generates candidate pairs by blocking on surname metaphone, significant org tokens, department, and research area, plus embedding cosine ANN, then scores each pair.
+The scorer sums per-feature Fellegi-Sunter weights only for comparable features (both sides carry the data), applies hard vetoes for conflicting first names and incompatible entity types, and assigns each pair an `auto`, `review`, or `discard` band via two probability thresholds.
+The CLI prints a JSON report of candidate/auto/review counts and measures blocking recall and auto-band precision against the labeled positives and same-name-different-PI hard negatives.

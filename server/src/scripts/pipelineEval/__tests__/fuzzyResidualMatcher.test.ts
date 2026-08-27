@@ -64,15 +64,30 @@ describe('scorePair scoring', () => {
 
   it('does not auto-merge a bare namesake with no PI/host/dept overlap', () => {
     const a = entity({ id: 'a', name: 'Chen Lab', surname: 'Chen', departments: ['Physics'] });
-    const b = entity({ id: 'b', name: 'Chen Laboratory', surname: 'Chen', departments: ['Chemistry'] });
+    const b = entity({
+      id: 'b',
+      name: 'Chen Laboratory',
+      surname: 'Chen',
+      departments: ['Chemistry'],
+    });
     const result = scorePair(a, b);
     expect(result.band).not.toBe('auto');
   });
 
   it('ignores an umbrella shared host (yale.edu) as corroboration', () => {
     const distinctive = scorePair(
-      entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'https://ruizlab.yale.edu' }),
-      entity({ id: 'b', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'https://ruizlab.yale.edu' }),
+      entity({
+        id: 'a',
+        name: 'Ruiz Lab',
+        surname: 'Ruiz',
+        websiteUrl: 'https://ruizlab.yale.edu',
+      }),
+      entity({
+        id: 'b',
+        name: 'Ruiz Lab',
+        surname: 'Ruiz',
+        websiteUrl: 'https://ruizlab.yale.edu',
+      }),
     );
     const umbrella = scorePair(
       entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'https://yale.edu' }),
@@ -83,8 +98,18 @@ describe('scorePair scoring', () => {
 
   it('credits identical scheme-less distinctive hosts instead of penalizing them', () => {
     const withScheme = scorePair(
-      entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'https://ruizlab.yale.edu' }),
-      entity({ id: 'b', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'https://ruizlab.yale.edu' }),
+      entity({
+        id: 'a',
+        name: 'Ruiz Lab',
+        surname: 'Ruiz',
+        websiteUrl: 'https://ruizlab.yale.edu',
+      }),
+      entity({
+        id: 'b',
+        name: 'Ruiz Lab',
+        surname: 'Ruiz',
+        websiteUrl: 'https://ruizlab.yale.edu',
+      }),
     );
     const withoutScheme = scorePair(
       entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'ruizlab.yale.edu' }),
@@ -104,8 +129,18 @@ describe('scorePair scoring', () => {
       entity({ id: 'b', name: 'Ruiz Lab', surname: 'Ruiz' }),
     );
     const withPi = scorePair(
-      entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz', pi: [{ personId: 'u1', confidence: 1 }] }),
-      entity({ id: 'b', name: 'Ruiz Lab', surname: 'Ruiz', pi: [{ personId: 'u1', confidence: 1 }] }),
+      entity({
+        id: 'a',
+        name: 'Ruiz Lab',
+        surname: 'Ruiz',
+        pi: [{ personId: 'u1', confidence: 1 }],
+      }),
+      entity({
+        id: 'b',
+        name: 'Ruiz Lab',
+        surname: 'Ruiz',
+        pi: [{ personId: 'u1', confidence: 1 }],
+      }),
     );
     expect(withPi.score).toBeGreaterThan(base.score);
   });
@@ -129,7 +164,9 @@ describe('generateCandidatePairs', () => {
       entity({ id: 'a', name: 'Smith Lab', surname: 'Smith' }),
       entity({ id: 'b', name: 'Smyth Laboratory', surname: 'Smyth' }),
     ];
-    const candidates = generateCandidatePairs(entities, { excludePairs: new Set([pairKey('a', 'b')]) });
+    const candidates = generateCandidatePairs(entities, {
+      excludePairs: new Set([pairKey('a', 'b')]),
+    });
     expect(candidates.has(pairKey('a', 'b'))).toBe(false);
   });
 });
@@ -148,8 +185,19 @@ describe('bare-surname transitivity trap', () => {
 describe('buildFuzzyResidualPlan', () => {
   it('emits scored non-discard pairs sorted by score, dropping vetoed pairs', () => {
     const entities: MatcherEntity[] = [
-      entity({ id: 'a', name: 'Maria Ruiz Laboratory', surname: 'Ruiz', firstName: 'Maria', pi: [{ personId: 'u1', confidence: 1 }] }),
-      entity({ id: 'b', name: 'Ruiz Lab', surname: 'Ruiz', pi: [{ personId: 'u1', confidence: 1 }] }),
+      entity({
+        id: 'a',
+        name: 'Maria Ruiz Laboratory',
+        surname: 'Ruiz',
+        firstName: 'Maria',
+        pi: [{ personId: 'u1', confidence: 1 }],
+      }),
+      entity({
+        id: 'b',
+        name: 'Ruiz Lab',
+        surname: 'Ruiz',
+        pi: [{ personId: 'u1', confidence: 1 }],
+      }),
       entity({ id: 'c', name: 'John Smith Lab', surname: 'Smith', firstName: 'John' }),
       entity({ id: 'd', name: 'Jane Smith Lab', surname: 'Smith', firstName: 'Jane' }),
     ];
@@ -158,6 +206,7 @@ describe('buildFuzzyResidualPlan', () => {
     const smithPair = plan.find((entry) => entry.pair.includes('c') && entry.pair.includes('d'));
     expect(ruizPair).toBeDefined();
     expect(smithPair).toBeUndefined();
-    for (let i = 1; i < plan.length; i += 1) expect(plan[i - 1].score).toBeGreaterThanOrEqual(plan[i].score);
+    for (let i = 1; i < plan.length; i += 1)
+      expect(plan[i - 1].score).toBeGreaterThanOrEqual(plan[i].score);
   });
 });

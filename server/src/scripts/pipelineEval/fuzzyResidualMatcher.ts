@@ -121,7 +121,11 @@ export function generateCandidatePairs(
     if (a === b) return;
     const key = pairKey(a, b);
     if (pairs.has(key) || exclude.has(key)) return;
-    if ((perEntityCount.get(a) ?? 0) >= maxPerEntity || (perEntityCount.get(b) ?? 0) >= maxPerEntity) return;
+    if (
+      (perEntityCount.get(a) ?? 0) >= maxPerEntity ||
+      (perEntityCount.get(b) ?? 0) >= maxPerEntity
+    )
+      return;
     pairs.add(key);
     perEntityCount.set(a, (perEntityCount.get(a) ?? 0) + 1);
     perEntityCount.set(b, (perEntityCount.get(b) ?? 0) + 1);
@@ -203,8 +207,14 @@ function vetoReasonFor(a: MatcherEntity, b: MatcherEntity): string | undefined {
   // compareEntities derives with a full-name fallback: for a bare "<Surname> Lab"
   // that makes the surname look like a conflicting given name. An absent first name
   // must not veto.
-  if (firstNameCompatibility(a.firstName, b.firstName) === 'conflicting') return 'first_name_conflict';
-  if (a.entityType && b.entityType && a.entityType !== b.entityType && orgLike(a.entityType) !== orgLike(b.entityType)) {
+  if (firstNameCompatibility(a.firstName, b.firstName) === 'conflicting')
+    return 'first_name_conflict';
+  if (
+    a.entityType &&
+    b.entityType &&
+    a.entityType !== b.entityType &&
+    orgLike(a.entityType) !== orgLike(b.entityType)
+  ) {
     return 'entity_type_incompatible';
   }
   return undefined;
@@ -214,7 +224,11 @@ function log2(value: number): number {
   return Math.log(value) / Math.log(2);
 }
 
-export function scorePair(a: MatcherEntity, b: MatcherEntity, options: ScoreOptions = {}): PairScore {
+export function scorePair(
+  a: MatcherEntity,
+  b: MatcherEntity,
+  options: ScoreOptions = {},
+): PairScore {
   const weights = options.weights ?? DEFAULT_FEATURE_WEIGHTS;
   const lambda = options.lambda ?? DEFAULT_LAMBDA;
   const tUpper = options.tUpper ?? DEFAULT_T_UPPER;
@@ -228,7 +242,8 @@ export function scorePair(a: MatcherEntity, b: MatcherEntity, options: ScoreOpti
 
   const hostA = hostOf(a.websiteUrl);
   const hostB = hostOf(b.websiteUrl);
-  const distinctiveHostMatch = isDistinctiveHost(hostA) && isDistinctiveHost(hostB) && hostA === hostB;
+  const distinctiveHostMatch =
+    isDistinctiveHost(hostA) && isDistinctiveHost(hostB) && hostA === hostB;
   const hasItems = (value: unknown): boolean => Array.isArray(value) && value.length > 0;
 
   // A feature contributes its Fellegi-Sunter weight only when it is COMPARABLE
@@ -236,11 +251,31 @@ export function scorePair(a: MatcherEntity, b: MatcherEntity, options: ScoreOpti
   // disagreement penalty - otherwise a strong shared-PI match with sparse other
   // fields would be buried by penalties for merely-missing attributes.
   const features3: Array<[keyof typeof DEFAULT_FEATURE_WEIGHTS, boolean, boolean]> = [
-    ['surnameMetaphone', metaphone(surnameOf(a)) !== '' && metaphone(surnameOf(b)) !== '', features.surnameMetaphoneMatch],
-    ['nameJaroWinkler', asString(a.name) !== '' && asString(b.name) !== '', features.nameJaroWinkler >= 0.9],
-    ['nameTokenSet', asString(a.name) !== '' && asString(b.name) !== '', features.nameTokenSetRatio >= 0.8],
-    ['department', hasItems(a.departments) && hasItems(b.departments), features.departmentJaccard > 0],
-    ['researchArea', hasItems(a.researchAreas) && hasItems(b.researchAreas), features.researchAreaJaccard >= 0.2],
+    [
+      'surnameMetaphone',
+      metaphone(surnameOf(a)) !== '' && metaphone(surnameOf(b)) !== '',
+      features.surnameMetaphoneMatch,
+    ],
+    [
+      'nameJaroWinkler',
+      asString(a.name) !== '' && asString(b.name) !== '',
+      features.nameJaroWinkler >= 0.9,
+    ],
+    [
+      'nameTokenSet',
+      asString(a.name) !== '' && asString(b.name) !== '',
+      features.nameTokenSetRatio >= 0.8,
+    ],
+    [
+      'department',
+      hasItems(a.departments) && hasItems(b.departments),
+      features.departmentJaccard > 0,
+    ],
+    [
+      'researchArea',
+      hasItems(a.researchAreas) && hasItems(b.researchAreas),
+      features.researchAreaJaccard >= 0.2,
+    ],
     ['host', isDistinctiveHost(hostA) && isDistinctiveHost(hostB), distinctiveHostMatch],
     ['embedding', hasItems(a.embedding) && hasItems(b.embedding), features.embeddingCosine >= 0.85],
     ['pi', hasItems(a.pi) && hasItems(b.pi), features.piOverlap > 0],
@@ -283,7 +318,12 @@ export function buildFuzzyResidualPlan(
     if (!a || !b) continue;
     const scored = scorePair(a, b, options);
     if (scored.band === 'discard') continue;
-    plan.push({ pair: [idA, idB], score: scored.score, band: scored.band, features: scored.features });
+    plan.push({
+      pair: [idA, idB],
+      score: scored.score,
+      band: scored.band,
+      features: scored.features,
+    });
   }
   plan.sort((x, y) => y.score - x.score);
   return { plan, candidatePairs };
