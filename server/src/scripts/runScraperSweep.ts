@@ -164,9 +164,19 @@ export function isDevelopmentSweepMode(mode: ScraperSweepMode): boolean {
   return mode === 'development-full' || mode === 'development-incremental';
 }
 
+const DEV_SWEEP_STAGE_DISABLE_VALUES = new Set([
+  '0',
+  'false',
+  'no',
+  'n',
+  'off',
+  'disable',
+  'disabled',
+]);
+
 function isDevSweepStageEnabledByDefault(rawValue: string | undefined): boolean {
   const value = (rawValue || '').trim().toLowerCase();
-  return value !== '0' && value !== 'false';
+  return !DEV_SWEEP_STAGE_DISABLE_VALUES.has(value);
 }
 
 export function resolveDevelopmentPostRunOptions(

@@ -471,6 +471,23 @@ describe('runScraperSweep', () => {
     expect(cleanupArgs).not.toContain('--confirm-archived-entity-cleanup');
   });
 
+  it.each(['off', 'no', 'disabled'] as const)(
+    'keeps the archived-cleanup stage report-only when merge-residue deletion is %s',
+    (disableValue) => {
+      const options = resolveDevelopmentPostRunOptions(
+        'development-full',
+        { SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: disableValue },
+        sinceIso,
+      );
+      expect(options?.deleteMergeResidue).toBe(false);
+      const cleanupArgs = buildDevelopmentPostRunStages('/tmp/development-sweep', options).find(
+        (stage) => stage.name === 'archived-cleanup',
+      )?.args;
+      expect(cleanupArgs).not.toContain('--apply');
+      expect(cleanupArgs).not.toContain('--confirm-archived-entity-cleanup');
+    },
+  );
+
   it.each(['beta-plan', 'beta-fetch', 'development-plan', 'development-sample'] as const)(
     'produces no post-run stage options for the %s mode',
     (mode) => {
