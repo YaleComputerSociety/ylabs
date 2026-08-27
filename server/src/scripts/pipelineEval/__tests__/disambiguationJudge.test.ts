@@ -81,6 +81,16 @@ describe('decideVerdict asymmetric authority', () => {
     expect(result.discardedReason).toBe('low_confidence');
   });
 
+  it('accepts SAME whose evidence cites the matching first name', () => {
+    const result = decideVerdict(ruizA, ruizB, {
+      verdict: 'SAME',
+      confidence: 0.95,
+      evidence: 'both labs are led by Maria',
+    });
+    expect(result.verdict).toBe('SAME');
+    expect(result.accepted).toBe(true);
+  });
+
   it('does not accept SAME whose evidence cites an absent field', () => {
     const result = decideVerdict(ruizA, ruizB, {
       verdict: 'SAME',
@@ -112,6 +122,9 @@ describe('decideVerdict asymmetric authority', () => {
 describe('evidenceReferencesPresentField', () => {
   it('is true when the evidence quotes a present field token', () => {
     expect(evidenceReferencesPresentField('matching Neuroscience department', ruizA, ruizB)).toBe(true);
+  });
+  it('is true when the evidence quotes a first-name token', () => {
+    expect(evidenceReferencesPresentField('both led by Maria', ruizA, ruizB)).toBe(true);
   });
   it('is false when the evidence references nothing in the records', () => {
     expect(evidenceReferencesPresentField('same phone number', ruizA, ruizB)).toBe(false);
@@ -146,6 +159,9 @@ describe('renderJudgeRecord', () => {
     expect(rendered).not.toContain('maria@example.edu');
     expect(rendered).toContain('name: Ruiz Lab');
     expect(rendered).toContain('departments: Neuroscience');
+  });
+  it('renders the first name so it is available to the model', () => {
+    expect(renderJudgeRecord(ruizA)).toContain('firstName: Maria');
   });
 });
 

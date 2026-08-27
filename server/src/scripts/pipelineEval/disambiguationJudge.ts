@@ -74,6 +74,8 @@ export function renderJudgeRecord(entity: JudgeEntity): string {
   const parts: string[] = [];
   const name = redactDirectContactInfo(asString(entity.name));
   if (name) parts.push(`name: ${name}`);
+  const firstName = redactDirectContactInfo(asString(entity.firstName));
+  if (firstName) parts.push(`firstName: ${firstName}`);
   if (typeof entity.entityType === 'string' && entity.entityType) {
     parts.push(`entityType: ${entity.entityType}`);
   }
@@ -96,6 +98,7 @@ function presentFieldTokens(entity: JudgeEntity): Set<string> {
     for (const token of tokenize(text)) if (token.length >= 3) tokens.add(token);
   };
   add(asString(entity.name));
+  add(asString(entity.firstName));
   if (typeof entity.entityType === 'string') add(entity.entityType);
   for (const dept of stringList(entity.departments, 8)) add(dept);
   for (const area of stringList(entity.researchAreas, 8)) add(area);
