@@ -4,10 +4,11 @@ import {
   fullDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 import { stripFacultyResearchAreaNameTemplateSuffix } from '../utils/researchEntityDescriptionText';
 
-export const SYNTHESIS_MODEL = 'gpt-4o-mini';
+export const SYNTHESIS_MODEL = 'gpt-5-mini';
 export const SYNTHESIS_INPUT_USD_PER_1K = 0.00015;
 export const SYNTHESIS_OUTPUT_USD_PER_1K = 0.0006;
 export const MIN_SYNTHESIS_SOURCE_CHARS = 120;
@@ -214,7 +215,7 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
     {
       model: SYNTHESIS_MODEL,
       response_format: { type: 'json_object' },
-      temperature: 0,
+      ...openAiChatSampling(SYNTHESIS_MODEL),
       messages: [
         { role: 'system', content: synthesisSystemPromptFor(input.entityType) },
         {

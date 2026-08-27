@@ -12,6 +12,7 @@
     "build": "tsup",
     "build:clean": "rm -rf build",
     "dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
+    "scraper-llm:ab": "tsx src/scripts/scraperLlmModelAbHarness.ts",
     "migrate:mongo-naming": "tsx src/scripts/migrateMongoNaming.ts",
     "migrate:signal-consolidation": "tsx src/scripts/signalConsolidationMigration.ts",
     "research-entity:migrate": "tsx src/scripts/migrateResearchEntities.ts",

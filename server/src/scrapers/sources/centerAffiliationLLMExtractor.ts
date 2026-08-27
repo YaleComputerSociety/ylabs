@@ -21,6 +21,7 @@ import * as cheerio from 'cheerio';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
 import {
@@ -35,7 +36,7 @@ import {
 } from './centersInstitutesScraper';
 
 const SOURCE_KEY = 'center-affiliation-llm';
-const DEFAULT_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const CENTER_AFFILIATION_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
@@ -175,6 +176,7 @@ async function defaultCallLLM(input: {
             'You extract the Yale faculty/people explicitly named on an official research center or institute web page. ' +
             'Only include real personal names that literally appear in the provided page text (directors, affiliated faculty, core members). ' +
             'Never invent names, never include students/staff titles without a name, and never include people who are not on the page. ' +
+            'Copy each name character-for-character exactly as it appears in the page text; never reformat, correct, translate, or complete a name. ' +
             'If the page names no individuals, return an empty list.',
         },
         {
@@ -187,7 +189,7 @@ async function defaultCallLLM(input: {
           ].join('\n\n'),
         },
       ],
-      temperature: 0,
+      ...openAiChatSampling(input.model),
     },
     {
       headers: {

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { redactDirectContactInfo } from './contactRedaction';
+import { openAiChatSampling } from './openAiChatSampling';
 import {
   buildResearchAreasCardSummary,
   deriveProgramCardShortDescription,
@@ -11,7 +12,7 @@ import {
 } from './researchEntityDescriptionQuality';
 import { sanitizeResearchEntityShortDescription } from './descriptionHygiene';
 
-export const CARD_SYNTHESIS_MODEL = 'gpt-4o-mini';
+export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
 export const MIN_CARD_GROUNDING = 0.9;
 export const MAX_CARD_SOURCE_CHARS = 6000;
 export const MAX_CARD_NAME_CHARS = 240;
@@ -271,13 +272,13 @@ export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
     {
       model: input.model,
       response_format: { type: 'json_object' },
-      temperature: 0,
+      ...openAiChatSampling(input.model),
       messages: [
         { role: 'system', content: CARD_SYNTHESIS_SYSTEM_PROMPT },
         {
           role: 'user',
           content: [
-            `Research home: ${safeName}`,
+            `Research entity: ${safeName}`,
             'Return JSON {"shortDescription": "..."} with a single card sentence, or {"shortDescription": ""} when the description has no clear research focus.',
             'DESCRIPTION:',
             safeSource,
