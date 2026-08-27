@@ -42,6 +42,7 @@ import {
   ResolverObservation,
   ResolvedField,
 } from './confidenceResolver';
+import { collapseLatestWins } from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
 import {
@@ -3348,8 +3349,9 @@ export async function materializeEntity(
     if (entityDoc && entityDoc[f] !== undefined) manualValues[f] = entityDoc[f];
   }
 
-  const materializationObs = obs.filter(
-    (o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o),
+  const materializationObs = collapseLatestWins(
+    obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+    entityType,
   );
 
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({

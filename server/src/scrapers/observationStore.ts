@@ -336,8 +336,41 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'sourceContentHash',
 ]);
 
-function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
+export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
   return input.entityType === 'fellowship' || LATEST_WINS_FINGERPRINT_FIELDS.has(input.field);
+}
+
+function latestWinsObservedTime(value: unknown): number {
+  if (value instanceof Date) return value.getTime();
+  const parsed = new Date(value as string | number).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// Read-time equivalent of the value-less latest-wins fingerprint: for a latest-wins field,
+// keep only the newest observation per (sourceName, field); every other field keeps all rows.
+// On an active-only read this is a no-op (write-time supersession already left one active row
+// per key), so it is safe to land before a full-log read replaces that supersession.
+export function collapseLatestWins<
+  T extends { field: string; sourceName: string; observedAt?: unknown },
+>(observations: T[], entityType: string): T[] {
+  const newestIndexByKey = new Map<string, number>();
+  observations.forEach((observation, index) => {
+    if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return;
+    const key = JSON.stringify([observation.sourceName, observation.field]);
+    const currentIndex = newestIndexByKey.get(key);
+    if (
+      currentIndex === undefined ||
+      latestWinsObservedTime(observation.observedAt) >
+        latestWinsObservedTime(observations[currentIndex].observedAt)
+    ) {
+      newestIndexByKey.set(key, index);
+    }
+  });
+  return observations.filter((observation, index) => {
+    if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return true;
+    const key = JSON.stringify([observation.sourceName, observation.field]);
+    return newestIndexByKey.get(key) === index;
+  });
 }
 
 export function buildObservationFingerprint(input: {
