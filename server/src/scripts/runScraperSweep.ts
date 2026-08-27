@@ -11,6 +11,7 @@ import {
   resolveScraperEnvironment,
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
+import { DEFAULT_PER_HOST_CONCURRENCY } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   DEFAULT_EPONYMOUS_FRA_MERGE_MAX,
@@ -331,6 +332,16 @@ export function resolvePhaseConcurrency(
   const base = requested ?? MODE_CONFIG[mode].defaultConcurrency;
   const cap = PHASE_CONCURRENCY_CAPS[phase];
   return Math.max(1, cap ? Math.min(base, cap) : base);
+}
+
+export function resolveSweepChildPerHostConcurrency(
+  phaseConcurrency: number,
+  env: NodeJS.ProcessEnv = process.env,
+  budget: number = DEFAULT_PER_HOST_CONCURRENCY,
+): number {
+  const shared = Math.max(1, Math.floor(budget / Math.max(1, phaseConcurrency)));
+  const override = Number(env.SCRAPER_PER_HOST_CONCURRENCY);
+  return Number.isInteger(override) && override >= 1 ? Math.min(override, shared) : shared;
 }
 
 export async function runWithBoundedConcurrency<T>(
@@ -872,7 +883,16 @@ export async function runScraperSweep(
     const child = await childRunner(
       'yarn',
       buildScraperSweepChildArgs(options.mode, source.name, artifactPath),
-      { cwd: repoRoot, env: process.env, logPath },
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          SCRAPER_PER_HOST_CONCURRENCY: String(
+            resolveSweepChildPerHostConcurrency(phaseConcurrency),
+          ),
+        },
+        logPath,
+      },
     );
     const exitCode = child.status ?? 1;
     if (child.error || exitCode !== 0 || !fs.existsSync(artifactPath)) {
