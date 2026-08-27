@@ -4,7 +4,6 @@ vi.mock('../../services/listingService', () => ({
   addView: vi.fn(),
   archiveListing: vi.fn(),
   createListing: vi.fn(),
-  deleteListing: vi.fn(),
   getSkeletonListing: vi.fn(),
   readAllListings: vi.fn(),
   readListing: vi.fn(),

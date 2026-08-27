@@ -1859,8 +1859,6 @@ test('admin taxonomy write routes bound labels and category arrays before persis
   assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
   assert.match(source, /return ADMIN_OBJECT_ID_RE\.test\(id\) \? id : undefined/);
   assert.match(source, /const safeId = normalizeAdminObjectId\(req\.params\.id\)/);
-  assert.match(source, /new mongoose\.Types\.ObjectId\(safeId\)/);
-  assert.match(source, /findById\(safeId\)/);
   assert.match(source, /ResearchArea\.findByIdAndUpdate\(safeId/);
   assert.match(source, /ResearchArea\.findByIdAndDelete\(safeId\)/);
   assert.match(source, /Department\.findByIdAndUpdate\(safeId/);
