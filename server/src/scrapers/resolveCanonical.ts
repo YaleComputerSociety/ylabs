@@ -109,7 +109,6 @@ export function deriveCanonicalKeys(
       specificProfileLabUrlIdentityKey(map.get('websiteUrl')) ||
       specificProfileLabUrlIdentityKey(map.get('sourceUrl'));
     pushKey(keys, 'profile-lab-url', profileKey, 'strong');
-    pushKey(keys, 'pi-person', map.get('inferredPiUserId') ?? '', 'strong');
     pushKey(keys, 'org-name', normalizeOrgDedupeName(map.get('name')), 'weak');
   } else if (type === 'fellowship') {
     pushKey(keys, 'source-key', map.get('sourceKey') ?? '', 'unique');

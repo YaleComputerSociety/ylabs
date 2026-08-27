@@ -3087,19 +3087,6 @@ async function findEntityCandidatesByKey(
       .lean()) as { _id: unknown; name?: string; studentVisibilityTier?: string } | null;
     return doc ? [{ id: String(doc._id), name: doc.name, tier: doc.studentVisibilityTier }] : [];
   }
-  if (key.ns === 'pi-person') {
-    const docs = (await ResearchEntity.find({
-      inferredPiUserId: key.value,
-      archived: { $ne: true },
-    })
-      .select('_id name studentVisibilityTier')
-      .lean()) as Array<{ _id: unknown; name?: string; studentVisibilityTier?: string }>;
-    return docs.map((d) => ({
-      id: String(d._id),
-      name: d.name,
-      tier: d.studentVisibilityTier,
-    }));
-  }
   return [];
 }
 

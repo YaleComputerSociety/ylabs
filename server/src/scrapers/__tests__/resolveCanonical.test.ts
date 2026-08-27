@@ -225,6 +225,25 @@ describe('resolveCanonical', () => {
     expect(result.status).toBe('mint');
   });
 
+  it('does not collapse same-PI research entities that carry different names', async () => {
+    const keys = deriveCanonicalKeys('researchEntity', [
+      { field: 'slug', value: 'smith-center' },
+      { field: 'name', value: 'Smith Center' },
+      { field: 'inferredPiUserId', value: 'uP' },
+    ]);
+    expect(keys.find((k) => k.ns === 'pi-person')).toBeUndefined();
+
+    const result = await resolveCanonical(
+      { type: 'researchEntity', keys, self: { id: 'new', name: 'Smith Center' } },
+      deps({
+        findCandidatesByKey: candidatesByNs({
+          'pi-person': [{ id: 'smith-lab', name: 'Smith Lab' }],
+        }),
+      }),
+    );
+    expect(result.status).toBe('mint');
+  });
+
   it('merges on a weak org-name key when lead person names corroborate', async () => {
     const key: CanonicalKey = { ns: 'org-name', value: 'jane doe lab', strength: 'weak' };
     const result = await resolveCanonical(
