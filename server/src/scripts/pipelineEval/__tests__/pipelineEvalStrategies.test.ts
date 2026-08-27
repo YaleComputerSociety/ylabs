@@ -33,12 +33,12 @@ describe('identityKeysFor', () => {
     const basic = identityKeysFor(entity);
     const rich = identityKeysFor(entity, {
       rich: true,
-      orcidByUserId: new Map([['pi-1', '0000-0002-1825-0097']]),
+      orcidByUserId: new Map([['pi-1', '9999-0000-0000-0001']]),
     });
     expect(basic.some((k) => k.startsWith('name:'))).toBe(false);
     expect(basic.some((k) => k.startsWith('orcid:'))).toBe(false);
     expect(rich.some((k) => k.startsWith('name:'))).toBe(true);
-    expect(rich).toContain('orcid:0000-0002-1825-0097');
+    expect(rich).toContain('orcid:9999-0000-0000-0001');
   });
 });
 
