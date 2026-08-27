@@ -62,7 +62,8 @@ const MS_PER_DAY = 86_400_000;
 const MAX_BLOCK_SIZE = 8;
 
 function recencyWeight(obs: DescriptionObservation, now: number): number {
-  const ageDays = (now - (obs.observedAt instanceof Date ? obs.observedAt.getTime() : 0)) / MS_PER_DAY;
+  const ageDays =
+    (now - (obs.observedAt instanceof Date ? obs.observedAt.getTime() : 0)) / MS_PER_DAY;
   const confidence = typeof obs.confidence === 'number' ? obs.confidence : 0;
   return confidence * Math.pow(0.5, Math.max(0, ageDays) / HALF_LIFE_DAYS);
 }
@@ -106,7 +107,9 @@ export function projectDescriptions(
     (value) =>
       ctx.isProgramLike
         ? programCardShortDescriptionQuality(value, fullDescription).isUseful
-        : shortDescriptionQuality(value, fullDescription, ctx.researchAreas, { entityType: ctx.entityType }).isUseful,
+        : shortDescriptionQuality(value, fullDescription, ctx.researchAreas, {
+            entityType: ctx.entityType,
+          }).isUseful,
     now,
   );
   return { fullDescription, shortDescription };
@@ -119,7 +122,8 @@ function shortIsUseful(ctx: DescriptionContext, short: unknown, full: unknown): 
   if (textVal(short) === '') return false;
   return ctx.isProgramLike
     ? programCardShortDescriptionQuality(short, full).isUseful
-    : shortDescriptionQuality(short, full, ctx.researchAreas, { entityType: ctx.entityType }).isUseful;
+    : shortDescriptionQuality(short, full, ctx.researchAreas, { entityType: ctx.entityType })
+        .isUseful;
 }
 
 export type SynthesisCache = Map<string, string>;
@@ -168,7 +172,10 @@ export function collectSynthesisTargets(
   return Array.from(byFull.values());
 }
 
-export async function synthesizeCardShort(target: SynthesisTarget, apiKey: string): Promise<string> {
+export async function synthesizeCardShort(
+  target: SynthesisTarget,
+  apiKey: string,
+): Promise<string> {
   return resolveGroundedCardDescription({
     fullDescription: target.fullText,
     researchAreas: target.researchAreas,
@@ -181,7 +188,12 @@ export async function synthesizeCardShort(target: SynthesisTarget, apiKey: strin
         researchAreas: target.researchAreas,
         entityType: target.entityType,
         callLLM: ({ fullDescription, entityName }) =>
-          defaultCardSynthesisLLM({ model: CARD_SYNTHESIS_MODEL, apiKey, fullDescription, entityName }),
+          defaultCardSynthesisLLM({
+            model: CARD_SYNTHESIS_MODEL,
+            apiKey,
+            fullDescription,
+            entityName,
+          }),
       }),
   });
 }
@@ -248,12 +260,24 @@ export function scoreDescriptionStrategy(
   for (const entity of liveEntities) {
     const obs = (entity.slug && obsByEntity.get(entity.slug)) || obsByEntity.get(entity.id) || [];
     const ctx = ctxFor(entity);
-    const activeOnly = applySynthesizedShort(entity, ctx, projectDescriptions(obs, false, ctx), synthCache);
-    const chosen = applySynthesizedShort(entity, ctx, projectDescriptions(obs, true, ctx), synthCache);
+    const activeOnly = applySynthesizedShort(
+      entity,
+      ctx,
+      projectDescriptions(obs, false, ctx),
+      synthCache,
+    );
+    const chosen = applySynthesizedShort(
+      entity,
+      ctx,
+      projectDescriptions(obs, true, ctx),
+      synthCache,
+    );
     if (obs.length > 0) entitiesWithObservations += 1;
 
-    const activeComplete = scoreAccuracy([scorableFromProjection(entity, activeOnly)]).cardComplete === 1;
-    const chosenComplete = scoreAccuracy([scorableFromProjection(entity, chosen)]).cardComplete === 1;
+    const activeComplete =
+      scoreAccuracy([scorableFromProjection(entity, activeOnly)]).cardComplete === 1;
+    const chosenComplete =
+      scoreAccuracy([scorableFromProjection(entity, chosen)]).cardComplete === 1;
     if (
       JSON.stringify([activeOnly.fullDescription, activeOnly.shortDescription]) !==
       JSON.stringify([chosen.fullDescription, chosen.shortDescription])
@@ -302,7 +326,8 @@ class UnionFind {
 
 export function identityKeysFor(entity: EvalEntity, opts: IdentityKeyOptions = {}): string[] {
   const keys: string[] = [];
-  const own = typeof entity.websiteUrl === 'string' ? normalizeWebsiteUrlIdentityKey(entity.websiteUrl) : '';
+  const own =
+    typeof entity.websiteUrl === 'string' ? normalizeWebsiteUrlIdentityKey(entity.websiteUrl) : '';
   if (own) keys.push(`web:${own}`);
 
   const profileUrls: string[] = [];
@@ -392,7 +417,10 @@ export function scoreDedupeStrategy(
     if (uf.find(shell) === uf.find(canonical)) groundTruthCaught += 1;
   }
   const knownMergedKeys = new Set(
-    groundTruthPairs.flatMap(([shell, canonical]) => [`${shell}|${canonical}`, `${canonical}|${shell}`]),
+    groundTruthPairs.flatMap(([shell, canonical]) => [
+      `${shell}|${canonical}`,
+      `${canonical}|${shell}`,
+    ]),
   );
 
   const clusters = new Map<string, string[]>();

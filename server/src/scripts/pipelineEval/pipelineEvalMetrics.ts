@@ -53,7 +53,8 @@ export function scoreAccuracy(entities: ScorableEntity[]): AccuracyMetrics {
   let studentReady = 0;
 
   for (const entity of entities) {
-    const tier = typeof entity.studentVisibilityTier === 'string' ? entity.studentVisibilityTier : 'unknown';
+    const tier =
+      typeof entity.studentVisibilityTier === 'string' ? entity.studentVisibilityTier : 'unknown';
     byTier[tier] = (byTier[tier] ?? 0) + 1;
     if (tier === 'student_ready') studentReady += 1;
 
@@ -125,7 +126,10 @@ export function scoreDedupe(
   for (const p of predictedSet) if (truthSet.has(p)) truePositives += 1;
   const precision = rate(truePositives, predictedSet.size);
   const recall = rate(truePositives, truthSet.size);
-  const f1 = precision + recall === 0 ? 0 : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
+  const f1 =
+    precision + recall === 0
+      ? 0
+      : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
   return {
     groundTruthPairs: truthSet.size,
     predictedPairs: predictedSet.size,

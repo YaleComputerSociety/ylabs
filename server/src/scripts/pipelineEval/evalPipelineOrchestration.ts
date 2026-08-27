@@ -8,11 +8,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { planStudentVisibilityGate } from '../../services/studentVisibilityGateService';
 import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import {
-  buildChurnMetrics,
-  scoreAccuracy,
-  type ScorableEntity,
-} from './pipelineEvalMetrics';
+import { buildChurnMetrics, scoreAccuracy, type ScorableEntity } from './pipelineEvalMetrics';
 import {
   scoreDescriptionStrategy,
   scoreDedupeStrategy,
@@ -46,14 +42,19 @@ function parseArgs(argv: string[]): EvalArgs {
     else if (token.startsWith('--sample=')) args.sample = Number(token.slice('--sample='.length));
     else if (token === '--llm') args.llm = true;
     else if (token === '--gate') args.gate = true;
-    else if (token.startsWith('--concurrency=')) args.concurrency = Number(token.slice('--concurrency='.length));
+    else if (token.startsWith('--concurrency='))
+      args.concurrency = Number(token.slice('--concurrency='.length));
     else if (token.startsWith('--trial=')) args.trial = Number(token.slice('--trial='.length));
     else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
   }
   return args;
 }
 
-async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
   let index = 0;
   const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
     while (index < items.length) {
@@ -124,16 +125,25 @@ async function loadDescriptionObservations(
   if (objectIds.length > 0) entityMatch.push({ entityId: { $in: objectIds } });
   if (entityMatch.length === 0) return new Map();
 
-  const cursor = mongoose.connection.db
-    .collection('observations')
-    .find(
-      {
-        entityType: 'researchEntity',
-        field: { $in: ['fullDescription', 'shortDescription'] },
-        $or: entityMatch,
+  const cursor = mongoose.connection.db.collection('observations').find(
+    {
+      entityType: 'researchEntity',
+      field: { $in: ['fullDescription', 'shortDescription'] },
+      $or: entityMatch,
+    },
+    {
+      projection: {
+        entityKey: 1,
+        entityId: 1,
+        field: 1,
+        value: 1,
+        sourceName: 1,
+        confidence: 1,
+        observedAt: 1,
+        superseded: 1,
       },
-      { projection: { entityKey: 1, entityId: 1, field: 1, value: 1, sourceName: 1, confidence: 1, observedAt: 1, superseded: 1 } },
-    );
+    },
+  );
   const byEntity = new Map<string, DescriptionObservation[]>();
   for await (const raw of cursor) {
     const key = raw.entityKey || (raw.entityId ? String(raw.entityId) : undefined);
@@ -178,7 +188,10 @@ async function main() {
   }
   const liveEntities = liveDocs.map(toEvalEntity);
 
-  const allDocs = (await ResearchEntity.find(filter).select(ENTITY_FIELDS).lean()) as Record<string, any>[];
+  const allDocs = (await ResearchEntity.find(filter).select(ENTITY_FIELDS).lean()) as Record<
+    string,
+    any
+  >[];
   const allEntities = allDocs.map(toEvalEntity);
 
   const liveSlugs = new Set(liveEntities.map((e) => e.slug).filter(Boolean) as string[]);
@@ -312,9 +325,15 @@ async function main() {
   }
 
   const globalChurn = {
-    redirects: await mongoose.connection.db.collection('research_entity_redirects').estimatedDocumentCount(),
-    releaseQueueItems: await mongoose.connection.db.collection('visibility_release_queue_items').estimatedDocumentCount(),
-    referenceRepairAudits: await mongoose.connection.db.collection('observation_reference_repair_audits').estimatedDocumentCount(),
+    redirects: await mongoose.connection.db
+      .collection('research_entity_redirects')
+      .estimatedDocumentCount(),
+    releaseQueueItems: await mongoose.connection.db
+      .collection('visibility_release_queue_items')
+      .estimatedDocumentCount(),
+    referenceRepairAudits: await mongoose.connection.db
+      .collection('observation_reference_repair_audits')
+      .estimatedDocumentCount(),
   };
   const fullCorpusLiveCount = allEntities.filter((e) => !e.archived).length;
   const c0Churn = buildChurnMetrics({
@@ -331,7 +350,11 @@ async function main() {
     trial: args.trial,
     db: dbLabel,
     scope: args.scope,
-    selection: args.sample ? `random-sample:${args.sample}` : args.limit ? `first:${args.limit}` : 'all',
+    selection: args.sample
+      ? `random-sample:${args.sample}`
+      : args.limit
+        ? `first:${args.limit}`
+        : 'all',
     llmEnabled: args.llm,
     corpus: {
       liveEntities: liveEntities.length,
