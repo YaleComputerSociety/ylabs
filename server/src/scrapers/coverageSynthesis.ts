@@ -119,7 +119,8 @@ export async function synthesizeCoverageDescription(
 
   const corpus = snippets.map((snippet) => snippet.text).join(' \n ');
   if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) return null;
-  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) return null;
+  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful)
+    return null;
   if (isUngroundedSynthesizedCard(description, corpus)) return null;
 
   const sourceUrls = Array.from(
@@ -152,7 +153,9 @@ export function defaultCoverageSynthesisLLM(
           { role: 'system', content: COVERAGE_SYNTHESIS_PROMPT },
           {
             role: 'user',
-            content: [`Research entity: ${safeName}`, 'EVIDENCE SNIPPETS:', snippetBlock].join('\n\n'),
+            content: [`Research entity: ${safeName}`, 'EVIDENCE SNIPPETS:', snippetBlock].join(
+              '\n\n',
+            ),
           },
         ],
       },
@@ -162,8 +165,12 @@ export function defaultCoverageSynthesisLLM(
       },
     );
     const content = response.data?.choices?.[0]?.message?.content;
-    if (!content || typeof content !== 'string') return { fullDescription: '', usedSnippetIndexes: [] };
-    const parsed = JSON.parse(content) as { fullDescription?: unknown; usedSnippetIndexes?: unknown };
+    if (!content || typeof content !== 'string')
+      return { fullDescription: '', usedSnippetIndexes: [] };
+    const parsed = JSON.parse(content) as {
+      fullDescription?: unknown;
+      usedSnippetIndexes?: unknown;
+    };
     return {
       fullDescription: textValue(parsed.fullDescription),
       usedSnippetIndexes: Array.isArray(parsed.usedSnippetIndexes)

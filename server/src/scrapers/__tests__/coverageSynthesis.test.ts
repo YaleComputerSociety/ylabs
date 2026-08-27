@@ -8,20 +8,21 @@ import {
 
 const SNIPPETS: CoverageSnippet[] = [
   {
-    text:
-      'The laboratory develops single-cell sequencing methods and computational models of gene regulatory networks controlling immune cell differentiation.',
+    text: 'The laboratory develops single-cell sequencing methods and computational models of gene regulatory networks controlling immune cell differentiation.',
     sourceUrl: 'https://example.edu/lab',
     sourceName: 'lab-page',
   },
   {
-    text:
-      'Recent projects apply CRISPR screens and machine learning to predict transcription factor activity in immune cells.',
+    text: 'Recent projects apply CRISPR screens and machine learning to predict transcription factor activity in immune cells.',
     sourceUrl: 'https://example.edu/research',
     sourceName: 'research-page',
   },
 ];
 
-const stub = (result: unknown): CoverageSynthesisLLMFn => async () => result as never;
+const stub =
+  (result: unknown): CoverageSynthesisLLMFn =>
+  async () =>
+    result as never;
 
 describe('synthesizeCoverageDescription', () => {
   it('accepts a grounded, useful description and returns its cited source urls', async () => {
@@ -80,19 +81,35 @@ describe('synthesizeCoverageDescription', () => {
 
   it('is fail-closed on empty, malformed, and throwing LLM output', async () => {
     expect(
-      await synthesizeCoverageDescription({ snippets: SNIPPETS, entityName: 'X', callLLM: stub({ fullDescription: '', usedSnippetIndexes: [] }) }),
+      await synthesizeCoverageDescription({
+        snippets: SNIPPETS,
+        entityName: 'X',
+        callLLM: stub({ fullDescription: '', usedSnippetIndexes: [] }),
+      }),
     ).toBeNull();
     expect(
-      await synthesizeCoverageDescription({ snippets: SNIPPETS, entityName: 'X', callLLM: stub({}) }),
+      await synthesizeCoverageDescription({
+        snippets: SNIPPETS,
+        entityName: 'X',
+        callLLM: stub({}),
+      }),
     ).toBeNull();
     expect(
-      await synthesizeCoverageDescription({ snippets: SNIPPETS, entityName: 'X', callLLM: stub(undefined) }),
+      await synthesizeCoverageDescription({
+        snippets: SNIPPETS,
+        entityName: 'X',
+        callLLM: stub(undefined),
+      }),
     ).toBeNull();
     const thrower: CoverageSynthesisLLMFn = async () => {
       throw new Error('boom');
     };
     expect(
-      await synthesizeCoverageDescription({ snippets: SNIPPETS, entityName: 'X', callLLM: thrower }),
+      await synthesizeCoverageDescription({
+        snippets: SNIPPETS,
+        entityName: 'X',
+        callLLM: thrower,
+      }),
     ).toBeNull();
   });
 
@@ -109,9 +126,24 @@ describe('synthesizeCoverageDescription', () => {
 describe('gatherCoverageSnippets', () => {
   it('keeps description-like fields, redacts contact, drops rejected sources, and dedupes', () => {
     const snippets = gatherCoverageSnippets([
-      { field: 'fullDescription', value: 'Studies coral reef resilience under ocean warming and acidification.', sourceUrl: 'https://example.edu/a', sourceName: 'a' },
-      { field: 'fullDescription', value: 'Studies coral reef resilience under ocean warming and acidification.', sourceUrl: 'https://example.edu/dup', sourceName: 'dup' },
-      { field: 'shortDescription', value: 'Contact the reef ecology group at reef@example.edu for details on projects.', sourceUrl: 'https://example.edu/b', sourceName: 'b' },
+      {
+        field: 'fullDescription',
+        value: 'Studies coral reef resilience under ocean warming and acidification.',
+        sourceUrl: 'https://example.edu/a',
+        sourceName: 'a',
+      },
+      {
+        field: 'fullDescription',
+        value: 'Studies coral reef resilience under ocean warming and acidification.',
+        sourceUrl: 'https://example.edu/dup',
+        sourceName: 'dup',
+      },
+      {
+        field: 'shortDescription',
+        value: 'Contact the reef ecology group at reef@example.edu for details on projects.',
+        sourceUrl: 'https://example.edu/b',
+        sourceName: 'b',
+      },
       { field: 'websiteUrl', value: 'https://example.edu', sourceUrl: 'https://example.edu' },
     ]);
     expect(snippets.length).toBe(2);

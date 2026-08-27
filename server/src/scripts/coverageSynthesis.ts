@@ -69,14 +69,19 @@ async function main() {
 
   const source = args.apply ? await getSourceByName(SOURCE_NAME) : null;
   if (args.apply && !source) {
-    throw new Error(`research-entity:coverage-synthesis apply requires the '${SOURCE_NAME}' source to be seeded`);
+    throw new Error(
+      `research-entity:coverage-synthesis apply requires the '${SOURCE_NAME}' source to be seeded`,
+    );
   }
   const runId = new mongoose.Types.ObjectId().toString();
 
   const reports: CoverageEntityReport[] = [];
   let written = 0;
   for (const entity of entities) {
-    if (fullDescriptionQuality(entity.fullDescription, entity.researchAreas, entity.entityType).isUseful) {
+    if (
+      fullDescriptionQuality(entity.fullDescription, entity.researchAreas, entity.entityType)
+        .isUseful
+    ) {
       continue;
     }
     const observations = (await Observation.find({

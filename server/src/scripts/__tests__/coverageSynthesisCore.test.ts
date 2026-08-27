@@ -14,7 +14,12 @@ describe('parseCoverageSynthesisArgs', () => {
   });
 
   it('parses apply, confirm, limit, and slugs', () => {
-    const args = parseCoverageSynthesisArgs(['--apply', '--confirm-coverage-synthesis', '--limit=5', '--slugs=a,b']);
+    const args = parseCoverageSynthesisArgs([
+      '--apply',
+      '--confirm-coverage-synthesis',
+      '--limit=5',
+      '--slugs=a,b',
+    ]);
     expect(args.apply).toBe(true);
     expect(args.confirm).toBe(true);
     expect(args.limit).toBe(5);
@@ -30,7 +35,9 @@ describe('assertCoverageSynthesisApplyAllowed', () => {
   const dev = 'cluster/development';
 
   it('allows dry-run anywhere', () => {
-    expect(() => assertCoverageSynthesisApplyAllowed(parseCoverageSynthesisArgs([]), 'cluster/prod')).not.toThrow();
+    expect(() =>
+      assertCoverageSynthesisApplyAllowed(parseCoverageSynthesisArgs([]), 'cluster/prod'),
+    ).not.toThrow();
   });
 
   it('requires the confirm flag to apply', () => {

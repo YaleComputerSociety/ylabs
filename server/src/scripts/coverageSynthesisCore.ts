@@ -28,11 +28,15 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
         .filter(Boolean);
     } else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
   }
-  if (!Number.isFinite(args.limit) || args.limit <= 0) args.limit = DEFAULT_COVERAGE_SYNTHESIS_LIMIT;
+  if (!Number.isFinite(args.limit) || args.limit <= 0)
+    args.limit = DEFAULT_COVERAGE_SYNTHESIS_LIMIT;
   return args;
 }
 
-export function assertCoverageSynthesisApplyAllowed(args: CoverageSynthesisArgs, dbLabel: string): void {
+export function assertCoverageSynthesisApplyAllowed(
+  args: CoverageSynthesisArgs,
+  dbLabel: string,
+): void {
   if (!args.apply) return;
   if (!args.confirm) {
     throw new Error(
