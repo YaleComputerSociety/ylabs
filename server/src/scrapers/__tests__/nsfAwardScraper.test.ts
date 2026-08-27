@@ -7,11 +7,10 @@
  * emission) deterministically against canned fixtures.
  */
 import { describe, it, expect, vi } from 'vitest';
+import mongoose from 'mongoose';
 import {
   NsfAwardScraper,
   awardToRecord,
-  findUserForPi,
-  resolveUserForPi,
   groupAwardsByPi,
   maxStartDate,
   parseCoPdpiLine,
@@ -23,7 +22,6 @@ import {
   sortGrantsByRecency,
   type NsfAward,
 } from '../sources/nsfAwardScraper';
-import { SURNAME_FETCH_LIMIT } from '../utils/piNameMatch';
 import type { ObservationInput, ScraperContext } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -276,249 +274,6 @@ describe('piSlug', () => {
 // findUserForPi (with injected finder; no Mongo)
 // ---------------------------------------------------------------------------
 
-describe('findUserForPi', () => {
-  it('distinguishes absent and ambiguous identities', async () => {
-    expect(
-      await resolveUserForPi(
-        { firstName: 'Parker', lastName: 'Grant' },
-        vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]),
-      ),
-    ).toEqual({ status: 'absent' });
-    expect(
-      await resolveUserForPi(
-        { firstName: 'Parker', lastName: 'Grant' },
-        vi.fn().mockResolvedValue([
-          { _id: 'a', fname: 'Parker', lname: 'Grant' },
-          { _id: 'b', fname: 'Parker', lname: 'Grant' },
-        ]),
-      ),
-    ).toEqual({ status: 'ambiguous' });
-  });
-
-  it('returns the matched user id on exact lname+fname', async () => {
-    const finder = vi.fn(async () => [{ _id: 'user-1', fname: 'Parker', lname: 'Grant' }]);
-    const id = await findUserForPi({ firstName: 'Parker', lastName: 'Grant' }, finder as any);
-    expect(id).toBe('user-1');
-    expect(finder).toHaveBeenCalledTimes(1);
-  });
-
-  it('falls back to lname + first-name prefix when exact misses', async () => {
-    const finder = vi
-      .fn()
-      .mockResolvedValueOnce([]) // exact miss
-      .mockResolvedValueOnce([{ _id: 'user-2', fname: 'Patricia', lname: 'Grant' }]); // prefix hit
-    const id = await findUserForPi({ firstName: 'Pat', lastName: 'Grant' }, finder as any);
-    expect(id).toBe('user-2');
-    expect(finder).toHaveBeenCalledTimes(2);
-    expect(finder).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        fname: /^Pat/i,
-      }),
-    );
-  });
-
-  it('does not match full first names by initial only', async () => {
-    const finder = vi
-      .fn()
-      .mockResolvedValueOnce([]) // exact miss
-      .mockResolvedValueOnce([]); // Leying prefix does not match Lawrence
-    const id = await findUserForPi({ firstName: 'Leying', lastName: 'Guan' }, finder as any);
-
-    expect(id).toBeNull();
-    expect(finder).toHaveBeenCalledTimes(2);
-    expect(finder).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        fname: /^Leying/i,
-      }),
-    );
-  });
-
-  it('does not attach on a bare source initial, even to a lone same-initial candidate (issue #562)', async () => {
-    const finder = vi
-      .fn()
-      .mockResolvedValueOnce([]) // exact ^P$ miss
-      .mockResolvedValueOnce([{ _id: 'user-3', fname: 'Parker', lname: 'Grant' }]); // never reached
-    const id = await findUserForPi({ firstName: 'P.', lastName: 'Grant' }, finder as any);
-
-    expect(id).toBeNull();
-    expect(finder).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns null on ambiguous exact match (multiple)', async () => {
-    const finder = vi.fn(async () => [
-      { _id: 'a', fname: 'John', lname: 'Smith' },
-      { _id: 'b', fname: 'John', lname: 'Smith' },
-    ]);
-    const id = await findUserForPi({ firstName: 'John', lastName: 'Smith' }, finder as any);
-    expect(id).toBeNull();
-    // does NOT fall through to initial when exact is ambiguous
-    expect(finder).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns null when no last name', async () => {
-    const finder = vi.fn();
-    const id = await findUserForPi({ firstName: 'X', lastName: '' }, finder as any);
-    expect(id).toBeNull();
-    expect(finder).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveUserForPi recall gaps: nickname + particle/compound surname (#485)
-// ---------------------------------------------------------------------------
-
-function fakeUserFinder(users: Array<{ _id: string; fname: string; lname: string }>) {
-  return async (q: Record<string, unknown>) => {
-    const lnameRe = q.lname as RegExp;
-    const fnameRe = q.fname as RegExp | undefined;
-    return users.filter((u) => lnameRe.test(u.lname) && (!fnameRe || fnameRe.test(u.fname)));
-  };
-}
-
-describe('resolveUserForPi recall', () => {
-  it('resolves a nickname to its formal-name profile (Bob -> Robert)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Robert', lname: 'Miller' }]);
-    const id = await findUserForPi({ firstName: 'Bob', lastName: 'Miller' }, finder as any);
-    expect(id).toBe('u1');
-  });
-
-  it('resolves a source surname that dropped its particle (Berg -> van der Berg)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Robert', lname: 'van der Berg' }]);
-    const id = await findUserForPi({ firstName: 'Robert', lastName: 'Berg' }, finder as any);
-    expect(id).toBe('u1');
-  });
-
-  it('resolves a compound surname from its trailing part (Colwell -> Watkins-Colwell)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'James', lname: 'Watkins-Colwell' }]);
-    const id = await findUserForPi({ firstName: 'James', lastName: 'Colwell' }, finder as any);
-    expect(id).toBe('u1');
-  });
-
-  it('does NOT match a different person who merely shares a surname', async () => {
-    const finder = fakeUserFinder([
-      { _id: 'u1', fname: 'John', lname: 'Smith' },
-      { _id: 'u2', fname: 'Jane', lname: 'Smith' },
-    ]);
-    expect(await findUserForPi({ firstName: 'John', lastName: 'Smith' }, finder as any)).toBe('u1');
-    expect(await findUserForPi({ firstName: 'Jane', lastName: 'Smith' }, finder as any)).toBe('u2');
-    expect(
-      await findUserForPi({ firstName: 'Brian', lastName: 'Smith' }, finder as any),
-    ).toBeNull();
-  });
-
-  it('fails closed when a broadened surname pulls in two distinct people', async () => {
-    const finder = fakeUserFinder([
-      { _id: 'u1', fname: 'Robert', lname: 'van der Berg' },
-      { _id: 'u2', fname: 'Robert', lname: 'Berg' },
-    ]);
-    const result = await resolveUserForPi({ firstName: 'Robert', lastName: 'Berg' }, finder as any);
-    expect(result).toEqual({ status: 'ambiguous' });
-  });
-
-  it('fails closed when a nickname pass matches two distinct people', async () => {
-    const finder = fakeUserFinder([
-      { _id: 'u1', fname: 'Robert', lname: 'Miller' },
-      { _id: 'u2', fname: 'Robert', lname: 'Miller' },
-    ]);
-    const result = await resolveUserForPi({ firstName: 'Bob', lastName: 'Miller' }, finder as any);
-    expect(result).toEqual({ status: 'ambiguous' });
-  });
-
-  it('resolves when surname particles were mis-parsed into the given field (Frank van den Bosch)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Frank', lname: 'van den Bosch' }]);
-    const id = await findUserForPi(
-      { firstName: 'Frank van den', lastName: 'Bosch' },
-      finder as any,
-    );
-    expect(id).toBe('u1');
-  });
-
-  it('resolves when a compound surname part was mis-parsed into the given field', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Oswald', lname: 'Chinchilla Delgado' }]);
-    const id = await findUserForPi(
-      { firstName: 'Oswald Chinchilla', lastName: 'Delgado' },
-      finder as any,
-    );
-    expect(id).toBe('u1');
-  });
-
-  it('resolves when the source carries an extra middle token the profile lacks (Laura R Vieira)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Laura', lname: 'Alencar' }]);
-    const id = await findUserForPi(
-      { firstName: 'Laura R Vieira de', lastName: 'Alencar' },
-      finder as any,
-    );
-    expect(id).toBe('u1');
-  });
-
-  it('does NOT match a sole surname candidate whose leading given token differs (Charles != Patrick)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Patrick', lname: 'Lusk' }]);
-    const id = await findUserForPi({ firstName: 'Charles', lastName: 'Lusk' }, finder as any);
-    expect(id).toBeNull();
-  });
-
-  it('does NOT auto-resolve a goes-by-a-different-given-name profile (Ann Carla -> Carla)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Carla', lname: 'Staver' }]);
-    const id = await findUserForPi({ firstName: 'Ann Carla', lastName: 'Staver' }, finder as any);
-    expect(id).toBeNull();
-  });
-
-  it('does NOT match distinct particle sequences sharing a trailing token (von Berg != van der Berg)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Robert', lname: 'van der Berg' }]);
-    const result = await resolveUserForPi(
-      { firstName: 'Robert', lastName: 'von Berg' },
-      finder as any,
-    );
-    expect(result).toEqual({ status: 'absent' });
-  });
-
-  it('does NOT treat an ambiguous same-initial name as a nickname (Amy != Amelia)', async () => {
-    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Amelia', lname: 'Arnsten' }]);
-    const id = await findUserForPi({ firstName: 'Amy', lastName: 'Arnsten' }, finder as any);
-    expect(id).toBeNull();
-  });
-
-  it('fails closed when the surname fetch window is truncated at the cap', async () => {
-    const rows = Array.from({ length: SURNAME_FETCH_LIMIT }, (_v, i) => ({
-      _id: `u${i}`,
-      fname: 'Parker',
-      lname: 'Grant',
-    }));
-    const finder = vi.fn(async () => rows);
-    const result = await resolveUserForPi(
-      { firstName: 'Parker', lastName: 'Grant' },
-      finder as any,
-    );
-    expect(result).toEqual({ status: 'ambiguous' });
-  });
-
-  // Issue #562: "Schwartz Lab" (medicine.yale.edu/lab/schwartz) attached the
-  // wrong same-surname faculty. Surname-only, or a differing given name, must
-  // fail closed; only first+last agreement may attach. Synthetic ids only.
-  describe('surname precision (issue #562)', () => {
-    it('does not attach a surname-only PI name to a lone same-surname candidate', async () => {
-      const finder = fakeUserFinder([{ _id: 'sc1', fname: 'Michael', lname: 'Schwartz' }]);
-      const result = await resolveUserForPi({ firstName: '', lastName: 'Schwartz' }, finder as any);
-      expect(result).toEqual({ status: 'absent' });
-    });
-
-    it('does not attach when the real PI (Martin) is absent and only a namesake (Michael) exists', async () => {
-      const finder = fakeUserFinder([{ _id: 'sc1', fname: 'Michael', lname: 'Schwartz' }]);
-      const id = await findUserForPi({ firstName: 'Martin', lastName: 'Schwartz' }, finder as any);
-      expect(id).toBeNull();
-    });
-
-    it('attaches only when first and last name both agree', async () => {
-      const finder = fakeUserFinder([
-        { _id: 'sc1', fname: 'Michael', lname: 'Schwartz' },
-        { _id: 'sc2', fname: 'Martin', lname: 'Schwartz' },
-      ]);
-      const id = await findUserForPi({ firstName: 'Martin', lastName: 'Schwartz' }, finder as any);
-      expect(id).toBe('sc2');
-    });
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Full run() — paginated, with mocked NSF API + User finder
 // ---------------------------------------------------------------------------
@@ -564,11 +319,11 @@ describe('NsfAwardScraper.run', () => {
       .mockResolvedValueOnce({ awards: page1, totalCount: 26 })
       .mockResolvedValueOnce({ awards: page2, totalCount: 26 });
 
-    const userFinder = vi.fn(async () => []); // no user matches
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted, logs } = buildContext();
@@ -584,11 +339,11 @@ describe('NsfAwardScraper.run', () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({
       awards: [GRANT_AWARD, GRANT_AWARD_2, YAN_AWARD],
     });
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted } = buildContext();
@@ -621,10 +376,10 @@ describe('NsfAwardScraper.run', () => {
 
   it('emits a User observation under nsf-pi: key when PI is unmatched', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
-    const userFinder = vi.fn(async () => []); // no match
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted } = buildContext();
@@ -641,14 +396,11 @@ describe('NsfAwardScraper.run', () => {
 
   it('skips emitting User observations and uses user-id slug when PI matches a Yale User', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
-    // First call (exact lname+fname) returns one match.
-    const userFinder = vi.fn(async () => [
-      { _id: 'user-holland', fname: 'Parker', lname: 'Grant' },
-    ]);
+    const holland = new mongoose.Types.ObjectId();
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId: async () => ({ status: 'matched' as const, researcherId: holland }),
       dateStart: '01/01/2020',
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
     });
@@ -659,8 +411,8 @@ describe('NsfAwardScraper.run', () => {
     expect(emitted.filter((o) => o.entityType === 'user')).toHaveLength(0);
 
     const rgObs = emitted.filter((o) => o.entityType === 'researchEntity');
-    expect(rgObs.find((o) => o.field === 'slug')?.value).toBe('nsf-pi-user-holland');
-    expect(rgObs.find((o) => o.field === 'inferredPiUserId')?.value).toBe('user-holland');
+    expect(rgObs.find((o) => o.field === 'slug')?.value).toBe(`nsf-pi-${holland.toString()}`);
+    expect(rgObs.find((o) => o.field === 'inferredPiUserId')?.value).toBe(holland.toString());
     const inferredObs = rgObs.find((o) => o.field === 'inferredPiUserId');
     expect(inferredObs?.confidenceOverride).toBe(0.7);
     const nameObs = rgObs.find((o) => o.field === 'name');
@@ -670,16 +422,16 @@ describe('NsfAwardScraper.run', () => {
 
   it('targets one resolved canonical home and preserves its identity fields', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
-    const userFinder = vi.fn(async () => [
-      { _id: '507f1f77bcf86cd799439011', fname: 'Parker', lname: 'Grant' },
-    ]);
     const researchHomeResolver = vi.fn().mockResolvedValue({
       status: 'canonical',
       slug: 'dept-chem-parker-grant',
     });
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId: async () => ({
+        status: 'matched' as const,
+        researcherId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      }),
       researchHomeResolver,
       dateStart: '01/01/2020',
     });
@@ -699,25 +451,19 @@ describe('NsfAwardScraper.run', () => {
   it('emits ResearchGroupMember observations only for co-PIs that match Yale Users', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [BHATTACHARJEE_AWARD] });
 
-    // Sequence of finder calls expected:
-    //   (a) PI lookup: Bhattacharjee — exact miss (returns []).
-    //   (b) PI lookup: Bhattacharjee — initial fallback miss.
-    //   (c) co-PI Rowan Circuit — exact match → user-rajit.
-    //   (d) co-PI Harper Signal — exact match → user-hitten.
-    //   (e) co-PI Raghavendra Pothukuchi — exact miss → [].
-    //   (f) co-PI Raghavendra Pothukuchi — initial miss → [].
-    const userFinder = vi
-      .fn()
-      .mockResolvedValueOnce([]) // (a)
-      .mockResolvedValueOnce([]) // (b)
-      .mockResolvedValueOnce([{ _id: 'user-rajit', fname: 'Rowan', lname: 'Circuit' }]) // (c)
-      .mockResolvedValueOnce([{ _id: 'user-hitten', fname: 'Harper', lname: 'Signal' }]) // (d)
-      .mockResolvedValueOnce([]) // (e)
-      .mockResolvedValueOnce([]); // (f)
+    // PI Bhattacharjee is absent; co-PIs Rowan Circuit and Harper Signal match,
+    // Raghavendra Pothukuchi does not.
+    const rajit = new mongoose.Types.ObjectId();
+    const hitten = new mongoose.Types.ObjectId();
+    const resolveResearcherId = async (name: string) => {
+      if (/circuit/i.test(name)) return { status: 'matched' as const, researcherId: rajit };
+      if (/signal/i.test(name)) return { status: 'matched' as const, researcherId: hitten };
+      return { status: 'absent' as const };
+    };
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted } = buildContext();
@@ -726,7 +472,7 @@ describe('NsfAwardScraper.run', () => {
     const memberObs = emitted.filter((o) => o.entityType === 'researchGroupMember');
     // Two matched co-PIs × 4 fields each (researchGroupSlug, userId, role, fullName) + email when present
     const userIds = memberObs.filter((o) => o.field === 'userId').map((o) => o.value);
-    expect(userIds.sort()).toEqual(['user-hitten', 'user-rajit']);
+    expect(userIds.sort()).toEqual([hitten.toString(), rajit.toString()].sort());
 
     const roles = memberObs.filter((o) => o.field === 'role').map((o) => o.value);
     expect(roles.every((r) => r === 'co-pi')).toBe(true);
@@ -749,11 +495,11 @@ describe('NsfAwardScraper.run', () => {
       piLastName: 'Last' + i,
     }));
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: page, totalCount: 25 });
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       dateStart: '01/01/2020',
     });
     const { ctx } = buildContext({ limit: 3 });
@@ -765,10 +511,10 @@ describe('NsfAwardScraper.run', () => {
 
   it('rejects unsafe runtime limits before fetching NSF pages', async () => {
     const fetchPage = vi.fn().mockResolvedValue({ awards: [YAN_AWARD], totalCount: 1 });
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       dateStart: '01/01/2020',
     });
     const { ctx } = buildContext({ limit: 9007199254740992 } as any);
@@ -788,11 +534,11 @@ describe('NsfAwardScraper.run', () => {
       .fn()
       .mockResolvedValueOnce({ awards: page1, totalCount: 100 })
       .mockRejectedValueOnce(new Error('ECONNRESET'));
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       dateStart: '01/01/2020',
     });
     const { ctx, emitted, logs } = buildContext();

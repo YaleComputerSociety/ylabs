@@ -132,22 +132,24 @@ describe('canonical-alias resolve-at-mint against a real store', () => {
     const canonicalId = new mongoose.Types.ObjectId();
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    await db.collection('users').insertOne({ _id: canonicalId, netid: 'jr123', archived: false });
+    await db
+      .collection('researchers')
+      .insertOne({ _id: canonicalId, displayName: 'Jane Researcher', archived: false });
 
     await recordCanonicalAlias({
-      type: 'user',
+      type: 'researcher',
       aliasNs: 'orcid',
       aliasValue: '0000-0002-1825-009x',
-      canonicalType: 'user',
+      canonicalType: 'researcher',
       canonicalId,
     });
 
-    const storedValue = await CanonicalAlias.findOne({ type: 'user', aliasNs: 'orcid' })
+    const storedValue = await CanonicalAlias.findOne({ type: 'researcher', aliasNs: 'orcid' })
       .select('aliasValue')
       .lean<{ aliasValue?: string }>();
     expect(storedValue?.aliasValue).toBe('0000-0002-1825-009X');
 
-    const resolved = await resolveCanonicalAlias('user', 'orcid', '  0000-0002-1825-009X  ');
+    const resolved = await resolveCanonicalAlias('researcher', 'orcid', '  0000-0002-1825-009X  ');
     expect(resolved?.toHexString()).toBe(canonicalId.toHexString());
   });
 

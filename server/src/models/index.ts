@@ -1,7 +1,6 @@
 /**
  * Barrel export for all Mongoose models.
  */
-export { User } from './user';
 export { AdminGrant } from './adminGrant';
 export { AdminAuditEvent } from './adminAuditEvent';
 export {

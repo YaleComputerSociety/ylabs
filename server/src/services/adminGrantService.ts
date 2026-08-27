@@ -2,7 +2,8 @@
  * Service helpers for explicit admin authority grants.
  */
 import { AdminGrant } from '../models/adminGrant';
-import { User } from '../models/user';
+import { Account } from '../models/account';
+import { Researcher } from '../models/researcher';
 import { isLocalDevelopmentRuntime } from '../utils/environment';
 
 const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
@@ -55,10 +56,28 @@ export const hasAdminAuthorityForUser = async (
 
 const userSummaryByNetid = async (netids: string[]) => {
   if (netids.length === 0) return new Map<string, any>();
-  const users = await User.find({ netid: { $in: netids } })
-    .select('netid fname lname email userType profileVerified userConfirmed')
+  const accounts = await Account.find({ netid: { $in: netids } })
+    .select('netid email')
     .lean();
-  return new Map(users.map((user: any) => [normalizeNetid(user.netid), user]));
+  const accountIds = accounts.map((account: any) => account._id);
+  const researchers = accountIds.length
+    ? await Researcher.find({ accountId: { $in: accountIds } })
+        .select('accountId displayName')
+        .lean()
+    : [];
+  const displayNameByAccountId = new Map(
+    researchers.map((researcher: any) => [String(researcher.accountId), researcher.displayName]),
+  );
+  return new Map(
+    accounts.map((account: any) => [
+      normalizeNetid(account.netid),
+      {
+        netid: account.netid,
+        email: account.email,
+        displayName: displayNameByAccountId.get(String(account._id)),
+      },
+    ]),
+  );
 };
 
 export const listAdminGrants = async (): Promise<AdminGrantResponse> => {
@@ -66,13 +85,7 @@ export const listAdminGrants = async (): Promise<AdminGrantResponse> => {
   const activeNetids = grants.map((grant: any) => normalizeNetid(grant.netid));
   const usersByNetid = await userSummaryByNetid(activeNetids);
 
-  const legacyAdminsWithoutGrant = await User.find({
-    userType: 'admin',
-    netid: { $nin: activeNetids },
-  })
-    .select('netid fname lname email userType profileVerified userConfirmed')
-    .sort({ netid: 1 })
-    .lean();
+  const legacyAdminsWithoutGrant: any[] = [];
 
   const allGrantHistory = await AdminGrant.find({}, { netid: 1, history: 1 }).lean();
   const history: AdminGrantHistoryEntry[] = allGrantHistory

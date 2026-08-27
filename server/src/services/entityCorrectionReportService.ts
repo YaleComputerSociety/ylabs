@@ -13,6 +13,7 @@ import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { normalizeResearchDetailSlug } from './researchGroupService';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
 import { replaceAsciiControls } from '../utils/asciiControl';
+import { resolveReporterIdentityByNetid } from './accountService';
 
 const CATEGORIES = new Set<string>(EntityCorrectionReportCategory);
 const RESOLUTION_STATUSES = new Set<string>(['accepted', 'dismissed']);
@@ -113,6 +114,12 @@ export const createEntityCorrectionReport = async (
     throw error;
   }
 
+  const providedName = [reporter.fname, reporter.lname].filter(Boolean).join(' ');
+  const identity =
+    reporter.email && providedName
+      ? { email: reporter.email, name: providedName }
+      : await resolveReporterIdentityByNetid(reporter.netId);
+
   const report = await EntityCorrectionReport.create({
     researchEntityId: entity._id,
     entitySlug: entity.slug || normalizedSlug,
@@ -125,8 +132,8 @@ export const createEntityCorrectionReport = async (
     note,
     reporter: {
       netId: reporter.netId,
-      email: reporter.email || '',
-      name: [reporter.fname, reporter.lname].filter(Boolean).join(' '),
+      email: reporter.email || identity.email,
+      name: providedName || identity.name,
       userType: reporter.userType || 'unknown',
       role: deriveReporterRole(reporter.userType),
     },

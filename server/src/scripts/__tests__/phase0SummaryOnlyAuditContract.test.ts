@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { buildDedupeUsersByIdentitySummaryOnlyOutput } from '../dedupeUsersByIdentity';
 import { buildDuplicateEntityNameReviewSummaryOnlyOutput } from '../duplicateEntityNameReview';
 import { buildResearchEntityCoverageSummaryOnlyOutput } from '../researchEntityCoverageAudit';
 import {
@@ -117,38 +116,7 @@ describe('Phase 0 summary-only audit output security contract', () => {
     ).not.toThrow();
   });
 
-  it('recursively excludes sensitive keys and values from all four audit outputs', () => {
-    const userIdentity = buildDedupeUsersByIdentitySummaryOnlyOutput(
-      {
-        mode: 'dry-run',
-        candidateGroups: 1,
-        plannedGroups: 1,
-        duplicateUsers: 1,
-        warningGroups: 1,
-        plan: [
-          {
-            identityField: 'email',
-            identityValue: PRIVATE,
-            canonicalUserId: PRIVATE,
-            duplicateUserIds: [PRIVATE],
-            normalizedName: PRIVATE,
-          },
-        ],
-        warnings: [
-          {
-            identityField: 'email',
-            identityValue: PRIVATE,
-            reason: 'identity-shared-by-different-names',
-            normalizedNames: [PRIVATE],
-            userIds: [PRIVATE],
-          },
-        ],
-        applied: [{ private: PRIVATE }],
-      },
-      { environment: 'development', db: 'Development' },
-      { limit: 100 },
-    );
-
+  it('recursively excludes sensitive keys and values from all audit outputs', () => {
     const duplicateEntity = buildDuplicateEntityNameReviewSummaryOnlyOutput(
       {
         generatedAt: '2026-07-28T00:00:00.000Z',
@@ -232,7 +200,7 @@ describe('Phase 0 summary-only audit output security contract', () => {
       { environment: 'development', db: 'Development' },
     );
 
-    for (const output of [userIdentity, duplicateEntity, coverage]) {
+    for (const output of [duplicateEntity, coverage]) {
       expectAggregateOnlyContract(output);
     }
   });

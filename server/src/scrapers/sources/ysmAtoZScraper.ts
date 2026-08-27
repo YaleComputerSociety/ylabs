@@ -17,7 +17,7 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { User } from '../../models/user';
+import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { deriveShortDescriptionFromFullDescription } from '../../utils/researchEntityDescriptionQuality';
 import {
@@ -456,28 +456,10 @@ interface PiUserLookupOptions {
   allowUnknownExactName?: boolean;
 }
 
-export function buildPiUserLookupQuery(
-  nameHint: PiNameHint,
-  options: PiUserLookupOptions = {},
-): Record<string, unknown> {
-  const hasExactFirstName = nameHint.firstName.trim().length > 0;
-  const baseQuery: Record<string, unknown> = {
-    lname: new RegExp(`^${escapeRegex(nameHint.lastName)}$`, 'i'),
-    ...(!options.allowUnknownExactName || !hasExactFirstName
-      ? { userType: { $in: ['professor', 'faculty'] } }
-      : {}),
-  };
-  return hasExactFirstName
-    ? {
-        ...baseQuery,
-        fname: new RegExp(`^${escapeRegex(nameHint.firstName.trim())}$`, 'i'),
-      }
-    : baseQuery;
-}
-
 export async function findPiUserId(
   nameHint: PiNameHint | null,
-  options: PiUserLookupOptions = {},
+  _options: PiUserLookupOptions = {},
+  deps: { resolveResearcherId?: typeof resolveResearcherIdForPersonName } = {},
 ): Promise<string | null> {
   if (!nameHint?.lastName) return null;
   // Issue #562: a PI may never be attached on a surname alone. A lone
@@ -485,12 +467,12 @@ export async function findPiUserId(
   // "Schwartz Lab" that attached Michael Schwartz when the real PI is Martin
   // Schwartz), so a name hint that carries no given name fails closed.
   if (nameHint.firstName.trim().length === 0) return null;
-  const query = buildPiUserLookupQuery(nameHint, options);
-  const matches = await User.find(query, { _id: 1, fname: 1, lname: 1, primaryDepartment: 1 })
-    .limit(5)
-    .lean();
-  if (matches.length !== 1) return null;
-  return serializedDocumentId(matches[0]._id) || null;
+  const resolveResearcherId = deps.resolveResearcherId ?? resolveResearcherIdForPersonName;
+  const name = [nameHint.firstName.trim(), nameHint.lastName.trim()].filter(Boolean).join(' ');
+  const resolution = await resolveResearcherId(name);
+  return resolution.status === 'matched' && resolution.researcherId
+    ? resolution.researcherId.toString()
+    : null;
 }
 
 export function labToObservations(lab: RawLab, sourceUrl: string): ObservationInput[] {
@@ -601,7 +583,6 @@ function profileContactWidgetUserObservations(
     { ...base, field: 'fname', value: nameHint.firstName },
     { ...base, field: 'lname', value: nameHint.lastName },
     { ...base, field: 'email', value: profile.email },
-    { ...base, field: 'userType', value: 'faculty' },
     { ...base, field: 'profileVerified', value: true },
     {
       ...base,

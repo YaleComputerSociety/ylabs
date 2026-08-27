@@ -7,6 +7,7 @@
  * additive grant emission) runs deterministically against canned fixtures.
  */
 import { describe, it, expect, vi } from 'vitest';
+import mongoose from 'mongoose';
 import {
   FederalAwardScraper,
   awardToRecord,
@@ -193,10 +194,16 @@ describe('federalPiSlug', () => {
 });
 
 function fakeUserFinder(users: Array<{ _id: string; fname: string; lname: string }>) {
-  return async (q: Record<string, unknown>) => {
-    const lnameRe = q.lname as RegExp;
-    const fnameRe = q.fname as RegExp | undefined;
-    return users.filter((u) => lnameRe.test(u.lname) && (!fnameRe || fnameRe.test(u.fname)));
+  return async (name: string) => {
+    const lower = name.toLowerCase();
+    const matches = users.filter((u) => lower.includes(u.lname.toLowerCase()));
+    if (matches.length === 1) {
+      return {
+        status: 'matched' as const,
+        researcherId: new mongoose.Types.ObjectId(matches[0]._id),
+      };
+    }
+    return { status: matches.length > 1 ? ('ambiguous' as const) : ('absent' as const) };
   };
 }
 
@@ -222,7 +229,7 @@ function buildContext(overrides: Partial<ScraperContext['options']> = {}) {
 
 const ONE_AGENCY = [{ toptierName: 'Department of Energy', abbreviation: 'DOE' }];
 const TIME_PERIOD = { start_date: '2020-01-01', end_date: '2026-01-01' };
-const HARRIS = { _id: 'user-harris', fname: 'John', lname: 'Harris' };
+const HARRIS = { _id: '507f1f77bcf86cd799439013', fname: 'John', lname: 'Harris' };
 
 describe('FederalAwardScraper.run', () => {
   it('paginates one agency until hasNext is false', async () => {
@@ -232,7 +239,7 @@ describe('FederalAwardScraper.run', () => {
       .mockResolvedValueOnce({ awards: [NASA_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -244,17 +251,17 @@ describe('FederalAwardScraper.run', () => {
 
   it('skips awards with no inline PI (fail closed)', async () => {
     const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [NO_PI_AWARD], hasNext: false });
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = vi.fn(async () => ({ status: 'absent' as const }));
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: userFinder as any,
+      resolveResearcherId: resolveResearcherId as any,
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
     });
     const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
     expect(emitted).toHaveLength(0);
-    expect(userFinder).not.toHaveBeenCalled();
+    expect(resolveResearcherId).not.toHaveBeenCalled();
     expect(result.entitiesObserved).toBe(0);
   });
 
@@ -262,7 +269,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [DOE_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([]) as any,
+      resolveResearcherId: fakeUserFinder([]) as any,
       researchHomeResolver: vi.fn(),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -276,7 +283,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [DOE_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([
+      resolveResearcherId: fakeUserFinder([
         { _id: 'a', fname: 'John', lname: 'Harris' },
         { _id: 'b', fname: 'John', lname: 'Harris' },
       ]) as any,
@@ -293,7 +300,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [DOE_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -302,13 +309,13 @@ describe('FederalAwardScraper.run', () => {
     await scraper.run(ctx);
 
     const rg = emitted.filter((o) => o.entityType === 'researchEntity');
-    expect(rg.every((o) => o.entityKey === 'federal-pi-user-harris')).toBe(true);
-    expect(rg.find((o) => o.field === 'slug')?.value).toBe('federal-pi-user-harris');
+    expect(rg.every((o) => o.entityKey === `federal-pi-${HARRIS._id}`)).toBe(true);
+    expect(rg.find((o) => o.field === 'slug')?.value).toBe(`federal-pi-${HARRIS._id}`);
     expect(rg.find((o) => o.field === 'kind')?.value).toBe('lab');
     const nameObs = rg.find((o) => o.field === 'name');
     expect(nameObs?.value).toBe('John Harris Lab');
     expect(nameObs?.confidenceOverride).toBe(0.3);
-    expect(rg.find((o) => o.field === 'inferredPiUserId')?.value).toBe('user-harris');
+    expect(rg.find((o) => o.field === 'inferredPiUserId')?.value).toBe(HARRIS._id);
     expect(rg.find((o) => o.field === 'inferredPiUserId')?.confidenceOverride).toBe(0.7);
     expect(rg.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['DOE']);
     expect(rg.find((o) => o.field === 'recentGrantCount')?.value).toBe(1);
@@ -321,7 +328,7 @@ describe('FederalAwardScraper.run', () => {
       .mockResolvedValue({ status: 'canonical', slug: 'dept-physics-john-harris' });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([{ _id: '507f1f77bcf86cd799439011', fname: 'John', lname: 'Harris' }]) as any,
+      resolveResearcherId: fakeUserFinder([{ _id: '507f1f77bcf86cd799439011', fname: 'John', lname: 'Harris' }]) as any,
       researchHomeResolver,
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -343,7 +350,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [DOE_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'ambiguous' }),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -361,7 +368,7 @@ describe('FederalAwardScraper.run', () => {
     });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
       agencies: [
         { toptierName: 'Department of Energy', abbreviation: 'DOE' },
@@ -386,7 +393,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValue({ awards: page, hasNext: true });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
@@ -400,7 +407,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockResolvedValue({ awards: [DOE_AWARD], hasNext: false });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
     });
@@ -413,7 +420,7 @@ describe('FederalAwardScraper.run', () => {
     const fetchAgencyPage = vi.fn().mockRejectedValueOnce(new Error('ECONNRESET'));
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      userFinder: fakeUserFinder([HARRIS]) as any,
+      resolveResearcherId: fakeUserFinder([HARRIS]) as any,
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,
     });

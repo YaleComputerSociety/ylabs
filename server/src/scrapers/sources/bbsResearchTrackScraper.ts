@@ -352,7 +352,7 @@ export function bbsGraftObservations(
  * resolves. Keyed on the `ysm-faculty-<slug>` namespace so it converges with
  * `ysm-faculty-directory` rather than forking a duplicate shell (#1390). The
  * lead is keyed to a synthetic BBS user observation; the materializer resolves
- * the actual Yale User from the name under the existing person-match guards.
+ * the actual canonical Researcher from the name under the existing person-match guards.
  */
 export function bbsMintObservations(
   pi: BbsTrackPi,

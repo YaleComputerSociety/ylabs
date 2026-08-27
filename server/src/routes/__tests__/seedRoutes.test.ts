@@ -1,12 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createUser, updateUser, validateUser } from '../../services/userService';
 import router from '../seed';
 
-vi.mock('../../services/userService', () => ({
-  createUser: vi.fn(),
-  updateUser: vi.fn(),
-  validateUser: vi.fn(),
-}));
 
 vi.mock('../../services/listingService', () => ({
   readAllListings: vi.fn(),
@@ -183,48 +177,4 @@ describe('seed routes', () => {
     }
   });
 
-  it('serializes seed response ids without arbitrary object string coercion', async () => {
-    const routeLayer = (router as any).stack.find(
-      (candidate: any) => candidate.route?.path === '/users' && candidate.route?.methods?.post,
-    );
-    const handler = routeLayer.route.stack.at(-1).handle;
-    const maliciousId = {
-      toString: () => {
-        throw new Error('seed route stringified arbitrary id');
-      },
-    };
-    vi.mocked(validateUser).mockResolvedValueOnce(null as any);
-    vi.mocked(createUser).mockResolvedValueOnce({
-      _id: maliciousId,
-      netid: 'abc123',
-      userType: 'professor',
-      userConfirmed: true,
-      profileVerified: true,
-    } as any);
-
-    const res = {
-      statusCode: 200,
-      body: undefined as unknown,
-      status(code: number) {
-        this.statusCode = code;
-        return this;
-      },
-      json(body: unknown) {
-        this.body = body;
-        return this;
-      },
-    };
-
-    await handler({ body: { netid: 'abc123' } }, res);
-
-    expect(vi.mocked(updateUser)).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(201);
-    expect(res.body).toMatchObject({
-      action: 'created',
-      user: {
-        _id: '',
-        netid: 'abc123',
-      },
-    });
-  });
 });

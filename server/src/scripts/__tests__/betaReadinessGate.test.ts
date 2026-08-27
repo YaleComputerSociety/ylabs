@@ -9,7 +9,6 @@ import {
   summarizeReviewedProfileLinkInput,
   writeBetaReadinessGateOutput,
 } from '../betaReadinessGate';
-import { DEFAULT_ACCEPTED_INPUT_ROOT } from '../acceptedInputsCore';
 
 describe('betaReadinessGate CLI helpers', () => {
   it('parses gate confirmation, strict, root, and output flags', () => {
@@ -50,9 +49,9 @@ describe('betaReadinessGate CLI helpers', () => {
     );
   });
 
-  it('uses the default accepted-input root when root is omitted', () => {
+  it('defaults the accepted-input root to empty when omitted', () => {
     expect(parseBetaReadinessGateArgs([])).toEqual({
-      root: DEFAULT_ACCEPTED_INPUT_ROOT,
+      root: '',
       strict: false,
       confirmBetaBackup: false,
     });

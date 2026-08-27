@@ -16,7 +16,7 @@
  *   - For each faculty member: User observations keyed by netid (when an
  *     @yale.edu email is on the page) or by a synthetic
  *     `dept:<deptKey>:<slug>` entityKey otherwise. The materializer creates
- *     stub Users from synthetic keys.
+ *     stub Researchers from synthetic keys.
  *   - For each lab/personal website discovered: a ResearchGroup observation
  *     keyed by `dept-<deptKey>-<slug>`.
  *

@@ -27,9 +27,9 @@
  * as the websiteUrl; a profile with governed research areas or a research
  * description but no lab site
  * seeds a FACULTY_RESEARCH_AREA home instead. Contact is fail-closed: emails
- * derive stable Researcher identity and key the lead PI to the canonical Yale
- * User, and are redacted from public payloads at read time. The lead PI is
- * never attached from a surname match against the User collection (#562,
+ * derive stable Researcher identity and key the lead PI to the canonical
+ * Researcher, and are redacted from public payloads at read time. The lead PI is
+ * never attached from a surname match against the researcher collection (#562,
  * #579); identity here comes directly from the person's own official profile
  * page, keyed by their own profile email/netid, exactly as `yseFacultyDirectoryScraper`
  * already does for YSE.
@@ -343,7 +343,7 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
  *
  * The lead PI is keyed on the person-specific email when present, mirroring
  * yseFacultyDirectoryScraper: identity here comes from the person's own
- * profile, not a name search against the User collection, so this never risks
+ * profile, not a name search against the researcher collection, so this never risks
  * the surname-collision failure mode fixed in #562/#579.
  */
 export function facultyToResearchEntityObservations(

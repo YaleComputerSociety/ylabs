@@ -39,7 +39,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
   This is the ingest half of the ingest/serve/coverage data-integrity triad (#1374 owns serve-time, #1376 owns coverage); the person/entity identity resolver half is already hardened in `personProfileEntityMatch.ts`/`piNameMatch.ts` (#562/#981/#1045/#1110).
 - `entityMaterializer.ts` - derives `ResearchEntity`/`RoleAssignment` (the canonical roster; replaces the retired `ResearchGroupMember`).
   - `materializeInferredPiMembership` (labs, from grant-inferred PI keys) and `materializeInferredDirectorMembership` (organizational homes, from `center-director-llm`'s entity-level inferred-director observation) attach the entity **lead**.
-  Each resolves the name to a unique Yale User, resolves that `User` to its canonical `Researcher`, and upserts a `PI`/`DIRECTOR` `RoleAssignment`.
+  Each resolves the name to a canonical `Researcher` via `resolveResearcherIdForPersonName` (`researcherPersonNameResolver.ts`), and upserts a `PI`/`DIRECTOR` `RoleAssignment`.
   Promoting a director also lets the access materializer upgrade an organizational home from its "no named director" `DEPARTMENT_CONTACT` fallback to a named-lead `FACULTY_PI` ways-in on the same pass.
   - Official roster rows use stable profile identity and membership keys.
   Only a complete non-empty snapshot archives disappeared source-owned rows; failed, empty, partial, stale, or withheld snapshots preserve current history.
@@ -138,7 +138,7 @@ Discovery-only producers, mostly for the `ARCHIVE_OR_MUSEUM_PROJECT` entity type
 
 | Scraper | Data |
 |---------|------|
-| `peabodyCollectionsResearchScraper.ts` | Yale Peabody Museum "Collections & Research" divisions (Anthropology, Botany, Vertebrate Paleontology, ...), each led by the named "Curator-in-charge" resolved to a unique Yale User before promoting a lead. Pilot producer for the museum/archive type (#1349/#1367). |
+| `peabodyCollectionsResearchScraper.ts` | Yale Peabody Museum "Collections & Research" divisions (Anthropology, Botany, Vertebrate Paleontology, ...), each led by the named "Curator-in-charge" resolved to a unique canonical `Researcher` before promoting a lead. Pilot producer for the museum/archive type (#1349/#1367). |
 | `beineckeCuratorialUnitsScraper.ts` | Beinecke Rare Book & Manuscript Library curatorial units (Americana, the Osborn Collection, ...). Reads only a structured staff/contact curator credit, never body prose, so it fails closed on units with no structured lead. |
 | `beineckeCollectionsResearchScraper.ts` | Yale Beinecke Library research fellowship programs; emits identity and official-page description only, fail-closed on contact, access claims, openings, and the awarded-fellow roster (#2040). |
 | `yaleCenterBritishArtScraper.ts` | Yale Center for British Art curatorial departments and museum-run research programs; carries a curated seed of each department's own page because YCBA publishes no enumerable index. |

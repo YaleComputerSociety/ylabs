@@ -15,7 +15,7 @@
  *   - Paginate through Yale grants (offset/limit, max 500 per request).
  *   - Group grants by contact PI name.
  *   - For each PI:
- *       - Resolve an unambiguous Yale User by exact or conservative prefix name matching.
+ *       - Resolve an unambiguous canonical Researcher by exact or conservative prefix name matching.
  *       - Enrich the PI's one eligible official research home when present, fail closed
  *         on ambiguous or ineligible identity/home evidence, or use a synthetic shell
  *         only when no research-home membership exists.
@@ -26,22 +26,16 @@
  *   - ctx.options.limit — caps the *number of PIs processed*, not raw grants.
  */
 import axios from 'axios';
-import { User } from '../../models/user';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
-  resolveCanonicalResearchHomeForUser,
+  resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { slugify, splitName } from '../utils/scraperHelpers';
-import {
-  givenNamesEquivalent,
-  surnameFetchRegex,
-  surnamesCompatible,
-  surnameOnlyMatch,
-  SURNAME_FETCH_LIMIT,
-} from '../utils/piNameMatch';
+import { Researcher } from '../../models/researcher';
+import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
@@ -430,9 +424,9 @@ function parseDate(s: string | undefined): Date | undefined {
  */
 export async function findUserForPi(
   canonicalName: string,
-  userModel: { find: typeof User.find } = User,
+  deps?: NihPiResolverDeps,
 ): Promise<{ _id: string; netid?: string; researchHomeEligible?: boolean } | null> {
-  const result = await resolveUserForPi(canonicalName, userModel);
+  const result = await resolveUserForPi(canonicalName, deps);
   return result.status === 'matched' ? result.user : null;
 }
 
@@ -441,69 +435,38 @@ export type NihPiUserResolution =
   | { status: 'absent' }
   | { status: 'ambiguous' };
 
-export async function resolveUserForPi(
-  canonicalName: string,
-  userModel: { find: typeof User.find } = User,
-): Promise<NihPiUserResolution> {
-  if (!canonicalName) return { status: 'absent' };
-  let { first, last } = splitName(canonicalName);
-  if (!last && first && !/\s/.test(first)) {
-    last = first;
-    first = '';
-  }
-  if (!last) return { status: 'absent' };
-  const surnameRe = surnameFetchRegex(last);
-  if (!surnameRe) return { status: 'absent' };
-  const fetched: any[] = await userModel
-    .find(
-      {
-        lname: surnameRe,
-        userType: { $in: ['professor', 'faculty', 'admin'] },
-      },
-      { _id: 1, fname: 1, lname: 1, netid: 1, primaryDepartment: 1, title: 1 },
-    )
-    .limit(SURNAME_FETCH_LIMIT)
-    .lean();
-  if (fetched.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
-  const candidates = fetched.filter((c) => surnamesCompatible(last, c.lname));
-  if (!first) {
-    return { status: surnameOnlyMatch(candidates.length) };
-  }
-  const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
-  // Exact or canonical-nickname first name match wins.
-  const exact = candidates.filter(
-    (c) =>
-      (c.fname || '').toLowerCase() === first.toLowerCase() ||
-      givenNamesEquivalent(firstToken, c.fname || ''),
-  );
-  if (exact.length === 1) {
-    return { status: 'matched', user: userPiMatchResult(exact[0]) };
-  }
-  if (exact.length > 1) return { status: 'ambiguous' };
-
-  // A given-name prefix is a genuine first-name match; a bare source initial is
-  // not, so an initial-only source name never binds to a same-initial namesake
-  // and fails closed instead (issue #562).
-  if (firstToken.length > 1) {
-    const prefix = first.toLowerCase();
-    const byPrefix = candidates.filter((c) => (c.fname || '').toLowerCase().startsWith(prefix));
-    if (byPrefix.length === 1) {
-      return { status: 'matched', user: userPiMatchResult(byPrefix[0]) };
-    }
-    if (byPrefix.length > 1) return { status: 'ambiguous' };
-  }
-  return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
+export interface NihPiResolverDeps {
+  resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+  loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
 }
 
-function userPiMatchResult(candidate: any): {
-  _id: string;
-  netid?: string;
-  researchHomeEligible?: boolean;
-} {
+async function defaultLoadResearcherProfileTitle(
+  researcherId: string,
+): Promise<string | undefined> {
+  const researcher: any = await Researcher.findById(researcherId).select('profile').lean();
+  const title = researcher?.profile?.title;
+  return typeof title === 'string' ? title : undefined;
+}
+
+export async function resolveUserForPi(
+  canonicalName: string,
+  deps: NihPiResolverDeps = {},
+): Promise<NihPiUserResolution> {
+  if (!canonicalName) return { status: 'absent' };
+  const resolveResearcherId = deps.resolveResearcherId ?? resolveResearcherIdForPersonName;
+  const loadResearcherProfileTitle =
+    deps.loadResearcherProfileTitle ?? defaultLoadResearcherProfileTitle;
+  const resolution = await resolveResearcherId(canonicalName);
+  if (resolution.status === 'ambiguous') return { status: 'ambiguous' };
+  if (resolution.status !== 'matched' || !resolution.researcherId) return { status: 'absent' };
+  const researcherId = resolution.researcherId.toString();
+  const title = await loadResearcherProfileTitle(researcherId);
   return {
-    _id: serializedDocumentId(candidate._id) || '',
-    netid: candidate.netid,
-    researchHomeEligible: researchHomeEligibleUserTitle(candidate.title),
+    status: 'matched',
+    user: {
+      _id: researcherId,
+      researchHomeEligible: researchHomeEligibleUserTitle(title),
+    },
   };
 }
 
@@ -520,10 +483,10 @@ function researchHomeEligibleUserTitle(title: unknown): boolean {
  * Build the observation list for one PI's grants.
  *
  * Emits:
- *   - User observation keyed by `nih-pi:<slug>` when no Yale User matched, so
+ *   - `user` observation keyed by `nih-pi:<slug>` when no researcher matched, so
  *     downstream materialization can create a stub.
- *   - ResearchGroup observations keyed by either the matched User's PI slug
- *     (legible `nih-pi-<slug>`) or the same slug used by the User stub.
+ *   - ResearchGroup observations keyed by either the matched researcher's PI slug
+ *     (legible `nih-pi-<slug>`) or the same slug used by the researcher stub.
  *   - All recentGrants observations are emitted as a single full array — the
  *     resolver picks the highest-confidence value per field rather than trying
  *     to merge multiple partial arrays.
@@ -563,9 +526,9 @@ export function piGrantsToObservations(
     if (dt) deptTypes.add(dt);
   }
 
-  // 1. User observation — only emit when no existing user was matched. The
-  //    materializer treats `nih-pi:<slug>` as a synthetic key and creates a
-  //    stub User row (lname = surname, fname = first name, userType=unknown).
+  // 1. `user` observation — only emit when no existing researcher was matched.
+  //    The materializer treats `nih-pi:<slug>` as a synthetic key and creates a
+  //    stub Researcher from the surname and first name.
   const piEntityKeyValue = piEntityKey(canonicalName);
   if (!matchedUser && piEntityKeyValue) {
     const { first, last } = splitName(canonicalName);
@@ -576,7 +539,6 @@ export function piGrantsToObservations(
     };
     if (first) out.push({ ...userBase, field: 'fname', value: first });
     if (last) out.push({ ...userBase, field: 'lname', value: last });
-    out.push({ ...userBase, field: 'userType', value: 'faculty' });
     out.push({ ...userBase, field: 'dataSources', value: ['nih-reporter'] });
   }
 
@@ -706,9 +668,9 @@ async function fetchPage({
 export interface NihReporterScraperOptions {
   /** Override fiscal years (defaults to current FY plus the two prior FYs). */
   fiscalYears?: number[];
-  /** Inject a custom User model (used by tests to mock the DB). */
-  userModel?: { find: typeof User.find };
-  researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
+  resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+  loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
+  researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 export class NihReporterScraper implements IScraper {
@@ -719,9 +681,8 @@ export class NihReporterScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
-    const userModel = this.opts.userModel || User;
     const researchHomeResolver =
-      this.opts.researchHomeResolver || resolveCanonicalResearchHomeForUser;
+      this.opts.researchHomeResolver || resolveCanonicalResearchHomeForResearcher;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -781,7 +742,10 @@ export class NihReporterScraper implements IScraper {
     for (const [piName, grants] of piEntries) {
       let userResolution: NihPiUserResolution = { status: 'ambiguous' };
       try {
-        userResolution = await resolveUserForPi(piName, userModel);
+        userResolution = await resolveUserForPi(piName, {
+          resolveResearcherId: this.opts.resolveResearcherId,
+          loadResearcherProfileTitle: this.opts.loadResearcherProfileTitle,
+        });
       } catch (err: any) {
         ctx.log(`user-lookup error for PI candidate: ${sanitizeLogValue(err)}`);
       }

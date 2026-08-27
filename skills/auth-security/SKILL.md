@@ -19,8 +19,8 @@ User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
      -> cookie-session for 30 days, httpOnly, secure in prod, sameSite lax
 ```
 
-Authentication runs on the canonical `Account` (the private login principal), not the legacy `User`.
-Classification (undergrad/grad/faculty) is derived at login and carried in the signed session; it is not persisted to a `User`.
+Authentication runs on the canonical `Account` (the private login principal); the legacy `User` model has been retired (#2014).
+Classification (undergrad/grad/faculty) is derived at login and carried in the signed session; it is not persisted.
 `userType` is a classification/analytics dimension only; it does not authorize anything.
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.

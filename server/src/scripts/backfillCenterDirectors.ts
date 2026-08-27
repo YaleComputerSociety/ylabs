@@ -6,7 +6,7 @@
  * Investigator" panel renders empty. The `center-director-llm` source now reads
  * each home's official site + leadership pages and emits an entity-level
  * inferred-director observation, which the materializer resolves to a unique
- * Yale User and promotes to a `director` member. New scrape/materialize runs
+ * canonical Researcher and promotes to a `director` member. New scrape/materialize runs
  * pick this up automatically; this script applies it to the already-materialized
  * corpus so historical organizational homes are not left lead-less.
  *

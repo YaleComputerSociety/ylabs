@@ -2,8 +2,6 @@
  * Service layer for listing CRUD, view tracking, and favorites.
  */
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from '../utils/errors';
-import { addOwnListings, deleteOwnListings, userExists, createUser } from './userService';
-import { fetchYalie } from './yaliesService';
 import mongoose from 'mongoose';
 import { getListingModel } from '../db/connections';
 import { processListingTitle, isCustomTitle, generateSmartTitle } from '../utils/smartTitle';
@@ -12,7 +10,7 @@ import { findOrCreateForOwner } from './researchGroupService';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
-import { resolveResearcherIdForLegacyUser } from './researchEntityMembershipAccessor';
+import { resolveResearcherIdForPersonName } from './researcherPersonNameResolver';
 import { buildListingResearchEntityProfilePatch } from './listingResearchEntityProfile';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -74,7 +72,11 @@ const hasListingEntityAuthority = async (
     return false;
   }
 
-  const personId = await resolveResearcherIdForLegacyUser(owner?._id);
+  const resolution = await resolveResearcherIdForPersonName(
+    [owner?.fname, owner?.lname].filter(Boolean).join(' '),
+    { netid: owner?.netid },
+  );
+  const personId = resolution.status === 'matched' ? resolution.researcherId : undefined;
   if (!personId) {
     return false;
   }
@@ -416,27 +418,6 @@ export const createListing = async (data: any, owner: any) => {
     confirmed: owner.userConfirmed,
   });
 
-  const listingId = listing._id;
-  const professorIds = listing.professorIds;
-
-  for (const id of [...professorIds, owner.netid]) {
-    const exists = await userExists(id);
-
-    if (!exists) {
-      let user = await fetchYalie(id);
-      if (!user) {
-        user = await createUser({
-          netid: id,
-          fname: id,
-          lname: id,
-          email: placeholderYaleEmail(id),
-        });
-      }
-    }
-
-    await addOwnListings(id, [listingId]);
-  }
-
   await listing.save();
 
   const savedListing = listing.toObject();
@@ -500,31 +481,6 @@ export const updateListing = async (
       throw new NotFoundError('Listing not found');
     }
 
-    let toUpdate = [...oldListing.professorIds, oldListing.ownerId];
-
-    if (safeData.professorIds) {
-      toUpdate = [...toUpdate, ...safeData.professorIds];
-    }
-    if (safeData.ownerId) {
-      toUpdate.push(safeData.ownerId);
-    }
-
-    for (const id of toUpdate) {
-      const exists = await userExists(id);
-
-      if (!exists) {
-        let user = await fetchYalie(id);
-        if (!user) {
-          user = await createUser({
-            netid: id,
-            fname: id,
-            lname: id,
-            email: placeholderYaleEmail(id),
-          });
-        }
-      }
-    }
-
     if (!noAuth && !oldListing.professorIds.includes(userId) && oldListing.ownerId !== userId) {
       throw new IncorrectPermissionsError('Forbidden');
     }
@@ -548,17 +504,6 @@ export const updateListing = async (
 
     if (!listing || !oldListing) {
       throw new NotFoundError('Listing not found');
-    }
-
-    const oldProfessorIds = [...oldListing.professorIds, oldListing.ownerId];
-    const newProfessorIds = [...listing.professorIds, listing.ownerId];
-    const listingId = listing._id;
-
-    for (const id of oldProfessorIds) {
-      await deleteOwnListings(id, [listingId]);
-    }
-    for (const id of newProfessorIds) {
-      await addOwnListings(id, [listingId]);
     }
 
     const updatedListing = listing.toObject();

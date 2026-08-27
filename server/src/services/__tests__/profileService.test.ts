@@ -5,12 +5,8 @@ const userModelMock = vi.hoisted(() => ({
   findOneAndUpdate: vi.fn(),
 }));
 
-vi.mock('../../models/user', () => ({
-  User: userModelMock,
-}));
 
 import {
-  adminUpdateProfile,
   cleanPublicProfileBio,
   dedupeProfileResearchEntities,
   isLikelySameNameContaminatedProfile,
@@ -1944,101 +1940,3 @@ describe('profileService profile shaping', () => {
   });
 });
 
-describe('profileService admin profile update persistence', () => {
-  it('bounds and allowlists admin profile update payloads before persistence', async () => {
-    userModelMock.findOne.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({
-        primaryDepartment: 'Existing Department',
-        secondaryDepartments: ['Existing Secondary'],
-      }),
-    });
-    userModelMock.findOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ netid: 'ada123' }),
-    });
-
-    await adminUpdateProfile('ada123', {
-      bio: `Reach me at hidden@example.edu or 203-432-1234. ${'x'.repeat(20_000)}`,
-      primaryDepartment: 'Computer Science',
-      secondaryDepartments: Array.from(
-        { length: 200 },
-        (_, index) => `Dept ${index} dept${index}@example.edu`,
-      ),
-      researchInterests: ['Machine learning admin@example.edu', { nested: true }],
-      topics: ['Systems 203-432-1234'],
-      website: 'javascript:alert(document.cookie)',
-      profileUrls: {
-        official: 'https://profiles.example.edu/ada',
-        unsafe: 'data:text/html,<script>alert(1)</script>',
-      },
-      fname: `Ada hidden@example.edu ${'x'.repeat(500)}`,
-      lname: { nested: true },
-      email: 'ada@example.edu\nBcc: hidden@example.edu',
-      title: `Professor 203-432-1234 ${'x'.repeat(500)}`,
-      hIndex: 2_000_000,
-      profileVerified: 'true',
-      userConfirmed: true,
-      userType: 'superadmin',
-      arbitraryNested: { $set: { admin: true } },
-    });
-
-    const update = userModelMock.findOneAndUpdate.mock.calls[0][1];
-
-    expect(update.bio.length).toBeLessThanOrEqual(5_000);
-    expect(update.bio).not.toContain('hidden@example.edu');
-    expect(update.bio).not.toContain('203-432-1234');
-    expect(update.primaryDepartment).toBe('Computer Science');
-    expect(update.secondaryDepartments.length).toBeLessThanOrEqual(100);
-    expect(JSON.stringify(update.secondaryDepartments)).not.toContain('@example.edu');
-    expect(update.researchInterests).toEqual(['Machine learning [email redacted]']);
-    expect(update.topics).toEqual(['Systems [phone redacted]']);
-    expect(update.website).toBeUndefined();
-    expect(update.profileUrls.official).toMatch(/^https:\/\/profiles\.example\.edu\/ada\/?$/);
-    expect(update.profileUrls).not.toHaveProperty('unsafe');
-    expect(update.fname.length).toBeLessThanOrEqual(120);
-    expect(update.fname).not.toContain('hidden@example.edu');
-    expect(update).not.toHaveProperty('lname');
-    expect(update).not.toHaveProperty('email');
-    expect(update.title.length).toBeLessThanOrEqual(320);
-    expect(update.title).not.toContain('203-432-1234');
-    expect(update).not.toHaveProperty('hIndex');
-    expect(update).not.toHaveProperty('profileVerified');
-    expect(update.userConfirmed).toBe(true);
-    expect(update).not.toHaveProperty('userType');
-    expect(update).not.toHaveProperty('publications');
-    expect(update).not.toHaveProperty('arbitraryNested');
-  });
-
-  it('accepts every userType the AdminProfileEditModal dropdown actually offers', async () => {
-    for (const userType of [
-      'admin',
-      'professor',
-      'faculty',
-      'undergraduate',
-      'graduate',
-      'unknown',
-    ]) {
-      userModelMock.findOneAndUpdate.mockReturnValue({
-        lean: vi.fn().mockResolvedValue({ netid: 'u123' }),
-      });
-
-      await adminUpdateProfile('u123', { userType });
-
-      const update = userModelMock.findOneAndUpdate.mock.calls.at(-1)![1] as Record<
-        string,
-        unknown
-      >;
-      expect(update.userType).toBe(userType);
-    }
-  });
-
-  it('drops the legacy generic student userType, which no real account uses and the dropdown never offers', async () => {
-    userModelMock.findOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ netid: 'u123' }),
-    });
-
-    await adminUpdateProfile('u123', { userType: 'student' });
-
-    const update = userModelMock.findOneAndUpdate.mock.calls.at(-1)![1] as Record<string, unknown>;
-    expect(update).not.toHaveProperty('userType');
-  });
-});

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   readUser: vi.fn(),
   updateUser: vi.fn(),
+  accountFindOneAndUpdate: vi.fn(),
+  researcherFindOneAndUpdate: vi.fn(),
   normalizeObjectIdsForUserMutation: vi.fn((values: unknown[], fieldName: string) => {
     if (values.length > 100) {
       const error: any = new Error(`Too many ${fieldName} ids`);
@@ -41,6 +43,14 @@ vi.mock('../../services/userService', () => ({
   readUser: mocks.readUser,
   updateUser: mocks.updateUser,
   normalizeObjectIdsForUserMutation: mocks.normalizeObjectIdsForUserMutation,
+}));
+
+vi.mock('../../models/account', () => ({
+  Account: { findOneAndUpdate: mocks.accountFindOneAndUpdate },
+}));
+
+vi.mock('../../models/researcher', () => ({
+  Researcher: { findOneAndUpdate: mocks.researcherFindOneAndUpdate },
 }));
 
 vi.mock('../../services/researchPlanService', () => ({
@@ -304,15 +314,19 @@ describe('userController', () => {
 
   it('does not leak internal service errors when updating the current user fails', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    mocks.updateUser.mockRejectedValue(
-      new Error(
-        'mongodb://user:pass@example.invalid leaked for ada@example.edu with Bearer abc123 and 203-555-1212',
-      ),
-    );
+    mocks.accountFindOneAndUpdate.mockReturnValue({
+      lean: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'mongodb://user:pass@example.invalid leaked for ada@example.edu with Bearer abc123 and 203-555-1212',
+          ),
+        ),
+    });
 
     const req = {
       user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { bio: 'I study public health.' } },
+      body: { data: { fname: 'Ada', lname: 'Lovelace' } },
     } as any;
     const res = privateResponseDouble();
     const next = vi.fn();
@@ -329,22 +343,17 @@ describe('userController', () => {
     expect(logged).not.toContain('203-555-1212');
   });
 
-  it('does not expose internal account join fields after current-user profile updates', async () => {
-    mocks.updateUser.mockResolvedValue({
-      _id: '64a000000000000000000020',
-      netid: 'student123',
-      userType: 'undergraduate',
-      userConfirmed: true,
-      bio: 'I study public health.',
-      facultyMemberId: 'faculty-join-123',
-      savedPathwayPlans: { private: { note: 'private planning note' } },
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-02T00:00:00.000Z',
+  it('returns only thin identity fields after current-user profile updates', async () => {
+    mocks.accountFindOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ _id: '64a000000000000000000020', netid: 'student123' }),
+    });
+    mocks.researcherFindOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ displayName: 'Ada Lovelace' }),
     });
 
     const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { bio: 'I study public health.' } },
+      user: { netId: 'student123', userConfirmed: true },
+      body: { data: { fname: 'Ada', lname: 'Lovelace', bio: 'I study public health.' } },
     } as any;
     const res = privateResponseDouble();
     const next = vi.fn();
@@ -353,205 +362,48 @@ describe('userController', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(200);
-    expect(res.body.user).toMatchObject({
+    expect(res.body.user).toEqual({
       netid: 'student123',
-      bio: 'I study public health.',
+      displayName: 'Ada Lovelace',
+      userConfirmed: true,
     });
+    expect(res.body.user).not.toHaveProperty('userType');
+    expect(res.body.user).not.toHaveProperty('bio');
     expect(res.body.user).not.toHaveProperty('facultyMemberId');
-    expect(res.body.user).not.toHaveProperty('savedPathwayPlans');
-    expect(res.body.user).not.toHaveProperty('createdAt');
-    expect(res.body.user).not.toHaveProperty('updatedAt');
+    expect(res.body.user).not.toHaveProperty('studentProfileId');
   });
 
-  it('ignores identity and userType fields on current-user profile updates', async () => {
-    mocks.updateUser.mockResolvedValueOnce({
+  it('upserts an Account and thin Researcher from the bootstrap form, echoing thin identity', async () => {
+    mocks.accountFindOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ _id: 'acct-unknown', netid: 'unknown123' }),
+    });
+    mocks.researcherFindOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ displayName: 'Ada Lovelace' }),
+    });
+
+    const req = {
+      user: { netId: 'unknown123', userConfirmed: false },
+      body: {
+        data: { fname: 'Ada', lname: 'Lovelace', email: 'ada@example.edu', userType: 'faculty' },
+      },
+    } as any;
+    const res = privateResponseDouble();
+    const next = vi.fn();
+
+    await updateCurrentUser(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.researcherFindOneAndUpdate.mock.calls.at(-1)![1]).toMatchObject({
+      $set: { displayName: 'Ada Lovelace' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.user).toEqual({
       netid: 'unknown123',
-      userType: 'unknown',
+      displayName: 'Ada Lovelace',
       userConfirmed: false,
-      bio: 'Researcher',
     });
-
-    const req = {
-      user: { netId: 'unknown123' },
-      body: {
-        data: {
-          fname: 'Ada',
-          lname: 'Lovelace',
-          email: 'ada@example.edu',
-          userType: 'professor',
-          userConfirmed: true,
-          profileVerified: true,
-          bio: 'Researcher',
-        },
-      },
-    } as any;
-    const res = privateResponseDouble();
-    const next = vi.fn();
-
-    await updateCurrentUser(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(mocks.updateUser).toHaveBeenLastCalledWith('unknown123', { bio: 'Researcher' });
-    expect(res.statusCode).toBe(200);
-  });
-
-  it('sanitizes self-edit profile URLs before persisting the current user', async () => {
-    const profileUrls = Object.create(null);
-    Object.assign(profileUrls, {
-      yale: 'https://example.yale.edu/profile/student123',
-      ' research.profile ': 'https://example.yale.edu/research/student123',
-      $source: 'https://example.yale.edu/source/student123',
-      constructor: 'https://example.yale.edu/constructor',
-      prototype: 'https://example.yale.edu/prototype',
-      personal: 'mailto:student123@yale.edu',
-      script: 'javascript:alert(document.cookie)',
-    });
-    Object.defineProperty(profileUrls, '__proto__', {
-      value: 'https://example.yale.edu/proto',
-      enumerable: true,
-    });
-
-    mocks.updateUser.mockResolvedValue({
-      _id: '64a000000000000000000020',
-      netid: 'student123',
-      userType: 'undergraduate',
-      userConfirmed: true,
-      website: 'https://example.yale.edu/student123',
-      imageUrl: 'javascript:alert(document.cookie)',
-      profileUrls: {
-        yale: 'https://example.yale.edu/profile/student123',
-        'research.profile': 'https://example.yale.edu/research/student123',
-        $source: 'https://example.yale.edu/source/student123',
-        constructor: 'https://example.yale.edu/constructor',
-      },
-      bio: 'I study public health.',
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: {
-        data: {
-          bio: 'I study public health.',
-          website: 'javascript:alert(document.cookie)',
-          imageUrl: 'javascript:alert(document.cookie)',
-          profileUrls,
-        },
-      },
-    } as any;
-    const res = privateResponseDouble();
-    const next = vi.fn();
-
-    await updateCurrentUser(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(mocks.updateUser).toHaveBeenCalledWith('student123', {
-      bio: 'I study public health.',
-      profileUrls: {
-        yale: 'https://example.yale.edu/profile/student123',
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.body.user).toMatchObject({
-      website: 'https://example.yale.edu/student123',
-      profileUrls: {
-        yale: 'https://example.yale.edu/profile/student123',
-      },
-    });
-    expect(res.body.user).not.toHaveProperty('imageUrl');
-    expect(Object.prototype.hasOwnProperty.call(res.body.user.profileUrls, 'constructor')).toBe(
-      false,
-    );
-    expect(Object.prototype.hasOwnProperty.call(res.body.user.profileUrls, 'prototype')).toBe(
-      false,
-    );
-  });
-
-  it('bounds self-edit account text and array fields before persisting the current user', async () => {
-    mocks.updateUser.mockResolvedValue({
-      _id: '64a000000000000000000020',
-      netid: 'student123',
-      userType: 'undergraduate',
-      userConfirmed: true,
-      bio: 'a'.repeat(2000),
-      major: ['Computer Science'],
-      researchInterests: ['public health'],
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: {
-        data: {
-          bio: `  ${'a'.repeat(2100)}  `,
-          phone: 2035551212,
-          college: '  Benjamin Franklin College  ',
-          physicalLocation: `  ${'b'.repeat(600)}  `,
-          major: [
-            'Computer Science',
-            '',
-            123,
-            ...Array.from({ length: 60 }, (_, index) => `Topic ${index}`),
-          ],
-          departments: 'not-an-array',
-          researchInterests: [' public health ', 'x'.repeat(150)],
-          topics: [{ nested: true }],
-        },
-      },
-    } as any;
-    const res = privateResponseDouble();
-    const next = vi.fn();
-
-    await updateCurrentUser(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    const update = mocks.updateUser.mock.calls[0][1];
-    expect(update.bio).toHaveLength(2000);
-    expect(update.phone).toBeUndefined();
-    expect(update.college).toBe('Benjamin Franklin College');
-    expect(update.physicalLocation).toHaveLength(500);
-    expect(update.major).toHaveLength(50);
-    expect(update.major[0]).toBe('Computer Science');
-    expect(update.major).not.toContain('');
-    expect(update.departments).toBeUndefined();
-    expect(update.researchInterests).toEqual(['public health', 'x'.repeat(120)]);
-    expect(update.topics).toEqual([]);
-  });
-
-  it('derives account departments from sanitized primary and secondary department fields', async () => {
-    mocks.readUser.mockResolvedValue({
-      netid: 'student123',
-      primaryDepartment: 'History',
-      secondaryDepartments: ['Statistics'],
-    });
-    mocks.updateUser.mockResolvedValue({
-      _id: '64a000000000000000000020',
-      netid: 'student123',
-      userType: 'undergraduate',
-      userConfirmed: true,
-      primaryDepartment: 'Public Health',
-      secondaryDepartments: ['Statistics'],
-      departments: ['Public Health', 'Statistics'],
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: {
-        data: {
-          primaryDepartment: '  Public Health  ',
-          departments: ['Forged Department'],
-        },
-      },
-    } as any;
-    const res = privateResponseDouble();
-    const next = vi.fn();
-
-    await updateCurrentUser(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(mocks.readUser).toHaveBeenCalledWith('student123');
-    expect(mocks.updateUser).toHaveBeenCalledWith('student123', {
-      primaryDepartment: 'Public Health',
-      departments: ['Public Health', 'Statistics'],
-    });
+    expect(res.body.user).not.toHaveProperty('userType');
+    expect(res.body.user).not.toHaveProperty('profileVerified');
   });
 
   it('scopes saved-entity reads and private exports to the authenticated owner', async () => {

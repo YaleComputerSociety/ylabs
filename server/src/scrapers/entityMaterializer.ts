@@ -2,12 +2,11 @@
  * Reads pending Observations for a given entity, resolves field values via the
  * ConfidenceResolver, and writes the resolved values back to the entity collection.
  *
- * For User entities, also handles upsert when no entityId is yet known (lookup by
+ * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
-import { User, normalizeUserType } from '../models/user';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
@@ -106,9 +105,13 @@ import {
 } from './canonicalMembershipMaterializer';
 import {
   getResearchEntityRoster,
-  resolveResearcherIdForLegacyUser,
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
+import { resolveResearcherIdForPersonName } from '../services/researcherPersonNameResolver';
+import { Researcher, isValidOrcid, type ResearcherProfileLink } from '../models/researcher';
+import { Account } from '../models/account';
+import { composeOfficialProfileLink } from '../scripts/backfillResearcherOfficialProfileLinksCore';
+import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
 import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
 import {
   isPersonOrGrantShellSlug,
@@ -586,9 +589,6 @@ export function materializedFieldValue(
       ),
     );
   }
-  if (entityType === 'user' && field === 'userType') {
-    return normalizeUserType(value);
-  }
   if (
     entityType === 'user' &&
     (field === 'fname' || field === 'lname') &&
@@ -1015,26 +1015,19 @@ function normalizeMemberRole(value: unknown): string {
   return MEMBER_ROLES.has(role) ? role : '';
 }
 
-async function findUniqueUserForRosterMember(
+async function findUniqueResearcherForRosterMember(
   resolved: Record<string, ResolvedField>,
 ): Promise<any | null> {
   const profileUrl = textValue(resolved.profileUrl?.value);
   if (!profileUrl) return null;
-  const users = await User.find({
-    $or: [
-      { 'profileUrls.official': profileUrl },
-      { 'profileUrls.medicine': profileUrl },
-      { 'profileUrls.yale': profileUrl },
-      { 'profileUrls.department': profileUrl },
-      { 'profileUrls.directory': profileUrl },
-      { scholarCandidateProfileUrls: profileUrl },
-      { website: profileUrl },
-    ],
+  const researchers = await Researcher.find({
+    archived: { $ne: true },
+    $or: [{ 'profileLinks.url': profileUrl }, { 'profile.websiteUrl': profileUrl }],
   })
-    .select('_id netid email orcid')
+    .select('_id')
     .limit(2)
     .lean();
-  return users.length === 1 ? users[0] : null;
+  return researchers.length === 1 ? researchers[0] : null;
 }
 
 export function buildRosterMemberUpsert(
@@ -1161,10 +1154,14 @@ interface CanonicalRosterMatch {
 
 async function findCanonicalRosterMatch(
   researchEntityId: string,
-  identity: { userId?: unknown; name?: unknown },
+  identity: { researcherId?: unknown; name?: unknown },
 ): Promise<CanonicalRosterMatch> {
   const roster = await getResearchEntityRoster(researchEntityId);
-  const researcherId = (await resolveResearcherIdForLegacyUser(identity.userId))?.toString();
+  const candidateId = normalizeMaterializerObjectId(identity.researcherId);
+  const researcher: any = candidateId
+    ? await Researcher.findById(candidateId).select('_id').lean()
+    : null;
+  const researcherId = researcher?._id ? researcher._id.toString() : undefined;
   const name = textValue(identity.name).toLowerCase();
   const matches = (entry: ResearchEntityRosterEntry): boolean => {
     if (researcherId && entry.personId) {
@@ -1220,8 +1217,11 @@ async function materializeRosterMember(
   }
 
   const researchEntityId = normalizeMaterializerObjectId(entity._id) || '';
-  const user = await findUniqueUserForRosterMember(resolved);
-  const patch = buildRosterMemberUpsert(researchEntityId, resolved, user);
+  const researcher = await findUniqueResearcherForRosterMember(resolved);
+  const memberIdentity = researcher?._id
+    ? await canonicalResearcherIdentity(idValue(researcher._id))
+    : undefined;
+  const patch = buildRosterMemberUpsert(researchEntityId, resolved, researcher);
   if (!patch) {
     return {
       entityType: 'researchGroupMember',
@@ -1249,7 +1249,7 @@ async function materializeRosterMember(
 
   const resolvedRole = String(patch.filter.role || '');
   const { roster, matches } = await findCanonicalRosterMatch(researchEntityId, {
-    userId: patch.filter.userId,
+    researcherId: patch.filter.userId,
     name: patch.filter.name,
   });
 
@@ -1293,9 +1293,9 @@ async function materializeRosterMember(
       ),
     },
     {
-      netid: user?.netid,
-      email: user?.email,
-      orcid: user?.orcid,
+      netid: memberIdentity?.netid,
+      email: memberIdentity?.email,
+      orcid: memberIdentity?.orcid,
       displayName: textValue(patchSet.name),
       hasCanonicalSourceReference: Boolean(patch.filter.userId),
     },
@@ -1343,28 +1343,37 @@ export async function materializeInferredPiMembership(
   }
 
   const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
-  const inferredPiDepartments = departmentValuesForInferredPiLookup(observations);
   for (const observation of piKeyObservations) {
-    const filters = userLookupFiltersForInferredPiUserKey(observation.value, inferredPiDepartments);
-    if (filters.length === 0) continue;
-    const users = await User.find(filters.length === 1 ? filters[0] : { $or: filters })
-      .select('_id')
-      .limit(2)
-      .lean();
-    if (users.length !== 1) continue;
-    const user = users[0];
-    if (!user?._id) continue;
+    const identity = inferredPiUserKeyIdentity(observation.value);
+    if (!identity.netid && !identity.name) continue;
+    const resolution = await resolveResearcherIdForPersonName(identity.name, {
+      netid: identity.netid,
+    });
+    if (resolution.status !== 'matched' || !resolution.researcherId) continue;
+    const researcherId = resolution.researcherId.toString();
     const patch = buildInferredPiMemberUpsert(researchEntityId, {
       ...observation,
-      value: materializerDocumentId(user._id),
+      value: researcherId,
     });
     if (!patch) continue;
-    await materializeCanonicalPiMembership(
-      researchEntityId,
-      patch,
-      materializerDocumentId(user._id),
-    );
+    await materializeCanonicalPiMembership(researchEntityId, patch, researcherId);
   }
+}
+
+function inferredPiUserKeyIdentity(value: unknown): { netid?: string; name: string } {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  const deptMatch = raw.match(DEPT_USER_KEY_PATTERN);
+  if (deptMatch) {
+    const name = deptMatch[1]
+      .toLowerCase()
+      .split(/[^a-z0-9]+/i)
+      .filter(Boolean)
+      .join(' ');
+    return { name };
+  }
+  const lookupValue = userLookupValueForInferredPiUserKey(value);
+  const netid = lookupValue && !lookupValue.includes('@') ? lookupValue.toLowerCase() : undefined;
+  return { netid, name: '' };
 }
 
 function coerceRosterProvenanceDate(value: unknown): Date | undefined {
@@ -1392,24 +1401,37 @@ export function canonicalRosterProvenanceFromSet(
   };
 }
 
-function canonicalUserDisplayName(user: Record<string, unknown> | null): string {
-  if (!user) return '';
-  const explicit = textValue(user.displayName) || textValue(user.name);
-  if (explicit) return explicit;
-  return [textValue(user.fname), textValue(user.lname)].filter(Boolean).join(' ').trim();
+async function canonicalResearcherIdentity(
+  researcherId: string,
+): Promise<{ netid?: string; email?: string; orcid?: string; displayName: string }> {
+  if (!researcherId) return { displayName: '' };
+  const researcher: any = await Researcher.findById(researcherId)
+    .select('displayName accountId identifiers')
+    .lean();
+  if (!researcher) return { displayName: '' };
+  let netid: string | undefined;
+  let email: string | undefined;
+  if (researcher.accountId) {
+    const account: any = await Account.findById(researcher.accountId).select('netid email').lean();
+    netid = textValue(account?.netid) || undefined;
+    email = textValue(account?.email) || undefined;
+  }
+  return {
+    netid,
+    email,
+    orcid: textValue(researcher.identifiers?.orcid) || undefined,
+    displayName: textValue(researcher.displayName),
+  };
 }
 
 async function materializeCanonicalPiMembership(
   researchEntityId: string,
   patch: { filter: Record<string, any>; update: any },
-  userId: string,
+  researcherId: string,
 ): Promise<void> {
-  const canonicalUser = userId
-    ? await User.findById(userId).select('_id netid email orcid fname lname').lean()
-    : null;
+  const identity = await canonicalResearcherIdentity(researcherId);
   const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
-  const displayName =
-    textValue(patchSet.name) || canonicalUserDisplayName(canonicalUser as Record<string, unknown>);
+  const displayName = textValue(patchSet.name) || identity.displayName;
   await materializeCanonicalMembership(
     researchEntityId,
     {
@@ -1421,9 +1443,9 @@ async function materializeCanonicalPiMembership(
       rosterProvenance: canonicalRosterProvenanceFromSet(patchSet),
     },
     {
-      netid: (canonicalUser as any)?.netid,
-      email: (canonicalUser as any)?.email,
-      orcid: (canonicalUser as any)?.orcid,
+      netid: identity.netid,
+      email: identity.email,
+      orcid: identity.orcid,
       displayName,
       hasCanonicalSourceReference: Boolean(patch.filter.userId),
     },
@@ -1443,8 +1465,8 @@ export interface InferredDirectorMaterializationResult {
  * Promote a center's named director to a `director` member.
  *
  * Reads the entity-level `inferredDirector*` observations emitted by
- * `center-director-llm`, resolves the name (+ profile URL) to a UNIQUE Yale
- * User, and upserts a lead member row. Resolution is required: an unresolved or
+ * `center-director-llm`, resolves the name (+ profile URL) to a UNIQUE canonical
+ * Researcher, and upserts a lead member row. Resolution is required: an unresolved or
  * ambiguous name is skipped, never written, so a hallucinated leadership name
  * cannot mint a lead. Any pre-existing non-lead roster row for the same person
  * in this entity is removed so they surface once as the lead (the detail-page
@@ -1489,17 +1511,18 @@ export async function materializeInferredDirectorMembership(
       hasConflict: false,
     };
   }
-  const user = await findUniqueUserForRosterMember(lookupFields);
-  if (!user?._id) return { ...empty, skipped: 'unresolved-user' };
+  const researcher = await findUniqueResearcherForRosterMember(lookupFields);
+  if (!researcher?._id) return { ...empty, skipped: 'unresolved-user' };
 
-  const userId = idValue(user._id);
+  const researcherId = idValue(researcher._id);
   const roleSource = fieldObs('inferredDirectorRole') || nameObs;
   const observedAt = roleSource.observedAt || new Date();
   const confidence = typeof roleSource.confidence === 'number' ? roleSource.confidence : 0.85;
   const sourceUrl = textValue(roleSource.sourceUrl);
   const sourceName = textValue(roleSource.sourceName);
 
-  const directorResearcherId = await resolveResearcherIdForLegacyUser(userId);
+  const directorResearcherId = researcherId;
+  const directorEnrichment = await canonicalResearcherIdentity(researcherId);
   const roster = await getResearchEntityRoster(researchEntityId);
   const normalizedDirectorName = textValue(name).toLowerCase();
   const matchesDirector = (entry: ResearchEntityRosterEntry): boolean =>
@@ -1515,9 +1538,9 @@ export async function materializeInferredDirectorMembership(
   ).length;
 
   const directorIdentity: CanonicalMemberIdentity = {
-    netid: user.netid,
-    email: user.email,
-    orcid: user.orcid,
+    netid: directorEnrichment.netid,
+    email: directorEnrichment.email,
+    orcid: directorEnrichment.orcid,
     displayName: name,
     hasCanonicalSourceReference: true,
   };
@@ -1548,7 +1571,7 @@ export async function materializeInferredDirectorMembership(
     written: true,
     promoted: existing || supersededCount > 0,
     removedDuplicates: supersededCount,
-    userId,
+    userId: researcherId,
     role,
   };
 }
@@ -1588,15 +1611,7 @@ interface ResolvedRelationshipMaterializationDeps {
 }
 
 interface ProfileBackedFacultyResearchAreaMemberDeps {
-  userModel?: Pick<typeof User, 'findById'>;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function compactPersonName(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  researcherModel?: Pick<typeof Researcher, 'findById'>;
 }
 
 function normalizeResearchEntityName(value: unknown): string {
@@ -1629,30 +1644,11 @@ function piCompatibleResearchEntityNames(firstName: string, lastName: string): S
   );
 }
 
-async function findUniqueUserByPersonName(personName: string): Promise<any | null> {
-  const parts = personName.split(/\s+/).filter(Boolean);
-  if (parts.length < 2) return null;
-  const first = parts.slice(0, -1).join(' ');
-  const last = parts[parts.length - 1];
-  const users = await User.find({
-    lname: { $regex: new RegExp(`^\\s*${escapeRegExp(last)}\\s*$`, 'i') },
-  })
-    .select('_id fname lname')
-    .limit(10)
-    .lean();
-  const expectedFullName = compactPersonName(`${first} ${last}`);
-  const matches = users.filter((user: any) => {
-    const candidateFullName = compactPersonName(
-      `${textValue(user.fname)} ${textValue(user.lname)}`,
-    );
-    return candidateFullName === expectedFullName;
-  });
-  return matches.length === 1 && matches[0]?._id ? matches[0] : null;
-}
-
-async function findUniqueUserIdByPersonName(personName: string): Promise<string | null> {
-  const user = await findUniqueUserByPersonName(personName);
-  return user?._id ? materializerDocumentId(user._id) || null : null;
+async function findUniqueResearcherIdByPersonName(personName: string): Promise<string | null> {
+  const resolution = await resolveResearcherIdForPersonName(personName);
+  return resolution.status === 'matched' && resolution.researcherId
+    ? resolution.researcherId.toString()
+    : null;
 }
 
 function isGeneratedResearchEntitySlug(value: unknown): boolean {
@@ -1666,11 +1662,8 @@ async function resolveUniquePiLinkedResearchEntityByPersonName(
 ): Promise<any | null> {
   if (!personName) return null;
 
-  const userId = await findUniqueUserIdByPersonName(personName);
-  const userObjectId = toMaterializerObjectId(userId);
-  if (!userObjectId) return null;
-
-  const researcherId = await resolveResearcherIdForLegacyUser(userId);
+  const researcherIdString = await findUniqueResearcherIdByPersonName(personName);
+  const researcherId = toMaterializerObjectId(researcherIdString);
   if (!researcherId) return null;
   const assignments = await RoleAssignment.find({
     personId: researcherId,
@@ -1844,31 +1837,26 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     return { synced: false, created: false, skipped: 'not-faculty-research-area' };
   }
 
-  const userModel = deps.userModel || User;
+  const researcherModel = deps.researcherModel || Researcher;
   const personName =
     personNameFromFacultyResearchArea(identity.name) ||
     personNameFromFacultyResearchArea(observedKey);
-  const identityUserId = normalizeMaterializerObjectId(identity.userId);
-  let user = identityUserId
-    ? await userModel.findById(identityUserId).select('_id fname lname').lean()
-    : null;
-  if (!user) {
-    user = personName ? await findUniqueUserByPersonName(personName) : null;
+  const providedId = normalizeMaterializerObjectId(identity.userId);
+  let researcherId: string | undefined;
+  if (providedId) {
+    const provided: any = await researcherModel.findById(providedId).select('_id').lean();
+    researcherId = provided?._id ? provided._id.toString() : undefined;
   }
-  if (!user?._id) return { synced: false, created: false, skipped: 'user-not-resolved' };
+  if (!researcherId && personName) {
+    researcherId = (await findUniqueResearcherIdByPersonName(personName)) || undefined;
+  }
+  if (!researcherId) return { synced: false, created: false, skipped: 'user-not-resolved' };
 
-  const userId = normalizeMaterializerObjectId(user._id) || '';
-  if (!userId) return { synced: false, created: false, skipped: 'user-not-resolved' };
-  const identityUser: any =
-    (await userModel.findById(userId).select('netid email orcid fname lname').lean()) || user;
-  const displayName =
-    `${textValue(identityUser?.fname)} ${textValue(identityUser?.lname)}`.trim() ||
-    personName ||
-    '';
+  const identityUser = await canonicalResearcherIdentity(researcherId);
+  const displayName = identityUser.displayName || personName || '';
   const observedAt = new Date();
   const confidence = Number(identity.confidence) || 0.8;
 
-  const researcherId = (await resolveResearcherIdForLegacyUser(userId))?.toString();
   const normalizedName = displayName.toLowerCase();
   const roster = await getResearchEntityRoster(researchEntityId);
   const existing = roster.some(
@@ -1901,7 +1889,7 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     },
   );
 
-  return { synced: true, created: !existing, researchEntityId, userId };
+  return { synced: true, created: !existing, researchEntityId, userId: researcherId };
 }
 
 function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date {
@@ -2323,16 +2311,6 @@ export function selectOfficialProfileObservationUserMatch(
   return null;
 }
 
-async function findUserDocByOfficialProfileObservations(
-  Model: mongoose.Model<any>,
-  observations: MaterializerObservationLike[],
-  observedKeyValue = '',
-): Promise<any | null> {
-  const profileFallbackFilters = userLookupFiltersForOfficialProfileObservations(observations);
-  if (profileFallbackFilters.length === 0) return null;
-  const candidates = await Model.find({ $or: profileFallbackFilters }).limit(5).lean();
-  return selectOfficialProfileObservationUserMatch(observations, candidates, observedKeyValue);
-}
 
 export function emptyPostMaterializationMetrics(): Required<ReportPostMaterializationMetrics> {
   return {
@@ -2366,8 +2344,6 @@ export function addPostMaterializationMetrics(
 
 function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | null {
   switch (entityType) {
-    case 'user':
-      return User;
     case 'researchEntity':
     case 'researchGroup':
       return ResearchEntity;
@@ -2535,11 +2511,6 @@ async function findEntityDocByIdentifier(
   const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
   if (!keyValue) return null;
 
-  if (entityType === 'user') {
-    const byOfficialProfile = await findUserDocByOfficialProfileObservations(Model, obs, keyValue);
-    if (byOfficialProfile) return byOfficialProfile;
-  }
-
   const exact = await Model.findOne({ [keyField]: keyValue }).lean();
   if (exact) return exact;
 
@@ -2552,34 +2523,18 @@ async function findEntityDocByIdentifier(
     if (byApplicationLink) return byApplicationLink;
   }
 
-  if (entityType === 'user') {
-    const emailObservation = obs.find((o) => o.field === 'email' && typeof o.value === 'string');
-    const observedEmail =
-      typeof emailObservation?.value === 'string'
-        ? emailObservation.value.trim().toLowerCase()
-        : '';
-    if (observedEmail) {
-      const byEmail = await Model.find({ email: observedEmail }).limit(2).lean();
-      if (byEmail.length === 1) return byEmail[0];
-    }
-  }
-
   return null;
 }
 
 /**
  * Some entity schemas have required fields the scraper observation set may not
- * carry — User in particular requires email/fname/lname. Skip create when
- * those aren't present rather than throwing a Mongoose ValidationError that
- * would abort the whole materialization run.
+ * carry. Skip create when those aren't present rather than throwing a Mongoose
+ * ValidationError that would abort the whole materialization run.
  */
 function hasRequiredFieldsForCreate(
   entityType: ObservedEntityType,
   insert: Record<string, unknown>,
 ): boolean {
-  if (entityType === 'user') {
-    return !!(insert.email && insert.fname && insert.lname);
-  }
   if (isResearchEntityObservationType(entityType)) {
     return !!insert.name;
   }
@@ -2663,6 +2618,169 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
   });
 }
 
+const ACCOUNT_NETID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
+const ACCOUNT_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizedAccountNetid(value: unknown): string | undefined {
+  const netid = textValue(value).trim().toLowerCase();
+  return netid && ACCOUNT_NETID_PATTERN.test(netid) ? netid : undefined;
+}
+
+function normalizedAccountEmail(value: unknown): string | undefined {
+  const email = textValue(value).trim().toLowerCase();
+  return email && ACCOUNT_EMAIL_PATTERN.test(email) ? email : undefined;
+}
+
+function scholarProfileLink(url: string, verifiedAt: Date): ResearcherProfileLink {
+  return { kind: 'GOOGLE_SCHOLAR', purpose: 'SCHOLARLY', url, verifiedAt, healthStatus: 'UNKNOWN' };
+}
+
+function orcidProfileLink(orcid: string, verifiedAt: Date): ResearcherProfileLink {
+  return {
+    kind: 'ORCID',
+    purpose: 'SCHOLARLY',
+    url: `https://orcid.org/${orcid}`,
+    verifiedAt,
+    healthStatus: 'UNKNOWN',
+  };
+}
+
+async function materializeUserIdentityToResearcher(
+  identifier: { entityId?: string; entityKey?: string },
+  obs: any[],
+): Promise<MaterializeResult> {
+  const skipped = (reason: string): MaterializeResult => ({
+    entityType: 'user',
+    ...identifier,
+    fieldsWritten: 0,
+    conflicts: 0,
+    created: false,
+    resolved: {},
+    skipped: reason,
+  });
+
+  const materializationObs = obs.filter(
+    (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
+  );
+  const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
+    field: o.field,
+    value: o.value,
+    sourceName: o.sourceName,
+    confidence: o.confidence,
+    observedAt: o.observedAt,
+  }));
+  const resolved = resolveAllFields(resolverObs);
+  const resolvedValue = (field: string): unknown => resolved[field]?.value;
+
+  const netid =
+    normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
+    normalizedAccountNetid(resolvedValue('netid'));
+  const email = normalizedAccountEmail(resolvedValue('email'));
+  const displayName =
+    textValue(resolvedValue('displayName')) ||
+    [textValue(resolvedValue('fname')), textValue(resolvedValue('lname'))]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  const title = textValue(resolvedValue('title')) || undefined;
+  const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;
+  const imageUrl = textValue(resolvedValue('imageUrl')) || undefined;
+  const websiteUrl =
+    textValue(resolvedValue('websiteUrl')) || textValue(resolvedValue('website')) || undefined;
+  const orcidCandidate = textValue(resolvedValue('orcid')).trim().toUpperCase();
+  const orcid = orcidCandidate && isValidOrcid(orcidCandidate) ? orcidCandidate : undefined;
+  const profileUrls =
+    resolvedValue('profileUrls') && typeof resolvedValue('profileUrls') === 'object'
+      ? (resolvedValue('profileUrls') as Record<string, unknown>)
+      : undefined;
+
+  let accountId: mongoose.Types.ObjectId | undefined;
+  if (netid) {
+    let account: any = await Account.findOne({ netid }).lean();
+    if (!account && email) {
+      account = await Account.findOneAndUpdate(
+        { netid },
+        { $set: { email }, $setOnInsert: { status: 'ACTIVE' } },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      ).lean();
+    } else if (account && email && !textValue(account.email)) {
+      await Account.updateOne({ _id: account._id }, { $set: { email } });
+    }
+    if (account?._id) accountId = account._id;
+  }
+
+  let researcher: any = accountId ? await Researcher.findOne({ accountId }) : null;
+  if (!researcher && displayName) {
+    const resolution = await resolveResearcherIdForPersonName(displayName, { netid });
+    if (resolution.status === 'matched' && resolution.researcherId) {
+      researcher = await Researcher.findById(resolution.researcherId);
+    }
+  }
+
+  const created = !researcher;
+  if (!researcher) {
+    if (!accountId || !displayName) return skipped('insufficient-identity-for-researcher');
+    researcher = new Researcher({ displayName, accountId, status: 'UNKNOWN', profileLinks: [] });
+  }
+
+  let fieldsWritten = 0;
+  if (displayName && researcher.displayName !== displayName) {
+    researcher.displayName = displayName;
+    fieldsWritten += 1;
+  }
+  if (accountId && !researcher.accountId) {
+    researcher.accountId = accountId;
+    fieldsWritten += 1;
+  }
+  researcher.profile = researcher.profile || {};
+  for (const [key, value] of [
+    ['title', title],
+    ['primaryDepartment', primaryDepartment],
+    ['imageUrl', imageUrl],
+    ['websiteUrl', websiteUrl],
+  ] as const) {
+    if (value && researcher.profile[key] !== value) {
+      researcher.profile[key] = value;
+      fieldsWritten += 1;
+    }
+  }
+  if (orcid && researcher.identifiers?.orcid !== orcid) {
+    researcher.identifiers = { ...(researcher.identifiers || {}), orcid };
+    fieldsWritten += 1;
+  }
+
+  const now = new Date();
+  const existingLinkKinds = new Set(
+    (researcher.profileLinks || []).map((link: ResearcherProfileLink) => link.kind),
+  );
+  const officialLink = profileUrls ? composeOfficialProfileLink({ profileUrls }, now) : undefined;
+  if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {
+    researcher.profileLinks.push(officialLink);
+    fieldsWritten += 1;
+  }
+  const scholarUrl = profileUrls ? canonicalScholarCitationUrl(profileUrls.googleScholar) : undefined;
+  if (scholarUrl && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
+    researcher.profileLinks.push(scholarProfileLink(scholarUrl, now));
+    fieldsWritten += 1;
+  }
+  if (orcid && !existingLinkKinds.has('ORCID')) {
+    researcher.profileLinks.push(orcidProfileLink(orcid, now));
+    fieldsWritten += 1;
+  }
+
+  await researcher.save();
+
+  return {
+    entityType: 'user',
+    entityId: materializerDocumentId(researcher._id),
+    entityKey: identifier.entityKey,
+    fieldsWritten,
+    conflicts: 0,
+    created,
+    resolved,
+  };
+}
+
 export interface ProjectFromLogInput {
   resolved: Record<string, ResolvedField>;
   manuallyLockedFields: string[];
@@ -2723,14 +2841,7 @@ export async function projectFromLog(
   let fieldsWritten = 0;
   for (const [field, r] of Object.entries(resolved)) {
     if (manuallyLockedFields.includes(field)) continue;
-    if (entityType === 'user' && entityDoc && field === 'netid') continue;
     const nextValue = r.value;
-    if (
-      entityType === 'user' &&
-      shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)
-    ) {
-      continue;
-    }
     if (
       isResearchEntityObservationType(entityType) &&
       field === 'shortDescription' &&
@@ -3034,98 +3145,8 @@ export async function projectFromLog(
   return { set, unset, confidenceByField, conflicts, fieldsWritten };
 }
 
-function c4ResolveAtMintUsersEnabled(): boolean {
-  return process.env.C4_RESOLVE_AT_MINT_USERS === 'true';
-}
-
 function isDuplicateKeyMongoError(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && (error as { code?: number }).code === 11000);
-}
-
-function buildResolverSelf(obs: Array<{ field: string; value?: unknown }>): CandidateEntity {
-  const map = new Map<string, string>();
-  for (const o of obs) {
-    const v =
-      typeof o.value === 'string' ? o.value.trim() : o.value == null ? '' : String(o.value).trim();
-    if (v && !map.has(o.field)) map.set(o.field, v);
-  }
-  const fname = map.get('fname') ?? '';
-  const lname = map.get('lname') ?? '';
-  const name = `${fname} ${lname}`.replace(/\s+/g, ' ').trim() || (map.get('name') ?? '');
-  return {
-    id: '',
-    name: name || undefined,
-    fname: fname || undefined,
-    lname: lname || undefined,
-  };
-}
-
-async function findUserCandidatesByKey(key: CanonicalKey): Promise<CandidateEntity[]> {
-  const field =
-    key.ns === 'netid'
-      ? 'netid'
-      : key.ns === 'orcid'
-        ? 'orcid'
-        : key.ns === 'email'
-          ? 'email'
-          : null;
-  if (!field) return [];
-  const clause =
-    field === 'orcid'
-      ? { $in: [key.value, key.value.toUpperCase(), key.value.toLowerCase()] }
-      : key.value;
-  const docs = (await User.find({
-    [field]: clause,
-    archived: { $ne: true },
-    dedupedIntoUserId: { $exists: false },
-  })
-    .select('_id fname lname')
-    .lean()) as Array<{ _id: unknown; fname?: string; lname?: string }>;
-  return docs.map((d) => {
-    const name = `${d.fname ?? ''} ${d.lname ?? ''}`.replace(/\s+/g, ' ').trim();
-    return { id: String(d._id), name: name || undefined, fname: d.fname, lname: d.lname };
-  });
-}
-
-async function resolveCanonicalForUserMint(
-  obs: Array<{ field: string; value?: unknown }>,
-): Promise<CanonicalResolution> {
-  const keys = deriveCanonicalKeys(
-    'user',
-    obs.map((o) => ({ field: o.field, value: o.value })),
-  );
-  if (keys.length === 0) return { status: 'mint', reservedKeys: [] };
-  return resolveCanonical(
-    { type: 'user', keys, self: buildResolverSelf(obs) },
-    {
-      resolveAlias: async (type, ns, value) => {
-        const id = await resolveCanonicalAlias(type, ns, value);
-        return id ? String(id) : null;
-      },
-      findCandidatesByKey: (_type, key) => findUserCandidatesByKey(key),
-    },
-  );
-}
-
-async function reserveUserCanonicalAliases(
-  obs: Array<{ field: string; value?: unknown }>,
-  canonicalId: string,
-): Promise<void> {
-  const keys = deriveCanonicalKeys(
-    'user',
-    obs.map((o) => ({ field: o.field, value: o.value })),
-  );
-  for (const key of keys) {
-    if (key.strength === 'weak') continue;
-    await recordCanonicalAlias({
-      type: 'user',
-      aliasNs: key.ns,
-      aliasValue: key.value,
-      canonicalType: 'user',
-      canonicalId,
-      reason: 'resolve_at_mint',
-    });
-  }
 }
 
 function c4ResolveAtMintEntitiesEnabled(): boolean {
@@ -3251,6 +3272,10 @@ export async function materializeEntity(
     return materializeResearchEntityRelationship(identifier, obs, options);
   }
 
+  if (entityType === 'user') {
+    return materializeUserIdentityToResearcher(identifier, obs);
+  }
+
   const Model = entityModelFor(entityType);
   if (!Model) {
     return {
@@ -3309,36 +3334,6 @@ export async function materializeEntity(
       resolved: {},
       skipped: 'merged-into-canonical',
     };
-  }
-
-  // C4 resolve-at-mint (User-first, env-flagged). When enabled and the existing
-  // hard-key/redirect path did not resolve a user, consult resolveCanonical so a
-  // duplicate User is folded into its canonical BEFORE minting a second row
-  // (closes the email/ORCID after-mint gap). When the flag is off this is skipped
-  // entirely, so behavior is unchanged.
-  let userMintResolution: CanonicalResolution | undefined;
-  if (c4ResolveAtMintUsersEnabled() && entityType === 'user' && !entityDoc) {
-    const resolution = await resolveCanonicalForUserMint(obs);
-    userMintResolution = resolution;
-    if (resolution.status === 'blocked') {
-      return {
-        entityType,
-        ...identifier,
-        fieldsWritten: 0,
-        conflicts: 0,
-        created: false,
-        resolved: {},
-        skipped: 'resolver-blocked',
-      };
-    }
-    if (resolution.status === 'existing') {
-      const canonicalDoc = await Model.findById(resolution.canonicalId);
-      if (canonicalDoc) {
-        entityDoc = canonicalDoc;
-        entityIdString = String(canonicalDoc._id);
-      }
-    }
-    // 'ambiguous' | 'mint' fall through to the existing create branch unchanged.
   }
 
   // C4 resolve-at-mint for research entities and fellowships (env-flagged, separate
@@ -3583,15 +3578,6 @@ export async function materializeEntity(
     }
     entityIdString = materializerDocumentId(created_._id);
     created = didCreate;
-    if (
-      c4ResolveAtMintUsersEnabled() &&
-      entityType === 'user' &&
-      didCreate &&
-      entityIdString &&
-      userMintResolution?.status === 'mint'
-    ) {
-      await reserveUserCanonicalAliases(obs, entityIdString);
-    }
     if (
       c4ResolveAtMintEntitiesEnabled() &&
       (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&

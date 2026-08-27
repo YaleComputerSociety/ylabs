@@ -21,7 +21,7 @@
  * Conservatism is load-bearing, mirroring `centerAffiliationLLMExtractor`: the
  * LLM output is an observation, not a conclusion. The materializer
  * (`materializeInferredDirectorMembership`) resolves the named director to a
- * unique Yale User and only then promotes them to a `director` member — an
+ * unique canonical Researcher and only then promotes them to a `director` member — an
  * unresolved or hallucinated name never mints a lead. We intentionally extract
  * only the single top director; co-directors and multi-leader rosters are out
  * of scope for this source.

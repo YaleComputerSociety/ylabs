@@ -4,10 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
-import { User } from '../../models/user';
 import {
   getResearchEntityRoster,
-  resolveResearcherIdForLegacyUser,
 } from '../researchEntityMembershipAccessor';
 
 describe('getResearchEntityRoster display profile projection', () => {
@@ -180,104 +178,3 @@ describe('getResearchEntityRoster display profile projection', () => {
   });
 });
 
-describe('resolveResearcherIdForLegacyUser canonical resolution', () => {
-  let replSet: MongoMemoryReplSet;
-
-  beforeAll(async () => {
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-    await mongoose.connect(replSet.getUri());
-  }, 60000);
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await replSet.stop();
-  });
-
-  beforeEach(async () => {
-    const db = mongoose.connection.db;
-    if (!db) throw new Error('no db');
-    for (const name of ['accounts', 'researchers', 'role_assignments', 'users']) {
-      await db.collection(name).deleteMany({});
-    }
-  });
-
-  it('resolves via the netid to Account to Researcher chain', async () => {
-    const account = await Account.create({
-      netid: 'resolvenetid',
-      email: 'resolvenetid@example.test',
-      status: 'ACTIVE',
-      archived: false,
-    });
-    const researcher = await Researcher.create({
-      displayName: 'Netid Researcher',
-      accountId: account._id,
-      profileLinks: [],
-      status: 'ACTIVE',
-      archived: false,
-    });
-    const user = await User.create({
-      netid: 'ResolveNetid',
-      email: 'resolvenetid@example.test',
-      fname: 'Netid',
-      lname: 'Researcher',
-    });
-
-    const resolved = await resolveResearcherIdForLegacyUser(user._id);
-
-    expect(resolved?.toString()).toBe(researcher._id.toString());
-  });
-
-  it('falls back to the User orcid when the netid does not resolve', async () => {
-    const orcid = '0009-0009-0009-0003';
-    const researcher = await Researcher.create({
-      displayName: 'Canonical Researcher Name',
-      identifiers: { orcid },
-      profileLinks: [],
-      status: 'ACTIVE',
-      archived: false,
-    });
-    const user = await User.create({
-      netid: 'unresolved1',
-      email: 'unresolved1@example.test',
-      orcid,
-      fname: 'Unrelated',
-      lname: 'PersonOne',
-    });
-
-    const resolved = await resolveResearcherIdForLegacyUser(user._id);
-
-    expect(resolved?.toString()).toBe(researcher._id.toString());
-  });
-
-  it('falls back to a single displayName match when neither netid nor orcid resolve', async () => {
-    const researcher = await Researcher.create({
-      displayName: 'Solo Matcher',
-      profileLinks: [],
-      status: 'ACTIVE',
-      archived: false,
-    });
-    const user = await User.create({
-      netid: 'unresolved3',
-      email: 'unresolved3@example.test',
-      fname: 'Solo',
-      lname: 'Matcher',
-    });
-
-    const resolved = await resolveResearcherIdForLegacyUser(user._id);
-
-    expect(resolved?.toString()).toBe(researcher._id.toString());
-  });
-
-  it('returns undefined when the User does not resolve to any Researcher', async () => {
-    const user = await User.create({
-      netid: 'unresolved2',
-      email: 'unresolved2@example.test',
-      fname: 'Unrelated',
-      lname: 'PersonTwo',
-    });
-
-    const resolved = await resolveResearcherIdForLegacyUser(user._id);
-
-    expect(resolved).toBeUndefined();
-  });
-});

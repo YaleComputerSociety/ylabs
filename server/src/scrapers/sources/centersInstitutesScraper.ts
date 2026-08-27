@@ -1183,7 +1183,7 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
  * Build the ResearchGroup observation set for a parent center.
  *
  * `affiliatedNames` carries the raw names of every member found on the page,
- * letting downstream tooling resolve them to User records by name (lname +
+ * letting downstream tooling resolve them to canonical Researchers by name (lname +
  * fname) without needing a separate observation per unmatched person.
  */
 export function centerToGroupObservations(

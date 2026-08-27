@@ -3,7 +3,6 @@
  */
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { createUser, validateUser } from './userService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config();
@@ -158,22 +157,3 @@ export const classifyYalieByNetid = async (netid: any): Promise<YaliesIdentity |
   }
 };
 
-/**
- * Function to fetch a Yalie by NetID.
- * - First, check the database for cached data.
- * - If not found, fetch from Yalies API, validate required fields, store it in the database, and return it.
- */
-export const fetchYalie = async (netid: any) => {
-  const normalizedNetid = normalizeYaliesNetid(netid);
-  if (!normalizedNetid) return null;
-
-  const existingUser = await validateUser(normalizedNetid);
-  if (existingUser) {
-    return existingUser;
-  }
-
-  const identity = await classifyYalieByNetid(normalizedNetid);
-  if (!identity) return null;
-
-  return createUser(identity);
-};

@@ -7,6 +7,7 @@
  * emission, fail-closed behavior) deterministically against canned fixtures.
  */
 import { describe, it, expect, vi } from 'vitest';
+import mongoose from 'mongoose';
 import {
   NehGrantScraper,
   decadeFilesForLookback,
@@ -337,10 +338,10 @@ describe('NehGrantScraper.run', () => {
     const fetchDecadeCsv = vi.fn(async () =>
       buildCsv([YALE_FELLOWSHIP, NON_YALE, YALE_OUT_OF_STATE]),
     );
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NehGrantScraper({
       fetchDecadeCsv: fetchDecadeCsv as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       currentYear: 2026,
     });
     const { ctx, emitted } = buildContext();
@@ -352,10 +353,10 @@ describe('NehGrantScraper.run', () => {
 
   it('mints a humanities FACULTY_PROJECT shell for an unmatched PI (never a STEM LAB)', async () => {
     const fetchDecadeCsv = vi.fn(async () => buildCsv([YALE_FELLOWSHIP]));
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NehGrantScraper({
       fetchDecadeCsv: fetchDecadeCsv as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       currentYear: 2026,
     });
     const { ctx, emitted } = buildContext();
@@ -377,15 +378,15 @@ describe('NehGrantScraper.run', () => {
 
   it('self-attaches a matched PI to a canonical home without minting identity fields', async () => {
     const fetchDecadeCsv = vi.fn(async () => buildCsv([YALE_FELLOWSHIP]));
-    const userFinder = vi.fn(async () => [
-      { _id: '507f1f77bcf86cd799439011', fname: 'Oksana', lname: 'Director' },
-    ]);
     const researchHomeResolver = vi
       .fn()
       .mockResolvedValue({ status: 'canonical', slug: 'dept-film-oksana-director' });
     const scraper = new NehGrantScraper({
       fetchDecadeCsv: fetchDecadeCsv as any,
-      userFinder: userFinder as any,
+      resolveResearcherId: async () => ({
+        status: 'matched' as const,
+        researcherId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      }),
       researchHomeResolver,
       currentYear: 2026,
     });
@@ -405,34 +406,33 @@ describe('NehGrantScraper.run', () => {
 
   it('emits co-PI members only for Yale-resolvable Co Project Directors', async () => {
     const fetchDecadeCsv = vi.fn(async () => buildCsv([YALE_COLLAB]));
-    const roster = [{ _id: 'user-eliz', fname: 'Elizabeth', lname: 'Second' }];
-    const userFinder = vi.fn(async (q: Record<string, unknown>) => {
-      const lnameRe = q.lname as RegExp | undefined;
-      const fnameRe = q.fname as RegExp | undefined;
-      return roster.filter(
-        (u) => (!lnameRe || lnameRe.test(u.lname)) && (!fnameRe || fnameRe.test(u.fname)),
-      );
-    });
+    const eliz = new mongoose.Types.ObjectId();
+    const resolveResearcherId = async (name: string) =>
+      /second/i.test(name)
+        ? { status: 'matched' as const, researcherId: eliz }
+        : { status: 'absent' as const };
     const scraper = new NehGrantScraper({
       fetchDecadeCsv: fetchDecadeCsv as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       currentYear: 2026,
     });
     const { ctx, emitted } = buildContext();
     await scraper.run(ctx);
 
     const members = emitted.filter((o) => o.entityType === 'researchGroupMember');
-    expect(members.filter((o) => o.field === 'userId').map((o) => o.value)).toEqual(['user-eliz']);
+    expect(members.filter((o) => o.field === 'userId').map((o) => o.value)).toEqual([
+      eliz.toString(),
+    ]);
     expect(members.filter((o) => o.field === 'role').every((o) => o.value === 'co-pi')).toBe(true);
   });
 
   it('drops awards older than the lookback cutoff', async () => {
     const stale = { ...YALE_FELLOWSHIP, AppNumber: 'OLD', YearAwarded: '2005' };
     const fetchDecadeCsv = vi.fn(async () => buildCsv([stale]));
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NehGrantScraper({
       fetchDecadeCsv: fetchDecadeCsv as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       currentYear: 2026,
       lookbackYears: 6,
     });
@@ -446,10 +446,10 @@ describe('NehGrantScraper.run', () => {
     const fetchDecadeCsv = vi.fn(async () => {
       throw new Error('ETIMEDOUT');
     });
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NehGrantScraper({
       fetchDecadeCsv: fetchDecadeCsv as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       currentYear: 2026,
     });
     const { ctx, emitted, logs } = buildContext();
@@ -462,10 +462,10 @@ describe('NehGrantScraper.run', () => {
   it('fails closed with no writes on schema drift', async () => {
     const drifted = buildCsv([YALE_FELLOWSHIP]).replace('Participants', 'Contributors');
     const fetchDecadeCsv = vi.fn(async () => drifted);
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NehGrantScraper({
       fetchDecadeCsv: fetchDecadeCsv as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       currentYear: 2026,
     });
     const { ctx, emitted, logs } = buildContext();
@@ -490,10 +490,10 @@ describe('NehGrantScraper.run', () => {
       Participants: `First${i} Last${i} [Project Director]`,
     }));
     const fetchDecadeCsv = vi.fn(async () => buildCsv(rows));
-    const userFinder = vi.fn(async () => []);
+    const resolveResearcherId = async () => ({ status: 'absent' as const });
     const scraper = new NehGrantScraper({
       fetchDecadeCsv: fetchDecadeCsv as any,
-      userFinder: userFinder as any,
+      resolveResearcherId,
       currentYear: 2026,
     });
     const { ctx } = buildContext({ limit: 2 });

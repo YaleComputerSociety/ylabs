@@ -12,11 +12,10 @@
  */
 import mongoose from 'mongoose';
 
-export type CanonicalType = 'researchEntity' | 'user' | 'researcher' | 'fellowship';
+export type CanonicalType = 'researchEntity' | 'researcher' | 'fellowship';
 
 export const CANONICAL_ALIAS_TYPES: CanonicalType[] = [
   'researchEntity',
-  'user',
   'researcher',
   'fellowship',
 ];

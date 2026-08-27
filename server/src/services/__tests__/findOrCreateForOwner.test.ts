@@ -5,7 +5,6 @@ import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { ResearchEntity } from '../../models/researchEntity';
-import { User } from '../../models/user';
 import { findOrCreateForOwner } from '../researchGroupService';
 
 describe('findOrCreateForOwner canonical PI assignment', () => {
@@ -30,16 +29,11 @@ describe('findOrCreateForOwner canonical PI assignment', () => {
   });
 
   it('resolves-or-creates the owner Researcher and writes a PI RoleAssignment for an un-materialized owner', async () => {
-    const user = await User.create({
-      netid: 'pi001',
-      email: 'pi001@yale.edu',
-      fname: 'Pat',
-      lname: 'Investigator',
-    });
+    const ownerId = new mongoose.Types.ObjectId();
     expect(await Researcher.countDocuments({})).toBe(0);
 
     const { group } = await findOrCreateForOwner({
-      _id: user._id,
+      _id: ownerId,
       netid: 'pi001',
       fname: 'Pat',
       lname: 'Investigator',
@@ -61,15 +55,20 @@ describe('findOrCreateForOwner canonical PI assignment', () => {
   });
 
   it('reuses the existing PI group on a second call for the same owner', async () => {
-    const user = await User.create({
+    const ownerId = new mongoose.Types.ObjectId();
+
+    const first = await findOrCreateForOwner({
+      _id: ownerId,
       netid: 'pi002',
-      email: 'pi002@yale.edu',
       fname: 'Robin',
       lname: 'Scholar',
     });
-
-    const first = await findOrCreateForOwner({ _id: user._id, netid: 'pi002' });
-    const second = await findOrCreateForOwner({ _id: user._id, netid: 'pi002' });
+    const second = await findOrCreateForOwner({
+      _id: ownerId,
+      netid: 'pi002',
+      fname: 'Robin',
+      lname: 'Scholar',
+    });
 
     expect(second.group._id.toString()).toBe(first.group._id.toString());
     expect(await ResearchEntity.countDocuments({})).toBe(1);

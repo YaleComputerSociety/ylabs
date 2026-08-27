@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import axios from 'axios';
+import mongoose from 'mongoose';
 import {
   NihReporterScraper,
   canonicalPiName,
@@ -25,7 +26,6 @@ import {
   resolveUserForPi,
   type NihGrant,
 } from '../sources/nihReporterScraper';
-import { SURNAME_FETCH_LIMIT } from '../utils/piNameMatch';
 import type { ScraperContext, ObservationInput } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -294,262 +294,58 @@ describe('grantToRecord', () => {
 });
 
 // ---------------------------------------------------------------------------
-// findUserForPi (mocked User model)
+// resolveUserForPi / findUserForPi (name matching delegated to the keystone)
 // ---------------------------------------------------------------------------
 
-function mockUserModel(rows: any[]) {
+function stubResolver(
+  status: 'matched' | 'absent' | 'ambiguous',
+  researcherId?: mongoose.Types.ObjectId,
+  title?: string,
+) {
   return {
-    find: vi.fn(() => ({
-      limit: () => ({
-        lean: async () => rows,
-      }),
-    })) as any,
+    resolveResearcherId: async () => (researcherId ? { status, researcherId } : { status }),
+    loadResearcherProfileTitle: async () => title,
   };
 }
 
-describe('findUserForPi', () => {
-  it('distinguishes absent and ambiguous identities', async () => {
-    expect(await resolveUserForPi('Amy Arnsten', mockUserModel([]))).toEqual({ status: 'absent' });
-    expect(
-      await resolveUserForPi(
-        'Amy Arnsten',
-        mockUserModel([
-          { _id: 'u1', fname: 'Amy', lname: 'Arnsten' },
-          { _id: 'u2', fname: 'Amy', lname: 'Arnsten' },
-        ]),
-      ),
-    ).toEqual({ status: 'ambiguous' });
-  });
-
-  it('returns null when no candidates match the surname', async () => {
-    const um = mockUserModel([]);
-    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
-  });
-
-  it('returns the unique candidate when there is exactly one exact first-name surname match', async () => {
-    const um = mockUserModel([{ _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' }]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
-      _id: 'u1',
-      netid: 'aa1',
-      researchHomeEligible: true,
+describe('resolveUserForPi', () => {
+  it('delegates identity matching to the researcher resolver', async () => {
+    const id = new mongoose.Types.ObjectId();
+    expect(await resolveUserForPi('Amy Arnsten', stubResolver('matched', id))).toEqual({
+      status: 'matched',
+      user: { _id: id.toString(), researchHomeEligible: true },
     });
-  });
-
-  it('does not match a unique surname candidate when the full first name conflicts', async () => {
-    const um = mockUserModel([{ _id: 'u1', fname: 'Frederick', lname: 'Wilson', netid: 'fpw2' }]);
-    expect(await findUserForPi('Francis Wilson', um)).toBeNull();
-  });
-
-  it('disambiguates by exact first name when surname has multiple hits', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
-      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
-      _id: 'u1',
-      netid: 'aa1',
-      researchHomeEligible: true,
+    expect(await resolveUserForPi('Amy Arnsten', stubResolver('absent'))).toEqual({
+      status: 'absent',
     });
-  });
-
-  it('falls back to given-name prefix match when exact fname fails', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amylynn', lname: 'Arnsten', netid: 'ax1' },
-      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
-      _id: 'u1',
-      netid: 'ax1',
-      researchHomeEligible: true,
-    });
-  });
-
-  it('does not attach on a bare source initial, even to a lone same-initial candidate (issue #562)', async () => {
-    const um = mockUserModel([{ _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' }]);
-    expect(await findUserForPi('A Arnsten', um)).toBeNull();
-  });
-
-  it('does not match full first names to different same-initial candidates', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
-      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
-  });
-
-  it('marks postdoctoral and research-affiliate grant PIs as ineligible research homes', async () => {
-    const postdoc = mockUserModel([
-      {
-        _id: 'u1',
-        fname: 'Robin',
-        lname: 'Hutchison',
-        netid: 'jh1',
-        title: 'Postdoctoral Associate in Pharmacology',
-      },
-    ]);
-    expect(await findUserForPi('Robin Hutchison', postdoc)).toEqual({
-      _id: 'u1',
-      netid: 'jh1',
-      researchHomeEligible: false,
-    });
-
-    const affiliate = mockUserModel([
-      {
-        _id: 'u2',
-        fname: 'Seyedmehdi',
-        lname: 'Payabvash',
-        netid: 'sp1',
-        title: 'Research Affiliates',
-      },
-    ]);
-    expect(await findUserForPi('Seyedmehdi Payabvash', affiliate)).toEqual({
-      _id: 'u2',
-      netid: 'sp1',
-      researchHomeEligible: false,
-    });
-  });
-
-  it('returns null when a full given name prefixes no unique candidate', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
-      { _id: 'u2', fname: 'Anne', lname: 'Arnsten', netid: 'an1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
-  });
-
-  // Issue #562: "Schwartz Lab" (medicine.yale.edu/lab/schwartz) attached the
-  // wrong same-surname faculty. A surname-only name, or a surname whose given
-  // name differs, must fail closed; only first+last (or netid / profile URL)
-  // agreement may attach. Synthetic identifiers - no real Yale netids.
-  describe('surname precision (issue #562)', () => {
-    it('does not attach a surname-only PI name to a lone same-surname candidate', async () => {
-      const um = mockUserModel([
-        { _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' },
-      ]);
-      expect(await findUserForPi('Schwartz', um)).toBeNull();
-    });
-
-    it('does not attach when the real PI (Martin) is absent and only a namesake (Michael) exists', async () => {
-      const um = mockUserModel([
-        { _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' },
-      ]);
-      expect(await findUserForPi('Martin Schwartz', um)).toBeNull();
-    });
-
-    it('attaches only when first and last name both agree', async () => {
-      const um = mockUserModel([
-        { _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' },
-        { _id: 'sc2', fname: 'Martin', lname: 'Schwartz', netid: 'zz02' },
-      ]);
-      expect(await findUserForPi('Martin Schwartz', um)).toEqual({
-        _id: 'sc2',
-        netid: 'zz02',
-        researchHomeEligible: true,
-      });
-    });
-  });
-
-  it('returns null for an empty PI name', async () => {
-    const um = mockUserModel([]);
-    expect(await findUserForPi('', um)).toBeNull();
-    // Should NOT have called find at all.
-    expect(um.find).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveUserForPi recall gaps: nickname + particle/compound surname (#485)
-// ---------------------------------------------------------------------------
-
-describe('findUserForPi recall', () => {
-  it('resolves a nickname to its formal-name profile (Bob -> Robert)', async () => {
-    const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'Miller', netid: 'rm1' }]);
-    expect(await findUserForPi('Bob Miller', um)).toEqual({
-      _id: 'u1',
-      netid: 'rm1',
-      researchHomeEligible: true,
-    });
-  });
-
-  it('resolves a source surname that dropped its particle (Berg -> van der Berg)', async () => {
-    const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'van der Berg', netid: 'rb1' }]);
-    expect(await findUserForPi('Robert Berg', um)).toEqual({
-      _id: 'u1',
-      netid: 'rb1',
-      researchHomeEligible: true,
-    });
-  });
-
-  it('rejects a near-miss surname that is not the same family name (Berg != Berger)', async () => {
-    const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'Berger', netid: 'rb2' }]);
-    expect(await findUserForPi('Robert Berg', um)).toBeNull();
-  });
-
-  it('fails closed when two distinct people share a compatible surname', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Robert', lname: 'van der Berg', netid: 'rb1' },
-      { _id: 'u2', fname: 'Robert', lname: 'Berg', netid: 'rb3' },
-    ]);
-    expect(await resolveUserForPi('Robert Berg', um)).toEqual({ status: 'ambiguous' });
-  });
-
-  it('fails closed when a nickname matches two distinct people', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Robert', lname: 'Miller', netid: 'rm1' },
-      { _id: 'u2', fname: 'Robert', lname: 'Miller', netid: 'rm2' },
-    ]);
-    expect(await resolveUserForPi('Bob Miller', um)).toEqual({ status: 'ambiguous' });
-  });
-
-  it('does not auto-resolve a goes-by-a-different-given-name profile without corroboration', async () => {
-    const um = mockUserModel([{ _id: 'u1', fname: 'Carla', lname: 'Staver', netid: 'cs1' }]);
-    expect(await findUserForPi('Ann Carla Staver', um)).toBeNull();
-  });
-
-  it('resolves an additional canonical diminutive (Jenn -> Jennifer, Candie -> Candice)', async () => {
-    const jenn = mockUserModel([{ _id: 'u1', fname: 'Jennifer', lname: 'Delgado', netid: 'jd1' }]);
-    expect(await findUserForPi('Jenn Delgado', jenn)).toEqual({
-      _id: 'u1',
-      netid: 'jd1',
-      researchHomeEligible: true,
-    });
-    const candie = mockUserModel([{ _id: 'u2', fname: 'Candice', lname: 'Fenwick', netid: 'cf1' }]);
-    expect(await findUserForPi('Candie Fenwick', candie)).toEqual({
-      _id: 'u2',
-      netid: 'cf1',
-      researchHomeEligible: true,
-    });
-  });
-
-  it('fails closed on a surname-only lab name even when one faculty carries the surname (issue #562)', async () => {
-    const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'Berg', netid: 'rb1' }]);
-    expect(await resolveUserForPi('Berg', um)).toEqual({ status: 'ambiguous' });
-    expect(await findUserForPi('Berg', um)).toBeNull();
-  });
-
-  it('fails closed on a surname-only name shared by several faculty', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Robert', lname: 'Berg' },
-      { _id: 'u2', fname: 'Alice', lname: 'van der Berg' },
-    ]);
-    expect(await resolveUserForPi('Berg', um)).toEqual({ status: 'ambiguous' });
-    expect(await findUserForPi('Berg', um)).toBeNull();
-  });
-
-  it('is absent for a surname-only name no faculty carries', async () => {
-    expect(await resolveUserForPi('Berg', mockUserModel([]))).toEqual({ status: 'absent' });
-  });
-
-  it('fails closed when the surname fetch window is truncated at the cap', async () => {
-    const rows = Array.from({ length: SURNAME_FETCH_LIMIT }, (_v, i) => ({
-      _id: `u${i}`,
-      fname: i === 0 ? 'David' : `Other${i}`,
-      lname: 'Lee',
-      netid: `dl${i}`,
-    }));
-    expect(await resolveUserForPi('David Lee', mockUserModel(rows))).toEqual({
+    expect(await resolveUserForPi('Amy Arnsten', stubResolver('ambiguous'))).toEqual({
       status: 'ambiguous',
     });
+  });
+
+  it('is absent for an empty PI name', async () => {
+    expect(
+      await resolveUserForPi('', stubResolver('matched', new mongoose.Types.ObjectId())),
+    ).toEqual({ status: 'absent' });
+  });
+
+  it('gates a postdoctoral / research-affiliate title out of research-home eligibility', async () => {
+    const id = new mongoose.Types.ObjectId();
+    expect(
+      await resolveUserForPi(
+        'Robin Hutchison',
+        stubResolver('matched', id, 'Postdoctoral Associate in Pharmacology'),
+      ),
+    ).toEqual({ status: 'matched', user: { _id: id.toString(), researchHomeEligible: false } });
+  });
+
+  it('returns the matched researcher via findUserForPi and null otherwise', async () => {
+    const id = new mongoose.Types.ObjectId();
+    expect(await findUserForPi('Amy Arnsten', stubResolver('matched', id))).toEqual({
+      _id: id.toString(),
+      researchHomeEligible: true,
+    });
+    expect(await findUserForPi('Nobody Here', stubResolver('absent'))).toBeNull();
   });
 });
 
@@ -743,7 +539,6 @@ describe('piGrantsToObservations', () => {
     expect(userObs.every((o) => o.entityKey === 'nih-pi:amy-arnsten')).toBe(true);
     expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Amy');
     expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Arnsten');
-    expect(userObs.find((o) => o.field === 'userType')?.value).toBe('faculty');
 
     const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
     expect(groupObs.every((o) => o.entityKey === 'nih-pi-amy-arnsten')).toBe(true);
@@ -884,23 +679,18 @@ describe('NihReporterScraper.run', () => {
     });
 
     // Match Roster but not Arnsten.
-    const userModel = {
-      find: vi.fn((query: any) => ({
-        limit: () => ({
-          lean: async () => {
-            // The query includes a regex on lname; we just check the source string.
-            const src: string = query.lname?.source || '';
-            if (/Roster/i.test(src)) {
-              return [{ _id: 'breaker-id', fname: 'Riley', lname: 'Roster', netid: 'rrb1' }];
-            }
-            return [];
-          },
-        }),
-      })) as any,
-    };
+    const breakerId = new mongoose.Types.ObjectId();
+    const resolveResearcherId = async (name: string) =>
+      /roster/i.test(name)
+        ? { status: 'matched' as const, researcherId: breakerId }
+        : { status: 'absent' as const };
 
     const researchHomeResolver = vi.fn().mockResolvedValue({ status: 'safe-shell' });
-    const scraper = new NihReporterScraper({ userModel, researchHomeResolver });
+    const scraper = new NihReporterScraper({
+      resolveResearcherId,
+      loadResearcherProfileTitle: async () => undefined,
+      researchHomeResolver,
+    });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
@@ -908,7 +698,7 @@ describe('NihReporterScraper.run', () => {
     expect(result.entitiesObserved).toBe(2); // 2 unique PIs
     expect(result.notes).toContain('matched 1');
     expect(result.notes).toContain('stubbed 1');
-    expect(researchHomeResolver).toHaveBeenCalledWith('breaker-id');
+    expect(researchHomeResolver).toHaveBeenCalledWith(breakerId.toString());
 
     // Arnsten unmatched → user obs present
     const arnstenUserObs = emitted.filter(
@@ -932,7 +722,9 @@ describe('NihReporterScraper.run', () => {
     const breakerGroup = emitted.filter(
       (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-riley-roster',
     );
-    expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe('breaker-id');
+    expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe(
+      breakerId.toString(),
+    );
   });
 
   it('never mints an entity for an individual trainee-fellowship award (#739)', async () => {
@@ -950,7 +742,7 @@ describe('NihReporterScraper.run', () => {
     });
 
     const scraper = new NihReporterScraper({
-      userModel: mockUserModel([]),
+      resolveResearcherId: async () => ({ status: 'absent' as const }),
       researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
     });
     const { ctx, emitted } = makeContext();
@@ -984,8 +776,9 @@ describe('NihReporterScraper.run', () => {
       data: { meta: { total: 3, offset: 3, limit: 500 }, results: [] },
     } as any);
 
-    const userModel = mockUserModel([]);
-    const scraper = new NihReporterScraper({ userModel });
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({ status: 'absent' as const }),
+    });
     const { ctx, emitted } = makeContext({ limit: 1 });
     const result = await scraper.run(ctx);
 
@@ -1001,7 +794,9 @@ describe('NihReporterScraper.run', () => {
     const postSpy = vi.spyOn(axios, 'post').mockResolvedValue({
       data: { meta: { total: 0, offset: 0, limit: 500 }, results: [] },
     } as any);
-    const scraper = new NihReporterScraper({ userModel: mockUserModel([]) });
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({ status: 'absent' as const }),
+    });
     const { ctx } = makeContext({ limit: 9007199254740992 });
 
     await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);

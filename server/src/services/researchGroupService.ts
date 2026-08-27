@@ -19,13 +19,11 @@ import { RoleAssignment } from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
   getResearchEntityRosterByEntityId,
-  resolveResearcherIdForLegacyUser,
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
-import type { ResearcherProfileLink } from '../models/researcher';
+import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { Listing } from '../models/listing';
-import { User } from '../models/user';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
 import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
@@ -208,29 +206,13 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
     throw new Error('findOrCreateForOwner requires owner._id or owner.netid');
   }
 
-  const ownerObjectId = normalizeResearchGroupObjectId(owner._id);
-  let ownerPersonId = ownerObjectId
-    ? await resolveResearcherIdForLegacyUser(ownerObjectId)
-    : undefined;
-  if (!ownerPersonId && ownerObjectId) {
-    const ownerUser: any = await User.findById(ownerObjectId)
-      .select('netid email orcid fname lname displayName')
-      .lean();
-    const ownerDisplayName =
-      (typeof ownerUser?.displayName === 'string' && ownerUser.displayName.trim()) ||
-      [ownerUser?.fname ?? owner.fname, ownerUser?.lname ?? owner.lname]
-        .filter(Boolean)
-        .join(' ')
-        .trim() ||
-      undefined;
-    ownerPersonId = await resolveOrCreateResearcherIdForIdentity({
-      netid: ownerUser?.netid ?? owner.netid,
-      email: ownerUser?.email,
-      orcid: ownerUser?.orcid,
-      displayName: ownerDisplayName,
-      hasCanonicalSourceReference: true,
-    });
-  }
+  const ownerDisplayNameValue =
+    [owner.fname, owner.lname].filter(Boolean).join(' ').trim() || undefined;
+  const ownerPersonId = await resolveOrCreateResearcherIdForIdentity({
+    netid: owner.netid,
+    displayName: ownerDisplayNameValue,
+    hasCanonicalSourceReference: true,
+  });
   if (ownerPersonId) {
     const existingLeadAssignment = await RoleAssignment.findOne({
       personId: ownerPersonId,
@@ -1943,10 +1925,24 @@ async function withPublicMemberImageGuards<T extends { user: any }>(members: T[]
     }));
   }
 
-  const sameImageUsers = await User.find({ imageUrl: { $in: imageUrls } })
-    .select('_id netid fname lname email imageUrl')
+  const sameImageResearchers = await Researcher.find({
+    'profile.imageUrl': { $in: imageUrls },
+    archived: { $ne: true },
+  })
+    .select('displayName profile.imageUrl')
     .limit(500)
     .lean();
+  const sameImageUsers = sameImageResearchers.map((researcher: any) => {
+    const parts = String(researcher.displayName || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    return {
+      imageUrl: researcher.profile?.imageUrl,
+      fname: parts.slice(0, -1).join(' '),
+      lname: parts.length > 1 ? parts[parts.length - 1] : '',
+    };
+  });
 
   return members.map((member) => {
     const imageUrl = publicMemberProfileImageUrl(member.user);

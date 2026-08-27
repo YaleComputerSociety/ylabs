@@ -2,7 +2,7 @@ import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { User } from '../models/user';
+import { Researcher } from '../models/researcher';
 import { getResearchEntityRoster } from './researchEntityMembershipAccessor';
 import {
   VisibilityReleaseQueueItem,
@@ -661,38 +661,15 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
   async findUsersByUrls(urls) {
     const variants = urlVariants(urls);
     if (variants.length === 0) return [];
-    return User.aggregate([
+    return Researcher.find(
       {
-        $addFields: {
-          profileUrlValues: {
-            $map: {
-              input: { $objectToArray: { $ifNull: ['$profileUrls', {}] } },
-              as: 'profileUrl',
-              in: '$$profileUrl.v',
-            },
-          },
-        },
+        archived: { $ne: true },
+        $or: [{ 'profileLinks.url': { $in: variants } }, { 'profile.websiteUrl': { $in: variants } }],
       },
-      {
-        $match: {
-          $or: [
-            { website: { $in: variants } },
-            { websiteUrl: { $in: variants } },
-            { profileUrlValues: { $in: variants } },
-          ],
-        },
-      },
-      { $limit: 3 },
-      {
-        $project: {
-          fname: 1,
-          lname: 1,
-          firstName: 1,
-          lastName: 1,
-          displayName: 1,
-        },
-      },
-    ]);
+      { displayName: 1 },
+    )
+      .limit(3)
+      .lean();
   },
   async countUndergraduateAccessObservations(entity) {
     const id = idValue(entity._id);

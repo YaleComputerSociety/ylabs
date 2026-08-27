@@ -2,10 +2,8 @@
  * Controller for user operations: favorites, listings, and profile updates.
  */
 import { Request, Response, NextFunction } from 'express';
-import {
-  readUser,
-  updateUser,
-} from '../services/userService';
+import { Account } from '../models/account';
+import { Researcher } from '../models/researcher';
 import {
   getSavedResearchEntities as getSavedResearchEntitiesService,
   getSavedResearchEntitySlugs as getSavedResearchEntitySlugsService,
@@ -472,56 +470,47 @@ export const exportSavedResearchEntities = async (request: Request, response: Re
   }
 };
 
-const SELF_UPDATABLE_FIELDS = [
-  'bio',
-  'website',
-  'imageUrl',
-  'phone',
-  'college',
-  'year',
-  'major',
-  'title',
-  'physicalLocation',
-  'buildingDesk',
-  'mailingAddress',
-  'primaryDepartment',
-  'secondaryDepartments',
-  'researchInterests',
-  'topics',
-  'profileUrls',
-] as const;
-
 export const updateCurrentUser = async (
   request: Request,
   response: Response,
   _next: NextFunction,
 ) => {
   try {
-    const currentUser = request.user as { netId?: string };
+    const currentUser = request.user as { netId?: string; userConfirmed?: boolean };
+    const netid =
+      typeof currentUser.netId === 'string' ? currentUser.netId.trim().toLowerCase() : '';
+    if (!netid) {
+      response.status(400).json({ error: 'Missing account' });
+      return;
+    }
     const payload = request.body?.data ?? {};
+    const fname = typeof payload.fname === 'string' ? payload.fname.trim() : '';
+    const lname = typeof payload.lname === 'string' ? payload.lname.trim() : '';
+    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : undefined;
+    const displayName = [fname, lname].filter(Boolean).join(' ').trim();
 
-    const update: Record<string, any> = {};
-    for (const field of SELF_UPDATABLE_FIELDS) {
-      if (payload[field] !== undefined) {
-        update[field] = payload[field];
-      }
+    const account: any = await Account.findOneAndUpdate(
+      { netid },
+      { ...(email ? { $set: { email } } : {}), $setOnInsert: { status: 'ACTIVE' } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean();
+
+    let echoDisplayName = displayName;
+    if (account?._id) {
+      const researcherUpdate: Record<string, any> = displayName
+        ? { $set: { displayName }, $setOnInsert: { status: 'UNKNOWN', archived: false } }
+        : { $setOnInsert: { displayName: netid, status: 'UNKNOWN', archived: false } };
+      const researcher: any = await Researcher.findOneAndUpdate(
+        { accountId: account._id },
+        researcherUpdate,
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      ).lean();
+      echoDisplayName = researcher?.displayName || echoDisplayName;
     }
-    sanitizeSelfEditableTextFields(update);
-    sanitizeSelfEditableUrlFields(update);
 
-    if (update.primaryDepartment !== undefined || update.secondaryDepartments !== undefined) {
-      const current = await readUser(currentUser.netId);
-      const primary = update.primaryDepartment ?? (current as any)?.primaryDepartment ?? '';
-      const secondary =
-        update.secondaryDepartments ??
-        ((Array.isArray((current as any)?.secondaryDepartments)
-          ? (current as any).secondaryDepartments
-          : []) as string[]);
-      update.departments = [primary, ...secondary].filter(Boolean);
-    }
-
-    const user = await updateUser(currentUser.netId, update);
-    response.status(200).json({ user: publicCurrentUserForResponse(user) });
+    response.status(200).json({
+      user: { netid, displayName: echoDisplayName, userConfirmed: currentUser.userConfirmed },
+    });
   } catch (error: any) {
     console.error('Current-user profile update failed:', sanitizeLogValue(error));
     sendAccountMutationError(response, error, 'Failed to update account profile');

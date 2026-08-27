@@ -156,7 +156,7 @@ Research relevance also depends on `researchentities` settings and documents: to
 When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
 
 Organizational research homes (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters initially list everyone as core faculty.
-The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a Yale user before promoting them to a director (lead) member.
+The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a canonical `Researcher` before promoting them to a director (lead) member.
 New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
 
 Non-lead current-team context comes only from the disabled-by-default `official-research-home-roster` source and its reviewed entity/page/section allowlist.
@@ -380,15 +380,14 @@ Beta suppresses real student analytics while permitting fixture and admin valida
 ## Authentication
 
 ```
-User → Yale CAS SSO → passport.ts findOrCreateUser
-     → Check DB (refresh if stale >30 days)
+User → Yale CAS SSO → passport.ts resolveLoginPrincipalForCas
      → Yalies API (student/grad detection)
      → Yale Directory (faculty detection)
      → Fallback: userType "unknown"
-     → Create/Update User → cookie-session
+     → accountService.recordAccountLogin: resolve-or-create Account (netid/email) → cookie-session
 ```
 
-The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check - no user creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
+Authentication runs on the canonical `Account`; the legacy `User` model has been retired (#2014) and `userType` is derived per login and carried in the signed session rather than persisted. The classification cascade runs at login time only. Per-request session restore (`deserializeUser`) re-validates that the backing `Account` exists and is not archived plus the admin-grant check - no account creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
 
 The public browse surface (`/api/research`) is exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous signed-session buckets and conservative IP fallback - debounced search-as-you-type, filters, infinite scroll, and detail views.
 Anonymous bucket identifiers are initialized only for `/api` requests.
@@ -417,8 +416,8 @@ All mount under `/api`.
 | `/programs`       | Programs & Fellowships browse/search                                                      | Varies                                                 |
 | `/listings`       | Legacy authenticated reads, outreach, claims, and view tracking; authoring is retired    | Authenticated                                          |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
-| `/users`          | User CRUD                                                                                 | Yes                                                    |
-| `/profiles`       | Public faculty profile reads (admin curation lives under `/admin/profiles/:netid`)        | Authenticated                                          |
+| `/users`          | Account profile update and saved-research / program-watch planning                        | Yes                                                    |
+| `/profiles`       | Public faculty profile reads                                                               | Authenticated                                          |
 | `/analytics`      | Analytics dashboard + research event writes                                               | Admin for dashboard, authenticated for research writes |
 | `/config`         | Departments + research areas                                                              | No                                                     |
 | `/research-areas` | Custom research area creation                                                             | Admin for writes                                       |

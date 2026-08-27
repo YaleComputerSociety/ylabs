@@ -94,7 +94,7 @@ export function deriveCanonicalKeys(
   const map = observationMap(observations);
   const keys: CanonicalKey[] = [];
 
-  if (type === 'user' || type === 'researcher') {
+  if (type === 'researcher') {
     pushKey(keys, 'netid', map.get('netid') ?? '', 'unique');
     pushKey(keys, 'orcid', map.get('orcid') ?? '', 'unique');
     const email = (map.get('email') ?? '').toLowerCase();
@@ -205,8 +205,8 @@ export async function resolveCanonical(
     }
     const candidate = candidates[0];
 
-    const isUserType = input.type === 'user' || input.type === 'researcher';
-    const vetoed = isUserType
+    const isPersonType = input.type === 'researcher';
+    const vetoed = isPersonType
       ? personGuardVetoes(input.self, candidate)
       : nameGuardVetoes(input.self, candidate);
     if (vetoed) {

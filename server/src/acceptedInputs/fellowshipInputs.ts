@@ -3,7 +3,8 @@ import * as cheerio from 'cheerio';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { User } from '../models/user';
+import { Researcher } from '../models/researcher';
+import { resolveResearcherIdForPersonName } from '../services/researcherPersonNameResolver';
 import {
   DEFAULT_PROGRAM_CONFIGS,
   drupalRecipientRowExtractor,
@@ -679,61 +680,36 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+async function researcherDisplayName(researcherId: unknown): Promise<string> {
+  const researcher: any = await Researcher.findById(researcherId as any)
+    .select('displayName')
+    .lean();
+  return typeof researcher?.displayName === 'string' ? researcher.displayName.trim() : '';
+}
+
 async function findUserByName(advisorName: string): Promise<AdvisorResolution> {
-  const cleaned = normalizeName(advisorName);
-  const { first, last } = splitName(cleaned);
-  if (!last) return { status: 'missing', label: advisorName };
-  const facultyTypes = { $in: ['professor', 'faculty', 'admin'] };
-  const lname = new RegExp(`^${escapeRegex(last)}$`, 'i');
-
-  const queries: Record<string, unknown>[] = [];
-  if (first) {
-    queries.push({
-      lname,
-      fname: new RegExp(`^${escapeRegex(first)}$`, 'i'),
-      userType: facultyTypes,
-    });
-    queries.push({
-      lname,
-      fname: new RegExp(`^${escapeRegex(first.charAt(0))}`, 'i'),
-      userType: facultyTypes,
-    });
+  const resolution = await resolveResearcherIdForPersonName(advisorName);
+  if (resolution.status === 'matched' && resolution.researcherId) {
+    const label = await researcherDisplayName(resolution.researcherId);
+    return { status: 'resolved', label: label || advisorName };
   }
-  queries.push({ lname, userType: facultyTypes });
-
-  for (const query of queries) {
-    const matches = await User.find(query, { fname: 1, lname: 1, netid: 1 }).limit(2).lean();
-    if (matches.length === 1) {
-      const match = matches[0] as any;
-      return {
-        status: 'resolved',
-        label: `${match.fname || ''} ${match.lname || ''}`.trim() || match.netid,
-      };
-    }
-    if (matches.length > 1) {
-      return { status: 'ambiguous', label: advisorName };
-    }
-  }
-
+  if (resolution.status === 'ambiguous') return { status: 'ambiguous', label: advisorName };
   return { status: 'missing', label: advisorName };
 }
 
 export async function defaultAdvisorResolver(row: FellowshipReviewRow): Promise<AdvisorResolution> {
   const advisorOrcid = normalizeOrcid(row.advisorOrcid);
-  const facultyTypes = { $in: ['professor', 'faculty', 'admin'] };
   if (advisorOrcid) {
-    const matches = await User.find(
-      { orcid: advisorOrcid, userType: facultyTypes },
-      { fname: 1, lname: 1, netid: 1 },
+    const matches = await Researcher.find(
+      { 'identifiers.orcid': advisorOrcid.toUpperCase(), archived: { $ne: true } },
+      { displayName: 1 },
     )
       .limit(2)
       .lean();
     if (matches.length === 1) {
-      const match = matches[0] as any;
-      return {
-        status: 'resolved',
-        label: `${match.fname || ''} ${match.lname || ''}`.trim() || match.netid,
-      };
+      const displayName = (matches[0] as any).displayName;
+      const label = typeof displayName === 'string' ? displayName.trim() : '';
+      return { status: 'resolved', label: label || advisorOrcid };
     }
     if (matches.length > 1) return { status: 'ambiguous', label: advisorOrcid };
     return { status: 'missing', label: advisorOrcid };

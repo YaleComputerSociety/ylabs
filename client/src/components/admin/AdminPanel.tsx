@@ -5,7 +5,6 @@ import { useState } from 'react';
 import AdminFellowshipsTable from './AdminFellowshipsTable';
 import AdminResearchAreas from './AdminResearchAreas';
 import AdminDepartments from './AdminDepartments';
-import AdminFacultyProfilesTable from './AdminFacultyProfilesTable';
 import AdminAccessReview from './AdminAccessReview';
 import AdminOperatorBoard from './AdminOperatorBoard';
 import AdminListingClaims from './AdminListingClaims';
@@ -19,7 +18,6 @@ const TABS = [
   'Fellowships',
   'Research Areas',
   'Departments',
-  'Faculty Profiles',
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -70,7 +68,6 @@ const AdminPanel = () => {
       {activeTab === 'Fellowships' && <AdminFellowshipsTable />}
       {activeTab === 'Research Areas' && <AdminResearchAreas />}
       {activeTab === 'Departments' && <AdminDepartments />}
-      {activeTab === 'Faculty Profiles' && <AdminFacultyProfilesTable />}
     </section>
   );
 };
