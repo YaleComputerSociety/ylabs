@@ -21,11 +21,6 @@ import { ScrapeRun } from '../scrapeRun';
 import { ScrapeSnapshot } from '../scrapeSnapshot';
 import { Source } from '../source';
 import { SourceDocument } from '../sourceDocument';
-import { StudentApplication } from '../studentApplication';
-import { StudentEngagementEvent } from '../studentEngagementEvent';
-import { StudentOutreach } from '../studentOutreach';
-import { StudentProfile } from '../studentProfile';
-import { StudentTracking } from '../studentTracking';
 import { TaxonomyTerm } from '../taxonomyTerm';
 import { User } from '../user';
 
@@ -51,11 +46,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [ScrapeSnapshot, 'scrape_snapshots'],
   [Source, 'sources'],
   [SourceDocument, 'source_documents'],
-  [StudentApplication, 'student_applications'],
-  [StudentEngagementEvent, 'student_engagement_events'],
-  [StudentOutreach, 'student_outreaches'],
-  [StudentProfile, 'student_profiles'],
-  [StudentTracking, 'student_trackings'],
   [TaxonomyTerm, 'taxonomy_terms'],
   [User, 'users'],
 ];

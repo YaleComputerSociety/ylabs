@@ -899,8 +899,7 @@ describe('LabDetail page', () => {
     expect(body).toContain('Neuroscience');
   });
 
-  it('records a scaffolded mailto outreach attempt without blocking the email link', async () => {
-    mockedAxios.post.mockResolvedValue({ status: 204 });
+  it('offers a working mailto email link without recording outreach', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -920,13 +919,13 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
+    expect(emailLink.getAttribute('href')).toMatch(/^mailto:/);
     fireEvent.click(emailLink);
 
-    expect(mockedAxios.post).toHaveBeenCalledWith(`/research/${DEFAULT_SLUG}/outreach`, {
-      deliveryMethod: 'mailto',
-      emailGeneratedByPlatform: true,
-      templateVersion: 'student-intro-v1',
-    });
+    expect(mockedAxios.post).not.toHaveBeenCalledWith(
+      expect.stringContaining('/outreach'),
+      expect.anything(),
+    );
   });
 
   it('keeps multiple PI cards together in a dedicated pluralized section', async () => {

@@ -138,18 +138,6 @@ router.delete(
   validateResearchEntityId('entityId'),
   userController.deleteSavedResearchEntityPlan,
 );
-router.get(
-  '/savedResearchFollowUps',
-  isAuthenticated,
-  userController.getSavedResearchFollowUps,
-);
-router.post(
-  '/savedResearchFollowUps/:entityId/dismiss',
-  writeLimit,
-  isAuthenticated,
-  validateResearchEntityId('entityId'),
-  userController.dismissSavedResearchFollowUp,
-);
 router.put(
   '/',
   writeLimit,

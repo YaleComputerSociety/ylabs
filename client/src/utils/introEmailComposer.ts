@@ -1,9 +1,7 @@
 import { MAX_SAFE_MAILTO_BODY_LENGTH, MAX_SAFE_MAILTO_SUBJECT_LENGTH } from './url';
 
 export const STUDENT_INTRO_EMAIL_TEMPLATE_VERSION = 'student-intro-v1';
-export const STUDENT_FOLLOW_UP_EMAIL_TEMPLATE_VERSION = 'student-follow-up-v1';
 export const FALLBACK_INTRO_EMAIL_SUBJECT = 'Interest in undergraduate research';
-export const FALLBACK_FOLLOW_UP_EMAIL_SUBJECT = 'Following up on undergraduate research interest';
 
 const PLACEHOLDER_TOKEN_PATTERN = /\[[^\]]*\]|\{\{?[^}]*\}?\}|<[^>]+>|\bredacted\b/i;
 
@@ -93,48 +91,5 @@ export const composeStudentIntroEmailDraft = (
     body,
     generatedByPlatform: true,
     templateVersion: STUDENT_INTRO_EMAIL_TEMPLATE_VERSION,
-  };
-};
-
-export interface StudentFollowUpEmailDraftInput {
-  entityName?: string;
-  leadName?: string;
-}
-
-const fallbackFollowUpDraft = (): StudentIntroEmailDraft => ({
-  subject: FALLBACK_FOLLOW_UP_EMAIL_SUBJECT,
-  body: '',
-  generatedByPlatform: false,
-  templateVersion: '',
-});
-
-export const composeStudentFollowUpEmailDraft = (
-  input: StudentFollowUpEmailDraftInput,
-): StudentIntroEmailDraft => {
-  const entityName = input.entityName?.trim();
-  if (!entityName) return fallbackFollowUpDraft();
-
-  const leadName = input.leadName?.trim();
-  const subject = `Following up: interest in undergraduate research with ${entityName}`;
-  const greeting = leadName ? `Dear ${leadName},` : 'Hello,';
-  const body = [
-    greeting,
-    '',
-    `I recently reached out about undergraduate research opportunities with ${entityName}, and I wanted to follow up briefly in case my earlier note is easier to find here. I remain very interested in your work and would be glad to learn more about whether there might be a way for me to get involved.`,
-    '',
-    'Thank you again for your time.',
-    '',
-    '[Your Name]',
-  ].join('\n');
-
-  if (subject.length > MAX_SAFE_MAILTO_SUBJECT_LENGTH || body.length > MAX_SAFE_MAILTO_BODY_LENGTH) {
-    return fallbackFollowUpDraft();
-  }
-
-  return {
-    subject,
-    body,
-    generatedByPlatform: true,
-    templateVersion: STUDENT_FOLLOW_UP_EMAIL_TEMPLATE_VERSION,
   };
 };

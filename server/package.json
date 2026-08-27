@@ -49,7 +49,6 @@
     "observations:stale-conflict-review": "tsx src/scripts/staleObservationConflictReview.ts",
     "observations:repair-orphaned-references": "tsx src/scripts/repairOrphanedObservationReferences.ts",
     "observations:purge-miskeyed-profile-descriptions": "tsx src/scripts/purgeMiskeyedProfileDescriptions.ts",
-    "pfr3:outreach-report": "tsx src/scripts/pfr3StudentOutreachReport.ts",
     "meili:rebuild-research-entities": "tsx src/scripts/rebuildResearchEntitySearchIndex.ts",
     "meili:prune-archived-research-entities": "tsx src/scripts/pruneArchivedResearchEntitiesFromIndex.ts",
     "reindex:meili": "tsx src/scripts/reindexMeiliForEnvironment.ts",

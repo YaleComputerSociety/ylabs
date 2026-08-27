@@ -113,15 +113,6 @@ describe('INVENTORY_COLLECTIONS', () => {
     expect(residue.map((spec) => spec.collection)).toContain('applications');
   });
 
-  it('classifies retained private student applications', () => {
-    expect(
-      INVENTORY_COLLECTIONS.find((spec) => spec.collection === 'student_applications'),
-    ).toMatchObject({
-      group: 'private',
-      phase: 4,
-      target: 'Private student application records (retained, normalized references)',
-    });
-  });
 
   it('retains the existing ResearchEntityRelationship identity and collection', () => {
     expect(
@@ -172,12 +163,10 @@ describe('INVENTORY_COLLECTIONS', () => {
     ]);
   });
 
-  it('uses the durable relationship and engagement collection names without aliases', () => {
+  it('uses the durable relationship collection name without aliases', () => {
     const names = INVENTORY_COLLECTIONS.map((spec) => spec.collection);
     expect(names).toContain('research_entity_relationships');
-    expect(names).toContain('student_engagement_events');
     expect(names).not.toContain('entity_relationships');
-    expect(names).not.toContain('engagement_events');
   });
 
   it('classifies every collection found by the Development Phase 0 inventory', () => {
@@ -260,9 +249,7 @@ describe('inventory coverage', () => {
       expect.arrayContaining([
         'research_entity_members.facultyMemberId',
         'users.facultyMemberId',
-        'users.studentProfileId',
         'faculty_members.userId',
-        'student_profiles.userId',
         'access_signals.entryPathwayId',
         'access_signals.sourceEvidenceId',
         'access_signals.observationId',
@@ -273,25 +260,6 @@ describe('inventory coverage', () => {
         'posted_opportunities.listingId',
         'listings.researchEntityId',
         'observations.sourceId',
-      ]),
-    );
-  });
-
-  it('includes current private-record reference edges', () => {
-    expect(REFERENCE_EDGES.map((edge) => `${edge.fromCollection}.${edge.localField}`)).toEqual(
-      expect.arrayContaining([
-        'student_applications.listingObjectId',
-        'student_applications.postedOpportunityId',
-        'student_applications.researchEntityId',
-        'student_applications.studentUserId',
-        'student_applications.studentProfileId',
-        'student_trackings.studentProfileId',
-        'student_trackings.researchEntityId',
-        'student_outreaches.studentProfileId',
-        'student_outreaches.researchEntityId',
-        'student_outreaches.trackingId',
-        'student_engagement_events.studentProfileId',
-        'student_engagement_events.researchEntityId',
       ]),
     );
   });
@@ -310,9 +278,6 @@ describe('inventory coverage', () => {
     expect(RETIREMENT_FIELD_PROBES.map((probe) => `${probe.collection}.${probe.field}`)).toEqual(
       expect.arrayContaining([
         'listings.researchGroupId',
-        'student_trackings.researchGroupId',
-        'student_outreaches.researchGroupId',
-        'student_engagement_events.researchGroupId',
         'users.hIndex',
         'users.googleScholarId',
         'users.openAlexId',
@@ -539,8 +504,8 @@ describe('buildResearchModelInventoryReport', () => {
       ...emptyFacts(),
       referenceIntegrity: [
         {
-          name: 'student_application_to_listing',
-          fromCollection: 'student_applications',
+          name: 'posted_opportunity_to_listing',
+          fromCollection: 'posted_opportunities',
           toCollection: 'listings',
           status: 'target-missing',
           checked: 0,
@@ -550,7 +515,7 @@ describe('buildResearchModelInventoryReport', () => {
       ],
     });
     const edge = report.referenceIntegrity.find(
-      (row) => row.name === 'student_application_to_listing',
+      (row) => row.name === 'posted_opportunity_to_listing',
     );
     expect(edge).toMatchObject({
       status: 'target-missing',

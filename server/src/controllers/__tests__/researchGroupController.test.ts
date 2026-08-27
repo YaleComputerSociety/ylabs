@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   hasAdminAuthorityForUser: vi.fn(),
   searchResearchGroupsViaMeili: vi.fn(),
   resolveArchivedResearchEntityCanonicalSlug: vi.fn(),
-  recordResearchEntityOutreach: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -17,18 +16,13 @@ vi.mock('../../services/researchGroupService', () => ({
   },
   searchResearchGroupsViaMeili: mocks.searchResearchGroupsViaMeili,
   resolveArchivedResearchEntityCanonicalSlug: mocks.resolveArchivedResearchEntityCanonicalSlug,
-  recordResearchEntityOutreach: mocks.recordResearchEntityOutreach,
 }));
 
 vi.mock('../../services/adminGrantService', () => ({
   hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
 
-import {
-  getResearchGroupBySlug,
-  recordResearchOutreach,
-  searchResearchGroups,
-} from '../researchGroupController';
+import { getResearchGroupBySlug, searchResearchGroups } from '../researchGroupController';
 
 describe('researchGroupController', () => {
   beforeEach(() => {
@@ -319,92 +313,4 @@ describe('researchGroupController', () => {
     );
   });
 
-  it('rejects an outreach record from a session with no student profile', async () => {
-    const req = { params: { slug: 'a-lab' }, body: {}, user: {} } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-
-    await recordResearchOutreach(req, res);
-
-    expect(mocks.recordResearchEntityOutreach).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'A student profile is required' });
-  });
-
-  it('forwards a sanitized mailto delivery context to the outreach service', async () => {
-    mocks.recordResearchEntityOutreach.mockResolvedValue({ recorded: true });
-    const req = {
-      params: { slug: 'a-lab' },
-      user: { studentProfileId: 'profile-1' },
-      body: {
-        deliveryMethod: 'mailto',
-        emailGeneratedByPlatform: true,
-        templateVersion: 'student-intro-v1',
-      },
-    } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
-
-    await recordResearchOutreach(req, res);
-
-    expect(mocks.recordResearchEntityOutreach).toHaveBeenCalledWith('a-lab', 'profile-1', {
-      deliveryMethod: 'mailto',
-      emailGeneratedByPlatform: true,
-      templateVersion: 'student-intro-v1',
-    });
-    expect(res.status).toHaveBeenCalledWith(204);
-  });
-
-  it('drops an unsafe templateVersion instead of forwarding it to the outreach service', async () => {
-    mocks.recordResearchEntityOutreach.mockResolvedValue({ recorded: true });
-    const req = {
-      params: { slug: 'a-lab' },
-      user: { studentProfileId: 'profile-1' },
-      body: {
-        deliveryMethod: 'mailto',
-        emailGeneratedByPlatform: true,
-        templateVersion: '<script>alert(1)</script>',
-      },
-    } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
-
-    await recordResearchOutreach(req, res);
-
-    expect(mocks.recordResearchEntityOutreach).toHaveBeenCalledWith('a-lab', 'profile-1', {
-      deliveryMethod: 'mailto',
-      emailGeneratedByPlatform: true,
-      templateVersion: undefined,
-    });
-  });
-
-  it('ignores a client-supplied deliveryMethod outside the mailto scaffold', async () => {
-    mocks.recordResearchEntityOutreach.mockResolvedValue({ recorded: true, routeUrl: 'https://a.example' });
-    const req = {
-      params: { slug: 'a-lab' },
-      user: { studentProfileId: 'profile-1' },
-      body: { deliveryMethod: 'official-route', emailGeneratedByPlatform: true },
-    } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
-
-    await recordResearchOutreach(req, res);
-
-    expect(mocks.recordResearchEntityOutreach).toHaveBeenCalledWith('a-lab', 'profile-1', {
-      deliveryMethod: 'official-route',
-      emailGeneratedByPlatform: false,
-      templateVersion: undefined,
-    });
-  });
-
-  it('translates a missing outreach route into a 409 without leaking internals', async () => {
-    mocks.recordResearchEntityOutreach.mockRejectedValue(new Error('NO_APPROVED_OUTREACH_ROUTE'));
-    const req = {
-      params: { slug: 'a-lab' },
-      user: { studentProfileId: 'profile-1' },
-      body: {},
-    } as any;
-    const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
-
-    await recordResearchOutreach(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({ error: 'No approved outreach route is available' });
-  });
 });

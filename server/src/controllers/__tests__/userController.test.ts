@@ -337,7 +337,6 @@ describe('userController', () => {
       userConfirmed: true,
       bio: 'I study public health.',
       facultyMemberId: 'faculty-join-123',
-      studentProfileId: 'student-profile-123',
       savedPathwayPlans: { private: { note: 'private planning note' } },
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
@@ -359,7 +358,6 @@ describe('userController', () => {
       bio: 'I study public health.',
     });
     expect(res.body.user).not.toHaveProperty('facultyMemberId');
-    expect(res.body.user).not.toHaveProperty('studentProfileId');
     expect(res.body.user).not.toHaveProperty('savedPathwayPlans');
     expect(res.body.user).not.toHaveProperty('createdAt');
     expect(res.body.user).not.toHaveProperty('updatedAt');
