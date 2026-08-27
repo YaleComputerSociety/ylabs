@@ -3049,6 +3049,99 @@ async function reserveUserCanonicalAliases(
   }
 }
 
+function c4ResolveAtMintEntitiesEnabled(): boolean {
+  return process.env.C4_RESOLVE_AT_MINT_ENTITIES === 'true';
+}
+
+function resolverTypeForEntity(entityType: ObservedEntityType): 'researchEntity' | 'fellowship' {
+  return entityType === 'fellowship' ? 'fellowship' : 'researchEntity';
+}
+
+function buildEntityResolverSelf(obs: Array<{ field: string; value?: unknown }>): CandidateEntity {
+  const map = new Map<string, string>();
+  for (const o of obs) {
+    const v =
+      typeof o.value === 'string' ? o.value.trim() : o.value == null ? '' : String(o.value).trim();
+    if (v && !map.has(o.field)) map.set(o.field, v);
+  }
+  return { id: '', name: map.get('name') || undefined };
+}
+
+async function findEntityCandidatesByKey(
+  resolverType: 'researchEntity' | 'fellowship',
+  key: CanonicalKey,
+): Promise<CandidateEntity[]> {
+  if (resolverType === 'fellowship') {
+    if (key.ns !== 'source-key') return [];
+    const doc = (await Fellowship.findOne({ sourceKey: key.value }).select('_id title').lean()) as {
+      _id: unknown;
+      title?: string;
+    } | null;
+    return doc ? [{ id: String(doc._id), name: doc.title }] : [];
+  }
+  // Non-normalized keys (website-url, profile-lab-url, org-name) are resolved via
+  // the canonical-alias ledger (resolveAlias), not a live corpus scan: the DB does
+  // not store their normalized form, and the ledger accumulates them on merge/mint.
+  if (key.ns === 'slug') {
+    const doc = (await ResearchEntity.findOne({ slug: key.value, archived: { $ne: true } })
+      .select('_id name studentVisibilityTier')
+      .lean()) as { _id: unknown; name?: string; studentVisibilityTier?: string } | null;
+    return doc ? [{ id: String(doc._id), name: doc.name, tier: doc.studentVisibilityTier }] : [];
+  }
+  return [];
+}
+
+async function resolveCanonicalForEntityMint(
+  entityType: ObservedEntityType,
+  obs: Array<{ field: string; value?: unknown }>,
+): Promise<CanonicalResolution> {
+  const resolverType = resolverTypeForEntity(entityType);
+  const keys = deriveCanonicalKeys(
+    resolverType,
+    obs.map((o) => ({ field: o.field, value: o.value })),
+  );
+  if (keys.length === 0) return { status: 'mint', reservedKeys: [] };
+  // The resolver's wouldDemote guard compares self.tier against a candidate's
+  // stored tier. At mint the would-be entity has no computed tier (it is not yet
+  // projected or gated), so self.tier is intentionally unset: folding new
+  // observations into an existing canonical enriches it and re-gates it rather
+  // than archiving any existing public row, so no live entity is demoted. The
+  // guard stays wired for any caller that does supply a would-be tier.
+  return resolveCanonical(
+    { type: resolverType, keys, self: buildEntityResolverSelf(obs) },
+    {
+      resolveAlias: async (type, ns, value) => {
+        const id = await resolveCanonicalAlias(type, ns, value);
+        return id ? String(id) : null;
+      },
+      findCandidatesByKey: (_type, key) => findEntityCandidatesByKey(resolverType, key),
+    },
+  );
+}
+
+async function reserveEntityCanonicalAliases(
+  entityType: ObservedEntityType,
+  obs: Array<{ field: string; value?: unknown }>,
+  canonicalId: string,
+): Promise<void> {
+  const resolverType = resolverTypeForEntity(entityType);
+  const keys = deriveCanonicalKeys(
+    resolverType,
+    obs.map((o) => ({ field: o.field, value: o.value })),
+  );
+  for (const key of keys) {
+    if (key.strength === 'weak') continue;
+    await recordCanonicalAlias({
+      type: resolverType,
+      aliasNs: key.ns,
+      aliasValue: key.value,
+      canonicalType: resolverType,
+      canonicalId,
+      reason: 'resolve_at_mint',
+    });
+  }
+}
+
 export async function materializeEntity(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
@@ -3148,6 +3241,38 @@ export async function materializeEntity(
   if (c4ResolveAtMintUsersEnabled() && entityType === 'user' && !entityDoc) {
     const resolution = await resolveCanonicalForUserMint(obs);
     userMintResolution = resolution;
+    if (resolution.status === 'blocked') {
+      return {
+        entityType,
+        ...identifier,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'resolver-blocked',
+      };
+    }
+    if (resolution.status === 'existing') {
+      const canonicalDoc = await Model.findById(resolution.canonicalId);
+      if (canonicalDoc) {
+        entityDoc = canonicalDoc;
+        entityIdString = String(canonicalDoc._id);
+      }
+    }
+    // 'ambiguous' | 'mint' fall through to the existing create branch unchanged.
+  }
+
+  // C4 resolve-at-mint for research entities and fellowships (env-flagged, separate
+  // from the users flag). Same contract as the user path: an existing canonical is
+  // adopted before minting a duplicate; blocked skips; ambiguous/mint fall through.
+  let entityMintResolution: CanonicalResolution | undefined;
+  if (
+    c4ResolveAtMintEntitiesEnabled() &&
+    (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
+    !entityDoc
+  ) {
+    const resolution = await resolveCanonicalForEntityMint(entityType, obs);
+    entityMintResolution = resolution;
     if (resolution.status === 'blocked') {
       return {
         entityType,
@@ -3324,15 +3449,29 @@ export async function materializeEntity(
     let didCreate = true;
     if (isResearchEntityObservationType(entityType)) {
       const researchEntityId = new mongoose.Types.ObjectId();
-      created_ = await mutateAndRefreshAdminAccessReviewProjection(
-        researchEntityId,
-        async (session) => {
-          const createdDocuments = await Model.create([{ _id: researchEntityId, ...insert }], {
-            session,
-          });
-          return createdDocuments[0];
-        },
-      );
+      try {
+        created_ = await mutateAndRefreshAdminAccessReviewProjection(
+          researchEntityId,
+          async (session) => {
+            const createdDocuments = await Model.create([{ _id: researchEntityId, ...insert }], {
+              session,
+            });
+            return createdDocuments[0];
+          },
+        );
+      } catch (error) {
+        // A concurrent writer may have minted the same unique slug between our
+        // resolve/lookup and this create; adopt the winning row instead of
+        // erroring the run (mirrors the non-research create path below).
+        if (isDuplicateKeyMongoError(error)) {
+          const adopted = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
+          if (!adopted) throw error;
+          created_ = adopted;
+          didCreate = false;
+        } else {
+          throw error;
+        }
+      }
     } else {
       try {
         created_ = await Model.create(insert);
@@ -3361,6 +3500,15 @@ export async function materializeEntity(
       userMintResolution?.status === 'mint'
     ) {
       await reserveUserCanonicalAliases(obs, entityIdString);
+    }
+    if (
+      c4ResolveAtMintEntitiesEnabled() &&
+      (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
+      didCreate &&
+      entityIdString &&
+      entityMintResolution?.status === 'mint'
+    ) {
+      await reserveEntityCanonicalAliases(entityType, obs, entityIdString);
     }
   }
 
