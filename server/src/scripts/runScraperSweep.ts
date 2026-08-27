@@ -14,12 +14,12 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   DEFAULT_EPONYMOUS_FRA_MERGE_MAX,
-  isEponymousFraLabMergeStageEnabled,
+  SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV,
   type EponymousFraLabMergeDelta,
 } from './researchEntityEponymousMergeStage';
-import { isMergeResidueDeletionStageEnabled } from './cleanupArchivedResearchEntities';
+import { SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV } from './cleanupArchivedResearchEntities';
 import {
-  isResearcherDedupeStageEnabled,
+  SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV,
   type ResearcherDedupeStageDelta,
 } from './dedupeAccountlessResearcherShells';
 
@@ -158,6 +158,31 @@ export interface DevelopmentPostRunStageOptions {
   deleteMergeResidue?: boolean;
   sinceIso?: string;
   maxMerges?: number;
+}
+
+export function isDevelopmentSweepMode(mode: ScraperSweepMode): boolean {
+  return mode === 'development-full' || mode === 'development-incremental';
+}
+
+function isDevSweepStageEnabledByDefault(rawValue: string | undefined): boolean {
+  const value = (rawValue || '').trim().toLowerCase();
+  return value !== '0' && value !== 'false';
+}
+
+export function resolveDevelopmentPostRunOptions(
+  mode: ScraperSweepMode,
+  env: NodeJS.ProcessEnv,
+  sinceIso: string,
+): DevelopmentPostRunStageOptions | undefined {
+  if (!isDevelopmentSweepMode(mode)) return undefined;
+  return {
+    autoMergeEponymousFra: isDevSweepStageEnabledByDefault(env[SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV]),
+    dedupeResearchers: isDevSweepStageEnabledByDefault(env[SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV]),
+    deleteMergeResidue: isDevSweepStageEnabledByDefault(
+      env[SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV],
+    ),
+    sinceIso,
+  };
 }
 
 const MERGE_RESIDUE_DELETION_STAGE_ARGS = [
@@ -936,15 +961,19 @@ export async function runScraperSweep(
     if (!rows[index]) rows[index] = notRunRow(source, index);
   }
 
-  const postRun =
-    options.mode === 'development-full' || options.mode === 'development-incremental'
-      ? await runDevelopmentPostRunStages(outputDirectory, repoRoot, childRunner, {
-          autoMergeEponymousFra: isEponymousFraLabMergeStageEnabled(process.env),
-          dedupeResearchers: isResearcherDedupeStageEnabled(process.env),
-          deleteMergeResidue: isMergeResidueDeletionStageEnabled(process.env),
-          sinceIso: startedAt.toISOString(),
-        })
-      : undefined;
+  const developmentPostRunOptions = resolveDevelopmentPostRunOptions(
+    options.mode,
+    process.env,
+    startedAt.toISOString(),
+  );
+  const postRun = developmentPostRunOptions
+    ? await runDevelopmentPostRunStages(
+        outputDirectory,
+        repoRoot,
+        childRunner,
+        developmentPostRunOptions,
+      )
+    : undefined;
   const summary: ScraperSweepSummary = {
     mode: options.mode,
     environment: config.environment,
