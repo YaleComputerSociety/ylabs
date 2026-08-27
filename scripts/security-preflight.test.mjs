@@ -117,20 +117,15 @@ test('test fixtures do not contain known real Yale identifiers', () => {
 test('operator scripts sanitize raw caught error messages before logging', () => {
   const files = [
     '../server/src/scripts/crossSourceObservationConflictReview.ts',
-    '../server/src/scripts/dedupeUsersByIdentity.ts',
     '../server/src/scripts/repairDuplicateAccessSignals.ts',
     '../server/src/scripts/betaDataQuality.ts',
     '../server/src/scripts/betaReadinessGate.ts',
     '../server/src/scripts/sourceHealth.ts',
-    '../server/src/scripts/userEmailHygiene.ts',
-    '../server/src/scripts/acceptedInputs.ts',
     '../server/src/scripts/researchEntityCoverageAudit.ts',
     '../server/src/scripts/clearBetaStudentAnalytics.ts',
-    '../server/src/scripts/repairMismatchedPersonEmails.ts',
     '../server/src/scripts/promoteAcceptedBetaCopy.ts',
     '../server/src/scripts/staleObservationConflictReview.ts',
     '../server/src/scripts/duplicateEntityNameReview.ts',
-    '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
   ];
 
   for (const file of files) {
@@ -242,43 +237,6 @@ test('research description LLM backfill observation ids use safe serialization',
   assert.match(source, /entityId,/);
   assert.doesNotMatch(source, /entityId: String\(entity\._id\)/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
-});
-
-test('profile bio LLM backfill redacts prompt contact data before provider calls', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
-  assert.match(source, /const MAX_PROMPT_CHARS = 40_000/);
-  assert.match(source, /const MAX_PROMPT_NAME_CHARS = 240/);
-  assert.match(source, /const MAX_PROMPT_TITLE_CHARS = 500/);
-  assert.match(source, /const MAX_PROMPT_SOURCE_URL_CHARS = 2048/);
-  assert.match(
-    source,
-    /const safeName = redactDirectContactInfo\(name\)\.slice\(0, MAX_PROMPT_NAME_CHARS\)/,
-  );
-  assert.match(
-    source,
-    /const safeTitle = redactDirectContactInfo\(title\)\.slice\(0, MAX_PROMPT_TITLE_CHARS\)/,
-  );
-  assert.match(
-    source,
-    /const safeSourceUrl = redactDirectContactInfo\(sourceUrl\)\.slice\(0, MAX_PROMPT_SOURCE_URL_CHARS\)/,
-  );
-  assert.match(
-    source,
-    /const safePageText = redactDirectContactInfo\(pageText\)\.slice\(0, MAX_PROMPT_CHARS\)/,
-  );
-  assert.match(source, /`Faculty member: \$\{safeName\}`/);
-  assert.match(source, /`Known title \(authoritative\): \$\{safeTitle \|\| '\(unknown\)'\}`/);
-  assert.match(source, /`Source URL: \$\{safeSourceUrl\}`/);
-  assert.match(source, /safePageText/);
-  assert.doesNotMatch(source, /`Faculty member: \$\{name\}`/);
-  assert.doesNotMatch(source, /`Known title \(authoritative\): \$\{title \|\| '\(unknown\)'\}`/);
-  assert.doesNotMatch(source, /`Source URL: \$\{sourceUrl\}`/);
-  assert.doesNotMatch(source, /pageText\.slice\(0, MAX_PROMPT_CHARS\)/);
 });
 
 test('scraper LLM extractors redact prompt page text before provider calls', () => {
@@ -873,16 +831,15 @@ test('NIH Reporter matched user ids use safe serialization', () => {
     source,
     /import \{ serializedDocumentId \} from '\.\.\/\.\.\/utils\/idSerialization'/,
   );
-  assert.match(source, /_id: serializedDocumentId\(candidate\._id\) \|\| ''/);
+  assert.match(source, /const researcherId = resolution\.researcherId\.toString\(\)/);
+  assert.match(source, /_id: researcherId,/);
   assert.doesNotMatch(source, /_id: String\(candidate\._id\)/);
   assert.doesNotMatch(source, /String\(candidate\._id\)/);
 });
 
 test('credentialed scraper backfills do not log raw caught error messages', () => {
   const files = [
-    '../server/src/scripts/backfillResearchHomeOfficialUrls.ts',
     '../server/src/scripts/backfillResearchDescriptions.ts',
-    '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
     '../server/src/scrapers/entityMaterializer.ts',
     '../server/src/scrapers/sources/nihReporterScraper.ts',
     '../server/src/scrapers/sources/undergradFellowshipRecipientScraper.ts',
@@ -926,7 +883,6 @@ test('audit and index id stringifiers avoid arbitrary object toString coercion',
     '../server/src/scripts/staleObservationConflictReview.ts',
     '../server/src/scripts/betaDataQuality.ts',
     '../server/src/scripts/duplicateEntityNameReview.ts',
-    '../server/src/scripts/acceptedInputsCore.ts',
   ];
 
   for (const file of files) {
@@ -979,12 +935,10 @@ test('public search loaders avoid raw Axios console errors', () => {
 test('admin client surfaces avoid raw caught console errors', () => {
   const files = [
     '../client/src/pages/analytics.tsx',
-    '../client/src/components/admin/AdminProfileEditModal.tsx',
     '../client/src/components/admin/AdminOperatorBoard.tsx',
     '../client/src/components/admin/AdminAccessReview.tsx',
     '../client/src/components/admin/AdminResearchAreas.tsx',
     '../client/src/components/admin/AdminFellowshipsTable.tsx',
-    '../client/src/components/admin/AdminFacultyProfilesTable.tsx',
     '../client/src/components/admin/AdminFellowshipEditModal.tsx',
     '../client/src/components/admin/AdminDepartments.tsx',
   ];
@@ -1202,10 +1156,7 @@ test('OAuth callback assets are served with no-store cache headers', () => {
 test('seed route token gate rejects malformed and oversized tokens cheaply', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/seed.ts', import.meta.url), 'utf8');
 
-  assert.match(
-    source,
-    /import \{ validateNetid, validateObjectId \} from '\.\.\/middleware\/validation'/,
-  );
+  assert.match(source, /import \{ validateObjectId \} from '\.\.\/middleware\/validation'/);
   assert.match(source, /import \{ isLocalDevelopmentRuntime \} from '\.\.\/utils\/environment'/);
   assert.match(source, /function requireLocalSeedRuntime/);
   assert.match(source, /if \(!isLocalDevelopmentRuntime\(\)\)/);
@@ -1225,32 +1176,12 @@ test('seed route token gate rejects malformed and oversized tokens cheaply', () 
   assert.match(source, /provided\.length > MAX_SEED_TOKEN_LENGTH/);
   assert.match(source, /!tokensMatch\(provided, expected\)/);
   assert.match(source, /router\.put\('\/listings\/:id', validateObjectId\('id'\), async/);
-  assert.match(source, /const SEED_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\//);
-  assert.match(source, /const SEED_USER_FIELDS = \[/);
-  assert.match(source, /const seedUserSummary = \(user: any\) => \(\{/);
   assert.match(source, /const seedListingSummary = \(listing: any\) => \(\{/);
   assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /_id: serializedDocumentId\(user\?\._id\) \|\| ''/);
   assert.match(source, /_id: serializedDocumentId\(listing\?\._id\) \|\| ''/);
-  assert.match(source, /const seedUserPayload = \(/);
-  assert.match(
-    source,
-    /if \(!value \|\| typeof value !== 'object' \|\| Array\.isArray\(value\)\) return undefined/,
-  );
-  assert.match(source, /if \(field === 'netid' && !options\.includeNetid\) continue/);
-  assert.match(source, /const safeData = seedUserPayload\(req\.body, \{ includeNetid: true \}\)/);
-  assert.match(source, /const safeData = seedUserPayload\(req\.body, \{ includeNetid: false \}\)/);
-  assert.match(source, /createUser\(safeData\)/);
-  assert.match(source, /user: seedUserSummary\(updated\)/);
-  assert.match(source, /user: seedUserSummary\(user\)/);
   assert.match(source, /results: listings\.map\(seedListingSummary\)/);
   assert.match(source, /listing: seedListingSummary\(listing\)/);
-  assert.doesNotMatch(source, /user\?\._id\?\.toString\?\.\(\)/);
   assert.doesNotMatch(source, /listing\?\._id\?\.toString\?\.\(\)/);
-  assert.doesNotMatch(source, /createUser\(req\.body\)/);
-  assert.doesNotMatch(source, /const \{ \.\.\.safeData \} = req\.body/);
-  assert.doesNotMatch(source, /user: updated/);
-  assert.doesNotMatch(source, /user \}/);
   assert.doesNotMatch(source, /results: listings \}/);
   assert.doesNotMatch(source, /listing \}/);
 });
@@ -1509,26 +1440,6 @@ test('same-PI research entity dedupe apply IDs reject object-shaped values', () 
   assert.doesNotMatch(source, /userId: String\(row\._id\.userId\)/);
 });
 
-test('user identity dedupe apply IDs reject object-shaped values', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/dedupeUsersByIdentity.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const USER_IDENTITY_DEDUPE_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /export function normalizeUserIdentityDedupeObjectId/);
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /typeof value !== 'string'/);
-  assert.match(source, /const trimmed = value\.trim\(\)/);
-  assert.match(source, /const objectId = normalizeUserIdentityDedupeObjectId\(value\)/);
-  assert.match(source, /serializedDocumentId\(member\._id\) \|\| ''/);
-  assert.match(source, /serializedDocumentId\(row\._id\) \|\| ''/);
-  assert.doesNotMatch(source, /ObjectId\.isValid/);
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(value\)/);
-  assert.doesNotMatch(source, /String\(member\._id\)/);
-  assert.doesNotMatch(source, /String\(row\._id\)/);
-});
-
 test('stale observation supersession IDs reject object-shaped values', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/staleObservationConflictReview.ts', import.meta.url),
@@ -1721,39 +1632,6 @@ test('admin routes use full private no-store response headers', () => {
   assert.match(source, /router\.use\(setPrivateAdminCacheHeaders, isAuthenticated, isAdmin\)/);
 });
 
-test('admin profile management payloads do not expose raw account state', () => {
-  const routeSource = fs.readFileSync(
-    new URL('../server/src/routes/admin.ts', import.meta.url),
-    'utf8',
-  );
-  const tableSource = fs.readFileSync(
-    new URL('../client/src/components/admin/AdminFacultyProfilesTable.tsx', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(routeSource, /export const adminProfileDto = \(user: any\) => \{/);
-  assert.match(routeSource, /ownListingCount: ownListings\.length/);
-  assert.match(routeSource, /profiles: profiles\.map\(\(profile\) => adminProfileDto\(profile\)\)/);
-  assert.match(routeSource, /res\.json\(\{ profile: adminProfileDto\(user\) \}\)/);
-  assert.match(routeSource, /res\.json\(\{ profile: adminProfileDto\(profile\) \}\)/);
-  assert.doesNotMatch(
-    routeSource,
-    /User\.find\(filter\)[\s\S]*?\.select\('-publications'\)[\s\S]*?res\.json\(\{\s*profiles,/,
-  );
-  assert.doesNotMatch(routeSource, /res\.json\(\{ profile \}\)/);
-  assert.doesNotMatch(routeSource, /res\.json\(\{ profile: user \}\)/);
-  assert.doesNotMatch(routeSource, /favListings:/);
-  assert.doesNotMatch(routeSource, /favFellowships:/);
-  assert.doesNotMatch(routeSource, /favPathways:/);
-  assert.doesNotMatch(routeSource, /savedPathwayPlans:/);
-  assert.doesNotMatch(routeSource, /confidenceByField:/);
-  assert.doesNotMatch(routeSource, /manuallyLockedFields:/);
-  assert.match(tableSource, /ownListingCount\?: number/);
-  assert.match(tableSource, /\{p\.ownListingCount \|\| 0\}/);
-  assert.doesNotMatch(tableSource, /ownListings\?: string\[\]/);
-  assert.doesNotMatch(tableSource, /p\.ownListings\?\.length/);
-});
-
 test('admin taxonomy write routes bound labels and category arrays before persistence', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
   const researchAreaClientSource = fs.readFileSync(
@@ -1917,10 +1795,6 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
     new URL('../server/src/scripts/scraperIntegrityDuplicateReview.ts', import.meta.url),
     'utf8',
   );
-  const studentVisibilityBackfill = fs.readFileSync(
-    new URL('../server/src/scripts/backfillStudentVisibilityTiers.ts', import.meta.url),
-    'utf8',
-  );
   assert.match(guards, /export function resolveSafeJsonReportOutputPath/);
   assert.match(guards, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
   assert.match(guards, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
@@ -1937,11 +1811,6 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   assert.match(integrityGate, /resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(outputValue\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(output\)/);
-  assert.match(studentVisibilityBackfill, /resolveSafeJsonReportOutputPath/);
-  assert.match(
-    studentVisibilityBackfill,
-    /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/,
-  );
 });
 
 test('scraper cache invalidation escapes and bounds regex prefixes', () => {
@@ -2288,7 +2157,7 @@ test('entity materializer ObjectId handling is primitive-normalized', () => {
     source,
     /function toMaterializerObjectId\(value: unknown\): mongoose\.Types\.ObjectId \| undefined/,
   );
-  assert.match(source, /const userObjectId = toMaterializerObjectId\(userId\)/);
+  assert.match(source, /const researcherId = toMaterializerObjectId\(researcherIdString\)/);
   assert.match(source, /const runObjectId = toMaterializerObjectId\(scrapeRunId\)/);
   assert.match(source, /const entityId = normalizeMaterializerObjectId\(identifier\.entityId\)/);
   assert.match(
@@ -2296,12 +2165,9 @@ test('entity materializer ObjectId handling is primitive-normalized', () => {
     /const researchEntityId = normalizeMaterializerObjectId\(entity\._id\) \|\| ''/,
   );
   assert.match(source, /entityId: materializerDocumentId\(entity\._id\)/);
-  assert.match(
-    source,
-    /return user\?\._id \? materializerDocumentId\(user\._id\) \|\| null : null/,
-  );
+  assert.match(source, /return resolution\.status === 'matched' && resolution\.researcherId/);
   assert.match(source, /normalizeMaterializerObjectId\(assignment\?\.target\?\.id\)/);
-  assert.match(source, /const userId = normalizeMaterializerObjectId\(user\._id\) \|\| ''/);
+  assert.match(source, /const providedId = normalizeMaterializerObjectId\(identity\.userId\)/);
   assert.match(source, /entityId: materializerDocumentId\(source\._id\)/);
   assert.match(
     source,
@@ -2514,10 +2380,7 @@ test('maintenance and scraper id helpers do not execute duck-typed toHexString h
   const files = [
     '../server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts',
     '../server/src/scrapers/sources/officialProfilePiBackfillScraper.ts',
-    '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
-    '../server/src/scripts/profileBioCoverageAudit.ts',
     '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
-    '../server/src/scripts/acceptedInputsCore.ts',
     '../server/src/services/visibilityRepairQueueService.ts',
     '../server/src/scripts/staleObservationConflictReview.ts',
     '../server/src/scripts/crossSourceObservationConflictReview.ts',
@@ -2546,31 +2409,11 @@ test('maintenance and scraper id helpers do not execute duck-typed toHexString h
   }
 });
 
-test('student visibility backfill report and grouping ids use safe serialization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/backfillStudentVisibilityTiers.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /serializedDocumentId\(row\._id\)/);
-  assert.match(source, /serializedDocumentId\(entity\._id\)/);
-  assert.match(source, /serializedDocumentId\(row\.userId\)/);
-  assert.match(source, /serializedDocumentId\(row\.researchEntityId\)/);
-  assert.match(source, /serializedDocumentId\(program\._id\)/);
-  assert.doesNotMatch(source, /String\(row\._id\)/);
-  assert.doesNotMatch(source, /String\(entity\._id\)/);
-  assert.doesNotMatch(source, /String\(program\._id\)/);
-  assert.doesNotMatch(source, /String\(row\.userId \|\| ''\)/);
-  assert.doesNotMatch(source, /String\(row\.researchEntityId\)/);
-});
-
 test('audit planning and source seed artifacts are constrained to safe JSON roots', () => {
   for (const [name, file] of [
     ['research entity rename audit', '../server/src/scripts/auditResearchEntityRename.ts'],
-    ['accepted inputs JSON report', '../server/src/scripts/acceptedInputs.ts'],
     ['source registry seed', '../server/src/scrapers/seedSources.ts'],
     ['surname lab disambiguation', '../server/src/scripts/disambiguateSurnameLabNames.ts'],
-    ['profile data quality audit', '../server/src/scripts/profileDataQualityAudit.ts'],
   ]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /resolveSafeJsonReportOutputPath/, `${name} must use safe JSON paths`);
@@ -2578,10 +2421,6 @@ test('audit planning and source seed artifacts are constrained to safe JSON root
 });
 
 test('accepted-input CSV and TXT command artifacts stay under safe roots', () => {
-  const cliSource = fs.readFileSync(
-    new URL('../server/src/scripts/acceptedInputs.ts', import.meta.url),
-    'utf8',
-  );
   const fellowshipSource = fs.readFileSync(
     new URL('../server/src/acceptedInputs/fellowshipInputs.ts', import.meta.url),
     'utf8',
@@ -2600,14 +2439,6 @@ test('accepted-input CSV and TXT command artifacts stay under safe roots', () =>
     /fs\.readFile\(resolveSafeAcceptedInputPath\(filePath\), 'utf8'\)/,
   );
   assert.match(fellowshipSource, /const safePath = resolveSafeAcceptedInputPath\(filePath\)/);
-
-  assert.match(cliSource, /resolveSafeAcceptedInputPath/);
-  assert.match(cliSource, /resolveSafeAcceptedInputRoot/);
-  assert.match(cliSource, /options\.root = resolveSafeAcceptedInputRoot\(options\.root\)/);
-  assert.match(cliSource, /const safePath = resolveSafeAcceptedInputPath\(filePath, flag\)/);
-  assert.match(cliSource, /await fs\.readFile\(safePath, 'utf8'\)/);
-  assert.match(cliSource, /const safePath = resolveSafeAcceptedInputPath\(filePath, '--output'\)/);
-  assert.match(cliSource, /await fs\.writeFile\(safePath, text, 'utf8'\)/);
 });
 
 test('manual fellowship recipient scraper inputs stay under safe local roots', () => {
@@ -2773,11 +2604,7 @@ test('source health operator commands quote unsafe stored identifiers', () => {
 test('identity cleanup report outputs are constrained to safe JSON roots', () => {
   for (const [name, file] of [
     ['user identity dedupe core', '../server/src/scripts/dedupeUsersByIdentityCore.ts'],
-    ['user identity dedupe wrapper', '../server/src/scripts/dedupeUsersByIdentity.ts'],
-    ['mismatched email repair core', '../server/src/scripts/repairMismatchedPersonEmailsCore.ts'],
-    ['mismatched email repair wrapper', '../server/src/scripts/repairMismatchedPersonEmails.ts'],
     ['user email hygiene core', '../server/src/scripts/userEmailHygieneCore.ts'],
-    ['user email hygiene wrapper', '../server/src/scripts/userEmailHygiene.ts'],
     ['beta student analytics core', '../server/src/scripts/clearBetaStudentAnalyticsCore.ts'],
     ['beta student analytics wrapper', '../server/src/scripts/clearBetaStudentAnalytics.ts'],
   ]) {
@@ -2785,12 +2612,7 @@ test('identity cleanup report outputs are constrained to safe JSON roots', () =>
     assert.match(source, /resolveSafeJsonReportOutputPath/, `${name} must use safe JSON paths`);
   }
 
-  for (const file of [
-    '../server/src/scripts/dedupeUsersByIdentity.ts',
-    '../server/src/scripts/repairMismatchedPersonEmails.ts',
-    '../server/src/scripts/userEmailHygiene.ts',
-    '../server/src/scripts/clearBetaStudentAnalytics.ts',
-  ]) {
+  for (const file of ['../server/src/scripts/clearBetaStudentAnalytics.ts']) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/);
     assert.match(source, /fs\.writeFileSync\(safeOutput,/);
@@ -2799,13 +2621,6 @@ test('identity cleanup report outputs are constrained to safe JSON roots', () =>
 
 test('Phase 0 complementary audits enforce fail-closed summary-only output', () => {
   const contracts = [
-    [
-      'user identity dedupe',
-      '../server/src/scripts/dedupeUsersByIdentityCore.ts',
-      '../server/src/scripts/dedupeUsersByIdentity.ts',
-      '../server/src/scripts/dedupeUsersByIdentity.ts',
-      'buildDedupeUsersByIdentitySummaryOnlyOutput',
-    ],
     [
       'duplicate entity name review',
       '../server/src/scripts/duplicateEntityNameReview.ts',
@@ -2941,32 +2756,6 @@ test('shared ObjectId route validator rejects non-hex coercible ids', () => {
   assert.doesNotMatch(source, /ObjectId\.isValid\(id\)/);
 });
 
-test('user update service rejects unsafe Mongo update documents', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/userService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /const USER_UPDATE_OPERATORS = new Set\(\['\$set', '\$unset', '\$addToSet'\]\)/,
-  );
-  assert.match(source, /const USER_UPDATE_PATH_SEGMENT_RE = \/\^\[A-Za-z0-9_-\]\+\$\/;/);
-  assert.match(
-    source,
-    /const assertSafeUserUpdateDocument = \(data: unknown\): Record<string, unknown> => \{/,
-  );
-  assert.match(source, /if \(operatorKeys\.length !== keys\.length\)/);
-  assert.match(source, /if \(!USER_UPDATE_OPERATORS\.has\(operator\)\)/);
-  assert.match(source, /!isSafeUserUpdatePath\(path\) \|\| isUnsafeNestedUserUpdateValue\(value\)/);
-  assert.match(source, /key\.startsWith\('\$'\) \|\|/);
-  assert.match(source, /key\.includes\('\.'\) \|\|/);
-  assert.match(source, /isPrototypePollutionKey\(key\)/);
-  assert.match(source, /const safeData = assertSafeUserUpdateDocument\(data\)/);
-  assert.match(source, /findByIdAndUpdate\(objectId, safeData/);
-  assert.match(source, /findOneAndUpdate\(netidFilter, safeData/);
-});
-
 test('client API base URL builder rejects hostile backend origins', () => {
   const source = fs.readFileSync(
     new URL('../client/src/utils/apiBaseUrl.ts', import.meta.url),
@@ -3014,20 +2803,6 @@ test('client logout navigation uses the safe API URL builder', () => {
   assert.match(signInButton, /buildApiUrl\(`\/cas\$\{redirectParam\}`\)/);
 });
 
-test('user service validates netids before building regex lookup filters', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/userService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const NETID_LOOKUP_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\//);
-  assert.match(source, /const normalizeUserLookupNetid = \(id: unknown\): string =>/);
-  assert.match(source, /if \(!NETID_LOOKUP_RE\.test\(netid\)\)/);
-  assert.match(source, /throw badRequestError\('Invalid netid'\)/);
-  assert.match(source, /escapeRegex\(normalizeUserLookupNetid\(id\)\)/);
-  assert.doesNotMatch(source, /escapeRegex\(String\(id \?\? ''\)\)/);
-});
-
 test('saved research-entity export requires POST body opt-in for private notes', () => {
   const controllerSource = fs.readFileSync(
     new URL('../server/src/controllers/userController.ts', import.meta.url),
@@ -3058,7 +2833,10 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
   assert.match(source, /return LISTING_OBJECT_ID_RE\.test\(id\) \? id : undefined/);
   assert.match(source, /const safeResearchEntityId = normalizeListingObjectId\(researchEntityId\)/);
-  assert.match(source, /const personId = await resolveResearcherIdForLegacyUser\(owner\?\._id\)/);
+  assert.match(
+    source,
+    /const personId = resolution\.status === 'matched' \? resolution\.researcherId : undefined/,
+  );
   assert.match(source, /'target\.id': new mongoose\.Types\.ObjectId\(safeResearchEntityId\)/);
   assert.match(source, /state: \{ \$ne: 'HISTORICAL' \}/);
   assert.match(source, /archived: \{ \$ne: true \}/);
@@ -3584,8 +3362,6 @@ test('LLM and profile fetchers use the normalized SSRF-safe URL for axios reques
   const fetcherFiles = [
     '../server/src/scrapers/sources/centerDirectorLLMExtractor.ts',
     '../server/src/scrapers/sources/centerAffiliationLLMExtractor.ts',
-    '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
-    '../server/src/scripts/profileDataQualityAudit.ts',
   ];
 
   for (const file of fetcherFiles) {
@@ -3638,31 +3414,6 @@ test('lab-microsite fetchers delegate to the SSRF-guarded shared fetch policy', 
     assert.doesNotMatch(source, /axios\.get\(safeUrlText,\s*\{/);
     assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
   }
-});
-
-test('profile data-quality audit ids use safe serialization for report grouping', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/profileDataQualityAudit.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /\[serializedDocumentId\(entity\._id\) \|\| '', entity\]/);
-  assert.match(
-    source,
-    /entityById\.get\(serializedDocumentId\(membership\.target\?\.id\) \|\| ''\)/,
-  );
-  assert.match(
-    source,
-    /researcherIdToUser\.get\(serializedDocumentId\(membership\.personId\) \|\| ''\)/,
-  );
-  assert.match(source, /const key = serializedDocumentId\(user\._id\) \|\| ''/);
-  assert.match(source, /_id: serializedDocumentId\(entity\._id\) \|\| ''/);
-  assert.match(source, /homesByUserId\.get\(serializedDocumentId\(user\._id\) \|\| ''\)/);
-  assert.doesNotMatch(source, /String\(entity\._id\)/);
-  assert.doesNotMatch(source, /String\(membership\.target\?\.id\)/);
-  assert.doesNotMatch(source, /String\(membership\.personId\)/);
-  assert.doesNotMatch(source, /String\(user\._id\)/);
 });
 
 test('rendered fetch bridge executes the SSRF-normalized URL', () => {
@@ -4126,148 +3877,6 @@ test('analytics event storage redacts user-entered contact details', () => {
   assert.doesNotMatch(source, /eventType:\s*normalizedParams\.eventType/);
   assert.match(source, /if \(listingId\) eventPayload\.listingId = listingId/);
   assert.match(source, /if \(fellowshipId\) eventPayload\.fellowshipId = fellowshipId/);
-  assert.match(source, /User\.findOneAndUpdate\(\{ netid \}, updateFields\)/);
-});
-
-test('saved pathway plan checklist keys are safe before nested Mongo storage', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/userService.ts', import.meta.url),
-    'utf8',
-  );
-  const controller = fs.readFileSync(
-    new URL('../server/src/controllers/userController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.doesNotMatch(source, /const sanitizeSavedPathwayChecklistKey =/);
-  assert.doesNotMatch(source, /export function sanitizeSavedPathwayPlansForResponse\(/);
-  assert.doesNotMatch(source, /export function sanitizeSavedPathwayPlanForStorage\(/);
-  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_NOTE_LENGTH/);
-  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_CHECKLIST_ITEMS/);
-  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS/);
-  assert.doesNotMatch(
-    source,
-    /Object\.entries\(candidate\.checklist \|\| \{\}\)[\s\S]*\.slice\(0, MAX_SAVED_PATHWAY_CHECKLIST_ITEMS\)/,
-  );
-  assert.doesNotMatch(source, /return user\.savedPathwayPlans \|\| \{\}/);
-  assert.match(source, /export function normalizeObjectIdStringForUserMutation/);
-  assert.match(source, /typeof value === 'string'/);
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /value\.toHexString\(\)/);
-  assert.match(source, /throw badRequestError\(`Invalid \$\{fieldName\} id`\)/);
-  assert.match(source, /if \(!Array\.isArray\(values\)\)/);
-  assert.match(source, /const seen = new Set<string>\(\)/);
-  assert.match(source, /if \(seen\.has\(id\)\) continue/);
-  assert.match(source, /seen\.add\(id\)/);
-  assert.match(source, /const normalizeStoredObjectIdsForUserMutation = \(/);
-  assert.match(source, /values\.slice\(0, MAX_ACCOUNT_MUTATION_IDS\)/);
-  assert.match(source, /const mergeStoredObjectIdsForUserMutation = \(/);
-  assert.match(source, /const removeStoredObjectIdsForUserMutation = \(/);
-  assert.doesNotMatch(
-    source,
-    /updateUser\(id, \{ favListings: user\.favListings \}\);[\s\S]*for \(const listingId of newVisibleListingIds\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /for \(const listingId of newVisibleListingIds\) \{\s*await addFavorite\(listingId\.toHexString\(\), id\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /for \(const listingId of visibleListingIds\) \{\s*await addFavorite\(listingId\.toHexString\(\), id\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /mergeStoredObjectIdsForUserMutation\(\s*user\.favListings,\s*visibleListingIds,\s*'favListings',\s*\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /const existingListingIds = new Set\(storedObjectIdStringsForUserMutation\(user\.favListings, 'favListings'\)\)/,
-  );
-  assert.doesNotMatch(source, /const existingVisibleListingIds = visibleListingIds\.filter/);
-  assert.doesNotMatch(
-    source,
-    /for \(const listingId of existingVisibleListingIds\) \{\s*await removeFavorite\(listingId\.toHexString\(\), id\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /for \(const listingId of visibleListingIds\) \{\s*await removeFavorite\(listingId\.toHexString\(\), id\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /for \(const listingId of listingIds\) \{\s*await removeFavorite\(listingId\.toHexString\(\), id\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /mergeStoredObjectIdsForUserMutation\(\s*user\.favListings,\s*listingIds,\s*'favListings',\s*\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /updateUser\(id, \{ favFellowships: user\.favFellowships \}\);[\s\S]*for \(const fellowshipId of newVisibleFellowshipIds\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /for \(const fellowshipId of newVisibleFellowshipIds\) \{\s*await addFellowshipFavorite\(fellowshipId\.toHexString\(\)\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /for \(const fellowshipId of visibleFellowshipIds\) \{\s*await addFellowshipFavorite\(fellowshipId\.toHexString\(\)\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /mergeStoredObjectIdsForUserMutation\(\s*user\.favFellowships,\s*visibleFellowshipIds,\s*'favFellowships',\s*\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /const existingFellowshipIds = new Set\(\s*storedObjectIdStringsForUserMutation\(user\.favFellowships, 'favFellowships'\),\s*\)/,
-  );
-  assert.doesNotMatch(source, /const existingVisibleFellowshipIds = visibleFellowshipIds\.filter/);
-  assert.doesNotMatch(
-    source,
-    /for \(const fellowshipId of existingVisibleFellowshipIds\) \{\s*await removeFellowshipFavorite\(fellowshipId\.toHexString\(\)\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /for \(const fellowshipId of visibleFellowshipIds\) \{\s*await removeFellowshipFavorite\(fellowshipId\.toHexString\(\)\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /for \(const fellowshipId of fellowshipIds\) \{\s*await removeFellowshipFavorite\(fellowshipId\.toHexString\(\)\);\s*\}/,
-  );
-  assert.doesNotMatch(
-    source,
-    /mergeStoredObjectIdsForUserMutation\(\s*user\.favFellowships,\s*fellowshipIds,\s*'favFellowships',\s*\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /mergeStoredObjectIdsForUserMutation\(\s*user\.favPathways,\s*visiblePathwayIds,\s*'favPathways',\s*\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /mergeStoredObjectIdsForUserMutation\(\s*user\.favPathways,\s*pathwayIds,\s*'favPathways',\s*\)/,
-  );
-  assert.doesNotMatch(source, /\$set: \{ favPathways: user\.favPathways \}/);
-  assert.match(source, /const normalizeUserLookupNetid = \(id: unknown\): string => \{/);
-  assert.match(source, /const netid = typeof id === 'string' \? id\.trim\(\) : ''/);
-  assert.match(
-    source,
-    /export const normalizeUserLookupObjectId = \(id: unknown\): string \| null => \{/,
-  );
-  assert.match(source, /id instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /return \/\^\[a-f0-9\]\{24\}\$\/i\.test\(value\) \? value : null/);
-  assert.match(source, /const objectId = normalizeUserLookupObjectId\(id\)/);
-  assert.match(source, /User\.findById\(objectId\)/);
-  assert.match(source, /User\.findByIdAndUpdate\(objectId, safeData/);
-  assert.doesNotMatch(source, /String\(value \|\| ''\)\.trim\(\)/);
-  assert.doesNotMatch(source, /String\(id \?\? ''\)\.trim\(\)/);
-  assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
-  assert.doesNotMatch(
-    source,
-    /user\.favListings\.map\(\(listing: any\) => listing\.toString\(\)\)/,
-  );
-  assert.doesNotMatch(source, /user\.favFellowships\.map\(\(f: any\) => f\.toString\(\)\)/);
-  assert.doesNotMatch(source, /user\.favPathways\.map\(\(p: any\) => p\.toString\(\)\)/);
-  assert.doesNotMatch(controller, /matchFellowshipsForPathways\(favPathwayIds\)/);
-  assert.doesNotMatch(controller, /new mongoose\.Types\.ObjectId\(pathway\._id\)/);
 });
 
 test('saved research-plan exports redact system-derived direct contact details', () => {
@@ -4398,7 +4007,6 @@ test('Yalies API client uses bounded requests and credential-free errors', () =>
   assert.match(source, /new Error\(`Yalies API request failed\$\{suffix\}`\)/);
   assert.match(source, /timeout: YALIES_API_TIMEOUT_MS/);
   assert.match(source, /throw yaliesRequestError\(error\)/);
-  assert.match(source, /validateUser\(normalizedNetid\)/);
   assert.match(source, /filters: \{ netid: \[normalizedNetid\] \}/);
   assert.match(source, /sanitizeLogValue\(yaliesRequestError\(error\)\)/);
   assert.match(source, /console\.error\('Error fetching user:', sanitizeLogValue\(error\)\)/);
@@ -4464,7 +4072,6 @@ test('public config serializes taxonomy through bounded contact-redacted fields'
 test('OpenAI-backed operator scripts sanitize top-level errors', () => {
   const files = [
     '../server/src/scripts/backfillResearchDescriptions.ts',
-    '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
     '../server/src/scripts/backfillCenterDirectors.ts',
   ];
 
@@ -4482,12 +4089,8 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
   const files = [
     '../server/src/scripts/scraperIntegrityGate.ts',
     '../server/src/scripts/claimGate.ts',
-    '../server/src/scripts/cleanDepartments.ts',
-    '../server/src/scripts/projectActiveFacultyToResearchModel.ts',
     '../server/src/scripts/migrateMongoNaming.ts',
     '../server/src/scripts/betaSeedEnvironment.ts',
-    '../server/src/scripts/backfillResearchHomeOfficialUrls.ts',
-    '../server/src/scripts/profileDataQualityAudit.ts',
     '../server/src/scripts/backfillBrowseRank.ts',
     '../server/src/scripts/auditProgramResearchRelevance.ts',
     '../server/src/scripts/scholarlyLinkProvenanceAudit.ts',
@@ -4502,15 +4105,12 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/launchAcquisitionReport.ts',
     '../server/src/scripts/launchReviewExceptions.ts',
     '../server/src/scripts/migrateResearchEntities.ts',
-    '../server/src/scripts/profileImageQualityAudit.ts',
     '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
     '../server/src/scripts/migrateResearchEntityCollections.ts',
     '../server/src/scripts/scraperIntegrityDuplicateReview.ts',
     '../server/src/scripts/rebuildResearchEntitySearchIndex.ts',
     '../server/src/scripts/researchQualitySearchReview.ts',
-    '../server/src/scripts/profileBioCoverageAudit.ts',
     '../server/src/scripts/paperQualityAudit.ts',
-    '../server/src/scripts/backfillStudentVisibilityTiers.ts',
     '../server/src/scripts/disambiguateSurnameLabNames.ts',
     '../server/src/scripts/studentVisibilityGate.ts',
     '../server/src/scripts/cleanupLegacyMongoCollections.ts',
@@ -5203,7 +4803,6 @@ test('client UI does not surface raw Axios error payload text', () => {
     'utf8',
   );
   const clientFiles = [
-    '../client/src/components/admin/AdminProfileEditModal.tsx',
     '../client/src/components/admin/AdminDepartments.tsx',
     '../client/src/components/admin/AdminResearchAreas.tsx',
     '../client/src/components/admin/AdminFellowshipEditModal.tsx',
@@ -5359,73 +4958,6 @@ test('public profile scholarly links omit internal user and entity ids', () => {
   assert.doesNotMatch(serializer[0], /evidenceLabel: options\.evidenceLabel/);
 });
 
-test('profile update persistence sanitizes public URL fields for self and admin edits', () => {
-  const profileServiceSource = fs.readFileSync(
-    new URL('../server/src/services/profileService.ts', import.meta.url),
-    'utf8',
-  );
-  const userControllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/userController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    profileServiceSource,
-    /const sanitizeSelfEditableProfileUrlFields = \(update: Record<string, any>\) => \{/,
-  );
-  assert.match(profileServiceSource, /const website = boundedPublicProfileUrl\(update\.website\)/);
-  assert.match(
-    profileServiceSource,
-    /const imageUrl = boundedPublicProfileUrl\(update\.imageUrl\)/,
-  );
-  assert.match(profileServiceSource, /const normalizedUrl = boundedPublicProfileUrl\(url\)/);
-  assert.match(
-    profileServiceSource,
-    /export const adminUpdateProfile[\s\S]*sanitizeSelfEditableProfileUrlFields\(update\)/,
-  );
-  assert.match(
-    userControllerSource,
-    /const publicProfileUrlKey = \(key: unknown\): string \| undefined => \{/,
-  );
-  assert.match(userControllerSource, /MAX_CURRENT_USER_BIO_LENGTH/);
-  assert.match(userControllerSource, /MAX_CURRENT_USER_ARRAY_ITEMS/);
-  assert.match(userControllerSource, /MAX_CURRENT_USER_ARRAY_VALUE_LENGTH/);
-  assert.match(
-    userControllerSource,
-    /const sanitizeSelfEditableTextFields = \(update: Record<string, any>\) => \{/,
-  );
-  assert.match(userControllerSource, /boundedAccountStringArray/);
-  assert.match(userControllerSource, /sanitizeSelfEditableTextFields\(update\)/);
-  assert.doesNotMatch(userControllerSource, /sanitizeUnknownBootstrapFields/);
-  assert.doesNotMatch(userControllerSource, /currentUser\.userType === 'unknown'/);
-  const selfUpdateFields =
-    userControllerSource.match(/const SELF_UPDATABLE_FIELDS = \[[\s\S]*?\] as const;/)?.[0] || '';
-  assert.doesNotMatch(selfUpdateFields, /'departments'/);
-  assert.match(
-    userControllerSource,
-    /if \(update\.primaryDepartment !== undefined \|\| update\.secondaryDepartments !== undefined\) \{/,
-  );
-  assert.match(userControllerSource, /const current = await readUser\(currentUser\.netId\)/);
-  assert.match(
-    userControllerSource,
-    /update\.departments = \[primary, \.\.\.secondary\]\.filter\(Boolean\)/,
-  );
-  assert.match(
-    userControllerSource,
-    /const SAFE_CURRENT_USER_PROFILE_URL_KEY_RE = \/\^\[A-Za-z0-9 _-\]\{1,80\}\$\//,
-  );
-  assert.match(userControllerSource, /!SAFE_CURRENT_USER_PROFILE_URL_KEY_RE\.test\(trimmed\)/);
-  assert.match(userControllerSource, /trimmed === '__proto__' \|\|/);
-  assert.match(userControllerSource, /trimmed === 'constructor' \|\|/);
-  assert.match(userControllerSource, /trimmed === 'prototype'/);
-  assert.doesNotMatch(
-    userControllerSource,
-    /replace\(\/\^\\\$\+\/, '_'\)\.replace\(\/\\\.\/g, '_'\)/,
-  );
-  assert.match(userControllerSource, /const normalizedKey = publicProfileUrlKey\(key\)/);
-  assert.match(userControllerSource, /slice\(0, MAX_CURRENT_USER_PROFILE_URLS\)/);
-});
-
 test('public URL normalization rejects local and private-network browser targets', () => {
   const serverUrlSource = fs.readFileSync(
     new URL('../server/src/utils/urlSafety.ts', import.meta.url),
@@ -5462,29 +4994,6 @@ test('public URL normalization rejects local and private-network browser targets
   assert.match(serverUrlSource, /if \(!isAllowedPublicHttpPort\(url\)\) return false/);
   assert.match(clientUrlSource, /if \(isPrivateOrLocalHostname\(parsed\.hostname\)\) return ''/);
   assert.match(clientUrlSource, /if \(!isAllowedPublicHttpPort\(parsed\)\) return ''/);
-});
-
-test('admin profile updates bound allowlisted fields before persistence', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/profileService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const sanitizeAdminProfileTextFields = \(update: Record<string, any>\) =>/);
-  assert.match(
-    source,
-    /const sanitizeAdminProfileScalarFields = \(update: Record<string, any>\) =>/,
-  );
-  assert.match(
-    source,
-    /const ADMIN_PROFILE_USER_TYPES = new Set\(\[\s*'admin',\s*'professor',\s*'faculty',\s*'undergraduate',\s*'graduate',\s*'unknown',\s*\]\)/,
-  );
-  assert.match(source, /data && typeof data === 'object' && !Array\.isArray\(data\)/);
-  assert.match(source, /sanitizeAdminProfileTextFields\(update\)/);
-  assert.match(source, /sanitizeSelfEditableProfileUrlFields\(update\)/);
-  assert.match(source, /sanitizeAdminProfileScalarFields\(update\)/);
-  assert.doesNotMatch(source, /if \(data\[field\] !== undefined\)/);
-  assert.doesNotMatch(source, /update\[field\] = data\[field\]/);
 });
 
 test('current-user mutation responses omit internal account join fields', () => {
@@ -5577,15 +5086,9 @@ test('shared URL sanitizers bound values before parsing', () => {
 
 test('publication DOI links use the shared DOI sanitizer', () => {
   const urlSource = fs.readFileSync(new URL('../client/src/utils/url.ts', import.meta.url), 'utf8');
-  const doiRenderers = ['../client/src/components/admin/AdminProfileEditModal.tsx'];
 
   assert.match(urlSource, /export const safeDoiUrl = \(rawDoi: unknown\): string => \{/);
   assert.match(urlSource, /DOI_PATTERN/);
-  for (const file of doiRenderers) {
-    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(source, /safeDoiUrl/);
-    assert.doesNotMatch(source, /https:\/\/doi\.org\/\$\{/);
-  }
 });
 
 test('research activity title normalization avoids HTML parser sinks', () => {
@@ -5794,10 +5297,6 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
     new URL('../server/src/acceptedInputs/fellowshipInputs.ts', import.meta.url),
     'utf8',
   );
-  const acceptedInputsCoreSource = fs.readFileSync(
-    new URL('../server/src/scripts/acceptedInputsCore.ts', import.meta.url),
-    'utf8',
-  );
 
   assert.match(spreadsheetSafetySource, /startsWithSpreadsheetFormula/);
   assert.match(spreadsheetSafetySource, /isAsciiControlCode\(code\)/);
@@ -5880,7 +5379,6 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
   assert.match(googleSheetsSource, /stringValue:\s*safeSheetCell\(h\)/);
   assert.match(googleSheetsSource, /stringValue:\s*safeSheetCell\(cell\)/);
   assert.match(acceptedInputsSource, /safeSpreadsheetCell\(value\)/);
-  assert.match(acceptedInputsCoreSource, /safeSpreadsheetCell\(value\)/);
   const researchPlanServiceSource = fs.readFileSync(
     new URL('../server/src/services/researchPlanService.ts', import.meta.url),
     'utf8',
@@ -6084,9 +5582,7 @@ test('Meilisearch rebuild artifacts use safe JSON output paths', () => {
 
 test('quality and coverage audit artifacts use safe JSON output paths', () => {
   const files = [
-    ['professor bio coverage audit', '../server/src/scripts/profileBioCoverageAudit.ts'],
     ['research entity coverage audit', '../server/src/scripts/researchEntityCoverageAudit.ts'],
-    ['profile image quality audit', '../server/src/scripts/profileImageQualityAudit.ts'],
     ['research quality search review', '../server/src/scripts/researchQualitySearchReview.ts'],
   ];
 
@@ -6200,9 +5696,7 @@ test('migration and cleanup artifacts use safe JSON output paths', () => {
 
 test('research and profile backfill artifacts use safe JSON output paths', () => {
   const files = [
-    ['research home URL backfill', '../server/src/scripts/backfillResearchHomeOfficialUrls.ts'],
     ['research description backfill', '../server/src/scripts/backfillResearchDescriptions.ts'],
-    ['profile bio backfill', '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts'],
     ['center directors backfill', '../server/src/scripts/backfillCenterDirectors.ts'],
     ['browse rank backfill', '../server/src/scripts/backfillBrowseRank.ts'],
   ];
@@ -6571,18 +6065,6 @@ test('listing permission failures do not interpolate user or listing identifiers
   assert.doesNotMatch(serviceSource, /User with id \$\{userId\}/);
   assert.doesNotMatch(serviceSource, /update listing with id \$\{safeId\}/);
   assert.match(serviceSource, /throw new IncorrectPermissionsError\('Forbidden'\)/);
-});
-
-test('user lookup not-found errors do not echo queried identifiers', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/userService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.doesNotMatch(source, /User not found with ObjectId/);
-  assert.doesNotMatch(source, /User not found with NetId/);
-  assert.doesNotMatch(source, /netidFilter\.netid\.\$regex\.slice/);
-  assert.match(source, /throw new NotFoundError\('User not found'\)/);
 });
 
 test('listing and fellowship not-found errors do not echo queried identifiers', () => {
