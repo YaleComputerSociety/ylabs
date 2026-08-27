@@ -125,7 +125,9 @@ async function loadDescriptionObservations(
   if (objectIds.length > 0) entityMatch.push({ entityId: { $in: objectIds } });
   if (entityMatch.length === 0) return new Map();
 
-  const cursor = mongoose.connection.db.collection('observations').find(
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('MongoDB connection is not initialized');
+  const cursor = db.collection('observations').find(
     {
       entityType: 'researchEntity',
       field: { $in: ['fullDescription', 'shortDescription'] },
@@ -168,7 +170,9 @@ async function loadDescriptionObservations(
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   await initializeConnections();
-  const dbLabel = mongoose.connection.db?.databaseName ?? 'unknown';
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('MongoDB connection is not initialized');
+  const dbLabel = db.databaseName ?? 'unknown';
   const filter = scopeFilter(args);
 
   const loadStart = Date.now();
@@ -236,7 +240,7 @@ async function main() {
   // C1 - prevention-first: cluster by identity keys; score dedup vs known merges.
   // basic = URL+PI+org keys (trial 1/2); rich = + name, name+dept, ORCID-via-PI (C4).
   const orcidByUserId = new Map<string, string>();
-  for await (const user of mongoose.connection.db
+  for await (const user of db
     .collection('users')
     .find({ orcid: { $type: 'string' } }, { projection: { orcid: 1 } })) {
     const orcid = String((user as Record<string, any>).orcid).trim();
@@ -325,13 +329,11 @@ async function main() {
   }
 
   const globalChurn = {
-    redirects: await mongoose.connection.db
-      .collection('research_entity_redirects')
-      .estimatedDocumentCount(),
-    releaseQueueItems: await mongoose.connection.db
+    redirects: await db.collection('research_entity_redirects').estimatedDocumentCount(),
+    releaseQueueItems: await db
       .collection('visibility_release_queue_items')
       .estimatedDocumentCount(),
-    referenceRepairAudits: await mongoose.connection.db
+    referenceRepairAudits: await db
       .collection('observation_reference_repair_audits')
       .estimatedDocumentCount(),
   };

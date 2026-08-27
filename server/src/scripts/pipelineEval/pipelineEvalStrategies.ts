@@ -140,7 +140,7 @@ function ctxFor(entity: EvalEntity): DescriptionContext {
   return {
     researchAreas: entity.researchAreas,
     entityType: entity.entityType,
-    isProgramLike: isProgramLikeResearchEntity(entity as Record<string, unknown>),
+    isProgramLike: isProgramLikeResearchEntity(entity as unknown as Record<string, unknown>),
   };
 }
 
