@@ -12,7 +12,6 @@ Claude Code can auto-discover them if `.claude/skills` is symlinked to `skills/`
 
 | Skill | Read it when |
 |-------|-------------|
-| `skills/graphify/SKILL.md` | Navigating cross-module architecture, refreshing the local graph cache, or resolving stale/invalid Graphify output. |
 | `skills/product-model/SKILL.md` | Changing student-facing research discovery behavior, product vocabulary, visibility, access evidence, or entity-page content. |
 | `skills/architecture/SKILL.md` | Needing the repo map, stack, commands, routes, services, naming conventions, environments, or external integrations. |
 | `skills/search-data/SKILL.md` | Working on MongoDB data shape, Meilisearch indexes, browse ranking, ResearchEntity search, or search rebuild scripts. |
@@ -26,18 +25,15 @@ Claude Code can auto-discover them if `.claude/skills` is symlinked to `skills/`
 
 For any non-trivial codebase task:
 
-1. Run `yarn graphify:ensure`, then use a scoped `graphify query`, `graphify path`, or `graphify explain` before broad search.
-If refresh is unavailable, state the fallback and use targeted source search.
-2. Read the smallest relevant skill or skills from the table above.
-3. Verify important Graphify or skill claims against source files, tests, and durable docs.
+1. Read the smallest relevant skill or skills from the table above.
+2. Use targeted source search (`rg`, then reading the named files) to locate the relevant code before making changes.
+3. Verify important skill claims against source files, tests, and durable docs.
 4. Make the smallest safe change using existing repo patterns.
 5. Run focused verification and review the diff.
-6. Fold durable changes back into docs and refresh the ignored local Graphify cache when the architectural shape changed.
+6. Fold durable changes back into docs.
 7. When an action becomes a recurring workflow, improve the relevant skill with the reusable procedure and verify that its guidance still matches the repository.
 
 Source files, tests, `AGENTS.md`, and `docs/*.md` are canonical.
-Graphify is a navigation layer, not the source of truth.
-Never stage or commit generated files under `graphify-out/`.
 
 ## Core Rules
 

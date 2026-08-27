@@ -4,6 +4,13 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-27: Retire Graphify
+
+Graphify was kept as a local generated navigation cache (see the 2026-08-01 decision) but was not installed by default, not automated, and not used in practice; agents navigate with source search plus the durable `docs/` and `skills/` instead.
+An evaluation found only its `explain`/`path` queries on a known symbol accurate and useful, while the natural-language `query`-before-search mode the task loop led with was noisy without an embeddings backend, and the deterministic-cache CI job ran on every pull request to protect a capability with no consumers.
+Decision: remove Graphify entirely - the workflow, cache scripts, pinned version, ignore file, skill, and onboarding doc - and rewrite the agent task loop to lead with the relevant skill plus targeted source search.
+This supersedes the 2026-08-01 decision.
+
 ## 2026-08-26: Deduplicate Via One Resolver Plus One Engine, Not Per-Domain Repair
 
 Deduplication today is spread across many after-the-fact repair lanes (`dedupeUsersByIdentity`, `dedupeAccountlessResearcherShells`, `dedupeResearchEntitiesByPi`, the in-flight URL-identity lane, program/fellowship dedup, `repairDuplicateAccessSignals`) plus per-domain canonical stores (`research_entity_redirects`, `canonicalGroupId`, `dedupedIntoUserId`, `dedupedIntoResearcherId`).
@@ -125,6 +132,8 @@ Missing professor coverage is repaired through bounded, targeted scraper runs ag
 Archived `ResearchEntity` rows are migration residue rather than catalog inventory and should be physically removed only through fail-closed cleanup that preserves source observations and resolves dependent references.
 
 ## 2026-08-01: Treat Graphify As A Local Generated Cache
+
+Superseded by the 2026-08-27 decision to retire Graphify.
 
 Graphify output changes frequently during architecture refactors and created unrelated feature-branch diffs, rebase conflicts, and invalid generated JSON.
 Generated files under `graphify-out/` are now ignored local cache data rather than committed source.

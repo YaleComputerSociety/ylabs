@@ -71,10 +71,6 @@ client/node_modules/
 .yarn/
 *.yarn
 
-# Graphify is a branch-local generated navigation cache.
-# Keep its pinned version and generation policy in Git, never its outputs.
-graphify-out/
-
 # Local agent and browser-driver support files
 .codex/
 .gstack/

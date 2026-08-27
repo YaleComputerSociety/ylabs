@@ -81,14 +81,14 @@ test('selects tracked and untracked non-ignored files for scanning', () => {
     'server/src/app.ts',
     'new-admin-note.md',
     'yarn.lock',
-    'graphify-out/graph.json',
+    'local-scratch.md',
     '',
   ]);
 
   assert.deepEqual(paths, [
     'server/src/app.ts',
     'new-admin-note.md',
-    'graphify-out/graph.json',
+    'local-scratch.md',
   ]);
 });
 
