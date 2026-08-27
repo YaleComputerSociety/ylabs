@@ -54,15 +54,16 @@ The two exhaustive Development modes (`development-full`, `development-increment
 1. `faculty-projection` (`research-entity:project-faculty`, `--concurrency 12`)
 2. `researcher-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`)
 3. `eponymous-fra-merge` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`)
-4. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-5. `search-rebuild` (`meili:rebuild-research-entities --clear`)
-6. `coverage-audit`
-7. `data-quality` (`beta:data-quality --strict`)
-8. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-9. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-10. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+4. `url-identity-dedupe` (opt-in, only when `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set)
+5. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+6. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+7. `coverage-audit`
+8. `data-quality` (`beta:data-quality --strict`)
+9. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+10. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+11. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
 
-The three dedupe/merge/delete stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`): `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
+The `researcher-dedupe`, `eponymous-fra-merge`, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`): `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. The `url-identity-dedupe` stage is opt-in and stays off unless `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set to a truthy value (`1` or `true`), so a routine sweep never silently merges by shared profile URL. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
 
 The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
 A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
