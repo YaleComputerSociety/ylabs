@@ -146,7 +146,8 @@
     "prod": "cross-env NODE_ENV=production tsx watch src/index.ts",
     "eval:pipeline": "tsx src/scripts/pipelineEval/evalPipelineOrchestration.ts",
     "data:backfill-canonical-aliases": "tsx src/scripts/backfillCanonicalAliases.ts",
-    "fuzzy:labeled-set": "tsx src/scripts/pipelineEval/fuzzyMatchLabeledSet.ts"
+    "fuzzy:labeled-set": "tsx src/scripts/pipelineEval/fuzzyMatchLabeledSet.ts",
+    "fuzzy:residual-report": "tsx src/scripts/pipelineEval/fuzzyResidualReport.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",
