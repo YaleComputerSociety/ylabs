@@ -277,6 +277,48 @@ const FELLOWSHIP_DESCRIPTION_FIELDS = new Set(['description', 'summary']);
 const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt', 'sourceContentHash']);
 const CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS = ['methods', 'inferredPiUserId'];
 
+function materializerValueAtPath(doc: Record<string, unknown> | null, path: string): unknown {
+  if (!doc) return undefined;
+  let current: unknown = doc;
+  for (const segment of path.split('.')) {
+    if (current === null || current === undefined || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function materializerValuesDeepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+// A re-projection over an unchanged observation log recomputes the same field
+// values every run; the only guaranteed-different field is the managed
+// `lastObservedAt` timestamp. Treat the projection as a no-op when every scoped
+// `set` field already equals the stored value (ignoring managed metadata) and
+// every `unset` target is already absent, so the write and its redundant search
+// re-sync can be skipped. Any path we cannot confidently resolve is treated as a
+// change (we never skip a real write).
+export function isMaterializerProjectionNoOp(
+  entityDoc: Record<string, unknown>,
+  set: Record<string, unknown>,
+  unset: Record<string, unknown>,
+): boolean {
+  for (const [path, value] of Object.entries(set)) {
+    if (MATERIALIZER_MANAGED_FIELDS.has(path)) continue;
+    if (!materializerValuesDeepEqual(materializerValueAtPath(entityDoc, path), value)) return false;
+  }
+  for (const path of Object.keys(unset)) {
+    const current = materializerValueAtPath(entityDoc, path);
+    if (current !== undefined && current !== null) return false;
+  }
+  return true;
+}
+
 function isClearableStaleFieldValue(value: unknown): boolean {
   if (value === undefined || value === null) return false;
   if (typeof value === 'string') return value.trim().length > 0;
@@ -3438,6 +3480,10 @@ export async function materializeEntity(
     };
   }
 
+  const entityScalarUnchanged =
+    Boolean(entityDoc) &&
+    isMaterializerProjectionNoOp(entityDoc as Record<string, unknown>, set, unset);
+
   let created = false;
   if (entityDoc) {
     if (Object.keys(set).length === 0 && Object.keys(unset).length === 0) {
@@ -3452,14 +3498,21 @@ export async function materializeEntity(
         skipped: 'no-scoped-fields',
       };
     }
-    const update: Record<string, unknown> = { $set: set };
-    if (Object.keys(unset).length > 0) update.$unset = unset;
-    if (isResearchEntityObservationType(entityType)) {
-      await mutateAndRefreshAdminAccessReviewProjection(entityDoc._id, (session) =>
-        Model.updateOne({ _id: entityDoc._id }, update, { session }),
-      );
-    } else {
-      await Model.updateOne({ _id: entityDoc._id }, update);
+    // Skip the write (and, below, the redundant search re-sync) when the
+    // projection recomputed the same values it already stored - only the managed
+    // lastObservedAt would differ. Unconditional sub-projections (membership,
+    // access, logistics, browse-rank) still run; they have their own change
+    // detection and can change independently of the scalar projection.
+    if (!entityScalarUnchanged) {
+      const update: Record<string, unknown> = { $set: set };
+      if (Object.keys(unset).length > 0) update.$unset = unset;
+      if (isResearchEntityObservationType(entityType)) {
+        await mutateAndRefreshAdminAccessReviewProjection(entityDoc._id, (session) =>
+          Model.updateOne({ _id: entityDoc._id }, update, { session }),
+        );
+      } else {
+        await Model.updateOne({ _id: entityDoc._id }, update);
+      }
     }
   } else {
     const keyField = uniqueKeyFieldForIdentifier(entityType, identifier.entityKey);
@@ -3551,7 +3604,7 @@ export async function materializeEntity(
   }
 
   const syncEntityType = entityType === 'researchGroup' ? 'researchEntity' : entityType;
-  if (isSyncableEntityType(syncEntityType) && entityIdString) {
+  if (isSyncableEntityType(syncEntityType) && entityIdString && !entityScalarUnchanged) {
     const fresh = await Model.findById(entityIdString).lean();
     if (fresh) await syncEntity(syncEntityType, fresh);
   }
@@ -3611,11 +3664,12 @@ export async function materializeEntity(
     entityType,
     entityId: entityIdString,
     entityKey: identifier.entityKey,
-    fieldsWritten,
+    fieldsWritten: entityScalarUnchanged ? 0 : fieldsWritten,
     conflicts,
     created,
     resolved,
     postMaterializationMetrics,
+    ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
   };
 }
 
