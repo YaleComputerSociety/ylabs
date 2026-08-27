@@ -279,7 +279,7 @@ const Fellowships = () => {
   } = useContext(FellowshipSearchContext);
 
   const { user } = useContext(UserContext);
-  const isAdmin = user?.userType === 'admin';
+  const isAdmin = user?.isAdmin ?? false;
 
   const [state, dispatch] = useReducer(
     browsePageReducer<Fellowship>,

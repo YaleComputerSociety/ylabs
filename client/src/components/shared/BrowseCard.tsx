@@ -51,7 +51,7 @@ const BrowseCard = React.memo(
   }: BrowseCardProps) => {
     const { departments, getColorForResearchArea } = useContext(ConfigContext);
     const { user } = useContext(UserContext);
-    const isAdmin = user?.userType === 'admin';
+    const isAdmin = user?.isAdmin ?? false;
     const tags = useMemo(
       () => getItemTags(item, getColorForResearchArea),
       [item, getColorForResearchArea],

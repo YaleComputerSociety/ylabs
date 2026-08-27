@@ -365,50 +365,36 @@ describe('userController', () => {
     expect(res.body.user).not.toHaveProperty('updatedAt');
   });
 
-  it('lets unknown users bootstrap into any real non-admin account type without confirming them', async () => {
-    for (const userType of ['undergraduate', 'graduate', 'professor', 'faculty']) {
-      mocks.updateUser.mockResolvedValueOnce({
-        netid: 'unknown123',
-        fname: 'Ada',
-        lname: 'Lovelace',
-        email: 'ada@example.edu',
-        userType,
-        userConfirmed: false,
-        profileVerified: false,
-      });
+  it('ignores identity and userType fields on current-user profile updates', async () => {
+    mocks.updateUser.mockResolvedValueOnce({
+      netid: 'unknown123',
+      userType: 'unknown',
+      userConfirmed: false,
+      bio: 'Researcher',
+    });
 
-      const req = {
-        user: { netId: 'unknown123', userType: 'unknown', userConfirmed: false },
-        body: {
-          data: {
-            fname: 'Ada',
-            lname: 'Lovelace',
-            email: 'ada@example.edu',
-            userType,
-            userConfirmed: true,
-            profileVerified: true,
-          },
+    const req = {
+      user: { netId: 'unknown123' },
+      body: {
+        data: {
+          fname: 'Ada',
+          lname: 'Lovelace',
+          email: 'ada@example.edu',
+          userType: 'professor',
+          userConfirmed: true,
+          profileVerified: true,
+          bio: 'Researcher',
         },
-      } as any;
-      const res = privateResponseDouble();
-      const next = vi.fn();
+      },
+    } as any;
+    const res = privateResponseDouble();
+    const next = vi.fn();
 
-      await updateCurrentUser(req, res, next);
+    await updateCurrentUser(req, res, next);
 
-      expect(next).not.toHaveBeenCalled();
-      expect(mocks.updateUser).toHaveBeenLastCalledWith('unknown123', {
-        fname: 'Ada',
-        lname: 'Lovelace',
-        email: 'ada@example.edu',
-        userType,
-      });
-      expect(res.statusCode).toBe(200);
-      expect(res.body.user).toMatchObject({
-        userType,
-        userConfirmed: false,
-      });
-      expect(res.body.user).not.toHaveProperty('profileVerified', true);
-    }
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.updateUser).toHaveBeenLastCalledWith('unknown123', { bio: 'Researcher' });
+    expect(res.statusCode).toBe(200);
   });
 
   it('sanitizes self-edit profile URLs before persisting the current user', async () => {

@@ -7,7 +7,6 @@ import UserContext from '../../contexts/UserContext';
 import type { User } from '../../types/types';
 
 const Protected = () => <div>research content</div>;
-const Onboarding = () => <div>onboarding</div>;
 
 const renderPublicRoute = (contextValue: {
   isLoading: boolean;
@@ -18,11 +17,7 @@ const renderPublicRoute = (contextValue: {
     <MemoryRouter initialEntries={['/research']}>
       <UserContext.Provider value={{ ...contextValue, checkContext: vi.fn() }}>
         <Routes>
-          <Route
-            path="/research"
-            element={<PublicRoute Component={Protected} unknownBlocked={true} />}
-          />
-          <Route path="/unknown" element={<Onboarding />} />
+          <Route path="/research" element={<PublicRoute Component={Protected} />} />
         </Routes>
       </UserContext.Provider>
     </MemoryRouter>,
@@ -37,7 +32,7 @@ describe('PublicRoute', () => {
     expect(screen.getByText('research content')).toBeTruthy();
   });
 
-  it('renders the component for a known authenticated user', () => {
+  it('renders the component for any authenticated user', () => {
     renderPublicRoute({
       isLoading: false,
       isAuthenticated: true,
@@ -45,17 +40,6 @@ describe('PublicRoute', () => {
     });
 
     expect(screen.getByText('research content')).toBeTruthy();
-  });
-
-  it('routes an unknown authenticated user to onboarding when unknownBlocked', () => {
-    renderPublicRoute({
-      isLoading: false,
-      isAuthenticated: true,
-      user: { userType: 'unknown' } as User,
-    });
-
-    expect(screen.getByText('onboarding')).toBeTruthy();
-    expect(screen.queryByText('research content')).toBeNull();
   });
 
   it('shows a loading state while auth resolves', () => {

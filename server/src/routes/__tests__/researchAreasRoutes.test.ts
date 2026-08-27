@@ -103,13 +103,13 @@ describe('research area routes', () => {
     vi.clearAllMocks();
   });
 
-  it('keeps shared research-area creation limited to faculty-style users', () => {
+  it('limits shared research-area creation to admins', () => {
     const createRoutes = routesByPath('/');
     const postRoute = createRoutes.find((route: any) => route.methods?.post);
 
     expect(postRoute).toBeTruthy();
     expect(routeHandlerNames(postRoute)).toEqual(
-      expect.arrayContaining(['isAuthenticated', 'isProfessor']),
+      expect.arrayContaining(['isAuthenticated', 'isAdmin']),
     );
   });
 

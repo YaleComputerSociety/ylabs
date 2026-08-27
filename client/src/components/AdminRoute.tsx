@@ -48,7 +48,7 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
     if (
       !isLoading &&
       localAdminDevLoginUrl &&
-      (!isAuthenticated || (user && user.userType !== 'admin'))
+      (!isAuthenticated || (user && !user.isAdmin))
     ) {
       window.location.assign(localAdminDevLoginUrl);
     }
@@ -74,19 +74,7 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
     return <Navigate to="/login" />;
   }
 
-  if (user && user.userType === 'unknown') {
-    if (localAdminDevLoginUrl) {
-      return (
-        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
-          Opening local admin session...
-        </div>
-      );
-    }
-
-    return <Navigate to="/unknown" />;
-  }
-
-  if (user && user.userType !== 'admin') {
+  if (user && !user.isAdmin) {
     if (localAdminDevLoginUrl) {
       return (
         <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">

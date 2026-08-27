@@ -78,7 +78,7 @@ Migration scripts run from `data-migration/` with `npx tsx --transpile-only <scr
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
-Use `unknown` to reach `/unknown` onboarding locally.
+`?userType=admin` mints a local bootstrap `AdminGrant`, so admin authority comes from a grant rather than `userType`.
 
 ## TypeScript
 

@@ -52,7 +52,7 @@ const BrowseListItem = React.memo(
   }: BrowseListItemProps) => {
     const { departments, getColorForResearchArea } = useContext(ConfigContext);
     const { user } = useContext(UserContext);
-    const isAdmin = user?.userType === 'admin';
+    const isAdmin = user?.isAdmin ?? false;
     const open = isItemOpen(item);
     const tags = useMemo(
       () => getItemTags(item, getColorForResearchArea),

@@ -14,7 +14,7 @@ import {
   requiresDeployedRuntimeSecurity,
 } from './utils/environment';
 import { isPrivateOrLocalHostname } from './utils/urlSafety';
-import { allowsLegacyAdminUserType, hasActiveAdminGrant } from './services/adminGrantService';
+import { ensureBootstrapAdminGrant, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { triggerReconnect, isTopologyLostError, withMongoReconnect } from './db/connections';
 import { authLimiter } from './middleware/rateLimiters';
@@ -39,6 +39,7 @@ type AuthenticatedSessionUser = {
   userType?: string;
   userConfirmed?: boolean;
   profileVerified?: boolean;
+  isAdmin?: boolean;
 };
 
 type PassportAuthInfo = {
@@ -234,9 +235,9 @@ function normalizedHeaderValue(value: string | string[] | undefined): string | u
 }
 
 // Every real account in the database is 'undergraduate' or 'graduate' —
-// bare 'student' is never actually assigned (Yalies and the /unknown
-// bootstrap form both only ever produce undergraduate/graduate) — so
-// dev/local-bypass tooling defaults to 'undergraduate' to match reality.
+// bare 'student' is never actually assigned (Yalies classification only
+// produces undergraduate/graduate) — so dev/local-bypass tooling defaults
+// to 'undergraduate' to match reality.
 function normalizeDevUserType(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return ['admin', 'undergraduate', 'graduate', 'professor', 'faculty', 'unknown'].includes(
@@ -285,6 +286,7 @@ function publicAuthSessionUser(user: unknown): AuthenticatedSessionUser | null {
     userType: normalizeSessionUserType(source.userType),
     userConfirmed: source.userConfirmed === true,
     profileVerified: source.profileVerified === true,
+    isAdmin: source.isAdmin === true,
   };
 }
 
@@ -333,6 +335,9 @@ async function ensureLocalAuthBypassUser(
     netid: bypassUser.netId,
     email: `${bypassUser.netId.toLowerCase()}@example.invalid`,
   });
+  if (bypassUser.userType === 'admin') {
+    await ensureBootstrapAdminGrant(bypassUser.netId);
+  }
 
   return bypassUser;
 }
@@ -363,12 +368,15 @@ async function ensureDevLoginUser(userType: unknown) {
 
   const normalizedUserType = normalizeDevUserType(userType);
   const profile = DEV_LOGIN_PROFILES[normalizedUserType] ?? DEV_LOGIN_PROFILES.undergraduate;
-  // A real 'unknown' user is unconfirmed/unverified until they complete the
-  // /unknown bootstrap form; every other dev role is pre-confirmed so it can
-  // exercise the rest of the app immediately.
+  // A real 'unknown' user is unconfirmed/unverified because Yalies and the
+  // Directory could not classify them; every other dev role is pre-confirmed
+  // so it can exercise the rest of the app immediately.
   const isBootstrappedType = normalizedUserType !== 'unknown';
   const netId = profile.netId;
   await recordAccountLogin({ netid: netId, email: `${netId}@example.invalid` });
+  if (normalizedUserType === 'admin') {
+    await ensureBootstrapAdminGrant(netId);
+  }
 
   return {
     netId,
@@ -387,21 +395,15 @@ async function buildAuthenticatedSessionUser(
     throw new Error('Invalid authentication principal');
   }
   const persistedUserType = user.userType || 'unknown';
-  const grantBackedAdmin = await hasActiveAdminGrant(netId);
-  const localDevelopmentAdmin =
-    persistedUserType === 'admin' && allowsLegacyAdminUserType(process.env);
-  const userType =
-    grantBackedAdmin || localDevelopmentAdmin
-      ? 'admin'
-      : persistedUserType === 'admin'
-        ? 'unknown'
-        : persistedUserType;
+  const isAdmin = await hasActiveAdminGrant(netId);
+  const userType = persistedUserType === 'admin' ? 'unknown' : persistedUserType;
 
   return {
     netId,
     userType,
     userConfirmed: user.userConfirmed,
     profileVerified: user.profileVerified || false,
+    isAdmin,
   };
 }
 

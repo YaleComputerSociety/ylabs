@@ -83,7 +83,7 @@ const renderAdmin = (children: ReactNode) =>
         ...defaultUserContext,
         isLoading: false,
         isAuthenticated: true,
-        user: { userType: 'admin' } as any,
+        user: { userType: 'admin', isAdmin: true } as any,
       }}
     >
       <ConfigContext.Provider value={defaultConfigContext}>{children}</ConfigContext.Provider>

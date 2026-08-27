@@ -46,16 +46,11 @@ const normalizeAdminGrantNote = (note: unknown): string => {
   return normalized;
 };
 
-export const allowsLegacyAdminUserType = (env: NodeJS.ProcessEnv = process.env): boolean =>
-  isLocalDevelopmentRuntime(env);
-
 export const hasAdminAuthorityForUser = async (
-  user: { netId?: unknown; netid?: unknown; userType?: unknown } | null | undefined,
+  user: { netId?: unknown; netid?: unknown } | null | undefined,
 ): Promise<boolean> => {
-  if (!user || user.userType !== 'admin') return false;
-
-  const netid = user.netId || user.netid;
-  return (await hasActiveAdminGrant(netid)) || allowsLegacyAdminUserType();
+  if (!user) return false;
+  return hasActiveAdminGrant(user.netId || user.netid);
 };
 
 const userSummaryByNetid = async (netids: string[]) => {
@@ -131,6 +126,31 @@ export const hasActiveAdminGrant = async (netid: unknown): Promise<boolean> => {
     expiresAt: Date.now() + ADMIN_GRANT_CACHE_TTL_MS,
   });
   return value;
+};
+
+export const ensureBootstrapAdminGrant = async (netid: unknown): Promise<void> => {
+  if (!isLocalDevelopmentRuntime()) return;
+  const normalizedNetid = normalizeNetid(netid);
+  if (!NETID_RE.test(normalizedNetid)) return;
+  const now = new Date();
+  await AdminGrant.findOneAndUpdate(
+    { netid: normalizedNetid, status: 'active' },
+    {
+      $setOnInsert: {
+        netid: normalizedNetid,
+        status: 'active',
+        source: 'bootstrap',
+        grantedBy: 'system',
+        grantedAt: now,
+        note: 'Local dev-login bootstrap admin',
+        history: [
+          { action: 'granted', actorNetid: 'system', note: 'Local dev-login bootstrap admin', at: now },
+        ],
+      },
+    },
+    { upsert: true, setDefaultsOnInsert: true },
+  );
+  adminGrantCache.delete(normalizedNetid);
 };
 
 export const grantAdminAccess = async ({

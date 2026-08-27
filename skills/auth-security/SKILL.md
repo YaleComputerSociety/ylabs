@@ -14,15 +14,17 @@ Prefer source verification before editing `passport.ts`, `app.ts`, security midd
 User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
      -> Yalies API for undergrad/grad classification
      -> Yale Directory for faculty classification
-     -> Fallback: userType "unknown", unconfirmed
+     -> Fallback: userType "unknown"
      -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt
      -> cookie-session for 30 days, httpOnly, secure in prod, sameSite lax
 ```
 
 Authentication runs on the canonical `Account` (the private login principal), not the legacy `User`.
 Classification (undergrad/grad/faculty) is derived at login and carried in the signed session; it is not persisted to a `User`.
+`userType` is a classification/analytics dimension only; it does not authorize anything.
+Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.
-Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then re-applies the admin-grant check.
+Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
 A session whose `Account` no longer exists or is archived deserializes to unauthenticated.
 
@@ -32,7 +34,7 @@ Dev login bypass:
 
 This creates a test session as `test123` with user type `undergraduate`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local account.
-`unknown` is the only way to reach `/unknown` onboarding locally.
+`?userType=admin` mints an idempotent local bootstrap `AdminGrant` (via `ensureBootstrapAdminGrant`), so dev admin authority comes from a real grant, not a `userType` shortcut.
 
 ## Auth middleware
 
@@ -40,18 +42,19 @@ Defined in `server/src/middleware/auth.ts`.
 
 | Middleware | Check |
 |------------|-------|
-| `isAuthenticated` | `req.user` exists. |
-| `isAdmin` | `userType === 'admin'`. |
-| `isProfessor` | `userType` is `professor`, `faculty`, or `admin`. |
-| `isTrustworthy` | confirmed admin, professor, or faculty. |
-| `isConfirmed` | `userConfirmed === true`. |
+| `isAuthenticated` | `req.user` has a valid bounded NetID. |
+| `isAdmin` | active `AdminGrant` for the NetID (`hasActiveAdminGrant`). |
+
+There are no `userType`-based authorization guards.
+Admin-review write surfaces (research-area creation) use `isAdmin`; correction-report and listing-claim submission use `isAuthenticated`.
 
 Client route guards:
 
 | Guard | Purpose |
 |-------|---------|
-| `PrivateRoute` | Auth required; redirects unknown users when `unknownBlocked=true`. |
-| `AdminRoute` | Admin only. |
+| `PrivateRoute` | Auth required. |
+| `AdminRoute` | Admin only, keyed off the server-provided `user.isAdmin`. |
+| `PublicRoute` | Renders for logged-out and authenticated users alike. |
 | `UnprivateRoute` | No auth required. |
 
 ## Validation middleware

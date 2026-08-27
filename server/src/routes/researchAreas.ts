@@ -2,7 +2,7 @@
  * Express routes for custom research area creation.
  */
 import { Router, Request, Response, type NextFunction } from 'express';
-import { isAuthenticated, isProfessor } from '../middleware/index';
+import { isAuthenticated, isAdmin } from '../middleware/index';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { invalidateConfigCache } from '../services/configService';
 import { escapeRegex } from '../utils/regex';
@@ -30,7 +30,7 @@ function setPrivateResearchAreaCacheHeaders(_req: Request, res: Response, next: 
 
 router.use(setPrivateResearchAreaCacheHeaders);
 
-router.post('/', writeLimit, isAuthenticated, isProfessor, async (req: Request, res: Response) => {
+router.post('/', writeLimit, isAuthenticated, isAdmin, async (req: Request, res: Response) => {
   try {
     const { name, field } = req.body;
     const currentUser = req.user as { netId?: string };

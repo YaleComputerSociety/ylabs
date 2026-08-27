@@ -15,7 +15,6 @@ import Login from './pages/login';
 import About from './pages/about';
 import Dashboard from './pages/dashboard';
 import Profile from './pages/profile';
-import Unknown from './pages/unknown';
 import LoginError from './pages/loginError';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -65,58 +64,34 @@ const App = () => {
                 <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
                   <RouteFade>
                     <Routes>
-                      <Route
-                        path="/"
-                        element={<PublicRoute Component={RootRedirect} unknownBlocked={true} />}
-                      />
+                      <Route path="/" element={<PublicRoute Component={RootRedirect} />} />
                       <Route
                         path="/listings"
-                        element={
-                          <PrivateRoute Component={RetiredListingsRedirect} unknownBlocked={true} />
-                        }
+                        element={<PrivateRoute Component={RetiredListingsRedirect} />}
                       />
                       <Route
                         path="/fellowships"
-                        element={
-                          <PrivateRoute
-                            Component={RetiredFellowshipsRedirect}
-                            unknownBlocked={true}
-                          />
-                        }
+                        element={<PrivateRoute Component={RetiredFellowshipsRedirect} />}
                       />
-                      <Route
-                        path="/programs"
-                        element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/research"
-                        element={<PublicRoute Component={Research} unknownBlocked={true} />}
-                      />
+                      <Route path="/programs" element={<PrivateRoute Component={Fellowships} />} />
+                      <Route path="/research" element={<PublicRoute Component={Research} />} />
                       <Route
                         path="/research/person/:publicKey"
                         element={<RetiredPersonRedirect />}
                       />
                       <Route
                         path="/research/:slug"
-                        element={<PublicRoute Component={ResearchDetail} unknownBlocked={true} />}
+                        element={<PublicRoute Component={ResearchDetail} />}
                       />
-                      <Route
-                        path="/about"
-                        element={<PublicRoute Component={About} unknownBlocked={true} />}
-                      />
+                      <Route path="/about" element={<PublicRoute Component={About} />} />
                       <Route
                         path="/account"
-                        element={
-                          <PrivateRoute Component={RetiredAccountRedirect} unknownBlocked={true} />
-                        }
+                        element={<PrivateRoute Component={RetiredAccountRedirect} />}
                       />
-                      <Route
-                        path="/dashboard"
-                        element={<PrivateRoute Component={Dashboard} unknownBlocked={true} />}
-                      />
+                      <Route path="/dashboard" element={<PrivateRoute Component={Dashboard} />} />
                       <Route
                         path="/profile/:netid"
-                        element={<PrivateRoute Component={Profile} unknownBlocked={true} />}
+                        element={<PrivateRoute Component={Profile} />}
                       />
                       <Route
                         path="/analytics"
@@ -130,10 +105,6 @@ const App = () => {
                       <Route
                         path="/login-error"
                         element={<UnprivateRoute Component={LoginError} />}
-                      />
-                      <Route
-                        path="/unknown"
-                        element={<PrivateRoute Component={Unknown} knownBlocked={true} />}
                       />
                       <Route path="*" element={<NotFound />} />
                     </Routes>

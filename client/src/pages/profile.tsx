@@ -58,7 +58,7 @@ const Profile = () => {
   );
   const [showAdminEdit, setShowAdminEdit] = useState(false);
 
-  const isAdmin = user?.userType === 'admin';
+  const isAdmin = user?.isAdmin ?? false;
   const bioText = profile?.bio || '';
   useDocumentTitle(profile ? `${profile.fname} ${profile.lname}` : 'Profile');
 

@@ -1232,6 +1232,7 @@ describe('Research page', () => {
       netId: 'admin1',
       userType: 'admin',
       userConfirmed: true,
+      isAdmin: true,
     });
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
@@ -1300,6 +1301,7 @@ describe('Research page', () => {
       netId: 'admin1',
       userType: 'admin',
       userConfirmed: true,
+      isAdmin: true,
     });
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
@@ -1368,6 +1370,7 @@ describe('Research page', () => {
       netId: 'admin1',
       userType: 'admin',
       userConfirmed: true,
+      isAdmin: true,
     });
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
     fireEvent.click(screen.getByLabelText('Show weakest profiles first'));

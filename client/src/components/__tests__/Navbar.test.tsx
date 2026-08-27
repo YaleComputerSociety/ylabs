@@ -102,7 +102,7 @@ describe('Navbar', () => {
   });
 
   it('shows exactly one desktop analytics dashboard link for admin users', () => {
-    renderNavbar({ userType: 'admin', netId: 'devadmin' });
+    renderNavbar({ userType: 'admin', netId: 'devadmin', isAdmin: true });
 
     const analyticsLinks = screen.getAllByRole('link', { name: 'Analytics' });
     expect(analyticsLinks).toHaveLength(1);

@@ -1017,17 +1017,6 @@ test('public search loaders avoid raw Axios console errors', () => {
   }
 });
 
-test('account and profile client surfaces avoid raw caught console errors', () => {
-  const files = ['../client/src/pages/unknown.tsx'];
-
-  for (const file of files) {
-    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.doesNotMatch(source, /console\.error\(err\)/);
-    assert.doesNotMatch(source, /console\.error\([^;\n]*,\s*error\)/);
-    assert.doesNotMatch(source, /console\.error\([^;\n]*,\s*err\)/);
-  }
-});
-
 test('admin client surfaces avoid raw caught console errors', () => {
   const files = [
     '../client/src/pages/analytics.tsx',
@@ -4978,13 +4967,12 @@ test('local auth bypass bounds netid session identities', () => {
   );
 });
 
-test('legacy admin userType is not production authority outside active admin grants', () => {
+test('admin authority requires an active admin grant and never consults userType', () => {
   const source = fs.readFileSync(
     new URL('../server/src/middleware/auth.ts', import.meta.url),
     'utf8',
   );
 
-  assert.match(source, /const hasAdminAuthority = async/);
   assert.match(source, /const AUTH_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\/;/);
   assert.match(source, /const normalizeAuthNetid = \(value: unknown\): string =>/);
   assert.match(
@@ -4995,18 +4983,17 @@ test('legacy admin userType is not production authority outside active admin gra
     source,
     /const hasAuthenticatedPrincipal = \(user: unknown\): user is AuthenticatedUser =>/,
   );
-  assert.match(source, /if \(user\.userType !== 'admin' \|\| !netid\) return false/);
-  assert.match(source, /hasActiveAdminGrant\(netid\)/);
-  assert.match(source, /hasGrant \|\| allowsLegacyAdminUserType\(\)/);
   assert.match(source, /export const isAuthenticated[\s\S]*hasAuthenticatedPrincipal\(req\.user\)/);
-  assert.match(source, /currentUser\.userType === 'admin'[\s\S]*hasAdminAuthority\(currentUser\)/);
-  assert.doesNotMatch(source, /const allowedTypes = \['admin', 'professor', 'faculty'\]/);
+  assert.match(source, /export const isAdmin[\s\S]*hasActiveAdminGrant\(requestNetid\(currentUser\)\)/);
+  assert.doesNotMatch(source, /allowsLegacyAdminUserType/);
+  assert.doesNotMatch(source, /userType/);
+  assert.doesNotMatch(source, /hasAdminAuthority/);
+  assert.doesNotMatch(source, /export const isProfessor/);
+  assert.doesNotMatch(source, /export const isTrustworthy/);
   assert.doesNotMatch(
     source,
     /const requestNetid = \(user: \{ netId\?: string; netid\?: string \}\) => user\.netId \|\| user\.netid \|\| ''/,
   );
-  assert.match(source, /export const isProfessor[\s\S]*hasAdminAuthority\(currentUser\)/);
-  assert.match(source, /export const isTrustworthy[\s\S]*hasAdminAuthority\(user\)/);
 });
 
 test('admin grant notes are bounded before persistence', () => {
@@ -5505,7 +5492,8 @@ test('profile update persistence sanitizes public URL fields for self and admin 
   );
   assert.match(userControllerSource, /boundedAccountStringArray/);
   assert.match(userControllerSource, /sanitizeSelfEditableTextFields\(update\)/);
-  assert.match(userControllerSource, /sanitizeUnknownBootstrapFields\(update\)/);
+  assert.doesNotMatch(userControllerSource, /sanitizeUnknownBootstrapFields/);
+  assert.doesNotMatch(userControllerSource, /currentUser\.userType === 'unknown'/);
   const selfUpdateFields =
     userControllerSource.match(/const SELF_UPDATABLE_FIELDS = \[[\s\S]*?\] as const;/)?.[0] || '';
   assert.doesNotMatch(selfUpdateFields, /'departments'/);
