@@ -78,4 +78,34 @@ describe('collapseLatestWins', () => {
     const result = collapseLatestWins(log, 'researchEntity');
     expect(result.map((r) => r.value)).toEqual(['first', 'second', 'desc-new']);
   });
+
+  it('is a no-op on an active-only read that holds one row per source-field', () => {
+    const activeOnly: TestObs[] = [
+      obs('name', 'source-a', 3, 'Alpha Lab'),
+      obs('fullDescription', 'source-a', 3, 'a-active'),
+      obs('fullDescription', 'source-b', 4, 'b-active'),
+      obs('shortDescription', 'source-a', 3, 'a-short'),
+    ];
+    const result = collapseLatestWins(activeOnly, 'researchEntity');
+    expect(result).toEqual(activeOnly);
+  });
+
+  it('collapses a lossless full log to the same projection an active-only read yields', () => {
+    const activeOnly: TestObs[] = [
+      obs('name', 'source-a', 3, 'Alpha Lab'),
+      obs('fullDescription', 'source-a', 5, 'a-newest'),
+      obs('fullDescription', 'source-b', 6, 'b-newest'),
+    ];
+    const supersededParaphrases: TestObs[] = [
+      obs('fullDescription', 'source-a', 1, 'a-old-paraphrase'),
+      obs('fullDescription', 'source-a', 2, 'a-mid-paraphrase'),
+      obs('fullDescription', 'source-b', 4, 'b-old-paraphrase'),
+    ];
+    const fullLog = [...supersededParaphrases, ...activeOnly];
+    const collapsedFullLog = collapseLatestWins(fullLog, 'researchEntity');
+    const collapsedActiveOnly = collapseLatestWins(activeOnly, 'researchEntity');
+    expect(collapsedFullLog.map((r) => [r.field, r.sourceName, r.value]).sort()).toEqual(
+      collapsedActiveOnly.map((r) => [r.field, r.sourceName, r.value]).sort(),
+    );
+  });
 });
