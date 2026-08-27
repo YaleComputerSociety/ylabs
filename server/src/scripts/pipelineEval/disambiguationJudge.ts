@@ -124,10 +124,21 @@ export function evidenceReferencesPresentField(
   return false;
 }
 
-export function decideVerdict(a: JudgeEntity, b: JudgeEntity, raw: JudgeVerdict | null): JudgeResult {
+export function decideVerdict(
+  a: JudgeEntity,
+  b: JudgeEntity,
+  raw: JudgeVerdict | null,
+): JudgeResult {
   const pair: [string, string] = [a.id, b.id];
   if (!raw || (raw.verdict !== 'SAME' && raw.verdict !== 'DIFFERENT')) {
-    return { pair, verdict: 'DIFFERENT', accepted: false, confidence: 0, evidence: '', discardedReason: 'malformed' };
+    return {
+      pair,
+      verdict: 'DIFFERENT',
+      accepted: false,
+      confidence: 0,
+      evidence: '',
+      discardedReason: 'malformed',
+    };
   }
   const confidence = clampConfidence(raw.confidence);
   const evidence = asString(raw.evidence);
@@ -136,13 +147,34 @@ export function decideVerdict(a: JudgeEntity, b: JudgeEntity, raw: JudgeVerdict 
   }
   // SAME verdict: a deterministic first-name conflict overrides it, always.
   if (firstNameCompatibility(a.firstName, b.firstName) === 'conflicting') {
-    return { pair, verdict: 'DIFFERENT', accepted: false, confidence, evidence, discardedReason: 'first_name_conflict' };
+    return {
+      pair,
+      verdict: 'DIFFERENT',
+      accepted: false,
+      confidence,
+      evidence,
+      discardedReason: 'first_name_conflict',
+    };
   }
   if (confidence < SAME_CONFIDENCE_THRESHOLD) {
-    return { pair, verdict: 'SAME', accepted: false, confidence, evidence, discardedReason: 'low_confidence' };
+    return {
+      pair,
+      verdict: 'SAME',
+      accepted: false,
+      confidence,
+      evidence,
+      discardedReason: 'low_confidence',
+    };
   }
   if (!evidenceReferencesPresentField(evidence, a, b)) {
-    return { pair, verdict: 'SAME', accepted: false, confidence, evidence, discardedReason: 'evidence_not_grounded' };
+    return {
+      pair,
+      verdict: 'SAME',
+      accepted: false,
+      confidence,
+      evidence,
+      discardedReason: 'evidence_not_grounded',
+    };
   }
   return { pair, verdict: 'SAME', accepted: true, confidence, evidence };
 }

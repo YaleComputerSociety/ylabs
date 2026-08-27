@@ -46,3 +46,13 @@ Flags: `--sample=<N>` draws a random sample, `--limit=<N>` takes the first N, an
 `fuzzyResidualMatcher.ts` generates candidate pairs by blocking on surname metaphone, significant org tokens, department, and research area, plus embedding cosine ANN, then scores each pair.
 The scorer sums per-feature Fellegi-Sunter weights only for comparable features (both sides carry the data), applies hard vetoes for conflicting first names and incompatible entity types, and assigns each pair an `auto`, `review`, or `discard` band via two probability thresholds.
 The CLI prints a JSON report of candidate/auto/review counts and measures blocking recall and auto-band precision against the labeled positives and same-name-different-PI hard negatives.
+
+## Disambiguation judge
+
+Propose-only gpt-5-mini judge (`disambiguationJudge.ts`) that adjudicates the residual matcher's uncertain `review` band to raise recall without lowering precision.
+It is additive and never auto-merges; nothing is written to live collections and it never merges people.
+
+Its authority is asymmetric.
+A `SAME` verdict is accepted only when it clears every guard: the model's confidence is at least `0.85`, its cited evidence quotes a field actually present on one of the records, and the deterministic first-name check finds no conflict.
+A `DIFFERENT` verdict is always taken, and any malformed, empty, or errored model output fails closed to `DIFFERENT`.
+Records are rendered from provided fields only (name, first name, entity type, departments, research areas, website host, profile path, and the first sentence of the description), with direct contact info redacted before the model sees them.

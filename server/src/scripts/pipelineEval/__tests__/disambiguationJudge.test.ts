@@ -121,7 +121,9 @@ describe('decideVerdict asymmetric authority', () => {
 
 describe('evidenceReferencesPresentField', () => {
   it('is true when the evidence quotes a present field token', () => {
-    expect(evidenceReferencesPresentField('matching Neuroscience department', ruizA, ruizB)).toBe(true);
+    expect(evidenceReferencesPresentField('matching Neuroscience department', ruizA, ruizB)).toBe(
+      true,
+    );
   });
   it('is true when the evidence quotes a first-name token', () => {
     expect(evidenceReferencesPresentField('both led by Maria', ruizA, ruizB)).toBe(true);
