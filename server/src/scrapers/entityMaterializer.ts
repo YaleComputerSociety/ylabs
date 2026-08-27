@@ -42,7 +42,7 @@ import {
   ResolverObservation,
   ResolvedField,
 } from './confidenceResolver';
-import { collapseLatestWins } from './observationStore';
+import { collapseLatestWins, c4LosslessIngestEnabled } from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
 import {
@@ -2564,7 +2564,7 @@ export async function entityIdAnchoredObservationsExcludedByEntityKeyScope(
   );
   const entityIdMatches = await Observation.find({
     entityType,
-    superseded: false,
+    ...(c4LosslessIngestEnabled() ? {} : { superseded: false }),
     entityId: entityIdObjectId,
   }).lean();
   return entityIdMatches.filter(
@@ -2594,7 +2594,7 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
   );
   const entityKeyMatches = await Observation.find({
     entityType,
-    superseded: false,
+    ...(c4LosslessIngestEnabled() ? {} : { superseded: false }),
     entityKey,
   }).lean();
   return entityKeyMatches.filter((observation: any) => {
@@ -3173,7 +3173,8 @@ export async function materializeEntity(
   identifier: { entityId?: string; entityKey?: string },
   options: MaterializeOptions = {},
 ): Promise<MaterializeResult> {
-  const filter: any = { entityType, superseded: false };
+  const filter: any = { entityType };
+  if (!c4LosslessIngestEnabled()) filter.superseded = false;
   if (identifier.entityId) filter.entityId = identifier.entityId;
   else if (identifier.entityKey) filter.entityKey = identifier.entityKey;
   else throw new Error('materializeEntity requires entityId or entityKey');

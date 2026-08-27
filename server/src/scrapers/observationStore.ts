@@ -21,6 +21,14 @@ import type { ObservationInput } from './types';
 
 const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
+// When set, the log is kept lossless at write time: the regressive-prose drop and the
+// value-less latest-wins supersession are skipped, and the materializer reads the full
+// retained log and decides late (collapseLatestWins + the resolver's ranked prose
+// preference). Off by default so behavior is byte-identical to today.
+export function c4LosslessIngestEnabled(): boolean {
+  return process.env.C4_LOSSLESS_INGEST === 'true';
+}
+
 function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): string {
   return obs.entityId || obs.entityKey || '';
 }
@@ -149,10 +157,11 @@ export async function appendObservations(
     }
   }
 
+  const losslessIngest = c4LosslessIngestEnabled();
   const keptInputs: ObservationInput[] = [];
   let regressiveProseGuarded = 0;
   for (const obs of acceptedInputs) {
-    if (QUALITY_GUARDED_PROSE_FIELDS.has(obs.field)) {
+    if (!losslessIngest && QUALITY_GUARDED_PROSE_FIELDS.has(obs.field)) {
       const entityKey = entityKeyForProse(obs);
       const incomingResearchAreas = incomingResearchAreasByEntity.get(entityKey);
       const incomingContext: ProseQualityContext = {
@@ -247,8 +256,9 @@ export async function appendObservations(
     latestByFingerprint.set(doc.observationFingerprint, { id: doc._id, input: docs[index] });
   }
 
-  const supersedeOps = Array.from(latestByFingerprint.entries()).map(
-    ([fingerprint, { id: latestId, input }]) => ({
+  const supersedeOps = Array.from(latestByFingerprint.entries())
+    .filter(([, { input }]) => !(losslessIngest && usesLatestWinsFingerprint(input)))
+    .map(([fingerprint, { id: latestId, input }]) => ({
       updateMany: {
         filter: {
           ...(usesLatestWinsFingerprint(input)
