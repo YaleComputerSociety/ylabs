@@ -54,6 +54,7 @@ import {
 import { recordCanonicalAlias, resolveCanonicalAlias } from '../services/canonicalAliasService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
+import { sanitizeObservationField } from './observationFieldSanitizer';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
@@ -462,6 +463,30 @@ export function shouldIgnoreObservationForEntityMaterialization(
     !!observation.field &&
     RETIRED_ACCESS_OBSERVATION_FIELDS.has(observation.field)
   );
+}
+
+/**
+ * The single write-side field transform for the projection: it composes the
+ * ingest-time sanitizer (`sanitizeObservationField`) and the materialize-time
+ * transform (`materializedFieldValue`), which already share the same
+ * descriptionHygiene/titleHygiene/contactRedaction primitives, into one pass.
+ * On an already-ingest-sanitized observation the ingest step is a no-op, so this
+ * is byte-identical to the prior materialize path; it additionally cleans values
+ * that reached the projection without passing through `appendObservations` (for
+ * example manual values). Rejection stays an ingest concern (a rejected value is
+ * cleaned, never dropped, here), so this never removes a field the materializer
+ * would have written.
+ */
+export function sanitizeProjectedField(
+  entityType: ObservedEntityType,
+  field: string,
+  value: unknown,
+  existingValue?: unknown,
+  entityIdentity?: ResearchEntityIdentity,
+): unknown {
+  const ingest = sanitizeObservationField(entityType, field, value);
+  const ingestCleaned = ingest.rejected ? value : ingest.value;
+  return materializedFieldValue(entityType, field, ingestCleaned, existingValue, entityIdentity);
 }
 
 export function materializedFieldValue(
@@ -2666,7 +2691,7 @@ export async function projectFromLog(
     ) {
       continue;
     }
-    set[field] = materializedFieldValue(
+    set[field] = sanitizeProjectedField(
       entityType,
       field,
       nextValue,
@@ -2700,7 +2725,7 @@ export async function projectFromLog(
           manualValues,
         });
         for (const candidate of rankedFull) {
-          const materialized = materializedFieldValue(
+          const materialized = sanitizeProjectedField(
             entityType,
             'fullDescription',
             candidate.value,
