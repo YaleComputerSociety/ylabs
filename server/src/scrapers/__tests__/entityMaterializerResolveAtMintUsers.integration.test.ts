@@ -100,4 +100,23 @@ describe('resolve-at-mint for users (C4_RESOLVE_AT_MINT_USERS)', () => {
     expect(orcidAlias).not.toBeNull();
     expect(String((orcidAlias as { canonicalId: unknown }).canonicalId)).toBe(first.entityId);
   });
+
+  it('flag ON: an ambiguous ORCID match mints a row without reserving the contested alias', async () => {
+    delete process.env.C4_RESOLVE_AT_MINT_USERS;
+    await seedUser('user-a', 'jtest1', 'jayne.a@example.edu');
+    await materializeEntity('user', { entityKey: 'user-a' });
+    await seedUser('user-b', 'jtest2', 'jayne.b@example.edu');
+    await materializeEntity('user', { entityKey: 'user-b' });
+
+    expect(await User.countDocuments({})).toBe(2);
+    expect(await CanonicalAlias.countDocuments({})).toBe(0);
+
+    process.env.C4_RESOLVE_AT_MINT_USERS = 'true';
+    await seedUser('user-c', 'jtest3', 'jayne.c@example.edu');
+    const third = await materializeEntity('user', { entityKey: 'user-c' });
+
+    expect(third.created).toBe(true);
+    expect(await User.countDocuments({})).toBe(3);
+    expect(await CanonicalAlias.countDocuments({})).toBe(0);
+  });
 });

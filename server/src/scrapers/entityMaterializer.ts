@@ -3138,8 +3138,10 @@ export async function materializeEntity(
   // duplicate User is folded into its canonical BEFORE minting a second row
   // (closes the email/ORCID after-mint gap). When the flag is off this is skipped
   // entirely, so behavior is unchanged.
+  let userMintResolution: CanonicalResolution | undefined;
   if (c4ResolveAtMintUsersEnabled() && entityType === 'user' && !entityDoc) {
     const resolution = await resolveCanonicalForUserMint(obs);
+    userMintResolution = resolution;
     if (resolution.status === 'blocked') {
       return {
         entityType,
@@ -3345,7 +3347,13 @@ export async function materializeEntity(
     }
     entityIdString = materializerDocumentId(created_._id);
     created = didCreate;
-    if (c4ResolveAtMintUsersEnabled() && entityType === 'user' && didCreate && entityIdString) {
+    if (
+      c4ResolveAtMintUsersEnabled() &&
+      entityType === 'user' &&
+      didCreate &&
+      entityIdString &&
+      userMintResolution?.status === 'mint'
+    ) {
       await reserveUserCanonicalAliases(obs, entityIdString);
     }
   }
