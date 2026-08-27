@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as contentHashGate from '../contentHashGate';
 import {
+  DEFAULT_MODEL,
+  DESCRIPTION_EXTRACTION_PROMPT_VERSION,
   LabMicrositeDescriptionLLMExtractor,
   type CallDescriptionLLMFn,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
-import type { CardSynthesisLLMFn } from '../../utils/groundedCardSynthesis';
+import {
+  CARD_SYNTHESIS_MODEL,
+  CARD_SYNTHESIS_PROMPT_VERSION,
+  type CardSynthesisLLMFn,
+} from '../../utils/groundedCardSynthesis';
 import {
   LabMicrositeUndergradLLMExtractor,
   type CallLLMFn,
@@ -65,7 +71,13 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
   it('description extractor: unchanged page → no LLM call, no observations, skip is logged', async () => {
     const pageHtml =
       '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';
-    const expectedHash = contentHashGate.computeContentHash(pageHtml);
+    const expectedHash = contentHashGate.computeVersionedContentHash(
+      pageHtml,
+      DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+      DEFAULT_MODEL,
+      CARD_SYNTHESIS_MODEL,
+      CARD_SYNTHESIS_PROMPT_VERSION,
+    );
     const loadHashSpy = vi
       .spyOn(contentHashGate, 'loadStoredContentHash')
       .mockResolvedValue(expectedHash);
@@ -152,12 +164,22 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
   });
 
   it('description extractor: changed page → LLM runs and a new sourceContentHash observation is emitted', async () => {
-    const staleHash = contentHashGate.computeContentHash('previous-run-html');
+    const staleHash = contentHashGate.computeVersionedContentHash(
+      'previous-run-html',
+      DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+      DEFAULT_MODEL,
+    );
     vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(staleHash);
 
     const pageHtml =
       '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';
-    const freshHash = contentHashGate.computeContentHash(pageHtml);
+    const freshHash = contentHashGate.computeVersionedContentHash(
+      pageHtml,
+      DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+      DEFAULT_MODEL,
+      CARD_SYNTHESIS_MODEL,
+      CARD_SYNTHESIS_PROMPT_VERSION,
+    );
     const fetchPage = vi.fn().mockResolvedValue({
       url: 'https://medicine.yale.edu/lab/ashford/',
       html: pageHtml,
@@ -194,18 +216,76 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     expect(hashObs?.value).not.toBe(staleHash);
   });
 
+  it('description extractor: card model change re-extracts the same unchanged page', async () => {
+    const pageHtml =
+      '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';
+    const priorCardModelHash = contentHashGate.computeVersionedContentHash(
+      pageHtml,
+      DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+      DEFAULT_MODEL,
+      CARD_SYNTHESIS_MODEL,
+      CARD_SYNTHESIS_PROMPT_VERSION,
+    );
+    vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(priorCardModelHash);
+
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://medicine.yale.edu/lab/ashford/',
+      html: pageHtml,
+    });
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription:
+        'The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.',
+      shortDescription:
+        'Studies cellular signaling, immune response, translational biomarkers, and computational modeling.',
+      topics: [],
+      methods: [],
+    } satisfies DescriptionExtraction);
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      cardModel: 'gpt-5-mini-next',
+      labFinder: async () => [
+        {
+          _id: 'entity-ashford',
+          slug: 'ashford-lab',
+          name: 'Ashford Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/ashford/',
+        },
+      ],
+      fetchPage,
+      callLLM,
+    });
+
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    const hashObs = emitted.find((obs) => obs.field === 'sourceContentHash');
+    expect(hashObs?.value).toBe(
+      contentHashGate.computeVersionedContentHash(
+        pageHtml,
+        DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+        DEFAULT_MODEL,
+        'gpt-5-mini-next',
+        CARD_SYNTHESIS_PROMPT_VERSION,
+      ),
+    );
+    expect(hashObs?.value).not.toBe(priorCardModelHash);
+  });
+
   it('undergrad extractor: unchanged home + subpage text → no LLM call, no observations, skip is logged', async () => {
     const homeHtml =
       '<html><body><h1>Smith Lab</h1><p>We welcome undergraduate researchers each semester.</p><a href="/people">Lab Members</a></body></html>';
     const peopleHtml =
       '<html><body><h2>Members</h2><h3>Undergraduates</h3><ul><li>Alice</li></ul></body></html>';
     let echoedHash = '';
-    const originalCompute = contentHashGate.computeContentHash;
-    vi.spyOn(contentHashGate, 'computeContentHash').mockImplementation((text) => {
-      const hash = originalCompute(text);
-      echoedHash = hash;
-      return hash;
-    });
+    const originalCompute = contentHashGate.computeVersionedContentHash;
+    vi.spyOn(contentHashGate, 'computeVersionedContentHash').mockImplementation(
+      (text, promptVersion, model) => {
+        const hash = originalCompute(text, promptVersion, model);
+        echoedHash = hash;
+        return hash;
+      },
+    );
     const loadHashSpy = vi
       .spyOn(contentHashGate, 'loadStoredContentHash')
       .mockImplementation(async () => echoedHash);

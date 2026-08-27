@@ -41,20 +41,26 @@ import {
 } from '../../utils/officialResearchDescription';
 import {
   CARD_SYNTHESIS_MODEL,
+  CARD_SYNTHESIS_PROMPT_VERSION,
   defaultCardSynthesisLLM,
   synthesizeGroundedCardDescription,
   type CardSynthesisLLMFn,
 } from '../../utils/groundedCardSynthesis';
 import { groundMethods } from '../utils/methodGrounding';
 import {
-  computeContentHash,
+  computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
   loadStoredContentHash,
 } from '../contentHashGate';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
-const DEFAULT_MODEL = 'gpt-5-mini';
+export const DEFAULT_MODEL = 'gpt-5-mini';
+
+// Bump when the description-extraction prompt/contract changes so the
+// content-hash gate re-extracts affected entities instead of serving output
+// produced by the prior prompt. See contentHashGate.computeVersionedContentHash.
+export const DESCRIPTION_EXTRACTION_PROMPT_VERSION = 'v1';
 const MAX_PROMPT_CHARS = 40_000;
 // The lab's own microsite is the authoritative source of its real name, so its
 // name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
@@ -835,7 +841,13 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityId: serializedDocumentId(lab._id) || undefined,
           entityKey: lab.slug,
         };
-        const contentHash = computeContentHash(page.html);
+        const contentHash = computeVersionedContentHash(
+          page.html,
+          DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+          this.model,
+          this.cardModel,
+          CARD_SYNTHESIS_PROMPT_VERSION,
+        );
         const storedContentHash = ctx.options.forceLlm
           ? undefined
           : await loadStoredContentHash(this.name, entityRef);

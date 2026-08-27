@@ -255,6 +255,11 @@ export interface CardSynthesisLLMInput {
 
 export type CardSynthesisLLMFn = (input: CardSynthesisLLMInput) => Promise<string>;
 
+// Bump when CARD_SYNTHESIS_SYSTEM_PROMPT changes, so any content-hash-gated
+// caller keys re-synthesis on the prompt version. See
+// contentHashGate.computeVersionedContentHash.
+export const CARD_SYNTHESIS_PROMPT_VERSION = 'v1';
+
 export const CARD_SYNTHESIS_SYSTEM_PROMPT =
   'You condense an existing, verified research description into ONE short card sentence for a research-discovery card. ' +
   'Use ONLY topics, methods, questions, and terms that already appear in the provided description. ' +
