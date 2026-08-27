@@ -35,11 +35,6 @@ const FACULTY_RESEARCH_AREA_ENTITY_TYPES = new Set([
 
 type ScopeEntity = ResearchEntityPiDedupeRow['entities'][number];
 
-export function isEponymousFraLabMergeStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = (env[SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV] || '').trim().toLowerCase();
-  return value === '1' || value === 'true';
-}
-
 function isFacultyResearchAreaShellEntity(entity: ScopeEntity): boolean {
   if ((entity.slug || '').toLowerCase().startsWith('faculty-research-area-')) return true;
   return FACULTY_RESEARCH_AREA_ENTITY_TYPES.has((entity.entityType || '').toUpperCase());

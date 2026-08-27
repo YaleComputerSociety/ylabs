@@ -6,7 +6,6 @@ import { resolveResearchEntityMergeRedirectCanonical } from '../../services/rese
 import {
   assertCleanupArchivedResearchEntitiesApplyAllowed,
   cleanupArchivedResearchEntities,
-  isMergeResidueDeletionStageEnabled,
   parseCleanupArchivedResearchEntitiesArgs,
 } from '../cleanupArchivedResearchEntities';
 
@@ -50,19 +49,6 @@ describe('cleanupArchivedResearchEntities CLI helpers', () => {
     ).toThrow(/does not accept a value/);
     expect(() => parseCleanupArchivedResearchEntitiesArgs(['--merge-residue-only=1'])).toThrow(
       /does not accept a value/,
-    );
-  });
-
-  it('gates the merge-residue deletion sweep stage behind an env flag', () => {
-    expect(isMergeResidueDeletionStageEnabled({})).toBe(false);
-    expect(
-      isMergeResidueDeletionStageEnabled({ SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: 'false' }),
-    ).toBe(false);
-    expect(isMergeResidueDeletionStageEnabled({ SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: '1' })).toBe(
-      true,
-    );
-    expect(isMergeResidueDeletionStageEnabled({ SCRAPER_SWEEP_DELETE_MERGE_RESIDUE: 'true' })).toBe(
-      true,
     );
   });
 

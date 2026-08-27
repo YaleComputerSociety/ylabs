@@ -291,14 +291,6 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   return { group, created };
 }
 
-export async function getResearchGroupBySlug(slug: string): Promise<any | null> {
-  return ResearchEntity.findOne({
-    slug,
-    archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-  }).lean();
-}
-
 export interface ResearchGroupSearchSort {
   sortBy?: 'lastObservedAt' | 'name' | 'createdAt' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';

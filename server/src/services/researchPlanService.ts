@@ -479,11 +479,6 @@ export const getSavedResearchEntities = async (
   return entities;
 };
 
-export const getSavedResearchEntityIds = async (netid: any): Promise<string[]> => {
-  const { entities } = await loadVisibleAccountPlans(netid, { withDetail: false });
-  return entities.map((entity) => entity._id);
-};
-
 export const getSavedResearchEntitySlugs = async (netid: any): Promise<string[]> => {
   const { entities } = await loadVisibleAccountPlans(netid, { withDetail: false });
   return entities.flatMap((entity) => (entity.slug ? [entity.slug] : []));

@@ -9,12 +9,10 @@ import {
   readFellowship,
   readFellowships,
   searchFellowships,
-  updateFellowship,
 } from './fellowshipService';
 
 export const readProgram = readFellowship;
 export const readPrograms = readFellowships;
-export const updateProgram = updateFellowship;
 export const getProgramFilterOptions = getFilterOptions;
 
 export const searchPrograms = async (params: Parameters<typeof searchFellowships>[0]) => {
