@@ -9,8 +9,8 @@ import { classifyFullDescription, sanitizeDescriptionText } from './backfillDesc
 import { stripFacultyResearchAreaNameTemplateSuffix } from '../utils/researchEntityDescriptionText';
 
 export const SYNTHESIS_MODEL = 'gpt-5-mini';
-export const SYNTHESIS_INPUT_USD_PER_1K = 0.00015;
-export const SYNTHESIS_OUTPUT_USD_PER_1K = 0.0006;
+export const SYNTHESIS_INPUT_USD_PER_1K = 0.00025;
+export const SYNTHESIS_OUTPUT_USD_PER_1K = 0.002;
 export const MIN_SYNTHESIS_SOURCE_CHARS = 120;
 export const MIN_SYNTHESIS_GROUNDING = 0.5;
 
