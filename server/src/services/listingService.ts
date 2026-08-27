@@ -587,25 +587,3 @@ export const removeFavorite = async (id: any, _userId: string) => {
   return itemOps.removeFavorite(getListingModel(), id, PUBLIC_LISTING_MUTATION_FILTER);
 };
 
-export const deleteListing = async (id: any) => {
-  const safeId = normalizeListingObjectId(id);
-  if (safeId) {
-    const listing = await getListingModel().findById(safeId);
-    if (!listing) {
-      throw new NotFoundError('Listing not found');
-    }
-
-    await getListingModel().findByIdAndDelete(safeId);
-
-    const oldListingId = listing._id;
-    const oldProfessorIds = listing.professorIds;
-
-    for (const id of oldProfessorIds) {
-      if (await userExists(id)) {
-        await deleteOwnListings(id, [oldListingId]);
-      }
-    }
-  } else {
-    throw new ObjectIdError('Did not received expected id type ObjectId');
-  }
-};

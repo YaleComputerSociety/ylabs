@@ -218,8 +218,8 @@ describe('adminTableReducer (generic)', () => {
     });
 
     it('preserves extra fields when used with an extended state shape', () => {
-      // Consumers that extend AdminTableState (e.g. AdminListingsTable's
-      // URL-check fields) rely on the reducer preserving unknown keys.
+      // Consumers that extend AdminTableState with extra fields rely on the
+      // reducer preserving unknown keys.
       const extended = { ...initial(), extra: 'keep-me', checking: 'abc' };
       const next = adminTableReducer<Row, Sort, Filter, typeof extended>(extended, {
         type: 'FETCH_SUCCESS',

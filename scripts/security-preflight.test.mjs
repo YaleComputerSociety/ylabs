@@ -1035,10 +1035,8 @@ test('admin client surfaces avoid raw caught console errors', () => {
     '../client/src/components/admin/AdminOperatorBoard.tsx',
     '../client/src/components/admin/AdminAccessReview.tsx',
     '../client/src/components/admin/AdminResearchAreas.tsx',
-    '../client/src/components/admin/AdminListingEditModal.tsx',
     '../client/src/components/admin/AdminFellowshipsTable.tsx',
     '../client/src/components/admin/AdminFacultyProfilesTable.tsx',
-    '../client/src/components/admin/AdminListingsTable.tsx',
     '../client/src/components/admin/AdminFellowshipEditModal.tsx',
     '../client/src/components/admin/AdminDepartments.tsx',
   ];
@@ -1760,33 +1758,6 @@ test('paper quality duplicate samples use safe id serialization', () => {
   assert.doesNotMatch(source, /id: String\(link\._id \|\| ''\)/);
 });
 
-test('admin URL reachability helpers bound inputs before parsing or DNS work', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
-
-  assert.match(source, /export const MAX_ADMIN_URL_CHECK_URL_LENGTH = 2048/);
-  assert.match(source, /containsAsciiControl\(value\) \|\| \/\[\\s\\\\\]\/\.test\(value\)/);
-  assert.match(source, /const adminUrlCheckDisplayText = \(value: string\): string =>/);
-  assert.match(source, /replaceAsciiControls\(value, ''\)/);
-  assert.match(source, /\.slice\(0, MAX_ADMIN_URL_CHECK_URL_LENGTH\)/);
-  assert.match(
-    source,
-    /trimmed\.length === 0 \|\| trimmed\.length > MAX_ADMIN_URL_CHECK_URL_LENGTH/,
-  );
-  assert.match(source, /const trimmedUrl = url\.trim\(\)/);
-  assert.match(
-    source,
-    /trimmedUrl\.length === 0 \|\| url\.length > MAX_ADMIN_URL_CHECK_URL_LENGTH/,
-  );
-  assert.match(source, /hasUnsafeAdminUrlInput\(trimmedUrl\)/);
-  assert.match(source, /hasUnsafeAdminUrlInput\(trimmed\)/);
-  assert.match(source, /Each URL must be a canonical HTTP\(S\) URL/);
-  assert.match(
-    source,
-    /return \{ url: displayUrl, status: 0, reachable: false, error: 'URL too long' \}/,
-  );
-  assert.doesNotMatch(source, /return url;\n\s*\}/);
-});
-
 test('admin routes use full private no-store response headers', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
 
@@ -1888,8 +1859,6 @@ test('admin taxonomy write routes bound labels and category arrays before persis
   assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
   assert.match(source, /return ADMIN_OBJECT_ID_RE\.test\(id\) \? id : undefined/);
   assert.match(source, /const safeId = normalizeAdminObjectId\(req\.params\.id\)/);
-  assert.match(source, /updateListing\(safeId,/);
-  assert.match(source, /deleteListing\(safeId\)/);
   assert.match(source, /new mongoose\.Types\.ObjectId\(safeId\)/);
   assert.match(source, /findById\(safeId\)/);
   assert.match(source, /ResearchArea\.findByIdAndUpdate\(safeId/);
@@ -3177,7 +3146,6 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /requestedIds\.slice\(0, MAX_LISTING_ID_READS\)/);
   assert.match(source, /getListingModel\(\)\.findById\(safeId\)/);
   assert.match(source, /getListingModel\(\)\.findByIdAndUpdate\(safeId, safeData/);
-  assert.match(source, /getListingModel\(\)\.findByIdAndDelete\(safeId\)/);
   assert.match(source, /MAX_SELF_SERVICE_LISTING_DESCRIPTION_LENGTH/);
   assert.match(source, /MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS/);
   assert.match(source, /MAX_SELF_SERVICE_LISTING_WEBSITES/);
@@ -5086,38 +5054,6 @@ test('admin listing updates use a bounded allowlist before persistence', () => {
   assert.doesNotMatch(source, /noAuth\s*\n\s*\? \{ \.\.\.data \}/);
 });
 
-test('admin listing management responses use an allowlist serializer', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
-
-  const serializer = source.match(
-    /export const adminListingDto = \(listing: any\) => \{[\s\S]*?\n\};/,
-  );
-  assert.ok(serializer, 'admin listing serializer should exist');
-  assert.match(source, /import \{ publicHttpUrl \} from '\.\.\/utils\/urlSafety'/);
-  assert.match(source, /const MAX_ADMIN_LISTING_TEXT_LENGTH = 5000/);
-  assert.match(source, /const MAX_ADMIN_LISTING_ARRAY_ITEMS = 100/);
-  assert.match(source, /const adminListingText = \(/);
-  assert.match(source, /const adminListingTextArray = \(value: unknown\): string\[\] =>/);
-  assert.match(source, /const adminListingUrlArray = \(value: unknown\): string\[\] =>/);
-  assert.match(source, /publicHttpUrl\(item\)/);
-  assert.match(source, /listings: results\.map\(adminListingDto\)/);
-  assert.match(source, /listings: listings\.map\(adminListingDto\)/);
-  assert.match(source, /res\.json\(\{ listing: adminListingDto\(listing\) \}\)/);
-  assert.doesNotMatch(source, /listings: results,\s*total/);
-  assert.doesNotMatch(source, /\{ listings,\s*total \}/);
-  assert.doesNotMatch(source, /res\.json\(\{ listing \}\)/);
-  assert.match(serializer[0], /ownerEmail: adminListingText\(listing\?\.ownerEmail/);
-  assert.match(serializer[0], /emails: adminListingTextArray\(listing\?\.emails\)/);
-  assert.match(serializer[0], /websites: adminListingUrlArray\(listing\?\.websites\)/);
-  assert.doesNotMatch(serializer[0], /embedding/);
-  assert.doesNotMatch(serializer[0], /researchEntityId/);
-  assert.doesNotMatch(serializer[0], /researchGroupId/);
-  assert.doesNotMatch(serializer[0], /createdByUserId/);
-  assert.doesNotMatch(serializer[0], /sourceEvidenceIds/);
-  assert.doesNotMatch(serializer[0], /archivedAt/);
-  assert.doesNotMatch(serializer[0], /__v/);
-});
-
 test('admin fellowship management responses use an allowlist serializer', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
 
@@ -5360,7 +5296,6 @@ test('client UI does not surface raw Axios error payload text', () => {
   );
   const clientFiles = [
     '../client/src/components/admin/AdminProfileEditModal.tsx',
-    '../client/src/components/admin/AdminListingEditModal.tsx',
     '../client/src/components/admin/AdminDepartments.tsx',
     '../client/src/components/admin/AdminResearchAreas.tsx',
     '../client/src/components/admin/AdminFellowshipEditModal.tsx',
