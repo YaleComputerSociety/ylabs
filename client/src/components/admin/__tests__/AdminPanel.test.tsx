@@ -3,10 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AdminPanel from '../AdminPanel';
 
-vi.mock('../AdminListingsTable', () => ({
-  default: () => <div data-testid="legacy-listings-table" />,
-}));
-
 vi.mock('../AdminFellowshipsTable', () => ({
   default: () => <div data-testid="fellowships-table" />,
 }));

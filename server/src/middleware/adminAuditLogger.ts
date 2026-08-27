@@ -36,16 +36,6 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
     targetType: 'adminGrant',
     targetId: paramId('netid'),
   },
-  'PUT /listings/:id': {
-    action: 'listing.update',
-    targetType: 'listing',
-    targetId: paramId('id'),
-  },
-  'DELETE /listings/:id': {
-    action: 'listing.delete',
-    targetType: 'listing',
-    targetId: paramId('id'),
-  },
   'PUT /profiles/:netid': {
     action: 'profile.update',
     targetType: 'profile',

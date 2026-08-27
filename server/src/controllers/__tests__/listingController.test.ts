@@ -4,7 +4,6 @@ vi.mock('../../services/listingService', () => ({
   addView: vi.fn(),
   archiveListing: vi.fn(),
   createListing: vi.fn(),
-  deleteListing: vi.fn(),
   getSkeletonListing: vi.fn(),
   readAllListings: vi.fn(),
   readListing: vi.fn(),
@@ -151,7 +150,9 @@ describe('listingController', () => {
   });
 
   it('does not leak internal service errors from listing detail failures', async () => {
-    mockedReadPublicListing.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
+    mockedReadPublicListing.mockRejectedValue(
+      new Error('mongodb://user:pass@example.invalid leaked'),
+    );
     const req = { params: { id: 'listing-1' } };
     const res = responseDouble();
 
@@ -204,5 +205,4 @@ describe('listingController', () => {
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to update listing view count' });
   });
-
 });

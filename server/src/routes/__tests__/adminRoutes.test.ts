@@ -1,4 +1,3 @@
-import dns from 'dns/promises';
 import mongoose from 'mongoose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -56,18 +55,12 @@ import {
 } from '../../services/adminAccessReviewService';
 import { AdminGrantValidationError } from '../../services/adminGrantService';
 import router, {
-  checkAdminUrlReachability,
-  isPrivateAddress,
-  isPublicHostname,
-  MAX_ADMIN_URL_CHECK_URL_LENGTH,
-  MAX_ADMIN_URL_CHECK_URLS,
   MAX_ADMIN_DEPARTMENT_ABBREVIATION_LENGTH,
   MAX_ADMIN_DEPARTMENT_CATEGORIES,
   MAX_ADMIN_TAXONOMY_LABEL_LENGTH,
   adminAccessReviewRecordUpdateDto,
   adminDepartmentDto,
   adminFellowshipDto,
-  adminListingDto,
   adminProfileDto,
   adminResearchAreaDto,
   normalizeAdminObjectId,
@@ -76,7 +69,6 @@ import router, {
   normalizeAdminTaxonomyLabel,
   normalizeAdminPagination,
   resolveAdminSortField,
-  ssrfSafeLookup,
 } from '../admin';
 
 const routeByPath = (path: string) =>
@@ -128,18 +120,6 @@ const invokeRouteHandler = async (path: string, req: Record<string, any>, method
   await handler(req, res);
   return res;
 };
-
-const invokeSafeLookup = (hostname: string) =>
-  new Promise<{ error: NodeJS.ErrnoException | null; address?: string; family?: number }>(
-    (resolve) => {
-      (ssrfSafeLookup as any)(
-        hostname,
-        {},
-        (error: NodeJS.ErrnoException | null, address?: string, family?: number) =>
-          resolve({ error, address, family }),
-      );
-    },
-  );
 
 describe('admin routes', () => {
   afterEach(() => {
@@ -283,79 +263,6 @@ describe('admin routes', () => {
     expect(res.body).toEqual({ error: 'Failed to revoke admin access' });
   });
 
-  it('bounds URL checker fan-out before doing outbound work', async () => {
-    const res = await invokeRouteHandler('/check-urls', {
-      body: {
-        urls: Array.from({ length: MAX_ADMIN_URL_CHECK_URLS + 1 }, (_, i) => `example${i}.com`),
-      },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({
-      error: `At most ${MAX_ADMIN_URL_CHECK_URLS} URLs can be checked at once`,
-    });
-  });
-
-  it('rejects malformed URL checker batches before doing outbound work', async () => {
-    const res = await invokeRouteHandler('/check-urls', {
-      body: { urls: ['https://example.com', 42] },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Each URL must be a string' });
-  });
-
-  it('rejects ambiguous URL checker input before doing outbound work', async () => {
-    const res = await invokeRouteHandler('/check-urls', {
-      body: { urls: ['https://example.com/a b'] },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Each URL must be a canonical HTTP(S) URL' });
-  });
-
-  it('bounds direct admin URL reachability inputs before URL parsing or DNS work', async () => {
-    const lookup = vi.spyOn(dns, 'lookup');
-
-    await expect(
-      checkAdminUrlReachability(
-        'https://example.com/' + 'a'.repeat(MAX_ADMIN_URL_CHECK_URL_LENGTH),
-      ),
-    ).resolves.toMatchObject({
-      url: expect.stringMatching(/^https:\/\/example\.com\//),
-      status: 0,
-      reachable: false,
-      error: 'URL too long',
-    });
-    expect(lookup).not.toHaveBeenCalled();
-  });
-
-  it('rejects ambiguous direct admin URL reachability inputs before DNS work', async () => {
-    const lookup = vi.spyOn(dns, 'lookup');
-
-    await expect(
-      checkAdminUrlReachability('https://example.com\\@127.0.0.1/'),
-    ).resolves.toMatchObject({
-      status: 0,
-      reachable: false,
-      error: 'Invalid URL',
-    });
-    expect(lookup).not.toHaveBeenCalled();
-  });
-
-  it('bounds and strips control characters from admin URL check display values', async () => {
-    await expect(
-      checkAdminUrlReachability(
-        `\nhttps://example.com/${'a'.repeat(MAX_ADMIN_URL_CHECK_URL_LENGTH)}\r`,
-      ),
-    ).resolves.toMatchObject({
-      url: expect.not.stringMatching(/[\r\n]/),
-      status: 0,
-      reachable: false,
-      error: 'URL too long',
-    });
-  });
-
   it('allowlists admin sort fields before building Mongo sort objects', () => {
     const allowed = new Set(['createdAt', 'title', 'descriptionLength', 'redFlags']);
 
@@ -389,7 +296,6 @@ describe('admin routes', () => {
       },
     };
 
-    expect(adminListingDto({ _id: maliciousId })).toMatchObject({ _id: '', id: '' });
     expect(adminFellowshipDto({ _id: maliciousId })).toMatchObject({ _id: '', id: '' });
     expect(adminResearchAreaDto({ _id: maliciousId })).toMatchObject({ _id: '' });
     expect(adminDepartmentDto({ _id: maliciousId })).toMatchObject({ _id: '' });
@@ -397,85 +303,6 @@ describe('admin routes', () => {
       _id: '',
       id: '',
     });
-  });
-
-  it('serializes admin listings through an allowlist payload', () => {
-    const rawListing = {
-      _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
-      ownerId: 'abc123',
-      ownerFirstName: 'Ada',
-      ownerLastName: 'Lovelace',
-      ownerEmail: 'ada@example.edu',
-      ownerTitle: 'Professor',
-      ownerPrimaryDepartment: 'Computer Science',
-      professorIds: ['abc123'],
-      professorNames: ['Ada Lovelace'],
-      departments: ['Computer Science'],
-      emails: ['lab@example.edu'],
-      websites: [
-        'https://example.edu/lab',
-        'http://localhost/admin',
-        'https://user:pass@example.edu/private',
-      ],
-      title: 'Research Lab',
-      hiringStatus: 1,
-      description: 'A useful research description',
-      applicantDescription: 'Apply with a short note',
-      researchAreas: ['AI'],
-      keywords: ['systems'],
-      views: 12,
-      favorites: 3,
-      archived: false,
-      confirmed: true,
-      audited: true,
-      descriptionLength: 29,
-      redFlagScore: 0,
-      researchEntityId: 'entity-1',
-      researchGroupId: 'group-1',
-      createdByUserId: 'user-1',
-      sourceEvidenceIds: ['source-1'],
-      embedding: [0.1, 0.2],
-      archivedAt: new Date('2026-01-01T00:00:00.000Z'),
-      __v: 7,
-    };
-
-    const serialized = adminListingDto(rawListing) as Record<string, unknown>;
-
-    expect(serialized).toMatchObject({
-      _id: '507f1f77bcf86cd799439011',
-      id: '507f1f77bcf86cd799439011',
-      ownerId: 'abc123',
-      ownerFirstName: 'Ada',
-      ownerLastName: 'Lovelace',
-      ownerEmail: 'ada@example.edu',
-      ownerTitle: 'Professor',
-      ownerPrimaryDepartment: 'Computer Science',
-      professorIds: ['abc123'],
-      professorNames: ['Ada Lovelace'],
-      departments: ['Computer Science'],
-      emails: ['lab@example.edu'],
-      websites: ['https://example.edu/lab'],
-      title: 'Research Lab',
-      hiringStatus: 1,
-      description: 'A useful research description',
-      applicantDescription: 'Apply with a short note',
-      researchAreas: ['AI'],
-      keywords: ['systems'],
-      views: 12,
-      favorites: 3,
-      archived: false,
-      confirmed: true,
-      audited: true,
-      descriptionLength: 29,
-      redFlagScore: 0,
-    });
-    expect(serialized).not.toHaveProperty('researchEntityId');
-    expect(serialized).not.toHaveProperty('researchGroupId');
-    expect(serialized).not.toHaveProperty('createdByUserId');
-    expect(serialized).not.toHaveProperty('sourceEvidenceIds');
-    expect(serialized).not.toHaveProperty('embedding');
-    expect(serialized).not.toHaveProperty('archivedAt');
-    expect(serialized).not.toHaveProperty('__v');
   });
 
   it('serializes admin fellowships through an allowlist payload', () => {
@@ -688,7 +515,7 @@ describe('admin routes', () => {
   });
 
   it('rejects oversized admin search terms before model lookup', async () => {
-    for (const path of ['/listings', '/profiles', '/fellowships']) {
+    for (const path of ['/profiles', '/fellowships']) {
       const res = await invokeRouteHandler(
         path,
         {
@@ -837,93 +664,5 @@ describe('admin routes', () => {
 
     expect(res.statusCode).toBe(503);
     expect(res.body).toEqual({ error: 'Access review queue is rebuilding' });
-  });
-
-  it('classifies private and special-use addresses as blocked', () => {
-    for (const address of [
-      '0.0.0.0',
-      '10.1.2.3',
-      '100.64.0.1',
-      '127.0.0.1',
-      '169.254.169.254',
-      '172.16.0.1',
-      '192.168.0.1',
-      '198.18.0.1',
-      '224.0.0.1',
-      '::',
-      '::1',
-      '::ffff:127.0.0.1',
-      '::ffff:7f00:1',
-      '[::ffff:7f00:1]',
-      '64:ff9b::127.0.0.1',
-      'fc00::1',
-      'fe80::1',
-      'ff00::1',
-    ]) {
-      expect(isPrivateAddress(address), address).toBe(true);
-    }
-
-    expect(isPrivateAddress('8.8.8.8')).toBe(false);
-    expect(isPrivateAddress('2606:4700:4700::1111')).toBe(false);
-  });
-
-  it('rejects hostnames when any DNS answer is private', async () => {
-    vi.spyOn(dns, 'lookup').mockResolvedValue([
-      { address: '8.8.8.8', family: 4 },
-      { address: '127.0.0.1', family: 4 },
-    ] as any);
-
-    await expect(isPublicHostname('rebind.example')).resolves.toBe(false);
-  });
-
-  it('allows hostnames only when every DNS answer is public', async () => {
-    vi.spyOn(dns, 'lookup').mockResolvedValue([
-      { address: '8.8.8.8', family: 4 },
-      { address: '2606:4700:4700::1111', family: 6 },
-    ] as any);
-
-    await expect(isPublicHostname('public.example')).resolves.toBe(true);
-  });
-
-  it('blocks private DNS answers during the actual outbound connection lookup', async () => {
-    vi.spyOn(dns, 'lookup').mockResolvedValue({ address: '169.254.169.254', family: 4 } as any);
-
-    const result = await invokeSafeLookup('rebind.example');
-
-    expect(result.error?.code).toBe('EHOSTUNREACH');
-  });
-
-  it('rejects admin URL checks for non-public hosts and unsafe URL forms before connect', async () => {
-    await expect(
-      checkAdminUrlReachability('http://169.254.169.254/latest/meta-data'),
-    ).resolves.toEqual({
-      url: 'http://169.254.169.254/latest/meta-data',
-      status: 0,
-      reachable: false,
-      error: 'Blocked host',
-    });
-
-    await expect(checkAdminUrlReachability('http://[::ffff:127.0.0.1]')).resolves.toEqual({
-      url: 'http://[::ffff:127.0.0.1]',
-      status: 0,
-      reachable: false,
-      error: 'Blocked host',
-    });
-
-    await expect(checkAdminUrlReachability('https://example.com:8443')).resolves.toEqual({
-      url: 'https://example.com:8443',
-      status: 0,
-      reachable: false,
-      error: 'Unsupported port',
-    });
-
-    await expect(
-      checkAdminUrlReachability('https://user:pass@example.com/private'),
-    ).resolves.toEqual({
-      url: 'https://example.com/private',
-      status: 0,
-      reachable: false,
-      error: 'Credentials not supported',
-    });
   });
 });

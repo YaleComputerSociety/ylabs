@@ -61,8 +61,8 @@ describe('adminAuditMutationLogger', () => {
   });
 
   it('records an audit event when a mapped mutation succeeds', () => {
-    const req = buildReq('PUT /listings/:id', {
-      params: { id: 'listing1' },
+    const req = buildReq('PUT /fellowships/:id', {
+      params: { id: 'fellowship1' },
       body: { data: { title: 'New', description: 'x' } },
     });
     const { res, flushFinish } = buildRes(200);
@@ -70,14 +70,14 @@ describe('adminAuditMutationLogger', () => {
 
     adminAuditMutationLogger(req, res, next);
     expect(next).toHaveBeenCalledOnce();
-    res.json({ listing: { id: 'listing1' } });
+    res.json({ fellowship: { id: 'fellowship1' } });
     flushFinish();
 
     expect(mocks.recordAdminAuditEvent).toHaveBeenCalledTimes(1);
     const payload = mocks.recordAdminAuditEvent.mock.calls[0][0];
-    expect(payload.action).toBe('listing.update');
-    expect(payload.targetType).toBe('listing');
-    expect(payload.targetId).toBe('listing1');
+    expect(payload.action).toBe('fellowship.update');
+    expect(payload.targetType).toBe('fellowship');
+    expect(payload.targetId).toBe('fellowship1');
     expect(payload.summary.fields).toEqual(['title', 'description']);
   });
 
@@ -95,7 +95,7 @@ describe('adminAuditMutationLogger', () => {
   });
 
   it('does not record on a non-2xx response', () => {
-    const req = buildReq('DELETE /listings/:id', { params: { id: 'listing1' } });
+    const req = buildReq('DELETE /fellowships/:id', { params: { id: 'fellowship1' } });
     const { res, flushFinish } = buildRes(400);
     adminAuditMutationLogger(req, res, vi.fn());
     flushFinish();
