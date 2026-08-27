@@ -1,4 +1,7 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import {
   CARD_SYNTHESIS_PROMPT,
@@ -12,18 +15,16 @@ import {
 
 const sha256 = (value: string): string => crypto.createHash('sha256').update(value).digest('hex');
 
+const promptsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const readPromptFile = (fileName: string): string =>
+  fs.readFileSync(path.join(promptsDir, fileName), 'utf8');
+
 describe('prompt loader', () => {
-  it('loads each prompt .md with its distinctive text', () => {
-    expect(CARD_SYNTHESIS_PROMPT).toContain(
-      'You condense an existing, verified research description',
-    );
-    expect(DESCRIPTION_EXTRACTION_PROMPT).toContain('You are an extractor, not a writer.');
-    expect(UNDERGRAD_EXTRACTION_PROMPT).toContain(
-      "OR a Yale faculty member's own official profile/bio page",
-    );
-    expect(UNDERGRAD_EXTRACTION_LEGACY_PROMPT).toContain(
-      'You are an expert classifier evaluating whether a Yale research lab',
-    );
+  it('maps each export to the content of its named .md file', () => {
+    expect(CARD_SYNTHESIS_PROMPT).toBe(readPromptFile('cardSynthesis.md'));
+    expect(DESCRIPTION_EXTRACTION_PROMPT).toBe(readPromptFile('micrositeDescriptionExtraction.md'));
+    expect(UNDERGRAD_EXTRACTION_PROMPT).toBe(readPromptFile('undergradExtraction.md'));
+    expect(UNDERGRAD_EXTRACTION_LEGACY_PROMPT).toBe(readPromptFile('undergradExtractionLegacy.md'));
   });
 
   it('derives single-prompt hashes as sha256 of the file content', () => {
