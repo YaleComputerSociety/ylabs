@@ -178,9 +178,16 @@ export async function resolveCanonical(
   const reservedKeys = orderedKeys.filter((key) => key.strength !== 'weak');
 
   for (const key of orderedKeys) {
-    if (key.strength === 'unique') {
+    // Any reserved (non-weak) key can carry a durable canonical-alias from a prior
+    // confirmed resolution/merge; an alias hit is authoritative, so it resolves
+    // before the live candidate lookup and without re-applying guards. Weak keys
+    // are never reserved as aliases, so they skip the ledger.
+    if (key.strength !== 'weak') {
       const aliasId = await deps.resolveAlias(input.type, key.ns, key.value);
       if (aliasId) return { status: 'existing', canonicalId: aliasId, matchedKey: key };
+    }
+
+    if (key.strength === 'unique') {
       const candidates = await deps.findCandidatesByKey(input.type, key);
       if (candidates.length === 1) {
         if (wouldDemote(input.self, candidates[0])) continue;
