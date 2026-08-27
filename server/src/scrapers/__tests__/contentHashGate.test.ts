@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeContentHash,
+  computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
   SOURCE_CONTENT_HASH_FIELD,
@@ -15,6 +16,39 @@ describe('computeContentHash', () => {
     expect(computeContentHash('<html>lab a</html>')).not.toBe(
       computeContentHash('<html>lab b</html>'),
     );
+  });
+});
+
+describe('computeVersionedContentHash', () => {
+  const bytes = '<html>lab</html>';
+
+  it('skips when bytes, prompt version, and model are all unchanged', () => {
+    const stored = computeVersionedContentHash(bytes, 'v1', 'gpt-5-mini');
+    const fresh = computeVersionedContentHash(bytes, 'v1', 'gpt-5-mini');
+    expect(contentUnchanged(stored, fresh, false)).toBe(true);
+  });
+
+  it('re-runs when only the prompt version changes', () => {
+    const stored = computeVersionedContentHash(bytes, 'v1', 'gpt-5-mini');
+    const fresh = computeVersionedContentHash(bytes, 'v2', 'gpt-5-mini');
+    expect(fresh).not.toBe(stored);
+    expect(contentUnchanged(stored, fresh, false)).toBe(false);
+  });
+
+  it('re-runs when only the model changes', () => {
+    const stored = computeVersionedContentHash(bytes, 'v1', 'gpt-5-mini');
+    const fresh = computeVersionedContentHash(bytes, 'v1', 'gpt-4o-mini');
+    expect(fresh).not.toBe(stored);
+    expect(contentUnchanged(stored, fresh, false)).toBe(false);
+  });
+
+  it('force-llm bypasses even when the versioned hash matches', () => {
+    const hash = computeVersionedContentHash(bytes, 'v1', 'gpt-5-mini');
+    expect(contentUnchanged(hash, hash, true)).toBe(false);
+  });
+
+  it('differs from the bytes-only hash so pre-versioning rows re-extract once', () => {
+    expect(computeVersionedContentHash(bytes, 'v1', 'gpt-5-mini')).not.toBe(computeContentHash(bytes));
   });
 });
 

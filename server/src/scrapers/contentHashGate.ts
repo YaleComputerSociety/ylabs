@@ -26,6 +26,22 @@ export function computeContentHash(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
+// The gate skips a paid LLM call only when the source bytes AND the extraction
+// contract that would consume them are unchanged. Folding the prompt version and
+// model id into the stored/compared key means a prompt improvement or model bump
+// re-extracts exactly the affected entities on the next run, instead of silently
+// serving output produced by an older prompt/model. Bytes-only content still
+// skips when promptVersion and model are unchanged.
+export function computeVersionedContentHash(
+  text: string,
+  promptVersion: string,
+  model: string,
+): string {
+  return createHash('sha256')
+    .update(`${computeContentHash(text)} ${promptVersion} ${model}`, 'utf8')
+    .digest('hex');
+}
+
 export async function loadStoredContentHash(
   sourceName: string,
   entity: ContentHashEntityRef,

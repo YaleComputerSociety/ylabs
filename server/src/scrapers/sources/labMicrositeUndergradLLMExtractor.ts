@@ -48,7 +48,7 @@ import {
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
 import {
-  computeContentHash,
+  computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
   loadStoredContentHash,
@@ -79,7 +79,11 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
-const DEFAULT_MODEL = 'gpt-5-mini';
+export const DEFAULT_MODEL = 'gpt-5-mini';
+
+// Bump when the undergrad-extraction prompt/contract changes so the content-hash
+// gate re-extracts affected entities. See contentHashGate.computeVersionedContentHash.
+export const UNDERGRAD_EXTRACTION_PROMPT_VERSION = 'v1';
 const SOURCE_KEY = 'lab-microsite-undergrad-llm';
 const MAX_CANDIDATE_SUBPAGE_URLS = 8;
 const MAX_SUBPAGES_FETCHED = 3;
@@ -1444,8 +1448,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       const [primarySubPage, ...additionalSubPages] = subPages;
 
       const entityRef = { entityType: 'researchEntity' as const, entityKey: lab.slug };
-      const contentHash = computeContentHash(
+      const contentHash = computeVersionedContentHash(
         [homeText, ...subPages.map((page) => page.text)].join('\n'),
+        UNDERGRAD_EXTRACTION_PROMPT_VERSION,
+        this.model,
       );
       const storedContentHash = ctx.options.forceLlm
         ? undefined
