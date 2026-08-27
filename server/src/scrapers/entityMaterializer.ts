@@ -42,7 +42,7 @@ import {
   ResolverObservation,
   ResolvedField,
 } from './confidenceResolver';
-import { collapseLatestWins } from './observationStore';
+import { collapseLatestWins, c4LosslessIngestEnabled } from './observationStore';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
 import {
@@ -2552,6 +2552,17 @@ function hasRequiredFieldsForCreate(
  * even though the resolver would have picked correctly given the full set
  * (see #1131, where this silently served the wrong person's content).
  */
+// Flag-off: read only the single active row per fingerprint. Flag-on: read the
+// full retained log so the projection can decide late, but still exclude
+// rollback-retired rows. `superseded` is overloaded (latest-wins supersession
+// vs. retireObservations permanent removal), so dropping it wholesale would
+// resurface purged data; rollback rows are distinguished by rollback.rolledBackAt.
+function materializationReadScopeFilter(): Record<string, unknown> {
+  return c4LosslessIngestEnabled()
+    ? { 'rollback.rolledBackAt': { $exists: false } }
+    : { superseded: false };
+}
+
 export async function entityIdAnchoredObservationsExcludedByEntityKeyScope(
   entityType: ObservedEntityType,
   entityId: string,
@@ -2564,7 +2575,7 @@ export async function entityIdAnchoredObservationsExcludedByEntityKeyScope(
   );
   const entityIdMatches = await Observation.find({
     entityType,
-    superseded: false,
+    ...materializationReadScopeFilter(),
     entityId: entityIdObjectId,
   }).lean();
   return entityIdMatches.filter(
@@ -2594,7 +2605,7 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
   );
   const entityKeyMatches = await Observation.find({
     entityType,
-    superseded: false,
+    ...materializationReadScopeFilter(),
     entityKey,
   }).lean();
   return entityKeyMatches.filter((observation: any) => {
@@ -3173,7 +3184,7 @@ export async function materializeEntity(
   identifier: { entityId?: string; entityKey?: string },
   options: MaterializeOptions = {},
 ): Promise<MaterializeResult> {
-  const filter: any = { entityType, superseded: false };
+  const filter: any = { entityType, ...materializationReadScopeFilter() };
   if (identifier.entityId) filter.entityId = identifier.entityId;
   else if (identifier.entityKey) filter.entityKey = identifier.entityKey;
   else throw new Error('materializeEntity requires entityId or entityKey');
