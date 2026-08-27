@@ -1054,38 +1054,50 @@ async function planResearchEntityGateUpdates(
     countResearchEntityAlternateAccessPaths(entityIds),
   ]);
 
-  const leadRows = Array.from(rosterByEntityId.values())
-    .flat()
-    .filter(
-      (entry) => entry.state !== 'HISTORICAL' && STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(entry.role),
-    )
-    .map((entry) => {
-      const [fname = '', ...rest] = String(entry.name || '')
-        .trim()
-        .split(/\s+/);
-      const lname = rest.join(' ');
-      const officialProfileUrl = officialProfileUrlFromRosterEntry(entry);
-      return {
-        researchEntityId: entry.researchEntityId,
-        role: entry.role,
-        userId: entry.personId,
-        name: entry.name,
-        ...(entry.title ? { title: entry.title } : {}),
-        user: {
-          _id: entry.personId,
-          netid: entry.netid,
-          displayName: entry.name,
-          fname,
-          lname,
+  const buildGateLeadRows = (roster: typeof rosterByEntityId) =>
+    Array.from(roster.values())
+      .flat()
+      .filter(
+        (entry) =>
+          entry.state !== 'HISTORICAL' && STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(entry.role),
+      )
+      .map((entry) => {
+        const [fname = '', ...rest] = String(entry.name || '')
+          .trim()
+          .split(/\s+/);
+        const lname = rest.join(' ');
+        const officialProfileUrl = officialProfileUrlFromRosterEntry(entry);
+        return {
+          researchEntityId: entry.researchEntityId,
+          role: entry.role,
+          userId: entry.personId,
+          name: entry.name,
           ...(entry.title ? { title: entry.title } : {}),
-          ...(entry.websiteUrl ? { websiteUrl: entry.websiteUrl } : {}),
-          ...(officialProfileUrl ? { profileUrls: { official: officialProfileUrl } } : {}),
-        },
-      };
-    });
+          user: {
+            _id: entry.personId,
+            netid: entry.netid,
+            displayName: entry.name,
+            fname,
+            lname,
+            ...(entry.title ? { title: entry.title } : {}),
+            ...(entry.websiteUrl ? { websiteUrl: entry.websiteUrl } : {}),
+            ...(officialProfileUrl ? { profileUrls: { official: officialProfileUrl } } : {}),
+          },
+        };
+      });
+
+  const leadRows = buildGateLeadRows(rosterByEntityId);
+  const duplicateReferenceRosterByEntityId = needsDuplicateReferenceCorpus
+    ? await getResearchEntityRosterByEntityId(
+        duplicateReferenceEntities.map((entity: any) => entity._id),
+      )
+    : rosterByEntityId;
+  const duplicateReferenceLeadRows = needsDuplicateReferenceCorpus
+    ? buildGateLeadRows(duplicateReferenceRosterByEntityId)
+    : leadRows;
 
   const profileAreaNamesByUserId = new Map<string, string[]>();
-  for (const row of leadRows) {
+  for (const row of duplicateReferenceLeadRows) {
     const userId = studentVisibilityGateDocumentId(row.userId);
     if (!userId || profileAreaNamesByUserId.has(userId)) continue;
     profileAreaNamesByUserId.set(
@@ -1106,11 +1118,18 @@ async function planResearchEntityGateUpdates(
     if (matches.length > 0) profileAreaEntitiesByUserId.set(userId, matches);
   }
 
-  const leadsByEntityId = new Map<string, any[]>();
-  for (const row of leadRows) {
-    const key = studentVisibilityGateDocumentId(row.researchEntityId);
-    leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
-  }
+  const buildLeadsByEntityId = (rows: any[]) => {
+    const map = new Map<string, any[]>();
+    for (const row of rows) {
+      const key = studentVisibilityGateDocumentId(row.researchEntityId);
+      map.set(key, [...(map.get(key) || []), row]);
+    }
+    return map;
+  };
+  const leadsByEntityId = buildLeadsByEntityId(leadRows);
+  const duplicateReferenceLeadsByEntityId = needsDuplicateReferenceCorpus
+    ? buildLeadsByEntityId(duplicateReferenceLeadRows)
+    : leadsByEntityId;
   const accessCounts = countByEntityId(accessRows as any[]);
   const sourceNamesByEntityId = new Map(
     (accessRows as any[]).map((row) => [
@@ -1137,18 +1156,18 @@ async function planResearchEntityGateUpdates(
 
   const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds([
     ...buildSamePiVisibilityDedupeRows({
-      entities: entities as any[],
-      leadRows: leadRows as any[],
+      entities: duplicateReferenceEntities as any[],
+      leadRows: duplicateReferenceLeadRows as any[],
       extraEntitiesByUserId: profileAreaEntitiesByUserId,
     }),
     ...buildNameOnlyVisibilityDedupeRows({
-      entities: entities as any[],
-      leadsByEntityId,
+      entities: duplicateReferenceEntities as any[],
+      leadsByEntityId: duplicateReferenceLeadsByEntityId,
     }),
   ]);
   const exactUrlDuplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(
     duplicateReferenceEntities as any[],
-    leadRows as any[],
+    duplicateReferenceLeadRows as any[],
   );
   const concreteLeadEntityUserIds = new Set<string>();
   for (const row of leadRows as any[]) {
