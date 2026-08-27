@@ -28,7 +28,6 @@ const UserButton = () => {
   const open = Boolean(anchorEl);
   const location = useLocation();
   const { user } = useContext(UserContext);
-  const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
   const getInitials = () => {
     if (user?.netId && user.netId.length > 0) {
@@ -126,17 +125,6 @@ const UserButton = () => {
           },
         }}
       >
-        {isProfessorUser && user?.netId && (
-          <MenuItem
-            component={Link}
-            to={`/profile/${safeRouteSegment(user.netId)}`}
-            onClick={handleClose}
-            sx={menuItemStyle}
-            disableRipple
-          >
-            Public Profile
-          </MenuItem>
-        )}
         <MenuItem
           component={Link}
           to="/about"

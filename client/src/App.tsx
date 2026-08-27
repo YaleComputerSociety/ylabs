@@ -14,7 +14,6 @@ import ResearchDetail from './pages/labDetail';
 import Login from './pages/login';
 import About from './pages/about';
 import Dashboard from './pages/dashboard';
-import Profile from './pages/profile';
 import LoginError from './pages/loginError';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -89,10 +88,6 @@ const App = () => {
                         element={<PrivateRoute Component={RetiredAccountRedirect} />}
                       />
                       <Route path="/dashboard" element={<PrivateRoute Component={Dashboard} />} />
-                      <Route
-                        path="/profile/:netid"
-                        element={<PrivateRoute Component={Profile} />}
-                      />
                       <Route
                         path="/analytics"
                         element={

@@ -1713,7 +1713,6 @@ const searchResearchGroupsViaMongoFallback = async (
   ) as ResearchGroupSearchResult;
 };
 
-const PUBLIC_PROFILE_ROUTE_ID_RE = /^[a-z0-9][a-z0-9._-]{1,63}$/i;
 const MAX_PUBLIC_MEMBER_PROFILE_URLS = 20;
 const PUBLIC_MEMBER_PROFILE_URL_KEY_RE = /^[a-z0-9_-]{1,64}$/i;
 const PUBLIC_MEMBER_PROFILE_URL_KEYS = new Set([
@@ -1789,25 +1788,6 @@ const addPublicMemberProfileUrls = (target: Record<string, any>, value: unknown)
   }
 };
 
-const publicInternalProfilePath = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return PUBLIC_PROFILE_ROUTE_ID_RE.test(trimmed)
-    ? `/profile/${encodeURIComponent(trimmed)}`
-    : undefined;
-};
-
-const publicInternalProfilePathFromPath = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const match = /^\/profile\/([^/?#]+)$/.exec(value.trim());
-  if (!match) return undefined;
-  try {
-    return publicInternalProfilePath(decodeURIComponent(match[1]));
-  } catch {
-    return undefined;
-  }
-};
-
 const hasPublicMemberProfileUrls = (value: Record<string, any>): boolean =>
   Boolean(value.profileUrls && Object.keys(value.profileUrls).length > 0);
 
@@ -1854,18 +1834,10 @@ function publicMemberUserForResearchDetail(user: any): any {
   addPublicMemberField(publicUser, 'primary_department', primaryDepartment);
   addPublicMemberProfileUrls(publicUser, user?.profileUrls || user?.profile_urls);
   if (!hasPublicMemberProfileUrls(publicUser)) {
-    const internalProfilePath =
-      publicInternalProfilePathFromPath(user?.internalProfilePath || user?.internal_profile_path) ||
-      publicInternalProfilePath(user?.netid);
-    if (internalProfilePath) {
-      publicUser.internalProfilePath = internalProfilePath;
-      publicUser.internal_profile_path = internalProfilePath;
-    } else {
-      const website = publicHttpUrl(user?.websiteUrl) || publicHttpUrl(user?.website);
-      if (website) {
-        publicUser.website = website;
-        publicUser.websiteUrl = website;
-      }
+    const website = publicHttpUrl(user?.websiteUrl) || publicHttpUrl(user?.website);
+    if (website) {
+      publicUser.website = website;
+      publicUser.websiteUrl = website;
     }
   }
 
@@ -1917,19 +1889,13 @@ function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry):
     addPublicMemberProfileUrls(publicUser, { official: officialProfileUrl });
   }
   if (!hasPublicMemberProfileUrls(publicUser)) {
-    const internalProfilePath = publicInternalProfilePath(entry.netid);
-    if (internalProfilePath) {
-      publicUser.internalProfilePath = internalProfilePath;
-      publicUser.internal_profile_path = internalProfilePath;
-    } else {
-      const website =
-        publicHttpUrl(
-          canonicalProfileLinkUrl(entry.profileLinks, CANONICAL_PROFILE_LINK_WEBSITE_KINDS),
-        ) || publicHttpUrl(entry.websiteUrl);
-      if (website) {
-        publicUser.website = website;
-        publicUser.websiteUrl = website;
-      }
+    const website =
+      publicHttpUrl(
+        canonicalProfileLinkUrl(entry.profileLinks, CANONICAL_PROFILE_LINK_WEBSITE_KINDS),
+      ) || publicHttpUrl(entry.websiteUrl);
+    if (website) {
+      publicUser.website = website;
+      publicUser.websiteUrl = website;
     }
   }
 

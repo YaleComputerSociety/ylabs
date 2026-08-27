@@ -65,7 +65,6 @@ describe('LabMembersList', () => {
           official: 'https://medicine.yale.edu/profile/fixture-scholar/',
         },
         website: 'https://fixture-scholar.example.test/',
-        internalProfilePath: '/profile/fx1001',
       }),
     ]);
 

@@ -2013,27 +2013,6 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
   }
 };
 
-export const isPublicFacultyProfileUserType = (userType: unknown): boolean =>
-  normalizeUserType(userType) === 'professor';
-
-export const getProfileByNetid = async (netid: string) => {
-  const user = await User.findOne({ netid }).lean();
-  if (!user || !isPublicFacultyProfileUserType((user as any).userType)) return null;
-
-  const [scholarlyLinks, researchEntities] = await Promise.all([
-    loadProfileScholarlyLinks(user as any),
-    loadProfileResearchEntities(user as any),
-  ]);
-
-  const publicUser = await withPublicProfileImageGuards(user as any);
-
-  return normalizePublicProfile(publicUser as any, {
-    scholarlyLinks,
-    researchEntities,
-    trustedResearchEntities: true,
-  });
-};
-
 /**
  * Fields an account was allowed to self-edit. Retained as the base allowlist
  * that the admin profile update path extends.

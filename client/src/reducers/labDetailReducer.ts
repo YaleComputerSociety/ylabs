@@ -4,7 +4,7 @@
  * Models the fetch lifecycle for the `GET /api/research/:slug` payload
  * (idle → loading → loaded/error).
  *
- * Following the convention from `configReducer` and `profilePageReducer`:
+ * Following the convention from `configReducer`:
  * stale data is preserved on FETCH_FAILURE so a transient network blip does
  * not blank out the page if a prior load succeeded.
  *

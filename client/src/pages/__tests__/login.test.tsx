@@ -74,15 +74,6 @@ describe('Login', () => {
     ).toBeNull();
   });
 
-  it('keeps profile context on the CAS gate', () => {
-    renderLogin('/profile/example');
-
-    expect(screen.getByRole('heading', { name: /continue to profile/i })).toBeTruthy();
-    expect(
-      screen.getByText(/view research interests, activity, and yale research context/i),
-    ).toBeTruthy();
-  });
-
   it('keeps dashboard context on the CAS gate', () => {
     renderLogin('/dashboard');
 
