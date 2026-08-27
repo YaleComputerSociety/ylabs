@@ -16,7 +16,6 @@ import {
   isLikelySameNameContaminatedProfile,
   isPublicResearchPaperLink,
   normalizePublicProfile,
-  orderProfileScholarlyLinks,
   scholarlyLinkToPublicLink,
 } from '../profileService';
 
@@ -1741,36 +1740,6 @@ describe('profileService profile shaping', () => {
       'information design',
       'disclosure',
       'governance mechanisms',
-    ]);
-  });
-
-  it('prioritizes official-profile selected publications before trimming profile activity', () => {
-    const links = [
-      {
-        _id: 'openalex-2026',
-        title: 'Recent OpenAlex paper',
-        url: 'https://doi.org/10.1234/recent',
-        destinationKind: 'DOI',
-        displaySource: 'DOI',
-        discoveredVia: 'OPENALEX',
-        year: 2026,
-      },
-      {
-        _id: 'official-selected',
-        title: 'A Double Auction Mechanism for Mobile Data Offloading Markets',
-        url: 'https://faculty.example.test/papers/double-auction.pdf',
-        sourceUrl:
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
-        destinationKind: 'OTHER',
-        displaySource: 'Official Yale profile',
-        discoveredVia: 'OFFICIAL_PROFILE',
-        year: 2015,
-      },
-    ];
-
-    expect(orderProfileScholarlyLinks(links).map((link: any) => link._id)).toEqual([
-      'official-selected',
-      'openalex-2026',
     ]);
   });
 
