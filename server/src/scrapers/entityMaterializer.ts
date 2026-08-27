@@ -44,6 +44,14 @@ import {
 } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
+import {
+  deriveCanonicalKeys,
+  resolveCanonical,
+  type CandidateEntity,
+  type CanonicalKey,
+  type CanonicalResolution,
+} from './resolveCanonical';
+import { recordCanonicalAlias, resolveCanonicalAlias } from '../services/canonicalAliasService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -2947,6 +2955,100 @@ export async function projectFromLog(
   return { set, unset, confidenceByField, conflicts, fieldsWritten };
 }
 
+function c4ResolveAtMintUsersEnabled(): boolean {
+  return process.env.C4_RESOLVE_AT_MINT_USERS === 'true';
+}
+
+function isDuplicateKeyMongoError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { code?: number }).code === 11000);
+}
+
+function buildResolverSelf(obs: Array<{ field: string; value?: unknown }>): CandidateEntity {
+  const map = new Map<string, string>();
+  for (const o of obs) {
+    const v =
+      typeof o.value === 'string' ? o.value.trim() : o.value == null ? '' : String(o.value).trim();
+    if (v && !map.has(o.field)) map.set(o.field, v);
+  }
+  const fname = map.get('fname') ?? '';
+  const lname = map.get('lname') ?? '';
+  const name = `${fname} ${lname}`.replace(/\s+/g, ' ').trim() || (map.get('name') ?? '');
+  return {
+    id: '',
+    name: name || undefined,
+    fname: fname || undefined,
+    lname: lname || undefined,
+  };
+}
+
+async function findUserCandidatesByKey(key: CanonicalKey): Promise<CandidateEntity[]> {
+  const field =
+    key.ns === 'netid'
+      ? 'netid'
+      : key.ns === 'orcid'
+        ? 'orcid'
+        : key.ns === 'email'
+          ? 'email'
+          : null;
+  if (!field) return [];
+  const clause =
+    field === 'orcid'
+      ? { $in: [key.value, key.value.toUpperCase(), key.value.toLowerCase()] }
+      : key.value;
+  const docs = (await User.find({
+    [field]: clause,
+    archived: { $ne: true },
+    dedupedIntoUserId: { $exists: false },
+  })
+    .select('_id fname lname')
+    .lean()) as Array<{ _id: unknown; fname?: string; lname?: string }>;
+  return docs.map((d) => {
+    const name = `${d.fname ?? ''} ${d.lname ?? ''}`.replace(/\s+/g, ' ').trim();
+    return { id: String(d._id), name: name || undefined, fname: d.fname, lname: d.lname };
+  });
+}
+
+async function resolveCanonicalForUserMint(
+  obs: Array<{ field: string; value?: unknown }>,
+): Promise<CanonicalResolution> {
+  const keys = deriveCanonicalKeys(
+    'user',
+    obs.map((o) => ({ field: o.field, value: o.value })),
+  );
+  if (keys.length === 0) return { status: 'mint', reservedKeys: [] };
+  return resolveCanonical(
+    { type: 'user', keys, self: buildResolverSelf(obs) },
+    {
+      resolveAlias: async (type, ns, value) => {
+        const id = await resolveCanonicalAlias(type, ns, value);
+        return id ? String(id) : null;
+      },
+      findCandidatesByKey: (_type, key) => findUserCandidatesByKey(key),
+    },
+  );
+}
+
+async function reserveUserCanonicalAliases(
+  obs: Array<{ field: string; value?: unknown }>,
+  canonicalId: string,
+): Promise<void> {
+  const keys = deriveCanonicalKeys(
+    'user',
+    obs.map((o) => ({ field: o.field, value: o.value })),
+  );
+  for (const key of keys) {
+    if (key.strength === 'weak') continue;
+    await recordCanonicalAlias({
+      type: 'user',
+      aliasNs: key.ns,
+      aliasValue: key.value,
+      canonicalType: 'user',
+      canonicalId,
+      reason: 'resolve_at_mint',
+    });
+  }
+}
+
 export async function materializeEntity(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
@@ -3035,6 +3137,36 @@ export async function materializeEntity(
       resolved: {},
       skipped: 'merged-into-canonical',
     };
+  }
+
+  // C4 resolve-at-mint (User-first, env-flagged). When enabled and the existing
+  // hard-key/redirect path did not resolve a user, consult resolveCanonical so a
+  // duplicate User is folded into its canonical BEFORE minting a second row
+  // (closes the email/ORCID after-mint gap). When the flag is off this is skipped
+  // entirely, so behavior is unchanged.
+  let userMintResolution: CanonicalResolution | undefined;
+  if (c4ResolveAtMintUsersEnabled() && entityType === 'user' && !entityDoc) {
+    const resolution = await resolveCanonicalForUserMint(obs);
+    userMintResolution = resolution;
+    if (resolution.status === 'blocked') {
+      return {
+        entityType,
+        ...identifier,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'resolver-blocked',
+      };
+    }
+    if (resolution.status === 'existing') {
+      const canonicalDoc = await Model.findById(resolution.canonicalId);
+      if (canonicalDoc) {
+        entityDoc = canonicalDoc;
+        entityIdString = String(canonicalDoc._id);
+      }
+    }
+    // 'ambiguous' | 'mint' fall through to the existing create branch unchanged.
   }
 
   if (!identifier.entityId && entityIdString) {
@@ -3189,6 +3321,7 @@ export async function materializeEntity(
       };
     }
     let created_;
+    let didCreate = true;
     if (isResearchEntityObservationType(entityType)) {
       const researchEntityId = new mongoose.Types.ObjectId();
       created_ = await mutateAndRefreshAdminAccessReviewProjection(
@@ -3201,10 +3334,34 @@ export async function materializeEntity(
         },
       );
     } else {
-      created_ = await Model.create(insert);
+      try {
+        created_ = await Model.create(insert);
+      } catch (error) {
+        // A concurrent writer may have minted the same unique key between our
+        // resolve/lookup and this create (soft identity keys are not DB-unique), so
+        // adopt the winning row instead of throwing - a resolve-at-mint race
+        // collapses to one record rather than erroring the run.
+        if (isDuplicateKeyMongoError(error)) {
+          const adopted = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
+          if (!adopted) throw error;
+          created_ = adopted;
+          didCreate = false;
+        } else {
+          throw error;
+        }
+      }
     }
     entityIdString = materializerDocumentId(created_._id);
-    created = true;
+    created = didCreate;
+    if (
+      c4ResolveAtMintUsersEnabled() &&
+      entityType === 'user' &&
+      didCreate &&
+      entityIdString &&
+      userMintResolution?.status === 'mint'
+    ) {
+      await reserveUserCanonicalAliases(obs, entityIdString);
+    }
   }
 
   const syncEntityType = entityType === 'researchGroup' ? 'researchEntity' : entityType;
