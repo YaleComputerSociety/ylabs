@@ -88,7 +88,6 @@ export interface ResearchCluster {
   labels: string[];
   metadataTags: string[];
   wayInBadges?: string[];
-  activePostedOpportunity?: PathwaySearchHit['activePostedOpportunity'];
   entities: ResearchEntity[];
   pathways: PathwaySearchHit[];
   evidence: EvidenceSourceRowData[];
@@ -430,10 +429,6 @@ const pathwaysForEntities = (
   });
 };
 
-const hasCanonicalPostedOpportunity = (pathway: PathwaySearchHit): boolean =>
-  Boolean(pathway.activePostedOpportunity) &&
-  pathway.activePostedOpportunity?.provenance !== 'LISTING_BRIDGED';
-
 const hasContactRoute = (pathway: PathwaySearchHit): boolean =>
   Boolean(pathway.contactRoute?.url || pathway.contactRoute?.routeType) ||
   ['contact-program', 'plan-outreach'].includes(pathway.bestNextStepCategory);
@@ -451,7 +446,6 @@ export const buildWayInBadges = (
     if (condition && !badges.includes(label)) badges.push(label);
   };
 
-  addBadge('Posted route', pathways.some(hasCanonicalPostedOpportunity));
   addBadge('Contact route', pathways.some(hasContactRoute));
   addBadge(
     'Undergrad evidence',
@@ -476,9 +470,8 @@ const normalizeDisplayKeyPart = (value?: string): string =>
 
 const pathwayDisplayKey = (pathway: PathwaySearchHit): string => {
   const entity = pathway.researchEntity;
-  const hasPostedOpportunity = !!pathway.activePostedOpportunity;
   const entityKey =
-    !hasPostedOpportunity && (entity?.displayName || entity?.name)
+    entity?.displayName || entity?.name
       ? entity.displayName || entity.name
       : entity?.slug ||
         entity?._id ||
@@ -490,8 +483,6 @@ const pathwayDisplayKey = (pathway: PathwaySearchHit): string => {
     pathway.sourceUrls?.[0] ||
     pathway.evidence?.find((entry) => entry.sourceUrl)?.sourceUrl;
   const opportunityKey =
-    pathway.activePostedOpportunity?._id ||
-    pathway.activePostedOpportunity?.title ||
     sourceKey ||
     pathway.bestNextStepCategory ||
     pathway.bestNextStep ||
@@ -568,7 +559,6 @@ const buildProfileDiscoveryClusters = (
     const researchAreaLabels = meaningfulMetadata(entity.researchAreas || []);
     const conceptTags = meaningfulMetadata(entity.searchMatch?.concepts || []);
     const pathways = pathwaysForEntities(options.pathways || [], [entity]);
-    const activePostedOpportunity = pathways.find(hasCanonicalPostedOpportunity)?.activePostedOpportunity;
 
     return {
       id: entity.slug || entity.id || entity._id || slugify(displayName),
@@ -588,7 +578,6 @@ const buildProfileDiscoveryClusters = (
         ...conceptTags,
       ]).slice(0, 5),
       wayInBadges: buildWayInBadges(entity, pathways),
-      activePostedOpportunity,
       entities: [entity],
       pathways,
       evidence: [

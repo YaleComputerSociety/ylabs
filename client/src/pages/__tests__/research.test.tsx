@@ -2391,12 +2391,6 @@ describe('Research page', () => {
       pathwayType: 'POSTED_ROLE',
       bestNextStepCategory: 'apply',
       compensation: 'STIPEND',
-      activePostedOpportunity: {
-        _id: 'opportunity-1',
-        title: 'Summer RA role',
-        status: 'OPEN',
-        provenance: 'SCRAPER_DERIVED',
-      },
       evidence: [
         {
           signalType: 'POSTED_OPENING',

@@ -28,12 +28,6 @@ const Login = () => {
         description: 'Use your Yale account to review structured programs, funding cycles, and planning context.',
       };
     }
-    if (returnPath.startsWith('/opportunities')) {
-      return {
-        heading: 'Continue to Opportunity Details',
-        description: 'Use your Yale account to review the evidence, deadline, and application next step.',
-      };
-    }
     if (returnPath.startsWith('/profile')) {
       return {
         heading: 'Continue to Profile',

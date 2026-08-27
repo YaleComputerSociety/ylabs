@@ -63,15 +63,6 @@ describe('Login', () => {
     ).toBeTruthy();
   });
 
-  it('keeps opportunity detail context on the CAS gate', () => {
-    renderLogin('/opportunities/example-id');
-
-    expect(screen.getByRole('heading', { name: /continue to opportunity details/i })).toBeTruthy();
-    expect(
-      screen.getByText(/review the evidence, deadline, and application next step/i),
-    ).toBeTruthy();
-  });
-
   it('keeps profile context on the CAS gate', () => {
     renderLogin('/profile/example');
 
