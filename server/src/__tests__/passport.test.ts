@@ -246,6 +246,7 @@ describe('auth environment guards', () => {
         userType: 'admin',
         userConfirmed: true,
         profileVerified: true,
+        isAdmin: true,
       });
       expect(accountServiceMock.recordAccountLogin).toHaveBeenCalledWith({
         netid: 'devadmin',
