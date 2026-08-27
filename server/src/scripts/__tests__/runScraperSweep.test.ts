@@ -573,9 +573,35 @@ describe('runScraperSweep', () => {
     const withOptional = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       dedupeResearchers: true,
       autoMergeEponymousFra: true,
+      mergeUrlIdentityDuplicates: true,
       sinceIso: '2026-08-26T00:00:00.000Z',
     }).map((stage) => stage.name);
     expect(withOptional).toEqual(registryNames);
+  });
+
+  it('gates the url-identity dedupe stage behind its flag and runs it before search-rebuild', () => {
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
+    ).not.toContain('url-identity-dedupe');
+    const names = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      mergeUrlIdentityDuplicates: true,
+      maxUrlIdentityMerges: 300,
+    }).map((stage) => stage.name);
+    expect(names.indexOf('url-identity-dedupe')).toBeGreaterThan(names.indexOf('faculty-projection'));
+    expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('search-rebuild'));
+    const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      mergeUrlIdentityDuplicates: true,
+      maxUrlIdentityMerges: 300,
+    }).find((entry) => entry.name === 'url-identity-dedupe');
+    expect(stage?.args).toEqual(
+      expect.arrayContaining([
+        'research-entity:dedupe-by-pi',
+        '--profile-lab-url-only',
+        '--apply',
+        '--confirm-research-entity-pi-dedupe',
+        '--max-apply=300',
+      ]),
+    );
   });
 
   it('extracts the eponymous merge delta and fails loud when it is absent', () => {

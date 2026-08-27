@@ -23,6 +23,10 @@ import {
   SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV,
   type ResearcherDedupeStageDelta,
 } from './dedupeAccountlessResearcherShells';
+import {
+  DEFAULT_URL_IDENTITY_MERGE_MAX,
+  isUrlIdentityDedupeStageEnabled,
+} from './dedupeResearchEntitiesByPi';
 
 export type ScraperSweepMode =
   | 'development-plan'
@@ -138,6 +142,7 @@ export interface DevelopmentPostRunStage {
     | 'faculty-projection'
     | 'researcher-dedupe'
     | 'eponymous-fra-merge'
+    | 'url-identity-dedupe'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'coverage-audit'
@@ -156,9 +161,11 @@ export interface DevelopmentPostRunStage {
 export interface DevelopmentPostRunStageOptions {
   autoMergeEponymousFra?: boolean;
   dedupeResearchers?: boolean;
+  mergeUrlIdentityDuplicates?: boolean;
   deleteMergeResidue?: boolean;
   sinceIso?: string;
   maxMerges?: number;
+  maxUrlIdentityMerges?: number;
 }
 
 export function isDevelopmentSweepMode(mode: ScraperSweepMode): boolean {
@@ -189,6 +196,7 @@ export function resolveDevelopmentPostRunOptions(
   return {
     autoMergeEponymousFra: isDevSweepStageEnabledByDefault(env[SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV]),
     dedupeResearchers: isDevSweepStageEnabledByDefault(env[SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV]),
+    mergeUrlIdentityDuplicates: isUrlIdentityDedupeStageEnabled(env),
     deleteMergeResidue: isDevSweepStageEnabledByDefault(
       env[SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV],
     ),
@@ -691,6 +699,19 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     ],
     isEnabled: (options) => Boolean(options.autoMergeEponymousFra && options.sinceIso),
     parseResult: parseEponymousFraMergeResult,
+  },
+  {
+    name: 'url-identity-dedupe',
+    command: 'research-entity:dedupe-by-pi',
+    artifactName: 'development-url-identity-dedupe.json',
+    buildArgs: (options) => [
+      '--profile-lab-url-only',
+      '--apply',
+      '--confirm-research-entity-pi-dedupe',
+      '--limit=10000',
+      `--max-apply=${options.maxUrlIdentityMerges ?? DEFAULT_URL_IDENTITY_MERGE_MAX}`,
+    ],
+    isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
   },
   {
     name: 'visibility-gate',

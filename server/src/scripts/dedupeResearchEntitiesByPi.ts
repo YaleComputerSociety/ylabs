@@ -36,6 +36,12 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import { deleteFromIndex } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
+import { computeResearchEntityStudentVisibility } from '../services/studentVisibilityTier';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
+import {
+  fullDescriptionQuality,
+  shortDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -1744,35 +1750,220 @@ async function countRemainingDuplicateReferences(
   return counts;
 }
 
+export const SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV =
+  'SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES';
+export const DEFAULT_URL_IDENTITY_MERGE_MAX = 500;
+
+export function isUrlIdentityDedupeStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = (env[SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV] || '').trim().toLowerCase();
+  return value === '1' || value === 'true';
+}
+
+const STUDENT_VISIBILITY_TIER_RANK: Record<string, number> = {
+  student_ready: 3,
+  limited_but_safe: 2,
+  operator_review: 1,
+  suppressed: 0,
+};
+const STUDENT_VISIBILITY_RANK_TIER = ['suppressed', 'operator_review', 'limited_but_safe', 'student_ready'];
+const mergeTierRank = (tier: unknown): number =>
+  STUDENT_VISIBILITY_TIER_RANK[String(tier ?? '')] ?? STUDENT_VISIBILITY_TIER_RANK.operator_review;
+
+const MERGE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+
+function renderLeadMembersFromRoster(
+  entries: Array<Record<string, any>>,
+  researchEntityId: mongoose.Types.ObjectId,
+): Array<Record<string, any>> {
+  return entries
+    .filter(
+      (entry) =>
+        entry &&
+        entry.state !== 'HISTORICAL' &&
+        MERGE_LEAD_ROLES.has(String(entry.role ?? '').toLowerCase()),
+    )
+    .map((entry) => ({
+      researchEntityId,
+      role: String(entry.role ?? '').toLowerCase(),
+      userId: entry.personId ? String(entry.personId) : undefined,
+      name: entry.name,
+      user: entry.user,
+      facultyMemberId: entry.facultyMemberId,
+      facultyMember: entry.facultyMember,
+    }));
+}
+
+function pickBestUsefulText(
+  values: string[],
+  isUseful: (value: string) => boolean,
+): string {
+  const cleaned = values.map((value) => (value || '').trim()).filter(Boolean);
+  const useful = cleaned.filter(isUseful);
+  const pool = useful.length > 0 ? useful : cleaned;
+  return pool.sort((a, b) => b.length - a.length)[0] || '';
+}
+
+export interface NonDemotingMergeResolution {
+  defer: boolean;
+  canonicalId: mongoose.Types.ObjectId;
+  duplicateIds: mongoose.Types.ObjectId[];
+  hydratedFullDescription: string;
+  hydratedShortDescription: string;
+  bestInputTier: string;
+  simulatedTier: string;
+}
+
+/**
+ * A merge keeps one survivor and archives the rest, so keeping a survivor that
+ * is less student-visible than one of its twins silently drops a lab from
+ * student view (the #2060 regression). This resolves the survivor by
+ * hydrate-then-verify: hydrate a candidate canonical with the best card + the
+ * union of leads/areas/urls across all twins, simulate the served tier with the
+ * pure `computeResearchEntityStudentVisibility` gate, and accept the candidate
+ * only when it does not demote below the best input twin. The preferred
+ * (identity-consistent) canonical is tried first; if it would demote, higher-tier
+ * twins are tried; if none holds the tier the merge is deferred rather than
+ * demoting.
+ */
+export async function resolveNonDemotingMerge(
+  preferredCanonicalId: mongoose.Types.ObjectId,
+  duplicateIds: mongoose.Types.ObjectId[],
+): Promise<NonDemotingMergeResolution> {
+  const allIds = [preferredCanonicalId, ...duplicateIds];
+  const docs = await ResearchEntity.find({ _id: { $in: allIds } }).lean<Array<Record<string, any>>>();
+  const docById = new Map(docs.map((doc) => [String(doc._id), doc]));
+  const bestInputRank = Math.max(
+    ...allIds.map((id) => mergeTierRank(docById.get(String(id))?.studentVisibilityTier)),
+  );
+  const unionStrings = (field: string): string[] =>
+    Array.from(
+      new Set(
+        docs
+          .flatMap((doc) => (Array.isArray(doc[field]) ? doc[field] : []))
+          .map((value) => String(value))
+          .filter(Boolean),
+      ),
+    );
+  const unionAreas = unionStrings('researchAreas');
+  const unionSourceUrls = unionStrings('sourceUrls');
+  const unionDepartments = unionStrings('departments');
+  const bestFull = pickBestUsefulText(
+    docs.map((doc) => String(doc.fullDescription || '')),
+    (value) => fullDescriptionQuality(value).isUseful,
+  );
+  const bestShort = pickBestUsefulText(
+    docs.map((doc) => String(doc.shortDescription || '')),
+    (value) => shortDescriptionQuality(value, bestFull, unionAreas, {}).isUseful,
+  );
+
+  const rosterMap = await getResearchEntityRosterByEntityId(allIds);
+  const allLeads = allIds.flatMap((id) =>
+    renderLeadMembersFromRoster(rosterMap.get(String(id)) || [], id),
+  );
+
+  const candidateOrder = [
+    preferredCanonicalId,
+    ...duplicateIds
+      .slice()
+      .sort(
+        (a, b) =>
+          mergeTierRank(docById.get(String(b))?.studentVisibilityTier) -
+          mergeTierRank(docById.get(String(a))?.studentVisibilityTier),
+      ),
+  ];
+
+  for (const candidateId of candidateOrder) {
+    const doc = docById.get(String(candidateId));
+    if (!doc) continue;
+    const hypothetical = {
+      ...doc,
+      fullDescription: bestFull || doc.fullDescription,
+      shortDescription: bestShort || doc.shortDescription,
+      researchAreas: unionAreas,
+      sourceUrls: unionSourceUrls,
+      departments: unionDepartments,
+    };
+    const leadMembers = allLeads.map((lead) => ({ ...lead, researchEntityId: candidateId }));
+    const simulated = computeResearchEntityStudentVisibility({
+      entity: hypothetical,
+      leadMembers,
+      duplicateRisk: false,
+      exactUrlDuplicateRisk: false,
+    });
+    if (mergeTierRank(simulated.tier) >= bestInputRank) {
+      return {
+        defer: false,
+        canonicalId: candidateId,
+        duplicateIds: allIds.filter((id) => !id.equals(candidateId)),
+        hydratedFullDescription: bestFull,
+        hydratedShortDescription: bestShort,
+        bestInputTier: STUDENT_VISIBILITY_RANK_TIER[bestInputRank],
+        simulatedTier: simulated.tier,
+      };
+    }
+  }
+
+  return {
+    defer: true,
+    canonicalId: preferredCanonicalId,
+    duplicateIds,
+    hydratedFullDescription: bestFull,
+    hydratedShortDescription: bestShort,
+    bestInputTier: STUDENT_VISIBILITY_RANK_TIER[bestInputRank],
+    simulatedTier: STUDENT_VISIBILITY_RANK_TIER[0],
+  };
+}
+
 export async function applyResearchEntityDedupeMergeGroup(
   group: ResearchEntityDedupeMergeGroup,
-  options: { deleteDuplicates: boolean; relinkReferences?: boolean; redirectReason?: string },
+  options: {
+    deleteDuplicates: boolean;
+    relinkReferences?: boolean;
+    redirectReason?: string;
+    neverDemote?: boolean;
+  },
 ) {
-  const canonicalId = objectId(group.canonicalEntityId);
-  const duplicateIds = group.duplicateEntityIds
+  const requestedCanonicalId = objectId(group.canonicalEntityId);
+  const requestedDuplicateIds = group.duplicateEntityIds
     .map((id) => objectId(id))
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const zeroedResult = () => ({
+    canonicalEntityId: group.canonicalEntityId,
+    duplicateEntityIds: group.duplicateEntityIds,
+    canonicalUpdated: 0,
+    archivedEntities: 0,
+    deletedEntities: 0,
+    retiredConflictingMembers: 0,
+    relinkedMembers: 0,
+    artifactRelink: {},
+    scalarRelink: {},
+    arrayRelink: {},
+    remainingReferencesBeforeDelete: {},
+    removedFromSearchIndex: 0,
+  });
   if (
-    !canonicalId ||
-    duplicateIds.length !== group.duplicateEntityIds.length ||
-    duplicateIds.length === 0
+    !requestedCanonicalId ||
+    requestedDuplicateIds.length !== group.duplicateEntityIds.length ||
+    requestedDuplicateIds.length === 0
   ) {
-    return {
-      canonicalEntityId: group.canonicalEntityId,
-      duplicateEntityIds: group.duplicateEntityIds,
-      canonicalUpdated: 0,
-      archivedEntities: 0,
-      deletedEntities: 0,
-      retiredConflictingMembers: 0,
-      relinkedMembers: 0,
-      artifactRelink: {},
-      scalarRelink: {},
-      arrayRelink: {},
-      remainingReferencesBeforeDelete: {},
-      removedFromSearchIndex: 0,
-    };
+    return zeroedResult();
   }
   const now = new Date();
+
+  let canonicalId = requestedCanonicalId;
+  let duplicateIds = requestedDuplicateIds;
+  let hydratedFullDescription: string | undefined;
+  let hydratedShortDescription: string | undefined;
+  if (options.neverDemote) {
+    const resolution = await resolveNonDemotingMerge(requestedCanonicalId, requestedDuplicateIds);
+    if (resolution.defer) {
+      return { ...zeroedResult(), deferredAsWouldDemote: true, bestInputTier: resolution.bestInputTier };
+    }
+    canonicalId = resolution.canonicalId;
+    duplicateIds = resolution.duplicateIds;
+    hydratedFullDescription = resolution.hydratedFullDescription;
+    hydratedShortDescription = resolution.hydratedShortDescription;
+  }
 
   const duplicateSlugDocs = await ResearchEntity.find({ _id: { $in: duplicateIds } })
     .select('_id slug')
@@ -1796,8 +1987,10 @@ export async function applyResearchEntityDedupeMergeGroup(
     canonicalIdentitySet.displayName = carriedName;
   }
   if (carriedWebsiteUrl) canonicalIdentitySet.websiteUrl = carriedWebsiteUrl;
-  const carriedFullDescription = String(group.canonicalFullDescription || '').trim();
-  const carriedShortDescription = String(group.canonicalShortDescription || '').trim();
+  const carriedFullDescription =
+    (hydratedFullDescription || '').trim() || String(group.canonicalFullDescription || '').trim();
+  const carriedShortDescription =
+    (hydratedShortDescription || '').trim() || String(group.canonicalShortDescription || '').trim();
   if (carriedFullDescription) canonicalIdentitySet.fullDescription = carriedFullDescription;
   if (carriedShortDescription) canonicalIdentitySet.shortDescription = carriedShortDescription;
   if (group.mergedRecentGrants && group.mergedRecentGrants.length > 0) {
@@ -2118,6 +2311,7 @@ async function main() {
         applyResearchEntityDedupeMergeGroup(group, {
           deleteDuplicates,
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
+          neverDemote: profileLabUrlOnly,
         }),
       )
     : [];
