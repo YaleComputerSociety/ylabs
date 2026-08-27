@@ -51,17 +51,17 @@ Beta modes fetch observations into the `Beta` database and emit per-source `beta
 The two exhaustive Development modes (`development-full`, `development-incremental`) run a fixed chain of post-run stages after every source has fetched and materialized:
 
 1. `faculty-projection` (`research-entity:project-faculty`, `--concurrency 12`)
-2. `researcher-dedupe` (optional, only when `SCRAPER_SWEEP_DEDUPE_RESEARCHERS` is set)
-3. `eponymous-fra-merge` (optional, only when `SCRAPER_SWEEP_AUTO_MERGE_FRA` is set)
+2. `researcher-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`)
+3. `eponymous-fra-merge` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`)
 4. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
 5. `search-rebuild` (`meili:rebuild-research-entities --clear`)
 6. `coverage-audit`
 7. `data-quality` (`beta:data-quality --strict`)
 8. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
 9. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-10. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is only deleted when `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE` is set)
+10. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
 
-The three optional stages are each gated by a distinct environment flag so a routine sweep never silently dedupes, merges, or deletes: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`.
+The three dedupe/merge/delete stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`): `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
 
 The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
 A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
@@ -75,7 +75,7 @@ Concurrency is bounded (default 10, max 32); the sweep runs it at 12.
 
 ### Eponymous FRA-to-lab merge and durable redirects
 
-The optional `eponymous-fra-merge` sweep stage (`research-entity:merge-eponymous-fra`, gated by `SCRAPER_SWEEP_AUTO_MERGE_FRA`) collapses only the high-confidence eponymous case: a `faculty-research-area-*` shell that shadows the same PI's concrete lab home.
+The `eponymous-fra-merge` sweep stage (`research-entity:merge-eponymous-fra`, on by default in Dev sweeps, disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`) collapses only the high-confidence eponymous case: a `faculty-research-area-*` shell that shadows the same PI's concrete lab home.
 Selection filters to the `profile_area_shell_with_concrete_home` dedupe category and refuses a `CENTER`/`INSTITUTE` canonical (issue #1957), then relinks references onto the canonical, recomputes student visibility, and force-resyncs the canonical to Meilisearch.
 Every merge records a durable `ResearchEntityRedirect` (`researchEntityMergeRedirectService.ts`) keyed on the shell slug/id and pointing at the live canonical, so a later re-scrape resolves the old shell to its canonical instead of re-minting a duplicate; resolution follows redirect and `canonicalGroupId` chains and never depends on the shell row still existing.
 The `archived-cleanup` stage enforces a fail-closed redirect invariant (issue #2039): in `--merge-residue-only` mode it refuses to delete any residue whose durable redirect is absent (`missing_redirect`) or that still has live references (`has_live_references`).

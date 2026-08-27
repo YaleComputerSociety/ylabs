@@ -406,9 +406,7 @@ describe('runScraperSweep', () => {
       const names = stages.map((stage) => stage.name);
       expect(names).toContain('researcher-dedupe');
       expect(names).toContain('eponymous-fra-merge');
-      expect(names.indexOf('researcher-dedupe')).toBeLessThan(
-        names.indexOf('eponymous-fra-merge'),
-      );
+      expect(names.indexOf('researcher-dedupe')).toBeLessThan(names.indexOf('eponymous-fra-merge'));
       expect(stages.find((stage) => stage.name === 'archived-cleanup')?.args).toEqual(
         expect.arrayContaining([
           'research-entity:cleanup-archived',
