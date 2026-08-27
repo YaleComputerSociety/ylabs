@@ -2,14 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { parseBrowseRankBackfillArgs } from '../backfillBrowseRank';
 import { parseCenterDirectorsBackfillArgs } from '../backfillCenterDirectors';
-import { parseProfileBioBackfillArgs } from '../backfillProfileBiosFromOfficialUrls';
 import { parseResearchDescriptionBackfillArgs } from '../backfillResearchDescriptions';
-import { parseResearchHomeUrlBackfillArgs } from '../backfillResearchHomeOfficialUrls';
 
 const parsers: Array<[string, (argv: string[]) => { output?: string }]> = [
-  ['research home URL backfill', parseResearchHomeUrlBackfillArgs],
   ['research description backfill', parseResearchDescriptionBackfillArgs],
-  ['profile bio backfill', parseProfileBioBackfillArgs],
   ['center directors backfill', parseCenterDirectorsBackfillArgs],
   ['browse rank backfill', parseBrowseRankBackfillArgs],
 ];

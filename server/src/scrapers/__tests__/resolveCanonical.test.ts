@@ -24,7 +24,7 @@ function candidatesByNs(
 
 describe('deriveCanonicalKeys', () => {
   it('marks netid/orcid unique and email strong only when person-specific', () => {
-    const keys = deriveCanonicalKeys('user', [
+    const keys = deriveCanonicalKeys('researcher', [
       { field: 'netid', value: 'jdo9' },
       { field: 'orcid', value: '9999-8888-7777-6666' },
       { field: 'email', value: 'jane.doe@example.edu' },
@@ -38,7 +38,7 @@ describe('deriveCanonicalKeys', () => {
   });
 
   it('drops a non-person-specific (shared lab) email', () => {
-    const keys = deriveCanonicalKeys('user', [
+    const keys = deriveCanonicalKeys('researcher', [
       { field: 'email', value: 'lab-info@example.edu' },
       { field: 'fname', value: 'Jane' },
       { field: 'lname', value: 'Doe' },
@@ -64,7 +64,7 @@ describe('resolveCanonical', () => {
 
   it('resolves to an existing canonical via the alias ledger', async () => {
     const result = await resolveCanonical(
-      { type: 'user', keys: [uniqueNetid] },
+      { type: 'researcher', keys: [uniqueNetid] },
       deps({ resolveAlias: async () => 'canonical-1' }),
     );
     expect(result).toEqual({
@@ -76,7 +76,7 @@ describe('resolveCanonical', () => {
 
   it('resolves to a single live unique-key candidate', async () => {
     const result = await resolveCanonical(
-      { type: 'user', keys: [uniqueNetid] },
+      { type: 'researcher', keys: [uniqueNetid] },
       deps({ findCandidatesByKey: candidatesByNs({ netid: [{ id: 'u1' }] }) }),
     );
     expect(result.status).toBe('existing');
@@ -85,7 +85,7 @@ describe('resolveCanonical', () => {
 
   it('returns ambiguous when a unique key matches more than one live candidate', async () => {
     const result = await resolveCanonical(
-      { type: 'user', keys: [uniqueNetid] },
+      { type: 'researcher', keys: [uniqueNetid] },
       deps({ findCandidatesByKey: candidatesByNs({ netid: [{ id: 'u1' }, { id: 'u2' }] }) }),
     );
     expect(result.status).toBe('ambiguous');
@@ -130,7 +130,7 @@ describe('resolveCanonical', () => {
       findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', fname: 'John', lname: 'Doe' }] }),
     });
     const input = {
-      type: 'user' as CanonicalType,
+      type: 'researcher' as CanonicalType,
       keys: [key],
       self: { id: 'new', fname: 'Jane', lname: 'Doe' },
     };
@@ -143,7 +143,7 @@ describe('resolveCanonical', () => {
   it('resolves a shared email for the same-name person', async () => {
     const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
     const result = await resolveCanonical(
-      { type: 'user', keys: [key], self: { id: 'new', fname: 'Jane', lname: 'Doe' } },
+      { type: 'researcher', keys: [key], self: { id: 'new', fname: 'Jane', lname: 'Doe' } },
       deps({
         findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', fname: 'Jane', lname: 'Doe' }] }),
       }),

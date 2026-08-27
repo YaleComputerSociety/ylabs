@@ -5,10 +5,9 @@ import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
-  resolveResearcherIdForLegacyUser,
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
-import { User } from '../models/user';
+import { Researcher } from '../models/researcher';
 import mongoose from 'mongoose';
 import {
   VisibilityReleaseQueueItem,
@@ -1924,62 +1923,44 @@ const defaultRepairDeps: RepairDeps = {
   async findUserByProfileUrl(urls) {
     const variants = urlVariants(urls);
     if (variants.length === 0) return null;
-    const matches = await User.aggregate([
+    const matches = await Researcher.find(
       {
-        $addFields: {
-          profileUrlValues: {
-            $map: {
-              input: { $objectToArray: { $ifNull: ['$profileUrls', {}] } },
-              as: 'profileUrl',
-              in: '$$profileUrl.v',
-            },
-          },
-        },
+        archived: { $ne: true },
+        $or: [
+          { 'profileLinks.url': { $in: variants } },
+          { 'profile.websiteUrl': { $in: variants } },
+        ],
       },
-      {
-        $match: {
-          $or: [
-            { website: { $in: variants } },
-            { websiteUrl: { $in: variants } },
-            { profileUrlValues: { $in: variants } },
-          ],
-        },
-      },
-      { $limit: 2 },
-    ]);
+      { displayName: 1 },
+    )
+      .limit(2)
+      .lean();
     return matches.length === 1 ? matches[0] : null;
   },
   async findUserByExactWebsiteUrl(urls) {
     const variants = urlVariants(urls);
     if (variants.length === 0) return null;
-    const matches = await User.aggregate([
+    const matches = await Researcher.find(
       {
-        $addFields: {
-          profileUrlValues: {
-            $map: {
-              input: { $objectToArray: { $ifNull: ['$profileUrls', {}] } },
-              as: 'profileUrl',
-              in: '$$profileUrl.v',
-            },
-          },
-        },
+        archived: { $ne: true },
+        $or: [
+          { 'profileLinks.url': { $in: variants } },
+          { 'profile.websiteUrl': { $in: variants } },
+        ],
       },
-      {
-        $match: {
-          $or: [
-            { website: { $in: variants } },
-            { websiteUrl: { $in: variants } },
-            { profileUrlValues: { $in: variants } },
-          ],
-        },
-      },
-      { $limit: 2 },
-    ]);
+      { displayName: 1 },
+    )
+      .limit(2)
+      .lean();
     return matches.length === 1 ? matches[0] : null;
   },
   async upsertResearchEntityMember(researchEntityId, userId, metadata) {
     const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
-    const personId = await resolveResearcherIdForLegacyUser(userId);
+    const personObjectId = toVisibilityRepairObjectId(userId);
+    const researcher = personObjectId
+      ? await Researcher.findById(personObjectId).select('_id').lean()
+      : null;
+    const personId = (researcher as any)?._id;
     if (!entityObjectId || !personId) return;
     const { filter, update, options } = buildVisibilityRepairPiRoleAssignmentUpsert(
       personId,

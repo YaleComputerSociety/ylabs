@@ -2,7 +2,9 @@
  * Analytics event logging and aggregation service.
  */
 import { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from '../models/analytics';
-import { User, ResearchEntity, Fellowship } from '../models/index';
+import { ResearchEntity, Fellowship } from '../models/index';
+import { Account } from '../models/account';
+import { Researcher } from '../models/researcher';
 import { getListingModel } from '../db/connections';
 import { Types, type PipelineStage } from 'mongoose';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -11,7 +13,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 export interface LogEventParams {
   eventType: AnalyticsEventType;
   netid: string;
-  userType: string;
+  userType?: string;
   listingId?: string;
   fellowshipId?: string;
   entityType?: string;
@@ -321,13 +323,7 @@ const LEGACY_ACADEMIC_USER_TYPES = [CANONICAL_ACADEMIC_USER_TYPE, 'faculty'];
 
 const appUserAccountMatch = (): PipelineStage.Match['$match'] => ({
   archived: { $ne: true },
-  dedupedIntoUserId: { $exists: false },
-  $or: [
-    { loginCount: { $gt: 0 } },
-    { lastLogin: { $exists: true, $ne: null } },
-    { lastLoginAt: { $exists: true, $ne: null } },
-    { lastActive: { $exists: true, $ne: null } },
-  ],
+  lastLoginAt: { $exists: true, $ne: null },
 });
 
 export const normalizeAnalyticsUserTypeBucket = (userType?: string | null): string => {
@@ -595,29 +591,41 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
     },
     {
       $lookup: {
-        from: 'users',
+        from: 'accounts',
         localField: '_id',
         foreignField: 'netid',
-        as: 'user',
+        as: 'account',
       },
     },
     {
       $unwind: {
-        path: '$user',
+        path: '$account',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $lookup: {
+        from: 'researchers',
+        localField: 'account._id',
+        foreignField: 'accountId',
+        as: 'researcher',
+      },
+    },
+    {
+      $unwind: {
+        path: '$researcher',
         preserveNullAndEmptyArrays: true,
       },
     },
     {
       $addFields: {
         netid: '$_id',
-        userType: { $ifNull: ['$user.userType', '$analyticsUserType'] },
-        fname: '$user.fname',
-        lname: '$user.lname',
-        email: '$user.email',
-        firstSeen: { $ifNull: ['$user.createdAt', '$firstEventAt'] },
-        lastActive: { $ifNull: ['$user.lastActive', '$lastEventAt'] },
-        lastLogin: { $ifNull: ['$user.lastLogin', '$user.lastLoginAt'] },
-        loginCount: { $ifNull: ['$user.loginCount', 0] },
+        userType: '$analyticsUserType',
+        displayName: '$researcher.displayName',
+        email: '$account.email',
+        firstSeen: { $ifNull: ['$account.createdAt', '$firstEventAt'] },
+        lastActive: { $ifNull: ['$account.lastLoginAt', '$lastEventAt'] },
+        lastLogin: '$account.lastLoginAt',
       },
     },
   ];
@@ -633,8 +641,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
     const searchRegex = { $regex: escapeRegex(search), $options: 'i' };
     postLookupMatch.$or = [
       { netid: searchRegex },
-      { fname: searchRegex },
-      { lname: searchRegex },
+      { displayName: searchRegex },
       { email: searchRegex },
     ];
   }
@@ -649,8 +656,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         _id: 0,
         netid: 1,
         userType: 1,
-        fname: 1,
-        lname: 1,
+        displayName: 1,
         email: 1,
         totalEvents: 1,
         logins: 1,
@@ -673,7 +679,6 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         lastEventAt: 1,
         lastActive: 1,
         lastLogin: 1,
-        loginCount: 1,
       },
     },
     {
@@ -839,16 +844,6 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       lastActive: now,
     };
 
-    if (eventType === AnalyticsEventType.LOGIN) {
-      updateFields.lastLogin = now;
-      updateFields.$inc = { loginCount: 1 };
-    }
-
-    if (isAnalyticsUserNetid(netid)) {
-      User.findOneAndUpdate({ netid }, updateFields).catch((err: any) => {
-        console.error('Error updating user metrics:', sanitizeLogValue(err));
-      });
-    }
   } catch (error) {
     console.error('Error logging analytics event:', sanitizeLogValue(error));
   }
@@ -1180,15 +1175,29 @@ export const getSearchQueryAnalytics = async (
     },
     {
       $lookup: {
-        from: 'users',
+        from: 'accounts',
         localField: '_id.netid',
         foreignField: 'netid',
-        as: 'user',
+        as: 'account',
       },
     },
     {
       $unwind: {
-        path: '$user',
+        path: '$account',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $lookup: {
+        from: 'researchers',
+        localField: 'account._id',
+        foreignField: 'accountId',
+        as: 'researcher',
+      },
+    },
+    {
+      $unwind: {
+        path: '$researcher',
         preserveNullAndEmptyArrays: true,
       },
     },
@@ -1197,10 +1206,9 @@ export const getSearchQueryAnalytics = async (
         _id: 0,
         query: '$_id.query',
         netid: '$_id.netid',
-        userType: { $ifNull: ['$user.userType', '$userType'] },
-        fname: '$user.fname',
-        lname: '$user.lname',
-        email: '$user.email',
+        userType: '$userType',
+        displayName: '$researcher.displayName',
+        email: '$account.email',
         searchCount: 1,
         zeroResultSearches: 1,
         resultCountTotal: 1,
@@ -1220,8 +1228,7 @@ export const getSearchQueryAnalytics = async (
           $push: {
             netid: '$netid',
             userType: '$userType',
-            fname: '$fname',
-            lname: '$lname',
+            displayName: '$displayName',
             email: '$email',
             searchCount: '$searchCount',
             lastSearchedAt: '$lastSearchedAt',
@@ -1772,15 +1779,29 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           { $limit: 10 },
           {
             $lookup: {
-              from: 'users',
+              from: 'accounts',
               localField: '_id.netid',
               foreignField: 'netid',
-              as: 'user',
+              as: 'account',
             },
           },
           {
             $unwind: {
-              path: '$user',
+              path: '$account',
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
+            $lookup: {
+              from: 'researchers',
+              localField: 'account._id',
+              foreignField: 'accountId',
+              as: 'researcher',
+            },
+          },
+          {
+            $unwind: {
+              path: '$researcher',
               preserveNullAndEmptyArrays: true,
             },
           },
@@ -1790,8 +1811,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
               userId: '$_id.netid',
               userType: '$_id.userType',
               eventCount: 1,
-              fname: '$user.fname',
-              lname: '$user.lname',
+              displayName: '$researcher.displayName',
             },
           },
         ],
@@ -2260,7 +2280,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
     },
   ]);
 
-  const userStats = await User.aggregate([
+  const userStats = await Account.aggregate([
     {
       $match: appUserAccountMatch(),
     },
@@ -2271,25 +2291,11 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
             $group: {
               _id: null,
               total: { $sum: 1 },
-              confirmed: { $sum: { $cond: ['$userConfirmed', 1, 0] } },
+              confirmed: { $sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] } },
             },
           },
         ],
-        byType: [
-          {
-            $group: {
-              _id: '$userType',
-              count: { $sum: 1 },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              userType: '$_id',
-              count: 1,
-            },
-          },
-        ],
+        byType: [{ $limit: 0 }],
         newUsersLast7Days: [
           {
             $match: {
@@ -2306,26 +2312,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
           { $count: 'count' },
         ],
-        newUsersTodayByType: [
-          {
-            $match: {
-              createdAt: { $gte: today },
-            },
-          },
-          {
-            $group: {
-              _id: '$userType',
-              count: { $sum: 1 },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              userType: '$_id',
-              count: 1,
-            },
-          },
-        ],
+        newUsersTodayByType: [{ $limit: 0 }],
       },
     },
   ]);
@@ -2495,9 +2482,26 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
             .lean()
         : Promise.resolve([]),
       topEntityIdsFor('profile').length
-        ? User.find({ netid: { $in: topEntityIdsFor('profile') } })
-            .select('netid fname lname')
-            .lean()
+        ? (async () => {
+            const accounts = await Account.find({ netid: { $in: topEntityIdsFor('profile') } })
+              .select('netid _id')
+              .lean();
+            const netidByAccountId = new Map(
+              accounts.map((account: any) => [String(account._id), account.netid] as const),
+            );
+            const researchers = await Researcher.find({
+              accountId: { $in: accounts.map((account: any) => account._id) },
+            })
+              .select('accountId displayName')
+              .lean();
+            return researchers
+              .map((researcher: any) => ({
+                netid: netidByAccountId.get(String(researcher.accountId)),
+                fname: researcher.displayName,
+                lname: '',
+              }))
+              .filter((row) => Boolean(row.netid));
+          })()
         : Promise.resolve([]),
     ]);
   const researchEntityById = new Map(

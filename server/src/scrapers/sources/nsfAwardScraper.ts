@@ -35,20 +35,14 @@
  * (caps total awards processed across all pages).
  */
 import axios from 'axios';
-import { User } from '../../models/user';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
-  resolveCanonicalResearchHomeForUser,
+  resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
+import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import {
-  givenNameVariants,
-  surnameFetchRegex,
-  surnamesCompatible,
-  SURNAME_FETCH_LIMIT,
-} from '../utils/piNameMatch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -322,13 +316,15 @@ export interface PiUserRow {
   lname?: unknown;
 }
 
-export type PiUserFinder = (q: Record<string, unknown>) => Promise<PiUserRow[]>;
+export interface FederalPiResolverDeps {
+  resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+}
 
 export async function findUserForPi(
   name: { firstName: string; lastName: string },
-  finder: PiUserFinder = defaultUserFinder,
+  deps: FederalPiResolverDeps = {},
 ): Promise<string | null> {
-  const result = await resolveUserForPi(name, finder);
+  const result = await resolveUserForPi(name, deps);
   return result.status === 'matched' ? result.userId : null;
 }
 
@@ -339,78 +335,16 @@ export type NsfPiUserResolution =
 
 export async function resolveUserForPi(
   pi: { firstName?: string; lastName?: string },
-  finder: PiUserFinder = defaultUserFinder,
+  deps: FederalPiResolverDeps = {},
 ): Promise<NsfPiUserResolution> {
   const first = (pi.firstName || '').trim();
   const last = (pi.lastName || '').trim();
   if (!last) return { status: 'absent' };
-
-  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const lnameRe = surnameFetchRegex(last);
-  if (!lnameRe) return { status: 'absent' };
-  const userTypeFilter = { $in: ['professor', 'faculty', 'admin'] };
-  const firstToken = first ? first.split(/\s+/)[0]?.replace(/\./g, '') || first : '';
-  const compatible = (rows: PiUserRow[]) =>
-    rows.filter((r) => surnamesCompatible(last, String(r.lname ?? '')));
-
-  // pass 1: surname + exact leading given token. Matching the first token
-  // rather than the whole given string recovers a source name whose surname
-  // particles or compound-surname parts were mis-parsed into the given field
-  // ("Frank van den Bosch", "Oswaldo Chinchilla Mazariegos"); the surname-
-  // compatibility filter and single-candidate requirement still gate the match.
-  if (firstToken) {
-    const fnameRe = new RegExp(`^${escapeRe(firstToken)}$`, 'i');
-    const rows = await finder({
-      lname: lnameRe,
-      fname: fnameRe,
-      userType: userTypeFilter,
-    });
-    if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
-    const matches = compatible(rows);
-    if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
-    // multiple exact matches → ambiguous, give up (don't fall through to initial)
-    if (matches.length > 1) return { status: 'ambiguous' };
-  }
-
-  // pass 2: surname + given-name prefix. A given-name prefix is a genuine
-  // first-name match; a bare source initial is not, so an initial-only source
-  // name never binds to a same-initial namesake and fails closed (issue #562).
-  if (firstToken.length > 1) {
-    const initRe = new RegExp(`^${escapeRe(first)}`, 'i');
-    const rows = await finder({
-      lname: lnameRe,
-      fname: initRe,
-      userType: userTypeFilter,
-    });
-    if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
-    const matches = compatible(rows);
-    if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
-    if (matches.length > 1) return { status: 'ambiguous' };
-  }
-
-  // pass 3: canonical nickname / formal-name variants of the given name (source
-  // "Bob" resolving to a stored "Robert"). Runs only when the name has variants
-  // beyond itself, so a name with no nickname mapping never adds a query.
-  if (firstToken) {
-    const variants = givenNameVariants(firstToken).filter((v) => v !== firstToken.toLowerCase());
-    if (variants.length > 0) {
-      const variantRe = new RegExp(`^(?:${variants.map(escapeRe).join('|')})$`, 'i');
-      const rows = await finder({
-        lname: lnameRe,
-        fname: variantRe,
-        userType: userTypeFilter,
-      });
-      if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
-      const matches = compatible(rows);
-      if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
-      if (matches.length > 1) return { status: 'ambiguous' };
-    }
-  }
-  return { status: 'absent' };
-}
-
-async function defaultUserFinder(q: Record<string, unknown>): Promise<PiUserRow[]> {
-  return User.find(q, { _id: 1, fname: 1, lname: 1 }).limit(SURNAME_FETCH_LIMIT).lean();
+  const resolveResearcherId = deps.resolveResearcherId ?? resolveResearcherIdForPersonName;
+  const resolution = await resolveResearcherId([first, last].filter(Boolean).join(' '));
+  if (resolution.status === 'ambiguous') return { status: 'ambiguous' };
+  if (resolution.status !== 'matched' || !resolution.researcherId) return { status: 'absent' };
+  return { status: 'matched', userId: resolution.researcherId.toString() };
 }
 
 // ---------------------------------------------------------------------------
@@ -475,7 +409,6 @@ function buildPiUserObservations(
   if (last || group.piLastName) {
     obs.push({ ...base, field: 'lname', value: last || group.piLastName });
   }
-  obs.push({ ...base, field: 'userType', value: 'faculty' });
   // capture an email if one came back on a PI line
   const piLine = (group.awards[0]?.pi || [])[0];
   if (piLine) {
@@ -541,7 +474,7 @@ async function buildCoPiObservations(
   group: PiAwardsGroup,
   researchGroupSlug: string,
   sourceUrl: string,
-  finder: PiUserFinder,
+  deps: FederalPiResolverDeps,
 ): Promise<ObservationInput[]> {
   const out: ObservationInput[] = [];
   const seenUserIds = new Set<string>();
@@ -551,9 +484,9 @@ async function buildCoPiObservations(
       const parsed = parseCoPdpiLine(line);
       if (!parsed) continue;
       const { first, last } = splitName(normalizeName(parsed.fullName));
-      // Only match co-PIs that exist as Yale Users — avoids creating noise from
-      // non-Yale collaborators we don't have rich metadata for.
-      const userId = await findUserForPi({ firstName: first, lastName: last }, finder);
+      // Only match co-PIs that exist as Yale Researchers — avoids creating noise
+      // from non-Yale collaborators we don't have rich metadata for.
+      const userId = await findUserForPi({ firstName: first, lastName: last }, deps);
       if (!userId) continue;
       if (seenUserIds.has(userId)) continue;
       seenUserIds.add(userId);
@@ -579,13 +512,13 @@ async function buildCoPiObservations(
 // ---------------------------------------------------------------------------
 
 export interface NsfAwardScraperDeps {
-  /** Override the User-finder (used in tests to avoid hitting Mongo). */
-  userFinder?: PiUserFinder;
+  /** Override the researcher resolver (used in tests to avoid hitting Mongo). */
+  resolveResearcherId?: typeof resolveResearcherIdForPersonName;
   /** Override the page fetcher (used in tests to avoid hitting NSF). */
   fetchPage?: typeof fetchPage;
   /** Override the lookback start date (default: today minus 5 years). */
   dateStart?: string;
-  researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
+  researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 function defaultDateStart(): string {
@@ -604,10 +537,10 @@ export class NsfAwardScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const dateStart = this.deps.dateStart ?? defaultDateStart();
-    const finder = this.deps.userFinder ?? defaultUserFinder;
+    const resolverDeps: FederalPiResolverDeps = { resolveResearcherId: this.deps.resolveResearcherId };
     const fetcher = this.deps.fetchPage ?? fetchPage;
     const researchHomeResolver =
-      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForUser;
+      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -659,7 +592,7 @@ export class NsfAwardScraper implements IScraper {
       // 3a. Match PI to existing User (best-effort).
       const userResolution = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
-        finder,
+        resolverDeps,
       );
       if (userResolution.status === 'ambiguous') continue;
       const piUserId = userResolution.status === 'matched' ? userResolution.userId : null;
@@ -699,7 +632,7 @@ export class NsfAwardScraper implements IScraper {
       // 3d. Co-PI member observations — only when co-PI is a known Yale User.
       const slug =
         canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
-      const coPiObs = await buildCoPiObservations(group, slug, sourceUrl, finder);
+      const coPiObs = await buildCoPiObservations(group, slug, sourceUrl, resolverDeps);
       if (coPiObs.length > 0) {
         await ctx.emit(coPiObs);
         totalObs += coPiObs.length;

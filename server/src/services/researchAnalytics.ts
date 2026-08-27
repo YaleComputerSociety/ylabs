@@ -16,7 +16,8 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType } from '../models/analytics';
-import { Fellowship, ResearchEntity, User } from '../models/index';
+import { Fellowship, ResearchEntity } from '../models/index';
+import { Account } from '../models/account';
 import { getListingModel } from '../db/connections';
 import { logEvent } from './analyticsService';
 import type { LogEventParams } from './analyticsService';
@@ -318,7 +319,7 @@ export const researchEntityExists = async (
   const id = entityId.trim();
 
   if (entityType === 'profile') {
-    return Boolean(await User.exists({ netid: id }));
+    return Boolean(await Account.exists({ netid: id }));
   }
 
   if (entityType === 'research_entity') {

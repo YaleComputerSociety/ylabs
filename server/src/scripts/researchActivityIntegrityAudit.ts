@@ -12,7 +12,6 @@ import {
   researchActivityIntegrityCounts,
   type ResearchActivityCandidate,
 } from '../services/researchActivityIntegrity';
-import { resolveResearcherIdForLegacyUser } from '../services/researchEntityMembershipAccessor';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -93,12 +92,6 @@ async function main() {
   }
 
   const researcherIdByUserId = new Map<string, string>();
-  for (const userId of new Set(
-    (attributions as any[]).map((attribution) => id(attribution.targetUserId)).filter(Boolean),
-  )) {
-    const researcherId = await resolveResearcherIdForLegacyUser(userId);
-    if (researcherId) researcherIdByUserId.set(userId, id(researcherId));
-  }
 
   const candidatesByEntity = new Map<string, ResearchActivityCandidate[]>();
   for (const attribution of attributions as any[]) {

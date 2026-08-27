@@ -22,7 +22,6 @@ import { ScrapeSnapshot } from '../scrapeSnapshot';
 import { Source } from '../source';
 import { SourceDocument } from '../sourceDocument';
 import { TaxonomyTerm } from '../taxonomyTerm';
-import { User } from '../user';
 
 const models: Array<[mongoose.Model<any>, string]> = [
   [Account, 'accounts'],
@@ -47,7 +46,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [Source, 'sources'],
   [SourceDocument, 'source_documents'],
   [TaxonomyTerm, 'taxonomy_terms'],
-  [User, 'users'],
 ];
 
 function schemaPathSegments(model: mongoose.Model<any>): string[] {

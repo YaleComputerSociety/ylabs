@@ -65,7 +65,9 @@ import * as cheerio from 'cheerio';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { User } from '../../models/user';
+import { Account } from '../../models/account';
+import { Researcher } from '../../models/researcher';
+import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { findOrCreateForOwner } from '../../services/researchGroupService';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -649,93 +651,60 @@ export function aggregateAdviseesByAdvisor(
  * mock without touching mongoose. Faculty types include `admin` because some
  * Yale faculty also serve as deans/admins in the User collection.
  */
-export async function findUserForAdvisor(
-  advisorName: string,
-  userFinder: (filter: Record<string, unknown>) => Promise<UserMatch[]> = defaultUserFinder,
-): Promise<UserMatch | null> {
-  const cleaned = normalizeName(advisorName);
-  const { first, last } = splitName(cleaned);
-  if (!last) return null;
+export type AdvisorResearcherResolver = (
+  name: string,
+  orcid?: string,
+) => Promise<UserMatch | null>;
 
-  const lnameRe = new RegExp(`^${escapeRegex(last)}$`, 'i');
-  const facultyTypes = { $in: ['professor', 'faculty', 'admin'] };
+async function accountNetidForResearcher(accountId: unknown): Promise<string> {
+  if (!accountId) return '';
+  const account: any = await Account.findById(accountId as any)
+    .select('netid')
+    .lean();
+  return typeof account?.netid === 'string' ? account.netid : '';
+}
 
-  if (first) {
-    const fnameRe = new RegExp(`^${escapeRegex(first)}$`, 'i');
-    const exact = await userFinder({
-      lname: lnameRe,
-      fname: fnameRe,
-      userType: facultyTypes,
-    });
-    if (exact.length === 1) return exact[0];
-    if (exact.length > 1) return exact[0]; // ambiguous — take first deterministic hit
+function researcherToUserMatch(researcher: any, netid: string): UserMatch {
+  const displayName =
+    typeof researcher.displayName === 'string' ? researcher.displayName.trim() : '';
+  const { first, last } = splitName(displayName);
+  return {
+    _id: researcher._id,
+    netid,
+    fname: first || '',
+    lname: last || displayName,
+    primaryDepartment: researcher.profile?.primaryDepartment,
+    orcid: researcher.identifiers?.orcid,
+  };
+}
 
-    const initial = first.charAt(0);
-    if (initial) {
-      const initRe = new RegExp(`^${escapeRegex(initial)}`, 'i');
-      const initMatches = await userFinder({
-        lname: lnameRe,
-        fname: initRe,
-        userType: facultyTypes,
-      });
-      if (initMatches.length === 1) return initMatches[0];
-    }
+export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async (name, orcid) => {
+  if (orcid) {
+    const cleaned = normalizeOrcid(orcid);
+    if (!cleaned) return null;
+    const researcher: any = await Researcher.findOne({
+      'identifiers.orcid': cleaned.toUpperCase(),
+      archived: { $ne: true },
+    })
+      .select('_id displayName accountId profile identifiers')
+      .lean();
+    if (!researcher) return null;
+    return researcherToUserMatch(researcher, await accountNetidForResearcher(researcher.accountId));
   }
-
-  const lnameOnly = await userFinder({ lname: lnameRe, userType: facultyTypes });
-  if (lnameOnly.length === 1) return lnameOnly[0];
-
-  return null;
-}
-
-export async function findUserForAdvisorOrcid(
-  advisorOrcid: string,
-  userFinder: (filter: Record<string, unknown>) => Promise<UserMatch[]> = defaultUserFinder,
-): Promise<UserMatch | null> {
-  const cleaned = normalizeOrcid(advisorOrcid);
-  if (!cleaned) return null;
-  const matches = await userFinder({
-    orcid: cleaned,
-    userType: { $in: ['professor', 'faculty', 'admin'] },
-  });
-  return matches.length === 1 ? matches[0] : null;
-}
+  const resolution = await resolveResearcherIdForPersonName(name);
+  if (resolution.status !== 'matched' || !resolution.researcherId) return null;
+  const researcher: any = await Researcher.findById(resolution.researcherId)
+    .select('_id displayName accountId profile identifiers')
+    .lean();
+  if (!researcher) return null;
+  return researcherToUserMatch(researcher, await accountNetidForResearcher(researcher.accountId));
+};
 
 async function findUserForAdvisorRow(
   row: AdvisorAggregateRow,
-  userFinder: (filter: Record<string, unknown>) => Promise<UserMatch[]>,
+  advisorResolver: AdvisorResearcherResolver,
 ): Promise<UserMatch | null> {
-  if (row.advisorOrcid) {
-    return findUserForAdvisorOrcid(row.advisorOrcid, userFinder);
-  }
-  return findUserForAdvisor(row.canonicalName, userFinder);
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-async function defaultUserFinder(
-  filter: Record<string, unknown>,
-): Promise<UserMatch[]> {
-  const docs = await User.find(filter, {
-    _id: 1,
-    netid: 1,
-    fname: 1,
-    lname: 1,
-    primaryDepartment: 1,
-    orcid: 1,
-  })
-    .limit(10)
-    .lean();
-  return (docs as any[]).map((d) => ({
-    _id: d._id,
-    netid: d.netid,
-    fname: d.fname,
-    lname: d.lname,
-    primaryDepartment: d.primaryDepartment,
-    orcid: d.orcid,
-  }));
+  return advisorResolver(row.canonicalName, row.advisorOrcid || undefined);
 }
 
 /**
@@ -833,8 +802,8 @@ async function fetchHtml(
 export interface UndergradFellowshipScraperDeps {
   /** Override per-URL HTML fetching (tests inject canned bodies). */
   fetchPage?: (url: string, useCache: boolean) => Promise<string>;
-  /** Override the User lookup (tests inject a Mongo-free mock). */
-  userFinder?: (filter: Record<string, unknown>) => Promise<UserMatch[]>;
+  /** Override the advisor identity resolver (tests inject a Mongo-free mock). */
+  advisorResolver?: AdvisorResearcherResolver;
   /** Override the User → ResearchGroup slug resolver. */
   ownerToGroupSlug?: (owner: UserMatch) => Promise<string | null>;
   /** Override default accepted-input CSV directory for manual fellowship rows. */
@@ -850,9 +819,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
   readonly displayName = 'Yale undergrad fellowship recipient lists';
 
   private readonly fetchPage: (url: string, useCache: boolean) => Promise<string>;
-  private readonly userFinder: (
-    filter: Record<string, unknown>,
-  ) => Promise<UserMatch[]>;
+  private readonly advisorResolver: AdvisorResearcherResolver;
   private readonly ownerToGroupSlug: (owner: UserMatch) => Promise<string | null>;
   private readonly defaultManualRecipientCsvDir: string;
   private readonly defaultManualRecipientPdfDir: string;
@@ -869,7 +836,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
     const sourceName = this.name;
     this.fetchPage =
       deps.fetchPage ?? ((url, useCache) => fetchHtml(url, useCache, sourceName));
-    this.userFinder = deps.userFinder ?? defaultUserFinder;
+    this.advisorResolver = deps.advisorResolver ?? defaultAdvisorResearcherResolver;
     this.ownerToGroupSlug = deps.ownerToGroupSlug ?? defaultOwnerToGroupSlug;
     this.defaultManualRecipientCsvDir =
       deps.defaultManualRecipientCsvDir ?? DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
@@ -1037,7 +1004,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         // Resolve advisor → User
         let user: UserMatch | null;
         try {
-          user = await findUserForAdvisorRow(row, this.userFinder);
+          user = await findUserForAdvisorRow(row, this.advisorResolver);
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] user lookup failed for recipient advisor: ${sanitizeLogValue(err)}`,

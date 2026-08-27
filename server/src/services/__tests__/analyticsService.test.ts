@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   userFindOneAndUpdate: vi.fn(),
   userAggregate: vi.fn(),
   userFind: vi.fn(),
+  accountAggregate: vi.fn(),
+  accountFind: vi.fn(),
+  researcherFind: vi.fn(),
   researchEntityAggregate: vi.fn(),
   researchEntityFind: vi.fn(),
   fellowshipFind: vi.fn(),
@@ -72,6 +75,19 @@ vi.mock('../../models/index', () => ({
   },
   Fellowship: {
     find: mocks.fellowshipFind,
+  },
+}));
+
+vi.mock('../../models/account', () => ({
+  Account: {
+    aggregate: mocks.accountAggregate,
+    find: mocks.accountFind,
+  },
+}));
+
+vi.mock('../../models/researcher', () => ({
+  Researcher: {
+    find: mocks.researcherFind,
   },
 }));
 
@@ -287,7 +303,7 @@ describe('getAnalytics research coverage and range scoping', () => {
 
   const primeAnalyticsMocks = () => {
     mocks.analyticsAggregate.mockResolvedValue([eventFacetStub]);
-    mocks.userAggregate.mockResolvedValue([
+    mocks.accountAggregate.mockResolvedValue([
       {
         overview: [{ total: 50, confirmed: 40 }],
         byType: [],
@@ -296,6 +312,8 @@ describe('getAnalytics research coverage and range scoping', () => {
         newUsersTodayByType: [],
       },
     ]);
+    mocks.accountFind.mockImplementation(chainableFind);
+    mocks.researcherFind.mockImplementation(chainableFind);
     mocks.getListingModel.mockReturnValue({
       aggregate: vi.fn().mockResolvedValue([listingFacetStub]),
       find: chainableFind,
@@ -566,8 +584,7 @@ describe('getAnalytics research coverage and range scoping', () => {
             userId: 'analyst01',
             userType: 'undergraduate',
             eventCount: 7,
-            fname: 'Ada',
-            lname: 'Analyst',
+            displayName: 'Ada Analyst',
           },
         ],
       },
@@ -592,8 +609,7 @@ describe('getAnalytics research coverage and range scoping', () => {
         userId: 'analyst01',
         userType: 'undergraduate',
         eventCount: 7,
-        fname: 'Ada',
-        lname: 'Analyst',
+        displayName: 'Ada Analyst',
       },
     ]);
 
@@ -605,11 +621,10 @@ describe('getAnalytics research coverage and range scoping', () => {
       (stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers,
     ).$facet.mostActiveUsers;
     const lookupStage = mostActiveStages.find((stage: Record<string, any>) => stage.$lookup);
-    expect(lookupStage.$lookup.from).toBe('users');
+    expect(lookupStage.$lookup.from).toBe('accounts');
     expect(lookupStage.$lookup.foreignField).toBe('netid');
     const projectStage = mostActiveStages.find((stage: Record<string, any>) => stage.$project);
-    expect(projectStage.$project.fname).toBe('$user.fname');
-    expect(projectStage.$project.lname).toBe('$user.lname');
+    expect(projectStage.$project.displayName).toBe('$researcher.displayName');
   });
 
   it('resolves top research entity ids to human-readable names and hrefs', async () => {
@@ -633,7 +648,7 @@ describe('getAnalytics research coverage and range scoping', () => {
         ],
       },
     ]);
-    mocks.userAggregate.mockResolvedValue([
+    mocks.accountAggregate.mockResolvedValue([
       {
         overview: [{ total: 1, confirmed: 1 }],
         byType: [],
@@ -676,8 +691,11 @@ describe('getAnalytics research coverage and range scoping', () => {
     mocks.fellowshipFind.mockImplementation(
       chainableFindReturning([{ _id: fellowshipId, title: 'Summer Research Fellowship' }]),
     );
-    mocks.userFind.mockImplementation(
-      chainableFindReturning([{ netid: 'prof-netid', fname: 'Jane', lname: 'Doe' }]),
+    mocks.accountFind.mockImplementation(
+      chainableFindReturning([{ _id: 'acc-prof', netid: 'prof-netid' }]),
+    );
+    mocks.researcherFind.mockImplementation(
+      chainableFindReturning([{ accountId: 'acc-prof', displayName: 'Jane Doe' }]),
     );
 
     const analytics = await getAnalytics({

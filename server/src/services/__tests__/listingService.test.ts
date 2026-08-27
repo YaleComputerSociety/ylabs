@@ -47,21 +47,15 @@ const mocks = vi.hoisted(() => {
   return {
     state,
     MockListing,
-    addOwnListings: vi.fn(),
     buildListingResearchEntityProfilePatch: vi.fn(() => ({})),
-    createUser: vi.fn(),
-    deleteOwnListings: vi.fn(),
-    fetchYalie: vi.fn(),
     findOrCreateForOwner: vi.fn(),
     materializePostedOpportunityFromListing: vi.fn(),
     mutateProjection: vi.fn(),
     processListingTitle: vi.fn(async (title: string) => title),
-    readUser: vi.fn(),
     researchEntityFindById: vi.fn(),
     researchEntityUpdateOne: vi.fn(),
-    resolveResearcherIdForLegacyUser: vi.fn(),
+    resolveResearcherIdForPersonName: vi.fn(),
     roleAssignmentFindOne: vi.fn(),
-    userExists: vi.fn(),
   };
 });
 
@@ -82,8 +76,8 @@ vi.mock('../../models/roleAssignment', () => ({
   },
 }));
 
-vi.mock('../researchEntityMembershipAccessor', () => ({
-  resolveResearcherIdForLegacyUser: mocks.resolveResearcherIdForLegacyUser,
+vi.mock('../researcherPersonNameResolver', () => ({
+  resolveResearcherIdForPersonName: mocks.resolveResearcherIdForPersonName,
 }));
 
 vi.mock('../../utils/smartTitle', () => ({
@@ -108,18 +102,6 @@ vi.mock('../researchGroupService', () => ({
   findOrCreateForOwner: mocks.findOrCreateForOwner,
 }));
 
-vi.mock('../userService', () => ({
-  addOwnListings: mocks.addOwnListings,
-  createUser: mocks.createUser,
-  deleteOwnListings: mocks.deleteOwnListings,
-  readUser: mocks.readUser,
-  userExists: mocks.userExists,
-}));
-
-vi.mock('../yaliesService', () => ({
-  fetchYalie: mocks.fetchYalie,
-}));
-
 import {
   archiveListing,
   createListing,
@@ -134,11 +116,7 @@ describe('listingService', () => {
     mocks.state.findByIdDoc = null;
     mocks.state.lastFindByIdAndUpdate = null;
     mocks.state.nextListingId = '64a000000000000000000099';
-    mocks.addOwnListings.mockReset();
     mocks.buildListingResearchEntityProfilePatch.mockClear();
-    mocks.createUser.mockReset();
-    mocks.deleteOwnListings.mockReset();
-    mocks.fetchYalie.mockReset();
     mocks.findOrCreateForOwner.mockReset();
     mocks.materializePostedOpportunityFromListing.mockReset();
     mocks.mutateProjection.mockReset();
@@ -146,21 +124,18 @@ describe('listingService', () => {
       (_id: unknown, mutate: (session: mongoose.ClientSession) => unknown) => mutate({} as any),
     );
     mocks.processListingTitle.mockClear();
-    mocks.readUser.mockReset();
     mocks.researchEntityFindById.mockReset();
     mocks.researchEntityUpdateOne.mockReset();
-    mocks.resolveResearcherIdForLegacyUser.mockReset();
+    mocks.resolveResearcherIdForPersonName.mockReset();
     mocks.roleAssignmentFindOne.mockReset();
-    mocks.resolveResearcherIdForLegacyUser.mockResolvedValue(undefined);
+    mocks.resolveResearcherIdForPersonName.mockResolvedValue({ status: 'absent' });
     mocks.roleAssignmentFindOne.mockReturnValue({
       select: () => ({ lean: async () => null }),
     });
-    mocks.userExists.mockReset();
 
     mocks.researchEntityFindById.mockImplementation((id: string) => ({
       lean: async () => ({ _id: id, name: 'Entity' }),
     }));
-    mocks.userExists.mockResolvedValue(true);
   });
 
   it('does not let a faculty user attach a new listing to an unrelated research entity', async () => {
@@ -172,9 +147,10 @@ describe('listingService', () => {
       group: { _id: ownerEntityId },
       created: false,
     });
-    mocks.resolveResearcherIdForLegacyUser.mockResolvedValue(
-      new mongoose.Types.ObjectId('64a0000000000000000000aa'),
-    );
+    mocks.resolveResearcherIdForPersonName.mockResolvedValue({
+      status: 'matched',
+      researcherId: new mongoose.Types.ObjectId('64a0000000000000000000aa'),
+    });
     mocks.roleAssignmentFindOne.mockReturnValue({
       select: () => ({
         lean: async () => null,
@@ -239,7 +215,10 @@ describe('listingService', () => {
     const ownerUserId = '64a000000000000000000005';
 
     const authorizedPersonId = new mongoose.Types.ObjectId('64a0000000000000000000bb');
-    mocks.resolveResearcherIdForLegacyUser.mockResolvedValue(authorizedPersonId);
+    mocks.resolveResearcherIdForPersonName.mockResolvedValue({
+      status: 'matched',
+      researcherId: authorizedPersonId,
+    });
     mocks.roleAssignmentFindOne.mockReturnValue({
       select: () => ({
         lean: async () => ({ _id: 'role-assignment-1' }),
@@ -263,7 +242,9 @@ describe('listingService', () => {
       },
     );
 
-    expect(mocks.resolveResearcherIdForLegacyUser).toHaveBeenCalledWith(ownerUserId);
+    expect(mocks.resolveResearcherIdForPersonName).toHaveBeenCalledWith('Grace Hopper', {
+      netid: 'def456',
+    });
     expect(mocks.roleAssignmentFindOne).toHaveBeenCalledWith(
       expect.objectContaining({
         personId: authorizedPersonId,
@@ -304,11 +285,6 @@ describe('listingService', () => {
     expect(listing.professorIds).toEqual([]);
     expect(listing.professorNames).toEqual([]);
     expect(listing.emails).toEqual([]);
-    expect(mocks.userExists).not.toHaveBeenCalledWith('victim123');
-    expect(mocks.addOwnListings).not.toHaveBeenCalledWith(
-      'victim123',
-      expect.arrayContaining([expect.anything()]),
-    );
   });
 
   it('sanitizes self-service listing create payloads before storage and indexing', async () => {
@@ -417,11 +393,6 @@ describe('listingService', () => {
     expect(listing.professorNames).toEqual([]);
     expect(listing.emails).toEqual([]);
     expect(listing.ownerId).toBe('owner123');
-    expect(mocks.userExists).not.toHaveBeenCalledWith('victim123');
-    expect(mocks.addOwnListings).not.toHaveBeenCalledWith(
-      'victim123',
-      expect.arrayContaining([listingId]),
-    );
   });
 
   it('sanitizes self-service listing update payloads before storage and indexing', async () => {
@@ -520,7 +491,6 @@ describe('listingService', () => {
     expect(update).not.toHaveProperty('createdByUserId');
     expect(update).not.toHaveProperty('embedding');
     expect(update).not.toHaveProperty('raw');
-    expect(mocks.userExists).not.toHaveBeenCalledWith('prof50');
   });
 
   it('does not let a generic owner update change listing review or archive state', async () => {

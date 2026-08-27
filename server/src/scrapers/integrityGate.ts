@@ -3,12 +3,10 @@ import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
-import { User } from '../models/user';
+import mongoose from 'mongoose';
+import { Account } from '../models/account';
+import { Researcher } from '../models/researcher';
 import { splitName } from './utils/scraperHelpers';
-import {
-  buildUserIdentityDedupePlan,
-  type UserIdentityCollision,
-} from '../scripts/dedupeUsersByIdentityCore';
 import {
   buildResearchEntityPiDedupePlan,
   type ResearchEntityPiDedupeRow,
@@ -247,89 +245,41 @@ function enrichIntegrityWarnings(
   }));
 }
 
+async function loadIdentityCollisionGroups(
+  model: mongoose.Model<any>,
+  identityField: DuplicatePersonGroup['identityField'],
+  valuePath: string,
+): Promise<DuplicatePersonGroup[]> {
+  const rows = await model.aggregate([
+    { $match: { archived: { $ne: true } } },
+    {
+      $project: {
+        identityValue: { $trim: { input: { $toLower: `$${valuePath}` } } },
+        personId: { $toString: '$_id' },
+      },
+    },
+    { $match: { identityValue: { $nin: ['', 'na', 'n/a', 'unknown'] } } },
+    { $group: { _id: '$identityValue', personIds: { $push: '$personId' } } },
+    { $match: { 'personIds.1': { $exists: true } } },
+    { $limit: DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD },
+  ]);
+
+  return rows.map((row: any) => ({
+    identityField,
+    identityValue: stringId(row._id),
+    userIds: row.personIds || [],
+  }));
+}
+
 async function loadDuplicatePeopleIntegrity(): Promise<{
   groups: DuplicatePersonGroup[];
   warnings: PostMaterializationIntegrityWarning[];
 }> {
-  const fields: DuplicatePersonGroup['identityField'][] = [
-    'netid',
-    'email',
-    'orcid',
-    'openAlexId',
-    'googleScholarId',
-  ];
-  const collisions: UserIdentityCollision[] = [];
-
-  for (const field of fields) {
-    const rows = await User.aggregate([
-      { $match: { archived: { $ne: true } } },
-      {
-        $project: {
-          identityValue: { $trim: { input: { $toLower: `$${field}` } } },
-          user: {
-            id: { $toString: '$_id' },
-            netid: '$netid',
-            email: '$email',
-            fname: '$fname',
-            lname: '$lname',
-            userConfirmed: '$userConfirmed',
-            lastLogin: '$lastLogin',
-            lastLoginAt: '$lastLoginAt',
-            lastActive: '$lastActive',
-            loginCount: '$loginCount',
-            departments: '$departments',
-            primaryDepartment: '$primaryDepartment',
-            orcid: '$orcid',
-            openAlexId: '$openAlexId',
-            googleScholarId: '$googleScholarId',
-            createdAt: '$createdAt',
-            updatedAt: '$updatedAt',
-          },
-        },
-      },
-      {
-        $match: {
-          identityValue: { $nin: ['', 'na', 'n/a', 'unknown'] },
-        },
-      },
-      {
-        $group: {
-          _id: '$identityValue',
-          users: { $push: '$user' },
-        },
-      },
-      { $match: { 'users.1': { $exists: true } } },
-      { $limit: DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD },
-    ]);
-
-    for (const row of rows) {
-      collisions.push({
-        identityField: field,
-        identityValue: stringId(row._id),
-        users: row.users || [],
-      });
-    }
-  }
-
-  const plan = buildUserIdentityDedupePlan(collisions);
-  return {
-    groups: plan.groups.map((group) => ({
-      identityField: group.identityField,
-      identityValue: group.identityValue,
-      userIds: [group.canonicalUserId, ...group.duplicateUserIds],
-    })),
-    warnings:
-      plan.warningGroups.length > 0
-        ? [
-            {
-              name: 'duplicatePersonIdentityConflicts',
-              count: plan.warningGroups.length,
-              message:
-                'Some user identity values are shared by different names; review or repair source identity fields before merging.',
-            },
-          ]
-        : [],
-  };
+  const [emailGroups, orcidGroups] = await Promise.all([
+    loadIdentityCollisionGroups(Account, 'email', 'email'),
+    loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid'),
+  ]);
+  return { groups: [...emailGroups, ...orcidGroups], warnings: [] };
 }
 
 async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameDuplicateGroup[]> {

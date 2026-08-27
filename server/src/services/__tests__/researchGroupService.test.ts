@@ -70,11 +70,6 @@ vi.mock('../../models/account', () => ({
   },
 }));
 
-vi.mock('../../models/user', () => ({
-  User: {
-    find: mocks.userFind,
-  },
-}));
 
 vi.mock('../../models/researchScholarlyAttribution', () => ({
   ResearchScholarlyAttribution: {

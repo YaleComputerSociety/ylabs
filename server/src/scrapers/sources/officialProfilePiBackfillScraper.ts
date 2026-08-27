@@ -2,7 +2,8 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
-import { User } from '../../models/user';
+import { Account } from '../../models/account';
+import { Researcher } from '../../models/researcher';
 import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
@@ -33,7 +34,6 @@ import {
 import {
   cleanPublicProfileBio,
   isLikelyPersonUrl,
-  isLikelySameNameContaminatedProfile,
   stripTrailingOfficialProfileUpdateMetadata,
 } from '../../services/profileService';
 import { getCached, setCached } from '../snapshotCache';
@@ -420,12 +420,6 @@ export function preferredOfficialProfileUrl(candidates: string[]): string {
   return candidates.find((url) => /medicine\.yale\.edu/i.test(url)) || candidates[0] || '';
 }
 
-function publicBioNeedsBackfill(user: Record<string, any>): boolean {
-  if (isLikelySameNameContaminatedProfile(user)) return true;
-  const bio = cleanPublicProfileBio(user);
-  return bio.length < PROFILE_BIO_MIN_LENGTH || bio.length > OFFICIAL_PROFILE_BIO_MAX_LENGTH;
-}
-
 function userIdentityMatchEntity(
   user: Record<string, any>,
   leadProfileUrls: string[] = [],
@@ -445,6 +439,62 @@ function userIdentityMatchEntity(
     profileUrls: user.profileUrls,
     leadProfileUrls,
   };
+}
+
+function researcherAccountToProfileUser(
+  researcher: Record<string, any>,
+  account: Record<string, any> | undefined,
+): Record<string, any> {
+  const displayName = textValue(researcher.displayName);
+  const split = splitName(displayName);
+  const profile =
+    researcher.profile && typeof researcher.profile === 'object' ? researcher.profile : {};
+  const links = Array.isArray(researcher.profileLinks) ? researcher.profileLinks : [];
+  const linkUrl = (kind: string): string =>
+    textValue(links.find((link: any) => link?.kind === kind)?.url);
+  const profileUrls: Record<string, string> = {};
+  const official = linkUrl('YALE_OFFICIAL');
+  const scholar = linkUrl('GOOGLE_SCHOLAR');
+  const orcidLink = linkUrl('ORCID');
+  if (official) profileUrls.official = official;
+  if (scholar) profileUrls.googleScholar = scholar;
+  if (orcidLink) profileUrls.orcid = orcidLink;
+  const websiteUrl = textValue(profile.websiteUrl);
+  return {
+    _id: idValue(researcher._id),
+    netid: textValue(account?.netid),
+    email: textValue(account?.email),
+    fname: split.first,
+    lname: split.last,
+    name: displayName,
+    displayName,
+    website: websiteUrl,
+    websiteUrl,
+    profileUrls,
+    imageUrl: textValue(profile.imageUrl),
+    orcid: textValue(researcher.identifiers?.orcid),
+  };
+}
+
+async function profileUsersByNetids(netids: string[]): Promise<Array<Record<string, any>>> {
+  const normalized = uniqueStrings(netids);
+  if (normalized.length === 0) return [];
+  const accounts = (await Account.find({ netid: { $in: normalized } })
+    .collation({ locale: 'en', strength: 2 })
+    .select('_id netid email')
+    .lean()) as Array<Record<string, any>>;
+  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
+  const accountIds = accounts.map((account) => account._id);
+  const researchers = accountIds.length
+    ? ((await Researcher.find({ accountId: { $in: accountIds }, archived: { $ne: true } })
+        .select('_id accountId displayName profile profileLinks identifiers')
+        .lean()) as Array<Record<string, any>>)
+    : [];
+  return researchers
+    .map((researcher) =>
+      researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
+    )
+    .filter((user) => user.netid);
 }
 
 export function generatedOfficialProfileUrlCandidatesForPerson(
@@ -1940,14 +1990,11 @@ export function identityToUserObservations(
     ['netid', netid],
     ['fname', first],
     ['lname', last],
-    ['userType', 'faculty'],
-    ['profileVerified', true],
-    ['dataSources', [SOURCE_NAME]],
   ];
+  if (identity.email) identityObservations.push(['email', identity.email]);
   if (includeProfileEnrichment) {
-    identityObservations.splice(4, 0, ['title', identity.title], ['profileUrls', profileUrls]);
+    identityObservations.push(['title', identity.title], ['profileUrls', profileUrls]);
   }
-  if (identity.email) identityObservations.splice(3, 0, ['email', identity.email]);
 
   const observations: ObservationInput[] = includeIdentityEnrichment
     ? identityObservations.map(([field, value]) => ({
@@ -1961,46 +2008,6 @@ export function identityToUserObservations(
     : [];
 
   if (includeProfileEnrichment) {
-    const derivedBio = derivedBioFromOfficialProfile(identity);
-    const cleanedIdentityBio = identity.bio
-      ? cleanPublicProfileBio({
-          ...identity,
-          bio: identity.bio,
-          fname: first,
-          lname: last,
-          websiteUrl: identity.canonicalUrl,
-          profileUrls: {
-            medicine: identity.fetchedUrl,
-            official: identity.canonicalUrl,
-          },
-        })
-      : '';
-    const shouldUseDerivedBio =
-      Boolean(derivedBio) &&
-      (!cleanedIdentityBio || cleanedIdentityBio.length < PROFILE_BIO_MIN_LENGTH);
-    const rawBio = shouldUseDerivedBio ? derivedBio : cleanedIdentityBio || derivedBio;
-    const bioCandidate = hasExternalScholarProfileCallout(rawBio) ? '' : rawBio;
-    const bio = cleanPublicProfileBio({
-      ...identity,
-      bio: bioCandidate,
-      fname: first,
-      lname: last,
-      websiteUrl: identity.canonicalUrl,
-      profileUrls: {
-        medicine: identity.fetchedUrl,
-        official: identity.canonicalUrl,
-      },
-    });
-    if (bio && bio.length >= PROFILE_BIO_MIN_LENGTH && !isSemicolonDelimitedProfileTopicList(bio)) {
-      observations.push({
-        entityType: 'user',
-        entityKey: `netid:${netid}`,
-        field: 'bio',
-        value: bio,
-        sourceUrl: identity.canonicalUrl,
-        confidenceOverride: shouldUseDerivedBio || !cleanedIdentityBio ? 0.86 : 0.85,
-      });
-    }
     if (identity.imageUrl) {
       observations.push({
         entityType: 'user',
@@ -2019,33 +2026,6 @@ export function identityToUserObservations(
         value: identity.departments[0],
         sourceUrl: identity.canonicalUrl,
         confidenceOverride: 0.85,
-      });
-      observations.push({
-        entityType: 'user',
-        entityKey: `netid:${netid}`,
-        field: 'departments',
-        value: identity.departments,
-        sourceUrl: identity.canonicalUrl,
-        confidenceOverride: 0.85,
-      });
-    }
-    const researchInterests = publicProfileResearchTerms(identity.researchInterests);
-    if (researchInterests.length > 0) {
-      observations.push({
-        entityType: 'user',
-        entityKey: `netid:${netid}`,
-        field: 'researchInterests',
-        value: researchInterests,
-        sourceUrl: identity.canonicalUrl,
-        confidenceOverride: 0.85,
-      });
-      observations.push({
-        entityType: 'user',
-        entityKey: `netid:${netid}`,
-        field: 'topics',
-        value: researchInterests,
-        sourceUrl: identity.canonicalUrl,
-        confidenceOverride: 0.8,
       });
     }
     if (identity.orcid) {
@@ -2401,29 +2381,34 @@ async function selectDirectVisibleProfileBioUserTargets(
 ): Promise<Array<Record<string, any>>> {
   if (limit <= 0) return [];
 
-  const users = await applyFiniteCandidateLimit(
-    User.find({
+  const researchers = (await applyFiniteCandidateLimit(
+    Researcher.find({
       archived: { $ne: true },
-      userType: 'faculty',
-      netid: { $exists: true, $ne: '' },
+      accountId: { $exists: true, $ne: null },
       $or: [
-        { profileUrls: { $exists: true, $ne: null } },
-        { website: /yale\.edu/i },
-        { websiteUrl: /yale\.edu/i },
+        { 'profileLinks.kind': 'YALE_OFFICIAL' },
+        { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
       ],
     })
-      .select('_id netid email fname lname userType title bio website websiteUrl profileUrls')
+      .select('_id accountId displayName profile profileLinks identifiers')
       .sort({ updatedAt: 1 }),
     limit,
     4,
     50,
-  ).lean();
+  ).lean()) as Array<Record<string, any>>;
+  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
+  const accounts = accountIds.length
+    ? ((await Account.find({ _id: { $in: accountIds } })
+        .select('_id netid email')
+        .lean()) as Array<Record<string, any>>)
+    : [];
+  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
 
-  return (users as any[])
-    .filter(
-      (user) =>
-        user.netid && !excludedUserIds.has(idValue(user._id)) && publicBioNeedsBackfill(user),
+  return researchers
+    .map((researcher) =>
+      researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
     )
+    .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)))
     .map((user) => {
       const urls = visibleBioProfileUrlsForUser(user);
       return urls.length > 0 ? userIdentityMatchEntity(user, urls) : null;
@@ -2459,17 +2444,10 @@ export async function selectVisibleProfileBioTargets(
   }
   const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
 
-  const users =
-    netids.length > 0
-      ? await User.find({ netid: { $in: netids } })
-          .collation({ locale: 'en', strength: 2 })
-          .select('_id netid email fname lname userType title bio website websiteUrl profileUrls')
-          .sort({ updatedAt: 1 })
-          .lean()
-      : [];
+  const users = await profileUsersByNetids(netids);
 
-  const memberTargets = (users as any[])
-    .filter((user) => user.netid && publicBioNeedsBackfill(user))
+  const memberTargets = users
+    .filter((user) => user.netid)
     .map((user) => {
       const attachedUrls = (rosterEntriesByNetid.get(textValue(user.netid).toLowerCase()) || [])
         .flatMap((entry) => {
@@ -2588,12 +2566,7 @@ async function annotateEntitiesWithLeadUsers(
   );
   const rosterEntries = Array.from(leadRosterByEntity.values()).flat();
   const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
-  const users = netids.length
-    ? ((await User.find({ netid: { $in: netids } })
-        .collation({ locale: 'en', strength: 2 })
-        .select('netid fname lname name displayName email')
-        .lean()) as Array<Record<string, any>>)
-    : [];
+  const users = await profileUsersByNetids(netids);
   const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
   const generatedProfileUrlsByEntity = new Map<string, string[]>();
@@ -2762,10 +2735,7 @@ async function selectResearchHomeProfileTargets(
   const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
   if (netids.length === 0) return [];
 
-  const users = (await User.find({ netid: { $in: netids } })
-    .collation({ locale: 'en', strength: 2 })
-    .select('netid fname lname email website websiteUrl profileUrls')
-    .lean()) as Array<Record<string, any>>;
+  const users = await profileUsersByNetids(netids);
   const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const profileUrlsByEntity = new Map<string, string[]>();
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
@@ -2847,13 +2817,7 @@ async function selectLeadDirectWebsiteTargets(
     .flat()
     .filter((entry) => entry.netid);
   const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
-  const users =
-    netids.length > 0
-      ? ((await User.find({ netid: { $in: netids } })
-          .collation({ locale: 'en', strength: 2 })
-          .select('netid website websiteUrl profileUrls')
-          .lean()) as Array<Record<string, any>>)
-      : [];
+  const users = await profileUsersByNetids(netids);
   const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
 
   const urlsByEntity = new Map<string, string[]>();
@@ -3002,44 +2966,63 @@ export async function resolveExistingUserForIdentity(
 ): Promise<ExistingProfileUser | null> {
   const urls = uniqueStrings([identity.fetchedUrl, identity.canonicalUrl]);
   const email = textValue(identity.email).toLowerCase();
-  const orFilters = [
-    ...(email ? [{ email }] : []),
-    ...(urls.length
-      ? [
-          { website: { $in: urls } },
-          { websiteUrl: { $in: urls } },
-          { 'profileUrls.medicine': { $in: urls } },
-          { 'profileUrls.official': { $in: urls } },
-          { 'profileUrls.ysm': { $in: urls } },
-        ]
-      : []),
-  ];
-  if (orFilters.length === 0) return null;
-  const candidates = await User.find({
-    $or: orFilters,
-  })
-    .select('netid email fname lname name displayName website websiteUrl profileUrls')
-    .limit(10)
-    .lean();
+  if (!email && urls.length === 0) return null;
+
+  const researchersById = new Map<string, Record<string, any>>();
+  const addResearchers = (docs: Array<Record<string, any>>) => {
+    for (const doc of docs) researchersById.set(idValue(doc._id), doc);
+  };
+  const researcherSelect = '_id accountId displayName profile profileLinks identifiers';
+
+  if (urls.length) {
+    addResearchers(
+      (await Researcher.find({
+        archived: { $ne: true },
+        $or: [{ 'profileLinks.url': { $in: urls } }, { 'profile.websiteUrl': { $in: urls } }],
+      })
+        .select(researcherSelect)
+        .limit(10)
+        .lean()) as Array<Record<string, any>>,
+    );
+  }
+  if (email) {
+    const emailAccounts = (await Account.find({ email }).select('_id').lean()) as Array<
+      Record<string, any>
+    >;
+    const emailAccountIds = emailAccounts.map((account) => account._id);
+    if (emailAccountIds.length) {
+      addResearchers(
+        (await Researcher.find({ archived: { $ne: true }, accountId: { $in: emailAccountIds } })
+          .select(researcherSelect)
+          .limit(10)
+          .lean()) as Array<Record<string, any>>,
+      );
+    }
+  }
+  if (researchersById.size === 0) return null;
+
+  const researchers = Array.from(researchersById.values());
+  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
+  const accounts = accountIds.length
+    ? ((await Account.find({ _id: { $in: accountIds } })
+        .select('_id netid email')
+        .lean()) as Array<Record<string, any>>)
+    : [];
+  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
+  const candidates = researchers.map((researcher) =>
+    researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
+  );
 
   const matchingCandidates =
     candidates.length <= 1
       ? candidates
-      : candidates.filter((candidate: any) => {
+      : candidates.filter((candidate) => {
           const candidateEmail = textValue(candidate.email).toLowerCase();
           if (email && candidateEmail === email) return true;
 
           const identitySplit = splitName(identity.displayName);
-          const candidateSplit = splitName(
-            textValue(candidate.name || candidate.displayName) ||
-              textValue(`${textValue(candidate.fname)} ${textValue(candidate.lname)}`),
-          );
-          const candidateFirst = slugify(
-            normalizeName(textValue(candidate.fname) || candidateSplit.first),
-          );
-          const candidateLast = slugify(
-            normalizeName(textValue(candidate.lname) || candidateSplit.last),
-          );
+          const candidateFirst = slugify(normalizeName(textValue(candidate.fname)));
+          const candidateLast = slugify(normalizeName(textValue(candidate.lname)));
           const identityFirst = slugify(normalizeName(identitySplit.first));
           const identityLast = slugify(normalizeName(identitySplit.last));
           const exactNameMatch =
@@ -3055,7 +3038,7 @@ export async function resolveExistingUserForIdentity(
         });
 
   if (matchingCandidates.length !== 1) return null;
-  const user = matchingCandidates[0] as any;
+  const user = matchingCandidates[0];
   const netid = textValue(user.netid);
   return netid ? { _id: idValue(user._id), netid, email: textValue(user.email) } : null;
 }

@@ -6,11 +6,6 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
-import {
-  DEFAULT_ACCEPTED_INPUT_ROOT,
-  buildAcceptedInputsStatus,
-  loadAcceptedInputUsers,
-} from './acceptedInputsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -67,7 +62,7 @@ interface GateStatus {
 
 export function parseBetaReadinessGateArgs(argv: string[]): BetaReadinessGateCliOptions {
   const options: BetaReadinessGateCliOptions = {
-    root: DEFAULT_ACCEPTED_INPUT_ROOT,
+    root: '',
     strict: false,
     confirmBetaBackup: false,
   };
@@ -231,9 +226,8 @@ async function main(): Promise<void> {
 
   await initializeConnections();
 
-  const users = await loadAcceptedInputUsers();
-  const acceptedInputsStatus = await buildAcceptedInputsStatus(options.root, users);
-  const acceptedInputs = acceptedInputsStatus as Record<string, unknown>;
+  const users: any[] = [];
+  const acceptedInputs: Record<string, unknown> = {};
   const sourceRows = await Source.find(
     { name: { $in: [...EXPECTED_SOURCE_NAMES] } },
     'name enabled cadence',

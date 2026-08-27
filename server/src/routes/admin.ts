@@ -10,7 +10,6 @@ import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchA
 import { Department, DepartmentCategory, categoryColorKeys } from '../models/department';
 import { invalidateConfigCache } from '../services/configService';
 import { Fellowship } from '../models/fellowship';
-import { User } from '../models/user';
 import {
   updateFellowship,
   deleteFellowship,
@@ -28,7 +27,6 @@ import {
   listAdminEntityCorrectionReports,
   reviewAdminEntityCorrectionReport,
 } from '../controllers/entityCorrectionReportController';
-import { adminUpdateProfile, cascadeDepartmentsToListings } from '../services/profileService';
 import { buildSafeSearchRegex } from '../utils/regex';
 import {
   AccessReviewRequestError,
@@ -88,54 +86,6 @@ const MAX_ADMIN_ACCESS_REVIEW_NOTE_LENGTH = 2000;
 const MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELDS = 100;
 const MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELD_LENGTH = 120;
 
-export const adminProfileDto = (user: any) => {
-  const ownListings = Array.isArray(user?.ownListings) ? user.ownListings : [];
-  const secondaryDepartments = Array.isArray(user?.secondaryDepartments)
-    ? user.secondaryDepartments
-    : [];
-  const researchInterests = Array.isArray(user?.researchInterests) ? user.researchInterests : [];
-  const topics = Array.isArray(user?.topics) ? user.topics : [];
-  const profileUrls =
-    user?.profileUrls && typeof user.profileUrls === 'object' && !Array.isArray(user.profileUrls)
-      ? user.profileUrls
-      : {};
-  const hIndex = Number.isFinite(Number(user?.hIndex)) ? Number(user.hIndex) : undefined;
-
-  const profile: Record<string, unknown> = {
-    netid: user?.netid || '',
-    fname: user?.fname || '',
-    lname: user?.lname || '',
-    email: user?.email || '',
-    title: user?.title || '',
-    bio: user?.bio || '',
-    phone: user?.phone || '',
-    primaryDepartment: user?.primaryDepartment || '',
-    primary_department: user?.primaryDepartment || '',
-    secondaryDepartments,
-    secondary_departments: secondaryDepartments,
-    researchInterests,
-    research_interests: researchInterests,
-    hIndex,
-    h_index: hIndex,
-    orcid: user?.orcid || '',
-    openAlexId: user?.openAlexId || '',
-    openalex_id: user?.openAlexId || '',
-    imageUrl: user?.imageUrl || '',
-    image_url: user?.imageUrl || '',
-    profileUrls,
-    profile_urls: profileUrls,
-    topics,
-    profileVerified: user?.profileVerified === true,
-    profileVerificationRequestedAt: user?.profileVerificationRequestedAt,
-    userType: user?.userType || 'professor',
-    userConfirmed: user?.userConfirmed === true,
-    ownListingCount: ownListings.length,
-    createdAt: user?.createdAt,
-    updatedAt: user?.updatedAt,
-  };
-
-  return profile;
-};
 
 const adminPayloadId = (value: unknown): string => {
   if (typeof value === 'string') return value.trim();
@@ -809,125 +759,6 @@ router.delete(
       res.json({ message: 'Department deleted' });
     } catch (error) {
       console.error('Admin: Error deleting department:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
-    }
-  },
-);
-
-router.get('/profiles', async (req: Request, res: Response) => {
-  try {
-    const {
-      search,
-      sortBy: rawSortBy = 'lname',
-      sortOrder = 'asc',
-      page = '1',
-      pageSize = '25',
-      profileVerified,
-      hasListings,
-    } = req.query;
-
-    const filter: any = {
-      userType: { $in: ['professor', 'faculty'] },
-    };
-
-    if (profileVerified === 'true') filter.profileVerified = true;
-    else if (profileVerified === 'false') filter.profileVerified = { $ne: true };
-
-    if (hasListings === 'true') filter.ownListings = { $exists: true, $not: { $size: 0 } };
-    else if (hasListings === 'false')
-      filter.$or = [{ ownListings: { $exists: false } }, { ownListings: { $size: 0 } }];
-
-    const adminSearch = normalizeAdminSearchTerm(search);
-    if (adminSearch.errorCode) {
-      return res.status(400).json({ error: ADMIN_SEARCH_ERROR_MESSAGES[adminSearch.errorCode] });
-    }
-
-    if (adminSearch.searchTerm) {
-      const searchRegex = buildSafeSearchRegex(adminSearch.searchTerm);
-      const searchOr = [
-        { fname: searchRegex },
-        { lname: searchRegex },
-        { netid: searchRegex },
-        { email: searchRegex },
-        { primaryDepartment: searchRegex },
-      ];
-      if (filter.$or) {
-        filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
-        delete filter.$or;
-      } else {
-        filter.$or = searchOr;
-      }
-    }
-
-    const { page: pageNum, pageSize: pageSizeNum } = normalizeAdminPagination(page, pageSize);
-
-    const sort: any = {};
-    const order = sortOrder === 'asc' ? 1 : -1;
-    const sortBy = resolveAdminSortField(rawSortBy, ADMIN_PROFILE_SORT_FIELDS, 'lname');
-    sort[/^[A-Za-z0-9_]+$/.test(String(sortBy)) ? String(sortBy) : 'lname'] = order;
-    sort._id = 1;
-
-    const [profiles, total] = await Promise.all([
-      User.find(filter)
-        .sort(sort)
-        .skip((pageNum - 1) * pageSizeNum)
-        .limit(pageSizeNum)
-        .lean(),
-      User.countDocuments(filter),
-    ]);
-
-    res.json({
-      profiles: profiles.map((profile) => adminProfileDto(profile)),
-      total,
-      page: pageNum,
-      pageSize: pageSizeNum,
-      totalPages: Math.ceil(total / pageSizeNum),
-    });
-  } catch (error: any) {
-    console.error('Admin: Error fetching profiles:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch profiles' });
-  }
-});
-
-router.get('/profiles/:netid', validateNetid('netid'), async (req: Request, res: Response) => {
-  try {
-    const user = await User.findOne({ netid: req.params.netid }).lean();
-
-    if (!user) {
-      return res.status(404).json({ error: 'Profile not found' });
-    }
-
-    res.json({ profile: adminProfileDto(user) });
-  } catch (error: any) {
-    console.error('Admin: Error fetching profile:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch profile' });
-  }
-});
-
-router.put(
-  '/profiles/:netid',
-  writeLimit,
-  validateNetid('netid'),
-  async (req: Request, res: Response) => {
-    try {
-      const data = req.body?.data;
-      if (!data || typeof data !== 'object') {
-        return res.status(400).json({ error: 'Missing data payload' });
-      }
-
-      const profile = await adminUpdateProfile(req.params.netid, data);
-
-      if (!profile) {
-        return res.status(404).json({ error: 'Profile not found' });
-      }
-
-      if (data.primaryDepartment !== undefined || data.secondaryDepartments !== undefined) {
-        await cascadeDepartmentsToListings(req.params.netid);
-      }
-
-      res.json({ profile: adminProfileDto(profile) });
-    } catch (error: any) {
-      console.error('Admin: Error updating profile:', sanitizeLogValue(error));
       res.status(400).json({ error: 'Request failed' });
     }
   },

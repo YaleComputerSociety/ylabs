@@ -4,7 +4,7 @@
  * No network, no DB. The HTML extractor is exercised against embedded
  * structurally-faithful fixtures, the aggregator is tested directly, the user
  * resolver is tested against a hand-built mock User model, and the full
- * `run()` is tested with all three I/O hooks (fetchPage, userFinder,
+ * `run()` is tested with all three I/O hooks (fetchPage, advisorResolver,
  * ownerToGroupSlug) injected so neither axios nor mongoose are touched.
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -20,8 +20,6 @@ import {
   manualRecipientCsvExtractor,
   manualRecipientPdfTextExtractor,
   aggregateAdviseesByAdvisor,
-  findUserForAdvisor,
-  findUserForAdvisorOrcid,
   buildObservationsForAdvisor,
   inferYearFromUrl,
   resolveSafeManualRecipientInputPath,
@@ -292,107 +290,6 @@ describe('aggregateAdviseesByAdvisor', () => {
 // findUserForAdvisor
 // ---------------------------------------------------------------------------
 
-describe('findUserForAdvisor', () => {
-  it('matches on lname + fname when exactly one user matches', async () => {
-    const finder = vi.fn(async (q: any) => {
-      // Exact-fname query
-      if (q.fname) {
-        return [{ _id: 'u1', netid: 'rr1', fname: 'Riley', lname: 'Roster' }];
-      }
-      return [];
-    });
-    const out = await findUserForAdvisor('Riley Roster', finder);
-    expect(out).toEqual({ _id: 'u1', netid: 'rr1', fname: 'Riley', lname: 'Roster' });
-  });
-
-  it('falls back to first-initial match when exact fname matches zero', async () => {
-    let call = 0;
-    const finder = vi.fn(async (q: any) => {
-      call++;
-      const fnameSrc: string = q.fname?.source || '';
-      // Exact-fname (^Sandy$) returns nothing — admin's display name doesn't match canonical first name
-      if (/Sandy/.test(fnameSrc)) return [];
-      // First-initial query — pattern is just `^S` (1-char prefix), no $ anchor
-      if (fnameSrc === '^S') {
-        return [{ _id: 'u2', netid: 'sc2', fname: 'Sanford', lname: 'Chang' }];
-      }
-      return [];
-    });
-    const out = await findUserForAdvisor('Sandy Chang', finder);
-    expect(out?._id).toBe('u2');
-    expect(call).toBeGreaterThanOrEqual(2);
-  });
-
-  it('falls back to lname-only when exactly one faculty has that lname', async () => {
-    // Two-token name where the first-name match deliberately misses, forcing fall-through.
-    // (`splitName` requires ≥2 tokens before populating `last`, so a single-name input is skipped.)
-    const finder = vi.fn(async (q: any) => {
-      // No exact-fname or initial match
-      if (q.fname) return [];
-      // Only the lname-only query hits
-      return [{ _id: 'u3', netid: 'fb1', fname: 'Frances', lname: 'Bergquist' }];
-    });
-    const out = await findUserForAdvisor('Q. Bergquist', finder);
-    expect(out?._id).toBe('u3');
-  });
-
-  it('returns null when ambiguous lname-only match', async () => {
-    const finder = vi.fn(async (_q: any) => [
-      { _id: 'a', netid: 'a1', fname: 'A', lname: 'Smith' },
-      { _id: 'b', netid: 'b1', fname: 'B', lname: 'Smith' },
-    ]);
-    const out = await findUserForAdvisor('Smith', finder);
-    expect(out).toBeNull();
-  });
-
-  it('returns null on missing/unparseable name', async () => {
-    expect(await findUserForAdvisor('', vi.fn())).toBeNull();
-    expect(
-      await findUserForAdvisor(
-        'Madonna',
-        vi.fn(async () => []),
-      ),
-    ).toBeNull();
-  });
-});
-
-describe('findUserForAdvisorOrcid', () => {
-  it('matches exactly one reviewed ORCID', async () => {
-    const finder = vi.fn(async (q: any) =>
-      q.orcid === '0000-0001-2345-6789'
-        ? [
-            {
-              _id: 'u1',
-              netid: 'rr1',
-              fname: 'Riley',
-              lname: 'Roster',
-              orcid: '0000-0001-2345-6789',
-            },
-          ]
-        : [],
-    );
-    const out = await findUserForAdvisorOrcid('https://orcid.org/0000-0001-2345-6789', finder);
-    expect(out?._id).toBe('u1');
-    expect(finder).toHaveBeenCalledWith({
-      orcid: '0000-0001-2345-6789',
-      userType: { $in: ['professor', 'faculty', 'admin'] },
-    });
-  });
-
-  it('returns null for missing or ambiguous ORCID matches', async () => {
-    expect(await findUserForAdvisorOrcid('', vi.fn())).toBeNull();
-    expect(
-      await findUserForAdvisorOrcid(
-        '0000-0001-2345-6789',
-        vi.fn(async () => [
-          { _id: 'a', netid: 'a1', fname: 'A', lname: 'Smith' },
-          { _id: 'b', netid: 'b1', fname: 'B', lname: 'Smith' },
-        ]),
-      ),
-    ).toBeNull();
-  });
-});
-
 // ---------------------------------------------------------------------------
 // buildObservationsForAdvisor
 // ---------------------------------------------------------------------------
@@ -613,7 +510,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
       ],
       {
         fetchPage: vi.fn(),
-        userFinder: vi.fn(),
+        advisorResolver: vi.fn(),
         ownerToGroupSlug: vi.fn(),
       },
     );
@@ -632,31 +529,26 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     });
 
     // Match Roster (id=u-roster, netid=rr1) and Atlas (id=u-atlas, netid=atlas1).
-    const userFinder = vi.fn(async (q: any) => {
-      const lnameSrc: string = q.lname?.source || '';
-      if (/Roster/i.test(lnameSrc)) {
-        return [
-          {
-            _id: 'u-roster',
-            netid: 'rr1',
-            fname: 'Riley',
-            lname: 'Roster',
-            primaryDepartment: 'MCDB',
-          },
-        ];
+    const advisorResolver = vi.fn(async (name: string) => {
+      if (/Roster/i.test(name)) {
+        return {
+          _id: 'u-roster',
+          netid: 'rr1',
+          fname: 'Riley',
+          lname: 'Roster',
+          primaryDepartment: 'MCDB',
+        };
       }
-      if (/Atlas/i.test(lnameSrc)) {
-        return [
-          {
-            _id: 'u-atlas',
-            netid: 'atlas1',
-            fname: 'Amy',
-            lname: 'Atlas',
-            primaryDepartment: 'Neuroscience',
-          },
-        ];
+      if (/Atlas/i.test(name)) {
+        return {
+          _id: 'u-atlas',
+          netid: 'atlas1',
+          fname: 'Amy',
+          lname: 'Atlas',
+          primaryDepartment: 'Neuroscience',
+        };
       }
-      return [];
+      return null;
     });
 
     const ownerToGroupSlug = vi.fn(async (owner: UserMatch) => {
@@ -677,7 +569,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
 
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage,
-      userFinder,
+      advisorResolver,
       ownerToGroupSlug,
     });
 
@@ -731,15 +623,13 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
       '"Grace Hopper","Riley Roster",2025,"Genetic circuits"',
     ].join('\n');
     const fetchPage = vi.fn(async () => csv);
-    const userFinder = vi.fn(async () => [
-      {
+    const advisorResolver = vi.fn(async () => ({
         _id: 'u-roster',
         netid: 'rr1',
         fname: 'Riley',
         lname: 'Roster',
         primaryDepartment: 'MCDB',
-      },
-    ]);
+      }));
     const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
     const configs: ProgramConfig[] = [
       {
@@ -752,7 +642,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
 
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage,
-      userFinder,
+      advisorResolver,
       ownerToGroupSlug,
     });
     const { ctx, emitted } = makeContext();
@@ -778,15 +668,13 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
         ].join('\n'),
         'utf8',
       );
-      const userFinder = vi.fn(async () => [
-        {
+      const advisorResolver = vi.fn(async () => ({
           _id: 'u-roster',
           netid: 'rr1',
           fname: 'Riley',
           lname: 'Roster',
           primaryDepartment: 'MCDB',
-        },
-      ]);
+        }));
       const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
       const configs: ProgramConfig[] = [
         {
@@ -802,7 +690,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
         fetchPage: vi.fn(async () => {
           throw new Error('manual CSV should bypass fetchPage');
         }),
-        userFinder,
+        advisorResolver,
         ownerToGroupSlug,
       });
       const { ctx, emitted } = makeContext({ manualRecipientCsvDir: tmpDir });
@@ -831,15 +719,13 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
         ].join('\n'),
         'utf8',
       );
-      const userFinder = vi.fn(async () => [
-        {
+      const advisorResolver = vi.fn(async () => ({
           _id: 'u-roster',
           netid: 'rr1',
           fname: 'Riley',
           lname: 'Roster',
           primaryDepartment: 'MCDB',
-        },
-      ]);
+        }));
       const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
       const scraper = new UndergradFellowshipRecipientScraper(
         [
@@ -855,7 +741,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
           fetchPage: vi.fn(async () => {
             throw new Error('default accepted CSV should bypass fetchPage');
           }),
-          userFinder,
+          advisorResolver,
           ownerToGroupSlug,
           defaultManualRecipientCsvDir: tmpDir,
         },
@@ -880,15 +766,13 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ylabs-fellowship-default-pdf-'));
     try {
       await fs.writeFile(path.join(tmpDir, 'stars-ii.pdf'), Buffer.from('fake pdf bytes'));
-      const userFinder = vi.fn(async () => [
-        {
+      const advisorResolver = vi.fn(async () => ({
           _id: 'u-roster',
           netid: 'rr1',
           fname: 'Riley',
           lname: 'Roster',
           primaryDepartment: 'MCDB',
-        },
-      ]);
+        }));
       const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
       const pdfTextExtractor = vi.fn(async () =>
         [
@@ -915,7 +799,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
           fetchPage: vi.fn(async () => {
             throw new Error('default accepted PDF should bypass fetchPage');
           }),
-          userFinder,
+          advisorResolver,
           ownerToGroupSlug,
           defaultManualRecipientCsvDir: tmpDir,
           defaultManualRecipientPdfDir: tmpDir,
@@ -953,20 +837,18 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
         ].join('\n'),
         'utf8',
       );
-      const userFinder = vi.fn(async (query: any) => {
-        if (query.orcid === '0000-0001-2345-6789') {
-          return [
-            {
-              _id: 'u-roster',
-              netid: 'rr1',
-              fname: 'Riley',
-              lname: 'Roster',
-              primaryDepartment: 'MCDB',
-              orcid: '0000-0001-2345-6789',
-            },
-          ];
+      const advisorResolver = vi.fn(async (_name: string, orcid?: string) => {
+        if (orcid === '0000-0001-2345-6789') {
+          return {
+            _id: 'u-roster',
+            netid: 'rr1',
+            fname: 'Riley',
+            lname: 'Roster',
+            primaryDepartment: 'MCDB',
+            orcid: '0000-0001-2345-6789',
+          };
         }
-        return [];
+        return null;
       });
       const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
       const scraper = new UndergradFellowshipRecipientScraper(
@@ -983,7 +865,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
           fetchPage: vi.fn(async () => {
             throw new Error('manual CSV should bypass fetchPage');
           }),
-          userFinder,
+          advisorResolver,
           ownerToGroupSlug,
         },
       );
@@ -992,10 +874,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
       const result = await scraper.run(ctx);
 
       expect(result.entitiesObserved).toBe(1);
-      expect(userFinder).toHaveBeenCalledWith({
-        orcid: '0000-0001-2345-6789',
-        userType: { $in: ['professor', 'faculty', 'admin'] },
-      });
+      expect(advisorResolver).toHaveBeenCalledWith(expect.anything(), '0000-0001-2345-6789');
       expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.entityKey).toBe(
         'roster-lab-rr1',
       );
@@ -1007,7 +886,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
   it('silently skips advisors that cannot be matched against the User collection', async () => {
     const fetchPage = vi.fn(async () => RECIPIENTS_HTML_2024);
     // Match nothing — every advisor lookup returns empty
-    const userFinder = vi.fn(async () => []);
+    const advisorResolver = vi.fn(async () => null);
     const ownerToGroupSlug = vi.fn(async () => 'should-never-be-called');
 
     const configs: ProgramConfig[] = [
@@ -1021,7 +900,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
 
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage,
-      userFinder,
+      advisorResolver,
       ownerToGroupSlug,
     });
     const { ctx, emitted } = makeContext();
@@ -1052,7 +931,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     ];
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage: vi.fn(async () => RECIPIENTS_HTML_2024),
-      userFinder: vi.fn(async () => []),
+      advisorResolver: vi.fn(async () => null),
       ownerToGroupSlug: vi.fn(async () => null),
     });
 
@@ -1090,7 +969,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     });
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage,
-      userFinder: vi.fn(async () => []),
+      advisorResolver: vi.fn(async () => null),
       ownerToGroupSlug: vi.fn(async () => null),
     });
     const { ctx } = makeContext();
@@ -1124,17 +1003,17 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
       },
     ];
 
-    const userFinder = vi.fn(async (q: any) => {
-      if (/Roster/i.test(q.lname?.source || '')) {
-        return [{ _id: 'b', netid: 'rr1', fname: 'Riley', lname: 'Roster' }];
+    const advisorResolver = vi.fn(async (name: string) => {
+      if (/Roster/i.test(name)) {
+        return { _id: 'b', netid: 'rr1', fname: 'Riley', lname: 'Roster' };
       }
-      return [];
+      return null;
     });
     const ownerToGroupSlug = vi.fn(async (u: UserMatch) => `${u.lname}-${u.netid}`);
 
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage: vi.fn(async () => RECIPIENTS_HTML_2024),
-      userFinder,
+      advisorResolver,
       ownerToGroupSlug,
     });
     const { ctx, emitted } = makeContext();
@@ -1161,7 +1040,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     });
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage,
-      userFinder: vi.fn(async () => []),
+      advisorResolver: vi.fn(async () => null),
       ownerToGroupSlug: vi.fn(async () => null),
     });
     const { ctx, emitted } = makeContext();
@@ -1196,11 +1075,11 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     // Track distinct advisor lname values queried (findUserForAdvisor can call
     // the finder up to 3 times per advisor as it falls back through strategies).
     const distinctLnames = new Set<string>();
-    const userFinder = vi.fn(async (q: any) => {
-      const src: string = q.lname?.source || '';
-      const lname = src.replace(/^\^|\$$/g, '');
+    const advisorResolver = vi.fn(async (name: string) => {
+      const parts = name.trim().split(/\s+/).filter(Boolean);
+      const lname = parts[parts.length - 1] || '';
       if (lname) distinctLnames.add(lname);
-      return [];
+      return null;
     });
     const ownerToGroupSlug = vi.fn(async () => null);
     const configs: ProgramConfig[] = [
@@ -1214,7 +1093,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
 
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage,
-      userFinder,
+      advisorResolver,
       ownerToGroupSlug,
     });
     const { ctx } = makeContext({ limit: 2 });
@@ -1228,7 +1107,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
 
   it('rejects unsafe runtime limits before fetching recipient pages', async () => {
     const fetchPage = vi.fn(async () => RECIPIENTS_HTML_2024);
-    const userFinder = vi.fn(async () => []);
+    const advisorResolver = vi.fn(async () => null);
     const ownerToGroupSlug = vi.fn(async () => null);
     const configs: ProgramConfig[] = [
       {
@@ -1240,7 +1119,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     ];
     const scraper = new UndergradFellowshipRecipientScraper(configs, {
       fetchPage,
-      userFinder,
+      advisorResolver,
       ownerToGroupSlug,
     });
     const { ctx } = makeContext({ limit: 9007199254740992 } as any);

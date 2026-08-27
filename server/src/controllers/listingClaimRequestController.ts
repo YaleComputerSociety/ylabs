@@ -9,7 +9,6 @@ import {
   reviewListingClaimRequest,
   applyListingClaimRequestDecision,
 } from '../services/listingClaimRequestService';
-import { readUser } from '../services/userService';
 
 export const submitListingClaimRequest = async (
   request: Request,
@@ -17,20 +16,21 @@ export const submitListingClaimRequest = async (
   next: NextFunction,
 ) => {
   try {
-    const currentUser = request.user as { netId?: string };
+    const currentUser = request.user as {
+      netId?: string;
+      isAdmin?: boolean;
+      userConfirmed?: boolean;
+      profileVerified?: boolean;
+    };
     if (!currentUser.netId) {
       return response.status(401).json({ error: 'Unauthorized' });
     }
 
-    const user = await readUser(currentUser.netId);
     const claimRequest = await createListingClaimRequest(request.params.id, request.body, {
-      netId: user.netid,
-      email: user.email,
-      fname: user.fname,
-      lname: user.lname,
-      userType: user.userType,
-      userConfirmed: user.userConfirmed,
-      profileVerified: user.profileVerified,
+      netId: currentUser.netId,
+      userType: currentUser.isAdmin ? 'admin' : undefined,
+      userConfirmed: currentUser.userConfirmed,
+      profileVerified: currentUser.profileVerified,
     });
 
     response.status(201).json({ request: claimRequest });

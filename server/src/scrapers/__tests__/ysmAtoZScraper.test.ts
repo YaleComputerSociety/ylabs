@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { describe, it, expect, vi } from 'vitest';
 import * as cheerio from 'cheerio';
+import mongoose from 'mongoose';
 import {
   YsmAtoZScraper,
   extractLabHomepageDescription,
@@ -9,13 +10,11 @@ import {
   extractSoleResearchFacultyProfile,
   findPiUserId,
   inferPiNameFromLabName,
-  buildPiUserLookupQuery,
   labResearchFacultyToObservations,
   labToObservations,
   parseLabs,
   recoverLabDisplayName,
 } from '../sources/ysmAtoZScraper';
-import { User } from '../../models/user';
 import type { ObservationInput, ScraperContext } from '../types';
 
 vi.mock('axios', () => ({
@@ -23,18 +22,6 @@ vi.mock('axios', () => ({
     get: vi.fn(),
   },
 }));
-
-vi.mock('../../models/user', () => ({
-  User: {
-    find: vi.fn(),
-  },
-}));
-
-function mockUserFindResult(matches: Array<Record<string, unknown>>) {
-  vi.mocked(User.find).mockReturnValue({
-    limit: () => ({ lean: () => Promise.resolve(matches) }),
-  } as unknown as ReturnType<typeof User.find>);
-}
 
 const SAMPLE_HTML = `
 <html><body>
@@ -249,80 +236,42 @@ describe('inferPiNameFromLabName', () => {
   });
 });
 
-describe('buildPiUserLookupQuery', () => {
-  it('allows a unique exact name from an official lab profile to resolve an unclassified user', () => {
-    const query = buildPiUserLookupQuery(
-      { firstName: 'Jeffrey', lastName: 'Townsend' },
-      { allowUnknownExactName: true },
-    );
-
-    expect(query).not.toHaveProperty('userType');
-    expect(String(query.fname)).toBe('/^Jeffrey$/i');
-    expect(String(query.lname)).toBe('/^Townsend$/i');
-  });
-
-  it('keeps surname-only fallback restricted to classified faculty', () => {
-    const query = buildPiUserLookupQuery({ firstName: '', lastName: 'Townsend' });
-
-    expect(query).toHaveProperty('userType');
-  });
-});
-
 describe('findPiUserId surname-only safeguard (issue #562)', () => {
   it('never attaches on a surname alone, even to a lone medicine-department candidate', async () => {
-    mockUserFindResult([
-      {
-        _id: 'medicine-dixit',
-        fname: 'Vishwa',
-        lname: 'Dixit',
-        primaryDepartment: 'Comparative Medicine',
-      },
-    ]);
 
     expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
   });
 
   it('never attaches on a surname alone when several faculty share the surname', async () => {
-    mockUserFindResult([
-      { _id: 'a', fname: 'Vishwa', lname: 'Dixit', primaryDepartment: 'Comparative Medicine' },
-      { _id: 'b', fname: 'Purushottam', lname: 'Dixit', primaryDepartment: 'Internal Medicine' },
-    ]);
 
     expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
   });
 
   it('does not attach a surname-only lab name to a lone same-surname faculty (Schwartz)', async () => {
-    mockUserFindResult([
-      { _id: 'sc1', fname: 'Michael', lname: 'Schwartz', primaryDepartment: 'Internal Medicine' },
-    ]);
 
     expect(await findPiUserId(inferPiNameFromLabName('Schwartz Lab'))).toBeNull();
   });
 
   it('resolves a unique exact full-name match regardless of department', async () => {
-    mockUserFindResult([
-      { _id: 'townsend', fname: 'Jeffrey', lname: 'Townsend', primaryDepartment: 'Biostatistics' },
-    ]);
-
+    const townsend = new mongoose.Types.ObjectId();
     expect(
       await findPiUserId(
         { firstName: 'Jeffrey', lastName: 'Townsend' },
         { allowUnknownExactName: true },
+        { resolveResearcherId: async () => ({ status: 'matched', researcherId: townsend }) },
       ),
-    ).toBe('townsend');
+    ).toBe(townsend.toString());
   });
 
   it('attaches only when a full first and last name both agree (Martin vs Michael Schwartz)', async () => {
-    mockUserFindResult([
-      { _id: 'sc2', fname: 'Martin', lname: 'Schwartz', primaryDepartment: 'Internal Medicine' },
-    ]);
-
+    const martin = new mongoose.Types.ObjectId();
     expect(
       await findPiUserId(
         { firstName: 'Martin', lastName: 'Schwartz' },
         { allowUnknownExactName: true },
+        { resolveResearcherId: async () => ({ status: 'matched', researcherId: martin }) },
       ),
-    ).toBe('sc2');
+    ).toBe(martin.toString());
   });
 });
 

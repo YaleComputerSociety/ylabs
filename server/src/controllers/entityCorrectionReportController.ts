@@ -8,7 +8,6 @@ import {
   readEntityCorrectionReport,
   reviewEntityCorrectionReport,
 } from '../services/entityCorrectionReportService';
-import { readUser } from '../services/userService';
 
 export const submitEntityCorrectionReport = async (
   request: Request,
@@ -16,19 +15,15 @@ export const submitEntityCorrectionReport = async (
   next: NextFunction,
 ) => {
   try {
-    const currentUser = request.user as { netId?: string; netid?: string };
+    const currentUser = request.user as { netId?: string; netid?: string; isAdmin?: boolean };
     const netId = currentUser?.netId || currentUser?.netid;
     if (!netId) {
       return response.status(401).json({ error: 'Unauthorized' });
     }
 
-    const user = await readUser(netId);
     const report = await createEntityCorrectionReport(request.params.slug, request.body, {
-      netId: user.netid,
-      email: user.email,
-      fname: user.fname,
-      lname: user.lname,
-      userType: user.userType,
+      netId,
+      userType: currentUser.isAdmin ? 'admin' : undefined,
     });
 
     response.status(201).json({ report });

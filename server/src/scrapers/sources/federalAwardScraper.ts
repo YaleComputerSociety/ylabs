@@ -31,15 +31,12 @@ import { canonicalPersonName } from '../utils/personNameCasing';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
-  resolveCanonicalResearchHomeForUser,
+  resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import {
-  resolveUserForPi,
-  piGroupKey,
-  type PiUserFinder,
-} from './nsfAwardScraper';
+import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
+import { resolveUserForPi, piGroupKey, type FederalPiResolverDeps } from './nsfAwardScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const USASPENDING_SEARCH_URL =
@@ -314,11 +311,11 @@ async function fetchAgencyPage(
 }
 
 export interface FederalAwardScraperDeps {
-  userFinder?: PiUserFinder;
+  resolveResearcherId?: typeof resolveResearcherIdForPersonName;
   fetchAgencyPage?: typeof fetchAgencyPage;
   timePeriod?: { start_date: string; end_date: string };
   agencies?: FederalAgencyConfig[];
-  researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
+  researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 function defaultTimePeriod(): { start_date: string; end_date: string } {
@@ -340,11 +337,11 @@ export class FederalAwardScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const timePeriod = this.deps.timePeriod ?? defaultTimePeriod();
-    const finder = this.deps.userFinder;
+    const resolverDeps: FederalPiResolverDeps = { resolveResearcherId: this.deps.resolveResearcherId };
     const fetcher = this.deps.fetchAgencyPage ?? fetchAgencyPage;
     const agencies = this.deps.agencies ?? FEDERAL_AGENCIES;
     const researchHomeResolver =
-      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForUser;
+      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;
 
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
@@ -409,7 +406,7 @@ export class FederalAwardScraper implements IScraper {
     for (const group of groups) {
       const resolution = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
-        finder,
+        resolverDeps,
       );
       if (resolution.status !== 'matched') continue;
       piMatched++;

@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   grantAdminAccess: vi.fn(),
   revokeAdminAccess: vi.fn(),
   getListingModel: vi.fn(),
-  userFind: vi.fn(),
   fellowshipFind: vi.fn(),
   listAccessReviewEntities: vi.fn(),
   listAdminAuditEvents: vi.fn(),
@@ -32,15 +31,6 @@ vi.mock('../../db/connections', async (importOriginal) => ({
   getListingModel: mocks.getListingModel,
 }));
 
-vi.mock('../../models/user', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../models/user')>()),
-  User: {
-    find: mocks.userFind,
-    countDocuments: vi.fn(),
-    findOne: vi.fn(),
-  },
-}));
-
 vi.mock('../../models/fellowship', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../models/fellowship')>()),
   Fellowship: {
@@ -61,7 +51,6 @@ import router, {
   adminAccessReviewRecordUpdateDto,
   adminDepartmentDto,
   adminFellowshipDto,
-  adminProfileDto,
   adminResearchAreaDto,
   normalizeAdminObjectId,
   normalizeAdminSearchTerm,
@@ -515,7 +504,7 @@ describe('admin routes', () => {
   });
 
   it('rejects oversized admin search terms before model lookup', async () => {
-    for (const path of ['/profiles', '/fellowships']) {
+    for (const path of ['/fellowships']) {
       const res = await invokeRouteHandler(
         path,
         {
@@ -529,63 +518,9 @@ describe('admin routes', () => {
     }
 
     expect(mocks.getListingModel).not.toHaveBeenCalled();
-    expect(mocks.userFind).not.toHaveBeenCalled();
     expect(mocks.fellowshipFind).not.toHaveBeenCalled();
   });
 
-  it('does not expose private account state on admin profile management payloads', () => {
-    const payload = adminProfileDto({
-      _id: 'internal-user-id',
-      netid: 'prof123',
-      fname: 'Ada',
-      lname: 'Lovelace',
-      email: 'ada@yale.edu',
-      userType: 'professor',
-      userConfirmed: true,
-      profileVerified: true,
-      primaryDepartment: 'Computer Science',
-      secondaryDepartments: ['Applied Math'],
-      researchInterests: ['Computation'],
-      hIndex: 42,
-      orcid: '0000-0000-0000-0000',
-      openAlexId: 'A123',
-      imageUrl: 'https://example.edu/ada.jpg',
-      profileUrls: { official: 'https://example.edu/ada' },
-      topics: ['algorithms'],
-      ownListings: ['listing1', 'listing2'],
-      favListings: ['private-favorite-listing'],
-      favFellowships: ['private-favorite-fellowship'],
-      favPathways: ['private-favorite-pathway'],
-      savedPathwayPlans: { pathway1: { note: 'private note' } },
-      confidenceByField: { email: 0.1 },
-      manuallyLockedFields: ['email'],
-      dedupedIntoUserId: 'merged-user',
-      dedupeReason: 'duplicate',
-      publications: Array.from({ length: 501 }, (_, index) => ({ title: `Paper ${index}` })),
-    });
-
-    expect(payload).toMatchObject({
-      netid: 'prof123',
-      primaryDepartment: 'Computer Science',
-      primary_department: 'Computer Science',
-      ownListingCount: 2,
-      hIndex: 42,
-      h_index: 42,
-    });
-    expect(payload).not.toHaveProperty('publications');
-    expect(payload).not.toHaveProperty('_id');
-    expect(payload).not.toHaveProperty('ownListings');
-    expect(payload).not.toHaveProperty('favListings');
-    expect(payload).not.toHaveProperty('favFellowships');
-    expect(payload).not.toHaveProperty('favPathways');
-    expect(payload).not.toHaveProperty('savedPathwayPlans');
-    expect(payload).not.toHaveProperty('confidenceByField');
-    expect(payload).not.toHaveProperty('manuallyLockedFields');
-    expect(payload).not.toHaveProperty('dedupedIntoUserId');
-    expect(payload).not.toHaveProperty('dedupeReason');
-    expect(JSON.stringify(payload)).not.toContain('private note');
-    expect(JSON.stringify(payload)).not.toContain('private-favorite');
-  });
 
   it('minimizes admin taxonomy management payloads', () => {
     const areaPayload = adminResearchAreaDto({

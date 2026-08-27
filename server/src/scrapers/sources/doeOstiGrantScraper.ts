@@ -46,11 +46,10 @@
  * (caps the number of PIs processed).
  */
 import axios from 'axios';
-import { User } from '../../models/user';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
-  resolveCanonicalResearchHomeForUser,
+  resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { canonicalPiName, resolveUserForPi } from './nihReporterScraper';
@@ -302,7 +301,7 @@ export interface DoeOstiGrantScraperDeps {
 }
 
 function defaultPiResolver(canonicalName: string): ReturnType<PiResolver> {
-  return resolveUserForPi(canonicalName, User).then((resolution) =>
+  return resolveUserForPi(canonicalName).then((resolution) =>
     resolution.status === 'matched'
       ? { status: 'matched' as const, userId: resolution.user._id }
       : { status: resolution.status },
@@ -319,7 +318,7 @@ export class DoeOstiGrantScraper implements IScraper {
     const fetcher = this.deps.fetchPage ?? fetchPage;
     const resolvePi = this.deps.piResolver ?? defaultPiResolver;
     const researchHomeResolver =
-      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForUser;
+      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;
     const now = this.deps.now ? this.deps.now() : new Date();
     const cutoff = new Date(now);
     cutoff.setFullYear(cutoff.getFullYear() - (this.deps.lookbackYears ?? DEFAULT_LOOKBACK_YEARS));

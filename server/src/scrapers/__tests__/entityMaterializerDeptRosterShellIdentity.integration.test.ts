@@ -28,7 +28,7 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Researcher } from '../../models/researcher';
-import { User } from '../../models/user';
+import { Account } from '../../models/account';
 import { materializeEntity } from '../entityMaterializer';
 
 describe('materializeEntity folds dept-roster shells into their canonical PI-linked home (#1364)', () => {
@@ -90,13 +90,14 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
       archived: false,
     });
 
-    const researcher = await Researcher.create({ displayName: 'Jane Smith' });
-    await User.create({
+    const account = await Account.create({
       netid: 'jane.smith',
       email: 'jane.smith@yale.edu',
-      fname: 'Jane',
-      lname: 'Smith',
-      userType: 'professor',
+      status: 'ACTIVE',
+    });
+    const researcher = await Researcher.create({
+      displayName: 'Jane Smith',
+      accountId: account._id,
     });
     await RoleAssignment.create({
       personId: researcher._id,

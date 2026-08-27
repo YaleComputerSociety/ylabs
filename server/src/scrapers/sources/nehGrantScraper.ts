@@ -21,15 +21,15 @@
  * coverage note, exactly as the NIH/NSF scrapers do on API errors.
  */
 import axios from 'axios';
-import { User } from '../../models/user';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
-  resolveCanonicalResearchHomeForUser,
+  resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
+import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import { resolveUserForPi, findUserForPi, type PiUserFinder } from './nsfAwardScraper';
+import { resolveUserForPi, findUserForPi, type FederalPiResolverDeps } from './nsfAwardScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const NEH_OPEN_DATA_BASE = 'https://apps.neh.gov/open/data';
@@ -394,7 +394,7 @@ async function buildCoPiObservations(
   researchEntitySlug: string,
   leadFullName: string,
   sourceUrl: string,
-  finder: PiUserFinder,
+  deps: FederalPiResolverDeps,
 ): Promise<ObservationInput[]> {
   const out: ObservationInput[] = [];
   const seenUserIds = new Set<string>();
@@ -404,7 +404,7 @@ async function buildCoPiObservations(
       if (participant.isLead && participant.fullName.toLowerCase() === leadKey) continue;
       const { first, last } = splitName(participant.fullName);
       if (!first && !last) continue;
-      const userId = await findUserForPi({ firstName: first, lastName: last }, finder);
+      const userId = await findUserForPi({ firstName: first, lastName: last }, deps);
       if (!userId) continue;
       if (seenUserIds.has(userId)) continue;
       seenUserIds.add(userId);
@@ -425,17 +425,11 @@ async function buildCoPiObservations(
 }
 
 export interface NehGrantScraperDeps {
-  userFinder?: PiUserFinder;
+  resolveResearcherId?: typeof resolveResearcherIdForPersonName;
   fetchDecadeCsv?: typeof fetchDecadeCsv;
   lookbackYears?: number;
   currentYear?: number;
-  researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
-}
-
-async function defaultUserFinder(
-  q: Record<string, unknown>,
-): Promise<Array<{ _id: unknown; fname?: unknown; lname?: unknown }>> {
-  return User.find(q, { _id: 1, fname: 1, lname: 1 }).limit(200).lean();
+  researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 export class NehGrantScraper implements IScraper {
@@ -445,10 +439,12 @@ export class NehGrantScraper implements IScraper {
   constructor(private readonly deps: NehGrantScraperDeps = {}) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
-    const finder = this.deps.userFinder ?? defaultUserFinder;
+    const resolverDeps: FederalPiResolverDeps = {
+      resolveResearcherId: this.deps.resolveResearcherId,
+    };
     const fetcher = this.deps.fetchDecadeCsv ?? fetchDecadeCsv;
     const researchHomeResolver =
-      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForUser;
+      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;
     const lookbackYears = this.deps.lookbackYears ?? DEFAULT_LOOKBACK_YEARS;
     const currentYear = this.deps.currentYear ?? new Date().getFullYear();
     const cutoffYear = currentYear - lookbackYears;
@@ -521,7 +517,7 @@ export class NehGrantScraper implements IScraper {
 
       const userResolution = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
-        finder,
+        resolverDeps,
       );
       if (userResolution.status === 'ambiguous') continue;
       const piUserId = userResolution.status === 'matched' ? userResolution.userId : null;
@@ -550,7 +546,7 @@ export class NehGrantScraper implements IScraper {
 
       const slug =
         canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
-      const coPiObs = await buildCoPiObservations(group, slug, group.fullName, sourceUrl, finder);
+      const coPiObs = await buildCoPiObservations(group, slug, group.fullName, sourceUrl, resolverDeps);
       if (coPiObs.length > 0) {
         await ctx.emit(coPiObs);
         totalObs += coPiObs.length;

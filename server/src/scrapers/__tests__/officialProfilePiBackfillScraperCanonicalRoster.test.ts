@@ -5,7 +5,6 @@ import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { ResearchEntity } from '../../models/researchEntity';
-import { User } from '../../models/user';
 import { selectVisibleProfileBioTargets } from '../sources/officialProfilePiBackfillScraper';
 
 describe('selectVisibleProfileBioTargets canonical roster reads', () => {
@@ -78,23 +77,15 @@ describe('selectVisibleProfileBioTargets canonical roster reads', () => {
     return { account, researcher };
   };
 
-  it('joins a mixed-case User.netid to the lowercase Account.netid roster lead', async () => {
+  it('resolves the canonical lowercase Account.netid for the roster lead', async () => {
     const profileUrl = 'https://medicine.yale.edu/profile/jules-fixture/';
     const entityId = await seedEntity();
     await seedCanonicalLead(entityId, 'jf777', profileUrl);
-    await User.create({
-      netid: 'JF777',
-      email: 'jules.fixture@yale.edu',
-      fname: 'Jules',
-      lname: 'Fixture',
-      userType: 'professor',
-      bio: '',
-    });
 
     const targets = await selectVisibleProfileBioTargets(10);
 
     expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({ netid: 'JF777' });
+    expect(targets[0]).toMatchObject({ netid: 'jf777' });
     expect(targets[0].leadProfileUrls).toContain(profileUrl);
   });
 
@@ -104,14 +95,6 @@ describe('selectVisibleProfileBioTargets canonical roster reads', () => {
     await seedCanonicalLead(entityId, 'jf777', profileUrl, {
       state: 'HISTORICAL',
       endedAt: new Date('2020-01-01'),
-    });
-    await User.create({
-      netid: 'JF777',
-      email: 'jules.fixture@yale.edu',
-      fname: 'Jules',
-      lname: 'Fixture',
-      userType: 'professor',
-      bio: '',
     });
 
     const targets = await selectVisibleProfileBioTargets(10);

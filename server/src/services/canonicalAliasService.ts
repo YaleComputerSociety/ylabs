@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import { CanonicalAlias, type CanonicalType } from '../models/canonicalAlias';
 import { ResearchEntity } from '../models/researchEntity';
-import { User } from '../models/user';
 import { Researcher } from '../models/researcher';
 import { Fellowship } from '../models/fellowship';
 
@@ -87,8 +86,6 @@ function modelForType(type: CanonicalType): mongoose.Model<any> | null {
   switch (type) {
     case 'researchEntity':
       return ResearchEntity;
-    case 'user':
-      return User;
     case 'researcher':
       return Researcher;
     case 'fellowship':

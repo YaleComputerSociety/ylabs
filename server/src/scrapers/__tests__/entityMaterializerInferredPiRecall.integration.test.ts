@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { User } from '../../models/user';
 import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
@@ -64,38 +63,48 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
       state: { $ne: 'HISTORICAL' },
     }).lean<LeanRole[]>();
 
-  it('materializes a PI lead when the matched user has an email-local-part netid and no orcid', async () => {
-    const entity = await seedEntity('synthetic-recall-dotted');
-    await User.create({
-      netid: 'avery.parker',
-      email: 'avery.parker@yale.edu',
-      fname: 'Avery',
-      lname: 'Parker',
-      userType: 'professor',
+  const seedCanonicalResearcher = async (opts: {
+    netid?: string;
+    displayName: string;
+    orcid?: string;
+  }) => {
+    let accountId: mongoose.Types.ObjectId | undefined;
+    if (opts.netid) {
+      const account = await Account.create({
+        netid: opts.netid,
+        email: `${opts.netid}@yale.edu`,
+        status: 'ACTIVE',
+        archived: false,
+      });
+      accountId = account._id as mongoose.Types.ObjectId;
+    }
+    return Researcher.create({
+      schemaVersion: 1,
+      displayName: opts.displayName,
+      ...(accountId ? { accountId } : {}),
+      ...(opts.orcid ? { identifiers: { orcid: opts.orcid } } : {}),
+      status: 'ACTIVE',
+      archived: false,
     });
+  };
+
+  it('fails closed for an email-local-part key that is not a canonical netid and carries no name', async () => {
+    const entity = await seedEntity('synthetic-recall-dotted');
+    await seedCanonicalResearcher({ netid: 'aparker', displayName: 'Avery Parker' });
 
     await materializeInferredPiMembership(String(entity._id), [
       inferredPiKeyObservation('avery.parker'),
     ]);
 
     const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
-    expect(leads).toHaveLength(1);
-
-    const researcher = await Researcher.findById(leads[0].personId).lean<{
-      displayName?: string;
-    }>();
-    expect(researcher?.displayName).toBe('Avery Parker');
+    expect(leads).toHaveLength(0);
   });
 
-  it('materializes a PI lead when the matched user has a synthetic key netid but a valid orcid', async () => {
+  it('attaches a PI lead resolved by name from a synthetic dept key', async () => {
     const entity = await seedEntity('synthetic-recall-orcid');
-    await User.create({
-      netid: 'dept:econ:sam-lee',
-      email: 'sam.lee@example.edu',
+    const researcher = await seedCanonicalResearcher({
+      displayName: 'Sam Lee',
       orcid: '0000-0002-1359-5299',
-      fname: 'Sam',
-      lname: 'Lee',
-      userType: 'professor',
     });
 
     await materializeInferredPiMembership(String(entity._id), [
@@ -104,51 +113,42 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
 
     const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
     expect(leads).toHaveLength(1);
-
-    const researcher = await Researcher.findById(leads[0].personId).lean<{
-      displayName?: string;
-      identifiers?: { orcid?: string };
-    }>();
-    expect(researcher?.displayName).toBe('Sam Lee');
-    expect(researcher?.identifiers?.orcid).toBe('0000-0002-1359-5299');
+    expect(String(leads[0].personId)).toBe(String(researcher._id));
   });
 
-  it('creates an account-backed researcher when the matched user has a canonical netid', async () => {
+  it('attaches to an account-backed researcher resolved by a canonical netid', async () => {
     const entity = await seedEntity('synthetic-recall-canonical');
-    await User.create({
-      netid: 'plr42',
-      email: 'plr42@yale.edu',
-      fname: 'Priya',
-      lname: 'Lang',
-      userType: 'professor',
-    });
+    const researcher = await seedCanonicalResearcher({ netid: 'plr42', displayName: 'Priya Lang' });
 
     await materializeInferredPiMembership(String(entity._id), [inferredPiKeyObservation('plr42')]);
 
     const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
     expect(leads).toHaveLength(1);
+    expect(String(leads[0].personId)).toBe(String(researcher._id));
 
     const account = await Account.findOne({ netid: 'plr42' }).lean<{
       _id: mongoose.Types.ObjectId;
     }>();
-    expect(account).not.toBeNull();
-    const researcher = await Researcher.findById(leads[0].personId).lean<{
-      accountId?: mongoose.Types.ObjectId;
-    }>();
-    expect(String(researcher?.accountId)).toBe(String(account?._id));
+    expect(String(researcher.accountId)).toBe(String(account?._id));
+  });
+
+  it('fails closed when no canonical researcher matches the key', async () => {
+    const entity = await seedEntity('synthetic-recall-unmatched');
+
+    await materializeInferredPiMembership(String(entity._id), [
+      inferredPiKeyObservation('nobody.here'),
+    ]);
+
+    const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
+    expect(leads).toHaveLength(0);
+    expect(await Researcher.countDocuments({})).toBe(0);
   });
 
   it('is idempotent: re-running does not create a second lead', async () => {
     const entity = await seedEntity('synthetic-recall-idempotent');
-    await User.create({
-      netid: 'jordan.okoro',
-      email: 'jordan.okoro@yale.edu',
-      fname: 'Jordan',
-      lname: 'Okoro',
-      userType: 'professor',
-    });
+    await seedCanonicalResearcher({ netid: 'jokoro', displayName: 'Jordan Okoro' });
 
-    const observations = [inferredPiKeyObservation('jordan.okoro')];
+    const observations = [inferredPiKeyObservation('jokoro')];
     await materializeInferredPiMembership(String(entity._id), observations);
     await materializeInferredPiMembership(String(entity._id), observations);
 

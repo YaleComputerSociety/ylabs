@@ -1,7 +1,7 @@
 import { ResearchEntity } from '../models/researchEntity';
+import { Researcher } from '../models/researcher';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
-import { resolveResearcherIdForLegacyUser } from '../services/researchEntityMembershipAccessor';
 import mongoose from 'mongoose';
 
 const GRANT_SHELL_SLUG = /^(?:nih|nsf|federal|doe)-pi-/i;
@@ -85,12 +85,18 @@ export function resolveCanonicalResearchHome(
   return { status: 'ineligible' };
 }
 
-export async function resolveCanonicalResearchHomeForUser(
-  userId: string,
+export async function resolveCanonicalResearchHomeForResearcher(
+  researcherId: string,
 ): Promise<CanonicalResearchHomeResolution> {
-  if (!mongoose.isValidObjectId(userId)) return { status: 'ineligible' };
-  const personId = await resolveResearcherIdForLegacyUser(userId);
-  if (!personId) return { status: 'safe-shell' };
+  if (!mongoose.isValidObjectId(researcherId)) return { status: 'ineligible' };
+  const researcher: any = await Researcher.findOne({
+    _id: researcherId,
+    archived: { $ne: true },
+  })
+    .select('_id')
+    .lean();
+  if (!researcher?._id) return { status: 'safe-shell' };
+  const personId = researcher._id;
   const assignments = await RoleAssignment.find({
     personId,
     'target.kind': 'RESEARCH_ENTITY',
