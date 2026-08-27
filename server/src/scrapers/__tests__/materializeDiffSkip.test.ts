@@ -58,14 +58,22 @@ describe('isMaterializerProjectionNoOp', () => {
 
   it('is a no-op when unset targets are already absent, a change when present', () => {
     const doc = { name: 'Synthetic Lab' };
-    expect(isMaterializerProjectionNoOp(doc, { name: 'Synthetic Lab' }, { methods: '' })).toBe(true);
+    expect(isMaterializerProjectionNoOp(doc, { name: 'Synthetic Lab' }, { methods: '' })).toBe(
+      true,
+    );
     const withMethods = { name: 'Synthetic Lab', methods: ['pcr'] };
-    expect(isMaterializerProjectionNoOp(withMethods, { name: 'Synthetic Lab' }, { methods: '' })).toBe(false);
+    expect(
+      isMaterializerProjectionNoOp(withMethods, { name: 'Synthetic Lab' }, { methods: '' }),
+    ).toBe(false);
   });
 
   it('does not skip when the projection would set a field the doc lacks (bias to write)', () => {
     const doc = { name: 'Synthetic Lab' };
-    const set = { name: 'Synthetic Lab', websiteUrl: 'https://lab.example.edu', lastObservedAt: new Date() };
+    const set = {
+      name: 'Synthetic Lab',
+      websiteUrl: 'https://lab.example.edu',
+      lastObservedAt: new Date(),
+    };
     expect(isMaterializerProjectionNoOp(doc, set, {})).toBe(false);
   });
 

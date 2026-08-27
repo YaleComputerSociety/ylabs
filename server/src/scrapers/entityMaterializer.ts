@@ -3481,7 +3481,8 @@ export async function materializeEntity(
   }
 
   const entityScalarUnchanged =
-    Boolean(entityDoc) && isMaterializerProjectionNoOp(entityDoc as Record<string, unknown>, set, unset);
+    Boolean(entityDoc) &&
+    isMaterializerProjectionNoOp(entityDoc as Record<string, unknown>, set, unset);
 
   let created = false;
   if (entityDoc) {
