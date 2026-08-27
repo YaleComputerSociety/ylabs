@@ -12,7 +12,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // the tsup bundle runs from build/, so resolve the prompts directory across both
 // layouts (tsup copies the .md files into build/scrapers/prompts on build).
 function resolvePromptsDir(): string {
-  const candidates: string[] = [here, path.join(here, 'scrapers', 'prompts'), path.join(here, 'prompts')];
+  const candidates: string[] = [
+    here,
+    path.join(here, 'scrapers', 'prompts'),
+    path.join(here, 'prompts'),
+  ];
   let dir = here;
   for (let i = 0; i < 8; i += 1) {
     if (fs.existsSync(path.join(dir, 'package.json'))) {
