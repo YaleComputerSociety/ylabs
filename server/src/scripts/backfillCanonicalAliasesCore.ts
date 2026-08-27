@@ -29,8 +29,7 @@ export interface ResearcherTombstoneRow {
   orcid?: string | null;
 }
 
-const text = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 const asString = (value: unknown): string | null => {
   if (value === undefined || value === null) return null;
@@ -55,7 +54,9 @@ export function userTombstoneRowFromDoc(doc: Record<string, unknown>): UserTombs
   };
 }
 
-export function researcherTombstoneRowFromDoc(doc: Record<string, unknown>): ResearcherTombstoneRow {
+export function researcherTombstoneRowFromDoc(
+  doc: Record<string, unknown>,
+): ResearcherTombstoneRow {
   const identifiers = doc.identifiers as { orcid?: unknown } | undefined;
   return {
     _id: String(doc._id),
@@ -131,9 +132,7 @@ export function planCanonicalAliasesFromResearcherTombstones(
   return planned;
 }
 
-export function dedupePlannedAliases(
-  planned: PlannedCanonicalAlias[],
-): PlannedCanonicalAlias[] {
+export function dedupePlannedAliases(planned: PlannedCanonicalAlias[]): PlannedCanonicalAlias[] {
   const seen = new Set<string>();
   const out: PlannedCanonicalAlias[] = [];
   for (const alias of planned) {

@@ -33,18 +33,12 @@ describe('walkCanonicalAliasChain', () => {
   });
 
   it('follows the chain to the first live canonical', async () => {
-    const result = await walkCanonicalAliasChain(
-      'A',
-      chain({ A: 'B', B: 'C' }, new Set(['C'])),
-    );
+    const result = await walkCanonicalAliasChain('A', chain({ A: 'B', B: 'C' }, new Set(['C'])));
     expect(result).toBe('C');
   });
 
   it('returns null on a cycle without looping forever', async () => {
-    const result = await walkCanonicalAliasChain(
-      'A',
-      chain({ A: 'B', B: 'A' }, new Set()),
-    );
+    const result = await walkCanonicalAliasChain('A', chain({ A: 'B', B: 'A' }, new Set()));
     expect(result).toBeNull();
   });
 
@@ -62,10 +56,10 @@ describe('walkCanonicalAliasChain', () => {
   });
 
   it('stops at the hop limit', async () => {
-    const result = await walkCanonicalAliasChain(
-      'A',
-      { ...chain({ A: 'B', B: 'C', C: 'D' }, new Set(['D'])), maxHops: 2 },
-    );
+    const result = await walkCanonicalAliasChain('A', {
+      ...chain({ A: 'B', B: 'C', C: 'D' }, new Set(['D'])),
+      maxHops: 2,
+    });
     expect(result).toBeNull();
   });
 });

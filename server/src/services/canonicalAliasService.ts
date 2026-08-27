@@ -145,10 +145,11 @@ export async function resolveCanonicalAlias(
       })
         .select('canonicalId')
         .lean()) as { canonicalId?: mongoose.Types.ObjectId } | null;
-      if (onward?.canonicalId && String(onward.canonicalId) !== id) return String(onward.canonicalId);
+      if (onward?.canonicalId && String(onward.canonicalId) !== id)
+        return String(onward.canonicalId);
       return null;
     },
   });
 
-  return resolved ? toObjectId(resolved) ?? null : null;
+  return resolved ? (toObjectId(resolved) ?? null) : null;
 }
