@@ -114,11 +114,24 @@ function scorableFromEntity(e: EvalEntity): ScorableEntity {
 
 async function loadDescriptionObservations(
   liveSlugs: Set<string>,
+  liveIds: Set<string>,
 ): Promise<Map<string, DescriptionObservation[]>> {
+  const objectIds = Array.from(liveIds)
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const entityMatch: Record<string, unknown>[] = [];
+  if (liveSlugs.size > 0) entityMatch.push({ entityKey: { $in: Array.from(liveSlugs) } });
+  if (objectIds.length > 0) entityMatch.push({ entityId: { $in: objectIds } });
+  if (entityMatch.length === 0) return new Map();
+
   const cursor = mongoose.connection.db
     .collection('observations')
     .find(
-      { entityType: 'researchEntity', field: { $in: ['fullDescription', 'shortDescription'] } },
+      {
+        entityType: 'researchEntity',
+        field: { $in: ['fullDescription', 'shortDescription'] },
+        $or: entityMatch,
+      },
       { projection: { entityKey: 1, entityId: 1, field: 1, value: 1, sourceName: 1, confidence: 1, observedAt: 1, superseded: 1 } },
     );
   const byEntity = new Map<string, DescriptionObservation[]>();
@@ -169,7 +182,8 @@ async function main() {
   const allEntities = allDocs.map(toEvalEntity);
 
   const liveSlugs = new Set(liveEntities.map((e) => e.slug).filter(Boolean) as string[]);
-  const obsByEntity = await loadDescriptionObservations(liveSlugs);
+  const liveIds = new Set(liveEntities.map((e) => e.id));
+  const obsByEntity = await loadDescriptionObservations(liveSlugs, liveIds);
   const loadMs = Date.now() - loadStart;
 
   const synthCache: SynthesisCache | undefined = args.llm ? new Map() : undefined;
@@ -302,8 +316,9 @@ async function main() {
     releaseQueueItems: await mongoose.connection.db.collection('visibility_release_queue_items').estimatedDocumentCount(),
     referenceRepairAudits: await mongoose.connection.db.collection('observation_reference_repair_audits').estimatedDocumentCount(),
   };
+  const fullCorpusLiveCount = allEntities.filter((e) => !e.archived).length;
   const c0Churn = buildChurnMetrics({
-    liveEntityCount: c0Accuracy.entityCount,
+    liveEntityCount: fullCorpusLiveCount,
     redirects: globalChurn.redirects,
     shellsWithCanonicalGroup: allEntities.filter((e) => !e.archived && e.canonicalGroupId).length,
     archivedMerged: allEntities.filter((e) => e.archived && e.canonicalGroupId).length,
