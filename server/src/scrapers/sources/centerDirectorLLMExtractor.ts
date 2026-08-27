@@ -32,6 +32,7 @@ import * as cheerio from 'cheerio';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
@@ -44,7 +45,7 @@ import {
 } from '../utils/mapWithConcurrency';
 
 const SOURCE_KEY = 'center-director-llm';
-const DEFAULT_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const MAX_LEADERSHIP_PAGES = 3;
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
@@ -246,7 +247,7 @@ async function defaultCallLLM(input: {
           content:
             'You identify the single top leader of a Yale research center or institute from its official web page. ' +
             'Return the person whose title is Director, Executive Director, Faculty Director, or equivalent head of the center. ' +
-            'Only return a real personal name that literally appears in the provided page text. ' +
+            'Only return a real personal name that literally appears in the provided page text, copied character-for-character exactly as written; never reformat, correct, translate, or complete a name. ' +
             'Never invent a name. If no individual is clearly named as the center\'s director, return {"director":null}. ' +
             'Prefer the overall Director over associate/deputy/co-directors when both appear.',
         },
@@ -260,7 +261,7 @@ async function defaultCallLLM(input: {
           ].join('\n\n'),
         },
       ],
-      temperature: 0,
+      ...openAiChatSampling(input.model),
     },
     {
       headers: {

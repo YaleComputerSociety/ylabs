@@ -59,6 +59,7 @@ import {
   normalizePublicProfile,
 } from '../services/profileService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
@@ -81,7 +82,7 @@ const MAX_PROMPT_CHARS = 40_000;
 const MAX_PROMPT_NAME_CHARS = 240;
 const MAX_PROMPT_TITLE_CHARS = 500;
 const MAX_PROMPT_SOURCE_URL_CHARS = 2048;
-const DEFAULT_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5-mini';
 const BIO_CONFIDENCE = 0.7;
 const MAX_INTEREST_TERMS = 8;
 
@@ -454,7 +455,7 @@ const defaultRewriter: ProfileBioRewriter = async ({ name, title, sourceUrl, pag
     {
       model: process.env.PROFILE_BIO_BACKFILL_MODEL?.trim() || DEFAULT_MODEL,
       response_format: { type: 'json_object' },
-      temperature: 0,
+      ...openAiChatSampling(process.env.PROFILE_BIO_BACKFILL_MODEL?.trim() || DEFAULT_MODEL),
       messages: [
         {
           role: 'system',

@@ -3,7 +3,7 @@
  *
  * For every canonical ResearchEntity with a usable website URL, fetch the lab home
  * page (and a likely "people"/"members"/"join" sub-page if discoverable),
- * strip HTML to plain text, and ask an LLM (gpt-4o-mini via OpenAI's
+ * strip HTML to plain text, and ask an LLM (gpt-5-mini via OpenAI's
  * structured-output API) to extract evidence about undergrad access:
  *
  *   - `undergradAccessEvidence` (Object)    — evidence-shaped access assessment
@@ -33,6 +33,7 @@ import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { quoteExplicitlyDeclinesUndergraduates } from '../undergraduateLogisticsMaterializer';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
 import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
@@ -78,7 +79,7 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
-const DEFAULT_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5-mini';
 const SOURCE_KEY = 'lab-microsite-undergrad-llm';
 const MAX_CANDIDATE_SUBPAGE_URLS = 8;
 const MAX_SUBPAGES_FETCHED = 3;
@@ -336,7 +337,9 @@ Your job is to read text scraped from either page shape - a lab's website (home 
 - currentAvailabilityQuote: the verbatim quote supporting the currentAvailability value. Otherwise empty string.
 - availabilityValidThrough: an ISO YYYY-MM-DD date only when the source provides an explicit deadline or end date. Otherwise null.
 
-Be conservative. Keep each logistics claim isolated. Never use one claim as evidence for another, and never turn a missing field into a negative answer. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote. Quotes must be verbatim - do not paraphrase.`;
+Be conservative. Keep each logistics claim isolated. Never use one claim as evidence for another, and never turn a missing field into a negative answer. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote.
+
+CRITICAL VERBATIM QUOTE RULE: Every field whose name ends in "Quote", and every entry in currentUndergradEvidenceQuotes, must be copied character-for-character from the page text as one single contiguous span. Never paraphrase, summarize, reword, translate, fix grammar or punctuation, change capitalization, add or remove surrounding quotation marks or brackets, or normalize spacing. Never stitch text from different places together with an ellipsis (...) or by deleting words from the middle. The string you return must appear as a literal contiguous substring of the provided page text. If no exact contiguous substring fits, return an empty string for that field (or omit it from the array). Returning an empty quote is always better than a non-verbatim one.`;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-testable, no I/O)
@@ -1206,7 +1209,7 @@ export const defaultCallLLM: CallLLMFn = async ({
         { role: 'user', content: userPrompt },
       ],
       response_format: responseFormat,
-      temperature: 0,
+      ...openAiChatSampling(model),
     },
     {
       headers: {

@@ -9,6 +9,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { isBibliographyCitationEntryText } from '../../utils/descriptionHygiene';
 import { hasMultipleCareerTimelineSentences } from '../../utils/researchEntityBiographyDescriptionRepair';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
@@ -53,7 +54,7 @@ import {
 } from '../contentHashGate';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
-const DEFAULT_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 40_000;
 // The lab's own microsite is the authoritative source of its real name, so its
 // name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
@@ -556,7 +557,7 @@ async function defaultCallLLM(input: {
         {
           role: 'system',
           content:
-            'You are an extractor, not a writer. Copy the research home\'s own description verbatim from the provided page text. Never paraphrase, summarize, translate, combine sentences, or invent wording. Every returned description must be an exact, contiguous substring of the page text. If the page contains no such description, return an empty string for that field. Do not extract access, contact, openings, or application claims.',
+            'You are an extractor, not a writer. Copy the research entity\'s own description verbatim from the provided page text. Never paraphrase, summarize, translate, combine non-adjacent sentences, reword, fix grammar or punctuation, change capitalization, add or remove surrounding quotation marks or brackets, normalize spacing, or invent wording. Never stitch text from different places together with an ellipsis (...) or by deleting words from the middle. Every returned description must be an exact, contiguous substring of the page text, copied character-for-character. If the page contains no such description, return an empty string for that field. Do not extract access, contact, openings, or application claims.',
         },
         {
           role: 'user',
@@ -564,14 +565,14 @@ async function defaultCallLLM(input: {
             `Lab: ${safeLabName}`,
             `Source URL: ${safeSourceUrl}`,
             'Return JSON with fullDescription, shortDescription, topics, methods, name.',
-            'fullDescription: copy the page\'s own overview/about/mission prose describing what this research home studies, verbatim (one or more consecutive sentences, exactly as written). shortDescription: copy a single verbatim sentence that best summarizes the work, or an empty string.',
+            'fullDescription: copy the page\'s own overview/about/mission prose describing what this research entity studies, verbatim (one or more consecutive sentences, exactly as written). shortDescription: copy a single verbatim sentence that best summarizes the work, or an empty string.',
             'topics and methods: only terms that appear verbatim on the page.',
-            'For name, return the research home\'s own proper or branded name exactly as it appears prominently on the page (for example "The Efficient Computing Lab (ECL)"). If the page only identifies it by the principal investigator\'s personal name, or no clear proper name is stated, return an empty string.',
+            'For name, return the research entity\'s own proper or branded name exactly as it appears prominently on the page (for example "The Efficient Computing Lab (ECL)"). If the page only identifies it by the principal investigator\'s personal name, or no clear proper name is stated, return an empty string.',
             safePageText,
           ].join('\n\n'),
         },
       ],
-      temperature: 0,
+      ...openAiChatSampling(input.model),
     },
     {
       headers: {

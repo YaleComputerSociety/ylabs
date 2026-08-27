@@ -14,7 +14,7 @@
  * CONFIRM_PROD_SCRAPE=true.
  *
  * LLM synthesis lane (--llm-synthesis): reuses the repository's existing
- * OpenAI chat-completions integration (gpt-4o-mini, JSON output, temperature 0,
+ * OpenAI chat-completions integration (gpt-5-mini, JSON output,
  * contact redaction) to synthesize a clean, lab-focused short + full from the
  * best available stored source text. The prompt describes what the research
  * home STUDIES, not the PI biography, and drops credentials, titles, contact,
@@ -66,6 +66,7 @@ import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityD
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { openAiChatSampling } from '../utils/openAiChatSampling';
 import type { ObservationInput } from '../scrapers/types';
 import {
   assessEntityDescription,
@@ -259,9 +260,9 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
-      model: 'gpt-4o-mini',
+      model: SYNTHESIS_MODEL,
       response_format: { type: 'json_object' },
-      temperature: 0,
+      ...openAiChatSampling(SYNTHESIS_MODEL),
       messages: [
         {
           role: 'system',
