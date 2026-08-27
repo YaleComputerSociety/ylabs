@@ -45,11 +45,7 @@ import {
   normalizeSourceDocumentKey,
   sourceDocumentSchema,
 } from '../sourceDocument';
-import { StudentEngagementEvent } from '../studentEngagementEvent';
-import {
-  Source as BarrelSource,
-  StudentEngagementEvent as BarrelStudentEngagementEvent,
-} from '../index';
+import { Source as BarrelSource } from '../index';
 
 const objectId = () => new mongoose.Types.ObjectId();
 const contentHash = 'a'.repeat(64);
@@ -125,15 +121,10 @@ describe('canonical evidence, planning, and review models', () => {
     }
   });
 
-  it('registers barrel exports without duplicating existing Source or engagement models', () => {
+  it('registers barrel exports without duplicating the existing Source model', () => {
     expect(BarrelSource).toBe(Source);
-    expect(BarrelStudentEngagementEvent).toBe(StudentEngagementEvent);
     expect(Source.collection.name).toBe('sources');
-    expect(StudentEngagementEvent.collection.name).toBe('student_engagement_events');
     expect(mongoose.modelNames().filter((name) => name === 'Source')).toHaveLength(1);
-    expect(mongoose.modelNames().filter((name) => name === 'StudentEngagementEvent')).toHaveLength(
-      1,
-    );
   });
 
   describe('ResearchPlan', () => {

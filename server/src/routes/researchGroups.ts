@@ -22,13 +22,6 @@ const router = Router();
 router.post('/search', asyncHandler(researchGroupController.searchResearchGroups));
 
 router.post(
-  '/:slug/outreach',
-  writeLimit,
-  isAuthenticated,
-  asyncHandler(researchGroupController.recordResearchOutreach),
-);
-
-router.post(
   '/:slug/report',
   writeLimit,
   isAuthenticated,

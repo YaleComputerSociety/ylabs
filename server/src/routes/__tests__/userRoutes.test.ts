@@ -11,7 +11,6 @@ describe('user routes', () => {
     for (const [path, method] of [
       ['/savedResearchEntityPlans/:entityId', 'put'],
       ['/savedResearchEntityPlans/:entityId', 'delete'],
-      ['/savedResearchFollowUps/:entityId/dismiss', 'post'],
       ['/watchedProgramPlans/:programId', 'put'],
       ['/watchedProgramPlans/:programId', 'delete'],
     ]) {
@@ -28,7 +27,6 @@ describe('user routes', () => {
       ['/savedResearchEntityPlans', 'get'],
       ['/savedResearchEntityPlans/export', 'get'],
       ['/savedResearchEntityPlans/export', 'post'],
-      ['/savedResearchFollowUps', 'get'],
     ]) {
       const route = routeByPathAndMethod(path, method);
       expect(route).toBeTruthy();

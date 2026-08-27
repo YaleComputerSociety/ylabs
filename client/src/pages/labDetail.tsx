@@ -475,7 +475,6 @@ const DecisionSummary = ({
   preferOrgEngagementOutreach = false,
   principalInvestigator,
   leadProfilesLinkedInline = false,
-  canRecordOutreach = false,
 }: {
   group: any;
   profileUrl?: string;
@@ -484,7 +483,6 @@ const DecisionSummary = ({
   preferOrgEngagementOutreach?: boolean;
   principalInvestigator?: LabMember;
   leadProfilesLinkedInline?: boolean;
-  canRecordOutreach?: boolean;
 }) => {
   const { departments } = useConfig();
   const topics = detailTopics(group, 5);
@@ -535,16 +533,6 @@ const DecisionSummary = ({
     subject: introEmailDraft.subject,
     body: introEmailDraft.body,
   });
-  const handlePiMailtoClick = () => {
-    if (!group.slug || !canRecordOutreach) return;
-    void axios
-      .post(`/research/${group.slug}/outreach`, {
-        deliveryMethod: 'mailto',
-        emailGeneratedByPlatform: introEmailDraft.generatedByPlatform,
-        templateVersion: introEmailDraft.templateVersion,
-      })
-      .catch(() => {});
-  };
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
   const hasEvidenceDetail = Boolean(grantSummary) || Boolean(pastAdvisees);
@@ -679,7 +667,6 @@ const DecisionSummary = ({
                     {piMailtoHref ? (
                       <a
                         href={piMailtoHref}
-                        onClick={handlePiMailtoClick}
                         className="inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
                       >
                         {piName ? `Email ${piName}` : 'Email the director'}
@@ -700,7 +687,6 @@ const DecisionSummary = ({
                 <div className="mt-3 flex flex-col gap-2">
                   <a
                     href={piMailtoHref}
-                    onClick={handlePiMailtoClick}
                     className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                   >
                     {piName ? `Email ${piName}` : 'Email the PI'}
@@ -1166,7 +1152,6 @@ const LabDetail = () => {
             preferOrgEngagementOutreach={preferOrgEngagementOutreach}
             principalInvestigator={singlePrincipalInvestigator}
             leadProfilesLinkedInline={leadProfilesLinkedInline}
-            canRecordOutreach={isAuthenticated}
           />
 
           <UndergraduateLogisticsSection logistics={undergraduateLogistics} />

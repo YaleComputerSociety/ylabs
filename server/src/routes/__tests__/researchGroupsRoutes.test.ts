@@ -23,8 +23,7 @@ describe('research group routes', () => {
     expect(routeHandlerNames('/:slug', 'get')).not.toContain('isAuthenticated');
   });
 
-  it('keeps outreach, correction reports, and personal report reads behind authentication', () => {
-    expect(routeHandlerNames('/:slug/outreach', 'post')).toContain('isAuthenticated');
+  it('keeps correction reports and personal report reads behind authentication', () => {
     expect(routeHandlerNames('/:slug/report', 'post')).toContain('isAuthenticated');
     expect(routeHandlerNames('/:slug/reports/mine', 'get')).toContain('isAuthenticated');
   });

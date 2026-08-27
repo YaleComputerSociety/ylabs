@@ -131,7 +131,6 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
     '../server/src/scripts/staleObservationConflictReview.ts',
     '../server/src/scripts/duplicateEntityNameReview.ts',
     '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
-    '../server/src/scripts/pfr3StudentOutreachReport.ts',
   ];
 
   for (const file of files) {
@@ -145,16 +144,6 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
     assert.doesNotMatch(source, /console\.error\([^;\n]*\(error as Error\)\.message\)/);
     assert.doesNotMatch(source, /candidate\.netid[^;\n]*error/);
   }
-});
-
-test('PFR-3 rollout tooling stays aggregate-only and fail-closed', () => {
-  const outreach = fs.readFileSync(
-    new URL('../server/src/scripts/pfr3StudentOutreachReport.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(outreach, /studentConsentedToAggregateUse: true/);
-  assert.match(outreach, /outcomeReportedAt/);
-  assert.doesNotMatch(outreach, /studentProfileId|researchEntityId|trackingId|reachedOutAt/);
 });
 
 test('PFR-3 pathway evidence review keeps private data off stdout and uses guarded materialization', () => {

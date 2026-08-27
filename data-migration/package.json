@@ -17,7 +17,6 @@
     "migrate:root-data-files": "npx tsx ImportRootDataFiles.ts",
     "migrate:smart-titles": "npx tsx migrateSmartTitles.ts",
     "migrate:smart-titles:live": "npx tsx migrateSmartTitles.ts --live",
-    "migrate:v4:student-profiles": "npx tsx BackfillV4StudentProfiles.ts",
     "migrate:v4:paper-graph": "npx tsx BackfillV4PaperGraph.ts",
     "migrate:v4:grants": "npx tsx BackfillV4Grants.ts",
     "migrate:v4:research-group-stats": "npx tsx BackfillV4ResearchGroupStats.ts",

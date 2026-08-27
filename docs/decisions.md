@@ -4,6 +4,16 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-27: Remove The Dead StudentProfile / Follow-up / Outreach-recording Subsystem
+
+The student-side personalization, follow-up, and outreach-recording subsystem was built but never wired end-to-end, so it was dead scaffolding carried at a maintenance cost for no product value.
+No live path ever created a `StudentProfile` or set `User.studentProfileId` (only the `BackfillV4StudentProfiles` migration did), so `student_profiles` was empty in the running app; the outreach-recording endpoint (`POST /research/:slug/outreach` writing `StudentTracking`/`StudentOutreach`) required a session `studentProfileId` that was never populated and therefore always returned `403`; and `/savedResearchFollowUps` reads always resolved empty, so the follow-up nudge never fired.
+`StudentApplication` and `StudentEngagementEvent` had no live consumers at all.
+Decision: delete the subsystem - the `StudentProfile`, `StudentOutreach`, `StudentTracking`, `StudentApplication`, and `StudentEngagementEvent` models; the `studentFollowUpService` and `studentFollowUpEligibility` services; the `BackfillV4StudentProfiles` migration and `pfr3StudentOutreachReport` script; the `/users/savedResearchFollowUps*` and `/research-groups/:slug/outreach` routes; the client `FollowUpNudge` component, the follow-up integration in `SavedResearchPlans`, the `labDetail` outreach POST, and `composeStudentFollowUpEmailDraft`; the `User.studentProfileId` field; and the corresponding model-inventory specs and edges.
+This supersedes the earlier model-refactor designation of `StudentProfile` as a retained target.
+Explicitly retained: the student **visibility** system (`studentVisibility*`, the `student_ready` gate), the reach-out action itself (intro-email compose, mailto, official-profile links) and its `AnalyticsEvent`-backed `OUTREACH_CLICK`/`OUTREACH_OUTCOME` analytics, and `ResearchPlan` (saved planning for any authenticated account).
+This is the same "do not carry scaffolding for unsupported features" principle as the [2026-08-27 userType authorization retirement](#2026-08-26-retire-usertype-as-an-authorization-mechanism); if student personalization or a follow-up nudge is revived later, it should be built end-to-end with a real write path rather than restored from this dead code.
+
 ## 2026-08-27: Retire Graphify
 
 Graphify was kept as a local generated navigation cache (see the 2026-08-01 decision) but was not installed by default, not automated, and not used in practice; agents navigate with source search plus the durable `docs/` and `skills/` instead.

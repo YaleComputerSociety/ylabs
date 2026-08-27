@@ -152,7 +152,7 @@ Interpret operational queues and leases as environment-local state rather than c
 Treat regenerable caches and independently retained analytics according to their recorded posture rather than as canonical research evidence.
 Interpret expected-gone collections as residue even when an environment still contains documents.
 Schema introduction does not make an empty canonical collection a completed migration.
-The inventory preserves the durable `research_entity_relationships` and `student_engagement_events` names instead of inventing parallel storage.
+The inventory preserves the durable `research_entity_relationships` name instead of inventing parallel storage.
 
 ### `retirementFields`
 

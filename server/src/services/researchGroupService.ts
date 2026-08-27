@@ -31,8 +31,6 @@ import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribu
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
-import { StudentTracking } from '../models/studentTracking';
-import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
 import {
   isResearchEntitySearchEmbedderConfigured,
@@ -2813,74 +2811,6 @@ export const normalizeResearchDetailSlug = (value: unknown): string | undefined 
   if (!trimmed || trimmed.length > MAX_RESEARCH_DETAIL_SLUG_LENGTH) return undefined;
   return RESEARCH_DETAIL_SLUG_PATTERN.test(trimmed) ? trimmed : undefined;
 };
-
-/**
- * Public research-detail payload.
- *
- * Lead members remain first. Non-lead official-roster members are returned only
- * while their stable identity and snapshot evidence are verified and fresh, are
- * capped at 24, and carry public source/profile provenance. The separate roster
- * disclosure distinguishes current, partial, withheld, no-verified-data, and
- * optional-source-failure states so absence never implies an empty team.
- */
-export type ResearchEntityOutreachDeliveryMethod = 'official-route' | 'mailto';
-
-export interface RecordResearchEntityOutreachContext {
-  deliveryMethod?: ResearchEntityOutreachDeliveryMethod;
-  emailGeneratedByPlatform?: boolean;
-  templateVersion?: string;
-}
-
-export async function recordResearchEntityOutreach(
-  slug: string,
-  studentProfileId: unknown,
-  context: RecordResearchEntityOutreachContext = {},
-): Promise<{ recorded: true; routeUrl?: string }> {
-  const normalizedSlug = normalizeResearchDetailSlug(slug);
-  if (!normalizedSlug || !mongoose.isValidObjectId(studentProfileId)) {
-    throw new Error('INVALID_OUTREACH_REQUEST');
-  }
-
-  const entity = (await ResearchEntity.findOne({
-    slug: normalizedSlug,
-    archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-  })
-    .select('_id websiteUrl')
-    .lean()) as { _id: mongoose.Types.ObjectId; websiteUrl?: string } | null;
-  if (!entity) throw new Error('OUTREACH_ENTITY_NOT_FOUND');
-
-  const deliveryMethod = context.deliveryMethod === 'mailto' ? 'mailto' : 'official-route';
-  const routeUrl = publicHttpUrl(entity.websiteUrl);
-  if (deliveryMethod === 'official-route' && !routeUrl) {
-    throw new Error('NO_APPROVED_OUTREACH_ROUTE');
-  }
-
-  const now = new Date();
-  const tracking = await StudentTracking.findOneAndUpdate(
-    { studentProfileId, researchEntityId: entity._id },
-    {
-      $set: { stage: 'reached-out' },
-      $setOnInsert: { studentProfileId, researchEntityId: entity._id },
-      $push: { stageHistory: { stage: 'reached-out', timestamp: now } },
-    },
-    { upsert: true, new: true },
-  );
-
-  await StudentOutreach.create({
-    studentProfileId,
-    researchEntityId: entity._id,
-    trackingId: tracking._id,
-    reachedOutAt: now,
-    deliveryMethod,
-    emailGeneratedByPlatform:
-      deliveryMethod === 'mailto' ? context.emailGeneratedByPlatform === true : false,
-    templateVersion:
-      deliveryMethod === 'mailto' ? context.templateVersion || '' : 'official-route-v1',
-  });
-
-  return { recorded: true, ...(routeUrl ? { routeUrl } : {}) };
-}
 
 const MAX_CANONICAL_REDIRECT_HOPS = 10;
 

@@ -18,7 +18,6 @@ import {
 } from '../../utils/undergraduateAccessStatus';
 import ResearchHomeComparison from './ResearchHomeComparison';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
-import FollowUpNudge, { type FollowUpNudgeData } from './FollowUpNudge';
 import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   isActiveResearchPlanStage,
@@ -87,7 +86,6 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
-  const [followUps, setFollowUps] = useState<Record<string, FollowUpNudgeData>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
@@ -143,27 +141,6 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
     };
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    const loadFollowUps = async () => {
-      try {
-        const response = await axios.get('/users/savedResearchFollowUps', {
-          withCredentials: true,
-        });
-        if (!active) return;
-        setFollowUps(
-          (response.data?.savedResearchFollowUps || {}) as Record<string, FollowUpNudgeData>,
-        );
-      } catch {
-        if (active) setFollowUps({});
-      }
-    };
-    void loadFollowUps();
-    return () => {
-      active = false;
-    };
-  }, []);
-
   const savePlanNote = useCallback(async (entityId: string, note: string) => {
     setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
     try {
@@ -213,15 +190,6 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
   const unsavePlan = (slug: string) => {
     void setFavorite(slug, false);
   };
-
-  const clearFollowUp = useCallback((entityId: string) => {
-    setFollowUps((current) => {
-      if (!(entityId in current)) return current;
-      const next = { ...current };
-      delete next[entityId];
-      return next;
-    });
-  }, []);
 
   const visibleEntities = useMemo(
     () => entities.filter((entity) => savedSlugs.includes(entity.slug)),
@@ -447,17 +415,6 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                       status={stageStatuses[entity._id]}
                     />
                   </div>
-
-                  {followUps[entity._id] && (
-                    <FollowUpNudge
-                      entityId={entity._id}
-                      slug={entity.slug}
-                      displayName={entityDisplayName(entity)}
-                      followUp={followUps[entity._id]}
-                      onSent={clearFollowUp}
-                      onDismissed={clearFollowUp}
-                    />
-                  )}
 
                   {!isEditing && note && (
                     <p className="mt-2 truncate text-xs italic text-gray-500">Note: {note}</p>
