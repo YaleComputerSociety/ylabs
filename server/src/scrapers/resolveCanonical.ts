@@ -179,7 +179,7 @@ export async function resolveCanonical(
       if (aliasId) return { status: 'existing', canonicalId: aliasId, matchedKey: key };
       const candidates = await deps.findCandidatesByKey(input.type, key);
       if (candidates.length === 1) {
-        if (wouldDemote(input.self, candidates[0])) break;
+        if (wouldDemote(input.self, candidates[0])) continue;
         return { status: 'existing', canonicalId: candidates[0].id, matchedKey: key };
       }
       if (candidates.length > 1) {
@@ -202,11 +202,16 @@ export async function resolveCanonical(
     if (vetoed) {
       return { status: 'ambiguous', candidates: [candidate.id], blockingKey: key };
     }
-    if (key.strength === 'weak' && !isUserType) {
-      const self = input.self?.name ?? '';
-      if (self && candidate.name && !shareLead(self, candidate.name)) continue;
+    if (key.strength === 'weak') {
+      const selfName = input.self?.name ?? '';
+      const corroborated =
+        input.type === 'researchEntity' &&
+        Boolean(selfName) &&
+        Boolean(candidate.name) &&
+        shareLead(selfName, candidate.name);
+      if (!corroborated) continue;
     }
-    if (wouldDemote(input.self, candidate)) break;
+    if (wouldDemote(input.self, candidate)) continue;
     return { status: 'existing', canonicalId: candidate.id, matchedKey: key };
   }
 

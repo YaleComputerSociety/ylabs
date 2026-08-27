@@ -146,4 +146,54 @@ describe('resolveCanonical', () => {
     );
     expect(result.status).toBe('mint');
   });
+
+  it('tries remaining keys instead of minting when a stronger key would demote', async () => {
+    const keys: CanonicalKey[] = [
+      { ns: 'slug', value: 's', strength: 'unique' },
+      { ns: 'website-url', value: 'lab.example.edu', strength: 'strong' },
+    ];
+    const result = await resolveCanonical(
+      { type: 'researchEntity', keys, self: { id: 'new', tier: 'student_ready' } },
+      deps({
+        findCandidatesByKey: candidatesByNs({
+          slug: [{ id: 'suppressed-1', tier: 'suppressed' }],
+          'website-url': [{ id: 'e2', tier: 'student_ready' }],
+        }),
+      }),
+    );
+    expect(result.status).toBe('existing');
+    if (result.status === 'existing') expect(result.canonicalId).toBe('e2');
+  });
+
+  it('does not collapse two distinct fellowships that share a normalized title', async () => {
+    const title: CanonicalKey = { ns: 'title', value: 'graduate research fellowship', strength: 'weak' };
+    const result = await resolveCanonical(
+      { type: 'fellowship', keys: [title], self: { id: 'new', name: 'graduate research fellowship' } },
+      deps({
+        findCandidatesByKey: candidatesByNs({
+          title: [{ id: 'f1', name: 'graduate research fellowship' }],
+        }),
+      }),
+    );
+    expect(result.status).toBe('mint');
+  });
+
+  it('does not merge on a weak org-name key without lead-name corroboration', async () => {
+    const key: CanonicalKey = { ns: 'org-name', value: 'ocean lab', strength: 'weak' };
+    const result = await resolveCanonical(
+      { type: 'researchEntity', keys: [key], self: { id: 'new' } },
+      deps({ findCandidatesByKey: candidatesByNs({ 'org-name': [{ id: 'e1', name: 'Ocean Lab' }] }) }),
+    );
+    expect(result.status).toBe('mint');
+  });
+
+  it('merges on a weak org-name key when lead person names corroborate', async () => {
+    const key: CanonicalKey = { ns: 'org-name', value: 'jane doe lab', strength: 'weak' };
+    const result = await resolveCanonical(
+      { type: 'researchEntity', keys: [key], self: { id: 'new', name: 'Jane Doe Lab' } },
+      deps({ findCandidatesByKey: candidatesByNs({ 'org-name': [{ id: 'e1', name: 'Jane Doe Lab' }] }) }),
+    );
+    expect(result.status).toBe('existing');
+    if (result.status === 'existing') expect(result.canonicalId).toBe('e1');
+  });
 });
