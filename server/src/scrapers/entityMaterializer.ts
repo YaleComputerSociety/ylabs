@@ -2576,6 +2576,373 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
   });
 }
 
+export interface ProjectFromLogInput {
+  resolved: Record<string, ResolvedField>;
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  entityDoc: any;
+  materializationObs: any[];
+  resolverObs: ResolverObservation[];
+  fullDescriptionShellGated: boolean;
+  now: Date;
+  synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  writeOnlyFields?: string[];
+  applyDescriptionResearchAreaDerivation?: typeof applyDescriptionResearchAreaDerivation;
+  applyResearchEntityOrgUnitCanonicalization?: typeof applyResearchEntityOrgUnitCanonicalization;
+  applyResearchEntityResearchAreaCanonicalization?: typeof applyResearchEntityResearchAreaCanonicalization;
+}
+
+export interface ProjectFromLogResult {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  conflicts: number;
+  fieldsWritten: number;
+}
+
+export async function projectFromLog(
+  entityType: ObservedEntityType,
+  input: ProjectFromLogInput,
+): Promise<ProjectFromLogResult> {
+  const {
+    resolved,
+    manuallyLockedFields,
+    manualValues,
+    entityDoc,
+    materializationObs,
+    resolverObs,
+    fullDescriptionShellGated,
+  } = input;
+  const set: Record<string, unknown> = {};
+  const unset: Record<string, ''> = {};
+  const confidenceByField: Record<string, number> = {
+    ...(entityDoc?.confidenceByField || {}),
+  };
+  const sourceEntityIdentity: ResearchEntityIdentity | undefined = isResearchEntityObservationType(
+    entityType,
+  )
+    ? {
+        slug: entityDoc?.slug,
+        name: entityDoc?.name,
+        displayName: entityDoc?.displayName,
+        school: entityDoc?.school,
+        schools: entityDoc?.schools,
+        departments: entityDoc?.departments,
+        fullDescription: entityDoc?.fullDescription,
+        recentGrants: entityDoc?.recentGrants,
+      }
+    : undefined;
+  let conflicts = 0;
+  let fieldsWritten = 0;
+  for (const [field, r] of Object.entries(resolved)) {
+    if (manuallyLockedFields.includes(field)) continue;
+    if (entityType === 'user' && entityDoc && field === 'netid') continue;
+    const nextValue = r.value;
+    if (
+      entityType === 'user' &&
+      shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)
+    ) {
+      continue;
+    }
+    if (
+      isResearchEntityObservationType(entityType) &&
+      field === 'shortDescription' &&
+      !resolvedShortDescriptionCandidateIsUsable(
+        nextValue,
+        resolved.fullDescription?.value ?? entityDoc?.fullDescription,
+        isProgramLikeResearchEntity({
+          kind: resolved.kind?.value ?? entityDoc?.kind,
+          entityType: resolved.entityType?.value ?? entityDoc?.entityType,
+        }),
+      )
+    ) {
+      continue;
+    }
+    set[field] = materializedFieldValue(
+      entityType,
+      field,
+      nextValue,
+      entityDoc?.[field],
+      sourceEntityIdentity,
+    );
+    confidenceByField[field] = r.confidence;
+    if (isResearchEntityObservationType(entityType)) {
+      const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);
+      if (provenance) set[`fieldProvenance.${field}`] = provenance;
+    }
+    if (r.hasConflict) conflicts++;
+    fieldsWritten++;
+  }
+  if (isResearchEntityObservationType(entityType)) {
+    if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
+      const currentShortForFullDistinctness = textValue(
+        set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
+      );
+      const winnerFull = textValue(set.fullDescription);
+      const winnerFullUseful =
+        !!winnerFull &&
+        fullDescriptionQuality(winnerFull).isUseful &&
+        !isFullDescriptionRestatementOfShortDescription(
+          winnerFull,
+          currentShortForFullDistinctness,
+        );
+      if (!winnerFullUseful) {
+        const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
+          manuallyLockedFields,
+          manualValues,
+        });
+        for (const candidate of rankedFull) {
+          const materialized = materializedFieldValue(
+            entityType,
+            'fullDescription',
+            candidate.value,
+            entityDoc?.fullDescription,
+            sourceEntityIdentity,
+          );
+          const materializedText = textValue(materialized);
+          if (
+            !materializedText ||
+            !fullDescriptionQuality(materializedText).isUseful ||
+            isFullDescriptionRestatementOfShortDescription(
+              materializedText,
+              currentShortForFullDistinctness,
+            )
+          ) {
+            continue;
+          }
+          if (materialized !== set.fullDescription) {
+            set.fullDescription = materialized;
+            confidenceByField.fullDescription = candidate.confidence;
+            const provenance = fieldProvenanceForResolvedObservation(
+              'fullDescription',
+              candidate,
+              materializationObs,
+            );
+            if (provenance) set['fieldProvenance.fullDescription'] = provenance;
+            fieldsWritten++;
+          }
+          break;
+        }
+      }
+      const finalFullText = textValue(set.fullDescription);
+      if (
+        finalFullText &&
+        isFullDescriptionRestatementOfShortDescription(
+          finalFullText,
+          currentShortForFullDistinctness,
+        )
+      ) {
+        set.fullDescription = '';
+        fieldsWritten++;
+      }
+    }
+    const fullDescription =
+      textValue(set.fullDescription) ||
+      sanitizeResearchEntityDescription(textValue(entityDoc?.fullDescription));
+    const entityName = textValue(
+      set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
+    );
+    const isProgramLikeEntity = isProgramLikeResearchEntity({
+      kind: set.kind ?? entityDoc?.kind,
+      entityType: set.entityType ?? entityDoc?.entityType,
+    });
+    const groundedShortDescription = await resolveMaterializedShortDescription({
+      fullDescription,
+      // When the single-PI-shell guard just rejected fullDescription in favor
+      // of the entity's existing org-level value, shortDescription must be
+      // re-derived from that corrected body rather than kept as-is: it may
+      // still be the seed PI's own grant sentence and now contradicts the
+      // fixed full (issue #1595).
+      currentShortDescription: fullDescriptionShellGated
+        ? undefined
+        : (set.shortDescription ?? entityDoc?.shortDescription),
+      researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+      isProgramLike: isProgramLikeEntity,
+      manuallyLocked: manuallyLockedFields.includes('shortDescription'),
+      synthesize:
+        input.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
+    });
+    if (groundedShortDescription) {
+      set.shortDescription = groundedShortDescription;
+      const fullDescriptionConfidence = resolved.fullDescription?.confidence;
+      if (typeof fullDescriptionConfidence === 'number') {
+        confidenceByField.shortDescription = fullDescriptionConfidence;
+      }
+      const provenance = resolved.fullDescription
+        ? fieldProvenanceForResolvedObservation(
+            'fullDescription',
+            resolved.fullDescription,
+            materializationObs,
+          )
+        : undefined;
+      if (provenance) set['fieldProvenance.shortDescription'] = provenance;
+      fieldsWritten++;
+    }
+    if (isProgramLikeEntity && !manuallyLockedFields.includes('fullDescription')) {
+      const finalShortText = textValue(
+        set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
+      );
+      const finalFullText = textValue(set.fullDescription ?? entityDoc?.fullDescription);
+      if (
+        finalFullText &&
+        finalShortText &&
+        isFullDescriptionRestatementOfShortDescription(finalFullText, finalShortText)
+      ) {
+        set.fullDescription = '';
+        fieldsWritten++;
+      }
+    }
+  }
+  if (isResearchEntityObservationType(entityType)) {
+    const orgUnitProfileUrls = [
+      ...(typeof set.websiteUrl === 'string' && set.websiteUrl
+        ? [set.websiteUrl]
+        : typeof entityDoc?.websiteUrl === 'string' && entityDoc.websiteUrl
+          ? [entityDoc.websiteUrl]
+          : []),
+      ...(Array.isArray(set.sourceUrls)
+        ? set.sourceUrls
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? entityDoc.sourceUrls
+          : []),
+    ].filter((url): url is string => typeof url === 'string');
+    await (input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation)(set, entityDoc);
+    await (input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization)(set, entityDoc, orgUnitProfileUrls);
+    await (input.applyResearchEntityResearchAreaCanonicalization ?? applyResearchEntityResearchAreaCanonicalization)(
+      set,
+      set.departments ?? entityDoc?.departments,
+    );
+    if (!manuallyLockedFields.includes('websiteUrl')) {
+      const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
+      if (websiteResolution.action === 'set') {
+        set.websiteUrl = websiteResolution.websiteUrl;
+        fieldsWritten++;
+      } else if (websiteResolution.action === 'clear') {
+        set.websiteUrl = '';
+        fieldsWritten++;
+      }
+    }
+    // The detail-page official-profile CTA reads only entity.sourceUrls, so a
+    // lead's official profile page must land there or the way-in disappears
+    // even though it is a known source (issue #613).
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const leadProfileUrl = officialLeadProfileSourceUrl(materializationObs);
+      if (leadProfileUrl) {
+        const currentSourceUrls = Array.isArray(set.sourceUrls)
+          ? (set.sourceUrls as unknown[])
+          : Array.isArray(entityDoc?.sourceUrls)
+            ? (entityDoc?.sourceUrls as unknown[])
+            : [];
+        const leadDestination = normalizeOfficialProfileDestination(leadProfileUrl);
+        const alreadyPresent = currentSourceUrls.some(
+          (url) =>
+            normalizeOfficialProfileDestination(typeof url === 'string' ? url : '') ===
+            leadDestination,
+        );
+        if (!alreadyPresent) {
+          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
+            ...currentSourceUrls,
+            leadProfileUrl,
+          ]);
+          fieldsWritten++;
+        }
+      }
+    }
+    if (
+      !manuallyLockedFields.includes('activeAtYaleCache') &&
+      !manuallyLockedFields.includes('yaleStatusCache')
+    ) {
+      const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
+        if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
+        if (Array.isArray(setValue)) return setValue.length > 0 ? setValue : docValue;
+        return setValue ?? docValue;
+      };
+      const yaleStatusSignal = deriveResearchEntityYaleStatus({
+        sourceUrls: populatedYaleStatusField(set.sourceUrls, entityDoc?.sourceUrls),
+        websiteUrl: populatedYaleStatusField(set.websiteUrl, entityDoc?.websiteUrl),
+        name: populatedYaleStatusField(set.name, entityDoc?.name),
+        displayName: populatedYaleStatusField(set.displayName, entityDoc?.displayName),
+        fullDescription: populatedYaleStatusField(set.fullDescription, entityDoc?.fullDescription),
+        shortDescription: populatedYaleStatusField(
+          set.shortDescription,
+          entityDoc?.shortDescription,
+        ),
+        profileSynthesisDescription: populatedYaleStatusField(
+          set.profileSynthesisDescription,
+          entityDoc?.profileSynthesisDescription,
+        ),
+      });
+      if (yaleStatusSignal) {
+        if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
+        set.yaleStatusCache = yaleStatusSignal.yaleStatusCache;
+        set.activeAtYaleCache = yaleStatusSignal.activeAtYaleCache;
+      } else if (
+        entityDoc?.activeAtYaleCache === false ||
+        entityDoc?.yaleStatusCache === 'departed'
+      ) {
+        set.yaleStatusCache = 'unknown';
+        set.activeAtYaleCache = true;
+        fieldsWritten++;
+      }
+    }
+    // Root-cause fix (issue #1802): a discovered entity always carries its
+    // source in observation provenance, yet its own `sourceUrls` can be empty,
+    // so `missing_source_url` fired for source-backed records purely as a
+    // projection gap. When the entity would otherwise expose no reachable http
+    // source, project its best-confidence provenance source url so source-backing
+    // is recognized. Runs AFTER yale-status derivation so an incidental provenance
+    // url never perturbs the explicit-signal status derivation (#1308); scoped to
+    // the empty case so already-sourced entities do not accrue extra shared urls
+    // that could trip exact-url duplicate detection.
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const currentSourceUrls = Array.isArray(set.sourceUrls)
+        ? (set.sourceUrls as unknown[])
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? (entityDoc?.sourceUrls as unknown[])
+          : [];
+      const hasReachableHttpSource = [
+        set.websiteUrl ?? entityDoc?.websiteUrl,
+        (entityDoc as Record<string, unknown> | null | undefined)?.website,
+        ...currentSourceUrls,
+      ].some((value) => /^https?:\/\//i.test(textValue(value)));
+      if (!hasReachableHttpSource) {
+        const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(materializationObs);
+        if (provenanceSourceUrl) {
+          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
+            ...currentSourceUrls,
+            provenanceSourceUrl,
+          ]);
+          fieldsWritten++;
+        }
+      }
+    }
+  }
+  set.confidenceByField = confidenceByField;
+  set.lastObservedAt = input.now;
+
+  if (isResearchEntityObservationType(entityType) && entityDoc) {
+    const fieldsWithLiveObservation = new Set(resolverObs.map((o) => o.field));
+    for (const field of CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS) {
+      if (manuallyLockedFields.includes(field)) continue;
+      if (field in set) continue;
+      if (fieldsWithLiveObservation.has(field)) continue;
+      if (!isClearableStaleFieldValue((entityDoc as Record<string, unknown>)[field])) continue;
+      unset[field] = '';
+      delete confidenceByField[field];
+    }
+  }
+
+  if (input.writeOnlyFields && input.writeOnlyFields.length > 0) {
+    fieldsWritten = restrictMaterializerSetToFields(
+      set,
+      unset,
+      confidenceByField,
+      input.writeOnlyFields,
+    );
+  }
+  return { set, unset, confidenceByField, conflicts, fieldsWritten };
+}
+
 export async function materializeEntity(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
@@ -2745,333 +3112,21 @@ export async function materializeEntity(
     }
   }
 
-  const set: Record<string, unknown> = {};
-  const unset: Record<string, ''> = {};
-  const confidenceByField: Record<string, number> = {
-    ...(entityDoc?.confidenceByField || {}),
-  };
-  const sourceEntityIdentity: ResearchEntityIdentity | undefined = isResearchEntityObservationType(
+  const { set, unset, confidenceByField, conflicts, fieldsWritten } = await projectFromLog(
     entityType,
-  )
-    ? {
-        slug: entityDoc?.slug,
-        name: entityDoc?.name,
-        displayName: entityDoc?.displayName,
-        school: entityDoc?.school,
-        schools: entityDoc?.schools,
-        departments: entityDoc?.departments,
-        fullDescription: entityDoc?.fullDescription,
-        recentGrants: entityDoc?.recentGrants,
-      }
-    : undefined;
-  let conflicts = 0;
-  let fieldsWritten = 0;
-  for (const [field, r] of Object.entries(resolved)) {
-    if (manuallyLockedFields.includes(field)) continue;
-    if (entityType === 'user' && entityDoc && field === 'netid') continue;
-    const nextValue = r.value;
-    if (
-      entityType === 'user' &&
-      shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)
-    ) {
-      continue;
-    }
-    if (
-      isResearchEntityObservationType(entityType) &&
-      field === 'shortDescription' &&
-      !resolvedShortDescriptionCandidateIsUsable(
-        nextValue,
-        resolved.fullDescription?.value ?? entityDoc?.fullDescription,
-        isProgramLikeResearchEntity({
-          kind: resolved.kind?.value ?? entityDoc?.kind,
-          entityType: resolved.entityType?.value ?? entityDoc?.entityType,
-        }),
-      )
-    ) {
-      continue;
-    }
-    set[field] = materializedFieldValue(
-      entityType,
-      field,
-      nextValue,
-      entityDoc?.[field],
-      sourceEntityIdentity,
-    );
-    confidenceByField[field] = r.confidence;
-    if (isResearchEntityObservationType(entityType)) {
-      const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);
-      if (provenance) set[`fieldProvenance.${field}`] = provenance;
-    }
-    if (r.hasConflict) conflicts++;
-    fieldsWritten++;
-  }
-  if (isResearchEntityObservationType(entityType)) {
-    if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
-      const currentShortForFullDistinctness = textValue(
-        set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
-      );
-      const winnerFull = textValue(set.fullDescription);
-      const winnerFullUseful =
-        !!winnerFull &&
-        fullDescriptionQuality(winnerFull).isUseful &&
-        !isFullDescriptionRestatementOfShortDescription(
-          winnerFull,
-          currentShortForFullDistinctness,
-        );
-      if (!winnerFullUseful) {
-        const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
-          manuallyLockedFields,
-          manualValues,
-        });
-        for (const candidate of rankedFull) {
-          const materialized = materializedFieldValue(
-            entityType,
-            'fullDescription',
-            candidate.value,
-            entityDoc?.fullDescription,
-            sourceEntityIdentity,
-          );
-          const materializedText = textValue(materialized);
-          if (
-            !materializedText ||
-            !fullDescriptionQuality(materializedText).isUseful ||
-            isFullDescriptionRestatementOfShortDescription(
-              materializedText,
-              currentShortForFullDistinctness,
-            )
-          ) {
-            continue;
-          }
-          if (materialized !== set.fullDescription) {
-            set.fullDescription = materialized;
-            confidenceByField.fullDescription = candidate.confidence;
-            const provenance = fieldProvenanceForResolvedObservation(
-              'fullDescription',
-              candidate,
-              materializationObs,
-            );
-            if (provenance) set['fieldProvenance.fullDescription'] = provenance;
-            fieldsWritten++;
-          }
-          break;
-        }
-      }
-      const finalFullText = textValue(set.fullDescription);
-      if (
-        finalFullText &&
-        isFullDescriptionRestatementOfShortDescription(
-          finalFullText,
-          currentShortForFullDistinctness,
-        )
-      ) {
-        set.fullDescription = '';
-        fieldsWritten++;
-      }
-    }
-    const fullDescription =
-      textValue(set.fullDescription) ||
-      sanitizeResearchEntityDescription(textValue(entityDoc?.fullDescription));
-    const entityName = textValue(
-      set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
-    );
-    const isProgramLikeEntity = isProgramLikeResearchEntity({
-      kind: set.kind ?? entityDoc?.kind,
-      entityType: set.entityType ?? entityDoc?.entityType,
-    });
-    const groundedShortDescription = await resolveMaterializedShortDescription({
-      fullDescription,
-      // When the single-PI-shell guard just rejected fullDescription in favor
-      // of the entity's existing org-level value, shortDescription must be
-      // re-derived from that corrected body rather than kept as-is: it may
-      // still be the seed PI's own grant sentence and now contradicts the
-      // fixed full (issue #1595).
-      currentShortDescription: fullDescriptionShellGated
-        ? undefined
-        : (set.shortDescription ?? entityDoc?.shortDescription),
-      researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
-      isProgramLike: isProgramLikeEntity,
-      manuallyLocked: manuallyLockedFields.includes('shortDescription'),
-      synthesize:
-        options.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
-    });
-    if (groundedShortDescription) {
-      set.shortDescription = groundedShortDescription;
-      const fullDescriptionConfidence = resolved.fullDescription?.confidence;
-      if (typeof fullDescriptionConfidence === 'number') {
-        confidenceByField.shortDescription = fullDescriptionConfidence;
-      }
-      const provenance = resolved.fullDescription
-        ? fieldProvenanceForResolvedObservation(
-            'fullDescription',
-            resolved.fullDescription,
-            materializationObs,
-          )
-        : undefined;
-      if (provenance) set['fieldProvenance.shortDescription'] = provenance;
-      fieldsWritten++;
-    }
-    if (isProgramLikeEntity && !manuallyLockedFields.includes('fullDescription')) {
-      const finalShortText = textValue(
-        set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
-      );
-      const finalFullText = textValue(set.fullDescription ?? entityDoc?.fullDescription);
-      if (
-        finalFullText &&
-        finalShortText &&
-        isFullDescriptionRestatementOfShortDescription(finalFullText, finalShortText)
-      ) {
-        set.fullDescription = '';
-        fieldsWritten++;
-      }
-    }
-  }
-  if (isResearchEntityObservationType(entityType)) {
-    const orgUnitProfileUrls = [
-      ...(typeof set.websiteUrl === 'string' && set.websiteUrl
-        ? [set.websiteUrl]
-        : typeof entityDoc?.websiteUrl === 'string' && entityDoc.websiteUrl
-          ? [entityDoc.websiteUrl]
-          : []),
-      ...(Array.isArray(set.sourceUrls)
-        ? set.sourceUrls
-        : Array.isArray(entityDoc?.sourceUrls)
-          ? entityDoc.sourceUrls
-          : []),
-    ].filter((url): url is string => typeof url === 'string');
-    await applyDescriptionResearchAreaDerivation(set, entityDoc);
-    await applyResearchEntityOrgUnitCanonicalization(set, entityDoc, orgUnitProfileUrls);
-    await applyResearchEntityResearchAreaCanonicalization(
-      set,
-      set.departments ?? entityDoc?.departments,
-    );
-    if (!manuallyLockedFields.includes('websiteUrl')) {
-      const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
-      if (websiteResolution.action === 'set') {
-        set.websiteUrl = websiteResolution.websiteUrl;
-        fieldsWritten++;
-      } else if (websiteResolution.action === 'clear') {
-        set.websiteUrl = '';
-        fieldsWritten++;
-      }
-    }
-    // The detail-page official-profile CTA reads only entity.sourceUrls, so a
-    // lead's official profile page must land there or the way-in disappears
-    // even though it is a known source (issue #613).
-    if (!manuallyLockedFields.includes('sourceUrls')) {
-      const leadProfileUrl = officialLeadProfileSourceUrl(materializationObs);
-      if (leadProfileUrl) {
-        const currentSourceUrls = Array.isArray(set.sourceUrls)
-          ? (set.sourceUrls as unknown[])
-          : Array.isArray(entityDoc?.sourceUrls)
-            ? (entityDoc?.sourceUrls as unknown[])
-            : [];
-        const leadDestination = normalizeOfficialProfileDestination(leadProfileUrl);
-        const alreadyPresent = currentSourceUrls.some(
-          (url) =>
-            normalizeOfficialProfileDestination(typeof url === 'string' ? url : '') ===
-            leadDestination,
-        );
-        if (!alreadyPresent) {
-          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
-            ...currentSourceUrls,
-            leadProfileUrl,
-          ]);
-          fieldsWritten++;
-        }
-      }
-    }
-    if (
-      !manuallyLockedFields.includes('activeAtYaleCache') &&
-      !manuallyLockedFields.includes('yaleStatusCache')
-    ) {
-      const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
-        if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
-        if (Array.isArray(setValue)) return setValue.length > 0 ? setValue : docValue;
-        return setValue ?? docValue;
-      };
-      const yaleStatusSignal = deriveResearchEntityYaleStatus({
-        sourceUrls: populatedYaleStatusField(set.sourceUrls, entityDoc?.sourceUrls),
-        websiteUrl: populatedYaleStatusField(set.websiteUrl, entityDoc?.websiteUrl),
-        name: populatedYaleStatusField(set.name, entityDoc?.name),
-        displayName: populatedYaleStatusField(set.displayName, entityDoc?.displayName),
-        fullDescription: populatedYaleStatusField(set.fullDescription, entityDoc?.fullDescription),
-        shortDescription: populatedYaleStatusField(
-          set.shortDescription,
-          entityDoc?.shortDescription,
-        ),
-        profileSynthesisDescription: populatedYaleStatusField(
-          set.profileSynthesisDescription,
-          entityDoc?.profileSynthesisDescription,
-        ),
-      });
-      if (yaleStatusSignal) {
-        if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
-        set.yaleStatusCache = yaleStatusSignal.yaleStatusCache;
-        set.activeAtYaleCache = yaleStatusSignal.activeAtYaleCache;
-      } else if (
-        entityDoc?.activeAtYaleCache === false ||
-        entityDoc?.yaleStatusCache === 'departed'
-      ) {
-        set.yaleStatusCache = 'unknown';
-        set.activeAtYaleCache = true;
-        fieldsWritten++;
-      }
-    }
-    // Root-cause fix (issue #1802): a discovered entity always carries its
-    // source in observation provenance, yet its own `sourceUrls` can be empty,
-    // so `missing_source_url` fired for source-backed records purely as a
-    // projection gap. When the entity would otherwise expose no reachable http
-    // source, project its best-confidence provenance source url so source-backing
-    // is recognized. Runs AFTER yale-status derivation so an incidental provenance
-    // url never perturbs the explicit-signal status derivation (#1308); scoped to
-    // the empty case so already-sourced entities do not accrue extra shared urls
-    // that could trip exact-url duplicate detection.
-    if (!manuallyLockedFields.includes('sourceUrls')) {
-      const currentSourceUrls = Array.isArray(set.sourceUrls)
-        ? (set.sourceUrls as unknown[])
-        : Array.isArray(entityDoc?.sourceUrls)
-          ? (entityDoc?.sourceUrls as unknown[])
-          : [];
-      const hasReachableHttpSource = [
-        set.websiteUrl ?? entityDoc?.websiteUrl,
-        (entityDoc as Record<string, unknown> | null | undefined)?.website,
-        ...currentSourceUrls,
-      ].some((value) => /^https?:\/\//i.test(textValue(value)));
-      if (!hasReachableHttpSource) {
-        const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(materializationObs);
-        if (provenanceSourceUrl) {
-          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
-            ...currentSourceUrls,
-            provenanceSourceUrl,
-          ]);
-          fieldsWritten++;
-        }
-      }
-    }
-  }
-  set.confidenceByField = confidenceByField;
-  set.lastObservedAt = new Date();
-
-  if (isResearchEntityObservationType(entityType) && entityDoc) {
-    const fieldsWithLiveObservation = new Set(resolverObs.map((o) => o.field));
-    for (const field of CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS) {
-      if (manuallyLockedFields.includes(field)) continue;
-      if (field in set) continue;
-      if (fieldsWithLiveObservation.has(field)) continue;
-      if (!isClearableStaleFieldValue((entityDoc as Record<string, unknown>)[field])) continue;
-      unset[field] = '';
-      delete confidenceByField[field];
-    }
-  }
-
-  if (options.writeOnlyFields && options.writeOnlyFields.length > 0) {
-    fieldsWritten = restrictMaterializerSetToFields(
-      set,
-      unset,
-      confidenceByField,
-      options.writeOnlyFields,
-    );
-  }
+    {
+      resolved,
+      manuallyLockedFields,
+      manualValues,
+      entityDoc,
+      materializationObs,
+      resolverObs,
+      fullDescriptionShellGated,
+      now: new Date(),
+      synthesizeCardDescription: options.synthesizeCardDescription,
+      writeOnlyFields: options.writeOnlyFields,
+    },
+  );
 
   if (options.dryRun) {
     return {
