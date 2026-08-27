@@ -1,15 +1,9 @@
 /**
  * Faculty profile service for self-editing, verification, and department cascading.
  */
-import { User, normalizeUserType } from '../models/user';
+import { User } from '../models/user';
 import { getListingModel } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { RoleAssignment } from '../models/roleAssignment';
-import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
-import { resolveResearcherIdForLegacyUser } from './researchEntityMembershipAccessor';
-import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
-import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
-import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -1676,18 +1670,6 @@ const publicOpenAccessStatus = (link: Record<string, any>): string | undefined =
   return PUBLIC_OPEN_ACCESS_STATUSES.has(status) ? status : undefined;
 };
 
-export const orderProfileScholarlyLinks = (links: Record<string, any>[]): Record<string, any>[] =>
-  [...links].sort((a, b) => {
-    const officialDelta =
-      Number(isOfficialProfileScholarlyLink(b)) - Number(isOfficialProfileScholarlyLink(a));
-    if (officialDelta !== 0) return officialDelta;
-    const yearDelta = Number(b.year || 0) - Number(a.year || 0);
-    if (yearDelta !== 0) return yearDelta;
-    const bObserved = new Date(String(b.observedAt || b.updatedAt || 0)).getTime() || 0;
-    const aObserved = new Date(String(a.observedAt || a.updatedAt || 0)).getTime() || 0;
-    return bObserved - aObserved;
-  });
-
 export const scholarlyLinkToPublicLink = (
   link: Record<string, any>,
   options: {
@@ -1799,142 +1781,6 @@ export const normalizePublicProfile = (
     scholarlyLinks,
     researchEntities: publicResearchEntities,
   };
-};
-
-const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
-  const userId = user._id;
-  if (!userId) return [];
-
-  const attributionRows = await ResearchScholarlyAttribution.find({
-    targetUserId: userId,
-    archived: { $ne: true },
-  })
-    .select(
-      'scholarlyLinkId relationshipBasis evidenceLabel confidence observedAt sourceName sourceUrl',
-    )
-    .sort({ observedAt: -1, updatedAt: -1 })
-    .limit(50)
-    .lean();
-  const scholarlyLinkIds = [
-    ...new Set(
-      attributionRows.map((row: any) => profileDocumentId(row.scholarlyLinkId)).filter(Boolean),
-    ),
-  ];
-
-  const [attributedLinks, directLinks] = await Promise.all([
-    scholarlyLinkIds.length
-      ? ResearchScholarlyLink.find({ _id: { $in: scholarlyLinkIds }, archived: { $ne: true } })
-          .select(
-            '_id userId researchEntityId title url destinationKind displaySource freeFullTextUrl freeFullTextLabel discoveredVia year venue confidence observedAt sourceUrl externalIds updatedAt',
-          )
-          .limit(50)
-          .lean()
-      : Promise.resolve([]),
-    ResearchScholarlyLink.find({ userId, archived: { $ne: true } })
-      .select(
-        '_id userId researchEntityId title url destinationKind displaySource freeFullTextUrl freeFullTextLabel discoveredVia year venue confidence observedAt sourceUrl externalIds updatedAt',
-      )
-      .sort({ observedAt: -1, year: -1, updatedAt: -1 })
-      .limit(20)
-      .lean(),
-  ]);
-
-  const linksById = new Map(
-    (attributedLinks as any[]).flatMap((link) => {
-      const id = profileDocumentId(link._id);
-      return id ? [[id, link] as const] : [];
-    }),
-  );
-  const seen = new Set<string>();
-  const scholarlyLinks = [
-    ...attributionRows.flatMap((row: any) => {
-      const link = linksById.get(profileDocumentId(row.scholarlyLinkId));
-      if (!link) return [];
-      return [
-        scholarlyLinkToPublicLink(link, {
-          userId,
-          relationshipBasis: row.relationshipBasis || 'identity_authorship',
-          evidenceLabel: row.evidenceLabel || 'Authored by a verified Yale faculty identity',
-          confidence: row.confidence,
-          observedAt: row.observedAt,
-          sourceName: row.sourceName,
-          sourceUrl: row.sourceUrl,
-        }),
-      ];
-    }),
-    ...(directLinks as any[]).map((link) =>
-      scholarlyLinkToPublicLink(link, {
-        userId,
-        relationshipBasis: 'direct_user_link',
-        evidenceLabel: 'Linked to this Yale faculty profile',
-      }),
-    ),
-  ].filter((link: any) => {
-    const key = profileDocumentId(link?._id);
-    if (!key || seen.has(key) || !isPublicResearchPaperLink(link)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  return orderProfileScholarlyLinks(scholarlyLinks).slice(0, 10);
-};
-
-const loadProfileResearchEntities = async (user: Record<string, any>) => {
-  const personId = await resolveResearcherIdForLegacyUser(user._id);
-  if (!personId) return [];
-
-  const assignments = await RoleAssignment.find({
-    personId,
-    'target.kind': 'RESEARCH_ENTITY',
-    state: { $ne: 'HISTORICAL' },
-    archived: { $ne: true },
-  })
-    .select('target role')
-    .lean();
-
-  const roleByEntityId = new Map<string, string>();
-  for (const assignment of assignments as any[]) {
-    const entityId = profileDocumentId(assignment.target?.id);
-    if (!entityId || roleByEntityId.has(entityId)) continue;
-    roleByEntityId.set(
-      entityId,
-      LEGACY_ROLE_BY_CANONICAL[assignment.role as keyof typeof LEGACY_ROLE_BY_CANONICAL] || '',
-    );
-  }
-  const entityIds = [...roleByEntityId.keys()];
-  if (entityIds.length === 0) return [];
-
-  const entities = await ResearchEntity.find({
-    _id: { $in: entityIds },
-    archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-  })
-    .select(
-      '_id slug name displayName kind entityType shortDescription fullDescription description departments researchAreas sourceUrls website websiteUrl',
-    )
-    .limit(12)
-    .lean();
-
-  return dedupeProfileResearchEntities(
-    entities.map((entity: any) => ({
-      _id: profileDocumentId(entity._id),
-      slug: entity.slug || '',
-      name: entity.name || '',
-      displayName: entity.displayName || '',
-      kind: entity.kind || '',
-      entityType: entity.entityType || '',
-      shortDescription: entity.shortDescription || '',
-      fullDescription: entity.fullDescription || '',
-      departments: entity.departments || [],
-      researchAreas: entity.researchAreas || [],
-      _bioFullDescription: entity.fullDescription || '',
-      _bioSourceUrls: entity.sourceUrls || [],
-      _bioWebsite: entity.website || '',
-      _bioWebsiteUrl: entity.websiteUrl || '',
-      role: roleByEntityId.get(profileDocumentId(entity._id)) || '',
-    })),
-    user,
-  );
 };
 
 /**
