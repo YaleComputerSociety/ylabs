@@ -25,11 +25,7 @@ vi.mock('../services/analyticsService', () => ({
 
 vi.mock('../services/adminGrantService', () => ({
   hasActiveAdminGrant: mocks.hasActiveAdminGrant,
-  allowsLegacyAdminUserType: vi.fn(
-    () =>
-      process.env.NODE_ENV === 'development' &&
-      process.env.SERVER_BASE_URL === 'http://localhost:4000',
-  ),
+  ensureBootstrapAdminGrant: vi.fn(),
 }));
 
 import passport from '../passport';
@@ -50,7 +46,7 @@ describe('passport admin authority', () => {
     process.env.NODE_ENV = 'test';
   });
 
-  it('exposes grant-backed admins to authenticated clients as admin users', async () => {
+  it('flags grant-backed users as admin while preserving their classification', async () => {
     mocks.validateAccount.mockResolvedValue({
       _id: 'acc-abc123',
       netid: 'abc123',
@@ -72,16 +68,14 @@ describe('passport admin authority', () => {
     expect(mocks.hasActiveAdminGrant).toHaveBeenCalledWith('abc123');
     expect(user).toMatchObject({
       netId: 'abc123',
-      userType: 'admin',
+      userType: 'student',
       userConfirmed: true,
       profileVerified: false,
+      isAdmin: true,
     });
   });
 
-  it('does not expose legacy admin rows as production admins without an active grant', async () => {
-    process.env.NODE_ENV = 'production';
-    process.env.SSOBASEURL = 'https://secure.its.yale.edu/cas';
-    process.env.SERVER_BASE_URL = 'https://yalelabs.io';
+  it('does not flag a user as admin without an active grant', async () => {
     mocks.validateAccount.mockResolvedValue({
       _id: 'acc-legacy1',
       netid: 'legacy1',
@@ -105,6 +99,7 @@ describe('passport admin authority', () => {
       userType: 'unknown',
       userConfirmed: true,
       profileVerified: true,
+      isAdmin: false,
     });
   });
 });

@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminGrant } from '../../models/adminGrant';
 import { User } from '../../models/user';
 import {
   MAX_ADMIN_GRANT_NOTE_LENGTH,
-  allowsLegacyAdminUserType,
+  clearAdminGrantCache,
   grantAdminAccess,
   hasActiveAdminGrant,
+  hasAdminAuthorityForUser,
   listAdminGrants,
   revokeAdminAccess,
 } from '../adminGrantService';
@@ -32,28 +33,31 @@ describe('hasActiveAdminGrant', () => {
   });
 });
 
-describe('allowsLegacyAdminUserType', () => {
-  it('allows legacy admin userType only for localhost development', () => {
-    expect(
-      allowsLegacyAdminUserType({
-        NODE_ENV: 'development',
-        SERVER_BASE_URL: 'http://localhost:4000',
-      } as NodeJS.ProcessEnv),
-    ).toBe(true);
+describe('hasAdminAuthorityForUser', () => {
+  beforeEach(() => {
+    clearAdminGrantCache();
+  });
 
-    expect(
-      allowsLegacyAdminUserType({
-        NODE_ENV: 'production',
-        SERVER_BASE_URL: 'https://yalelabs.io',
-      } as NodeJS.ProcessEnv),
-    ).toBe(false);
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearAdminGrantCache();
+  });
 
-    expect(
-      allowsLegacyAdminUserType({
-        NODE_ENV: 'development',
-        SERVER_BASE_URL: 'https://yalelabs.io',
-      } as NodeJS.ProcessEnv),
-    ).toBe(false);
+  it('grants authority from an active grant regardless of userType', async () => {
+    const exists = vi.spyOn(AdminGrant, 'exists').mockResolvedValue({ _id: 'grant-1' } as any);
+
+    await expect(hasAdminAuthorityForUser({ netId: 'grantee1' })).resolves.toBe(true);
+    expect(exists).toHaveBeenCalledWith({ netid: 'grantee1', status: 'active' });
+  });
+
+  it('denies a principal with no active grant', async () => {
+    vi.spyOn(AdminGrant, 'exists').mockResolvedValue(null as any);
+
+    await expect(hasAdminAuthorityForUser({ netid: 'legacy9' })).resolves.toBe(false);
+  });
+
+  it('denies a missing principal', async () => {
+    await expect(hasAdminAuthorityForUser(null)).resolves.toBe(false);
   });
 });
 

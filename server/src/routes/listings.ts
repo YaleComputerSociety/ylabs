@@ -3,11 +3,7 @@
  * Listing authoring is retired.
  */
 import { Router, Request, Response, NextFunction } from 'express';
-import {
-  isAuthenticated,
-  canSubmitListingClaimRequest,
-  validateObjectId,
-} from '../middleware/index';
+import { isAuthenticated, validateObjectId } from '../middleware/index';
 import * as listingController from '../controllers/listingController';
 import * as listingClaimRequestController from '../controllers/listingClaimRequestController';
 import { logEvent } from '../services/analyticsService';
@@ -57,7 +53,6 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
 router.get(
   '/claims/mine',
   isAuthenticated,
-  canSubmitListingClaimRequest,
   listingClaimRequestController.listMyListingClaimRequests,
 );
 
@@ -74,7 +69,6 @@ router.post(
   '/:id/claim',
   writeLimit,
   isAuthenticated,
-  canSubmitListingClaimRequest,
   validateObjectId('id'),
   listingClaimRequestController.submitListingClaimRequest,
 );

@@ -50,7 +50,7 @@ export default function Navbar() {
   const isMobile = useMediaQuery(`(max-width:${MOBILE_BREAKPOINT})`);
   const location = useLocation();
 
-  const isAdmin = user?.userType === 'admin';
+  const isAdmin = user?.isAdmin ?? false;
   const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
   const guestNavLinks = [

@@ -374,7 +374,7 @@ const Research = () => {
     notStartedCount: watchedDeadlineNotStartedCount,
   } = useWatchedDeadlineSummary(isAuthenticated);
   const { departments } = useConfig();
-  const isAdmin = user?.userType === 'admin';
+  const isAdmin = user?.isAdmin ?? false;
   const pageSnapshotKey = searchParams.toString();
   const restorableSnapshot =
     researchPageSnapshot?.key === pageSnapshotKey && researchPageSnapshot.isAdmin === isAdmin

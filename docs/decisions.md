@@ -11,6 +11,18 @@ An evaluation found only its `explain`/`path` queries on a known symbol accurate
 Decision: remove Graphify entirely - the workflow, cache scripts, pinned version, ignore file, skill, and onboarding doc - and rewrite the agent task loop to lead with the relevant skill plus targeted source search.
 This supersedes the 2026-08-01 decision.
 
+## 2026-08-26: Retire userType As An Authorization Mechanism
+
+`userType` (student/faculty/admin/unknown) is residue from the retired faculty-maintained job-board product, where it was the capability role that decided who could author listings, maintain a profile, and manage the site.
+After the pivot to scraped official-source discovery nobody authors content in-app, so the faculty-vs-student capability distinction no longer gates anything real.
+Decision: `userType` is a classification and analytics dimension only, and it authorizes nothing.
+Admin authority is the separate `AdminGrant` signal exposed as a server-computed `isAdmin` boolean on the session principal and the `/auth/check` payload; guards and the client key off `isAdmin`, never `userType`.
+The `isProfessor` and `isTrustworthy` middleware, the `isConfirmed`/`userConfirmed` gate, the `/unknown` onboarding wall (page, reducer, `unknownBlocked`/`knownBlocked` route guards, and the `updateCurrentUser` unknown-bootstrap), and the `allowsLegacyAdminUserType` / `persistedUserType === 'admin'` legacy admin path are all removed.
+Local dev-login-as-admin now mints an idempotent bootstrap `AdminGrant` (`ensureBootstrapAdminGrant`) so even dev admin authority flows through the canonical grant mechanism.
+Correction-report and listing-claim submission re-gate to `isAuthenticated`; admin-review write surfaces such as research-area creation use `isAdmin`.
+Explicitly retained: the persisted `User.userType` field and every scraper and data-pipeline read of it (the faculty `Researcher` spine, department rosters, official-profile PI backfill, and data-quality scripts), plus the analytics `userType` dimension.
+Tearing down the analytics `userType` dimension, and dropping the persisted `User.userType` once the faculty spine migrates off it, are separate follow-ups.
+
 ## 2026-08-26: Deduplicate Via One Resolver Plus One Engine, Not Per-Domain Repair
 
 Deduplication today is spread across many after-the-fact repair lanes (`dedupeUsersByIdentity`, `dedupeAccountlessResearcherShells`, `dedupeResearchEntitiesByPi`, the in-flight URL-identity lane, program/fellowship dedup, `repairDuplicateAccessSignals`) plus per-domain canonical stores (`research_entity_redirects`, `canonicalGroupId`, `dedupedIntoUserId`, `dedupedIntoResearcherId`).

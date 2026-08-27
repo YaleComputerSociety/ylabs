@@ -29,7 +29,7 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
         value={{
           isLoading: false,
           isAuthenticated: true,
-          user: { userType } as any,
+          user: { userType, isAdmin: userType === 'admin' } as any,
           checkContext: vi.fn(),
         }}
       >

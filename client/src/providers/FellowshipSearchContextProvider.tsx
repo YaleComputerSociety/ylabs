@@ -38,7 +38,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const { user } = useContext(UserContext);
   const authReady = !authLoading && isAuthenticated;
-  const isAdmin = user?.userType === 'admin';
+  const isAdmin = user?.isAdmin ?? false;
 
   const [state, dispatch] = useReducer(fellowshipSearchReducer, undefined, () =>
     createInitialFellowshipSearchState({ sortBy: sortableKeys[0] }),

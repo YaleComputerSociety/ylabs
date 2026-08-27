@@ -449,6 +449,7 @@ describe('auth environment guards', () => {
         userType: 'student',
         userConfirmed: true,
         profileVerified: false,
+        isAdmin: false,
       },
     });
   });
@@ -469,7 +470,7 @@ describe('auth environment guards', () => {
 
       expect(res.json).toHaveBeenCalledWith({
         auth: true,
-        user: { netId: 'abc123', userType, userConfirmed: true, profileVerified: false },
+        user: { netId: 'abc123', userType, userConfirmed: true, profileVerified: false, isAdmin: false },
       });
     }
   });
@@ -515,6 +516,7 @@ describe('auth environment guards', () => {
         userType: 'graduate',
         userConfirmed: true,
         profileVerified: false,
+        isAdmin: false,
       },
     });
 
