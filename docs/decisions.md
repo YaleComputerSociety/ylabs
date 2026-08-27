@@ -4,6 +4,22 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-26: Deduplicate Via One Resolver Plus One Engine, Not Per-Domain Repair
+
+Deduplication today is spread across many after-the-fact repair lanes (`dedupeUsersByIdentity`, `dedupeAccountlessResearcherShells`, `dedupeResearchEntitiesByPi`, the in-flight URL-identity lane, program/fellowship dedup, `repairDuplicateAccessSignals`) plus per-domain canonical stores (`research_entity_redirects`, `canonicalGroupId`, `dedupedIntoUserId`, `dedupedIntoResearcherId`).
+Each sweep re-runs these repair passes over the corpus, and the safety invariants (non-loss attribute union, reference relink, redirect permanence, fail-closed zero-live-reference delete) are re-implemented per lane and drift, and that drift is how merge losers were left carrying live signals in one lane but not another.
+Decision: converge on two shared components.
+The first is one before-mint resolver `resolveCanonical(type, observations)` consulted by the materializer before minting any record, folding every domain's identity and collision keys (user: netid, email, ORCID; researcher: account, ORCID, name; entity: slug, PI, lab-or-profile-URL), backed by a unified canonical-alias ledger that generalizes `research_entity_redirects` and survives deletion, which prevents duplicates by construction.
+The second is one dedup engine that owns the merge, relink, redirect, and delete core once (non-loss union, reference relink, lineage, redirect, fail-closed zero-live-reference delete), parameterized by per-domain adapters (candidate matcher, canonical selector, reference specs), which handles the backlog and the cases resolution misses.
+Rationale is performance and correctness: prevention-by-construction turns the repair, dedup, and delete post-run passes into idempotent no-ops that can be shrunk or retired, cutting per-sweep work and extending the #1945 "retire the fix\* repair genre" direction, and the safety invariants live in exactly one place instead of drifting across lanes.
+Migration is phased, Development-first, and behavior-preserving.
+P1 extracts the shared engine from the existing lanes once the in-flight URL-identity dedupe lane lands.
+P2 builds the unified resolver plus canonical-alias ledger and wires it into the materializer before-mint, closing the known User email and ORCID resolution gap where duplicate Users are only reconciled after minting.
+P3 demotes or retires the now-redundant repair passes and measures the sweep-time reduction.
+Multiple sessions edit the sweep and dedup code, so land the in-flight dedup lanes first and give this refactor a single owner to avoid collisions.
+This builds on current state: the eponymous FRA->lab merge segment (merge plus `research_entity_redirects` plus fail-closed delete) is built, validated end-to-end on Dev, and is the working prototype of both the alias ledger (resolver) and the shared merge and delete core (engine).
+This direction is tracked in issue #2063.
+
 ## 2026-08-26: `PROGRAM` Is Not A Research Entity; Every Program Lives Only On `/programs`
 
 The `PROGRAM` `entityType` is removed from `ResearchEntity`, so a program is never a `/research` citizen.
