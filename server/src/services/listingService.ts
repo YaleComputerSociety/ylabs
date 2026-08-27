@@ -4,20 +4,15 @@
 import { IncorrectPermissionsError, NotFoundError, ObjectIdError } from '../utils/errors';
 import mongoose from 'mongoose';
 import { getListingModel } from '../db/connections';
-import { processListingTitle, isCustomTitle, generateSmartTitle } from '../utils/smartTitle';
+import { isCustomTitle, generateSmartTitle } from '../utils/smartTitle';
 import * as itemOps from './itemOperations';
-import { findOrCreateForOwner } from './researchGroupService';
 import { ResearchEntity } from '../models/researchEntity';
-import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
-import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
-import { resolveResearcherIdForPersonName } from './researcherPersonNameResolver';
 import { buildListingResearchEntityProfilePatch } from './listingResearchEntityProfile';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 
 const LISTING_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-const MAX_LISTING_ID_READS = 100;
 const PUBLIC_LISTING_MUTATION_FILTER = {
   archived: false,
   confirmed: true,
@@ -57,75 +52,6 @@ async function syncResearchEntityProfileFromListing(listing: any): Promise<void>
     );
   }
 }
-
-const LISTING_ENTITY_AUTHOR_ROLES = ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'];
-const CANONICAL_LISTING_AUTHOR_ROLES = LISTING_ENTITY_AUTHOR_ROLES.map((role) =>
-  canonicalRoleForLegacy(role),
-).filter((role): role is RoleAssignmentRole => Boolean(role));
-
-const hasListingEntityAuthority = async (
-  researchEntityId: unknown,
-  owner: any,
-): Promise<boolean> => {
-  const safeResearchEntityId = normalizeListingObjectId(researchEntityId);
-  if (!safeResearchEntityId) {
-    return false;
-  }
-
-  const resolution = await resolveResearcherIdForPersonName(
-    [owner?.fname, owner?.lname].filter(Boolean).join(' '),
-    { netid: owner?.netid },
-  );
-  const personId = resolution.status === 'matched' ? resolution.researcherId : undefined;
-  if (!personId) {
-    return false;
-  }
-
-  const assignment = await RoleAssignment.findOne({
-    personId,
-    'target.kind': 'RESEARCH_ENTITY',
-    'target.id': new mongoose.Types.ObjectId(safeResearchEntityId),
-    role: { $in: CANONICAL_LISTING_AUTHOR_ROLES },
-    state: { $ne: 'HISTORICAL' },
-    archived: { $ne: true },
-  })
-    .select('_id')
-    .lean();
-
-  return Boolean(assignment);
-};
-
-const resolveListingResearchEntityId = async (data: any, owner: any): Promise<any> => {
-  const suppliedResearchEntityId = normalizeListingObjectId(data?.researchEntityId);
-  if (await hasListingEntityAuthority(suppliedResearchEntityId, owner)) {
-    return suppliedResearchEntityId;
-  }
-
-  const { group } = await findOrCreateForOwner({
-    _id: owner._id,
-    netid: owner.netid,
-    fname: owner.fname,
-    lname: owner.lname,
-    primaryDepartment: owner.primaryDepartment,
-  });
-  return group?._id;
-};
-
-const LISTING_SELF_CREATABLE_FIELDS = [
-  'title',
-  'hiringStatus',
-  'websites',
-  'description',
-  'applicantDescription',
-  'researchAreas',
-  'keywords',
-  'established',
-  'departments',
-  'type',
-  'commitment',
-  'compensationType',
-  'expiresAt',
-] as const;
 
 const MAX_SELF_SERVICE_LISTING_TITLE_LENGTH = 160;
 const MAX_SELF_SERVICE_LISTING_DESCRIPTION_LENGTH = 5000;
@@ -249,18 +175,6 @@ const sanitizeSelfServiceListingPayload = (safeData: Record<string, any>) => {
   }
 };
 
-const filterListingCreateData = (data: any): Record<string, any> => {
-  const safeData: Record<string, any> = {};
-  if (!data || typeof data !== 'object') return safeData;
-  for (const field of LISTING_SELF_CREATABLE_FIELDS) {
-    if (data[field] !== undefined) {
-      safeData[field] = data[field];
-    }
-  }
-  sanitizeSelfServiceListingPayload(safeData);
-  return safeData;
-};
-
 const LISTING_SELF_UPDATABLE_FIELDS = [
   'title',
   'hiringStatus',
@@ -370,96 +284,9 @@ const filterAdminListingUpdateData = (data: any): Record<string, any> => {
   return safeData;
 };
 
-export const createListing = async (data: any, owner: any) => {
-  if (!owner.netid || !owner.email || !owner.fname || !owner.lname) {
-    throw new Error('Incomplete user data for owner');
-  }
-
-  const safeData = filterListingCreateData(data);
-  const processedTitle = await processListingTitle(
-    safeData.title,
-    owner.fname,
-    owner.lname,
-    safeData.departments || [],
-  );
-
-  const ownerDepts = [owner.primaryDepartment, ...(owner.secondaryDepartments || [])].filter(
-    Boolean,
-  );
-
-  const ownerResearchAreas = owner.researchInterests || [];
-  let researchEntityId;
-  try {
-    researchEntityId = await resolveListingResearchEntityId(data, owner);
-  } catch (error) {
-    console.error('Failed to attach listing to ResearchEntity:', sanitizeLogValue(error));
-  }
-
-  const listing = new (getListingModel())({
-    ...safeData,
-    researchEntityId,
-    createdByUserId: owner._id,
-    title: processedTitle,
-    ownerId: owner.netid,
-    ownerEmail: owner.email,
-    ownerFirstName: owner.fname,
-    ownerLastName: owner.lname,
-    ownerTitle: owner.title || '',
-    ownerPrimaryDepartment: owner.primaryDepartment || '',
-    departments: ownerDepts.length > 0 ? ownerDepts : safeData.departments || [],
-    researchAreas:
-      ownerResearchAreas.length > 0
-        ? ownerResearchAreas
-        : safeData.researchAreas || safeData.keywords || [],
-    keywords:
-      ownerResearchAreas.length > 0
-        ? ownerResearchAreas
-        : safeData.keywords || safeData.researchAreas || [],
-    confirmed: owner.userConfirmed,
-  });
-
-  await listing.save();
-
-  const savedListing = listing.toObject();
-  await syncResearchEntityProfileFromListing(savedListing);
-
-  return savedListing;
-};
-
 export const readAllListings = async () => {
   const listings = await getListingModel().find();
   return listings.map((listing: any) => listing.toObject());
-};
-
-export const readPublicListing = async (id: any) => {
-  const safeId = normalizeListingObjectId(id);
-  if (safeId) {
-    const listing = await getListingModel().findOne({
-      _id: safeId,
-      ...PUBLIC_LISTING_MUTATION_FILTER,
-    });
-    if (!listing) {
-      throw new NotFoundError('Listing not found');
-    }
-    return listing.toObject();
-  } else {
-    throw new ObjectIdError('Did not received expected id type ObjectId');
-  }
-};
-
-export const readListings = async (ids: any[]) => {
-  const listings = [];
-  const requestedIds = Array.isArray(ids) ? ids : [];
-  for (const id of requestedIds.slice(0, MAX_LISTING_ID_READS)) {
-    const safeId = normalizeListingObjectId(id);
-    if (safeId) {
-      const listing = await getListingModel().findById(safeId);
-      if (listing) {
-        listings.push(listing.toObject());
-      }
-    }
-  }
-  return listings;
 };
 
 export const updateListing = async (
@@ -513,11 +340,6 @@ export const updateListing = async (
   } else {
     throw new ObjectIdError('Did not received expected id type ObjectId');
   }
-};
-
-export const archiveListing = async (id: any, userId: string) => {
-  const listing = await updateListing(id, userId, { archived: true }, false, true, true);
-  return listing;
 };
 
 export const addView = async (id: any, _userId: string) => {

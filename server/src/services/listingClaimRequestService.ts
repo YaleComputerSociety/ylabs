@@ -268,19 +268,6 @@ export const listListingClaimRequests = async (params: {
   };
 };
 
-export const readListingClaimRequest = async (id: string) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw new ObjectIdError('Did not received expected id type ObjectId');
-  }
-
-  const request = await ListingClaimRequest.findById(id).lean();
-  if (!request) {
-    throw new NotFoundError(`Listing claim request not found with ObjectId: ${id}`);
-  }
-
-  return request;
-};
-
 export const reviewListingClaimRequest = async (
   id: string,
   reviewerNetId: string,

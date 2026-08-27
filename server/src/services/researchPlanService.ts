@@ -13,8 +13,6 @@ import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { researchEntityServesPublicDetail } from './researchEntityPublicDescription';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { NotFoundError } from '../utils/errors';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
 import { resolveAccountIdByNetid } from './accountService';
 
 const RESEARCH_ENTITY_TARGET_KIND = 'RESEARCH_ENTITY' as const;
@@ -97,11 +95,6 @@ export interface ResearchPlanInput {
   exportPreferences?: unknown;
 }
 
-export interface SavedResearchEntitiesExportOptions {
-  includePrivateNotes?: boolean;
-  exportedAt?: Date;
-}
-
 export const boundSavedResearchEntitySummaryText = (
   value: unknown,
   maxLength: number,
@@ -112,12 +105,6 @@ export const boundSavedResearchEntitySummaryText = (
 
 const savedResearchEntityProjection =
   '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl undergraduateCurrentAvailability hasUndergradHostingEvidence';
-
-const exportTextWithoutDirectContact = (value: unknown): string =>
-  safeSpreadsheetCell(redactDirectContactInfo(String(value || '')));
-
-const exportUserTextForSpreadsheet = (value: unknown): string =>
-  safeSpreadsheetCell(String(value || ''));
 
 const asBoolean = (value: unknown): boolean => value === true;
 
@@ -228,18 +215,6 @@ const serializeStoredDeadlines = (value: unknown): ResearchPlanDeadline[] => {
   }
   return deadlines;
 };
-
-const emptyResearchPlanView = (): ResearchPlanView => ({
-  stage: 'SAVED',
-  privateNotes: '',
-  checklist: [],
-  deadlines: [],
-  exportPreferences: {
-    includePrivateNotes: false,
-    includeChecklist: false,
-    includeDeadlines: false,
-  },
-});
 
 const clearedResearchPlanFields = (): Record<string, unknown> => ({
   stage: 'SAVED',
@@ -568,25 +543,6 @@ export const updateSavedResearchEntityPlan = async (
   return getSavedResearchEntityPlans(netid);
 };
 
-export const deleteSavedResearchEntityPlan = async (
-  netid: any,
-  entityId: string,
-): Promise<Record<string, ResearchPlanView>> => {
-  const accountId = await resolveAccountIdByNetid(netid);
-  const targetId = await resolveSavedResearchEntityTargetId(entityId);
-  await ResearchPlan.updateOne(
-    {
-      accountId,
-      'target.kind': RESEARCH_ENTITY_TARGET_KIND,
-      'target.id': targetId,
-      archived: { $ne: true },
-    },
-    { $set: clearedResearchPlanFields() },
-    { runValidators: true },
-  );
-  return getSavedResearchEntityPlans(netid);
-};
-
 const resolveWatchedProgramObjectIds = async (
   values: unknown[],
 ): Promise<mongoose.Types.ObjectId[]> => {
@@ -742,81 +698,4 @@ export const updateWatchedProgramPlan = async (
     throw new NotFoundError('Watched program not found');
   }
   return getWatchedProgramPlans(netid);
-};
-
-export const deleteWatchedProgramPlan = async (
-  netid: any,
-  programId: string,
-): Promise<Record<string, ResearchPlanView>> => {
-  const accountId = await resolveAccountIdByNetid(netid);
-  const targetId = new mongoose.Types.ObjectId(normalizeObjectIdString(programId, 'program'));
-  await ResearchPlan.updateOne(
-    {
-      accountId,
-      'target.kind': PROGRAM_TARGET_KIND,
-      'target.id': targetId,
-      archived: { $ne: true },
-    },
-    { $set: clearedResearchPlanFields() },
-    { runValidators: true },
-  );
-  return getWatchedProgramPlans(netid);
-};
-
-export const exportSavedResearchEntities = async (
-  netid: any,
-  options: SavedResearchEntitiesExportOptions = {},
-) => {
-  const { entities, plansByEntityId } = await loadVisibleAccountPlans(netid, { withDetail: true });
-  const forceIncludePrivateNotes = options.includePrivateNotes === true;
-
-  let includedAnyPrivateNote = false;
-  const items = entities.map((entity) => {
-    const view = plansByEntityId.has(entity._id)
-      ? researchPlanViewFromDoc(plansByEntityId.get(entity._id) as Record<string, unknown>)
-      : emptyResearchPlanView();
-    const preferences = view.exportPreferences;
-    const includePrivateNote =
-      Boolean(view.privateNotes) && (forceIncludePrivateNotes || preferences.includePrivateNotes);
-    if (includePrivateNote) includedAnyPrivateNote = true;
-    return {
-      researchEntity: {
-        id: entity._id,
-        slug: entity.slug,
-        name: exportTextWithoutDirectContact(entity.displayName || entity.name),
-      },
-      stage: view.stage,
-      ...(preferences.includeChecklist
-        ? {
-            checklist: view.checklist.map((item) => ({
-              label: exportUserTextForSpreadsheet(item.label),
-              completed: item.completed,
-            })),
-          }
-        : {}),
-      ...(preferences.includeDeadlines
-        ? {
-            deadlines: view.deadlines.map((deadline) => ({
-              label: exportUserTextForSpreadsheet(deadline.label),
-              dueAt: deadline.dueAt,
-            })),
-          }
-        : {}),
-      ...(includePrivateNote
-        ? { privateNote: exportUserTextForSpreadsheet(view.privateNotes) }
-        : {}),
-    };
-  });
-
-  return {
-    schemaVersion: 2 as const,
-    exportedAt: (options.exportedAt || new Date()).toISOString(),
-    itemCount: entities.length,
-    privacy: {
-      includesPrivateNotes: includedAnyPrivateNote,
-      includesContactRoutes: false as const,
-      includesNonPublicContactEmails: false as const,
-    },
-    items,
-  };
 };

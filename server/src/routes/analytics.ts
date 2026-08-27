@@ -17,7 +17,6 @@ import {
   getUserAnalytics,
   getUserAnalyticsDrilldown,
 } from '../services/analyticsService';
-import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
 import { validateNetid } from '../middleware/validation';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -250,12 +249,6 @@ const parseAnalyticsActiveSince = (activeSince: unknown): string | undefined => 
   return trimmed;
 };
 
-const publicAnalyticsDebugEvent = (event: any) => ({
-  eventType: typeof event?.eventType === 'string' ? event.eventType : 'unknown',
-  userType: typeof event?.userType === 'string' ? event.userType : 'unknown',
-  timestamp: event?.timestamp,
-});
-
 router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
   try {
     const analytics = await getAnalytics(parseAnalyticsRange(request.query.range));
@@ -460,22 +453,5 @@ router.get(
     }
   },
 );
-
-router.get('/debug', isAuthenticated, isAdmin, async (_request: Request, response: Response) => {
-  try {
-    const events = await AnalyticsEvent.find({
-      eventType: { $in: [AnalyticsEventType.LOGIN, AnalyticsEventType.VISITOR] },
-    })
-      .select('eventType userType timestamp')
-      .sort({ timestamp: -1 })
-      .limit(50)
-      .lean();
-
-    response.status(200).json({ events: events.map(publicAnalyticsDebugEvent) });
-  } catch (error) {
-    console.error('Error fetching analytics debug events:', sanitizeLogValue(error));
-    response.status(500).json({ error: 'Failed to fetch analytics debug events' });
-  }
-});
 
 export default router;

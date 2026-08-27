@@ -120,7 +120,6 @@ describe('admin routes', () => {
 
     expect(guardNames).toEqual(expect.arrayContaining(['isAuthenticated', 'isAdmin']));
     expect(routeByPath('/operator-board')).toBeTruthy();
-    expect(routeByPath('/release-queue')).toBeTruthy();
   });
 
   it('exposes the listing claim apply route behind the same admin router guards', () => {

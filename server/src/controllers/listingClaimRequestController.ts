@@ -5,7 +5,6 @@ import { Request, Response, NextFunction } from 'express';
 import {
   createListingClaimRequest,
   listListingClaimRequests,
-  readListingClaimRequest,
   reviewListingClaimRequest,
   applyListingClaimRequestDecision,
 } from '../services/listingClaimRequestService';
@@ -74,19 +73,6 @@ export const listMyListingClaimRequests = async (
       pageSize: request.query.pageSize as string | undefined,
     });
     response.json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const getAdminListingClaimRequest = async (
-  request: Request,
-  response: Response,
-  next: NextFunction,
-) => {
-  try {
-    const claimRequest = await readListingClaimRequest(request.params.id);
-    response.json({ request: claimRequest });
   } catch (error) {
     next(error);
   }

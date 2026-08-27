@@ -7,7 +7,6 @@ vi.mock('../../services/listingService', () => ({
   getSkeletonListing: vi.fn(),
   readAllListings: vi.fn(),
   readListing: vi.fn(),
-  readPublicListing: vi.fn(),
   readPublicListings: vi.fn(),
   unarchiveListing: vi.fn(),
   updateListing: vi.fn(),
@@ -17,10 +16,9 @@ vi.mock('../../services/userService', () => ({
   readUser: vi.fn(),
 }));
 
-import { addView, readPublicListing } from '../../services/listingService';
-import { addViewToListing, getListingById } from '../listingController';
+import { addView } from '../../services/listingService';
+import { addViewToListing } from '../listingController';
 
-const mockedReadPublicListing = vi.mocked(readPublicListing);
 const mockedAddView = vi.mocked(addView);
 
 const privateListing = {
@@ -115,67 +113,6 @@ const responseDouble = () => ({
 describe('listingController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('allowlists listing detail payloads for authenticated readers', async () => {
-    mockedReadPublicListing.mockResolvedValue(privateListing);
-    const req = { params: { id: 'listing-1' } };
-    const res = responseDouble();
-
-    await getListingById(req as any, res as any);
-
-    expectPublicListing((res.body as any).listing);
-  });
-
-  it('redacts direct contact text from public listing descriptions', async () => {
-    mockedReadPublicListing.mockResolvedValue({
-      ...privateListing,
-      description: 'Help with a project. Email owner123@yale.edu or call 203-555-1212.',
-      applicantDescription: 'Questions go to applicant-contact@yale.edu.',
-    });
-    const req = { params: { id: 'listing-1' } };
-    const res = responseDouble();
-
-    await getListingById(req as any, res as any);
-
-    expect((res.body as any).listing.description).toBe(
-      'Help with a project. Email [email redacted] or call [phone redacted].',
-    );
-    expect((res.body as any).listing.applicantDescription).toBe(
-      'Questions go to [email redacted].',
-    );
-    expect(JSON.stringify((res.body as any).listing)).not.toContain('owner123@yale.edu');
-    expect(JSON.stringify((res.body as any).listing)).not.toContain('203-555-1212');
-    expect(JSON.stringify((res.body as any).listing)).not.toContain('applicant-contact@yale.edu');
-  });
-
-  it('does not leak internal service errors from listing detail failures', async () => {
-    mockedReadPublicListing.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-    const req = { params: { id: 'listing-1' } };
-    const res = responseDouble();
-
-    await getListingById(req as any, res as any);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch listing' });
-  });
-
-  it('does not leak internal not-found messages from listing detail failures', async () => {
-    mockedReadPublicListing.mockRejectedValue(
-      Object.assign(new Error('Listing not found with ObjectId: private-listing-id'), {
-        name: 'NotFoundError',
-        status: 404,
-      }),
-    );
-    const req = { params: { id: 'private-listing-id' } };
-    const res = responseDouble();
-
-    await getListingById(req as any, res as any);
-
-    expect(res.statusCode).toBe(404);
-    expect(res.body).toEqual({ error: 'Listing not found' });
   });
 
   it('allowlists listing view payloads for authenticated readers', async () => {

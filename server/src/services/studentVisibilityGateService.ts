@@ -12,10 +12,8 @@ import {
 import {
   VisibilityReleaseQueueItem,
   type VisibilityReleaseQueueCollection,
-  type VisibilityReleaseQueueStatus,
   type VisibilityRepairStage,
   type VisibilityRepairStatus,
-  visibilityReleaseQueueStatuses,
 } from '../models/visibilityReleaseQueueItem';
 import {
   computeProgramStudentVisibility,
@@ -44,8 +42,6 @@ import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
-const MAX_RELEASE_QUEUE_PAGE = 1000;
-const MAX_RELEASE_QUEUE_FILTER_LENGTH = 120;
 const STUDENT_VISIBILITY_GATE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const STUDENT_VISIBILITY_GATE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 const studentVisibilityGateDocumentId = (value: unknown): string =>
@@ -1300,55 +1296,3 @@ export async function runStudentVisibilityGate(
   }
   return report;
 }
-
-export async function listVisibilityReleaseQueue(input: {
-  collection?: VisibilityReleaseQueueCollection;
-  reason?: string;
-  sourceName?: string;
-  status?: string;
-  page?: unknown;
-  pageSize?: unknown;
-}) {
-  const page = Math.min(MAX_RELEASE_QUEUE_PAGE, Math.max(1, Math.floor(Number(input.page) || 1)));
-  const pageSize = Math.min(100, Math.max(1, Math.floor(Number(input.pageSize) || 25)));
-  const filter: Record<string, any> = {};
-  if (input.collection === 'research' || input.collection === 'programs') {
-    filter.collection = input.collection;
-  }
-  filter.status = normalizeReleaseQueueStatus(input.status);
-  const reason = normalizeReleaseQueueFilterValue(input.reason);
-  const sourceName = normalizeReleaseQueueFilterValue(input.sourceName);
-  if (reason) filter.blockerReasons = reason;
-  if (sourceName) filter.sourceNames = sourceName;
-
-  const [items, total] = await Promise.all([
-    VisibilityReleaseQueueItem.find(filter)
-      .sort({ lastSeenAt: -1, _id: 1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .lean(),
-    VisibilityReleaseQueueItem.countDocuments(filter),
-  ]);
-
-  return {
-    items,
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  };
-}
-
-const normalizeReleaseQueueFilterValue = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > MAX_RELEASE_QUEUE_FILTER_LENGTH) return undefined;
-  return trimmed;
-};
-
-const normalizeReleaseQueueStatus = (value: unknown): VisibilityReleaseQueueStatus => {
-  const status = normalizeReleaseQueueFilterValue(value);
-  return status && (visibilityReleaseQueueStatuses as readonly string[]).includes(status)
-    ? (status as VisibilityReleaseQueueStatus)
-    : 'open';
-};

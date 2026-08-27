@@ -10,9 +10,7 @@ describe('user routes', () => {
   it('keeps entity-owned planning routes authenticated and validates entity ids', () => {
     for (const [path, method] of [
       ['/savedResearchEntityPlans/:entityId', 'put'],
-      ['/savedResearchEntityPlans/:entityId', 'delete'],
       ['/watchedProgramPlans/:programId', 'put'],
-      ['/watchedProgramPlans/:programId', 'delete'],
     ]) {
       const route = routeByPathAndMethod(path, method);
       expect(route).toBeTruthy();
@@ -25,8 +23,6 @@ describe('user routes', () => {
       ['/savedResearchEntities', 'put'],
       ['/savedResearchEntities', 'delete'],
       ['/savedResearchEntityPlans', 'get'],
-      ['/savedResearchEntityPlans/export', 'get'],
-      ['/savedResearchEntityPlans/export', 'post'],
     ]) {
       const route = routeByPathAndMethod(path, method);
       expect(route).toBeTruthy();

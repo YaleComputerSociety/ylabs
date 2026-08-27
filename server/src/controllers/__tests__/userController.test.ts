@@ -3,8 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   readUser: vi.fn(),
   updateUser: vi.fn(),
-  accountFindOneAndUpdate: vi.fn(),
-  researcherFindOneAndUpdate: vi.fn(),
   normalizeObjectIdsForUserMutation: vi.fn((values: unknown[], fieldName: string) => {
     if (values.length > 100) {
       const error: any = new Error(`Too many ${fieldName} ids`);
@@ -28,29 +26,18 @@ const mocks = vi.hoisted(() => ({
   addSavedResearchEntities: vi.fn(),
   removeSavedResearchEntities: vi.fn(),
   updateSavedResearchEntityPlan: vi.fn(),
-  deleteSavedResearchEntityPlan: vi.fn(),
-  exportSavedResearchEntities: vi.fn(),
   getWatchedPrograms: vi.fn(),
   getWatchedProgramIds: vi.fn(),
   getWatchedProgramPlans: vi.fn(),
   addWatchedPrograms: vi.fn(),
   removeWatchedPrograms: vi.fn(),
   updateWatchedProgramPlan: vi.fn(),
-  deleteWatchedProgramPlan: vi.fn(),
 }));
 
 vi.mock('../../services/userService', () => ({
   readUser: mocks.readUser,
   updateUser: mocks.updateUser,
   normalizeObjectIdsForUserMutation: mocks.normalizeObjectIdsForUserMutation,
-}));
-
-vi.mock('../../models/account', () => ({
-  Account: { findOneAndUpdate: mocks.accountFindOneAndUpdate },
-}));
-
-vi.mock('../../models/researcher', () => ({
-  Researcher: { findOneAndUpdate: mocks.researcherFindOneAndUpdate },
 }));
 
 vi.mock('../../services/researchPlanService', () => ({
@@ -60,30 +47,23 @@ vi.mock('../../services/researchPlanService', () => ({
   addSavedResearchEntities: mocks.addSavedResearchEntities,
   removeSavedResearchEntities: mocks.removeSavedResearchEntities,
   updateSavedResearchEntityPlan: mocks.updateSavedResearchEntityPlan,
-  deleteSavedResearchEntityPlan: mocks.deleteSavedResearchEntityPlan,
-  exportSavedResearchEntities: mocks.exportSavedResearchEntities,
   getWatchedPrograms: mocks.getWatchedPrograms,
   getWatchedProgramIds: mocks.getWatchedProgramIds,
   getWatchedProgramPlans: mocks.getWatchedProgramPlans,
   addWatchedPrograms: mocks.addWatchedPrograms,
   removeWatchedPrograms: mocks.removeWatchedPrograms,
   updateWatchedProgramPlan: mocks.updateWatchedProgramPlan,
-  deleteWatchedProgramPlan: mocks.deleteWatchedProgramPlan,
 }));
 
 import {
   addSavedResearchEntities,
-  deleteSavedResearchEntityPlan,
-  exportSavedResearchEntities,
   getSavedResearchEntities,
   getSavedResearchEntityPlans,
   removeSavedResearchEntities,
-  updateCurrentUser,
   updateSavedResearchEntityPlan,
   getWatchedPrograms,
   addWatchedPrograms,
   removeWatchedPrograms,
-  deleteWatchedProgramPlan,
 } from '../userController';
 
 const privateProgram = {
@@ -312,132 +292,29 @@ describe('userController', () => {
     expect(res.body).toEqual({ error: 'Failed to fetch watched programs' });
   });
 
-  it('does not leak internal service errors when updating the current user fails', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    mocks.accountFindOneAndUpdate.mockReturnValue({
-      lean: vi
-        .fn()
-        .mockRejectedValue(
-          new Error(
-            'mongodb://user:pass@example.invalid leaked for ada@example.edu with Bearer abc123 and 203-555-1212',
-          ),
-        ),
-    });
-
+  it('scopes saved-entity reads to the authenticated owner', async () => {
     const req = {
       user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { fname: 'Ada', lname: 'Lovelace' } },
-    } as any;
-    const res = privateResponseDouble();
-    const next = vi.fn();
-
-    await updateCurrentUser(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update account profile' });
-    const logged = consoleError.mock.calls.flat().join(' ');
-    expect(logged).not.toContain('user:pass');
-    expect(logged).not.toContain('ada@example.edu');
-    expect(logged).not.toContain('abc123');
-    expect(logged).not.toContain('203-555-1212');
-  });
-
-  it('returns only thin identity fields after current-user profile updates', async () => {
-    mocks.accountFindOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ _id: '64a000000000000000000020', netid: 'student123' }),
-    });
-    mocks.researcherFindOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ displayName: 'Ada Lovelace' }),
-    });
-
-    const req = {
-      user: { netId: 'student123', userConfirmed: true },
-      body: { data: { fname: 'Ada', lname: 'Lovelace', bio: 'I study public health.' } },
-    } as any;
-    const res = privateResponseDouble();
-    const next = vi.fn();
-
-    await updateCurrentUser(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(200);
-    expect(res.body.user).toEqual({
-      netid: 'student123',
-      displayName: 'Ada Lovelace',
-      userConfirmed: true,
-    });
-    expect(res.body.user).not.toHaveProperty('userType');
-    expect(res.body.user).not.toHaveProperty('bio');
-    expect(res.body.user).not.toHaveProperty('facultyMemberId');
-    expect(res.body.user).not.toHaveProperty('studentProfileId');
-  });
-
-  it('upserts an Account and thin Researcher from the bootstrap form, echoing thin identity', async () => {
-    mocks.accountFindOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ _id: 'acct-unknown', netid: 'unknown123' }),
-    });
-    mocks.researcherFindOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ displayName: 'Ada Lovelace' }),
-    });
-
-    const req = {
-      user: { netId: 'unknown123', userConfirmed: false },
-      body: {
-        data: { fname: 'Ada', lname: 'Lovelace', email: 'ada@example.edu', userType: 'faculty' },
-      },
-    } as any;
-    const res = privateResponseDouble();
-    const next = vi.fn();
-
-    await updateCurrentUser(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(mocks.researcherFindOneAndUpdate.mock.calls.at(-1)![1]).toMatchObject({
-      $set: { displayName: 'Ada Lovelace' },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.body.user).toEqual({
-      netid: 'unknown123',
-      displayName: 'Ada Lovelace',
-      userConfirmed: false,
-    });
-    expect(res.body.user).not.toHaveProperty('userType');
-    expect(res.body.user).not.toHaveProperty('profileVerified');
-  });
-
-  it('scopes saved-entity reads and private exports to the authenticated owner', async () => {
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      method: 'POST',
-      body: { accountOwner: 'other-student', includePrivateNotes: true },
+      body: { accountOwner: 'other-student' },
     } as any;
     mocks.getSavedResearchEntities.mockResolvedValue([]);
     mocks.getSavedResearchEntityPlans.mockResolvedValue({});
-    mocks.exportSavedResearchEntities.mockResolvedValue({ items: [] });
 
     await getSavedResearchEntities(req, privateResponseDouble());
     const plansResponse = privateResponseDouble();
     await getSavedResearchEntityPlans(req, plansResponse);
-    const exportResponse = privateResponseDouble();
-    await exportSavedResearchEntities(req, exportResponse);
 
     expect(mocks.getSavedResearchEntities).toHaveBeenCalledWith('student123');
     expect(mocks.getSavedResearchEntityPlans).toHaveBeenCalledWith('student123');
-    expect(mocks.exportSavedResearchEntities).toHaveBeenCalledWith('student123', {
-      includePrivateNotes: true,
-    });
     expectPrivateNoStore(plansResponse);
-    expectPrivateNoStore(exportResponse);
   });
 
-  it('scopes saved-entity writes and deletes to the authenticated owner', async () => {
+  it('scopes saved-entity writes to the authenticated owner', async () => {
     const entityId = '64a000000000000000000030';
     const owner = { netId: 'student123', userType: 'undergraduate', userConfirmed: true };
     mocks.addSavedResearchEntities.mockResolvedValue([entityId]);
     mocks.removeSavedResearchEntities.mockResolvedValue([]);
     mocks.updateSavedResearchEntityPlan.mockResolvedValue({});
-    mocks.deleteSavedResearchEntityPlan.mockResolvedValue({});
 
     await addSavedResearchEntities(
       {
@@ -464,41 +341,11 @@ describe('userController', () => {
       } as any,
       privateResponseDouble(),
     );
-    await deleteSavedResearchEntityPlan(
-      {
-        user: owner,
-        params: { entityId },
-        body: { accountOwner: 'other-student' },
-      } as any,
-      privateResponseDouble(),
-    );
 
     expect(mocks.addSavedResearchEntities).toHaveBeenCalledWith('student123', [entityId]);
     expect(mocks.removeSavedResearchEntities).toHaveBeenCalledWith('student123', [entityId]);
     expect(mocks.updateSavedResearchEntityPlan).toHaveBeenCalledWith('student123', entityId, {
       note: 'Private note',
     });
-    expect(mocks.deleteSavedResearchEntityPlan).toHaveBeenCalledWith('student123', entityId);
-  });
-
-  it('scopes watched-program plan deletes to the authenticated owner and marks the response private', async () => {
-    const programId = '64a000000000000000000031';
-    const owner = { netId: 'student123', userType: 'undergraduate', userConfirmed: true };
-    mocks.deleteWatchedProgramPlan.mockResolvedValue({});
-    const res = privateResponseDouble();
-
-    await deleteWatchedProgramPlan(
-      {
-        user: owner,
-        params: { programId },
-        body: { accountOwner: 'other-student' },
-      } as any,
-      res,
-    );
-
-    expect(mocks.deleteWatchedProgramPlan).toHaveBeenCalledWith('student123', programId);
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ watchedProgramPlans: {} });
-    expectPrivateNoStore(res);
   });
 });
