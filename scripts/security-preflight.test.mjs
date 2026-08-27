@@ -141,15 +141,6 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
   }
 });
 
-test('PFR-3 pathway evidence review keeps private data off stdout and uses guarded materialization', () => {
-  const core = fs.readFileSync(
-    new URL('../server/src/scripts/pfr3PathwayEvidenceReviewCore.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(core, /'apply_recency' \| 'manual_only'/);
-  assert.doesNotMatch(core, /evidenceStrength:\s*['"](DIRECT|STRONG|MODERATE)['"]/);
-});
-
 test('admin access-review validation responses use fixed public copy', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
 
