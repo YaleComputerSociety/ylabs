@@ -287,7 +287,7 @@ function givenNameCompatible(a: string, b: string): boolean {
   return a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a));
 }
 
-function samePersonNameVariant(
+export function samePersonNameVariant(
   a: Pick<UserIdentityDedupeUser, 'fname' | 'lname'>,
   b: Pick<UserIdentityDedupeUser, 'fname' | 'lname'>,
 ): boolean {
@@ -314,7 +314,7 @@ function emailTokens(identityValue: string): string[] {
     .filter((token) => token && !/^\d+$/.test(token));
 }
 
-function emailLooksPersonSpecific(identityValue: string, normalizedName: string): boolean {
+export function emailLooksPersonSpecific(identityValue: string, normalizedName: string): boolean {
   const tokens = emailTokens(identityValue);
   const nameTokens = normalizedName.split(/\s+/).filter(Boolean);
   const lastName = nameTokens.at(-1) || '';
