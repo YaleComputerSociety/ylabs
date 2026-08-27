@@ -134,7 +134,7 @@ All 38 sources below are registered in `registry.ts`. Descriptions are grouped b
 
 ### Museums, collections, and archives
 
-Discovery-only producers for the `ARCHIVE_OR_MUSEUM_PROJECT` entity type. Each walks an index only to enumerate homes, then cites each home's own page (never the index root) per the self-referential / index-page source guards (#516/#549), and fails closed on contact.
+Discovery-only producers, mostly for the `ARCHIVE_OR_MUSEUM_PROJECT` entity type (`libraryCollectionsAsDataScraper.ts` mints `COLLECTIONS_INITIATIVE` and `dhLabProjectsScraper.ts` mints `DIGITAL_HUMANITIES_PROJECT`). Each walks an index only to enumerate homes, then cites each home's own page (never the index root) per the self-referential / index-page source guards (#516/#549), and fails closed on contact.
 
 | Scraper | Data |
 |---------|------|
