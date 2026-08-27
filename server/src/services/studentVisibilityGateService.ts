@@ -1167,7 +1167,7 @@ async function planResearchEntityGateUpdates(
   ]);
   const exactUrlDuplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(
     duplicateReferenceEntities as any[],
-    leadRows as any[],
+    duplicateReferenceLeadRows as any[],
   );
   const concreteLeadEntityUserIds = new Set<string>();
   for (const row of leadRows as any[]) {
