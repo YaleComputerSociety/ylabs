@@ -6,6 +6,13 @@ Last updated: 2026-08-26
 
 Yale Research data moves through an evidence-first pipeline. Use this document for the stable shape of the pipeline, [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for source-level audit expectations, and [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) for Beta and production promotion steps.
 
+## C4 engine (flagged)
+
+The consolidated C4 engine (issue #2063) adds prevention-first identity resolution (resolve-at-mint against a canonical-alias ledger) and decide-late projection over a lossless observation log, plus a fuzzy residual matcher and grounded gpt-5-mini description coverage.
+It is gated behind three off-by-default flags: `C4_RESOLVE_AT_MINT_USERS`, `C4_RESOLVE_AT_MINT_ENTITIES`, and `C4_LOSSLESS_INGEST`.
+When the flags are unset the pipeline behaves exactly as described below.
+See [`docs/c4-rollout-runbook.md`](./c4-rollout-runbook.md) for the flags, the new CLIs, the Development-first go-live sequence, the measured gains, and rollback.
+
 ## Pipeline Shape
 
 ```txt
