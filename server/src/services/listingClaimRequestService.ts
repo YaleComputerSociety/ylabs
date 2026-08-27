@@ -12,6 +12,7 @@ import { materializeEntity } from '../scrapers/entityMaterializer';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { syncEntity } from './meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { resolveReporterIdentityByNetid } from './accountService';
 import type { ObservationInput } from '../scrapers/types';
 
 const REQUEST_TYPES = new Set(['claim', 'correction']);
@@ -189,13 +190,19 @@ export const createListingClaimRequest = async (
     throw error;
   }
 
+  const providedName = [requester.fname, requester.lname].filter(Boolean).join(' ');
+  const identity =
+    requester.email && providedName
+      ? { email: requester.email, name: providedName }
+      : await resolveReporterIdentityByNetid(requester.netId);
+
   const request = await ListingClaimRequest.create({
     listingId,
     requestType,
     requester: {
       netId: requester.netId,
-      email: requester.email || '',
-      name: [requester.fname, requester.lname].filter(Boolean).join(' '),
+      email: requester.email || identity.email,
+      name: providedName || identity.name,
       userType: requester.userType || 'unknown',
       userConfirmed: Boolean(requester.userConfirmed),
       profileVerified: Boolean(requester.profileVerified),

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Account } from '../models/account';
+import { Researcher } from '../models/researcher';
 
 const NETID_INPUT_RE = /^[A-Za-z0-9]{2,12}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -65,6 +66,29 @@ export const resolveAccountIdByNetid = async (netid: unknown): Promise<mongoose.
     { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
   ).lean();
   return new mongoose.Types.ObjectId(String((account as { _id: unknown })._id));
+};
+
+export interface ReporterIdentity {
+  email: string;
+  name: string;
+}
+
+export const resolveReporterIdentityByNetid = async (
+  netid: unknown,
+): Promise<ReporterIdentity> => {
+  const normalizedNetid = normalizeNetid(netid);
+  if (!normalizedNetid) return { email: '', name: '' };
+  const account: any = await Account.findOne({ netid: normalizedNetid })
+    .select('_id email')
+    .lean();
+  if (!account?._id) return { email: '', name: '' };
+  const researcher: any = await Researcher.findOne({ accountId: account._id })
+    .select('displayName')
+    .lean();
+  return {
+    email: typeof account.email === 'string' ? account.email : '',
+    name: typeof researcher?.displayName === 'string' ? researcher.displayName : '',
+  };
 };
 
 export const recordAccountLogin = async (input: AccountLoginInput): Promise<AccountRecordView> => {

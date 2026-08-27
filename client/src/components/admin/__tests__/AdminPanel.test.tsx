@@ -15,10 +15,6 @@ vi.mock('../AdminDepartments', () => ({
   default: () => <div data-testid="departments" />,
 }));
 
-vi.mock('../AdminFacultyProfilesTable', () => ({
-  default: () => <div data-testid="faculty-profiles" />,
-}));
-
 vi.mock('../AdminAccessReview', () => ({
   default: () => <div data-testid="access-review" />,
 }));
@@ -49,7 +45,6 @@ describe('AdminPanel', () => {
       'Fellowships',
       'Research Areas',
       'Departments',
-      'Faculty Profiles',
     ]) {
       expect(screen.getByRole('button', { name: tab }).className).toContain('min-h-[44px]');
     }

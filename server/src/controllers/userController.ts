@@ -470,25 +470,6 @@ export const exportSavedResearchEntities = async (request: Request, response: Re
   }
 };
 
-const SELF_UPDATABLE_FIELDS = [
-  'bio',
-  'website',
-  'imageUrl',
-  'phone',
-  'college',
-  'year',
-  'major',
-  'title',
-  'physicalLocation',
-  'buildingDesk',
-  'mailingAddress',
-  'primaryDepartment',
-  'secondaryDepartments',
-  'researchInterests',
-  'topics',
-  'profileUrls',
-] as const;
-
 export const updateCurrentUser = async (
   request: Request,
   response: Response,

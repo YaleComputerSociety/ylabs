@@ -2295,7 +2295,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
             },
           },
         ],
-        byType: [{ $limit: 0 }],
+        byType: [{ $match: { _id: { $exists: false } } }],
         newUsersLast7Days: [
           {
             $match: {
@@ -2312,7 +2312,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
           { $count: 'count' },
         ],
-        newUsersTodayByType: [{ $limit: 0 }],
+        newUsersTodayByType: [{ $match: { _id: { $exists: false } } }],
       },
     },
   ]);
