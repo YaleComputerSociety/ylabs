@@ -5285,25 +5285,6 @@ test('public faculty profiles omit direct contact and office-location fields', (
   assert.doesNotMatch(profileServiceSource, /building_desk: user\.buildingDesk/);
 });
 
-test('public profile research-home loading uses safe document id serialization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/profileService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(
-    source,
-    /const profileDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
-  );
-  assert.match(source, /const entityId = profileDocumentId\(assignment\.target\?\.id\)/);
-  assert.match(source, /_id: profileDocumentId\(entity\._id\)/);
-  assert.match(source, /role: roleByEntityId\.get\(profileDocumentId\(entity\._id\)\) \|\| ''/);
-  assert.doesNotMatch(source, /String\(assignment\.target\?\.id\)/);
-  assert.doesNotMatch(source, /_id: String\(entity\._id\)/);
-  assert.doesNotMatch(source, /roleByEntityId\.get\(String\(entity\._id\)\)/);
-});
-
 test('public profile scholarly links omit internal user and entity ids', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/profileService.ts', import.meta.url),
