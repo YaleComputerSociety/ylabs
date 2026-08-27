@@ -36,8 +36,6 @@ export interface LabMemberUser {
   primary_department?: string;
   profileUrls?: Record<string, string>;
   profile_urls?: Record<string, string>;
-  internalProfilePath?: string;
-  internal_profile_path?: string;
   website?: string;
   websiteUrl?: string;
   title?: string;

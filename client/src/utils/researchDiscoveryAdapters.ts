@@ -705,7 +705,6 @@ const identitiesFromResearchEntities = (
           affiliations: uniq([resolveEntitySchool(entity), kindLabel(entity.kind)]),
           netid,
           email: entity.contactEmail || undefined,
-          profileUrl: netid ? `/profile/${netid}` : undefined,
           labName: entityDisplayName(entity),
           labSlug: entity.slug,
           sourceCount: (entity.sourceUrls || []).length || 1,

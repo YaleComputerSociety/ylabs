@@ -51,7 +51,6 @@ export default function Navbar() {
   const location = useLocation();
 
   const isAdmin = user?.isAdmin ?? false;
-  const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
   const guestNavLinks = [
     {
@@ -142,27 +141,6 @@ export default function Navbar() {
               {isAdmin && (
                 <ListItem sx={listItemStyle}>
                   <AnalyticsButton />
-                </ListItem>
-              )}
-              {isProfessorUser && user?.netId && (
-                <ListItem sx={listItemStyle}>
-                  <Button
-                    component={Link}
-                    to={`/profile/${safeRouteSegment(user.netId)}`}
-                    sx={{
-                      textTransform: 'none',
-                      color:
-                        location.pathname === `/profile/${user.netId}` ? 'var(--yr-blue)' : 'var(--yr-text)',
-                      fontWeight: location.pathname === `/profile/${user.netId}` ? 600 : 400,
-                      justifyContent: 'flex-start',
-                      minHeight: 44,
-                      width: '100%',
-                      pl: 1,
-                      ...navFocusRingSx,
-                    }}
-                  >
-                    Public Profile
-                  </Button>
                 </ListItem>
               )}
               <ListItem sx={listItemStyle}>

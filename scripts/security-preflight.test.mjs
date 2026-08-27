@@ -407,13 +407,9 @@ test('service-layer search and materialization sync logs sanitize caught errors'
   }
 });
 
-test('external directory and course integrations sanitize fetch errors before logging', () => {
+test('external directory integration sanitizes fetch errors before logging', () => {
   const directorySource = fs.readFileSync(
     new URL('../server/src/services/directoryService.ts', import.meta.url),
-    'utf8',
-  );
-  const courseTableSource = fs.readFileSync(
-    new URL('../server/src/services/courseTableService.ts', import.meta.url),
     'utf8',
   );
 
@@ -435,32 +431,6 @@ test('external directory and course integrations sanitize fetch errors before lo
   );
   assert.doesNotMatch(directorySource, /Directory lookup for/);
   assert.doesNotMatch(directorySource, /error\.message/);
-
-  assert.match(courseTableSource, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
-  assert.ok(courseTableSource.includes('const COURSETABLE_SEASON_RE = /^\\d{4}(?:01|03)$/;'));
-  assert.match(courseTableSource, /const MAX_COURSETABLE_PROFESSOR_NAME_LENGTH = 120/);
-  assert.match(
-    courseTableSource,
-    /const normalizeCourseTableSeason = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(courseTableSource, /COURSETABLE_SEASON_RE\.test\(season\) \? season : undefined/);
-  assert.match(
-    courseTableSource,
-    /const normalizeCourseTableProfessorName = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(courseTableSource, /slice\(0, MAX_COURSETABLE_PROFESSOR_NAME_LENGTH\)/);
-  assert.match(courseTableSource, /const safeSeason = normalizeCourseTableSeason\(season\)/);
-  assert.match(
-    courseTableSource,
-    /const safeProfessorName = normalizeCourseTableProfessorName\(professorName\)/,
-  );
-  assert.match(courseTableSource, /`\$\{COURSETABLE_API\}\/\$\{safeSeason\}`/);
-  assert.doesNotMatch(courseTableSource, /`\$\{COURSETABLE_API\}\/\$\{season\}`/);
-  assert.match(
-    courseTableSource,
-    /console\.error\('CourseTable: Failed to fetch season:', sanitizeLogValue\(err\)\)/,
-  );
-  assert.doesNotMatch(courseTableSource, /err\.message/);
 });
 
 test('shared pagination validation rejects object and array query controls before numeric coercion', () => {
@@ -3055,26 +3025,6 @@ test('client logout navigation uses the safe API URL builder', () => {
   assert.match(signInButton, /buildApiUrl\(`\/cas\$\{redirectParam\}`\)/);
 });
 
-test('profile read routes validate netid path params before controller work', () => {
-  const routeSource = fs.readFileSync(
-    new URL('../server/src/routes/profiles.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    routeSource,
-    /import \{ isAuthenticated, validateNetid \} from '\.\.\/middleware\/index'/,
-  );
-  assert.match(
-    routeSource,
-    /router\.get\(\s*'\/:netid',\s*isAuthenticated,\s*validateNetid\('netid'\),[\s\S]*?getProfile,\s*\)/,
-  );
-  assert.match(
-    routeSource,
-    /router\.get\('\/:netid\/courses', isAuthenticated, validateNetid\('netid'\), getProfileCourses\)/,
-  );
-});
-
 test('user service validates netids before building regex lookup filters', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/userService.ts', import.meta.url),
@@ -5188,10 +5138,6 @@ test('public API DTO ids avoid arbitrary object stringification', () => {
 });
 
 test('profile surfaces render only safe HTTP(S) profile URLs and images', () => {
-  const profileHeaderSource = fs.readFileSync(
-    new URL('../client/src/components/profile/ProfileHeader.tsx', import.meta.url),
-    'utf8',
-  );
   const labMembersSource = fs.readFileSync(
     new URL('../client/src/components/labs/LabMembersList.tsx', import.meta.url),
     'utf8',
@@ -5224,18 +5170,6 @@ test('profile surfaces render only safe HTTP(S) profile URLs and images', () => 
   assert.match(urlSource, /if \(!isAllowedPublicHttpPort\(parsed\)\) return ''/);
   assert.match(urlSource, /trimmed\.startsWith\('\/'\) && !trimmed\.startsWith\('\/\/'\)/);
   assert.match(urlSource, /return safeHttpUrl\(trimmed\)/);
-
-  assert.match(profileHeaderSource, /import \{ EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl \}/);
-  assert.match(profileHeaderSource, /const href = safeHttpUrl\(url\)/);
-  assert.match(profileHeaderSource, /const href = safeHttpUrl\(trimmed\)/);
-  assert.match(profileHeaderSource, /const websiteHref = safeHttpUrl\(profile\.website\)/);
-  assert.match(profileHeaderSource, /const profileImageHref = safeHttpUrl\(profile\.image_url\)/);
-  assert.doesNotMatch(profileHeaderSource, /safeUrl\(/);
-  assert.match(profileHeaderSource, /src=\{profileImageHref\}/);
-  assert.doesNotMatch(profileHeaderSource, /src=\{profile\.image_url\}/);
-  assert.doesNotMatch(profileHeaderSource, /safeMailtoHref\(profile\.email\)/);
-  assert.doesNotMatch(profileHeaderSource, /profile\.building_desk/);
-  assert.doesNotMatch(profileHeaderSource, /profile\.physical_location/);
 
   assert.match(labMembersSource, /import \{[^}]*safeHttpUrl[^}]*\} from '\.\.\/\.\.\/utils\/url'/);
   assert.match(labMembersSource, /const profileImageHref = safeHttpUrl\(user\.image_url\)/);
@@ -5711,7 +5645,6 @@ test('stored profile images do not leak page referrers to external image hosts',
 
   const imageRenderers = [
     '../client/src/components/labs/LabMembersList.tsx',
-    '../client/src/components/profile/ProfileHeader.tsx',
     '../client/src/components/DeveloperCard.tsx',
   ];
 
@@ -6012,8 +5945,8 @@ test('user account routes set full private no-store response headers', () => {
   }
 });
 
-test('authenticated profile and research-area routes set full private no-store response headers', () => {
-  const routeFiles = ['../server/src/routes/profiles.ts', '../server/src/routes/researchAreas.ts'];
+test('authenticated research-area routes set full private no-store response headers', () => {
+  const routeFiles = ['../server/src/routes/researchAreas.ts'];
 
   for (const file of routeFiles) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');

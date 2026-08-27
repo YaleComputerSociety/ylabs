@@ -1259,7 +1259,6 @@ describe('LabDetail page', () => {
             displayName: 'Jordan Researcher',
             title: 'Professor of Example Studies',
             primary_department: 'Example Studies',
-            internalProfilePath: '/profile/fixture.faculty',
             website: 'https://jordan-researcher.example.test/',
           },
         },

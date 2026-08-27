@@ -163,43 +163,6 @@ export type Publication = {
   source?: string;
 };
 
-export type FacultyProfile = {
-  netid: string;
-  email?: string;
-  fname: string;
-  lname: string;
-  userType?: string;
-  title?: string;
-  bio?: string;
-  website?: string;
-  primary_department?: string;
-  secondary_departments: string[];
-  departments: string[];
-  image_url?: string;
-  h_index?: number;
-  orcid?: string;
-  openalex_id?: string;
-  profile_urls: Record<string, string>;
-  publications: Publication[];
-  scholarlyLinks?: LabScholarlyLink[];
-  researchEntities?: Array<{
-    _id: string;
-    slug: string;
-    name: string;
-    displayName?: string;
-    shortDescription?: string;
-    fullDescription?: string;
-    departments?: string[];
-    researchAreas?: string[];
-    role?: string;
-  }>;
-  research_interests: string[];
-  research_interest_summary?: string;
-  topics: string[];
-  profileVerified: boolean;
-  profileVerificationRequestedAt?: string;
-};
-
 export type Developer = {
   name: string;
   position: string;

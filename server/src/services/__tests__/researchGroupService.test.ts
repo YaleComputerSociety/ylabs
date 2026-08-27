@@ -3116,68 +3116,6 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('raw');
   });
 
-  it('preserves internal profile path fallbacks through public detail member shaping', async () => {
-    const entityId = '67d8928150621bcef434a1d5';
-    const entityObjectId = new mongoose.Types.ObjectId(entityId);
-    const personId = new mongoose.Types.ObjectId();
-    const accountId = new mongoose.Types.ObjectId();
-    mocks.researchEntityFindOne.mockReturnValue(
-      leanResult({
-        _id: entityObjectId,
-        slug: 'member-internal-profile-lab',
-        name: 'Member Internal Profile Lab',
-        ...validPublicDescriptions,
-        departments: [],
-        researchAreas: [],
-        sourceUrls: [],
-        studentVisibilityTier: 'student_ready',
-      }),
-    );
-    mocks.roleAssignmentFind.mockReturnValue(
-      queryResult([
-        {
-          _id: new mongoose.Types.ObjectId(),
-          personId,
-          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
-          role: 'PI',
-          state: 'CURRENT',
-          confidence: 0.9,
-          reviewStatus: 'APPROVED',
-          archived: false,
-        },
-      ]),
-    );
-    mocks.personFind.mockReturnValue(
-      queryResult([
-        {
-          _id: personId,
-          displayName: 'Fixture Scholar',
-          accountId,
-          profile: {
-            title: 'Professor',
-            primaryDepartment: 'Example Studies',
-            imageUrl: '',
-          },
-          profileLinks: [],
-        },
-      ]),
-    );
-    mocks.accountFind.mockReturnValue(
-      queryResult([{ _id: accountId, netid: 'fx1001', email: 'fixture.scholar@example.edu' }]),
-    );
-
-    const detail = await getResearchGroupDetail('member-internal-profile-lab');
-
-    expect(detail?.members[0].user).toMatchObject({
-      fname: 'Fixture',
-      lname: 'Scholar',
-      internalProfilePath: '/profile/fx1001',
-      internal_profile_path: '/profile/fx1001',
-      publicKey: `${personId.toString()}-pi`,
-    });
-    expect(detail?.members[0].user).not.toHaveProperty('netid');
-  });
-
   it('suppresses a surname-colliding uncorroborated phantom co-PI when a corroborated PI exists', async () => {
     const entityObjectId = new mongoose.Types.ObjectId('67d8928150621bcef434a1d5');
     const corroboratedPersonId = new mongoose.Types.ObjectId();
