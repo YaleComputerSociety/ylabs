@@ -2,7 +2,7 @@
 
 Status: active operator reference
 
-Last updated: 2026-07-28
+Last updated: 2026-08-26
 
 Yale Research data moves through an evidence-first pipeline. Use this document for the stable shape of the pipeline, [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for source-level audit expectations, and [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) for Beta and production promotion steps.
 
@@ -11,20 +11,90 @@ Yale Research data moves through an evidence-first pipeline. Use this document f
 ```txt
 Source metadata
   -> ScrapeRun
-  -> append-only Observation rows
+  -> append-only Observation rows (ingest-time sanitized, content-hash gated, prose-regression guarded)
   -> claim validation for access interpretations
   -> entity/materializer resolution
-  -> ResearchEntity / RoleAssignment (roster) / User / Grant / Fellowship records
+  -> ResearchEntity / RoleAssignment (roster) / Researcher / User / Grant / Fellowship records
   -> Signal (access types) when evidence supports it
   -> Signal (logistics types) when exact official evidence supports an independent logistics claim
   -> student visibility gate promotes public-safe records or opens release queue items
   -> beta repair queue applies deterministic trusted-source repairs and re-gates records
-  -> Meilisearch rebuild or sync
+  -> Meilisearch rebuild or sync (the gate resyncs its changed entities itself)
   -> Research, Programs, and admin/operator surfaces
 ```
 
 The materializer resolves a legacy `User` to a canonical `Researcher` (via `resolveResearcherIdForLegacyUser`) before writing roster rows, so `RoleAssignment.personId` is always a `Researcher` id even though most other identity fields still live on `User`.
 See [`docs/research-model.md`](./research-model.md) for the current collection shapes.
+
+### Scraper sweep and recurring stages
+
+The pipeline is orchestrated end to end by one phased sweep, `yarn --cwd server scrape:sweep --mode=<mode>` (`server/src/scripts/runScraperSweep.ts`), rather than by running each source by hand.
+The registered sources in `SCRAPER_SWEEP_SOURCES` are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `funding`, `relationships`, and `content-access`.
+The `scholarly` phase is declared in the source-phase contract but currently carries no registered sources, so it does not run.
+Sources inside a phase run with bounded concurrency, and the two LLM-heavy phases (`relationships`, `content-access`) are capped at concurrency 2 by `PHASE_CONCURRENCY_CAPS` regardless of the requested `--concurrency`.
+The dept-roster and dept-undergrad sources stay effectively serial because they page through their own in-loop `--limit`.
+
+The sweep modes fix the environment, database, write posture, and confirmation flag together, so a single `--mode` cannot straddle environments:
+
+| Mode | Env / DB | Writes | Auto-materialize | Confirmation flag |
+| --- | --- | --- | --- | --- |
+| `development-plan` | development / Development | no | no | none (dry-run, `--limit 100 --use-cache`) |
+| `development-sample` | development / Development | yes | yes | none (`--limit 100 --use-cache`) |
+| `development-full` | development / Development | yes | yes | `--confirm-development-full-sweep` (`--exhaustive --ignore-work-planner`) |
+| `development-incremental` | development / Development | yes | yes | `--confirm-development-incremental-sweep` (`--exhaustive --use-cache`) |
+| `beta-plan` | beta / Beta | no | no | none (dry-run, stop-on-failure) |
+| `beta-fetch` | beta / Beta | yes | no (Render materializes) | `--confirm-beta-release-candidate` (`--exhaustive`, stop-on-failure) |
+
+Development modes require a local Meilisearch host and an empty `MEILISEARCH_INDEX_PREFIX`; the sweep refuses a non-local Development Meili target.
+Beta modes fetch observations into the `Beta` database and emit per-source `betaRenderCommands` (dry-run materialize plan plus apply) so the Beta Render service materializes the recorded run ID; local Beta runs never materialize.
+
+The two exhaustive Development modes (`development-full`, `development-incremental`) run a fixed chain of post-run stages after every source has fetched and materialized:
+
+1. `faculty-projection` (`research-entity:project-faculty`, `--concurrency 12`)
+2. `researcher-dedupe` (optional, only when `SCRAPER_SWEEP_DEDUPE_RESEARCHERS` is set)
+3. `eponymous-fra-merge` (optional, only when `SCRAPER_SWEEP_AUTO_MERGE_FRA` is set)
+4. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+5. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+6. `coverage-audit`
+7. `data-quality` (`beta:data-quality --strict`)
+8. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+9. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+10. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is only deleted when `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE` is set)
+
+The three optional stages are each gated by a distinct environment flag so a routine sweep never silently dedupes, merges, or deletes: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`.
+
+The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
+A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
+
+### Faculty new-model projection
+
+`research-entity:project-faculty` (`server/src/services/facultyResearcherProjection.ts`) is a recurring sweep stage that keeps a canonical `Researcher` spine for every active faculty member, independent of whether any scraped membership has resolved them yet.
+It reads active faculty `User` rows (`userType` in {`professor`, `faculty`}, not archived, not `dedupedIntoUserId`), skips organizational mailboxes, and resolves-or-creates the canonical `Researcher` id for each identity via `resolveOrCreateResearcherIdForIdentity`.
+It is dry-run by default; apply requires `--apply --confirm-faculty-projection`.
+Concurrency is bounded (default 10, max 32); the sweep runs it at 12.
+
+### Eponymous FRA-to-lab merge and durable redirects
+
+The optional `eponymous-fra-merge` sweep stage (`research-entity:merge-eponymous-fra`, gated by `SCRAPER_SWEEP_AUTO_MERGE_FRA`) collapses only the high-confidence eponymous case: a `faculty-research-area-*` shell that shadows the same PI's concrete lab home.
+Selection filters to the `profile_area_shell_with_concrete_home` dedupe category and refuses a `CENTER`/`INSTITUTE` canonical (issue #1957), then relinks references onto the canonical, recomputes student visibility, and force-resyncs the canonical to Meilisearch.
+Every merge records a durable `ResearchEntityRedirect` (`researchEntityMergeRedirectService.ts`) keyed on the shell slug/id and pointing at the live canonical, so a later re-scrape resolves the old shell to its canonical instead of re-minting a duplicate; resolution follows redirect and `canonicalGroupId` chains and never depends on the shell row still existing.
+The `archived-cleanup` stage enforces a fail-closed redirect invariant (issue #2039): in `--merge-residue-only` mode it refuses to delete any residue whose durable redirect is absent (`missing_redirect`) or that still has live references (`has_live_references`).
+
+### Ingest-time observation-store guards
+
+`observationStore.appendObservations` (`server/src/scrapers/observationStore.ts`) is the single ingest choke point, and it applies several guards before any observation is stored:
+
+- Ingest sanitization runs `observationFieldSanitizer` over every field from every source so page furniture, contact leakage, and chrome cannot enter a stored field (#1375).
+- Supersession keys on `observationFingerprint`; fields in `LATEST_WINS_FINGERPRINT_FIELDS` (including the first-class `methods` field, see below) omit `value` so a fresh snapshot supersedes the prior one despite content drift.
+- The regressive-prose guard `isRegressiveProseRefresh` (#2035) protects the quality-guarded prose fields (`fullDescription`, `shortDescription`): when the incoming value is judged not useful by the description-quality checks but an active same-`(source, entity, field)` value is useful, the incoming observation is dropped, so a degraded re-scrape can never overwrite a clean source-backed description. Clean-to-clean refreshes are unaffected.
+- `retireObservations` (#1966) is a primitive that bulk-supersedes the observations matching a filter (for example an entity's active rows) and stamps a `rollback` marker with an audit reason, without deleting evidence.
+
+Microsite LLM extractors are gated on a content hash (#2025).
+Each extractor computes a SHA-256 hash of the exact fetched page bytes, compares it against the last stored `sourceContentHash` bookkeeping observation for that `(source, entity)`, and skips the paid LLM call entirely when the page is unchanged.
+The `--force-llm` flag is the only bypass; the gate is read directly by the extractor so it also holds under `--exhaustive` and `--ignore-work-planner`.
+
+At materialization, `entityMaterializer` clears stale observation-only fields on rematerialize (#1963): for `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` (`methods`, `inferredPiUserId`) it unsets the field and its `confidenceByField` entry when the field is not manually locked, is not written this run, and has no live observation this run, so a value no source still supports is removed rather than lingering.
+`methods` is a first-class `string[]` of grounded research techniques (#1954, #1947): the microsite description extractor emits it (grounded through `utils/methodGrounding.ts` to drop vague fillers), the work planner targets it alongside descriptions and areas, and the materializer writes it latest-wins.
 
 Scrapers collect evidence. They should not create unsupported student-facing conclusions such as "accepting undergrads." Materializers derive product records from observed evidence, source confidence, stable keys, and manual locks. The student visibility gate is the public-release boundary: it promotes records that satisfy the visibility rules and holds the rest in the release queue with root repair reasons. In Beta, `operator_review` is an automatic repair state: queued records should be repaired from trusted source evidence where deterministic, then re-gated until they become `student_ready`, `limited_but_safe`, `suppressed`, or an explicit exception.
 
@@ -83,7 +153,12 @@ The first control-plane slice is the admin Operator Board. It remains read-only 
 
 Pending Meili sync is an operator warning, not a worker. Local or VPN jobs may make Mongo current while Render-owned Meili remains stale; production promotion must explicitly rebuild or verify the prefixed production indexes before smoke checks.
 
-The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize`, manual materialize, and production cron paths run the gate after clean write materialization. Standalone manual materialize writes require `--confirm-materialize` in addition to the existing scraper environment write guards; use `--dry-run --output <path>` first for review artifacts. Scheduled or manual global reconciliation should run the same command in dry-run mode first, then apply only with `--collection=all --mode=apply --confirm-student-visibility-apply --max-apply=<reviewedScannedCount>` under the existing environment write guards. For research entities, both public tiers require source-backed complete card copy plus source/lead identity quality; `limited_but_safe` means the record is usable but lacks action/access evidence, not that weak bios or sparse cards are allowed into public Beta.
+The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize`, manual materialize, and production cron paths run the gate after clean write materialization.
+
+The gate recomputes visibility for the whole corpus on every run rather than tracking a version stamp.
+A per-plan write guard, `isStudentVisibilityGatePlanMateriallyChanged`, means only records whose recomputed plan actually changes are written, so an unconditional recompute stays cheap in writes (issue #2044 retired the former `STUDENT_VISIBILITY_VERSION` stamp and its stale-version sweep in favor of this model; do not reintroduce a version).
+After a clean cron materialization the runner (`server/src/scrapers/cronRunner.ts`) runs one full-corpus `--collection=all` apply gate before marking the source crawled, and the exhaustive Development sweep runs the same gate as its `visibility-gate` post-run stage.
+The gate keeps search consistent itself (issue #1958): `applyStudentVisibilityGatePlans` re-reads the entities it changed and calls `syncEntities` so Meilisearch reflects the freshly applied tiers without waiting for a separate rebuild, in addition to the sweep's explicit `search-rebuild` stage. Standalone manual materialize writes require `--confirm-materialize` in addition to the existing scraper environment write guards; use `--dry-run --output <path>` first for review artifacts. Scheduled or manual global reconciliation should run the same command in dry-run mode first, then apply only with `--collection=all --mode=apply --confirm-student-visibility-apply --max-apply=<reviewedScannedCount>` under the existing environment write guards. For research entities, both public tiers require source-backed complete card copy plus source/lead identity quality; `limited_but_safe` means the record is usable but lacks action/access evidence, not that weak bios or sparse cards are allowed into public Beta.
 The gate and `student-visibility:backfill` fail closed on an empty-roster state: once enough lead-requiring research entities are scanned and nearly all of them resolve zero canonical leads, apply is refused with an explicit blocker instead of mass-suppressing the directory, so an accidental recompute against a mid-migration empty roster cannot hide public records.
 Recover by populating the canonical `Researcher` roster (re-materialize scraped sources or backfill legacy identities) and re-running the dry run before apply.
 
@@ -194,6 +269,7 @@ Runtime research discovery is centered on:
 - `accounts` (login principal)
 - `signals`
 - `research_entity_relationships`
+- `research_entity_redirects` (durable shell-to-canonical merge redirects; keeps deduped entities from re-minting on re-scrape)
 - `research_plans`
 - `users` (legacy identity/profile store; still the primary write target for most identity fields pending retirement, see `docs/research-model.md#legacy-user-residue`)
 - `fellowships`
