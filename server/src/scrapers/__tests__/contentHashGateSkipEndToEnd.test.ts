@@ -7,7 +7,11 @@ import {
   type CallDescriptionLLMFn,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
-import type { CardSynthesisLLMFn } from '../../utils/groundedCardSynthesis';
+import {
+  CARD_SYNTHESIS_MODEL,
+  CARD_SYNTHESIS_PROMPT_VERSION,
+  type CardSynthesisLLMFn,
+} from '../../utils/groundedCardSynthesis';
 import {
   LabMicrositeUndergradLLMExtractor,
   type CallLLMFn,
@@ -71,6 +75,8 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       pageHtml,
       DESCRIPTION_EXTRACTION_PROMPT_VERSION,
       DEFAULT_MODEL,
+      CARD_SYNTHESIS_MODEL,
+      CARD_SYNTHESIS_PROMPT_VERSION,
     );
     const loadHashSpy = vi
       .spyOn(contentHashGate, 'loadStoredContentHash')
@@ -171,6 +177,8 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
       pageHtml,
       DESCRIPTION_EXTRACTION_PROMPT_VERSION,
       DEFAULT_MODEL,
+      CARD_SYNTHESIS_MODEL,
+      CARD_SYNTHESIS_PROMPT_VERSION,
     );
     const fetchPage = vi.fn().mockResolvedValue({
       url: 'https://medicine.yale.edu/lab/ashford/',
@@ -206,6 +214,62 @@ describe('durable content-change gate skips LLM re-spend end-to-end', () => {
     expect(hashObs).toBeDefined();
     expect(hashObs?.value).toBe(freshHash);
     expect(hashObs?.value).not.toBe(staleHash);
+  });
+
+  it('description extractor: card model change re-extracts the same unchanged page', async () => {
+    const pageHtml =
+      '<main><h1>Ashford Lab</h1><p>The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.</p></main>';
+    const priorCardModelHash = contentHashGate.computeVersionedContentHash(
+      pageHtml,
+      DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+      DEFAULT_MODEL,
+      CARD_SYNTHESIS_MODEL,
+      CARD_SYNTHESIS_PROMPT_VERSION,
+    );
+    vi.spyOn(contentHashGate, 'loadStoredContentHash').mockResolvedValue(priorCardModelHash);
+
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://medicine.yale.edu/lab/ashford/',
+      html: pageHtml,
+    });
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription:
+        'The Ashford Lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.',
+      shortDescription:
+        'Studies cellular signaling, immune response, translational biomarkers, and computational modeling.',
+      topics: [],
+      methods: [],
+    } satisfies DescriptionExtraction);
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      cardModel: 'gpt-5-mini-next',
+      labFinder: async () => [
+        {
+          _id: 'entity-ashford',
+          slug: 'ashford-lab',
+          name: 'Ashford Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/ashford/',
+        },
+      ],
+      fetchPage,
+      callLLM,
+    });
+
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    const hashObs = emitted.find((obs) => obs.field === 'sourceContentHash');
+    expect(hashObs?.value).toBe(
+      contentHashGate.computeVersionedContentHash(
+        pageHtml,
+        DESCRIPTION_EXTRACTION_PROMPT_VERSION,
+        DEFAULT_MODEL,
+        'gpt-5-mini-next',
+        CARD_SYNTHESIS_PROMPT_VERSION,
+      ),
+    );
+    expect(hashObs?.value).not.toBe(priorCardModelHash);
   });
 
   it('undergrad extractor: unchanged home + subpage text → no LLM call, no observations, skip is logged', async () => {

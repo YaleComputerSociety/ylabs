@@ -41,6 +41,7 @@ import {
 } from '../../utils/officialResearchDescription';
 import {
   CARD_SYNTHESIS_MODEL,
+  CARD_SYNTHESIS_PROMPT_VERSION,
   defaultCardSynthesisLLM,
   synthesizeGroundedCardDescription,
   type CardSynthesisLLMFn,
@@ -844,6 +845,8 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           page.html,
           DESCRIPTION_EXTRACTION_PROMPT_VERSION,
           this.model,
+          this.cardModel,
+          CARD_SYNTHESIS_PROMPT_VERSION,
         );
         const storedContentHash = ctx.options.forceLlm
           ? undefined

@@ -36,9 +36,11 @@ export function computeVersionedContentHash(
   text: string,
   promptVersion: string,
   model: string,
+  ...additionalContractParts: string[]
 ): string {
+  const contract = [promptVersion, model, ...additionalContractParts].join(' ');
   return createHash('sha256')
-    .update(`${computeContentHash(text)} ${promptVersion} ${model}`, 'utf8')
+    .update(`${computeContentHash(text)} ${contract}`, 'utf8')
     .digest('hex');
 }
 
