@@ -54,6 +54,7 @@ export function jaroWinkler(a: string, b: string): number {
     if (s1[i] === s2[i]) prefix += 1;
     else break;
   }
+  if (jaro < 0.7) return jaro;
   return jaro + prefix * 0.1 * (1 - jaro);
 }
 
@@ -163,7 +164,7 @@ export interface PhoneticCode {
 
 const METAPHONE_VOWELS = new Set(['A', 'E', 'I', 'O', 'U']);
 
-export function metaphone(name: string): string {
+export function metaphone(name: string, useAlternate = false): string {
   let word = (typeof name === 'string' ? name : '').toUpperCase().replace(/[^A-Z]/g, '');
   if (word.length === 0) return '';
 
@@ -194,7 +195,8 @@ export function metaphone(name: string): string {
       case 'C':
         if (next === 'I' && at(i + 2) === 'A') code += 'X';
         else if (next === 'H') {
-          code += prev === 'S' ? 'K' : 'X';
+          if (prev === 'S') code += 'K';
+          else code += useAlternate ? 'K' : 'X';
         } else if (next === 'I' || next === 'E' || next === 'Y') {
           if (prev !== 'S') code += 'S';
         } else code += 'K';
@@ -271,8 +273,7 @@ export function metaphone(name: string): string {
 }
 
 export function doubleMetaphone(name: string): PhoneticCode {
-  const primary = metaphone(name);
-  return { primary, alternate: primary };
+  return { primary: metaphone(name), alternate: metaphone(name, true) };
 }
 
 function firstNameToken(value: unknown): string {
