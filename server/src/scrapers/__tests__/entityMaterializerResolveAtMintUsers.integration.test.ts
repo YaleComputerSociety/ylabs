@@ -50,6 +50,7 @@ describe('resolve-at-mint for users (C4_RESOLVE_AT_MINT_USERS)', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
+    await User.createIndexes();
   }, 60000);
 
   afterAll(async () => {
@@ -117,6 +118,42 @@ describe('resolve-at-mint for users (C4_RESOLVE_AT_MINT_USERS)', () => {
 
     expect(third.created).toBe(true);
     expect(await User.countDocuments({})).toBe(3);
+    expect(await CanonicalAlias.countDocuments({})).toBe(0);
+  });
+
+  it('flag ON: a netid lost to a concurrent writer is adopted, not minted a second row', async () => {
+    process.env.C4_RESOLVE_AT_MINT_USERS = 'true';
+    const raceNetid = 'jrace';
+    await seedUser('user-c', raceNetid, 'jayne.c@example.edu');
+
+    const winnerId = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const originalCreate = User.create.bind(User);
+    const createSpy = vi.spyOn(User, 'create').mockImplementationOnce(async (arg: any) => {
+      await db.collection('users').insertOne({
+        _id: winnerId,
+        netid: raceNetid,
+        email: 'winner@example.edu',
+        fname: 'Jayne',
+        lname: 'Testerson',
+      });
+      return originalCreate(arg);
+    });
+
+    let result;
+    let createCalls = 0;
+    try {
+      result = await materializeEntity('user', { entityKey: 'user-c' });
+    } finally {
+      createCalls = createSpy.mock.calls.length;
+      createSpy.mockRestore();
+    }
+
+    expect(createCalls).toBeGreaterThan(0);
+    expect(result.created).toBe(false);
+    expect(result.entityId).toBe(String(winnerId));
+    expect(await User.countDocuments({})).toBe(1);
     expect(await CanonicalAlias.countDocuments({})).toBe(0);
   });
 });
