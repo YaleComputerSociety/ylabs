@@ -2,13 +2,12 @@
  * Detail modal for viewing full listing information.
  */
 import React, { useEffect, useState, useContext } from 'react';
-import { Link } from 'react-router-dom';
 import { Listing } from '../../types/types';
 import UserContext from '../../contexts/UserContext';
 import ConfigContext from '../../contexts/ConfigContext';
 import axios from '../../utils/axios';
 import { getDepartmentAbbreviation } from '../../utils/departmentNames';
-import { ensureHttpPrefix, safeRouteSegment, safeUrl } from '../../utils/url';
+import { ensureHttpPrefix, safeUrl } from '../../utils/url';
 import { getInstitutionAffiliation, getInstitutionLabel } from '../../utils/institutionAffiliation';
 import FavoriteButton from './FavoriteButton';
 
@@ -421,22 +420,12 @@ const ListingDetailModal = ({
                         name,
                         netid: listing.professorIds?.[i] || null,
                       })),
-                    ].map(({ name, netid }, i) => (
+                    ].map(({ name }, i) => (
                       <div key={i} className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-700 font-semibold text-sm flex-shrink-0">
                           {name.charAt(0).toUpperCase()}
                         </div>
-                        {netid ? (
-                          <Link
-                            to={`/profile/${safeRouteSegment(netid)}`}
-                            onClick={onClose}
-                            className="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                          >
-                            {name}
-                          </Link>
-                        ) : (
-                          <span className="text-sm text-gray-800 font-medium">{name}</span>
-                        )}
+                        <span className="text-sm text-gray-800 font-medium">{name}</span>
                       </div>
                     ))}
                   </div>

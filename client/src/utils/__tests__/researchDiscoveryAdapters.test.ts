@@ -271,7 +271,6 @@ describe('buildGroupedSearchResults', () => {
     });
 
     expect(grouped.people).toHaveLength(1);
-    expect(grouped.people[0].profileUrl).toBe('/profile/grace.hopper');
     expect(grouped.people[0].labName).toBe('Safe AI Lab');
     expect(grouped.people[0].labSlug).toBe('safe-ai');
   });

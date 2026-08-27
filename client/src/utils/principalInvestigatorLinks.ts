@@ -1,4 +1,4 @@
-import { safeHttpUrl, safeRouteSegment } from './url';
+import { safeHttpUrl } from './url';
 
 export interface PrincipalInvestigatorLink {
   href: string;
@@ -108,47 +108,6 @@ const profileUrlFromCandidates = (
     }
   }
   return undefined;
-};
-
-const websiteLinkFromCandidates = (
-  candidates: Array<unknown>,
-): PrincipalInvestigatorLink | undefined => {
-  for (const candidate of candidates) {
-    const href = safeHttpUrl(candidate);
-    if (href) return { href, external: true };
-  }
-  return undefined;
-};
-
-const internalProfilePathFromCandidates = (
-  candidates: Array<unknown>,
-): PrincipalInvestigatorLink | undefined => {
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string') continue;
-    const trimmed = candidate.trim();
-    const match = /^\/profile\/([^/?#]+)$/.exec(trimmed);
-    if (!match) continue;
-    const segment = safeRouteSegment(match[1]);
-    if (segment) return { href: `/profile/${segment}`, external: false };
-  }
-  return undefined;
-};
-
-export const principalInvestigatorLinkFromMemberUser = (
-  user: Record<string, unknown> | undefined,
-): PrincipalInvestigatorLink | undefined => {
-  if (!user) return undefined;
-  const officialProfileLink = profileUrlFromCandidates([
-    ...profileUrlMapValues(user.profileUrls),
-    ...profileUrlMapValues(user.profile_urls),
-    user.websiteUrl,
-    user.website,
-  ]);
-  return (
-    officialProfileLink ||
-    internalProfilePathFromCandidates([user.internalProfilePath, user.internal_profile_path]) ||
-    websiteLinkFromCandidates([user.websiteUrl, user.website])
-  );
 };
 
 export const officialProfileUrlFromMemberUser = (

@@ -9,7 +9,6 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import UserContext from '../contexts/UserContext';
 import { buildApiUrl } from '../utils/apiBaseUrl';
-import { safeRouteSegment } from '../utils/url';
 
 const MAX_LOGOUT_RETURN_PATH_LENGTH = 2048;
 
@@ -28,7 +27,6 @@ const UserButton = () => {
   const open = Boolean(anchorEl);
   const location = useLocation();
   const { user } = useContext(UserContext);
-  const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
 
   const getInitials = () => {
     if (user?.netId && user.netId.length > 0) {
@@ -126,17 +124,6 @@ const UserButton = () => {
           },
         }}
       >
-        {isProfessorUser && user?.netId && (
-          <MenuItem
-            component={Link}
-            to={`/profile/${safeRouteSegment(user.netId)}`}
-            onClick={handleClose}
-            sx={menuItemStyle}
-            disableRipple
-          >
-            Public Profile
-          </MenuItem>
-        )}
         <MenuItem
           component={Link}
           to="/about"
