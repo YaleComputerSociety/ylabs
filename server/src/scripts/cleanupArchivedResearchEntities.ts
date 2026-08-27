@@ -27,11 +27,6 @@ const RESEARCH_ENTITY_REDIRECTS_COLLECTION = 'research_entity_redirects';
 
 export const SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV = 'SCRAPER_SWEEP_DELETE_MERGE_RESIDUE';
 
-export function isMergeResidueDeletionStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = (env[SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV] || '').trim().toLowerCase();
-  return value === '1' || value === 'true';
-}
-
 interface LiveReferenceSpec {
   collection: string;
   field: string;

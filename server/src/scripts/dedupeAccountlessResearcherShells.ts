@@ -24,11 +24,6 @@ const __filename = fileURLToPath(import.meta.url);
 
 export const SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV = 'SCRAPER_SWEEP_DEDUPE_RESEARCHERS';
 
-export function isResearcherDedupeStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = (env[SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV] || '').trim().toLowerCase();
-  return value === '1' || value === 'true';
-}
-
 export interface ResearcherDedupeStageDelta {
   byReason: Record<ShellMergeReason, number>;
   shellsMerged: number;

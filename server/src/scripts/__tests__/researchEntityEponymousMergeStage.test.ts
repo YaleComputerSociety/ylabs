@@ -13,7 +13,6 @@ vi.mock('../../services/studentVisibilityGateService', () => ({
 import {
   buildEponymousFraLabMergePairs,
   countCenterGuardedPis,
-  isEponymousFraLabMergeStageEnabled,
   parseEponymousFraLabMergeStageArgs,
   planEponymousFraLabMerges,
   runEponymousFraLabMergeStage,
@@ -82,19 +81,6 @@ function centerOnlyRow(): ResearchEntityPiDedupeRow {
     ],
   };
 }
-
-describe('isEponymousFraLabMergeStageEnabled', () => {
-  it('defaults to disabled when the flag is unset', () => {
-    expect(isEponymousFraLabMergeStageEnabled({})).toBe(false);
-  });
-
-  it('enables only for an explicit truthy flag value', () => {
-    expect(isEponymousFraLabMergeStageEnabled({ SCRAPER_SWEEP_AUTO_MERGE_FRA: '1' })).toBe(true);
-    expect(isEponymousFraLabMergeStageEnabled({ SCRAPER_SWEEP_AUTO_MERGE_FRA: 'true' })).toBe(true);
-    expect(isEponymousFraLabMergeStageEnabled({ SCRAPER_SWEEP_AUTO_MERGE_FRA: '0' })).toBe(false);
-    expect(isEponymousFraLabMergeStageEnabled({ SCRAPER_SWEEP_AUTO_MERGE_FRA: 'no' })).toBe(false);
-  });
-});
 
 describe('parseEponymousFraLabMergeStageArgs', () => {
   it('parses since, max-merges and apply flags', () => {
