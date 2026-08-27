@@ -32,8 +32,9 @@ Public research identity, and a first-class findable entity in its own right: a 
 The private login principal: the student or user who logs in.
 [`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, and `archived`.
 Authentication is wired onto `Account` (#367): CAS, dev-login, and the local bypass resolve-or-create an `Account` by netid and stamp `lastLoginAt`.
-The legacy `User` collection remains the primary identity and profile store that most runtime code still reads and writes (bio, favorites, saved plans prior to `ResearchPlan`, and scraper identity resolution); retiring the remaining `User` reads and dropping the collection is a separate, human-gated follow-up, not yet done.
-See [Legacy `User` Residue](#legacy-user-residue).
+The legacy `User` model has been retired (#2014): no runtime code reads or writes `User`, and identity lives entirely on `Account` (login) plus `Researcher` (public identity).
+Dropping the now-orphaned `users` collection is a separate, human-gated database cleanup.
+See [Legacy `User` Retirement](#legacy-user-retirement).
 
 ### `ResearchEntity` (`research_entities`)
 
@@ -49,8 +50,8 @@ Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are
 The person-to-research-entity membership edge (the roster); replaces the retired `ResearchGroupMember`.
 [`server/src/models/roleAssignment.ts`](../server/src/models/roleAssignment.ts) defines `personId` (a `Researcher` reference), `target` (`{ kind: 'RESEARCH_ENTITY' | 'ORG_UNIT', id }`), `role` (`PI` | `CO_PI` | `DIRECTOR` | `CO_DIRECTOR` | `CORE_FACULTY` | `AFFILIATED` | `STAFF` | `POSTDOC` | `GRADUATE_STUDENT` | `UNDERGRADUATE`), `state` (`CURRENT` | `HISTORICAL` | `UNKNOWN`), `reviewStatus`, `confidence`, and a bounded `rosterProvenance` subdoc (source name/url, profile url, section label, evidence status, membership key, observed and freshness-expiry timestamps) that feeds the roster-freshness disclosure.
 `evidenceClaimIds` stays empty while the evidence claim-graph is frozen (see [Frozen Evidence-Claim Scaffolding](#frozen-evidence-claim-scaffolding)).
-Read via `getResearchEntityRoster`/`getResearchEntityRosterByEntityId` in [`researchEntityMembershipAccessor.ts`](../server/src/services/researchEntityMembershipAccessor.ts) (joins `Researcher` and, transitionally, `User`).
-The continuous canonical materializer write path (`entityMaterializer.ts`) is the sole roster write path (#353, #361): it resolves a legacy `User` to a canonical `Researcher` via `resolveResearcherIdForLegacyUser` (netid to `Account` to `Researcher.accountId`, then `identifiers.orcid`, then a single name-only `displayName` match, failing closed rather than merging distinct identities) before writing `RoleAssignment.personId`, so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
+Read via `getResearchEntityRoster`/`getResearchEntityRosterByEntityId` in [`researchEntityMembershipAccessor.ts`](../server/src/services/researchEntityMembershipAccessor.ts) (joins `Researcher`).
+The continuous canonical materializer write path (`entityMaterializer.ts`) is the sole roster write path (#353, #361): it resolves a scraped person name to a canonical `Researcher` via `resolveResearcherIdForPersonName` in [`researcherPersonNameResolver.ts`](../server/src/services/researcherPersonNameResolver.ts) (netid to `Account` to `Researcher.accountId`, then a surname-plus-given-name match against `Researcher.displayName`, returning `absent`/`ambiguous`/`matched` and failing closed rather than merging distinct identities) before writing `RoleAssignment.personId`, so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
 
 ### `Signal` (`signals`)
 
@@ -74,8 +75,7 @@ Raw, append-only scraped evidence; the substrate that feeds the confidence resol
 
 Private student saved planning, keyed on `accountId` plus a target (`{ kind: 'RESEARCH_ENTITY' | 'PROGRAM', id }`).
 The saved-research and program-watch routes read and write `ResearchPlan` through `researchPlanService` at runtime (PR #484 / commit `34b9fd7e`).
-The embedded `User.savedResearchEntities` and `User.savedPrograms` fields are stale residue that no runtime reader consumes; backfilling them onto `ResearchPlan` and dropping the fields is a separate, tracked cleanup (#725), not an open design question.
-The `User.savedResearchEntityPlans`, `User.savedResearchEntityPlanMigrationConflicts`, and `User.savedPathwayPlans` declarations were already dropped as part of that cleanup, with the Dev-only `retire:stale-saved-plan-fields` script clearing any stale stored values.
+With the `User` model retired (#2014), no embedded planning fields remain in code; any legacy `savedResearchEntities`/`savedPrograms` values that survive only in the orphaned `users` collection are covered by the human-gated #725 data backfill onto `ResearchPlan` before that collection is dropped, not an open design question.
 
 ## Removed, Retired, And Frozen
 
@@ -83,7 +83,7 @@ Removed (do not model): `EntryPathway`, `ContactRoute`, `PostedOpportunity`, and
 `AccessSignal` and `UndergraduateLogisticsClaim` are folded into `Signal`.
 The embedded `discovery` projection blob is removed; there is no persisted discovery cache.
 
-Retired legacy models: `ResearchGroup` and `ResearchGroupMember` (superseded by `ResearchEntity` and `RoleAssignment`); `FacultyMember` (#366, folded into `Researcher`/`RoleAssignment` identity resolution; the last runtime reader, `resolveResearcherIdForLegacyUser`, has no `FacultyMember` fallback); `Paper` and `PaperAuthor` and their readers (#207 publication-mirror half, no rollback opt-in).
+Retired legacy models: `ResearchGroup` and `ResearchGroupMember` (superseded by `ResearchEntity` and `RoleAssignment`); `FacultyMember` (#366, folded into `Researcher`/`RoleAssignment` identity resolution, with no remaining runtime reader); `Paper` and `PaperAuthor` and their readers (#207 publication-mirror half, no rollback opt-in).
 `MaterializedProvenance` was deleted as dead code (unattached, referenced only by its own test).
 The `faculty_members` and `papers`/`paper_authors` collections are left in place pending a gated, human-approved collection drop tracked under #210's collection-drop scope; this is not imminent and code should not treat their presence as launch evidence.
 Historical `paper` observations and source rows are retained as read-only archived evidence and are never materialized.
@@ -119,19 +119,19 @@ Discovery projection: there is no persisted `discovery` blob.
 Mongo `ResearchEntity` is the source of truth; the Meilisearch `researchentities` index is the discovery and browse projection (a rebuildable cache); the detail page derives its view live.
 `browseRankScore` is the one computed field kept on `ResearchEntity` for the index rebuild, with `services/researchEntityBrowseRank.ts` as its single recompute trigger.
 
-## Legacy `User` Residue
+## Legacy `User` Retirement
 
-The refactor's identity split target is `User` splitting into `Account` (login) plus `Researcher` (public identity).
-`Account` wiring for login is done (#367), but `User` remains the collection most runtime code (roughly 30+ server files, including the entity materializer, `profileService`, `listingService`, and `visibilityRepairQueueService`) still reads and writes directly for profile fields (bio, ORCID), favorites, and scraper identity resolution.
-Every roster read and write resolves a `User` to its canonical `Researcher` via `resolveResearcherIdForLegacyUser` rather than treating `User` as the roster identity, so public payloads and `RoleAssignment` rows are already canonical even though the underlying `User` collection has not been dropped.
-Retiring the remaining `User` reads and dropping the collection stays the long pole and is human-gated; do not describe it as complete.
+The identity split is complete (#2014): the former `User` document is fully replaced by `Account` (the private login principal, keyed on netid) plus `Researcher` (the public research identity).
+The `User` model, `userService`, `facultyResearcherProjection`, and the one-time `User` backfill/dedupe/hygiene/audit scripts were deleted; no runtime code reads or writes `User`.
+Roster reads and writes resolve identity to a canonical `Researcher` directly (netid to `Account` to `Researcher.accountId`, then name matching via `resolveResearcherIdForPersonName`), so public payloads and `RoleAssignment` rows are canonical.
+Dropping the now-orphaned `users` collection is the only remaining step and stays human-gated; do not treat the collection's continued existence as a live runtime dependency.
 
 Accepted operator inputs should prefer ORCID over Yale netid.
-ORCID may enrich or disambiguate an existing Yale-confirmed `User` (including `User.orcid` and manually accepted `User.googleScholarId`) or a `Researcher.identifiers.orcid`, but ORCID must not create a Yale person record by itself.
-Netid remains an internal account/scraper compatibility key and should appear only as diagnostic or converted internal target data in accepted-input workflows.
+ORCID may enrich or disambiguate an existing Yale-confirmed `Researcher` (`Researcher.identifiers.orcid`), but ORCID must not create a Yale person record by itself.
+Netid remains an internal `Account`/scraper compatibility key and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 
-User dedupe note: scraper-created same-person user shells should be merged by rewriting active references to the canonical `User` and marking the duplicate with `archived`, `dedupedIntoUserId`, `dedupedAt`, and identity-review metadata.
-Integrity scans should ignore archived user shells.
+Researcher dedupe note: scraper-created same-person `Researcher` shells are merged by rewriting active references onto the canonical `Researcher` and marking the duplicate with `archived` and `dedupedIntoResearcherId`.
+Integrity scans should ignore archived shells.
 Same-email rows with different names are a review queue, not automatic merge evidence, unless a reviewer confirms they are the same Yale person.
 
 ## Frozen Evidence-Claim Scaffolding
@@ -226,9 +226,7 @@ Current behavior:
 The `favPathways` saving feature was removed (#363): the `/users/favPathways*` endpoints and the client saved-pathways section are gone, and saving is covered entirely by saved research entities and their plans.
 The embedded `User.favPathways` field declaration has since been dropped from the schema as well.
 The `favListings` listing-favorites feature was likewise removed (#2010): its `/users/favListings*` endpoints, the generic favorite-objectid helper chain and `logFavoriteEvent` middleware, the client `useFavorites` listings kind and `favoritesReducer` listing state, and the `User.favListings` field are all gone; the live Listing model, `/listings` endpoints, and `LISTING_*` analytics enums are untouched.
-All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; nothing consumes the embedded planning fields (`User.savedResearchEntities`, `User.savedPrograms`) at runtime.
-Those fields are intentionally left in the `User` schema only so their legacy data survives the pending, human-gated backfill onto `ResearchPlan` tracked in #725; they are stale residue, not an open design question.
-The former `User.savedResearchEntityPlans`, `User.savedResearchEntityPlanMigrationConflicts`, and `User.savedPathwayPlans` declarations were dropped once the canonical `ResearchPlan` cutover shipped and their Development backfill completed; the Dev-only `retire:stale-saved-plan-fields` script clears any stale stored values.
+All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; with the `User` model retired (#2014), no embedded planning fields remain in code (see [`ResearchPlan`](#researchplan-research_plans) for the human-gated #725 backfill of any legacy values in the orphaned `users` collection).
 
 Program watching (the account Program Watch surface and the `/programs` watch affordance) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.
 
@@ -307,7 +305,7 @@ This metadata is a planning and review contract, not a substitute for evidence. 
 
 ORCID may disambiguate a Yale-confirmed researcher and support a reviewed outbound profile link, but it must not act as an account-creation shortcut or a works feed.
 
-Promote a `User` to a canonical `Researcher`, or create a `Researcher` directly, only from Yale-controlled or Yale-corroborated identity evidence such as netid, Yale email, Yalies/Directory records, or an official Yale profile.
+Create a `Researcher` only from Yale-controlled or Yale-corroborated identity evidence such as netid, Yale email, Yalies/Directory records, or an official Yale profile.
 Reviewed ORCID and Google Scholar profiles may support disambiguation and outbound navigation, while NIH and NSF may enrich grant context, but none should create a Yale person record by itself.
 
 Official Yale sources may emit ORCID identity observations with source provenance.
@@ -380,4 +378,4 @@ Use the unified Yale Research surface as the primary student-facing experience. 
 4. Teach scrapers to emit source evidence first, then materialize access signals and roster rows only when evidence supports them.
 5. Rename or drop legacy physical fields and lab-named files only after a reviewed cleanup, per the human-gated collection-drop scope tracked under #210.
 
-The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including data-quality operations, post-launch legacy cleanup (the `User` retirement long pole, the `faculty_members`/`papers`/`paper_authors` collection drop, and the #725 saved-plan field backfill), and saved/advising workflow expansion.
+The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including data-quality operations, post-launch legacy cleanup (the human-gated `users`/`faculty_members`/`papers`/`paper_authors` collection drops and the #725 saved-plan data backfill), and saved/advising workflow expansion.

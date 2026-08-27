@@ -111,7 +111,8 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | Service                                                                                                                                     | Responsibility                                                       |
 | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `researchEntityDto.ts` / `researchEntityQuality.ts`                                                                                         | Public ResearchEntity DTO shaping and quality scoring.               |
-| `researchEntityMembershipAccessor.ts`                                                                                                       | Canonical roster reads (`getResearchEntityRoster`) and legacy-`User`-to-`Researcher` identity resolution (`resolveResearcherIdForLegacyUser`). |
+| `researchEntityMembershipAccessor.ts`                                                                                                       | Canonical roster reads (`getResearchEntityRoster`/`getResearchEntityRosterByEntityId`). |
+| `researcherPersonNameResolver.ts`                                                                                                           | Keystone `resolveResearcherIdForPersonName`: resolves a scraped person name (netid or surname-plus-given-name) to a canonical `Researcher`. |
 | `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts`                                                                        | Best-first browse ranking scorer and persist plus Meili resync.      |
 | `researchEntitySearchIndexService.ts`                                                                                                       | Meilisearch index sync and query.                                    |
 | `meiliSyncService.ts`                                                                                                                       | Syncs ResearchEntity upserts into the Meilisearch index.             |
@@ -128,7 +129,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | Element          | Convention                                                |
 | ---------------- | --------------------------------------------------------- |
 | Services         | camelCase plus `Service`, e.g. `listingService.ts`.       |
-| Models           | PascalCase exports, e.g. `User`, `Listing`, `Fellowship`. |
+| Models           | PascalCase exports, e.g. `Account`, `Listing`, `Fellowship`. |
 | Controllers      | camelCase descriptive names.                              |
 | Routes           | Resource-based files.                                     |
 | DB fields        | camelCase.                                                |
