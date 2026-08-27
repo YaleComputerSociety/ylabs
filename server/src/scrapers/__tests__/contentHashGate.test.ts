@@ -48,7 +48,9 @@ describe('computeVersionedContentHash', () => {
   });
 
   it('differs from the bytes-only hash so pre-versioning rows re-extract once', () => {
-    expect(computeVersionedContentHash(bytes, 'v1', 'gpt-5-mini')).not.toBe(computeContentHash(bytes));
+    expect(computeVersionedContentHash(bytes, 'v1', 'gpt-5-mini')).not.toBe(
+      computeContentHash(bytes),
+    );
   });
 });
 
