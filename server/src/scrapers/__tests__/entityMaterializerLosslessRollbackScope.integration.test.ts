@@ -76,7 +76,7 @@ describe('lossless full-log read excludes rollback-retired observations', () => 
     const entityId = new mongoose.Types.ObjectId();
 
     const live = await seedObservation({ entityId, value: 'live description' });
-    const latestWinsSuperseded = await seedObservation({
+    await seedObservation({
       entityId,
       value: 'earlier description',
       superseded: true,

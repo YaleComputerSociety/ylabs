@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Observation } from '../../models/observation';
 import { appendObservations, collapseLatestWins } from '../observationStore';
-import { resolveAllFields, resolveFieldRanked, type ResolverObservation } from '../confidenceResolver';
+import {
+  resolveAllFields,
+  resolveFieldRanked,
+  type ResolverObservation,
+} from '../confidenceResolver';
 
 const USEFUL_DESCRIPTION =
   'The laboratory investigates how gene regulatory networks control immune cell differentiation, ' +
@@ -21,7 +25,11 @@ function appendCtx() {
   };
 }
 
-function fullDescriptionObservation(value: string, observedAt: Date, sourceName = SOURCE): ResolverObservation {
+function fullDescriptionObservation(
+  value: string,
+  observedAt: Date,
+  sourceName = SOURCE,
+): ResolverObservation {
   return { field: 'fullDescription', value, sourceName, confidence: 0.82, observedAt };
 }
 
@@ -35,7 +43,14 @@ describe('C4_LOSSLESS_INGEST ingest gating', () => {
     delete process.env.C4_LOSSLESS_INGEST;
     const insertMany = vi.spyOn(Observation, 'insertMany');
     const result = await appendObservations(
-      [{ entityType: 'researchEntity', entityKey: 'synthetic-lab', field: 'fullDescription', value: DEGRADED_DESCRIPTION }],
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'synthetic-lab',
+          field: 'fullDescription',
+          value: DEGRADED_DESCRIPTION,
+        },
+      ],
       appendCtx(),
       { loadActiveProse: async () => USEFUL_DESCRIPTION },
     );
@@ -48,10 +63,19 @@ describe('C4_LOSSLESS_INGEST ingest gating', () => {
     const insertMany = vi
       .spyOn(Observation, 'insertMany')
       .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:desc' }] as any);
-    const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+    const bulkWrite = vi
+      .spyOn(Observation, 'bulkWrite')
+      .mockResolvedValue({ modifiedCount: 0 } as any);
 
     const result = await appendObservations(
-      [{ entityType: 'researchEntity', entityKey: 'synthetic-lab', field: 'fullDescription', value: DEGRADED_DESCRIPTION }],
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'synthetic-lab',
+          field: 'fullDescription',
+          value: DEGRADED_DESCRIPTION,
+        },
+      ],
       appendCtx(),
       { loadActiveProse: async () => USEFUL_DESCRIPTION },
     );
@@ -91,8 +115,20 @@ describe('C4 decide-late read: paraphrase flood + read-time preference', () => {
     // and a useful value from source B. collapseLatestWins keeps both (different sources),
     // so the materializer's ranked-useful preference can pick the useful one.
     const log: ResolverObservation[] = [
-      { field: 'fullDescription', value: DEGRADED_DESCRIPTION, sourceName: 'source-a', confidence: 0.95, observedAt: new Date(2026, 0, 10) },
-      { field: 'fullDescription', value: USEFUL_DESCRIPTION, sourceName: 'source-b', confidence: 0.5, observedAt: new Date(2026, 0, 1) },
+      {
+        field: 'fullDescription',
+        value: DEGRADED_DESCRIPTION,
+        sourceName: 'source-a',
+        confidence: 0.95,
+        observedAt: new Date(2026, 0, 10),
+      },
+      {
+        field: 'fullDescription',
+        value: USEFUL_DESCRIPTION,
+        sourceName: 'source-b',
+        confidence: 0.5,
+        observedAt: new Date(2026, 0, 1),
+      },
     ];
     const collapsed = collapseLatestWins(log, 'researchEntity');
     expect(collapsed).toHaveLength(2);

@@ -279,8 +279,7 @@ export async function appendObservations(
           },
         },
       },
-    }),
-  );
+    }));
 
   const superseded =
     supersedeOps.length > 0
