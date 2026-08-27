@@ -208,11 +208,12 @@ export async function resolveCanonical(
     }
     if (key.strength === 'weak') {
       const selfName = input.self?.name ?? '';
+      const candidateName = candidate.name ?? '';
       const corroborated =
         input.type === 'researchEntity' &&
         Boolean(selfName) &&
-        Boolean(candidate.name) &&
-        shareLead(selfName, candidate.name);
+        Boolean(candidateName) &&
+        shareLead(selfName, candidateName);
       if (!corroborated) continue;
     }
     if (wouldDemote(input.self, candidate)) continue;
