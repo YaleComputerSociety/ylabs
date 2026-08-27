@@ -1,4 +1,3 @@
-import dns from 'dns/promises';
 import mongoose from 'mongoose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -666,5 +665,4 @@ describe('admin routes', () => {
     expect(res.statusCode).toBe(503);
     expect(res.body).toEqual({ error: 'Access review queue is rebuilding' });
   });
-
 });

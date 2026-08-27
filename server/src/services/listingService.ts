@@ -586,4 +586,3 @@ export const addFavorite = async (id: any, _userId: string) => {
 export const removeFavorite = async (id: any, _userId: string) => {
   return itemOps.removeFavorite(getListingModel(), id, PUBLIC_LISTING_MUTATION_FILTER);
 };
-
