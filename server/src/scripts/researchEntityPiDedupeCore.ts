@@ -975,7 +975,7 @@ const specificProfileLabUrlCanonicalScore = (
  * after union-find: some pair shares the surname but carries disjoint, non-empty
  * first-name sets.
  */
-function clusterHasConflictingLeadFirstNames(
+export function clusterHasConflictingLeadFirstNames(
   entities: ResearchEntityPiDedupeRow['entities'],
 ): boolean {
   for (let i = 0; i < entities.length; i += 1) {
@@ -1070,7 +1070,7 @@ function personLeadNameTokens(name: string | undefined): string[] {
  * hosting several distinct faculty (het.yale.edu across four physicists), which
  * have no shared surname and must never collapse (issue #1130).
  */
-function entitiesShareLeadPersonName(
+export function entitiesShareLeadPersonName(
   a: ResearchEntityPiDedupeRow['entities'][number],
   b: ResearchEntityPiDedupeRow['entities'][number],
 ): boolean {
