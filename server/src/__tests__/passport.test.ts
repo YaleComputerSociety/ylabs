@@ -7,6 +7,12 @@ const accountServiceMock = vi.hoisted(() => ({
 }));
 vi.mock('../services/accountService', () => accountServiceMock);
 
+const adminGrantServiceMock = vi.hoisted(() => ({
+  ensureBootstrapAdminGrant: vi.fn(async () => undefined),
+  hasActiveAdminGrant: vi.fn(async () => false),
+}));
+vi.mock('../services/adminGrantService', () => adminGrantServiceMock);
+
 import {
   ensureDevLoginUser,
   ensureLocalAuthBypassUser,
@@ -246,6 +252,7 @@ describe('auth environment guards', () => {
         userType: 'admin',
         userConfirmed: true,
         profileVerified: true,
+        isAdmin: true,
       });
       expect(accountServiceMock.recordAccountLogin).toHaveBeenCalledWith({
         netid: 'devadmin',
@@ -253,6 +260,143 @@ describe('auth environment guards', () => {
       });
     } finally {
       accountServiceMock.recordAccountLogin.mockReset();
+    }
+  });
+
+  it('surfaces isAdmin on the /check payload for a dev-login admin session', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalServerBaseUrl = process.env.SERVER_BASE_URL;
+    process.env.NODE_ENV = 'development';
+    process.env.SERVER_BASE_URL = 'http://localhost:4000';
+    accountServiceMock.recordAccountLogin.mockResolvedValue({
+      _id: 'acc-devadmin',
+      netid: 'devadmin',
+      email: 'devadmin@example.invalid',
+      status: 'ACTIVE',
+      archived: false,
+    });
+
+    const checkRoute = (passportRoutes as any).stack
+      .map((layer: any) => layer.route)
+      .find((route: any) => route?.path === '/check');
+    const handler = checkRoute.stack.at(-1).handle;
+
+    try {
+      const sessionUser = await ensureDevLoginUser('admin');
+      expect(sessionUser.isAdmin).toBe(true);
+      expect(adminGrantServiceMock.ensureBootstrapAdminGrant).toHaveBeenCalledWith('devadmin');
+
+      const res = { setHeader: vi.fn(), json: vi.fn() };
+      handler({ user: sessionUser }, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        auth: true,
+        user: {
+          netId: 'devadmin',
+          userType: 'admin',
+          userConfirmed: true,
+          profileVerified: true,
+          isAdmin: true,
+        },
+      });
+    } finally {
+      accountServiceMock.recordAccountLogin.mockReset();
+      adminGrantServiceMock.ensureBootstrapAdminGrant.mockClear();
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalServerBaseUrl === undefined) delete process.env.SERVER_BASE_URL;
+      else process.env.SERVER_BASE_URL = originalServerBaseUrl;
+    }
+  });
+
+  it('surfaces isAdmin on the /check payload for a LOCAL_AUTH_BYPASS admin session', async () => {
+    const env = {
+      NODE_ENV: 'development',
+      SERVER_BASE_URL: 'http://localhost:4000',
+      LOCAL_AUTH_BYPASS: 'true',
+      LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+    };
+    accountServiceMock.recordAccountLogin.mockResolvedValue({
+      _id: 'acc-devadmin',
+      netid: 'devadmin',
+      email: 'devadmin@example.invalid',
+      status: 'ACTIVE',
+      archived: false,
+    });
+
+    const checkRoute = (passportRoutes as any).stack
+      .map((layer: any) => layer.route)
+      .find((route: any) => route?.path === '/check');
+    const handler = checkRoute.stack.at(-1).handle;
+
+    try {
+      const sessionUser = await ensureLocalAuthBypassUser(env);
+      expect(sessionUser.isAdmin).toBe(true);
+      expect(adminGrantServiceMock.ensureBootstrapAdminGrant).toHaveBeenCalledWith('devadmin');
+
+      const res = { setHeader: vi.fn(), json: vi.fn() };
+      handler({ user: sessionUser }, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        auth: true,
+        user: {
+          netId: 'devadmin',
+          userType: 'admin',
+          userConfirmed: true,
+          profileVerified: true,
+          isAdmin: true,
+        },
+      });
+    } finally {
+      accountServiceMock.recordAccountLogin.mockReset();
+      adminGrantServiceMock.ensureBootstrapAdminGrant.mockClear();
+    }
+  });
+
+  it('does not surface isAdmin for a non-admin dev-login session', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalServerBaseUrl = process.env.SERVER_BASE_URL;
+    process.env.NODE_ENV = 'development';
+    process.env.SERVER_BASE_URL = 'http://localhost:4000';
+    accountServiceMock.recordAccountLogin.mockResolvedValue({
+      _id: 'acc-test123',
+      netid: 'test123',
+      email: 'test123@example.invalid',
+      status: 'ACTIVE',
+      archived: false,
+    });
+
+    const checkRoute = (passportRoutes as any).stack
+      .map((layer: any) => layer.route)
+      .find((route: any) => route?.path === '/check');
+    const handler = checkRoute.stack.at(-1).handle;
+
+    try {
+      const sessionUser = await ensureDevLoginUser('undergraduate');
+      expect(sessionUser.isAdmin).toBe(false);
+      expect(adminGrantServiceMock.ensureBootstrapAdminGrant).not.toHaveBeenCalled();
+
+      const res = { setHeader: vi.fn(), json: vi.fn() };
+      handler({ user: sessionUser }, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        auth: true,
+        user: {
+          netId: 'test123',
+          userType: 'undergraduate',
+          userConfirmed: true,
+          profileVerified: true,
+          isAdmin: false,
+        },
+      });
+    } finally {
+      accountServiceMock.recordAccountLogin.mockReset();
+      adminGrantServiceMock.ensureBootstrapAdminGrant.mockClear();
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalServerBaseUrl === undefined) delete process.env.SERVER_BASE_URL;
+      else process.env.SERVER_BASE_URL = originalServerBaseUrl;
     }
   });
 

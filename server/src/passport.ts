@@ -335,11 +335,12 @@ async function ensureLocalAuthBypassUser(
     netid: bypassUser.netId,
     email: `${bypassUser.netId.toLowerCase()}@example.invalid`,
   });
-  if (bypassUser.userType === 'admin') {
+  const isAdmin = bypassUser.userType === 'admin';
+  if (isAdmin) {
     await ensureBootstrapAdminGrant(bypassUser.netId);
   }
 
-  return bypassUser;
+  return { ...bypassUser, isAdmin };
 }
 
 function shouldSkipLocalAuthBypass(path: string): boolean {
@@ -373,8 +374,9 @@ async function ensureDevLoginUser(userType: unknown) {
   // so it can exercise the rest of the app immediately.
   const isBootstrappedType = normalizedUserType !== 'unknown';
   const netId = profile.netId;
+  const isAdmin = normalizedUserType === 'admin';
   await recordAccountLogin({ netid: netId, email: `${netId}@example.invalid` });
-  if (normalizedUserType === 'admin') {
+  if (isAdmin) {
     await ensureBootstrapAdminGrant(netId);
   }
 
@@ -383,6 +385,7 @@ async function ensureDevLoginUser(userType: unknown) {
     userType: normalizedUserType,
     userConfirmed: isBootstrappedType,
     profileVerified: isBootstrappedType,
+    isAdmin,
   };
 }
 
