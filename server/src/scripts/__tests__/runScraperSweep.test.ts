@@ -118,8 +118,8 @@ describe('runScraperSweep', () => {
   });
 
   it('caps LLM phases, honors an override, and never drops below one', () => {
-    expect(resolvePhaseConcurrency('development-full', 'discovery')).toBe(4);
-    expect(resolvePhaseConcurrency('development-full', 'discovery', 8)).toBe(8);
+    expect(resolvePhaseConcurrency('development-full', 'discovery')).toBe(8);
+    expect(resolvePhaseConcurrency('development-full', 'discovery', 12)).toBe(12);
     expect(resolvePhaseConcurrency('development-full', 'content-access', 8)).toBe(2);
     expect(resolvePhaseConcurrency('development-full', 'relationships', 8)).toBe(2);
     expect(resolvePhaseConcurrency('beta-fetch', 'discovery')).toBe(1);

@@ -30,6 +30,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
+import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
 import { materializeFromRun } from './entityMaterializer';
 import { getScrapeRunReport } from './runReport';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
@@ -63,6 +64,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export async function main(): Promise<void> {
+  installScraperHostConcurrencyInterceptor();
   const { command, flags } = parseArgs(process.argv);
 
   if (command === 'help' || command === '--help' || command === '-h') {

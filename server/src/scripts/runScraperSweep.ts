@@ -211,7 +211,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     stopOnFailure: false,
     scraperFlags: ['--ignore-work-planner', '--exhaustive', '--use-cache', '--auto-materialize'],
     confirmationFlag: '--confirm-development-full-sweep',
-    defaultConcurrency: 4,
+    defaultConcurrency: 8,
   },
   'development-incremental': {
     environment: 'development',
@@ -221,7 +221,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     stopOnFailure: false,
     scraperFlags: ['--exhaustive', '--use-cache', '--auto-materialize'],
     confirmationFlag: '--confirm-development-incremental-sweep',
-    defaultConcurrency: 4,
+    defaultConcurrency: 8,
   },
   'beta-plan': {
     environment: 'beta',
