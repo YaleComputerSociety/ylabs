@@ -2983,7 +2983,13 @@ function buildResolverSelf(obs: Array<{ field: string; value?: unknown }>): Cand
 
 async function findUserCandidatesByKey(key: CanonicalKey): Promise<CandidateEntity[]> {
   const field =
-    key.ns === 'netid' ? 'netid' : key.ns === 'orcid' ? 'orcid' : key.ns === 'email' ? 'email' : null;
+    key.ns === 'netid'
+      ? 'netid'
+      : key.ns === 'orcid'
+        ? 'orcid'
+        : key.ns === 'email'
+          ? 'email'
+          : null;
   if (!field) return [];
   const clause =
     field === 'orcid'
