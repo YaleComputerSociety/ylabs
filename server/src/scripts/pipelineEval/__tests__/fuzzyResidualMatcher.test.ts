@@ -81,6 +81,23 @@ describe('scorePair scoring', () => {
     expect(distinctive.score).toBeGreaterThan(umbrella.score);
   });
 
+  it('credits identical scheme-less distinctive hosts instead of penalizing them', () => {
+    const withScheme = scorePair(
+      entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'https://ruizlab.yale.edu' }),
+      entity({ id: 'b', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'https://ruizlab.yale.edu' }),
+    );
+    const withoutScheme = scorePair(
+      entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'ruizlab.yale.edu' }),
+      entity({ id: 'b', name: 'Ruiz Lab', surname: 'Ruiz', websiteUrl: 'ruizlab.yale.edu' }),
+    );
+    const noHost = scorePair(
+      entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz' }),
+      entity({ id: 'b', name: 'Ruiz Lab', surname: 'Ruiz' }),
+    );
+    expect(withoutScheme.score).toBeCloseTo(withScheme.score);
+    expect(withoutScheme.score).toBeGreaterThan(noHost.score);
+  });
+
   it('is monotonic: adding an agreeing feature raises the score', () => {
     const base = scorePair(
       entity({ id: 'a', name: 'Ruiz Lab', surname: 'Ruiz' }),

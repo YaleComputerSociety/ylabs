@@ -6,13 +6,16 @@ import { initializeConnections } from '../../db/connections';
 import { ResearchEntity } from '../../models/researchEntity';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { buildFuzzyResidualPlan, type MatcherEntity } from './fuzzyResidualMatcher';
+import { normalizeToken } from './fuzzyMatchFeatures';
 import { loadFuzzyGroundTruth } from './fuzzyMatchLabeledSet';
 import {
   buildGroundTruthClusters,
+  buildLabeledNegatives,
   clusterPairs,
   pairCompleteness,
   pairKey,
   pairwiseMetrics,
+  type SameNameQuarantineLike,
 } from './fuzzyMatchMetrics';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +39,20 @@ function parseArgs(argv: string[]): Args {
 }
 
 const SELECT = 'slug name entityType departments researchAreas methods websiteUrl inferredPiUserId embedding';
+
+function buildInScopeQuarantines(entities: MatcherEntity[]): SameNameQuarantineLike[] {
+  const byName = new Map<string, Array<{ id: string; personId?: unknown }>>();
+  for (const entity of entities) {
+    const normalizedName = normalizeToken(entity.name);
+    if (!normalizedName) continue;
+    const group = byName.get(normalizedName) ?? [];
+    group.push({ id: entity.id, personId: entity.pi?.[0]?.personId });
+    byName.set(normalizedName, group);
+  }
+  return [...byName.entries()]
+    .filter(([, group]) => group.length > 1)
+    .map(([normalizedName, group]) => ({ normalizedName, entities: group }));
+}
 
 function toMatcherEntity(doc: Record<string, any>): MatcherEntity {
   const pi = doc.inferredPiUserId ? [{ personId: String(doc.inferredPiUserId), confidence: 1 }] : [];
@@ -85,6 +102,8 @@ async function main() {
     }),
   );
 
+  const inScopeNegatives = buildLabeledNegatives(buildInScopeQuarantines(entities));
+
   const { plan, candidatePairs } = buildFuzzyResidualPlan(entities);
   const autoPairs = new Set(plan.filter((e) => e.band === 'auto').map((e) => pairKey(e.pair[0], e.pair[1])));
   const reviewPairs = plan.filter((e) => e.band === 'review').length;
@@ -99,9 +118,10 @@ async function main() {
     autoBandPairs: autoPairs.size,
     reviewBandPairs: reviewPairs,
     inScopePositives: inScopePositives.size,
+    inScopeNegatives: inScopeNegatives.size,
     blockingPairCompleteness: pairCompleteness(candidatePairs, inScopePositives),
-    autoBandVsPositives: pairwiseMetrics(autoPairs, inScopePositives, new Set()),
-    note: 'Report-only. Use --include-archived for a true recall estimate (merge losers are often archived). No merges are applied.',
+    autoBandVsPositives: pairwiseMetrics(autoPairs, inScopePositives, inScopeNegatives),
+    note: 'Report-only. Precision is measured against same-name-different-PI hard negatives drawn from the loaded set. Use --include-archived for a true recall estimate (merge losers are often archived). No merges are applied.',
   };
   console.log(JSON.stringify(report, null, 2));
 }

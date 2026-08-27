@@ -228,7 +228,7 @@ export function scorePair(a: MatcherEntity, b: MatcherEntity, options: ScoreOpti
 
   const hostA = hostOf(a.websiteUrl);
   const hostB = hostOf(b.websiteUrl);
-  const distinctiveHostMatch = features.hostMatch && isDistinctiveHost(hostA) && isDistinctiveHost(hostB);
+  const distinctiveHostMatch = isDistinctiveHost(hostA) && isDistinctiveHost(hostB) && hostA === hostB;
   const hasItems = (value: unknown): boolean => Array.isArray(value) && value.length > 0;
 
   // A feature contributes its Fellegi-Sunter weight only when it is COMPARABLE
