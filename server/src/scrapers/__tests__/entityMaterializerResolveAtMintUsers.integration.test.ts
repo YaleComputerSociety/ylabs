@@ -99,7 +99,9 @@ describe('resolve-at-mint for users (C4_RESOLVE_AT_MINT_USERS)', () => {
 
     const orcidAlias = await CanonicalAlias.findOne({ type: 'user', aliasNs: 'orcid' }).lean();
     expect(orcidAlias).not.toBeNull();
-    expect(String((orcidAlias as { canonicalId: unknown }).canonicalId)).toBe(first.entityId);
+    expect(String((orcidAlias as unknown as { canonicalId: unknown }).canonicalId)).toBe(
+      first.entityId,
+    );
   });
 
   it('flag ON: an ambiguous ORCID match mints a row without reserving the contested alias', async () => {
@@ -130,7 +132,7 @@ describe('resolve-at-mint for users (C4_RESOLVE_AT_MINT_USERS)', () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     const originalCreate = User.create.bind(User);
-    const createSpy = vi.spyOn(User, 'create').mockImplementationOnce(async (arg: any) => {
+    const raceImplementation = async (arg: any) => {
       await db.collection('users').insertOne({
         _id: winnerId,
         netid: raceNetid,
@@ -139,7 +141,10 @@ describe('resolve-at-mint for users (C4_RESOLVE_AT_MINT_USERS)', () => {
         lname: 'Testerson',
       });
       return originalCreate(arg);
-    });
+    };
+    const createSpy = vi
+      .spyOn(User, 'create')
+      .mockImplementationOnce(raceImplementation as typeof User.create);
 
     let result;
     let createCalls = 0;
