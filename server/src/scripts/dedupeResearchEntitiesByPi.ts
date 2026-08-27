@@ -37,7 +37,11 @@ import { deleteFromIndex } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
 import { computeResearchEntityStudentVisibility } from '../services/studentVisibilityTier';
-import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
+import {
+  getResearchEntityRosterByEntityId,
+  type ResearchEntityRosterEntry,
+} from '../services/researchEntityMembershipAccessor';
+import { buildGateLeadRow } from './retireForeignLeadGraftsCore';
 import {
   fullDescriptionQuality,
   shortDescriptionQuality,
@@ -1772,7 +1776,7 @@ const mergeTierRank = (tier: unknown): number =>
 const MERGE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 function renderLeadMembersFromRoster(
-  entries: Array<Record<string, any>>,
+  entries: ResearchEntityRosterEntry[],
   researchEntityId: mongoose.Types.ObjectId,
 ): Array<Record<string, any>> {
   return entries
@@ -1783,13 +1787,9 @@ function renderLeadMembersFromRoster(
         MERGE_LEAD_ROLES.has(String(entry.role ?? '').toLowerCase()),
     )
     .map((entry) => ({
+      ...buildGateLeadRow(entry),
       researchEntityId,
-      role: String(entry.role ?? '').toLowerCase(),
-      userId: entry.personId ? String(entry.personId) : undefined,
-      name: entry.name,
-      user: entry.user,
-      facultyMemberId: entry.facultyMemberId,
-      facultyMember: entry.facultyMember,
+      userId: entry.personId,
     }));
 }
 
@@ -2109,12 +2109,12 @@ export async function applyResearchEntityDedupeMergeGroup(
   // never leave a "ghost" doc searchable in Meilisearch. Skip cleanup only
   // when deleteDuplicates left the duplicates untouched due to remaining refs.
   const idsToRemoveFromIndex =
-    options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : group.duplicateEntityIds;
+    options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : duplicateIds.map(String);
   await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
 
   return {
-    canonicalEntityId: group.canonicalEntityId,
-    duplicateEntityIds: group.duplicateEntityIds,
+    canonicalEntityId: String(canonicalId),
+    duplicateEntityIds: duplicateIds.map(String),
     canonicalUpdated: canonicalUpdate.modifiedCount || 0,
     archivedEntities: archived.modifiedCount || 0,
     deletedEntities: deleted.deletedCount || 0,

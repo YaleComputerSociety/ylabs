@@ -120,6 +120,69 @@ describe('never-demote merge guard', () => {
     expect(ready?.archived).toBe(true);
   });
 
+  it('swaps the survivor to the holding twin and repairs search + recompute against the resolved canonical', async () => {
+    const mismatchedShellId = new mongoose.Types.ObjectId();
+    const readyId = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    await db.collection('research_entities').insertMany([
+      {
+        _id: mismatchedShellId,
+        slug: 'ysm-smith',
+        name: 'Smith Lab',
+        kind: 'lab',
+        entityType: 'CENTER',
+        archived: false,
+        studentVisibilityTier: 'suppressed',
+        fullDescription: '',
+        shortDescription: '',
+        sourceUrls: [SHARED_URL],
+      },
+      {
+        _id: readyId,
+        slug: 'ysm-faculty-jane-roe',
+        name: 'Roe Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+        fullDescription: READY_FULL,
+        shortDescription: READY_SHORT,
+        sourceUrls: [SHARED_URL],
+      },
+    ]);
+    await seedReadyLead(readyId);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: mismatchedShellId.toHexString(),
+        duplicateEntityIds: [readyId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [SHARED_URL],
+      },
+      { deleteDuplicates: false, relinkReferences: true, neverDemote: true },
+    );
+
+    const typedResult = result as { canonicalEntityId: string; duplicateEntityIds: string[] };
+    expect(typedResult.canonicalEntityId).toBe(readyId.toHexString());
+    expect(typedResult.duplicateEntityIds).toEqual([mismatchedShellId.toHexString()]);
+
+    const shell = await ResearchEntity.findById(mismatchedShellId).lean<PersistedEntity>();
+    const ready = await ResearchEntity.findById(readyId).lean<PersistedEntity>();
+    expect(ready?.archived).not.toBe(true);
+    expect(shell?.archived).toBe(true);
+
+    expect(meiliMocks.deleteFromIndex).toHaveBeenCalledWith(
+      'researchEntity',
+      mismatchedShellId.toHexString(),
+    );
+    expect(meiliMocks.deleteFromIndex).not.toHaveBeenCalledWith(
+      'researchEntity',
+      readyId.toHexString(),
+    );
+  });
+
   it('defers rather than demoting when no survivor can hold the best input tier', async () => {
     const shellId = new mongoose.Types.ObjectId();
     const staleReadyId = new mongoose.Types.ObjectId();
