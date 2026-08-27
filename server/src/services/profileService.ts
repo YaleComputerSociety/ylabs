@@ -3,11 +3,9 @@
  */
 import { User } from '../models/user';
 import { getListingModel } from '../db/connections';
-import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isLikelyPublicProfileImageUrl,
@@ -607,8 +605,6 @@ const publicProfileHttpUrls = (value: unknown): string[] =>
   Array.from(
     new Set((Array.isArray(value) ? value : [value]).map(cleanPublicHttpUrl).filter(Boolean)),
   );
-
-const profileDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 const hasProfileDirectoryLabelContamination = (value: string): boolean =>
   /\b(?:research areas?|teaching interests?|fields? of interest|interests)\s*:/i.test(value);
