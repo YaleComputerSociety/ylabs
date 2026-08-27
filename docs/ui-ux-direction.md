@@ -2,25 +2,9 @@
 
 Last updated: 2026-05-15
 
-This document captures the current Yale Research interface direction and the next UX moves. It is grounded in Graphify as the navigation layer, then verified against product docs and implementation files.
+This document captures the current Yale Research interface direction and the next UX moves. It is verified against product docs and implementation files.
 
-## Graphify Grounding
-
-Start with the scoped Graphify checks below before changing this document.
-Run `yarn graphify:ensure` first so the ignored local cache matches the checked-out branch.
-Use `graphify-out/GRAPH_REPORT.md` only when a broad architecture review is needed.
-Do not record generated community numbers here because they change as the source graph changes.
-
-Useful Graphify checks:
-
-```sh
-graphify explain "BrowseCard"
-graphify explain "LabHeader"
-graphify explain "computeAcceptanceVerdict"
-graphify query "Which UI/product files support the current Yale Research UX, including research browse, detail page, cards, pathways, evidence, and best next step?" --budget 2200
-```
-
-Graphify is not canonical. Confirm UX claims against source files, tests, and durable docs before editing product behavior.
+Confirm UX claims against source files, tests, and durable docs before editing product behavior.
 
 ## Canonical Product Frame
 

@@ -9,8 +9,8 @@ Detailed task procedures live in focused skills under [`skills/`](../skills/).
 For normal coding work:
 
 1. Read [`AGENTS.md`](../AGENTS.md).
-2. Run `yarn graphify:ensure`, then use a scoped Graphify query, path, or explanation before broad search.
-3. Read the smallest relevant skill from [`skills/`](../skills/).
+2. Read the smallest relevant skill from [`skills/`](../skills/).
+3. Use targeted source search (`rg`, then reading the named files) to locate the relevant code before broad exploration.
 4. Verify important claims against source files, tests, and durable docs.
 
 For product, schema, or architecture decisions, also check the durable docs:
