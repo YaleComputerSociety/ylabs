@@ -20,7 +20,7 @@
  * a profile that links its own lab/personal
  * research site seeds a LAB home with that site as the websiteUrl. Contact is
  * fail-closed: emails derive stable Researcher identity and key the lead PI to
- * the canonical Yale User, and are redacted from public payloads at read time.
+ * the canonical Researcher, and are redacted from public payloads at read time.
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -336,7 +336,7 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
  *
  * The lead PI is keyed on the person-specific email when present: YSE profile
  * emails are firstname.lastname aliases, not netids, and the materializer
- * reconciles a faculty member to their canonical Yale User by email, so an
+ * reconciles a faculty member to their canonical Researcher by email, so an
  * email-derived netid key would fail to resolve an already-known professor. The
  * synthetic user key is only a last resort when no email was found.
  */

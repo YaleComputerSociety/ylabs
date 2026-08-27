@@ -29,7 +29,7 @@
  * a contact-laden roster. Where a department ever publishes a structured named
  * curatorial lead on its own page, it is emitted as an entity-level
  * inferred-director observation and `materializeInferredDirectorMembership`
- * resolves that name to a unique Yale User before promotion, introducing no new
+ * resolves that name to a unique canonical Researcher before promotion, introducing no new
  * access logic. Without a named director a museum home still earns the
  * organizational REACH_OUT_PLAUSIBLE ways-in from its official page. The scraper
  * never emits contact routes, undergraduate-access claims, or posted openings; it

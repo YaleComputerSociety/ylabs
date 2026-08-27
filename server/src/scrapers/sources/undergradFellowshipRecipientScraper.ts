@@ -21,10 +21,10 @@
  *      observation. Multiple students under the same (program, year) collapse
  *      via a `count` field rather than producing duplicate rows.
  *   3. For each aggregated advisor:
- *        a. resolve to a Yale User (lname + fname → lname + first initial → none).
+ *        a. resolve to a canonical Researcher (lname + fname → lname + first initial → none).
  *           Unmatched advisors are logged and skipped — we deliberately do NOT
- *           create synthetic User records for advisors we can't disambiguate
- *           (those would pollute the User collection with low-quality stubs).
+ *           create synthetic Researcher records for advisors we can't disambiguate
+ *           (those would pollute the researcher collection with low-quality stubs).
  *        b. resolve to a ResearchGroup via `findOrCreateForOwner` (the same
  *           helper Listing-creation uses), then emit observations against the
  *           returned slug. This guarantees the past-advisee history lands on
@@ -640,16 +640,15 @@ export function aggregateAdviseesByAdvisor(
 }
 
 /**
- * Look up the Yale User most likely to be `advisorName`.
+ * Resolve `advisorName` (optionally disambiguated by ORCID) to the canonical
+ * Researcher most likely to be that advisor.
  *
- * Strategy (in order, return on first hit):
- *   1. Exact case-insensitive match on lname AND fname.
- *   2. lname + first-initial of fname (handles "S. Chang" / "Sandy" vs "Sanford").
- *   3. lname only — but only if exactly one faculty user has that lname.
+ * ORCID, when present, is tried first; otherwise the shared
+ * `resolveResearcherIdForPersonName` keystone does the name matching and returns
+ * a match only when a single unambiguous candidate exists.
  *
- * The DB query is exposed via the `userFinder` parameter so tests can inject a
- * mock without touching mongoose. Faculty types include `admin` because some
- * Yale faculty also serve as deans/admins in the User collection.
+ * The resolver is exposed via the `advisorResolver` dependency so tests can
+ * inject a mock without touching mongoose.
  */
 export type AdvisorResearcherResolver = (
   name: string,

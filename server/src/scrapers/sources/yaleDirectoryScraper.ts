@@ -1,7 +1,7 @@
 /**
  * YaleDirectoryScraper
  *
- * Maintains the User collection (faculty roster) by paginating Yale faculty/staff
+ * Maintains the faculty roster by paginating Yale faculty/staff
  * records from the Yalies API (https://api.yalies.io/v2/people). It can be re-run on a
  * cadence so that new appointments, title changes, and email/phone updates flow through
  * the observation pipeline.
@@ -13,7 +13,7 @@
  *
  * For each faculty record we emit User observations keyed by `netid` (the
  * EntityMaterializer's keyField for the user entity). All field writes go through
- * `ctx.emit` — we never write to the User collection directly.
+ * `ctx.emit` — we never write to the researcher/account collections directly.
  *
  * Honors:
  *   - ctx.options.useCache: cache each Yalies API page in snapshotCache

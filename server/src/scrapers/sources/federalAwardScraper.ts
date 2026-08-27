@@ -20,7 +20,7 @@
  *   small minority of records. We therefore FAIL CLOSED:
  *     - Awards with no extractable inline PI are skipped (never attributed).
  *     - An extracted PI is emitted only when it resolves to a single existing
- *       Yale User via the same conservative matcher NSF uses; ambiguous or
+ *       canonical Researcher via the same conservative matcher NSF uses; ambiguous or
  *       absent identities are skipped. We never mint a person/lab shell from a
  *       free-text name alone.
  *   This keeps net-new coverage evidence-first and avoids fabricating research

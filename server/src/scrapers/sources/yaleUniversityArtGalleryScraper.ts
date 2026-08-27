@@ -29,7 +29,7 @@
  * the area's own page, so it fails closed rather than promoting a name from prose
  * or a roster. Where an area ever publishes a structured named curatorial lead on
  * its own page, it is emitted as an entity-level inferred-director observation and
- * `materializeInferredDirectorMembership` resolves that name to a unique Yale User
+ * `materializeInferredDirectorMembership` resolves that name to a unique canonical Researcher
  * before promotion, introducing no new access logic. Without a named director a
  * museum home still earns the organizational REACH_OUT_PLAUSIBLE ways-in from its
  * official page. The scraper never emits contact routes, undergraduate-access

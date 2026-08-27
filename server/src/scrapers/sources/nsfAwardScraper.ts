@@ -17,7 +17,7 @@
  *      ago) using `awardeeName="Yale University"` (quoted = exact phrase) and
  *      offset/rpp pagination. Stop on an empty page.
  *   2. Group awards by PI (`piFirstName` + `piLastName`).
- *   3. For each PI, resolve an unambiguous Yale User by exact or conservative
+ *   3. For each PI, resolve an unambiguous canonical Researcher by exact or conservative
  *      prefix matching. Enrich one eligible official research home when present,
  *      fail closed on ambiguous or ineligible identity/home evidence, or use a
  *      synthetic shell only when no research-home membership exists.
@@ -28,7 +28,7 @@
  *        - `fundingAgencies`: ['NSF'] (materialization unions latest source snapshots).
  *        - `lastObservedAt`: max(startDate) across this PI's awards.
  *   5. Co-PIs (`coPDPI`) → emit ResearchGroupMember observations with role
- *      'co-pi' but ONLY when we can resolve the co-PI to an existing Yale User
+ *      'co-pi' but ONLY when we can resolve the co-PI to an existing canonical Researcher
  *      (avoids creating noise from non-Yale collaborators).
  *
  * Honors `--use-cache` (page responses cached via snapshotCache) and `--limit`
@@ -299,16 +299,13 @@ export function piSlug(piUserId: string | null, firstName: string, lastName: str
 }
 
 /**
- * Find an existing Yale User for a given (first, last) name. Two-pass:
- *   1. exact lname + fname (case-insensitive)
- *   2. exact lname + given-name prefix, or first initial when the source only gives an initial
- * Both passes only consider professor/faculty/admin user types and return a
- * match only when a single candidate is found (avoids ambiguous attribution).
+ * Resolve a (first, last) name to a canonical Researcher via the shared
+ * `resolveResearcherIdForPersonName` keystone, which does the exact and
+ * conservative-prefix matching and returns a match only when a single candidate
+ * is found (avoids ambiguous attribution).
  *
- * Returns the User _id as a string, or null when no unambiguous match exists.
- *
- * Default depends on the live `User` model; tests can inject a custom finder
- * via the second argument.
+ * Returns the Researcher _id as a string, or null when no unambiguous match
+ * exists. Tests can inject a custom resolver via the second argument.
  */
 export interface PiUserRow {
   _id: unknown;
@@ -610,7 +607,7 @@ export class NsfAwardScraper implements IScraper {
         researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
 
       // 3b. User observations — under nsf-pi:<key> entityKey if no match.
-      // (Matched PIs already have a real User row; we don't re-emit User obs
+      // (Matched PIs already have a real Researcher; we don't re-emit user obs
       // for them, since we don't want to overwrite authoritative directory data
       // with weak NSF-name signals.)
       if (!piUserId) {
@@ -629,7 +626,7 @@ export class NsfAwardScraper implements IScraper {
       await ctx.emit(rgObs);
       totalObs += rgObs.length;
 
-      // 3d. Co-PI member observations — only when co-PI is a known Yale User.
+      // 3d. Co-PI member observations — only when co-PI is a known canonical Researcher.
       const slug =
         canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
       const coPiObs = await buildCoPiObservations(group, slug, sourceUrl, resolverDeps);

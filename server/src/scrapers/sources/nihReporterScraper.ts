@@ -15,7 +15,7 @@
  *   - Paginate through Yale grants (offset/limit, max 500 per request).
  *   - Group grants by contact PI name.
  *   - For each PI:
- *       - Resolve an unambiguous Yale User by exact or conservative prefix name matching.
+ *       - Resolve an unambiguous canonical Researcher by exact or conservative prefix name matching.
  *       - Enrich the PI's one eligible official research home when present, fail closed
  *         on ambiguous or ineligible identity/home evidence, or use a synthetic shell
  *         only when no research-home membership exists.
@@ -483,10 +483,10 @@ function researchHomeEligibleUserTitle(title: unknown): boolean {
  * Build the observation list for one PI's grants.
  *
  * Emits:
- *   - User observation keyed by `nih-pi:<slug>` when no Yale User matched, so
+ *   - `user` observation keyed by `nih-pi:<slug>` when no researcher matched, so
  *     downstream materialization can create a stub.
- *   - ResearchGroup observations keyed by either the matched User's PI slug
- *     (legible `nih-pi-<slug>`) or the same slug used by the User stub.
+ *   - ResearchGroup observations keyed by either the matched researcher's PI slug
+ *     (legible `nih-pi-<slug>`) or the same slug used by the researcher stub.
  *   - All recentGrants observations are emitted as a single full array — the
  *     resolver picks the highest-confidence value per field rather than trying
  *     to merge multiple partial arrays.
@@ -526,9 +526,9 @@ export function piGrantsToObservations(
     if (dt) deptTypes.add(dt);
   }
 
-  // 1. User observation — only emit when no existing user was matched. The
-  //    materializer treats `nih-pi:<slug>` as a synthetic key and creates a
-  //    stub User row (lname = surname, fname = first name, userType=unknown).
+  // 1. `user` observation — only emit when no existing researcher was matched.
+  //    The materializer treats `nih-pi:<slug>` as a synthetic key and creates a
+  //    stub Researcher from the surname and first name.
   const piEntityKeyValue = piEntityKey(canonicalName);
   if (!matchedUser && piEntityKeyValue) {
     const { first, last } = splitName(canonicalName);

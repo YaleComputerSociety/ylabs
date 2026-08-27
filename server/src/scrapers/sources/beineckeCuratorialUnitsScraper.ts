@@ -22,7 +22,7 @@
  * on all current unit pages rather than promoting a prose name. Where a unit ever
  * publishes a structured named curatorial lead, it is emitted as an entity-level
  * inferred-director observation and `materializeInferredDirectorMembership`
- * resolves that name to a unique Yale User before promotion, introducing no new
+ * resolves that name to a unique canonical Researcher before promotion, introducing no new
  * access logic. Without a named director an archive/museum home still earns the
  * organizational REACH_OUT_PLAUSIBLE ways-in from its official page. The scraper
  * never emits contact routes, undergraduate-access claims, or posted openings; it
