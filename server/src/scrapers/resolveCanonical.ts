@@ -115,7 +115,12 @@ export function deriveCanonicalKeys(
     pushKey(keys, 'source-key', map.get('sourceKey') ?? '', 'unique');
     pushKey(keys, 'source-url', map.get('sourceUrl') ?? '', 'strong');
     pushKey(keys, 'application-link', map.get('applicationLink') ?? '', 'strong');
-    pushKey(keys, 'title', (map.get('title') ?? '').replace(/\s+/g, ' ').trim().toLowerCase(), 'weak');
+    pushKey(
+      keys,
+      'title',
+      (map.get('title') ?? '').replace(/\s+/g, ' ').trim().toLowerCase(),
+      'weak',
+    );
   }
 
   const seen = new Set<string>();
@@ -135,10 +140,9 @@ function shareLead(a: string, b: string): boolean {
 }
 
 function conflictingFirstNames(a: string, b: string): boolean {
-  return clusterHasConflictingLeadFirstNames([
-    { name: a },
-    { name: b },
-  ] as unknown as Parameters<typeof clusterHasConflictingLeadFirstNames>[0]);
+  return clusterHasConflictingLeadFirstNames([{ name: a }, { name: b }] as unknown as Parameters<
+    typeof clusterHasConflictingLeadFirstNames
+  >[0]);
 }
 
 function nameGuardVetoes(self: CandidateEntity | undefined, candidate: CandidateEntity): boolean {

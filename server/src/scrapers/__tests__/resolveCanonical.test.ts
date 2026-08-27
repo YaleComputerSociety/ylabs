@@ -67,7 +67,11 @@ describe('resolveCanonical', () => {
       { type: 'user', keys: [uniqueNetid] },
       deps({ resolveAlias: async () => 'canonical-1' }),
     );
-    expect(result).toEqual({ status: 'existing', canonicalId: 'canonical-1', matchedKey: uniqueNetid });
+    expect(result).toEqual({
+      status: 'existing',
+      canonicalId: 'canonical-1',
+      matchedKey: uniqueNetid,
+    });
   });
 
   it('resolves to a single live unique-key candidate', async () => {
@@ -89,19 +93,33 @@ describe('resolveCanonical', () => {
   });
 
   it('resolves a strong website key when lead names do not conflict', async () => {
-    const key: CanonicalKey = { ns: 'website-url', value: 'oceanlab.example.edu', strength: 'strong' };
+    const key: CanonicalKey = {
+      ns: 'website-url',
+      value: 'oceanlab.example.edu',
+      strength: 'strong',
+    };
     const result = await resolveCanonical(
       { type: 'researchEntity', keys: [key], self: { id: 'new', name: 'Jane Doe Lab' } },
-      deps({ findCandidatesByKey: candidatesByNs({ 'website-url': [{ id: 'e1', name: 'Jane Doe Lab' }] }) }),
+      deps({
+        findCandidatesByKey: candidatesByNs({
+          'website-url': [{ id: 'e1', name: 'Jane Doe Lab' }],
+        }),
+      }),
     );
     expect(result.status).toBe('existing');
   });
 
   it('returns ambiguous on a strong key when lead first names conflict', async () => {
-    const key: CanonicalKey = { ns: 'website-url', value: 'shared.example.edu', strength: 'strong' };
+    const key: CanonicalKey = {
+      ns: 'website-url',
+      value: 'shared.example.edu',
+      strength: 'strong',
+    };
     const result = await resolveCanonical(
       { type: 'researchEntity', keys: [key], self: { id: 'new', name: 'Jane Doe' } },
-      deps({ findCandidatesByKey: candidatesByNs({ 'website-url': [{ id: 'e1', name: 'John Doe' }] }) }),
+      deps({
+        findCandidatesByKey: candidatesByNs({ 'website-url': [{ id: 'e1', name: 'John Doe' }] }),
+      }),
     );
     expect(result.status).toBe('ambiguous');
   });
@@ -111,7 +129,11 @@ describe('resolveCanonical', () => {
     const differentPerson = deps({
       findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', fname: 'John', lname: 'Doe' }] }),
     });
-    const input = { type: 'user' as CanonicalType, keys: [key], self: { id: 'new', fname: 'Jane', lname: 'Doe' } };
+    const input = {
+      type: 'user' as CanonicalType,
+      keys: [key],
+      self: { id: 'new', fname: 'Jane', lname: 'Doe' },
+    };
     const first = await resolveCanonical(input, differentPerson);
     const second = await resolveCanonical(input, differentPerson);
     expect(first.status).toBe('ambiguous');
@@ -122,7 +144,9 @@ describe('resolveCanonical', () => {
     const key: CanonicalKey = { ns: 'email', value: 'shared@example.edu', strength: 'strong' };
     const result = await resolveCanonical(
       { type: 'user', keys: [key], self: { id: 'new', fname: 'Jane', lname: 'Doe' } },
-      deps({ findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', fname: 'Jane', lname: 'Doe' }] }) }),
+      deps({
+        findCandidatesByKey: candidatesByNs({ email: [{ id: 'u1', fname: 'Jane', lname: 'Doe' }] }),
+      }),
     );
     expect(result.status).toBe('existing');
   });
@@ -141,7 +165,11 @@ describe('resolveCanonical', () => {
 
   it('defers to mint when resolving would demote student visibility', async () => {
     const result = await resolveCanonical(
-      { type: 'researchEntity', keys: [{ ns: 'slug', value: 's', strength: 'unique' }], self: { id: 'new', tier: 'student_ready' } },
+      {
+        type: 'researchEntity',
+        keys: [{ ns: 'slug', value: 's', strength: 'unique' }],
+        self: { id: 'new', tier: 'student_ready' },
+      },
       deps({ findCandidatesByKey: candidatesByNs({ slug: [{ id: 'e1', tier: 'suppressed' }] }) }),
     );
     expect(result.status).toBe('mint');
@@ -166,9 +194,17 @@ describe('resolveCanonical', () => {
   });
 
   it('does not collapse two distinct fellowships that share a normalized title', async () => {
-    const title: CanonicalKey = { ns: 'title', value: 'graduate research fellowship', strength: 'weak' };
+    const title: CanonicalKey = {
+      ns: 'title',
+      value: 'graduate research fellowship',
+      strength: 'weak',
+    };
     const result = await resolveCanonical(
-      { type: 'fellowship', keys: [title], self: { id: 'new', name: 'graduate research fellowship' } },
+      {
+        type: 'fellowship',
+        keys: [title],
+        self: { id: 'new', name: 'graduate research fellowship' },
+      },
       deps({
         findCandidatesByKey: candidatesByNs({
           title: [{ id: 'f1', name: 'graduate research fellowship' }],
@@ -182,7 +218,9 @@ describe('resolveCanonical', () => {
     const key: CanonicalKey = { ns: 'org-name', value: 'ocean lab', strength: 'weak' };
     const result = await resolveCanonical(
       { type: 'researchEntity', keys: [key], self: { id: 'new' } },
-      deps({ findCandidatesByKey: candidatesByNs({ 'org-name': [{ id: 'e1', name: 'Ocean Lab' }] }) }),
+      deps({
+        findCandidatesByKey: candidatesByNs({ 'org-name': [{ id: 'e1', name: 'Ocean Lab' }] }),
+      }),
     );
     expect(result.status).toBe('mint');
   });
@@ -191,7 +229,9 @@ describe('resolveCanonical', () => {
     const key: CanonicalKey = { ns: 'org-name', value: 'jane doe lab', strength: 'weak' };
     const result = await resolveCanonical(
       { type: 'researchEntity', keys: [key], self: { id: 'new', name: 'Jane Doe Lab' } },
-      deps({ findCandidatesByKey: candidatesByNs({ 'org-name': [{ id: 'e1', name: 'Jane Doe Lab' }] }) }),
+      deps({
+        findCandidatesByKey: candidatesByNs({ 'org-name': [{ id: 'e1', name: 'Jane Doe Lab' }] }),
+      }),
     );
     expect(result.status).toBe('existing');
     if (result.status === 'existing') expect(result.canonicalId).toBe('e1');
