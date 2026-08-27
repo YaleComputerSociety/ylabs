@@ -2759,8 +2759,7 @@ export async function projectFromLog(
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeEntity,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
-      synthesize:
-        input.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
+      synthesize: input.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
     });
     if (groundedShortDescription) {
       set.shortDescription = groundedShortDescription;
@@ -2806,12 +2805,17 @@ export async function projectFromLog(
           ? entityDoc.sourceUrls
           : []),
     ].filter((url): url is string => typeof url === 'string');
-    await (input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation)(set, entityDoc);
-    await (input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization)(set, entityDoc, orgUnitProfileUrls);
-    await (input.applyResearchEntityResearchAreaCanonicalization ?? applyResearchEntityResearchAreaCanonicalization)(
+    await (input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation)(
       set,
-      set.departments ?? entityDoc?.departments,
+      entityDoc,
     );
+    await (
+      input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization
+    )(set, entityDoc, orgUnitProfileUrls);
+    await (
+      input.applyResearchEntityResearchAreaCanonicalization ??
+      applyResearchEntityResearchAreaCanonicalization
+    )(set, set.departments ?? entityDoc?.departments);
     if (!manuallyLockedFields.includes('websiteUrl')) {
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
       if (websiteResolution.action === 'set') {
@@ -3112,21 +3116,18 @@ export async function materializeEntity(
     }
   }
 
-  const { set, unset, confidenceByField, conflicts, fieldsWritten } = await projectFromLog(
-    entityType,
-    {
-      resolved,
-      manuallyLockedFields,
-      manualValues,
-      entityDoc,
-      materializationObs,
-      resolverObs,
-      fullDescriptionShellGated,
-      now: new Date(),
-      synthesizeCardDescription: options.synthesizeCardDescription,
-      writeOnlyFields: options.writeOnlyFields,
-    },
-  );
+  const { set, unset, conflicts, fieldsWritten } = await projectFromLog(entityType, {
+    resolved,
+    manuallyLockedFields,
+    manualValues,
+    entityDoc,
+    materializationObs,
+    resolverObs,
+    fullDescriptionShellGated,
+    now: new Date(),
+    synthesizeCardDescription: options.synthesizeCardDescription,
+    writeOnlyFields: options.writeOnlyFields,
+  });
 
   if (options.dryRun) {
     return {

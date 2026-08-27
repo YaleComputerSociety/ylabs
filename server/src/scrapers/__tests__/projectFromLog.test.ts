@@ -74,9 +74,12 @@ describe('projectFromLog', () => {
         resolved: { name: resolvedField('Synthetic Lab') },
         resolverObs: [],
         entityDoc: { _id: 'a'.repeat(24), methods: ['stale-method'], confidenceByField: {} },
-        applyDescriptionResearchAreaDerivation: noopCanonicalizer as ProjectFromLogInput['applyDescriptionResearchAreaDerivation'],
-        applyResearchEntityOrgUnitCanonicalization: noopCanonicalizer as ProjectFromLogInput['applyResearchEntityOrgUnitCanonicalization'],
-        applyResearchEntityResearchAreaCanonicalization: noopCanonicalizer as ProjectFromLogInput['applyResearchEntityResearchAreaCanonicalization'],
+        applyDescriptionResearchAreaDerivation:
+          noopCanonicalizer as ProjectFromLogInput['applyDescriptionResearchAreaDerivation'],
+        applyResearchEntityOrgUnitCanonicalization:
+          noopCanonicalizer as ProjectFromLogInput['applyResearchEntityOrgUnitCanonicalization'],
+        applyResearchEntityResearchAreaCanonicalization:
+          noopCanonicalizer as ProjectFromLogInput['applyResearchEntityResearchAreaCanonicalization'],
       }),
     );
     expect(result.unset.methods).toBe('');
