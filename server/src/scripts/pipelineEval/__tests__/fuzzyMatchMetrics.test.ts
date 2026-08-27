@@ -29,7 +29,9 @@ describe('buildGroundTruthClusters', () => {
       [{ researcherId: 'r1', dedupedIntoResearcherId: 'r2' }],
     );
     expect(clusters).toHaveLength(2);
-    expect(clusters.some((c) => c.includes('researcher:r1') && c.includes('researcher:r2'))).toBe(true);
+    expect(clusters.some((c) => c.includes('researcher:r1') && c.includes('researcher:r2'))).toBe(
+      true,
+    );
     expect(clusters.some((c) => c.includes('a') && c.includes('researcher:r1'))).toBe(false);
   });
 });
@@ -99,10 +101,7 @@ describe('clusterBcubed', () => {
   });
 
   it('is perfect when clusterings are identical', () => {
-    const clusters = [
-      ['a', 'b'],
-      ['c'],
-    ];
+    const clusters = [['a', 'b'], ['c']];
     const m = clusterBcubed(clusters, clusters);
     expect(m.precision).toBe(1);
     expect(m.recall).toBe(1);

@@ -151,7 +151,10 @@ export function pairwiseMetrics(
   for (const p of positives) if (!predictedSet.has(p)) fn += 1;
   const precision = ratio(tp, tp + fp);
   const recall = ratio(tp, tp + fn);
-  const f1 = precision + recall === 0 ? 0 : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
+  const f1 =
+    precision + recall === 0
+      ? 0
+      : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
   return { precision, recall, f1, tp, fp, fn };
 }
 
@@ -198,6 +201,9 @@ export function clusterBcubed(
   }
   const precision = Number((precisionSum / elements.size).toFixed(4));
   const recall = Number((recallSum / elements.size).toFixed(4));
-  const f1 = precision + recall === 0 ? 0 : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
+  const f1 =
+    precision + recall === 0
+      ? 0
+      : Number(((2 * precision * recall) / (precision + recall)).toFixed(4));
   return { precision, recall, f1 };
 }
