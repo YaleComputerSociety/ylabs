@@ -40,6 +40,11 @@ import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQua
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
 import { isRejectedDescriptionSourceUrl } from './labMicrositeDescriptionLLMExtractor';
 import {
+  UNDERGRAD_EXTRACTION_PROMPT,
+  UNDERGRAD_EXTRACTION_LEGACY_PROMPT,
+  UNDERGRAD_EXTRACTION_PROMPT_HASH,
+} from '../prompts';
+import {
   createScraplingRenderedFetcher,
   measureRenderedFetch,
   summarizeFetchMetrics,
@@ -81,9 +86,9 @@ const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
 export const DEFAULT_MODEL = 'gpt-5-mini';
 
-// Bump when the undergrad-extraction prompt/contract changes so the content-hash
-// gate re-extracts affected entities. See contentHashGate.computeVersionedContentHash.
-export const UNDERGRAD_EXTRACTION_PROMPT_VERSION = 'v1';
+// Prompt text lives in server/src/scrapers/prompts/undergradExtraction*.md; the
+// content-hash gate keys on UNDERGRAD_EXTRACTION_PROMPT_HASH (sha256 of both
+// variants), so editing a .md re-extracts affected entities with no manual bump.
 const SOURCE_KEY = 'lab-microsite-undergrad-llm';
 const MAX_CANDIDATE_SUBPAGE_URLS = 8;
 const MAX_SUBPAGES_FETCHED = 3;
@@ -294,56 +299,9 @@ export const LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT = {
   },
 };
 
-export const LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT = `You are an expert classifier evaluating whether a Yale research lab's website indicates that the lab accepts undergraduate researchers and contains source-backed research description text.
+export const LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_LEGACY_PROMPT;
 
-Your job is to read text scraped from a lab's website (home page plus optionally a "members" or "join" sub-page) and return a JSON object with these fields:
-
-- openToUndergrads: "yes" if there is text that affirmatively states the lab welcomes / hires / mentors undergraduates, OR if the members section lists undergraduate students. "no" if the lab explicitly states they do NOT take undergraduates. "unclear" otherwise. Default to "unclear" - be conservative.
-- currentUndergradCount: integer count of CURRENT YALE undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. Count a person ONLY when they are a currently-active member who is a Yale undergraduate. EXCLUDE, and never count: (a) anyone listed as a former member, alumnus/alumna, past member, or "graduated"; (b) anyone with a past or closed date range (e.g. "2008-2010", "2009") or a "now a ... / now works at ..." career-status marker showing they have moved on; (c) any visiting undergraduate or any undergraduate whose listed institution is another school (e.g. Emory, Georgia Tech, UCLA, University of Connecticut, Johns Hopkins, Harvey Mudd, USC). When you cannot confirm that a listed undergraduate is both current AND at Yale, do not count them. Return 0 if no members section exists or no current Yale undergrads are listed there.
-- currentUndergradEvidenceQuotes: an array with one short verbatim roster snippet for EACH current Yale undergraduate you counted, so the count is auditable. currentUndergradCount MUST equal the length of this array. Return an empty array when currentUndergradCount is 0.
-- evidenceQuote: a verbatim quote from the page (at most 200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
-- evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates"), "members_section" if from a roster listing, "none" if no evidence.
-- joinPageUrl: the URL (absolute) of a "join the lab" or "opportunities" page, if mentioned. Otherwise null.
-- researchSummary: a concise 1-sentence summary of the lab/faculty site research text, only when the site itself describes current research topics, questions, or methods. Otherwise empty string.
-- methodsQuote: a verbatim quote (at most 200 characters) naming methods, materials, archives, data, fieldwork, instruments, or approaches that support researchSummary. Otherwise empty string.
-- topicsQuote: a verbatim quote (at most 200 characters) naming research topics, questions, populations, organisms, places, periods, systems, or phenomena that support researchSummary. Otherwise empty string.
-- undergradRoleQuote: a verbatim quote that describes undergraduate roles/tasks, if present. Otherwise empty string.
-- contactInstructionsQuote: a verbatim quote with contact/application instructions, if present. Otherwise empty string.
-- explicitConstraintQuote: a verbatim quote with constraints such as "not accepting", eligibility, required courses, or application-only instructions, if present. Otherwise empty string.
-
-Be conservative. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote. Quotes must be verbatim - do not paraphrase.`;
-
-export const LAB_UNDERGRAD_SYSTEM_PROMPT = `You are an expert classifier evaluating whether a Yale research lab's website, OR a Yale faculty member's own official profile/bio page, indicates that the lab or faculty member accepts undergraduate researchers, and whether the page contains source-backed research description text.
-
-Your job is to read text scraped from either page shape - a lab's website (home page plus optionally a "members" or "join" sub-page), or a faculty member's own profile/bio page (which has no roster of its own) - and return a JSON object with these fields:
-
-- openToUndergrads: "yes" if there is text that affirmatively states the lab/faculty member welcomes / hires / mentors undergraduates, OR if the members section lists undergraduate students, OR if a faculty profile page has its own "prospective students", "opportunities for undergraduates", or "how to get involved" section that affirmatively invites undergraduate inquiries. "no" if the page explicitly states they do NOT take undergraduates. "unclear" otherwise - a faculty profile with no such section is "unclear", not "no". Default to "unclear" — be conservative.
-- currentUndergradCount: integer count of CURRENT YALE undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. A bare faculty profile page has no roster, so this is always 0 for that page shape. Count a person ONLY when they are a currently-active member who is a Yale undergraduate. EXCLUDE, and never count: (a) anyone listed as a former member, alumnus/alumna, past member, or "graduated"; (b) anyone with a past or closed date range (e.g. "2008-2010", "2009") or a "now a ... / now works at ..." career-status marker showing they have moved on; (c) any visiting undergraduate or any undergraduate whose listed institution is another school (e.g. Emory, Georgia Tech, UCLA, University of Connecticut, Johns Hopkins, Harvey Mudd, USC). When you cannot confirm that a listed undergraduate is both current AND at Yale, do not count them. Return 0 if no members section exists or no current Yale undergrads are listed there.
-- currentUndergradEvidenceQuotes: an array with one short verbatim roster snippet for EACH current Yale undergraduate you counted, so the count is auditable. currentUndergradCount MUST equal the length of this array. Return an empty array when currentUndergradCount is 0.
-- evidenceQuote: a verbatim quote from the page (≤200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
-- evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates") or a faculty profile's own prospective-students/opportunities section, "members_section" if from a roster listing, "none" if no evidence.
-- joinPageUrl: the URL (absolute) of a "join the lab", "get involved", "prospective students", or "opportunities" page, if mentioned. Otherwise null.
-- researchSummary: a concise 1-sentence summary of the lab/faculty site research text, only when the site itself describes current research topics, questions, or methods. Otherwise empty string.
-- methodsQuote: a verbatim quote (≤200 characters) naming methods, materials, archives, data, fieldwork, instruments, or approaches that support researchSummary. Otherwise empty string.
-- topicsQuote: a verbatim quote (≤200 characters) naming research topics, questions, populations, organisms, places, periods, systems, or phenomena that support researchSummary. Otherwise empty string.
-- undergradRoleQuote: a verbatim quote that describes undergraduate roles/tasks, if present. Otherwise empty string.
-- contactInstructionsQuote: a verbatim quote with contact/application instructions, if present. Otherwise empty string.
-- explicitConstraintQuote: a verbatim quote with constraints such as "not accepting", eligibility, required courses, or application-only instructions, if present. Otherwise empty string.
-- eligibleStudentLevels: only the explicitly named class years from FIRST_YEAR, SOPHOMORE, JUNIOR, or SENIOR. An unqualified mention of "undergraduates" supports no class-year value. Return an empty array when no exact years are named.
-- eligibilityQuote: the verbatim quote that names every returned eligibleStudentLevels value. Otherwise empty string.
-- compensationModes: only explicitly documented modes from PAID, STIPEND, COURSE_CREDIT, VOLUNTEER, WORK_STUDY, or FELLOWSHIP. Do not infer unpaid or volunteer from missing pay language. Return an empty array when unknown.
-- compensationQuote: the verbatim quote that names every returned compensation mode. Otherwise empty string.
-- timeCommitmentMinHours and timeCommitmentMaxHours: weekly hours only when the page explicitly provides them. Use the same number for both when it gives one exact weekly amount. Otherwise return null for both.
-- timeCommitmentQuote: the verbatim quote containing the weekly hours. Otherwise empty string.
-- modalityModes: only explicitly documented IN_PERSON, HYBRID, or REMOTE arrangements. Do not infer modality from research methods or location. Return an empty array when unknown.
-- modalityQuote: the verbatim quote that names every returned modality. Otherwise empty string.
-- currentAvailability: OPEN or ROLLING only for explicit current, dated, or rolling evidence; NOT_CURRENTLY_AVAILABLE only for an explicit current negative statement; UNKNOWN otherwise. A generic join page or historical roster is UNKNOWN.
-- currentAvailabilityQuote: the verbatim quote supporting the currentAvailability value. Otherwise empty string.
-- availabilityValidThrough: an ISO YYYY-MM-DD date only when the source provides an explicit deadline or end date. Otherwise null.
-
-Be conservative. Keep each logistics claim isolated. Never use one claim as evidence for another, and never turn a missing field into a negative answer. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote.
-
-CRITICAL VERBATIM QUOTE RULE: Every field whose name ends in "Quote", and every entry in currentUndergradEvidenceQuotes, must be copied character-for-character from the page text as one single contiguous span. Never paraphrase, summarize, reword, translate, fix grammar or punctuation, change capitalization, add or remove surrounding quotation marks or brackets, or normalize spacing. Never stitch text from different places together with an ellipsis (...) or by deleting words from the middle. The string you return must appear as a literal contiguous substring of the provided page text. If no exact contiguous substring fits, return an empty string for that field (or omit it from the array). Returning an empty quote is always better than a non-verbatim one.`;
+export const LAB_UNDERGRAD_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_PROMPT;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-testable, no I/O)
@@ -1450,7 +1408,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       const entityRef = { entityType: 'researchEntity' as const, entityKey: lab.slug };
       const contentHash = computeVersionedContentHash(
         [homeText, ...subPages.map((page) => page.text)].join('\n'),
-        UNDERGRAD_EXTRACTION_PROMPT_VERSION,
+        UNDERGRAD_EXTRACTION_PROMPT_HASH,
         this.model,
       );
       const storedContentHash = ctx.options.forceLlm

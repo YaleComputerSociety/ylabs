@@ -15,7 +15,7 @@ const freshnessInputs = [
   path.join(serverRoot, 'tsup.config.ts'),
 ];
 
-const sourceFileExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.json']);
+const sourceFileExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.json', '.md']);
 
 const fail = (message) => {
   console.error(`[security] ${message}`);

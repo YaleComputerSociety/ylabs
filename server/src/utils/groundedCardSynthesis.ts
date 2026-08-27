@@ -11,6 +11,7 @@ import {
   shortDescriptionQuality,
 } from './researchEntityDescriptionQuality';
 import { sanitizeResearchEntityShortDescription } from './descriptionHygiene';
+import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
 export const MIN_CARD_GROUNDING = 0.9;
@@ -255,19 +256,11 @@ export interface CardSynthesisLLMInput {
 
 export type CardSynthesisLLMFn = (input: CardSynthesisLLMInput) => Promise<string>;
 
-// Bump when CARD_SYNTHESIS_SYSTEM_PROMPT changes, so any content-hash-gated
-// caller keys re-synthesis on the prompt version. See
-// contentHashGate.computeVersionedContentHash.
-export const CARD_SYNTHESIS_PROMPT_VERSION = 'v1';
-
-export const CARD_SYNTHESIS_SYSTEM_PROMPT =
-  'You condense an existing, verified research description into ONE short card sentence for a research-discovery card. ' +
-  'Use ONLY topics, methods, questions, and terms that already appear in the provided description. ' +
-  'Never add any topic, method, place, person, organization, or claim that is not present in the description. ' +
-  'Do not include the principal investigator biography, titles, degrees, awards, funding, appointments, or contact information. ' +
-  'Write in the third person, present tense, and start with a verb such as "Studies", "Investigates", "Develops", "Examines", "Focuses on", "Advances", or "Uses". ' +
-  'Keep it to a single sentence under 30 words. ' +
-  'If the description states no clear research focus, return an empty string.';
+// The prompt text lives in server/src/scrapers/prompts/cardSynthesis.md and the
+// content-hash gate keys on CARD_SYNTHESIS_PROMPT_HASH (sha256 of that file), so
+// editing the .md re-synthesizes gated entities with no manual version bump.
+export const CARD_SYNTHESIS_SYSTEM_PROMPT = CARD_SYNTHESIS_PROMPT;
+export { CARD_SYNTHESIS_PROMPT_HASH };
 
 export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
   const safeName = redactDirectContactInfo(input.entityName).slice(0, MAX_CARD_NAME_CHARS);
