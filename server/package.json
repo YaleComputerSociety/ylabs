@@ -144,7 +144,8 @@
     "scrape:seed-sources": "tsx src/scrapers/seedSources.ts",
     "start": "node ../scripts/ensure-server-build-fresh.mjs && node build/index.js",
     "test": "cross-env NODE_ENV=test ./node_modules/.bin/vitest run",
-    "prod": "cross-env NODE_ENV=production tsx watch src/index.ts"
+    "prod": "cross-env NODE_ENV=production tsx watch src/index.ts",
+    "eval:pipeline": "tsx src/scripts/pipelineEval/evalPipelineOrchestration.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",
