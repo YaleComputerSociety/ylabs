@@ -2541,7 +2541,6 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
       case 'profile': {
         const doc = profileByNetid.get(entity.entityId);
         name = [doc?.fname, doc?.lname].filter(Boolean).join(' ') || undefined;
-        href = `/profile/${entity.entityId}`;
         break;
       }
     }
