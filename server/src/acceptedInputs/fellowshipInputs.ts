@@ -696,24 +696,3 @@ async function findUserByName(advisorName: string): Promise<AdvisorResolution> {
   if (resolution.status === 'ambiguous') return { status: 'ambiguous', label: advisorName };
   return { status: 'missing', label: advisorName };
 }
-
-export async function defaultAdvisorResolver(row: FellowshipReviewRow): Promise<AdvisorResolution> {
-  const advisorOrcid = normalizeOrcid(row.advisorOrcid);
-  if (advisorOrcid) {
-    const matches = await Researcher.find(
-      { 'identifiers.orcid': advisorOrcid.toUpperCase(), archived: { $ne: true } },
-      { displayName: 1 },
-    )
-      .limit(2)
-      .lean();
-    if (matches.length === 1) {
-      const displayName = (matches[0] as any).displayName;
-      const label = typeof displayName === 'string' ? displayName.trim() : '';
-      return { status: 'resolved', label: label || advisorOrcid };
-    }
-    if (matches.length > 1) return { status: 'ambiguous', label: advisorOrcid };
-    return { status: 'missing', label: advisorOrcid };
-  }
-
-  return findUserByName(row.advisorName);
-}
