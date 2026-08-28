@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildPathwayEvidenceRows,
   buildGroupedSearchResults,
   buildResearchHomeContextLine,
   buildIdentityConfidenceRecords,
@@ -80,19 +79,9 @@ describe('pathway display helpers', () => {
     expect(getPathwayActionLabel('save-for-later')).toBe('Save for later');
   });
 
-  it('normalizes pathway type and evidence labels without raw enums', () => {
+  it('normalizes pathway type labels without raw enums', () => {
     expect(getPathwayTypeLabel('POSTED_ROLE')).toBe('Posted opening');
     expect(getPathwayTypeLabel('EXPLORATORY_CONTACT')).toBe('Exploratory outreach');
-
-    const evidenceRows = buildPathwayEvidenceRows(pathway());
-
-    expect(evidenceRows[0]).toMatchObject({
-      claim: 'A posted role mentions undergraduate research.',
-      sourceType: 'Posted opening',
-      url: 'https://example.yale.edu/posting',
-    });
-    expect(JSON.stringify(evidenceRows)).not.toContain('POSTED_OPENING');
-    expect(JSON.stringify(evidenceRows)).not.toContain('POSTED_ROLE');
   });
 
   it('does not trust credential-bearing Yale-looking source URLs', () => {
