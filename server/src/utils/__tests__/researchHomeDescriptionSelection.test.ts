@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   collectDescriptionCandidates,
+  isMissionOrCultureProse,
+  isRecruitingNoticeLead,
   selectResearchHomeDescription,
 } from '../researchHomeDescriptionSelection';
 
@@ -258,6 +260,44 @@ describe('selectResearchHomeDescription', () => {
     ).toBeNull();
     expect(selectResearchHomeDescription([A_TO_Z_INDEX_BLOCK, LAB_RESEARCH_BLOCK])).toBe(
       LAB_RESEARCH_BLOCK,
+    );
+  });
+  it('ranks a research passage above a mission statement from the same site (#2176)', () => {
+    const MISSION_BLOCK =
+      'Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease. To foster personal and scientific growth and excellence.';
+    const RESEARCH_BLOCK =
+      'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment. Using mouse genetics, cell culture models, genomics, and microscopy, we tackle the cell-intrinsic and cell-extrinsic factors behind regeneration.';
+
+    expect(isMissionOrCultureProse(MISSION_BLOCK)).toBe(true);
+    expect(isMissionOrCultureProse(RESEARCH_BLOCK)).toBe(false);
+    expect(selectResearchHomeDescription([MISSION_BLOCK, RESEARCH_BLOCK])).toBe(RESEARCH_BLOCK);
+    expect(selectResearchHomeDescription([RESEARCH_BLOCK, MISSION_BLOCK])).toBe(RESEARCH_BLOCK);
+  });
+
+  it('still keeps a mission statement when the home publishes nothing else (#2176)', () => {
+    const MISSION_ONLY =
+      'Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease. Our research uses multiple epithelial tissues to explore these scientific interests.';
+    expect(selectResearchHomeDescription([MISSION_ONLY])).toBe(MISSION_ONLY);
+  });
+
+  it('ranks a research passage above a recruiting-notice lead, but keeps it alone (#2176)', () => {
+    const HIRING_LEAD =
+      'Hiring! Our group has open positions for a postdoc and a graduate student. We study quantum many-body systems out of equilibrium using ultracold atomic gases as a platform for these experiments.';
+
+    expect(isRecruitingNoticeLead(HIRING_LEAD)).toBe(true);
+    expect(isRecruitingNoticeLead(LAB_RESEARCH_BLOCK)).toBe(false);
+    expect(selectResearchHomeDescription([HIRING_LEAD, LAB_RESEARCH_BLOCK])).toBe(
+      LAB_RESEARCH_BLOCK,
+    );
+    expect(selectResearchHomeDescription([HIRING_LEAD])).toBe(HIRING_LEAD);
+  });
+
+  it('does not let an off-topic demotion blank a person entity description (#2176)', () => {
+    const PERSON_MISSION_BIO =
+      'The lab is committed to fostering an inclusive training environment. My research examines carbon storage in tidal wetlands and the chemistry of estuary sediments, combining fieldwork with numerical modeling of coastal systems.';
+    expect(isMissionOrCultureProse(PERSON_MISSION_BIO)).toBe(true);
+    expect(selectResearchHomeDescription([PERSON_MISSION_BIO], { kind: 'person' })).toBe(
+      PERSON_MISSION_BIO,
     );
   });
 });

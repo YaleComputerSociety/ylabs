@@ -34,7 +34,10 @@ import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
-import type { DescriptionEntityKind } from '../../utils/researchHomeDescriptionSelection';
+import {
+  scoreResearchHomeDescriptionCandidate,
+  type DescriptionEntityKind,
+} from '../../utils/researchHomeDescriptionSelection';
 import {
   extractOfficialResearchDescription,
   isDescriptionGroundedInSource,
@@ -270,6 +273,148 @@ function descriptionUrlPriority(value: string): number {
     return 9;
   }
   return 3;
+}
+
+/** Anchor text that names a research-content page on a research home's own site. */
+const RESEARCH_SUBPAGE_ANCHOR_RE =
+  /^(?:our\s+|the\s+|current\s+)?(?:research(?:\s+(?:areas?|interests?|overview|projects?|topics?|themes?))?|projects?|research\s+&\s+publications|science|what\s+we\s+(?:do|study)|areas\s+of\s+research)$/i;
+
+const MAX_RESEARCH_SUBPAGE_CANDIDATES = 2;
+const MAX_RESEARCH_SUBPAGES_FETCHED = 2;
+
+function sameRegistrableHost(a: string, b: string): boolean {
+  try {
+    return (
+      new URL(a).hostname.replace(/^www\./i, '').toLowerCase() ===
+      new URL(b).hostname.replace(/^www\./i, '').toLowerCase()
+    );
+  } catch {
+    return false;
+  }
+}
+
+const withoutTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
+
+/**
+ * Pure: same-host pages on a research home's own site whose anchor text names
+ * research content. The home page alone often carries only a mission or welcome
+ * blurb while the site's `/research` page carries the actual research prose, so
+ * the lane has to enumerate the site rather than stop at the root (#2176).
+ */
+export function discoverResearchSubPageUrls(
+  html: string,
+  pageUrl: string,
+  maxUrls: number = MAX_RESEARCH_SUBPAGE_CANDIDATES,
+): string[] {
+  if (!html || maxUrls <= 0) return [];
+  let $: cheerio.CheerioAPI;
+  try {
+    $ = cheerio.load(html);
+  } catch {
+    return [];
+  }
+  const found: string[] = [];
+  const seen = new Set<string>();
+  $('a[href]').each((_i, el) => {
+    if (found.length >= maxUrls) return;
+    const text = textValue($(el).text());
+    if (!text || !RESEARCH_SUBPAGE_ANCHOR_RE.test(text)) return;
+    try {
+      const absolute = new URL($(el).attr('href') || '', pageUrl).toString().split('#')[0];
+      if (!/^https?:\/\//i.test(absolute)) return;
+      if (!sameRegistrableHost(absolute, pageUrl)) return;
+      if (withoutTrailingSlash(absolute) === withoutTrailingSlash(pageUrl.split('#')[0])) return;
+      if (seen.has(absolute)) return;
+      seen.add(absolute);
+      found.push(absolute);
+    } catch {
+      /* ignore unparseable hrefs */
+    }
+  });
+  return found;
+}
+
+/**
+ * Pure: bounded, deduped research-page crawl list, built only from links the
+ * site actually publishes. Blind origin-rooted probes (`/research`, `/projects`,
+ * ...) are deliberately NOT attempted: a corpus sample found published anchors
+ * already reach every research page the crawl recovers, while blind probing
+ * costs two mostly-404 requests per entity across the whole corpus. Published
+ * links also preserve the site's own URL shape, which matters because `/research`
+ * frequently redirects to something like `/research_page/`.
+ */
+export function researchSubPageCrawlUrls(
+  homeHtml: string,
+  homeUrl: string,
+  maxUrls: number = MAX_RESEARCH_SUBPAGE_CANDIDATES,
+): string[] {
+  if (maxUrls <= 0) return [];
+  const seen = new Set<string>([withoutTrailingSlash(homeUrl.split('#')[0])]);
+  const out: string[] = [];
+  for (const url of discoverResearchSubPageUrls(homeHtml, homeUrl, maxUrls)) {
+    const key = withoutTrailingSlash(url);
+    if (!key || seen.has(key)) continue;
+    if (isRejectedDescriptionSourceUrl(url)) continue;
+    seen.add(key);
+    out.push(url);
+    if (out.length >= maxUrls) break;
+  }
+  return out;
+}
+
+export interface DescriptionPageProse {
+  url: string;
+  fullDescription: string;
+  shortDescription: string;
+}
+
+/**
+ * Deterministic official prose for one fetched page. The embedded-JSON path runs
+ * first because many Yale pages are JS-rendered shells whose verbatim
+ * description only exists in a script-tag payload.
+ */
+export function extractDescriptionPageProse(
+  page: FetchedDescriptionPage,
+  kind: DescriptionEntityKind,
+): DescriptionPageProse | null {
+  const embedded = extractLabHomepageDescription(page.html, { kind });
+  const prose = embedded?.description
+    ? { fullDescription: embedded.description, shortDescription: embedded.shortDescription || '' }
+    : extractOfficialResearchDescription(page.html, { kind });
+  if (!prose?.fullDescription) return null;
+  return {
+    url: page.url,
+    fullDescription: prose.fullDescription,
+    shortDescription: prose.shortDescription || '',
+  };
+}
+
+/**
+ * Pure: pick the fetched page whose prose best says what the home studies.
+ * Candidates arrive primary-page-first and only a STRICTLY better score wins, so
+ * a crawled research page replaces the primary page's prose only when that prose
+ * is off-topic (a mission statement, a recruiting notice). This deliberate
+ * conservatism matters: a corpus dry-run over the 504 homepage-sourced entities
+ * found that preferring a research page whenever one merely exists regresses
+ * roughly a third of them onto figure captions, single-project leads, textbook
+ * background framing, and CV/contact blocks. Widening this to also beat weak but
+ * on-topic home-page prose needs a positive specificity signal, not a tiebreak
+ * (#2176).
+ */
+export function selectBestDescriptionPageProse(
+  candidates: DescriptionPageProse[],
+  kind: DescriptionEntityKind,
+): DescriptionPageProse | null {
+  let best: DescriptionPageProse | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const candidate of candidates) {
+    const score = scoreResearchHomeDescriptionCandidate(candidate.fullDescription, kind);
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 function descriptionSourceUrlVariants(value: string): string[] {
@@ -833,17 +978,50 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           return;
         }
 
+        const kind: DescriptionEntityKind = isFacultyResearchTextEntity({
+          entityType: lab.entityType,
+          kind: lab.kind,
+        })
+          ? 'person'
+          : 'organization';
+
+        // A home page often carries only a mission or welcome blurb while the
+        // site's own research page carries the research prose, so enumerate the
+        // site instead of stopping at whichever URL happened to be stored (#2176).
+        const pages: FetchedDescriptionPage[] = [page];
+        for (const researchUrl of researchSubPageCrawlUrls(page.html, page.url)) {
+          if (pages.length >= 1 + MAX_RESEARCH_SUBPAGES_FETCHED) break;
+          if (isKnownUnavailableSourceUrl(researchUrl, lab.sourceLinkHealth)) continue;
+          let researchPage: FetchedDescriptionPage | null = null;
+          try {
+            researchPage = await this.fetchPage(researchUrl);
+          } catch (error) {
+            ctx.log(
+              `[${lab.slug || 'candidate'}] research subpage skipped: ${sanitizeLogValue(error)}`,
+            );
+            continue;
+          }
+          if (!researchPage?.html) continue;
+          if (!personProfileSourceMatchesEntity(researchPage.url, lab)) continue;
+          if (pages.some((fetched) => fetched.url === researchPage.url)) continue;
+          pages.push(researchPage);
+        }
+
         // Raw HTML covers both extraction paths below: the visible-text LLM path
         // and the deterministic embedded-JSON official-prose path (which reads
         // script-tag payloads htmlToText strips). Hashing raw HTML ensures an
-        // embedded-prose-only change still re-runs extraction.
+        // embedded-prose-only change still re-runs extraction. A single-page
+        // entity keeps its pre-crawl hash input so adding this crawl does not
+        // force LLM re-spend on homes that gained no research page (#2022).
         const entityRef = {
           entityType: 'researchEntity' as const,
           entityId: serializedDocumentId(lab._id) || undefined,
           entityKey: lab.slug,
         };
         const contentHash = computeVersionedContentHash(
-          page.html,
+          pages.length === 1
+            ? page.html
+            : pages.map((fetched) => `${fetched.url}\n${fetched.html}`).join('\n'),
           DESCRIPTION_EXTRACTION_PROMPT_HASH,
           this.model,
           this.cardModel,
@@ -859,40 +1037,70 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           );
           return;
         }
-        const hashObservation = contentHashObservation(entityRef, page.url, contentHash);
+        // Fast, faithful path: the deterministic extractors are cheaper than the
+        // LLM and recover prose the plain-text path misses, so run them across
+        // every fetched page and keep the best passage. The page that wins also
+        // becomes the cited source URL and the text the LLM reads for methods.
+        const primaryPage = page;
+        const primaryProse = extractDescriptionPageProse(primaryPage, kind);
 
-        // Fast, faithful path: many Yale pages (medicine.yale.edu /lab and
-        // /profile, etc.) are JS-rendered, so the visible-text LLM path sees an
-        // empty shell — but the verbatim official description sits in an embedded
-        // script-tag JSON payload that extractLabHomepageDescription() parses.
-        // Use it before the LLM: cheaper, and it recovers descriptions the
-        // plain-text path misses.
-        const kind: DescriptionEntityKind = isFacultyResearchTextEntity({
-          entityType: lab.entityType,
-          kind: lab.kind,
-        })
-          ? 'person'
-          : 'organization';
+        // A crawled page may only ADD a description, never contribute an
+        // off-topic one, and it has to beat the primary page's own candidate
+        // outright. Ties go to the primary page, so the crawl changes an entity
+        // only when the primary page's prose is genuinely worse (a mission
+        // statement, a recruiting pitch) than the research page's (#2176).
+        const crawledProse = pages
+          .slice(1)
+          .map((fetched) => extractDescriptionPageProse(fetched, kind))
+          .filter(
+            (prose): prose is DescriptionPageProse =>
+              prose !== null &&
+              scoreResearchHomeDescriptionCandidate(prose.fullDescription, kind) >= 0,
+          );
+        const bestCrawledProse = selectBestDescriptionPageProse(crawledProse, kind);
 
-        const embedded = extractLabHomepageDescription(page.html, { kind });
-        const officialProse = embedded?.description
-          ? {
-              fullDescription: embedded.description,
-              shortDescription: embedded.shortDescription || '',
-            }
-          : extractOfficialResearchDescription(page.html, { kind });
-
-        const pageText = htmlToText(page.html);
+        const primaryPageText = htmlToText(primaryPage.html);
         const llmExtraction =
-          pageText.length >= 120
+          primaryPageText.length >= 120
             ? await this.callLLM({
                 model: this.model,
                 apiKey: this.apiKey as string,
                 labName: lab.name,
-                sourceUrl: page.url,
-                pageText,
+                sourceUrl: primaryPage.url,
+                pageText: primaryPageText,
               })
             : null;
+        const groundedLlmExtraction = llmExtraction
+          ? groundDescriptionExtraction(llmExtraction, primaryPageText)
+          : null;
+
+        // The primary page's own candidate, under today's precedence: its
+        // deterministic prose if it has any, otherwise its grounded LLM prose.
+        const primaryCandidate: DescriptionPageProse | null =
+          primaryProse ??
+          (groundedLlmExtraction?.fullDescription
+            ? {
+                url: primaryPage.url,
+                fullDescription: groundedLlmExtraction.fullDescription,
+                shortDescription: groundedLlmExtraction.shortDescription || '',
+              }
+            : null);
+        const crawledProseWins =
+          bestCrawledProse !== null &&
+          (primaryCandidate === null ||
+            scoreResearchHomeDescriptionCandidate(bestCrawledProse.fullDescription, kind) >
+              scoreResearchHomeDescriptionCandidate(primaryCandidate.fullDescription, kind));
+
+        if (crawledProseWins && bestCrawledProse) {
+          page = pages.find((fetched) => fetched.url === bestCrawledProse.url) ?? primaryPage;
+        }
+        const officialProse = crawledProseWins ? bestCrawledProse : primaryProse;
+
+        const hashObservation = contentHashObservation(entityRef, page.url, contentHash);
+
+        // Methods are grounded in the text of the page that is actually cited, so
+        // a crawled winner never attributes home-page methods to its own URL.
+        const pageText = page === primaryPage ? primaryPageText : htmlToText(page.html);
 
         // Methods are LLM-extracted and word-grounded before use, and are
         // emitted regardless of which description path wins - the deterministic
@@ -930,9 +1138,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               identity,
             )
           : [];
-        if (observations.length === 0 && llmExtraction) {
+        if (observations.length === 0 && groundedLlmExtraction) {
           observations = descriptionExtractionToObservations(
-            { ...groundDescriptionExtraction(llmExtraction, pageText), methods },
+            { ...groundedLlmExtraction, methods },
             identity,
           );
         }
