@@ -6,7 +6,6 @@ import { AnalyticsEvent } from '../analytics';
 import { Department } from '../department';
 import { EvidenceClaim } from '../evidenceClaim';
 import { Fellowship } from '../fellowship';
-import { Grant } from '../grant';
 import { Observation } from '../observation';
 import { OrgUnit } from '../orgUnit';
 import { Researcher } from '../researcher';
@@ -29,7 +28,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [Department, 'departments'],
   [EvidenceClaim, 'evidence_claims'],
   [Fellowship, 'fellowships'],
-  [Grant, 'grants'],
   [Observation, 'observations'],
   [OrgUnit, 'org_units'],
   [Researcher, 'researchers'],

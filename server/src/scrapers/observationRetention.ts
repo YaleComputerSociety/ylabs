@@ -39,7 +39,6 @@ export const OBSERVATION_REFERENCE_SPECS: ObservationReferenceSpec[] = [
   { collection: 'papers', field: 'fieldProvenance', kind: 'provenance-map' },
   { collection: 'paper_authors', field: 'fieldProvenance', kind: 'provenance-map' },
   { collection: 'research_entity_members', field: 'fieldProvenance', kind: 'provenance-map' },
-  { collection: 'grants', field: 'fieldProvenance', kind: 'provenance-map' },
 ];
 
 export function buildSupersededObservationPruneFilter(input: {

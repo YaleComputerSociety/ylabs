@@ -17,7 +17,6 @@ export {
   DepartmentCodeSystem,
   categoryColorKeys,
 } from './department';
-export { Grant } from './grant';
 export { ResearchEntity } from './researchEntity';
 export { ResearchEntityRedirect } from './researchEntityRedirect';
 export { ResearchEntityRelationship } from './researchEntityRelationship';
