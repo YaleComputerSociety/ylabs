@@ -152,13 +152,7 @@ export const sourceCoverageRegistry = {
   'department-undergrad-research': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: [
-      'Fellowship',
-      'EntryPathway',
-      'AccessSignal',
-      'ContactRoute',
-      'Observation',
-    ],
+    artifactTypes: ['Fellowship', 'EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'TOPICS',

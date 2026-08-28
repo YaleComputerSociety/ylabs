@@ -851,7 +851,8 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       );
     }
 
-    const failureNote = failedPages > 0 ? ` (${failedPages} page(s) skipped after fetch/parse failure)` : '';
+    const failureNote =
+      failedPages > 0 ? ` (${failedPages} page(s) skipped after fetch/parse failure)` : '';
     return {
       observationCount: totalObs,
       entitiesObserved: totalEntities,

@@ -308,7 +308,7 @@ Audit focus:
 Project impact:
 
 - Adds official, deterministic undergraduate research routes before any broad LLM or worker automation.
-- Current deterministic coverage includes Chemistry, MCDB, Economics, Psychology, Astronomy, Mathematics, Engineering, Cognitive Science, Ecology and Evolutionary Biology, Yale College Science and Quantitative Reasoning Education, Anthropology, Earth and Planetary Sciences, Political Science, and History.
+- The authoritative list of covered department pages is `DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES` in `server/src/scrapers/sources/departmentUndergradResearchScraper.ts`; audit by page key (`--only <key>`) rather than against a copied department list.
 
 ### `undergrad-fellowships-recipients`
 

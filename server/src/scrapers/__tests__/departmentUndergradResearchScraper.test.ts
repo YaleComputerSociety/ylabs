@@ -1097,7 +1097,9 @@ describe('departmentUndergradResearchScraper', () => {
       ],
       fetchHtml: async (url) => {
         if (url.includes('physics')) {
-          const error = new Error('Request failed with status code 404') as Error & { response?: { status: number } };
+          const error = new Error('Request failed with status code 404') as Error & {
+            response?: { status: number };
+          };
           error.response = { status: 404 };
           throw error;
         }
@@ -1147,8 +1149,7 @@ describe('departmentUndergradResearchScraper', () => {
           title: 'Chemistry Undergraduate Research',
         },
       ],
-      fetchHtml: async (url) =>
-        url.includes('physics') ? (null as unknown as string) : CHEM_HTML,
+      fetchHtml: async (url) => (url.includes('physics') ? (null as unknown as string) : CHEM_HTML),
     });
     const emitted: ObservationInput[] = [];
 
