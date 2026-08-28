@@ -20,10 +20,28 @@ function scriptSourceFiles(): string[] {
 
 const CANONICAL_IDENTITY_WIPE = new RegExp(
   '(RoleAssignment|Researcher|Account|role_assignments|researchers|accounts)\\b' +
-    '[^\\n]*\\.(deleteMany|drop)\\(',
+    '[^\\n]*\\.(?:drop\\(|deleteMany\\((?!\\s*\\{\\s*_id\\b))',
 );
 
+function wipesCanonicalIdentityCollections(source: string): boolean {
+  return CANONICAL_IDENTITY_WIPE.test(source);
+}
+
 describe('canonical identity write path is continuous, not batch-derived', () => {
+  it('treats unscoped identity deletes as wipes and enumerated-id prunes as safe', () => {
+    expect(wipesCanonicalIdentityCollections('await Researcher.deleteMany({});')).toBe(true);
+    expect(wipesCanonicalIdentityCollections('await Account.deleteMany();')).toBe(true);
+    expect(wipesCanonicalIdentityCollections('await RoleAssignment.collection.drop();')).toBe(true);
+    expect(wipesCanonicalIdentityCollections('await Researcher.deleteMany(filter);')).toBe(true);
+
+    expect(
+      wipesCanonicalIdentityCollections('await Researcher.deleteMany({ _id: { $in: ids } });'),
+    ).toBe(false);
+    expect(
+      wipesCanonicalIdentityCollections('await Account.deleteMany({ _id: { $in: ids } });'),
+    ).toBe(false);
+  });
+
   it('no longer exposes the destructive batch identity apply script', () => {
     const scripts = readServerScripts();
     expect(scripts).not.toHaveProperty('model-refactor:identity-apply');
@@ -37,7 +55,7 @@ describe('canonical identity write path is continuous, not batch-derived', () =>
 
   it('has no script that wipes canonical identity collections before rebuilding them', () => {
     const offenders = scriptSourceFiles().filter((file) =>
-      CANONICAL_IDENTITY_WIPE.test(fs.readFileSync(file, 'utf8')),
+      wipesCanonicalIdentityCollections(fs.readFileSync(file, 'utf8')),
     );
     expect(offenders).toEqual([]);
   });
