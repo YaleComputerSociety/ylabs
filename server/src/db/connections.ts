@@ -160,7 +160,7 @@ export async function initializeConnections(): Promise<void> {
     console.log('Connected to primary database (default) 🚀');
 
     migrationConnection = await mongoose.createConnection(migrationUrl, mongoOptions).asPromise();
-    console.log('Connected to migration database (listings) 🔄');
+    console.log('Connected to migration database 🔄');
 
     MigrationListing = migrationConnection.model('Listing', listingSchema, 'listings');
   } else {
@@ -174,7 +174,9 @@ export async function initializeConnections(): Promise<void> {
 }
 
 /**
- * Get the appropriate Listing model. In productionMigration mode, returns a model connected to the migration DB.
+ * Internal analytics read model for the retired `listings` collection. The
+ * Listing product surface is retired; only the admin analytics aggregations
+ * still read it, and they are tracked for removal separately.
  */
 export function getListingModel(): mongoose.Model<any> {
   const mode = getApiMode();

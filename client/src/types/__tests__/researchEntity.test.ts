@@ -88,7 +88,6 @@ describe('normalizeResearchEntityDetailPayload', () => {
       researchEntity: canonical,
       group: legacy,
       members: [],
-      activeListings: [],
     });
 
     expect(result.researchEntity).toEqual(expect.objectContaining(canonical));

@@ -7,7 +7,6 @@ import { Department } from '../department';
 import { EvidenceClaim } from '../evidenceClaim';
 import { Fellowship } from '../fellowship';
 import { Grant } from '../grant';
-import { Listing } from '../listing';
 import { Observation } from '../observation';
 import { OrgUnit } from '../orgUnit';
 import { Researcher } from '../researcher';
@@ -31,7 +30,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [EvidenceClaim, 'evidence_claims'],
   [Fellowship, 'fellowships'],
   [Grant, 'grants'],
-  [Listing, 'listings'],
   [Observation, 'observations'],
   [OrgUnit, 'org_units'],
   [Researcher, 'researchers'],

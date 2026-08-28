@@ -185,7 +185,6 @@ export function normalizeResearchEntityDetailPayload(
       truncated: false,
       withheldCount: 0,
     },
-    activeListings: payload.activeListings ?? [],
     accessSignals: payload.accessSignals ?? [],
     undergraduateLogistics: payload.undergraduateLogistics ?? {
       status: 'unavailable',

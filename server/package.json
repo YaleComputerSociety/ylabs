@@ -19,7 +19,6 @@
     "research-entity:cleanup-collections": "tsx src/scripts/migrateResearchEntityCollections.ts",
     "legacy:cleanup": "tsx src/scripts/cleanupLegacyMongoCollections.ts",
     "retire:bibliographic-mirror": "tsx src/scripts/retireBibliographicMirror.ts",
-    "retire:publication-surfaces": "tsx src/scripts/retirePublicationSurfaces.ts",
     "retire:stale-access-signal-fields": "tsx src/scripts/retireStaleAccessSignalFields.ts",
     "retire:stale-saved-plan-fields": "tsx src/scripts/retireStaleSavedPlanFields.ts",
     "research-entity:dedupe-by-pi": "tsx src/scripts/dedupeResearchEntitiesByPi.ts",

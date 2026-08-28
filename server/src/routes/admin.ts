@@ -17,11 +17,6 @@ import {
   unarchiveFellowship,
 } from '../services/fellowshipService';
 import {
-  listAdminListingClaimRequests,
-  reviewAdminListingClaimRequest,
-  applyAdminListingClaimRequest,
-} from '../controllers/listingClaimRequestController';
-import {
   listAdminEntityCorrectionReports,
   reviewAdminEntityCorrectionReport,
 } from '../controllers/entityCorrectionReportController';
@@ -512,20 +507,6 @@ router.put(
       res.status(400).json({ error: 'Request failed' });
     }
   },
-);
-
-router.get('/listing-claims', listAdminListingClaimRequests);
-router.put(
-  '/listing-claims/:id',
-  writeLimit,
-  validateObjectId('id'),
-  reviewAdminListingClaimRequest,
-);
-router.put(
-  '/listing-claims/:id/apply',
-  writeLimit,
-  validateObjectId('id'),
-  applyAdminListingClaimRequest,
 );
 
 router.get('/correction-reports', listAdminEntityCorrectionReports);

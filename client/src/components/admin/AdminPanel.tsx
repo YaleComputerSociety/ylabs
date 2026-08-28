@@ -7,14 +7,12 @@ import AdminResearchAreas from './AdminResearchAreas';
 import AdminDepartments from './AdminDepartments';
 import AdminAccessReview from './AdminAccessReview';
 import AdminOperatorBoard from './AdminOperatorBoard';
-import AdminListingClaims from './AdminListingClaims';
 import AdminCorrectionReports from './AdminCorrectionReports';
 
 const TABS = [
   'Operator Board',
   'Access Review',
   'Correction Reports',
-  'Listing Requests',
   'Fellowships',
   'Research Areas',
   'Departments',
@@ -64,7 +62,6 @@ const AdminPanel = () => {
       {activeTab === 'Operator Board' && <AdminOperatorBoard />}
       {activeTab === 'Access Review' && <AdminAccessReview />}
       {activeTab === 'Correction Reports' && <AdminCorrectionReports />}
-      {activeTab === 'Listing Requests' && <AdminListingClaims />}
       {activeTab === 'Fellowships' && <AdminFellowshipsTable />}
       {activeTab === 'Research Areas' && <AdminResearchAreas />}
       {activeTab === 'Departments' && <AdminDepartments />}

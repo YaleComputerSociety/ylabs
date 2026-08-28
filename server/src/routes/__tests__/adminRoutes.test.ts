@@ -122,10 +122,6 @@ describe('admin routes', () => {
     expect(routeByPath('/operator-board')).toBeTruthy();
   });
 
-  it('exposes the listing claim apply route behind the same admin router guards', () => {
-    expect(routeByPathAndMethod('/listing-claims/:id/apply', 'put')).toBeTruthy();
-  });
-
   it('marks admin responses as private no-store payloads', async () => {
     expect(middlewareNames()).toContain('setPrivateAdminCacheHeaders');
 

@@ -96,7 +96,6 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | ----------------- | ------------------- | --------------------------------------------------- |
 | `/research`       | `researchGroups.ts` | Varies, with public search and detail.              |
 | `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface.   |
-| `/listings`       | `listings.ts`       | Legacy read and claim routes; authoring is retired. |
 | `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
 | `/users`          | `users.ts`          | Auth required.                                      |
 | `/profiles`       | `profiles.ts`       | Varies.                                             |
@@ -121,15 +120,14 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts`                                          | Student visibility tiering and repair queue.                         |
 | `programClassifier.ts`                                                                                                                      | Program classification.                                              |
-| `listingResearchEntityProfile.ts`                                                                                                           | Keeps legacy listings synced to ResearchEntity profiles.             |
 | `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                        | External integrations.                                               |
 
 ## Naming conventions
 
 | Element          | Convention                                                |
 | ---------------- | --------------------------------------------------------- |
-| Services         | camelCase plus `Service`, e.g. `listingService.ts`.       |
-| Models           | PascalCase exports, e.g. `Account`, `Listing`, `Fellowship`. |
+| Services         | camelCase plus `Service`, e.g. `fellowshipService.ts`.    |
+| Models           | PascalCase exports, e.g. `Account`, `Researcher`, `Fellowship`. |
 | Controllers      | camelCase descriptive names.                              |
 | Routes           | Resource-based files.                                     |
 | DB fields        | camelCase.                                                |

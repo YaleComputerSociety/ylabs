@@ -59,7 +59,6 @@ import { canonicalizeResearcherDepartmentLabel } from '../utils/researcherDepart
 import { useConfig } from '../hooks/useConfig';
 import { leadRoleFamily, leadSectionHeading } from '../utils/leadRoleDisplay';
 import UserContext from '../contexts/UserContext';
-import ListingClaimRequestPanel from '../components/faculty/ListingClaimRequestPanel';
 import EntityCorrectionReportPanel from '../components/research/EntityCorrectionReportPanel';
 import {
   createResearchAnalyticsInteractionId,
@@ -935,7 +934,6 @@ const LabDetail = () => {
       withheldCount: 0,
     },
     accessSignals = [],
-    activeListings = [],
     entityRelationships = [],
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
@@ -1038,11 +1036,6 @@ const LabDetail = () => {
     ? [decisionProfileUrl, officialWebsiteUrl]
     : [decisionProfileUrl];
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
-  const canRequestListingReview =
-    Boolean(user?.userConfirmed) &&
-    ['professor', 'faculty', 'staff'].includes(user?.userType || '') &&
-    activeListings.length > 0;
-
   const handleDetailLinkOpen = (event: React.MouseEvent<HTMLElement>) => {
     const anchor = (event.target as HTMLElement).closest('a');
     const sourceUrl = safeHttpUrl(anchor?.getAttribute('href'));
@@ -1197,8 +1190,6 @@ const LabDetail = () => {
               similarResearchEntities={dedupedSimilarResearchEntities}
             />
           )}
-
-          {canRequestListingReview && <ListingClaimRequestPanel listing={activeListings[0]} />}
 
           {sources.length > 0 && (
             <section>

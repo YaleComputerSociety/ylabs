@@ -331,7 +331,6 @@ test('rendered fetch process boundary constrains env-selected command and bridge
 
 test('service-layer search and materialization sync logs sanitize caught errors', () => {
   const files = [
-    '../server/src/services/listingService.ts',
     '../server/src/services/meiliSyncService.ts',
   ];
 
@@ -457,30 +456,6 @@ test('global error handler does not log stack traces in deployed runtimes', () =
   );
 });
 
-test('public research detail active listings redact direct contact text', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/researchGroupService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /const publicString = \(value: unknown\): string \| undefined =>[\s\S]*redactDirectContactInfo/,
-  );
-  assert.match(
-    source,
-    /const publicStringArray = \(values: unknown\): string\[\] =>[\s\S]*publicString\(value\)/,
-  );
-  assert.match(source, /title: publicString\(listing\.title\)/);
-  assert.match(source, /description: publicString\(listing\.description\)/);
-  assert.match(source, /applicantDescription: publicString\(listing\.applicantDescription\)/);
-  assert.match(source, /departments: publicStringArray\(listing\.departments\)/);
-  assert.match(source, /researchAreas: publicStringArray\(listing\.researchAreas\)/);
-  assert.match(source, /keywords: publicStringArray\(listing\.keywords\)/);
-  assert.doesNotMatch(source, /description: listing\.description/);
-  assert.doesNotMatch(source, /applicantDescription: listing\.applicantDescription/);
-});
-
 test('client dynamic internal route segments are encoded before rendering', () => {
   const files = [];
   const visit = (dir) => {
@@ -582,7 +557,6 @@ test('public research detail queries cap unauthenticated fan-out before serializ
   );
 
   for (const constant of [
-    'MAX_PUBLIC_DETAIL_LISTINGS',
     'MAX_PUBLIC_DETAIL_ACCESS_SIGNALS',
     'MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT',
   ]) {
@@ -594,10 +568,6 @@ test('public research detail queries cap unauthenticated fan-out before serializ
   assert.match(source, /\.slice\(0, MAX_PUBLIC_DETAIL_MEMBERS\)/);
 
   assert.doesNotMatch(source, /ResearchEntityRelationship\.find\(\{[^;]*?\}\)\.lean\(\)/);
-  assert.doesNotMatch(
-    source,
-    /Listing\.find\(\{ researchEntityId: \(group as any\)\._id, archived: false \}\)\.lean\(\)/,
-  );
   assert.doesNotMatch(
     source,
     /EntryPathway\.find\(\{ researchEntityId: \(group as any\)\._id, archived: false \}\)\.lean\(\)/,
@@ -1144,49 +1114,14 @@ test('OAuth callback assets are served with no-store cache headers', () => {
   }
 });
 
-test('seed route token gate rejects malformed and oversized tokens cheaply', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/seed.ts', import.meta.url), 'utf8');
-
-  assert.match(source, /import \{ validateObjectId \} from '\.\.\/middleware\/validation'/);
-  assert.match(source, /import \{ isLocalDevelopmentRuntime \} from '\.\.\/utils\/environment'/);
-  assert.match(source, /function requireLocalSeedRuntime/);
-  assert.match(source, /if \(!isLocalDevelopmentRuntime\(\)\)/);
-  assert.match(source, /return res\.status\(404\)\.json\(\{ error: 'Not found' \}\)/);
-  assert.match(
-    source,
-    /router\.use\(setPrivateSeedCacheHeaders, requireLocalSeedRuntime, requireSeedToken\)/,
-  );
-  assert.match(source, /res\.setHeader\('Surrogate-Control', 'no-store'\)/);
-  assert.match(source, /res\.setHeader\('Expires', '0'\)/);
-  assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
-  assert.match(source, /MIN_SEED_TOKEN_LENGTH = 16/);
-  assert.match(source, /MAX_SEED_TOKEN_LENGTH = 256/);
-  assert.match(source, /expected\.length < MIN_SEED_TOKEN_LENGTH/);
-  assert.match(source, /expected\.length > MAX_SEED_TOKEN_LENGTH/);
-  assert.match(source, /provided\.length < MIN_SEED_TOKEN_LENGTH/);
-  assert.match(source, /provided\.length > MAX_SEED_TOKEN_LENGTH/);
-  assert.match(source, /!tokensMatch\(provided, expected\)/);
-  assert.match(source, /router\.put\('\/listings\/:id', validateObjectId\('id'\), async/);
-  assert.match(source, /const seedListingSummary = \(listing: any\) => \(\{/);
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /_id: serializedDocumentId\(listing\?\._id\) \|\| ''/);
-  assert.match(source, /results: listings\.map\(seedListingSummary\)/);
-  assert.match(source, /listing: seedListingSummary\(listing\)/);
-  assert.doesNotMatch(source, /listing\?\._id\?\.toString\?\.\(\)/);
-  assert.doesNotMatch(source, /results: listings \}/);
-  assert.doesNotMatch(source, /listing \}/);
-});
-
 test('mounted API routes sanitize caught errors before logging', () => {
   const routeFiles = [
     '../server/src/routes/admin.ts',
     '../server/src/routes/analytics.ts',
     '../server/src/routes/config.ts',
     '../server/src/routes/fellowships.ts',
-    '../server/src/routes/listings.ts',
     '../server/src/routes/programs.ts',
     '../server/src/routes/researchAreas.ts',
-    '../server/src/routes/seed.ts',
     '../server/src/routes/users.ts',
   ];
 
@@ -1380,22 +1315,6 @@ test('research discovery write service return ids use safe serialization', () =>
       `${name} must not conditionally stringify returned ids`,
     );
   }
-});
-
-test('listing research entity profile sync bounds public URLs before persistence', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/listingResearchEntityProfile.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_LISTING_RESEARCH_ENTITY_PROFILE_URLS = 50/);
-  assert.match(source, /const publicListingProfileUrls = \(values: unknown\[\]\): string\[\] =>/);
-  assert.match(
-    source,
-    /uniqueStrings\(values\)\.filter\(isHttpUrl\)\.slice\(0, MAX_LISTING_RESEARCH_ENTITY_PROFILE_URLS\)/,
-  );
-  assert.match(source, /const urls = publicListingProfileUrls\(\[/);
-  assert.doesNotMatch(source, /const urls = uniqueStrings\(\[[\s\S]*\]\)\.filter\(isHttpUrl\)/);
 });
 
 test('same-PI research entity dedupe apply IDs reject object-shaped values', () => {
@@ -1779,17 +1698,11 @@ test('scraper cache invalidation escapes and bounds regex prefixes', () => {
 
 test('shared search regex helper bounds terms and allowlists Mongo regex options', () => {
   const source = fs.readFileSync(new URL('../server/src/utils/regex.ts', import.meta.url), 'utf8');
-  const listingsRouteSource = fs.readFileSync(
-    new URL('../server/src/routes/listings.ts', import.meta.url),
-    'utf8',
-  );
-
   assert.match(source, /const SAFE_REGEX_OPTIONS = new Set\(\['i', 'm', 's', 'x'\]\)/);
   assert.match(source, /const normalizeRegexOptions = \(options: string\): string => \{/);
   assert.match(source, /SAFE_REGEX_OPTIONS\.has\(option\)/);
   assert.match(source, /return normalized \|\| 'i'/);
   assert.match(source, /escapeRegex\(input\.trim\(\)\.slice\(0, MAX_SEARCH_LEN\)\)/);
-  assert.doesNotMatch(listingsRouteSource, /listingController\.(create|update|archive|unarchive)/);
 });
 
 test('operator board gate artifact reads are constrained to safe JSON artifact paths', () => {
@@ -2750,51 +2663,6 @@ test('client logout navigation uses the safe API URL builder', () => {
   assert.match(signInButton, /buildApiUrl\(`\/cas\$\{redirectParam\}`\)/);
 });
 
-test('self-service listing writes sanitize public URLs and bound stored payloads', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/listingService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ publicHttpUrl \} from '\.\.\/utils\/urlSafety'/);
-  assert.match(source, /const LISTING_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(
-    source,
-    /export function normalizeListingObjectId\(value: unknown\): string \| undefined/,
-  );
-  assert.match(source, /typeof value === 'string'/);
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /return LISTING_OBJECT_ID_RE\.test\(id\) \? id : undefined/);
-  assert.match(source, /const safeResearchEntityId = normalizeListingObjectId\(researchEntityId\)/);
-  assert.match(source, /const safeId = normalizeListingObjectId\(id\)/);
-  assert.match(source, /getListingModel\(\)\.findById\(safeId\)/);
-  assert.match(source, /getListingModel\(\)\.findByIdAndUpdate\(safeId, safeData/);
-  assert.match(source, /MAX_SELF_SERVICE_LISTING_DESCRIPTION_LENGTH/);
-  assert.match(source, /MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS/);
-  assert.match(source, /MAX_SELF_SERVICE_LISTING_WEBSITES/);
-  assert.match(
-    source,
-    /const sanitizeSelfServiceListingPayload = \(safeData: Record<string, any>\) => \{/,
-  );
-  assert.match(source, /boundedListingWebsiteArray/);
-  assert.match(
-    source,
-    /for \(const field of \['hiringStatus', 'commitment', 'type', 'compensationType'\]\)/,
-  );
-  assert.match(source, /const established = boundedListingNumber\(safeData\.established\)/);
-  assert.match(source, /const expiresAt = boundedListingDate\(safeData\.expiresAt\)/);
-  assert.match(source, /value\s*\.slice\(0, MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS\)\s*\.flatMap/);
-  assert.match(source, /value\s*\.slice\(0, MAX_SELF_SERVICE_LISTING_WEBSITES\)\s*\.flatMap/);
-  assert.match(source, /sanitizeSelfServiceListingPayload\(safeData\)/);
-  assert.match(source, /url\.length <= MAX_SELF_SERVICE_LISTING_URL_LENGTH/);
-  assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
-  assert.doesNotMatch(source, /doc\._id\.toString\(\)/);
-  assert.doesNotMatch(source, /String\(doc\._id\)/);
-  assert.doesNotMatch(source, /findById\(id\)/);
-  assert.doesNotMatch(source, /findByIdAndUpdate\(id, safeData/);
-  assert.doesNotMatch(source, /findByIdAndDelete\(id\)/);
-});
-
 test('self-editable profile writes cap arrays and URL maps before per-item normalization', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/profileService.ts', import.meta.url),
@@ -3572,25 +3440,17 @@ test('legacy research group public DTO ids use safe serialization', () => {
     /const researchGroupDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
   );
   assert.match(source, /_id: researchGroupDocumentId\(entity\._id\)/);
-  assert.match(
-    source,
-    /hasActiveListing: activeListingGroupIdSet\.has\(researchGroupDocumentId\(entity\._id\)\)/,
-  );
-  assert.match(source, /_id: researchGroupDocumentId\(listing\._id\)/);
-  assert.match(source, /id: researchGroupDocumentId\(listing\._id\)/);
   assert.match(source, /leadMembersByEntityId\.get\(researchGroupDocumentId\(entity\._id\)\)/);
   assert.match(source, /\[researchGroupDocumentId\(entity\._id\), entity\]/);
   assert.match(source, /visibleEntitiesById\.has\(researchGroupDocumentId\(id\)\)/);
   assert.match(source, /identityKey: researchGroupDocumentId\(entry\.personId\)/);
   assert.doesNotMatch(source, /_id: String\(entity\._id\)/);
-  assert.doesNotMatch(source, /id: String\(listing\._id\)/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
   assert.doesNotMatch(source, /String\(member\.researchEntityId/);
   assert.doesNotMatch(source, /(?:^|[^A-Za-z])String\(route\?\._id/);
   assert.doesNotMatch(source, /(?:^|[^A-Za-z])String\(lead\.user\?\._id/);
   assert.doesNotMatch(source, /(?:^|[^A-Za-z])String\(userKey\)/);
   assert.doesNotMatch(source, /(?:^|[^A-Za-z])String\(candidateUserKey\)/);
-  assert.doesNotMatch(source, /activeListingGroupIds\.map\(\(id: any\) => String\(id\)\)/);
 });
 
 test('public research detail bounds slug input before service and Mongo work', () => {
@@ -3802,10 +3662,7 @@ test('public research detail subdocuments omit persistence metadata', () => {
     'utf8',
   );
 
-  for (const serializerName of [
-    'publicListingForResearchDetail',
-    'publicAccessSignalForResearchDetail',
-  ]) {
+  for (const serializerName of ['publicAccessSignalForResearchDetail']) {
     const serializerMatch = source.match(
       new RegExp(`const ${serializerName} = [\\s\\S]*?\\n\\}\\);`),
     );
@@ -4404,28 +4261,6 @@ test('admin grant notes are bounded before persistence', () => {
   assert.doesNotMatch(source, /revokeNote: typeof note === 'string' \? note\.trim\(\) : ''/);
 });
 
-test('admin listing updates use a bounded allowlist before persistence', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/listingService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /const filterAdminListingUpdateData = \(data: any\): Record<string, any> => \{/,
-  );
-  assert.match(source, /const LISTING_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\//);
-  assert.match(
-    source,
-    /const boundedListingNetidArray = \(value: unknown\): string\[\] \| undefined => \{/,
-  );
-  assert.match(source, /\.slice\(0, MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS\)/);
-  assert.match(source, /const id = normalizeListingObjectId\(data\[field\]\)/);
-  assert.match(source, /sanitizeSelfServiceListingPayload\(safeData\)/);
-  assert.match(source, /noAuth\s*\n\s*\? filterAdminListingUpdateData\(data\)/);
-  assert.doesNotMatch(source, /noAuth\s*\n\s*\? \{ \.\.\.data \}/);
-});
-
 test('admin fellowship management responses use an allowlist serializer', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
 
@@ -4455,63 +4290,9 @@ test('admin fellowship management responses use an allowlist serializer', () => 
   assert.doesNotMatch(serializer[0], /__v/);
 });
 
-test('current-user listing mutation responses use the public listing DTO', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/controllers/listingController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const publicListingForAuthenticatedReader = \(listing: any\) => \{/);
-  assert.match(source, /const publicListingText = \(value: unknown\): string \| undefined =>/);
-  assert.match(source, /const publicListingTextArray = \(values: unknown\): string\[\] =>/);
-  assert.match(source, /title: publicListingText\(listing\.title\)/);
-  assert.match(source, /hiringStatus: publicListingText\(listing\.hiringStatus\)/);
-  assert.match(source, /researchAreas: publicListingTextArray\(listing\.researchAreas\)/);
-  assert.match(source, /keywords: publicListingTextArray\(listing\.keywords\)/);
-  assert.match(source, /departments: publicListingTextArray\(listing\.departments\)/);
-  assert.match(source, /type: publicListingText\(listing\.type\)/);
-  assert.match(source, /commitment: publicListingText\(listing\.commitment\)/);
-  assert.match(source, /compensationType: publicListingText\(listing\.compensationType\)/);
-  assert.match(
-    source,
-    /response\.status\(200\)\.json\(\{ listing: publicListingForAuthenticatedReader\(listing\) \}\)/,
-  );
-  assert.doesNotMatch(source, /response\.status\(201\)\.json\(\{ listing \}\)/);
-  assert.doesNotMatch(source, /response\.status\(200\)\.json\(\{ listing \}\)/);
-  assert.doesNotMatch(source, /response\.status\(200\)\.json\(\{ deletedListing \}\)/);
-  assert.doesNotMatch(source, /createListingForCurrentUser/);
-  assert.doesNotMatch(source, /getSkeletonListingForCurrentUser/);
-  assert.doesNotMatch(source, /updateListingForCurrentUser/);
-  assert.doesNotMatch(source, /deleteListingForCurrentUser/);
-  assert.doesNotMatch(source, /title: listing\.title/);
-  assert.doesNotMatch(
-    source,
-    /researchAreas: Array\.isArray\(listing\.researchAreas\) \? listing\.researchAreas : \[\]/,
-  );
-  assert.doesNotMatch(
-    source,
-    /keywords: Array\.isArray\(listing\.keywords\) \? listing\.keywords : \[\]/,
-  );
-});
-
-test('listing DTO URL arrays are capped before public serialization', () => {
-  const listingController = fs.readFileSync(
-    new URL('../server/src/controllers/listingController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(listingController, /const MAX_PUBLIC_LISTING_URLS = 20/);
-  assert.match(listingController, /values\.slice\(0, MAX_PUBLIC_LISTING_URLS\)\.flatMap/);
-  assert.doesNotMatch(listingController, /values\.flatMap\(\(value\) => publicHttpUrl/);
-});
-
 test('public API DTO ids avoid arbitrary object stringification', () => {
   const idSerializationSource = fs.readFileSync(
     new URL('../server/src/utils/idSerialization.ts', import.meta.url),
-    'utf8',
-  );
-  const listingControllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/listingController.ts', import.meta.url),
     'utf8',
   );
   const programPayloadSource = fs.readFileSync(
@@ -4534,14 +4315,6 @@ test('public API DTO ids avoid arbitrary object stringification', () => {
   assert.doesNotMatch(idSerializationSource, /typeof \(value as any\)\.toHexString === 'function'/);
 
   assert.match(
-    listingControllerSource,
-    /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
-  );
-  assert.match(
-    listingControllerSource,
-    /const id = serializedDocumentId\(listing\._id\) \|\| serializedDocumentId\(listing\.id\) \|\| ''/,
-  );
-  assert.match(
     programPayloadSource,
     /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
   );
@@ -4549,7 +4322,7 @@ test('public API DTO ids avoid arbitrary object stringification', () => {
     programPayloadSource,
     /const id = serializedDocumentId\(program\._id\) \|\| serializedDocumentId\(program\.id\) \|\| ''/,
   );
-  for (const source of [listingControllerSource, programPayloadSource]) {
+  for (const source of [programPayloadSource]) {
     assert.doesNotMatch(source, /_id\?\.toString\?\.\(\)/);
   }
 });
@@ -5725,28 +5498,7 @@ test('research entity search index documents omit direct contact fields', () => 
   assert.match(syncSource, /if \(!meiliDoc\) return/);
 });
 
-test('listing permission failures do not interpolate user or listing identifiers', () => {
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/listingController.ts', import.meta.url),
-    'utf8',
-  );
-  const serviceSource = fs.readFileSync(
-    new URL('../server/src/services/listingService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.doesNotMatch(controllerSource, /User with id \$\{currentUser\.netId\}/);
-  assert.doesNotMatch(controllerSource, /delete listing with id \$\{request\.params\.id\}/);
-  assert.doesNotMatch(serviceSource, /User with id \$\{userId\}/);
-  assert.doesNotMatch(serviceSource, /update listing with id \$\{safeId\}/);
-  assert.match(serviceSource, /throw new IncorrectPermissionsError\('Forbidden'\)/);
-});
-
-test('listing and fellowship not-found errors do not echo queried identifiers', () => {
-  const listingSource = fs.readFileSync(
-    new URL('../server/src/services/listingService.ts', import.meta.url),
-    'utf8',
-  );
+test('fellowship and item not-found errors do not echo queried identifiers', () => {
   const fellowshipSource = fs.readFileSync(
     new URL('../server/src/services/fellowshipService.ts', import.meta.url),
     'utf8',
@@ -5756,20 +5508,15 @@ test('listing and fellowship not-found errors do not echo queried identifiers', 
     'utf8',
   );
 
-  for (const source of [listingSource, fellowshipSource, itemOpsSource]) {
+  for (const source of [fellowshipSource, itemOpsSource]) {
     assert.doesNotMatch(source, /not found with ObjectId/);
     assert.doesNotMatch(source, /ObjectId: \$\{safeId\}/);
   }
-  assert.match(listingSource, /throw new NotFoundError\('Listing not found'\)/);
   assert.match(fellowshipSource, /throw new NotFoundError\('Fellowship not found'\)/);
   assert.match(itemOpsSource, /throw new NotFoundError\('Item not found'\)/);
 });
 
 test('public item view and favorite mutations require visibility filters', () => {
-  const listingSource = fs.readFileSync(
-    new URL('../server/src/services/listingService.ts', import.meta.url),
-    'utf8',
-  );
   const fellowshipSource = fs.readFileSync(
     new URL('../server/src/services/fellowshipService.ts', import.meta.url),
     'utf8',
@@ -5783,22 +5530,6 @@ test('public item view and favorite mutations require visibility filters', () =>
   assert.match(itemOpsSource, /findOneAndUpdate\(\s*\{ _id: safeId, \.\.\.filter \}/);
   assert.match(itemOpsSource, /findOne\(\{ _id: safeId, \.\.\.filter \}\)/);
   assert.doesNotMatch(itemOpsSource, /findByIdAndUpdate\(/);
-  assert.match(
-    listingSource,
-    /PUBLIC_LISTING_MUTATION_FILTER = \{[\s\S]*?archived: false,[\s\S]*?confirmed: true,[\s\S]*?\}/,
-  );
-  assert.match(
-    listingSource,
-    /itemOps\.addView\(getListingModel\(\), id, PUBLIC_LISTING_MUTATION_FILTER\)/,
-  );
-  assert.match(
-    listingSource,
-    /itemOps\.addFavorite\(getListingModel\(\), id, PUBLIC_LISTING_MUTATION_FILTER\)/,
-  );
-  assert.match(
-    listingSource,
-    /itemOps\.removeFavorite\(getListingModel\(\), id, PUBLIC_LISTING_MUTATION_FILTER\)/,
-  );
   assert.match(
     fellowshipSource,
     /itemOps\.addView\(Fellowship, id, \{[\s\S]*?archived: false,[\s\S]*?\.\.\.publicFellowshipFilter\(\),[\s\S]*?\}\)/,
