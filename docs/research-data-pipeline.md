@@ -35,8 +35,13 @@ See [`docs/research-model.md`](./research-model.md) for the current collection s
 
 ### Scraper sweep and recurring stages
 
-The pipeline is orchestrated end to end by one phased sweep, `yarn --cwd server scrape:sweep --mode=<mode>` (`server/src/scripts/runScraperSweep.ts`), rather than by running each source by hand.
-The registered sources in `SCRAPER_SWEEP_SOURCES` are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `funding`, `relationships`, and `content-access`.
+The pipeline is orchestrated by two sweep engines that share the same substrate (append-only observation log, materializer, and content-hash gate) but own separate source manifests and post-run stages, both driven by `yarn --cwd server scrape:sweep --mode=<mode>` (`server/src/scripts/runScraperSweep.ts`), rather than by running each source by hand.
+The research engine writes `ResearchEntity` records for `/research` and runs the sources in `RESEARCH_SWEEP_SOURCES` (identity and faculty directories, labs, centers, microsites, funding and grants, research-area extractors, and the undergraduate research access sources).
+The fellowship engine writes `Fellowship` records for `/programs` and runs the catalog sources in `FELLOWSHIP_SWEEP_SOURCES`: `yale-college-fellowships-office`, `yale-reu-programs`, `yale-health-sciences-summer-programs`, and `student-grants-database`.
+`validateScraperSweepManifest` asserts every registered orchestrator source is in exactly one engine, with the sole exception of the manual-input source in `MANUAL_ONLY_SWEEP_SOURCES` (`undergrad-fellowships-recipients`), which stays registered and runnable by hand but out of both automated manifests because it is a backward-looking recipients source with no clean public feed.
+`department-undergrad-research` dual-writes (its `program` records materialize as `Fellowship` while its `lab` records materialize as `ResearchEntity` access-evidence); it lives in the research engine because access-evidence is research-side.
+The registered sources in each engine are grouped into ordered phases that run in sequence in the order the phases first appear in the manifest: `identity`, `discovery`, `funding`, `relationships`, and `content-access`.
+The fellowship engine currently only spans the `discovery` phase.
 The `scholarly` phase is declared in the source-phase contract but currently carries no registered sources, so it does not run.
 Sources inside a phase run with bounded concurrency, and the two LLM-heavy phases (`relationships`, `content-access`) are capped at concurrency 2 by `PHASE_CONCURRENCY_CAPS` regardless of the requested `--concurrency`.
 The two exhaustive Development modes default the network-bound discovery phase to cross-source concurrency 8; to stay polite to any single host, the sweep sets each source child process a `SCRAPER_PER_HOST_CONCURRENCY` cap that shrinks as cross-source concurrency rises, so the combined per-host request budget across concurrent children stays bounded, and an operator `SCRAPER_PER_HOST_CONCURRENCY` override can only tighten that per-child cap, never loosen it.
@@ -50,6 +55,7 @@ The sweep modes fix the environment, database, write posture, and confirmation f
 | `development-sample` | development / Development | yes | yes | none (`--limit 100 --use-cache`) |
 | `development-full` | development / Development | yes | yes | `--confirm-development-full-sweep` (`--exhaustive --ignore-work-planner`) |
 | `development-incremental` | development / Development | yes | yes | `--confirm-development-incremental-sweep` (`--exhaustive --use-cache`) |
+| `fellowship-development-full` | development / Development | yes | yes | `--confirm-fellowship-sweep` (fellowship engine only, `--exhaustive --ignore-work-planner`) |
 | `beta-plan` | beta / Beta | no | no | none (dry-run, stop-on-failure) |
 | `beta-fetch` | beta / Beta | yes | no (Render materializes) | `--confirm-beta-release-candidate` (`--exhaustive`, stop-on-failure) |
 
@@ -74,6 +80,24 @@ The `researcher-dedupe`, `eponymous-fra-merge`, and merge-residue deletion stage
 
 The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
 A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
+
+The `fellowship-development-full` mode runs the fellowship engine's own post-run chain (`FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS`, issue #2172), which wires the existing `programs:*` / `fellowships:refresh` scripts against the freshly scraped catalog in this order:
+
+1. `classification-backfill` (`programs:backfill-classification --apply`)
+2. `global-regions-backfill` (`programs:backfill-global-regions --apply`)
+3. `official-sources-backfill` (`programs:backfill-official-sources --apply`)
+4. `link-labels-backfill` (`programs:backfill-link-labels --apply`)
+5. `accepting-applications-invariant` (`programs:backfill-accepting-applications-invariant --apply`)
+6. `source-link-health` (`programs:backfill-source-link-health --apply`)
+7. `catalog-refresh` (`fellowships:refresh`, opt-in and off by default)
+8. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
+9. `freshness-audit` (`programs:audit-freshness`, report-only)
+
+Each backfill applies with the script's own confirm flag (production writes are blocked by each script's own apply guard, so the Development mode is safe), and the two audits run report-only.
+`catalog-refresh` is off by default because `fellowships:refresh` only accepts a `beta` or `prod` target and requires a restore token, so it cannot run in the Development sweep; it is opt-in via `SCRAPER_SWEEP_REFRESH_FELLOWSHIPS=1` plus `SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET` and `SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN`, and stays skipped unless all three are set.
+No `Fellowship`/`/programs` Meilisearch rebuild stage is wired because there is no programs search-index script; `researchEntity` is the only Meilisearch-syncable type.
+The beta modes (`beta-plan`, `beta-fetch`) still run `RESEARCH_SWEEP_SOURCES` only; a beta fellowship sweep is a possible follow-up.
+The two engines can therefore be scheduled, gated, and reasoned about on independent cadences.
 
 ### Faculty new-model projection
 

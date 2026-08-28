@@ -33,6 +33,7 @@ export type ScraperSweepMode =
   | 'development-sample'
   | 'development-full'
   | 'development-incremental'
+  | 'fellowship-development-full'
   | 'beta-plan'
   | 'beta-fetch';
 
@@ -41,7 +42,14 @@ export interface ScraperSweepSource {
   phase: 'identity' | 'discovery' | 'funding' | 'relationships' | 'content-access' | 'scholarly';
 }
 
-export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
+export const FELLOWSHIP_SWEEP_SOURCES: ScraperSweepSource[] = [
+  { name: 'yale-college-fellowships-office', phase: 'discovery' },
+  { name: 'yale-reu-programs', phase: 'discovery' },
+  { name: 'yale-health-sciences-summer-programs', phase: 'discovery' },
+  { name: 'student-grants-database', phase: 'discovery' },
+];
+
+export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'yale-directory', phase: 'identity' },
   { name: 'ysm-atoz-index', phase: 'discovery' },
   { name: 'ysm-faculty-directory', phase: 'discovery' },
@@ -60,11 +68,6 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'department-research-areas', phase: 'discovery' },
   { name: 'department-undergrad-research', phase: 'discovery' },
   { name: 'course-based-research-pathways', phase: 'discovery' },
-  { name: 'yale-college-fellowships-office', phase: 'discovery' },
-  { name: 'yale-reu-programs', phase: 'discovery' },
-  { name: 'yale-health-sciences-summer-programs', phase: 'discovery' },
-  { name: 'student-grants-database', phase: 'discovery' },
-  { name: 'undergrad-fellowships-recipients', phase: 'discovery' },
   { name: 'dh-lab-projects', phase: 'discovery' },
   { name: 'nih-reporter', phase: 'funding' },
   { name: 'nsf-award-search', phase: 'funding' },
@@ -81,6 +84,12 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'research-area-source-extractor', phase: 'content-access' },
   { name: 'ysm-mesh-keyword', phase: 'content-access' },
 ];
+
+export const MANUAL_ONLY_SWEEP_SOURCES: string[] = ['undergrad-fellowships-recipients'];
+
+export function sweepSourcesForMode(mode: ScraperSweepMode): ScraperSweepSource[] {
+  return isFellowshipSweepMode(mode) ? FELLOWSHIP_SWEEP_SOURCES : RESEARCH_SWEEP_SOURCES;
+}
 
 interface ScraperSweepModeConfig {
   environment: Extract<ScraperEnvironment, 'development' | 'beta'>;
@@ -172,6 +181,10 @@ export function isDevelopmentSweepMode(mode: ScraperSweepMode): boolean {
   return mode === 'development-full' || mode === 'development-incremental';
 }
 
+export function isFellowshipSweepMode(mode: ScraperSweepMode): boolean {
+  return mode === 'fellowship-development-full';
+}
+
 const DEV_SWEEP_STAGE_DISABLE_VALUES = new Set([
   '0',
   'false',
@@ -224,8 +237,33 @@ export interface ScraperSweepSummary {
   rows: ScraperSweepRunRow[];
   postRun?: {
     status: 'succeeded' | 'failed';
-    stages: DevelopmentPostRunStage[];
+    stages: Array<DevelopmentPostRunStage | FellowshipPostRunStage>;
   };
+}
+
+export interface FellowshipPostRunStage {
+  name:
+    | 'classification-backfill'
+    | 'global-regions-backfill'
+    | 'official-sources-backfill'
+    | 'link-labels-backfill'
+    | 'accepting-applications-invariant'
+    | 'source-link-health'
+    | 'catalog-refresh'
+    | 'research-relevance-audit'
+    | 'freshness-audit';
+  status: 'succeeded' | 'failed';
+  artifactPath: string;
+  exitCode: number;
+  error?: string;
+}
+
+export interface FellowshipPostRunStageOptions {
+  refreshFellowshipCatalog?: boolean;
+  fellowshipRefreshTarget?: string;
+  fellowshipRefreshRestoreToken?: string;
+  fellowshipRefreshLimit?: number;
+  applyLimit?: number;
 }
 
 const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
@@ -265,6 +303,16 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     stopOnFailure: false,
     scraperFlags: ['--exhaustive', '--use-cache', '--auto-materialize'],
     confirmationFlag: '--confirm-development-incremental-sweep',
+    defaultConcurrency: 8,
+  },
+  'fellowship-development-full': {
+    environment: 'development',
+    database: 'Development',
+    writes: true,
+    autoMaterialize: true,
+    stopOnFailure: false,
+    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--use-cache', '--auto-materialize'],
+    confirmationFlag: '--confirm-fellowship-sweep',
     defaultConcurrency: 8,
   },
   'beta-plan': {
@@ -335,6 +383,7 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     if (
       arg === '--confirm-development-full-sweep' ||
       arg === '--confirm-development-incremental-sweep' ||
+      arg === '--confirm-fellowship-sweep' ||
       arg === '--confirm-beta-release-candidate'
     ) {
       confirmations.add(arg);
@@ -354,7 +403,7 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
 }
 
 export function orderedScraperSweepPhases(
-  sources: ScraperSweepSource[] = SCRAPER_SWEEP_SOURCES,
+  sources: ScraperSweepSource[] = RESEARCH_SWEEP_SOURCES,
 ): ScraperSweepPhase[] {
   const seen = new Set<ScraperSweepPhase>();
   const phases: ScraperSweepPhase[] = [];
@@ -406,23 +455,40 @@ export async function runWithBoundedConcurrency<T>(
 }
 
 export function validateScraperSweepManifest(registeredNames: string[]): void {
-  const configuredNames = SCRAPER_SWEEP_SOURCES.map((source) => source.name);
+  const researchNames = RESEARCH_SWEEP_SOURCES.map((source) => source.name);
+  const fellowshipNames = FELLOWSHIP_SWEEP_SOURCES.map((source) => source.name);
+  const configuredNames = [...researchNames, ...fellowshipNames];
   const configuredSet = new Set(configuredNames);
   const registeredSet = new Set(registeredNames);
+  const manualOnlySet = new Set(MANUAL_ONLY_SWEEP_SOURCES);
+
   const duplicateNames = configuredNames.filter(
     (name, index) => configuredNames.indexOf(name) !== index,
   );
-  const missingFromSweep = registeredNames.filter((name) => !configuredSet.has(name));
+  const missingFromSweep = registeredNames.filter(
+    (name) => !configuredSet.has(name) && !manualOnlySet.has(name),
+  );
   const unknownInSweep = configuredNames.filter((name) => !registeredSet.has(name));
+  const manualInSweep = configuredNames.filter((name) => manualOnlySet.has(name));
 
-  if (duplicateNames.length || missingFromSweep.length || unknownInSweep.length) {
+  if (
+    duplicateNames.length ||
+    missingFromSweep.length ||
+    unknownInSweep.length ||
+    manualInSweep.length
+  ) {
     throw new Error(
       [
-        duplicateNames.length ? `duplicate sweep sources: ${duplicateNames.join(', ')}` : '',
+        duplicateNames.length
+          ? `sources present in both engines or duplicated: ${duplicateNames.join(', ')}`
+          : '',
         missingFromSweep.length
-          ? `registered sources missing from sweep: ${missingFromSweep.join(', ')}`
+          ? `registered sources missing from both sweep engines: ${missingFromSweep.join(', ')}`
           : '',
         unknownInSweep.length ? `unknown sweep sources: ${unknownInSweep.join(', ')}` : '',
+        manualInSweep.length
+          ? `manual-only sources must stay out of the sweep manifest: ${manualInSweep.join(', ')}`
+          : '',
       ]
         .filter(Boolean)
         .join('; '),
@@ -885,6 +951,218 @@ async function runDevelopmentPostRunStages(
   };
 }
 
+export const SCRAPER_SWEEP_REFRESH_FELLOWSHIPS_ENV = 'SCRAPER_SWEEP_REFRESH_FELLOWSHIPS';
+export const SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET_ENV =
+  'SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET';
+export const SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV =
+  'SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN';
+
+const DEFAULT_FELLOWSHIP_POST_RUN_APPLY_LIMIT = 10000;
+const DEFAULT_FELLOWSHIP_REFRESH_LIMIT = 50;
+
+const SWEEP_STAGE_OPT_IN_VALUES = new Set(['1', 'true', 'yes', 'y', 'on', 'enable', 'enabled']);
+
+function isSweepStageOptedIn(rawValue: string | undefined): boolean {
+  return SWEEP_STAGE_OPT_IN_VALUES.has((rawValue || '').trim().toLowerCase());
+}
+
+export function resolveFellowshipPostRunOptions(
+  mode: ScraperSweepMode,
+  env: NodeJS.ProcessEnv,
+): FellowshipPostRunStageOptions | undefined {
+  if (!isFellowshipSweepMode(mode)) return undefined;
+  return {
+    refreshFellowshipCatalog: isSweepStageOptedIn(env[SCRAPER_SWEEP_REFRESH_FELLOWSHIPS_ENV]),
+    fellowshipRefreshTarget: env[SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET_ENV],
+    fellowshipRefreshRestoreToken: env[SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV],
+  };
+}
+
+interface FellowshipPostRunStageDefinition {
+  name: FellowshipPostRunStage['name'];
+  command: string;
+  artifactName: string;
+  buildArgs: (options: FellowshipPostRunStageOptions) => string[];
+  isEnabled: (options: FellowshipPostRunStageOptions) => boolean;
+  appendsOutputArtifact: boolean;
+}
+
+function fellowshipApplyLimit(options: FellowshipPostRunStageOptions): number {
+  return options.applyLimit ?? DEFAULT_FELLOWSHIP_POST_RUN_APPLY_LIMIT;
+}
+
+export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefinition[] = [
+  {
+    name: 'classification-backfill',
+    command: 'programs:backfill-classification',
+    artifactName: 'fellowship-classification-backfill.json',
+    buildArgs: (options) => [
+      '--apply',
+      '--confirm-program-classification-backfill',
+      `--limit=${fellowshipApplyLimit(options)}`,
+    ],
+    isEnabled: () => true,
+    appendsOutputArtifact: true,
+  },
+  {
+    name: 'global-regions-backfill',
+    command: 'programs:backfill-global-regions',
+    artifactName: 'fellowship-global-regions-backfill.json',
+    buildArgs: (options) => [
+      '--apply',
+      '--confirm-global-regions-backfill',
+      `--limit=${fellowshipApplyLimit(options)}`,
+    ],
+    isEnabled: () => true,
+    appendsOutputArtifact: true,
+  },
+  {
+    name: 'official-sources-backfill',
+    command: 'programs:backfill-official-sources',
+    artifactName: 'fellowship-official-sources-backfill.json',
+    buildArgs: (options) => [
+      '--apply',
+      '--confirm-program-official-source-backfill',
+      `--limit=${fellowshipApplyLimit(options)}`,
+    ],
+    isEnabled: () => true,
+    appendsOutputArtifact: true,
+  },
+  {
+    name: 'link-labels-backfill',
+    command: 'programs:backfill-link-labels',
+    artifactName: 'fellowship-link-labels-backfill.json',
+    buildArgs: () => ['--apply', '--confirm-program-link-label-backfill'],
+    isEnabled: () => true,
+    appendsOutputArtifact: true,
+  },
+  {
+    name: 'accepting-applications-invariant',
+    command: 'programs:backfill-accepting-applications-invariant',
+    artifactName: 'fellowship-accepting-applications-invariant.json',
+    buildArgs: () => ['--apply', '--confirm-accepting-applications-invariant-backfill'],
+    isEnabled: () => true,
+    appendsOutputArtifact: true,
+  },
+  {
+    name: 'source-link-health',
+    command: 'programs:backfill-source-link-health',
+    artifactName: 'fellowship-source-link-health.json',
+    buildArgs: (options) => [
+      '--apply',
+      '--confirm-source-link-health',
+      `--limit=${fellowshipApplyLimit(options)}`,
+    ],
+    isEnabled: () => true,
+    appendsOutputArtifact: true,
+  },
+  {
+    name: 'catalog-refresh',
+    command: 'fellowships:refresh',
+    artifactName: 'fellowship-catalog-refresh.json',
+    buildArgs: (options) => {
+      const target = options.fellowshipRefreshTarget as string;
+      return [
+        `--target=${target}`,
+        `--confirm=execute-fellowship-refresh-${target}`,
+        `--restore-token=${options.fellowshipRefreshRestoreToken as string}`,
+        '--execute',
+        `--limit=${options.fellowshipRefreshLimit ?? DEFAULT_FELLOWSHIP_REFRESH_LIMIT}`,
+      ];
+    },
+    isEnabled: (options) =>
+      Boolean(
+        options.refreshFellowshipCatalog &&
+          options.fellowshipRefreshTarget &&
+          options.fellowshipRefreshRestoreToken,
+      ),
+    appendsOutputArtifact: false,
+  },
+  {
+    name: 'research-relevance-audit',
+    command: 'programs:audit-research-relevance',
+    artifactName: 'fellowship-research-relevance-audit.json',
+    buildArgs: () => [],
+    isEnabled: () => true,
+    appendsOutputArtifact: true,
+  },
+  {
+    name: 'freshness-audit',
+    command: 'programs:audit-freshness',
+    artifactName: 'fellowship-freshness-audit.json',
+    buildArgs: () => [],
+    isEnabled: () => true,
+    appendsOutputArtifact: true,
+  },
+];
+
+interface PlannedFellowshipPostRunStage {
+  name: FellowshipPostRunStage['name'];
+  artifactPath: string;
+  args: string[];
+}
+
+function planFellowshipPostRunStages(
+  outputDirectory: string,
+  options: FellowshipPostRunStageOptions,
+): PlannedFellowshipPostRunStage[] {
+  return FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
+    definition.isEnabled(options),
+  ).map((definition) => {
+    const artifactPath = path.join(outputDirectory, definition.artifactName);
+    return {
+      name: definition.name,
+      artifactPath,
+      args: [
+        '--cwd',
+        'server',
+        definition.command,
+        ...definition.buildArgs(options),
+        ...(definition.appendsOutputArtifact ? [`--output=${artifactPath}`] : []),
+      ],
+    };
+  });
+}
+
+export function buildFellowshipPostRunStages(
+  outputDirectory: string,
+  options: FellowshipPostRunStageOptions = {},
+): PlannedFellowshipPostRunStage[] {
+  return planFellowshipPostRunStages(outputDirectory, options);
+}
+
+async function runFellowshipPostRunStages(
+  outputDirectory: string,
+  repoRoot: string,
+  childRunner: ChildRunner,
+  options: FellowshipPostRunStageOptions = {},
+): Promise<ScraperSweepSummary['postRun']> {
+  const stages: FellowshipPostRunStage[] = [];
+  for (const planned of planFellowshipPostRunStages(outputDirectory, options)) {
+    console.log(`\n[fellowship-post-run] ${planned.name}`);
+    const child = await childRunner('yarn', planned.args, {
+      cwd: repoRoot,
+      env: process.env,
+    });
+    const exitCode = child.status ?? 1;
+    const error =
+      child.error || exitCode !== 0
+        ? sanitizeLogValue(child.error || `${planned.name} exited with status ${exitCode}`)
+        : undefined;
+    stages.push({
+      name: planned.name,
+      status: error ? 'failed' : 'succeeded',
+      artifactPath: planned.artifactPath,
+      exitCode,
+      ...(error ? { error } : {}),
+    });
+  }
+  return {
+    status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
+    stages,
+  };
+}
+
 export async function runScraperSweep(
   options: ScraperSweepCliOptions,
   dependencies: {
@@ -906,7 +1184,8 @@ export async function runScraperSweep(
   fs.mkdirSync(outputDirectory, { recursive: true });
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
   const childRunner = dependencies.childRunner || spawnChild;
-  const rows = new Array<ScraperSweepRunRow>(SCRAPER_SWEEP_SOURCES.length);
+  const sweepSources = sweepSourcesForMode(options.mode);
+  const rows = new Array<ScraperSweepRunRow>(sweepSources.length);
   let stopped = false;
 
   const artifactPathFor = (source: ScraperSweepSource, index: number): string =>
@@ -931,7 +1210,7 @@ export async function runScraperSweep(
     }
     const logPath = phaseConcurrency > 1 ? `${artifactPath}.log` : undefined;
     console.log(
-      `\n[${index + 1}/${SCRAPER_SWEEP_SOURCES.length}] ${source.phase}: ${source.name}` +
+      `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name}` +
         (logPath ? ` (logs -> ${logPath})` : ''),
     );
     const child = await childRunner(
@@ -991,8 +1270,8 @@ export async function runScraperSweep(
     }
   };
 
-  const globalEntries = SCRAPER_SWEEP_SOURCES.map((source, index) => ({ source, index }));
-  for (const phase of orderedScraperSweepPhases()) {
+  const globalEntries = sweepSources.map((source, index) => ({ source, index }));
+  for (const phase of orderedScraperSweepPhases(sweepSources)) {
     const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
     if (stopped) {
       for (const { source, index } of phaseEntries) {
@@ -1006,7 +1285,7 @@ export async function runScraperSweep(
     );
   }
 
-  for (const [index, source] of SCRAPER_SWEEP_SOURCES.entries()) {
+  for (const [index, source] of sweepSources.entries()) {
     if (!rows[index]) rows[index] = notRunRow(source, index);
   }
 
@@ -1015,14 +1294,23 @@ export async function runScraperSweep(
     process.env,
     startedAt.toISOString(),
   );
-  const postRun = developmentPostRunOptions
-    ? await runDevelopmentPostRunStages(
-        outputDirectory,
-        repoRoot,
-        childRunner,
-        developmentPostRunOptions,
-      )
-    : undefined;
+  const fellowshipPostRunOptions = resolveFellowshipPostRunOptions(options.mode, process.env);
+  let postRun: ScraperSweepSummary['postRun'];
+  if (developmentPostRunOptions) {
+    postRun = await runDevelopmentPostRunStages(
+      outputDirectory,
+      repoRoot,
+      childRunner,
+      developmentPostRunOptions,
+    );
+  } else if (fellowshipPostRunOptions) {
+    postRun = await runFellowshipPostRunStages(
+      outputDirectory,
+      repoRoot,
+      childRunner,
+      fellowshipPostRunOptions,
+    );
+  }
   const summary: ScraperSweepSummary = {
     mode: options.mode,
     environment: config.environment,
