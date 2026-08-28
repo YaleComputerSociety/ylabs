@@ -8,7 +8,7 @@ const NAME_LIFESPAN_ANYWHERE_RE = /((?:18|19|20)\d{2})\s*[-‒–—―−]\s*((
 const IN_MEMORIAM_URL_PATH_RE = /\bin-memoriam\b|\bobituar(?:y|ies)\b/i;
 const IN_MEMORIAM_TEXT_RE = /\bin memoriam\b|\bpassed away\b/i;
 
-export type ResearchEntityYaleStatusReason = 'deceased';
+export type ResearchEntityYaleStatusReason = 'deceased' | 'departed';
 
 export interface ResearchEntityYaleStatusSignal {
   yaleStatusCache: 'departed';

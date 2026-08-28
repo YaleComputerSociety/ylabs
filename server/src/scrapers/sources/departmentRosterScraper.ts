@@ -70,6 +70,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
+import { DEPARTMENT_ROSTER_HEALTH_FIELD } from '../facultyRosterDepartureReconciler';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -2991,6 +2992,7 @@ export class DepartmentRosterScraper implements IScraper {
     const fetchAttempts: ScraperFetchMetric[] = [];
     const seenUserKeys = new Set<string>();
     const seenLabKeys = new Set<string>();
+    const discoveredEntityKeysByDept = new Map<string, Set<string>>();
     const processEntries = async (
       entries: FacultyEntry[],
       dept: DeptConfig,
@@ -3029,6 +3031,12 @@ export class DepartmentRosterScraper implements IScraper {
           await ctx.emit(labObs);
           observations += labObs.length;
           labs++;
+        }
+        if (labObs.length > 0 && typeof labKey === 'string' && labKey) {
+          const deptDiscovered =
+            discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+          deptDiscovered.add(labKey);
+          discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
         }
         faculty++;
         totalFaculty++;
@@ -3152,6 +3160,35 @@ export class DepartmentRosterScraper implements IScraper {
         count: deptCount,
         status: deptCount === 0 ? 'empty' : 'ok',
       });
+    }
+
+    const deptConfigByKey = new Map(this.configs.map((dept) => [dept.deptKey, dept]));
+    const rosterHealthObservations: ObservationInput[] = perDept.map((deptResult) => {
+      const dept = deptConfigByKey.get(deptResult.deptKey);
+      const discoveredEntityKeys = Array.from(
+        discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
+      );
+      const entityAuthoritative = deptResult.status === 'ok' && !dept?.officialProfileOnly;
+      return {
+        entityType: 'departmentRosterHealth' as const,
+        entityKey: deptResult.deptKey,
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptKey: deptResult.deptKey,
+          deptName: dept?.deptName ?? '',
+          schoolName: dept?.schoolName ?? '',
+          status: deptResult.status,
+          complete: entityAuthoritative,
+          discoveredCount: discoveredEntityKeys.length,
+          discoveredEntityKeys,
+        },
+        sourceUrl: dept?.url ?? this.name,
+        observedAt: new Date(),
+      };
+    });
+    if (rosterHealthObservations.length > 0) {
+      await ctx.emit(rosterHealthObservations);
+      totalObs += rosterHealthObservations.length;
     }
 
     const summary = perDept

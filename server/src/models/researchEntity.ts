@@ -126,6 +126,19 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: Boolean,
       default: true,
     },
+    yaleStatusReasonCache: {
+      type: String,
+      enum: ['deceased', 'departed', ''],
+      default: '',
+    },
+    lastSeenInCompleteRosterAt: {
+      type: Date,
+      required: false,
+    },
+    absentFromRosterSinceRunId: {
+      type: String,
+      default: '',
+    },
     availableFrom: {
       type: Date,
       required: false,

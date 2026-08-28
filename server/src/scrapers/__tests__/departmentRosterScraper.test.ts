@@ -3484,7 +3484,15 @@ describe('DepartmentRosterScraper.run', () => {
       timeoutMs: 30000,
     });
     expect(renderedExtractor).not.toHaveBeenCalled();
-    expect(emitted).toEqual([]);
+    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
+    expect(emitted.filter((o) => o.entityType !== 'departmentRosterHealth')).toEqual([]);
+    expect(rosterHealth).toHaveLength(1);
+    expect(rosterHealth[0].value).toMatchObject({
+      deptKey: 'cs',
+      status: 'rendered-unavailable',
+      complete: false,
+      discoveredCount: 0,
+    });
     expect(result.entitiesObserved).toBe(0);
     expect(result.notes).toContain('cs=rendered-unavailable');
   });

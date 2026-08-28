@@ -113,6 +113,7 @@ import { Account } from '../models/account';
 import { composeOfficialProfileLink } from '../scripts/backfillResearcherOfficialProfileLinksCore';
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
 import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
+import { reconcileFacultyRosterDeparturesFromRun } from './facultyRosterDepartureReconciler';
 import {
   isPersonOrGrantShellSlug,
   personProfileNameTokensFromUrl,
@@ -3063,12 +3064,14 @@ export async function projectFromLog(
         if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
         set.yaleStatusCache = yaleStatusSignal.yaleStatusCache;
         set.activeAtYaleCache = yaleStatusSignal.activeAtYaleCache;
+        set.yaleStatusReasonCache = yaleStatusSignal.reason;
       } else if (
-        entityDoc?.activeAtYaleCache === false ||
-        entityDoc?.yaleStatusCache === 'departed'
+        entityDoc?.yaleStatusReasonCache !== 'departed' &&
+        (entityDoc?.activeAtYaleCache === false || entityDoc?.yaleStatusCache === 'departed')
       ) {
         set.yaleStatusCache = 'unknown';
         set.activeAtYaleCache = true;
+        set.yaleStatusReasonCache = '';
         fieldsWritten++;
       }
     }
@@ -3756,7 +3759,7 @@ export async function materializeFromRun(
     {
       $match: {
         scrapeRunId: runObjectId,
-        entityType: { $ne: 'paper' },
+        entityType: { $nin: ['paper', 'departmentRosterHealth'] },
       },
     },
     {
@@ -3814,6 +3817,7 @@ export async function materializeFromRun(
     addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
   }
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
+  await reconcileFacultyRosterDeparturesFromRun(scrapeRunId, options);
   if (!options.dryRun) {
     await ScrapeRun.updateOne(
       { _id: scrapeRunId },
