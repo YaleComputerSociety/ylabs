@@ -44,9 +44,6 @@ function memberDisplayName(member: Record<string, any>): string {
     member.user?.displayName,
     member.user?.name,
     [member.user?.fname, member.user?.lname].filter(Boolean).join(' '),
-    member.facultyMember?.displayName,
-    member.facultyMember?.name,
-    [member.facultyMember?.firstName, member.facultyMember?.lastName].filter(Boolean).join(' '),
     member.displayName,
     member.name,
   ];
