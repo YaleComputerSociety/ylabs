@@ -2271,7 +2271,6 @@ test('maintenance and scraper id helpers do not execute duck-typed toHexString h
 
 test('audit planning and source seed artifacts are constrained to safe JSON roots', () => {
   for (const [name, file] of [
-    ['research entity rename audit', '../server/src/scripts/auditResearchEntityRename.ts'],
     ['source registry seed', '../server/src/scrapers/seedSources.ts'],
     ['surname lab disambiguation', '../server/src/scripts/disambiguateSurnameLabNames.ts'],
   ]) {
@@ -3803,7 +3802,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/auditProgramResearchRelevance.ts',
     '../server/src/scripts/launchTrustContract.ts',
     '../server/src/scripts/repairArchivedEntityArtifacts.ts',
-    '../server/src/scripts/auditResearchEntityRename.ts',
     '../server/src/scripts/acceptFormalizationReviewExceptions.ts',
     '../server/src/scripts/betaRepairQueue.ts',
     '../server/src/scripts/backfillProgramClassifications.ts',
