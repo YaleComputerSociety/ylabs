@@ -128,6 +128,8 @@ Dropping the now-orphaned `users` collection is the only remaining step and stay
 
 Accepted operator inputs should prefer ORCID over Yale netid.
 ORCID may enrich or disambiguate an existing Yale-confirmed `Researcher` (`Researcher.identifiers.orcid`), but ORCID must not create a Yale person record by itself.
+`identifiers.orcid` carries a unique sparse index, so an ORCID belongs to exactly one `Researcher` row: a scraped or directory-sourced ORCID that another `Researcher` already holds yields to that existing holder, and the enrichment target keeps the identity it already had instead of the write failing the whole source run.
+An ORCID identifier and its `ORCID` `profileLinks[]` entry always move together, so a stored ORCID link never points at a different ORCID than `identifiers.orcid`.
 Netid is the internal disambiguation spine (`Researcher.identifiers.netid`, plus `Account.netid` for login) and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 
 Researcher dedupe note: scraper-created same-person `Researcher` shells are merged by rewriting active references onto the canonical `Researcher` and marking the duplicate with `archived` and `dedupedIntoResearcherId`.

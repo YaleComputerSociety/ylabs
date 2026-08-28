@@ -2317,7 +2317,6 @@ export function selectOfficialProfileObservationUserMatch(
   return null;
 }
 
-
 export function emptyPostMaterializationMetrics(): Required<ReportPostMaterializationMetrics> {
   return {
     entryPathways: 0,
@@ -2767,7 +2766,9 @@ async function materializeUserIdentityToResearcher(
     researcher.profileLinks.push(officialLink);
     fieldsWritten += 1;
   }
-  const scholarUrl = profileUrls ? canonicalScholarCitationUrl(profileUrls.googleScholar) : undefined;
+  const scholarUrl = profileUrls
+    ? canonicalScholarCitationUrl(profileUrls.googleScholar)
+    : undefined;
   if (scholarUrl && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
     researcher.profileLinks.push(scholarProfileLink(scholarUrl, now));
     fieldsWritten += 1;
