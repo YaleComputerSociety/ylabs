@@ -14,6 +14,7 @@ import {
 
 describe('scraperIntegrityGate CLI helpers', () => {
   it('parses include samples limit source-run and output flags', () => {
+    const output = path.join(os.tmpdir(), 'ylabs-scraper-integrity.json');
     expect(
       parseScraperIntegrityGateArgs([
         '--include-samples',
@@ -22,14 +23,14 @@ describe('scraperIntegrityGate CLI helpers', () => {
         '12',
         '--source-run=run-123',
         '--output',
-        '/tmp/ylabs-scraper-integrity.json',
+        output,
       ]),
     ).toEqual({
       includeSamples: true,
       includeClaimGate: true,
       limit: 12,
       sourceRunId: 'run-123',
-      output: '/tmp/ylabs-scraper-integrity.json',
+      output,
     });
   });
 
