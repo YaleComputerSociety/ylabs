@@ -63,31 +63,3 @@ export function composeOfficialProfileLink(
     healthStatus: 'UNKNOWN',
   };
 }
-
-export function officialProfileLinkFillUpdate(
-  existing: readonly ResearcherProfileLink[] | undefined,
-  composed: ResearcherProfileLink | undefined,
-): ResearcherProfileLink | undefined {
-  if (!composed) return undefined;
-  if (Array.isArray(existing) && existing.some((link) => link?.kind === 'YALE_OFFICIAL')) {
-    return undefined;
-  }
-  return composed;
-}
-
-export function assertBackfillPushIsOfficialProfileLinkOnly(update: Record<string, unknown>): void {
-  const keys = Object.keys(update);
-  if (keys.length !== 1 || keys[0] !== 'profileLinks') {
-    throw new Error(
-      `backfill:researcher-official-profile-links invariant violated: push touches "${keys.join(
-        ', ',
-      )}" instead of only "profileLinks".`,
-    );
-  }
-  const pushed = update.profileLinks as { kind?: unknown } | undefined;
-  if (!pushed || pushed.kind !== 'YALE_OFFICIAL') {
-    throw new Error(
-      'backfill:researcher-official-profile-links invariant violated: pushed link is not YALE_OFFICIAL.',
-    );
-  }
-}

@@ -204,23 +204,6 @@ function remainderStillLooksLikeDegreeListResidue(remainder: string): boolean {
   return mentionCount >= 2;
 }
 
-/**
- * A looser candidacy signal than stripLeadingDegreeListPrefix succeeding:
- * two or more degree/institution mentions in the opening stretch means the
- * description opens with a degree-list dump, even on a shape
- * stripLeadingDegreeListPrefix can't cleanly resolve on its own (#1533:
- * dept-history-art-mimi-yiengpruksawan's "A.B., Occidental College M.A.,
- * UCLA Ph.D., UCLA..." lead never fully strips - UCLA isn't a recognized
- * institution keyword - but the downstream CV/career-timeline sentence
- * patterns still clean up the rest once this signals the row as a
- * candidate).
- */
-export function hasLeadingDegreeListSignal(value: unknown): boolean {
-  const text = textValue(value);
-  if (!text) return false;
-  return remainderStillLooksLikeDegreeListResidue(text);
-}
-
 export function stripLeadingDegreeListPrefix(value: unknown): string {
   const text = textValue(value);
   if (!text) return '';
@@ -344,8 +327,7 @@ const MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD = 2;
  * the Professor of" clause). Two or more sentences matching the
  * education/career-timeline patterns anywhere in the text is instead the
  * signal: a single incidental match deep in an otherwise-fine research
- * description is common enough to be unsafe as a threshold of one (the same
- * over-broad risk hasLeadingDegreeListSignal's >=2 threshold guards against),
+ * description is common enough to be unsafe as a threshold of one,
  * but a real CV dump narrated in first person carries several.
  */
 export function hasMultipleCareerTimelineSentences(value: unknown): boolean {

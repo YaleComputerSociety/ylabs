@@ -307,12 +307,6 @@ export function piSlug(piUserId: string | null, firstName: string, lastName: str
  * Returns the Researcher _id as a string, or null when no unambiguous match
  * exists. Tests can inject a custom resolver via the second argument.
  */
-export interface PiUserRow {
-  _id: unknown;
-  fname?: unknown;
-  lname?: unknown;
-}
-
 export interface FederalPiResolverDeps {
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
 }

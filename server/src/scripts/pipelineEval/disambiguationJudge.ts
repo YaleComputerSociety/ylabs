@@ -1,8 +1,5 @@
-import axios from 'axios';
-import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { CARD_SYNTHESIS_MODEL } from '../../utils/groundedCardSynthesis';
-import { DISAMBIGUATION_JUDGE_PROMPT } from '../../scrapers/prompts';
 import { firstNameCompatibility, tokenize } from './fuzzyMatchFeatures';
 import { hostOf, type MatcherEntity } from './fuzzyResidualMatcher';
 
@@ -223,32 +220,3 @@ export function parseJudgeVerdict(content: string): JudgeVerdict | null {
     evidence: asString(record.evidence),
   };
 }
-
-export const defaultDisambiguationJudgeLLM: JudgeLLMFn = async (input) => {
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      model: input.model,
-      response_format: { type: 'json_object' },
-      ...openAiChatSampling(input.model),
-      messages: [
-        { role: 'system', content: DISAMBIGUATION_JUDGE_PROMPT },
-        {
-          role: 'user',
-          content: [
-            `RECORD A:\n${input.recordA}`,
-            `RECORD B:\n${input.recordB}`,
-            'Return JSON {"verdict":"SAME|DIFFERENT","confidence":0..1,"evidence":"..."}.',
-          ].join('\n\n'),
-        },
-      ],
-    },
-    {
-      headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 30_000,
-    },
-  );
-  const content = response.data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== 'string') return null;
-  return parseJudgeVerdict(content);
-};
