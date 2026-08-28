@@ -760,8 +760,6 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     buildArgs: () => [
       '--collection=all',
       '--mode=student-ready-only',
-      '--include-research-activity',
-      '--include-paper-quality',
       '--strict',
     ],
     isEnabled: () => true,

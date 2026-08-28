@@ -275,7 +275,7 @@ describe('AdminOperatorBoard', () => {
           launchTrust: {
             status: 'blocked',
             command:
-              'yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --include-research-activity --include-paper-quality --strict',
+              'yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --strict',
             note: 'Latest launch trust contract artifact has 15 held rows and 0 public visibility violations.',
             heldCount: 15,
             publicVisibilityViolations: 0,
