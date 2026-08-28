@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import path from 'path';
@@ -73,6 +74,13 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsed;
 }
 
+export function writeBackfillGlobalRegionsOutput(report: unknown, output?: string): void {
+  if (!output) return;
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+}
+
 export function assertDevelopmentTarget(mongoUrl: string | undefined): void {
   let database = '';
   try {
@@ -140,6 +148,7 @@ async function main() {
   };
 
   console.log(JSON.stringify(report, null, 2));
+  writeBackfillGlobalRegionsOutput(report, options.output);
 }
 
 const isDirectRun = process.argv[1]

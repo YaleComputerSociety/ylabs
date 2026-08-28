@@ -33,6 +33,7 @@ import {
   type ArchivedEntityArtifactType,
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { isSweepStageOptedIn } from './sweepStageFlags';
 import { deleteFromIndex } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
@@ -1759,8 +1760,7 @@ export const SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV =
 export const DEFAULT_URL_IDENTITY_MERGE_MAX = 500;
 
 export function isUrlIdentityDedupeStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = (env[SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV] || '').trim().toLowerCase();
-  return value === '1' || value === 'true';
+  return isSweepStageOptedIn(env[SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV]);
 }
 
 const STUDENT_VISIBILITY_TIER_RANK: Record<string, number> = {

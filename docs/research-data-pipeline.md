@@ -44,7 +44,7 @@ The registered sources in each engine are grouped into ordered phases that run i
 The fellowship engine currently only spans the `discovery` phase.
 The `scholarly` phase is declared in the source-phase contract but currently carries no registered sources, so it does not run.
 Sources inside a phase run with bounded concurrency, and the two LLM-heavy phases (`relationships`, `content-access`) are capped at concurrency 2 by `PHASE_CONCURRENCY_CAPS` regardless of the requested `--concurrency`.
-The two exhaustive Development modes default the network-bound discovery phase to cross-source concurrency 8; to stay polite to any single host, the sweep sets each source child process a `SCRAPER_PER_HOST_CONCURRENCY` cap that shrinks as cross-source concurrency rises, so the combined per-host request budget across concurrent children stays bounded, and an operator `SCRAPER_PER_HOST_CONCURRENCY` override can only tighten that per-child cap, never loosen it.
+The three exhaustive Development modes (`development-full`, `development-incremental`, and `fellowship-development-full`) default the network-bound discovery phase to cross-source concurrency 8; to stay polite to any single host, the sweep sets each source child process a `SCRAPER_PER_HOST_CONCURRENCY` cap that shrinks as cross-source concurrency rises, so the combined per-host request budget across concurrent children stays bounded, and an operator `SCRAPER_PER_HOST_CONCURRENCY` override can only tighten that per-child cap, never loosen it.
 The dept-roster and dept-undergrad sources stay effectively serial because they page through their own in-loop `--limit`.
 
 The sweep modes fix the environment, database, write posture, and confirmation flag together, so a single `--mode` cannot straddle environments:
@@ -76,7 +76,7 @@ The two exhaustive Development modes (`development-full`, `development-increment
 10. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
 11. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
 
-The `researcher-dedupe`, `eponymous-fra-merge`, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`): `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. The `url-identity-dedupe` stage is opt-in and stays off unless `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set to a truthy value (`1` or `true`), so a routine sweep never silently merges by shared profile URL. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
+The `researcher-dedupe`, `eponymous-fra-merge`, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. The `url-identity-dedupe` stage is opt-in and stays off unless `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set to a truthy value, so a routine sweep never silently merges by shared profile URL. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
 
 The post-run chain is defined once as a declarative registry (`DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `runScraperSweep.ts`, issue #2050): each stage owns its command, args builder, enable predicate, and optional typed result contract, and both the plan builder and the runner derive from it.
 A stage that declares a result contract but exits successfully without a readable, valid result artifact fails loud rather than silently dropping its delta.
@@ -85,7 +85,7 @@ The `fellowship-development-full` mode runs the fellowship engine's own post-run
 
 1. `classification-backfill` (`programs:backfill-classification --apply`)
 2. `global-regions-backfill` (`programs:backfill-global-regions --apply`)
-3. `official-sources-backfill` (`programs:backfill-official-sources --apply`)
+3. `official-sources-backfill` (`programs:backfill-official-sources --apply`, opt-in and off by default)
 4. `link-labels-backfill` (`programs:backfill-link-labels --apply`)
 5. `accepting-applications-invariant` (`programs:backfill-accepting-applications-invariant --apply`)
 6. `source-link-health` (`programs:backfill-source-link-health --apply`)
@@ -94,7 +94,10 @@ The `fellowship-development-full` mode runs the fellowship engine's own post-run
 9. `freshness-audit` (`programs:audit-freshness`, report-only)
 
 Each backfill applies with the script's own confirm flag (production writes are blocked by each script's own apply guard, so the Development mode is safe), and the two audits run report-only.
-`catalog-refresh` is off by default because `fellowships:refresh` only accepts a `beta` or `prod` target and requires a restore token, so it cannot run in the Development sweep; it is opt-in via `SCRAPER_SWEEP_REFRESH_FELLOWSHIPS=1` plus `SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET` and `SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN`, and stays skipped unless all three are set.
+Every stage that takes an `--output` path is held to a report contract: a stage that exits successfully without a readable, valid JSON report at the path recorded in `summary.json` fails loud, and a stage that writes no report records no `artifactPath` at all.
+`official-sources-backfill` is opt-in via `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` because `programs:backfill-official-sources` is not a general recomputation: with no `--input` it replays the committed one-shot curated change-set at `server/src/scripts/data/programOfficialSourceBackfill.json`, so running it on every sweep would overwrite each listed record's freshly scraped `sourceUrl` with a frozen hand-researched value.
+`catalog-refresh` is off by default because `fellowships:refresh` only accepts a `beta` or `prod` target and refuses any target that does not match `SCRAPER_ENV`, so no Development sweep mode can satisfy it; it is opt-in via `SCRAPER_SWEEP_REFRESH_FELLOWSHIPS=1` plus `SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET` and `SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN`, and stays skipped (with a logged reason) unless all three are set *and* the requested target matches the sweep mode's own target, so opting in during a Development sweep skips the stage instead of failing it.
+The restore token reaches `fellowships:refresh` through the child environment (`FELLOWSHIP_REFRESH_RESTORE_TOKEN`) rather than argv, so it never appears in the host process table.
 No `Fellowship`/`/programs` Meilisearch rebuild stage is wired because there is no programs search-index script; `researchEntity` is the only Meilisearch-syncable type.
 The beta modes (`beta-plan`, `beta-fetch`) still run `RESEARCH_SWEEP_SOURCES` only; a beta fellowship sweep is a possible follow-up.
 The two engines can therefore be scheduled, gated, and reasoned about on independent cadences.

@@ -1,3 +1,4 @@
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
@@ -5,6 +6,7 @@ import {
   assertBackfillGlobalRegionsApplyAllowed,
   assertDevelopmentTarget,
   parseBackfillGlobalRegionsArgs,
+  writeBackfillGlobalRegionsOutput,
 } from '../backfillGlobalRegionsDefaultFill';
 
 const OUTPUT_PATH = path.join(os.tmpdir(), 'ylabs-global-regions.json');
@@ -77,6 +79,26 @@ describe('backfillGlobalRegionsDefaultFill CLI helpers', () => {
         'mongodb://example.invalid/Development',
       ),
     ).toMatchObject({ environment: 'development' });
+  });
+
+  it('writes the collapse report to the requested output path', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-global-regions-'));
+    const output = path.join(directory, 'global-regions.json');
+    const report = { mode: 'dry-run', scanned: 12, collapsed: 3 };
+
+    writeBackfillGlobalRegionsOutput(report, output);
+
+    expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject(report);
+  });
+
+  it('writes nothing when no output path is requested', () => {
+    expect(() => writeBackfillGlobalRegionsOutput({ mode: 'dry-run' })).not.toThrow();
+  });
+
+  it('rejects an unsafe collapse report destination', () => {
+    expect(() =>
+      writeBackfillGlobalRegionsOutput({ mode: 'dry-run' }, '/var/tmp/global-regions.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('performs no environment checks in dry-run mode', () => {

@@ -77,12 +77,14 @@ async function main(): Promise<void> {
   const target = value(flags, 'target', true)!;
   const execute = flags.execute === true;
   const runtimeTarget = process.env.SCRAPER_ENV === 'production' ? 'prod' : process.env.SCRAPER_ENV;
+  const restoreToken =
+    value(flags, 'restore-token') ?? process.env.FELLOWSHIP_REFRESH_RESTORE_TOKEN;
   assertFellowshipRefreshGuards({
     target,
     runtimeTarget,
     execute,
     confirmation: value(flags, 'confirm'),
-    restoreToken: value(flags, 'restore-token'),
+    restoreToken,
     prodConfirmation: value(flags, 'confirm-prod'),
   });
   const limit = Number(value(flags, 'limit') || '50');
@@ -189,7 +191,7 @@ async function main(): Promise<void> {
         status: 'success',
         finishedAt: now,
         summary: aggregateFellowshipRefreshPlan(plan),
-        restoreTokenHash: fellowshipRefreshAuditToken(value(flags, 'restore-token')!),
+        restoreTokenHash: fellowshipRefreshAuditToken(restoreToken!),
       });
     }
     succeeded = true;
