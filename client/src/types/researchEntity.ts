@@ -185,10 +185,6 @@ export function normalizeResearchEntityDetailPayload(
       truncated: false,
       withheldCount: 0,
     },
-    researchActivityLinks: payload.researchActivityLinks ?? [],
-    earlierResearchActivityLinks: payload.earlierResearchActivityLinks ?? [],
-    scholarlyLinks: payload.scholarlyLinks ?? [],
-    memberScholarlyLinks: payload.memberScholarlyLinks ?? [],
     activeListings: payload.activeListings ?? [],
     accessSignals: payload.accessSignals ?? [],
     undergraduateLogistics: payload.undergraduateLogistics ?? {

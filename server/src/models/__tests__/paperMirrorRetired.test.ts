@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as models from '../index';
+import { Observation } from '../observation';
 import { isPublicResearchPaperLink } from '../../services/profileService';
 
 describe('Paper publication mirror retirement', () => {
@@ -8,11 +9,24 @@ describe('Paper publication mirror retirement', () => {
     expect('PaperAuthor' in models).toBe(false);
   });
 
-  it('retains the sanctioned scholarly-link models', () => {
-    expect(models.ResearchScholarlyLink.collection.name).toBe('research_scholarly_links');
-    expect(models.ResearchScholarlyAttribution.collection.name).toBe(
-      'research_scholarly_attributions',
-    );
+  it('stops exporting the retired scholarly-link models from the barrel', () => {
+    expect('ResearchScholarlyLink' in models).toBe(false);
+    expect('ResearchScholarlyAttribution' in models).toBe(false);
+  });
+
+  it('drops the retired publication observation lanes from the schema enum', () => {
+    const entityTypes: string[] = Observation.schema.path('entityType').options.enum;
+    expect(entityTypes).not.toContain('paper');
+    expect(entityTypes).not.toContain('scholarlyLink');
+    expect(entityTypes).not.toContain('researchGroup');
+    expect(entityTypes).not.toContain('listing');
+  });
+
+  it('keeps the live person and roster observation lanes', () => {
+    const entityTypes: string[] = Observation.schema.path('entityType').options.enum;
+    expect(entityTypes).toContain('user');
+    expect(entityTypes).toContain('researchGroupMember');
+    expect(entityTypes).toContain('researchEntity');
   });
 
   it('keeps verified Scholar and ORCID scholarly links as public destinations', () => {

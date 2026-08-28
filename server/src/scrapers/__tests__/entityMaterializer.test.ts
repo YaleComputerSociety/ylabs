@@ -555,9 +555,6 @@ describe('entityMaterializer post-materialization metrics', () => {
     for (const field of ['acceptingUndergrads', 'openness']) {
       for (const sourceName of ['ysm-atoz-index', 'lab-microsite-undergrad-llm']) {
         expect(
-          shouldIgnoreObservationForEntityMaterialization('researchGroup', { field, sourceName }),
-        ).toBe(true);
-        expect(
           shouldIgnoreObservationForEntityMaterialization('researchEntity', { field, sourceName }),
         ).toBe(true);
       }

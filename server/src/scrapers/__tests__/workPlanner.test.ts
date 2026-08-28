@@ -99,8 +99,8 @@ describe('buildEntityWorkPlan', () => {
 
   it('fetches stale fields and ignores superseded observations', () => {
     const plan = buildEntityWorkPlan({
-      entityType: 'paper',
-      entityKey: 'W1',
+      entityType: 'fellowship',
+      entityKey: 'F1',
       sourceName: 'openalex',
       targetFields: ['citedByCount'],
       observations: [

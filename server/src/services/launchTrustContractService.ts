@@ -13,8 +13,6 @@ import {
   classifyVisibilityRepairStage,
   repairActionForStage,
 } from './visibilityRepairQueueService';
-import { buildPaperQualityAudit } from './paperQualityService';
-import { buildScholarlyActivityAudit } from './scholarlyActivityAuditService';
 
 export const LAUNCH_TRUST_CONTRACT_VERSION = 'launch-trust-v1';
 
@@ -26,8 +24,6 @@ export interface LaunchTrustContractOptions {
   sourceName?: string;
   recordIds?: string[];
   limit?: number;
-  includeResearchActivity?: boolean;
-  includePaperQuality?: boolean;
 }
 
 export interface LaunchTrustRepairLane {
@@ -71,18 +67,6 @@ export interface LaunchTrustContractReport {
   };
   repairLanes: LaunchTrustRepairLane[];
   violations: LaunchTrustViolation[];
-  researchActivity?: {
-    pass: boolean;
-    counts: Record<string, number>;
-    command: string;
-    fixCommand: string;
-  };
-  paperQuality?: {
-    pass: boolean;
-    counts: Record<string, number>;
-    command: string;
-    fixCommands: string[];
-  };
   requiredCommands: string[];
 }
 
@@ -205,10 +189,7 @@ function buildRepairLanes(
 
 export function buildLaunchTrustContractReport(
   plans: StudentVisibilityGatePlan[],
-  options: Required<Pick<LaunchTrustContractOptions, 'collection' | 'mode'>> & {
-    researchActivity?: LaunchTrustContractReport['researchActivity'];
-    paperQuality?: LaunchTrustContractReport['paperQuality'];
-  },
+  options: Required<Pick<LaunchTrustContractOptions, 'collection' | 'mode'>>,
 ): LaunchTrustContractReport {
   const counts = {
     scanned: plans.length,
@@ -258,20 +239,6 @@ export function buildLaunchTrustContractReport(
   const gateCommand = betaCommand(
     `yarn --cwd server student-visibility:gate ${gateCollectionArg} --mode=dry-run --output /tmp/ylabs-student-visibility-gate.json`,
   );
-  const researchActivity = options.researchActivity
-    ? {
-        ...options.researchActivity,
-        command: betaCommand(options.researchActivity.command),
-        fixCommand: betaCommand(options.researchActivity.fixCommand),
-      }
-    : undefined;
-  const paperQuality = options.paperQuality
-    ? {
-        ...options.paperQuality,
-        command: betaCommand(options.paperQuality.command),
-        fixCommands: options.paperQuality.fixCommands.map(betaCommand),
-      }
-    : undefined;
 
   return {
     contractVersion: LAUNCH_TRUST_CONTRACT_VERSION,
@@ -279,23 +246,12 @@ export function buildLaunchTrustContractReport(
     collection: options.collection,
     pass:
       violations.length === 0 &&
-      counts.publicVisibilityViolations === 0 &&
-      (researchActivity?.pass ?? true) &&
-      (paperQuality?.pass ?? true),
+      counts.publicVisibilityViolations === 0,
     counts,
     repairLanes,
     violations: sampledViolations,
-    ...(researchActivity ? { researchActivity } : {}),
-    ...(paperQuality ? { paperQuality } : {}),
     requiredCommands: Array.from(
-      new Set([
-        gateCommand,
-        ...(researchActivity
-          ? [researchActivity.command, researchActivity.fixCommand].filter(Boolean)
-          : []),
-        ...(paperQuality ? [paperQuality.command, ...paperQuality.fixCommands] : []),
-        ...repairLanes.map((lane) => lane.command),
-      ]),
+      new Set([gateCommand, ...repairLanes.map((lane) => lane.command)]),
     ),
   };
 }
@@ -303,39 +259,16 @@ export function buildLaunchTrustContractReport(
 export async function runLaunchTrustContractAudit(
   options: LaunchTrustContractOptions,
 ): Promise<LaunchTrustContractReport> {
-  const [plans, scholarlyActivityAudit, paperQualityAudit] = await Promise.all([
-    planStudentVisibilityGate({
-      collection: options.collection,
-      mode: 'dry-run',
-      sourceName: options.sourceName,
-      recordIds: options.recordIds,
-      limit: options.limit,
-    }),
-    options.includeResearchActivity ? buildScholarlyActivityAudit() : Promise.resolve(null),
-    options.includePaperQuality ? buildPaperQualityAudit(0) : Promise.resolve(null),
-  ]);
-
-  const researchActivity = scholarlyActivityAudit
-    ? {
-        pass: scholarlyActivityAudit.pass,
-        counts: { ...scholarlyActivityAudit.counts },
-        command: 'yarn --cwd server scholarly-links:provenance-audit --sample-limit=0',
-        fixCommand: scholarlyActivityAudit.fixCommand,
-      }
-    : undefined;
-  const paperQuality = paperQualityAudit
-    ? {
-        pass: paperQualityAudit.pass,
-        counts: { ...paperQualityAudit.counts },
-        command: 'yarn --cwd server scholarly-links:quality-audit --sample-limit=0',
-        fixCommands: paperQualityAudit.fixCommands,
-      }
-    : undefined;
+  const plans = await planStudentVisibilityGate({
+    collection: options.collection,
+    mode: 'dry-run',
+    sourceName: options.sourceName,
+    recordIds: options.recordIds,
+    limit: options.limit,
+  });
 
   return buildLaunchTrustContractReport(plans, {
     collection: options.collection,
     mode: options.mode || 'student-ready-only',
-    researchActivity,
-    paperQuality,
   });
 }

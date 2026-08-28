@@ -800,10 +800,10 @@ describe('appendObservations', () => {
     const result = await appendObservations(
       [
         {
-          entityType: 'paper',
-          entityKey: 'W1',
+          entityType: 'fellowship',
+          entityKey: 'F1',
           field: 'title',
-          value: 'Paper',
+          value: 'Fellowship',
         },
       ],
       {

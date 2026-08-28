@@ -112,7 +112,7 @@ describe('sanitizeObservationField', () => {
 
     it('does not sanitize topics on a non-research-entity observation', () => {
       const topics = ['Research Areas', 'Something'];
-      expect(sanitizeObservationField('paper', 'topics', topics)).toEqual({
+      expect(sanitizeObservationField('fellowship', 'topics', topics)).toEqual({
         value: topics,
         rejected: false,
       });

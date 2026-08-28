@@ -289,8 +289,6 @@ describe('runScraperSweep', () => {
       expect.arrayContaining([
         '--collection=all',
         '--mode=student-ready-only',
-        '--include-research-activity',
-        '--include-paper-quality',
         '--strict',
       ]),
     );

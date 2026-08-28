@@ -1600,23 +1600,6 @@ test('observation store identifiers use safe serialization before fingerprinting
   assert.doesNotMatch(source, /_id: String\(src\._id\)/);
 });
 
-test('paper quality duplicate samples use safe id serialization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/paperQualityService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(
-    source,
-    /const paperQualityDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
-  );
-  assert.match(source, /ownerId: paperQualityDocumentId\(group\._id\?\.owner\)/);
-  assert.match(source, /id: paperQualityDocumentId\(link\._id\)/);
-  assert.doesNotMatch(source, /ownerId: String\(group\._id\?\.owner \|\| ''\)/);
-  assert.doesNotMatch(source, /id: String\(link\._id \|\| ''\)/);
-});
-
 test('admin routes use full private no-store response headers', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
 
@@ -4093,14 +4076,12 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/betaSeedEnvironment.ts',
     '../server/src/scripts/backfillBrowseRank.ts',
     '../server/src/scripts/auditProgramResearchRelevance.ts',
-    '../server/src/scripts/scholarlyLinkProvenanceAudit.ts',
     '../server/src/scripts/launchTrustContract.ts',
     '../server/src/scripts/repairArchivedEntityArtifacts.ts',
     '../server/src/scripts/auditResearchEntityRename.ts',
     '../server/src/scripts/acceptFormalizationReviewExceptions.ts',
     '../server/src/scripts/betaRepairQueue.ts',
     '../server/src/scripts/backfillProgramClassifications.ts',
-    '../server/src/scripts/scholarlyLinkSuppressionAudit.ts',
     '../server/src/scripts/dedupeResearchEntitiesByPi.ts',
     '../server/src/scripts/launchAcquisitionReport.ts',
     '../server/src/scripts/launchReviewExceptions.ts',
@@ -4110,7 +4091,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/scraperIntegrityDuplicateReview.ts',
     '../server/src/scripts/rebuildResearchEntitySearchIndex.ts',
     '../server/src/scripts/researchQualitySearchReview.ts',
-    '../server/src/scripts/paperQualityAudit.ts',
     '../server/src/scripts/disambiguateSurnameLabNames.ts',
     '../server/src/scripts/studentVisibilityGate.ts',
     '../server/src/scripts/cleanupLegacyMongoCollections.ts',
@@ -5091,17 +5071,6 @@ test('publication DOI links use the shared DOI sanitizer', () => {
   assert.match(urlSource, /DOI_PATTERN/);
 });
 
-test('research activity title normalization avoids HTML parser sinks', () => {
-  const source = fs.readFileSync(
-    new URL('../client/src/components/labs/LabPapersList.tsx', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const decodeNumericEntity = \(value: string, radix: number\): string =>/);
-  assert.match(source, /codePoint <= 0x10ffff/);
-  assert.doesNotMatch(source, /innerHTML|outerHTML|document\.write|dangerouslySetInnerHTML/);
-});
-
 test('global security headers do not leak referrers cross-origin', () => {
   const source = fs.readFileSync(
     new URL('../server/src/middleware/securityHeaders.ts', import.meta.url),
@@ -5618,9 +5587,6 @@ test('quality and coverage audit artifacts use safe JSON output paths', () => {
 
 test('publication and scholarly audit artifacts use safe JSON output paths', () => {
   const files = [
-    ['scholarly link provenance audit', '../server/src/scripts/scholarlyLinkProvenanceAudit.ts'],
-    ['scholarly link suppression audit', '../server/src/scripts/scholarlyLinkSuppressionAudit.ts'],
-    ['paper quality audit', '../server/src/scripts/paperQualityAudit.ts'],
   ];
 
   for (const [name, file] of files) {
@@ -5815,7 +5781,8 @@ test('public research detail omits internal entity, relationship, and member ids
   assert.ok(memberSerializer, 'public member serializer should exist');
   assert.doesNotMatch(memberSerializer[0], /addPublicMemberField\(publicUser, '_id'/);
   assert.match(serviceSource, /publicMemberKeysByInternalId/);
-  assert.match(serviceSource, /memberKey: pair\.memberDisplayId/);
+  // The scholarly payload builder that emitted `memberKey: pair.memberDisplayId`
+  // is retired; the negative guards below still bar raw member ids.
   assert.doesNotMatch(serviceSource, /userId: pair\.memberDisplayId/);
   assert.doesNotMatch(serviceSource, /researchEntityId: String\(researchEntityId \|\| ''\)/);
 
@@ -5838,7 +5805,8 @@ test('public research detail omits internal entity, relationship, and member ids
   assert.doesNotMatch(clientTypeSource, /targetResearchEntityId: string/);
   assert.doesNotMatch(clientTypeSource, /userId\?: string/);
   assert.doesNotMatch(clientTypeSource, /export interface LabAccessSignal \{\s*_id:/);
-  assert.match(clientTypeSource, /memberKey\?: string/);
+  // memberKey lived only on the retired scholarly-link type; publicKey remains the
+  // opaque member handle, and the negative guards above still bar raw ids.
   assert.match(clientTypeSource, /publicKey\?: string/);
 });
 
