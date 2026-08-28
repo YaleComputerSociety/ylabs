@@ -45,7 +45,9 @@ Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [
 It does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact fields, or a paper cache.
 Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are the sole canonical prose pair.
 The legacy `kind` field (migration residue from the retired `ResearchGroup` model) is no longer an independent taxonomy: the materializer deterministically derives it from the canonical `entityType` via `mapEntityTypeToResearchGroupKind` (#2144), and `research-entity:resync-kind` backfills historically drifted rows.
+The derivation is lossy wherever two legacy kinds shared one entity type: a stored `program` or `solo` row resolves to `initiative` or `individual` respectively (only `COURSE_SEQUENCE` still derives `program`), and the collapse is pinned in [`researchAccessModels.test.ts`](../server/src/models/__tests__/researchAccessModels.test.ts).
 The derivation is enforced in the scraper projection rather than in the schema, so every other writer must set the pair together (`researchGroupService` and the entity-type consolidation script already do); a direct `$set: { entityType }` elsewhere would reintroduce drift.
+Two escapes are deliberate: an operator lock on `kind` still wins over the derivation, and an entity with no recognizable `entityType` has no derivable kind, so `kind` observations still classify it at mint time.
 Classify a research home by observing `entityType`: a source that observes only `kind` cannot correct an entity another source already minted under a different `entityType`.
 
 ### `RoleAssignment` (`role_assignments`)

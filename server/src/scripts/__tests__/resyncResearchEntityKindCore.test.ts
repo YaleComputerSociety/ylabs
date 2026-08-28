@@ -33,9 +33,7 @@ describe('resyncResearchEntityKindCore', () => {
   });
 
   it('treats a missing stored kind as a disagreement to resync', () => {
-    const plan = planResearchEntityKindResync([
-      { id: 1, slug: 'center', entityType: 'CENTER' },
-    ]);
+    const plan = planResearchEntityKindResync([{ id: 1, slug: 'center', entityType: 'CENTER' }]);
 
     expect(plan).toEqual([
       { id: 1, slug: 'center', entityType: 'CENTER', kindFrom: '', kindTo: 'center' },

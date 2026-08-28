@@ -8,8 +8,9 @@
  * For each center config we fetch the people-listing page, run a per-center
  * extractor (HTML in → { name, profileUrl?, title? }[]), and emit:
  *   - one ResearchGroup observation set keyed by `center-<centerKey>`
- *     (kind, websiteUrl, school, sourceUrls, plus an `affiliatedNames` list of
- *     the raw member names so downstream tooling can join against User by name)
+ *     (kind, the canonical `entityType` derived from it, websiteUrl, school,
+ *     sourceUrls, plus an `affiliatedNames` list of the raw member names so
+ *     downstream tooling can join against User by name)
  *   - one ResearchGroupMember observation per member, keyed
  *     `center-<centerKey>:<member-slug>` with role 'core-faculty' (default) or
  *     'director' when the title clearly indicates leadership. The materializer
