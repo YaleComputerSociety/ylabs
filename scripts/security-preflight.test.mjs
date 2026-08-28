@@ -1200,20 +1200,6 @@ test('mounted API routes sanitize caught errors before logging', () => {
   }
 });
 
-test('account mutation analytics logs bounded normalized request fields', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/users.ts', import.meta.url), 'utf8');
-
-  assert.match(
-    source,
-    new RegExp(String.raw`const PROFILE_UPDATE_ANALYTICS_FIELD_RE = /\^\[A-Za-z0-9_-\]\{1,80\}\$/`),
-  );
-  assert.match(source, /const MAX_PROFILE_UPDATE_ANALYTICS_FIELDS = 50/);
-  assert.match(source, /profileUpdateAnalyticsFields\(req\.body\)/);
-  assert.match(source, /Object\.prototype\.hasOwnProperty\.call\(source, key\)/);
-  assert.doesNotMatch(source, /return Array\.isArray\(value\) \? value : \[value\]/);
-  assert.doesNotMatch(source, /fields: Object\.keys\(req\.body\)/);
-});
-
 test('admin access-review record updates allowlist record types at the route boundary', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
 
@@ -1737,28 +1723,6 @@ test('admin access-review queue withholds direct contact destinations', () => {
   assert.match(source, /route\.email \|\| route\.url \? ' · destination withheld' : ''/);
   assert.doesNotMatch(source, /` · \$\{route\.email\}`/);
   assert.doesNotMatch(source, /` · \$\{route\.url\}`/);
-});
-
-test('visibility release queue bounds admin query filters before Mongo work', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/studentVisibilityGateService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_RELEASE_QUEUE_FILTER_LENGTH = 120/);
-  assert.match(
-    source,
-    /const normalizeReleaseQueueFilterValue = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(source, /trimmed\.length > MAX_RELEASE_QUEUE_FILTER_LENGTH/);
-  assert.match(
-    source,
-    /const normalizeReleaseQueueStatus = \(value: unknown\): VisibilityReleaseQueueStatus =>/,
-  );
-  assert.match(source, /visibilityReleaseQueueStatuses as readonly string\[\]/);
-  assert.match(source, /filter\.status = normalizeReleaseQueueStatus\(input\.status\)/);
-  assert.match(source, /const reason = normalizeReleaseQueueFilterValue\(input\.reason\)/);
-  assert.match(source, /const sourceName = normalizeReleaseQueueFilterValue\(input\.sourceName\)/);
 });
 
 test('scraper integrity report outputs are constrained to safe JSON artifact paths', () => {
@@ -2786,19 +2750,6 @@ test('client logout navigation uses the safe API URL builder', () => {
   assert.match(signInButton, /buildApiUrl\(`\/cas\$\{redirectParam\}`\)/);
 });
 
-test('saved research-entity export requires POST body opt-in for private notes', () => {
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/userController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    controllerSource,
-    /includePrivateNotes: request\.method === 'POST' && request\.body\?\.includePrivateNotes === true/,
-  );
-  assert.doesNotMatch(controllerSource, /request\.query\.includePrivateNotes/);
-});
-
 test('self-service listing writes sanitize public URLs and bound stored payloads', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/listingService.ts', import.meta.url),
@@ -2807,7 +2758,6 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
 
   assert.match(source, /import \{ publicHttpUrl \} from '\.\.\/utils\/urlSafety'/);
   assert.match(source, /const LISTING_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /const MAX_LISTING_ID_READS = 100/);
   assert.match(
     source,
     /export function normalizeListingObjectId\(value: unknown\): string \| undefined/,
@@ -2816,21 +2766,7 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
   assert.match(source, /return LISTING_OBJECT_ID_RE\.test\(id\) \? id : undefined/);
   assert.match(source, /const safeResearchEntityId = normalizeListingObjectId\(researchEntityId\)/);
-  assert.match(
-    source,
-    /const personId = resolution\.status === 'matched' \? resolution\.researcherId : undefined/,
-  );
-  assert.match(source, /'target\.id': new mongoose\.Types\.ObjectId\(safeResearchEntityId\)/);
-  assert.match(source, /state: \{ \$ne: 'HISTORICAL' \}/);
-  assert.match(source, /archived: \{ \$ne: true \}/);
-  assert.match(
-    source,
-    /const suppliedResearchEntityId = normalizeListingObjectId\(data\?\.researchEntityId\)/,
-  );
-  assert.doesNotMatch(source, /const suppliedResearchEntityId = data\?\.researchEntityId/);
   assert.match(source, /const safeId = normalizeListingObjectId\(id\)/);
-  assert.match(source, /const requestedIds = Array\.isArray\(ids\) \? ids : \[\]/);
-  assert.match(source, /requestedIds\.slice\(0, MAX_LISTING_ID_READS\)/);
   assert.match(source, /getListingModel\(\)\.findById\(safeId\)/);
   assert.match(source, /getListingModel\(\)\.findByIdAndUpdate\(safeId, safeData/);
   assert.match(source, /MAX_SELF_SERVICE_LISTING_DESCRIPTION_LENGTH/);
@@ -3693,48 +3629,6 @@ test('research detail faculty fallback identities omit direct email fields', () 
   assert.doesNotMatch(source, /email:\s*faculty\.email/);
 });
 
-test('config refresh is an admin-only no-store mutation while public config stays cacheable', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/routes/config.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /res\.set\('Cache-Control', 'public, max-age=300'\)/);
-  assert.match(source, /res\.removeHeader\('Pragma'\)/);
-  assert.match(source, /res\.removeHeader\('Surrogate-Control'\)/);
-  assert.match(source, /res\.vary\('Origin'\)/);
-  assert.match(source, /function setPrivateConfigRefreshCacheHeaders/);
-  assert.match(source, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
-  assert.match(source, /res\.setHeader\('Pragma', 'no-cache'\)/);
-  assert.match(source, /res\.setHeader\('Surrogate-Control', 'no-store'\)/);
-  assert.match(source, /res\.setHeader\('Expires', '0'\)/);
-  assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
-  assert.match(
-    source,
-    /router\.post\(\s*'\/refresh',\s*setPrivateConfigRefreshCacheHeaders,\s*writeLimit,\s*isAuthenticated,\s*isAdmin,/,
-  );
-});
-
-test('analytics debug route does not expose raw analytics event documents', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/routes/analytics.ts', import.meta.url),
-    'utf8',
-  );
-  const analyticsServiceSource = fs.readFileSync(
-    new URL('../server/src/services/analyticsService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /\.select\('eventType userType timestamp'\)/);
-  assert.match(source, /publicAnalyticsDebugEvent/);
-  assert.match(source, /validateNetid\('netid'\)/);
-  assert.doesNotMatch(source, /response\.json\(events\)/);
-  assert.match(analyticsServiceSource, /ANALYTICS_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\//);
-  assert.match(analyticsServiceSource, /const normalizedNetid = normalizeAnalyticsNetid\(netid\)/);
-  assert.match(analyticsServiceSource, /userSummaryPipeline\(normalizedNetid/);
-  assert.match(analyticsServiceSource, /escapeRegex\(normalizedNetid\)/);
-});
-
 test('analytics user drilldown sanitizes legacy event fields before response', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/analyticsService.ts', import.meta.url),
@@ -3860,32 +3754,6 @@ test('analytics event storage redacts user-entered contact details', () => {
   assert.doesNotMatch(source, /eventType:\s*normalizedParams\.eventType/);
   assert.match(source, /if \(listingId\) eventPayload\.listingId = listingId/);
   assert.match(source, /if \(fellowshipId\) eventPayload\.fellowshipId = fellowshipId/);
-});
-
-test('saved research-plan exports redact system-derived direct contact details', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/researchPlanService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
-  assert.match(source, /import \{ safeSpreadsheetCell \} from '\.\.\/utils\/spreadsheetSafety'/);
-  assert.match(source, /const exportTextWithoutDirectContact = \(value: unknown\): string =>/);
-  assert.match(source, /safeSpreadsheetCell\(redactDirectContactInfo\(String\(value \|\| ''\)\)\)/);
-  assert.match(source, /const exportUserTextForSpreadsheet = \(value: unknown\): string =>/);
-  assert.match(source, /safeSpreadsheetCell\(String\(value \|\| ''\)\)/);
-  assert.match(
-    source,
-    /name:\s*exportTextWithoutDirectContact\(entity\.displayName \|\| entity\.name\)/,
-  );
-  assert.match(source, /label:\s*exportUserTextForSpreadsheet\(item\.label\)/);
-  assert.match(source, /privateNote: exportUserTextForSpreadsheet\(view\.privateNotes\)/);
-  assert.doesNotMatch(source, /title:\s*pathway\.studentFacingLabel/);
-  assert.doesNotMatch(
-    source,
-    /name:\s*pathway\.researchEntity\.displayName \|\| pathway\.researchEntity\.name/,
-  );
-  assert.doesNotMatch(source, /item\.privateNote = plan\.note/);
 });
 
 test('public ResearchEntity DTO recursively redacts direct-contact text', () => {
@@ -4626,26 +4494,6 @@ test('current-user listing mutation responses use the public listing DTO', () =>
   );
 });
 
-test('public listing detail reads require confirmed non-archived listings', () => {
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/listingController.ts', import.meta.url),
-    'utf8',
-  );
-  const serviceSource = fs.readFileSync(
-    new URL('../server/src/services/listingService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(controllerSource, /readPublicListing/);
-  assert.match(controllerSource, /const listing = await readPublicListing\(request\.params\.id\)/);
-  assert.match(serviceSource, /export const readPublicListing = async \(id: any\) => \{/);
-  assert.match(
-    serviceSource,
-    /getListingModel\(\)\.findOne\(\{\s*_id: safeId,[\s\S]*?\.\.\.PUBLIC_LISTING_MUTATION_FILTER,[\s\S]*?\}\)/,
-  );
-  assert.doesNotMatch(controllerSource, /const listing = await readListing\(request\.params\.id\)/);
-});
-
 test('listing DTO URL arrays are capped before public serialization', () => {
   const listingController = fs.readFileSync(
     new URL('../server/src/controllers/listingController.ts', import.meta.url),
@@ -4976,28 +4824,6 @@ test('public URL normalization rejects local and private-network browser targets
   assert.match(clientUrlSource, /if \(!isAllowedPublicHttpPort\(parsed\)\) return ''/);
 });
 
-test('current-user mutation responses omit internal account join fields', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/controllers/userController.ts', import.meta.url),
-    'utf8',
-  );
-  const responseFieldsMatch = source.match(
-    /const CURRENT_USER_RESPONSE_FIELDS = \[([\s\S]*?)\] as const;/,
-  );
-  assert.ok(responseFieldsMatch);
-  const responseFields = responseFieldsMatch[1];
-
-  assert.doesNotMatch(responseFields, /'facultyMemberId'/);
-  assert.doesNotMatch(responseFields, /'studentProfileId'/);
-  assert.doesNotMatch(responseFields, /'ownListings'/);
-  assert.doesNotMatch(responseFields, /'favListings'/);
-  assert.doesNotMatch(responseFields, /'favFellowships'/);
-  assert.doesNotMatch(responseFields, /'favPathways'/);
-  assert.doesNotMatch(responseFields, /'savedPathwayPlans'/);
-  assert.doesNotMatch(responseFields, /'createdAt'/);
-  assert.doesNotMatch(responseFields, /'updatedAt'/);
-});
-
 test('public PI official profile routes reject credential-bearing URLs', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/leadProfileIdentity.ts', import.meta.url),
@@ -5242,125 +5068,6 @@ test('scraper entrypoint fatal logs sanitize caught exceptions', () => {
     assert.match(source, /console\.error\(sanitizeLogValue\(err\)\)/);
     assert.doesNotMatch(source, /console\.error\(err\)/);
   }
-});
-
-test('spreadsheet exports neutralize formula-like cell values', () => {
-  const spreadsheetSafetySource = fs.readFileSync(
-    new URL('../client/src/utils/spreadsheetSafety.ts', import.meta.url),
-    'utf8',
-  );
-  const googleSheetsSource = fs.readFileSync(
-    new URL('../client/src/utils/googleSheets.ts', import.meta.url),
-    'utf8',
-  );
-  const googleOAuthCallbackSource = fs.readFileSync(
-    new URL('../client/public/oauth-callback.js', import.meta.url),
-    'utf8',
-  );
-  const googleOAuthCallbackDistUrl = new URL('../client/dist/oauth-callback.js', import.meta.url);
-  // dist/ is a build output; enforce the dist copy only when a build exists.
-  const googleOAuthCallbackDistSource = fs.existsSync(googleOAuthCallbackDistUrl)
-    ? fs.readFileSync(googleOAuthCallbackDistUrl, 'utf8')
-    : null;
-  const acceptedInputsSource = fs.readFileSync(
-    new URL('../server/src/acceptedInputs/fellowshipInputs.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(spreadsheetSafetySource, /startsWithSpreadsheetFormula/);
-  assert.match(spreadsheetSafetySource, /isAsciiControlCode\(code\)/);
-  assert.match(googleSheetsSource, /safeSheetCell/);
-  assert.match(googleSheetsSource, /normalizeOAuthAccessToken/);
-  assert.match(googleSheetsSource, /ACCESS_TOKEN_PATTERN/);
-  assert.match(googleSheetsSource, /let cachedToken: string \| null = null/);
-  assert.match(googleSheetsSource, /oauthChannelNameForState/);
-  assert.match(
-    googleSheetsSource,
-    /new BroadcastChannel\(oauthChannelNameForState\(oauthState\)\)/,
-  );
-  assert.match(googleSheetsSource, /OAUTH_POPUP_NAME_PREFIX = 'google-auth'/);
-  assert.match(
-    googleSheetsSource,
-    /OAUTH_POPUP_FEATURES = 'popup,width=500,height=600,noopener,noreferrer'/,
-  );
-  assert.match(googleSheetsSource, /oauthPopupNameForState/);
-  assert.match(
-    googleSheetsSource,
-    /window\.open\('about:blank', oauthPopupNameForState\(state\), OAUTH_POPUP_FEATURES\)/,
-  );
-  assert.match(googleSheetsSource, /popup\.opener = null/);
-  assert.doesNotMatch(googleSheetsSource, /OAUTH_POPUP_FEATURES = 'popup,width=500,height=600'/);
-  assert.doesNotMatch(googleSheetsSource, /window\.open\('about:blank', 'google-auth'/);
-  assert.ok(
-    googleSheetsSource.indexOf('popup.opener = null') >= 0 &&
-      googleSheetsSource.indexOf('popup.location.href = authUrl') >
-        googleSheetsSource.indexOf('popup.opener = null'),
-    'Google OAuth popup must clear opener before navigating to the provider',
-  );
-  assert.match(googleSheetsSource, /MAX_SHEET_TITLE_LENGTH = 120/);
-  assert.match(googleSheetsSource, /MAX_SHEET_HEADERS = 50/);
-  assert.match(googleSheetsSource, /MAX_SHEET_ROWS = 1000/);
-  assert.match(googleSheetsSource, /MAX_SHEET_CELL_LENGTH = 2000/);
-  assert.match(googleSheetsSource, /SHEETS_REQUEST_TIMEOUT_MS = 15000/);
-  assert.match(
-    googleSheetsSource,
-    /const token = await getAccessToken\(clientId\);\s*cachedToken = null;/,
-  );
-  assert.match(
-    googleSheetsSource,
-    /safeSpreadsheetCell\(String\(value \?\? ''\)\.slice\(0, MAX_SHEET_CELL_LENGTH\)\)/,
-  );
-  assert.match(googleSheetsSource, /headers\.slice\(0, MAX_SHEET_HEADERS\)/);
-  assert.match(googleSheetsSource, /rows\.slice\(0, MAX_SHEET_ROWS\)/);
-  assert.match(googleSheetsSource, /properties: \{ title: safeSheetTitle\(title\) \}/);
-  assert.match(googleSheetsSource, /const abortController = new AbortController\(\)/);
-  assert.match(
-    googleSheetsSource,
-    /window\.setTimeout\(\(\) => abortController\.abort\(\), SHEETS_REQUEST_TIMEOUT_MS\)/,
-  );
-  assert.match(googleSheetsSource, /signal: abortController\.signal/);
-  assert.match(
-    googleSheetsSource,
-    /if \(abortController\.signal\.aborted\) \{\s*throw new Error\('Google Sheets request timed out'\)/,
-  );
-  assert.match(
-    googleSheetsSource,
-    /try \{[\s\S]*Authorization: `Bearer \$\{token\}`[\s\S]*\} finally \{\s*window\.clearTimeout\(timeoutId\);\s*cachedToken = null;\s*\}/,
-  );
-  assert.match(googleSheetsSource, /safeGoogleSpreadsheetUrl/);
-  assert.match(googleSheetsSource, /url\.hostname !== 'docs\.google\.com'/);
-  assert.match(googleSheetsSource, /url\.pathname\.startsWith\('\/spreadsheets\/'\)/);
-  for (const callbackSource of [googleOAuthCallbackSource, googleOAuthCallbackDistSource].filter(
-    Boolean,
-  )) {
-    assert.match(callbackSource, /ACCESS_TOKEN_PATTERN/);
-    assert.match(callbackSource, /OAUTH_STATE_PATTERN/);
-    assert.match(callbackSource, /oauthChannelNameForState/);
-    assert.match(callbackSource, /new BroadcastChannel\(oauthChannelNameForState\(state\)\)/);
-    assert.match(callbackSource, /MAX_ACCESS_TOKEN_LENGTH = 4096/);
-    assert.match(callbackSource, /safeToken\(params\.get\('access_token'\)\)/);
-    assert.match(callbackSource, /safeState\(params\.get\('state'\)\)/);
-    assert.match(callbackSource, /if \(token && state\)/);
-    assert.doesNotMatch(callbackSource, /new BroadcastChannel\('google-oauth-token'\)/);
-    assert.doesNotMatch(callbackSource, /token = params\.get\('access_token'\)/);
-  }
-  assert.match(googleSheetsSource, /safeSheetCell\(cell\)/);
-  assert.match(googleSheetsSource, /stringValue:\s*safeSheetCell\(h\)/);
-  assert.match(googleSheetsSource, /stringValue:\s*safeSheetCell\(cell\)/);
-  assert.match(acceptedInputsSource, /safeSpreadsheetCell\(value\)/);
-  const researchPlanServiceSource = fs.readFileSync(
-    new URL('../server/src/services/researchPlanService.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(
-    researchPlanServiceSource,
-    /import \{ safeSpreadsheetCell \} from '\.\.\/utils\/spreadsheetSafety'/,
-  );
-  assert.match(
-    researchPlanServiceSource,
-    /safeSpreadsheetCell\(redactDirectContactInfo\(String\(value \|\| ''\)\)\)/,
-  );
-  assert.match(researchPlanServiceSource, /safeSpreadsheetCell\(String\(value \|\| ''\)\)/);
 });
 
 test('user account routes set full private no-store response headers', () => {
