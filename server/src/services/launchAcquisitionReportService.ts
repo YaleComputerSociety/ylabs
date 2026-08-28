@@ -664,10 +664,7 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     return Researcher.find(
       {
         archived: { $ne: true },
-        $or: [
-          { 'profileLinks.url': { $in: variants } },
-          { 'profile.websiteUrl': { $in: variants } },
-        ],
+        $or: [{ 'profileLinks.url': { $in: variants } }, { 'profile.websiteUrl': { $in: variants } }],
       },
       { displayName: 1 },
     )

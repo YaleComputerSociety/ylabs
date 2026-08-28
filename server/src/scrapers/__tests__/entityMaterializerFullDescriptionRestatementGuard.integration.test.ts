@@ -90,12 +90,7 @@ describe('materializeEntity rejects a fullDescription that restates shortDescrip
   it('falls through past a restatement winner to a genuinely richer observation', async () => {
     await seedEntity();
     await seedFull(MU_LAB_RESTATEMENT_FULL, 'ysm-atoz-index', 0.95, '2026-02-01T00:00:00Z');
-    await seedFull(
-      MU_LAB_RICHER_FULL,
-      'lab-microsite-description-llm',
-      0.7,
-      '2026-01-01T00:00:00Z',
-    );
+    await seedFull(MU_LAB_RICHER_FULL, 'lab-microsite-description-llm', 0.7, '2026-01-01T00:00:00Z');
 
     await materializeEntity('researchEntity', { entityKey: 'restatement-fixture' });
 
@@ -121,12 +116,7 @@ describe('materializeEntity rejects a fullDescription that restates shortDescrip
 
   it('does not blank a genuinely distinct fullDescription', async () => {
     await seedEntity();
-    await seedFull(
-      MU_LAB_RICHER_FULL,
-      'lab-microsite-description-llm',
-      0.95,
-      '2026-02-01T00:00:00Z',
-    );
+    await seedFull(MU_LAB_RICHER_FULL, 'lab-microsite-description-llm', 0.95, '2026-02-01T00:00:00Z');
 
     await materializeEntity('researchEntity', { entityKey: 'restatement-fixture' });
 

@@ -24,9 +24,7 @@ describe('isRejectedDescriptionSourceUrl', () => {
 
   it('still rejects directory and non-descriptive source pages', () => {
     expect(isRejectedDescriptionSourceUrl('https://medicine.yale.edu/people/')).toBe(true);
-    expect(isRejectedDescriptionSourceUrl('https://reporter.nih.gov/project-details/123')).toBe(
-      true,
-    );
+    expect(isRejectedDescriptionSourceUrl('https://reporter.nih.gov/project-details/123')).toBe(true);
     expect(isRejectedDescriptionSourceUrl('not-a-url')).toBe(true);
   });
 
@@ -37,9 +35,7 @@ describe('isRejectedDescriptionSourceUrl', () => {
       ),
     ).toBe(true);
     expect(
-      isRejectedDescriptionSourceUrl(
-        'https://mcdb.yale.edu/undergraduate/undergrad-degree-programs',
-      ),
+      isRejectedDescriptionSourceUrl('https://mcdb.yale.edu/undergraduate/undergrad-degree-programs'),
     ).toBe(true);
   });
 });
@@ -77,8 +73,6 @@ describe('usefulLabName', () => {
   it('keeps a genuine branded research-home name', () => {
     expect(usefulLabName('The Yale GRAB Lab')).toBe('The Yale GRAB Lab');
     expect(usefulLabName('David Spiegel Lab')).toBe('David Spiegel Lab');
-    expect(usefulLabName('The Efficient Computing Lab (ECL)')).toBe(
-      'The Efficient Computing Lab (ECL)',
-    );
+    expect(usefulLabName('The Efficient Computing Lab (ECL)')).toBe('The Efficient Computing Lab (ECL)');
   });
 });

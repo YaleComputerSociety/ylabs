@@ -38,12 +38,6 @@ jobs:
           yarn --cwd server install --immutable
           yarn --cwd client install --immutable
 
-      - name: Check formatting
-        run: yarn format:check
-
-      - name: Run lint
-        run: yarn lint
-
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
 

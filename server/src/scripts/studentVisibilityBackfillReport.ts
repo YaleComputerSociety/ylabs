@@ -1,7 +1,4 @@
-import {
-  publicStudentVisibilityTiers,
-  type StudentVisibilityTier,
-} from '../models/studentVisibility';
+import { publicStudentVisibilityTiers, type StudentVisibilityTier } from '../models/studentVisibility';
 import {
   evaluateRosterLeadResolution,
   type RosterLeadResolutionResult,
@@ -91,25 +88,20 @@ export function nextRepairActionForReasons(reasons: string[]): string {
     return 'Suppress the grant shell unless a durable PI-owned research home or student access route is found.';
   }
   if (reasons.includes('duplicate_risk')) return 'Resolve duplicate or disambiguation risk.';
-  if (reasons.includes('content_page_risk'))
-    return 'Suppress content pages or remap to a real research home.';
+  if (reasons.includes('content_page_risk')) return 'Suppress content pages or remap to a real research home.';
   if (reasons.includes('profile_identity_risk')) {
     return 'Resolve the person-derived identity: attach the lead whose official profile matches the entity, or suppress the contaminated shell.';
   }
   if (reasons.includes('missing_alternate_access_path')) {
     return 'Give this organizational/program entity a real way in: attach a related lab, faculty area, or hosted program, or a source-backed people/staff/get-involved/programs page.';
   }
-  if (reasons.includes('missing_lead'))
-    return 'Attach a source-backed PI, director, or lead member.';
+  if (reasons.includes('missing_lead')) return 'Attach a source-backed PI, director, or lead member.';
   if (reasons.includes('missing_card_description')) {
     return 'Backfill a student-facing short description from source-backed research text.';
   }
-  if (reasons.includes('missing_description'))
-    return 'Backfill a source-backed research description.';
-  if (reasons.includes('thin_description'))
-    return 'Replace thin copy with a useful source-backed description.';
-  if (reasons.includes('profile_fallback_only'))
-    return 'Verify the profile-derived description against an entity source.';
+  if (reasons.includes('missing_description')) return 'Backfill a source-backed research description.';
+  if (reasons.includes('thin_description')) return 'Replace thin copy with a useful source-backed description.';
+  if (reasons.includes('profile_fallback_only')) return 'Verify the profile-derived description against an entity source.';
   if (reasons.includes('missing_source_url')) return 'Attach an official source URL.';
   if (reasons.includes('missing_action_evidence')) {
     return 'Add source-backed access or pathway evidence only if it exists.';

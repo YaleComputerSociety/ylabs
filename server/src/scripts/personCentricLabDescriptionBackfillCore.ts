@@ -25,7 +25,9 @@ function isOrganizationEntity(entity: PersonCentricLabDescriptionEntityInput): b
 }
 
 function isLockedField(entity: PersonCentricLabDescriptionEntityInput, field: string): boolean {
-  return Array.isArray(entity.manuallyLockedFields) && entity.manuallyLockedFields.includes(field);
+  return (
+    Array.isArray(entity.manuallyLockedFields) && entity.manuallyLockedFields.includes(field)
+  );
 }
 
 export function selectPersonCentricLabDescriptionTargets<
@@ -73,10 +75,7 @@ export function planPersonCentricLabDescriptionRewrite(
 
   if (usable) {
     return {
-      set: {
-        fullDescription: usable.fullDescription,
-        shortDescription: usable.shortDescription || '',
-      },
+      set: { fullDescription: usable.fullDescription, shortDescription: usable.shortDescription || '' },
       action: 're-derived',
       hasWrites: true,
     };

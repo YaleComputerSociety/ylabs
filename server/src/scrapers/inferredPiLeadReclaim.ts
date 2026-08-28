@@ -22,7 +22,9 @@ const CANONICAL_LEAD_ROLES = LEGACY_LEAD_ROLES.map((role) => canonicalRoleForLeg
 );
 
 function toEntityObjectId(entityId: string): mongoose.Types.ObjectId | null {
-  return mongoose.Types.ObjectId.isValid(entityId) ? new mongoose.Types.ObjectId(entityId) : null;
+  return mongoose.Types.ObjectId.isValid(entityId)
+    ? new mongoose.Types.ObjectId(entityId)
+    : null;
 }
 
 async function currentLeadEntityIds(objectIds: mongoose.Types.ObjectId[]): Promise<string[]> {

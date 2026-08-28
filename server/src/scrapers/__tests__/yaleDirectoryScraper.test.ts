@@ -244,12 +244,7 @@ describe('YaleDirectoryScraper.run', () => {
       sourceId: 'test-source-id',
       sourceName: 'yale-directory',
       sourceWeight: 0.9,
-      options: {
-        dryRun: false,
-        useCache: false,
-        release: false,
-        ...((overrides.options as any) || {}),
-      },
+      options: { dryRun: false, useCache: false, release: false, ...((overrides.options as any) || {}) },
       emit: async (input) => {
         const arr = Array.isArray(input) ? input : [input];
         for (const o of arr) emitted.push(o);
@@ -294,7 +289,9 @@ describe('YaleDirectoryScraper.run', () => {
     }));
     const page2 = [{ ...facultyRecord, netid: 'aaLast' }];
 
-    mockedListYalies.mockResolvedValueOnce(page1).mockResolvedValueOnce(page2);
+    mockedListYalies
+      .mockResolvedValueOnce(page1)
+      .mockResolvedValueOnce(page2);
 
     const { ctx, emitted } = buildContext();
     const scraper = new YaleDirectoryScraper();

@@ -24,9 +24,9 @@ describe('stale observation conflict review', () => {
     };
 
     expect(normalizeStaleObservationObjectId(objectShapedId)).toBeUndefined();
-    expect(normalizeStaleObservationObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString()).toBe(
-      '507f1f77bcf86cd799439011',
-    );
+    expect(
+      normalizeStaleObservationObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString(),
+    ).toBe('507f1f77bcf86cd799439011');
   });
 
   it('builds a dry-run plan that keeps the latest same-source value', () => {
@@ -245,16 +245,19 @@ describe('stale observation conflict review', () => {
       parseStaleObservationConflictReviewArgs(['--limit', '--source=dept-faculty-roster']),
     ).toThrow('--limit requires a number');
 
-    expect(() => parseStaleObservationConflictReviewArgs(['--source', '--limit=10'])).toThrow(
-      '--source requires a value',
-    );
+    expect(() =>
+      parseStaleObservationConflictReviewArgs(['--source', '--limit=10']),
+    ).toThrow('--source requires a value');
 
     expect(() =>
       parseStaleObservationConflictReviewArgs(['--output', '--allow-empty-decisions']),
     ).toThrow('--output requires a path');
 
     expect(() =>
-      parseStaleObservationConflictReviewArgs(['--accepted-decisions', '--allow-empty-decisions']),
+      parseStaleObservationConflictReviewArgs([
+        '--accepted-decisions',
+        '--allow-empty-decisions',
+      ]),
     ).toThrow('--accepted-decisions requires a path');
 
     expect(() =>
@@ -292,7 +295,9 @@ describe('stale observation conflict review', () => {
     }
 
     expect(() =>
-      parseStaleObservationConflictReviewArgs(['--confirm-stale-observation-supersession=true']),
+      parseStaleObservationConflictReviewArgs([
+        '--confirm-stale-observation-supersession=true',
+      ]),
     ).toThrow('--confirm-stale-observation-supersession does not accept a value');
 
     expect(() => parseStaleObservationConflictReviewArgs(['prod'])).toThrow(
@@ -373,7 +378,10 @@ describe('stale observation conflict review', () => {
   });
 
   it('can treat a missing accepted-decisions artifact as an empty validation probe', () => {
-    const missingPath = path.join(os.tmpdir(), `ylabs-missing-stale-decisions-${Date.now()}.json`);
+    const missingPath = path.join(
+      os.tmpdir(),
+      `ylabs-missing-stale-decisions-${Date.now()}.json`,
+    );
 
     expect(readStaleObservationReviewDecisions(missingPath, { allowEmpty: true })).toEqual([]);
     expect(() =>

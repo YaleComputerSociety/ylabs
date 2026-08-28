@@ -528,9 +528,7 @@ export class NsfAwardScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const dateStart = this.deps.dateStart ?? defaultDateStart();
-    const resolverDeps: FederalPiResolverDeps = {
-      resolveResearcherId: this.deps.resolveResearcherId,
-    };
+    const resolverDeps: FederalPiResolverDeps = { resolveResearcherId: this.deps.resolveResearcherId };
     const fetcher = this.deps.fetchPage ?? fetchPage;
     const researchHomeResolver =
       this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;

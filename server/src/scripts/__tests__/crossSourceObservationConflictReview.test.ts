@@ -187,9 +187,9 @@ describe('cross-source observation conflict review', () => {
       parseCrossSourceObservationConflictReviewArgs(['--plan-limit=9007199254740992']),
     ).toThrow('--plan-limit must be a positive integer');
 
-    expect(() => parseCrossSourceObservationConflictReviewArgs(['--source', '--limit=10'])).toThrow(
-      '--source requires a value',
-    );
+    expect(() =>
+      parseCrossSourceObservationConflictReviewArgs(['--source', '--limit=10']),
+    ).toThrow('--source requires a value');
 
     expect(() =>
       parseCrossSourceObservationConflictReviewArgs(['--output', '--allow-empty-decisions']),
@@ -237,9 +237,9 @@ describe('cross-source observation conflict review', () => {
       `ylabs-missing-cross-source-decisions-${Date.now()}.json`,
     );
 
-    expect(readCrossSourceObservationReviewDecisions(missingPath, { allowEmpty: true })).toEqual(
-      [],
-    );
+    expect(
+      readCrossSourceObservationReviewDecisions(missingPath, { allowEmpty: true }),
+    ).toEqual([]);
   });
 
   it('builds reviewer decision templates from cross-source plans', () => {

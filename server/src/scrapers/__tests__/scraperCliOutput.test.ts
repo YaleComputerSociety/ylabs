@@ -26,14 +26,14 @@ describe('scraperCliOutput', () => {
   });
 
   it('rejects unsafe scraper CLI output paths before writing', async () => {
-    await expect(
-      writeJsonOutputFile('/etc/ylabs-scraper-output.json', { ok: true }),
-    ).rejects.toThrow('--output must write under');
+    await expect(writeJsonOutputFile('/etc/ylabs-scraper-output.json', { ok: true })).rejects.toThrow(
+      '--output must write under',
+    );
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-scraper-cli-output-'));
-    await expect(
-      writeJsonOutputFile(path.join(dir, 'retention.txt'), { ok: true }),
-    ).rejects.toThrow('--output must point to a .json report file');
+    await expect(writeJsonOutputFile(path.join(dir, 'retention.txt'), { ok: true })).rejects.toThrow(
+      '--output must point to a .json report file',
+    );
   });
 
   it('recognizes non-empty output path flags only', () => {

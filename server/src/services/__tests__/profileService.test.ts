@@ -5,6 +5,7 @@ const userModelMock = vi.hoisted(() => ({
   findOneAndUpdate: vi.fn(),
 }));
 
+
 import {
   cleanPublicProfileBio,
   dedupeProfileResearchEntities,
@@ -973,7 +974,9 @@ describe('profileService profile shaping', () => {
       cleanPublicProfileBio({
         bio: 'faculty@yale.edu Website Professor Doe studies decision theory, game theory, and the economics of information.',
       }),
-    ).toBe('Professor Doe studies decision theory, game theory, and the economics of information.');
+    ).toBe(
+      'Professor Doe studies decision theory, game theory, and the economics of information.',
+    );
   });
 
   it('strips a leading redacted-contact placeholder plus nav-label chrome', () => {
@@ -1936,3 +1939,4 @@ describe('profileService profile shaping', () => {
     expect(isPublicResearchPaperLink(freeTextLink)).toBe(true);
   });
 });
+

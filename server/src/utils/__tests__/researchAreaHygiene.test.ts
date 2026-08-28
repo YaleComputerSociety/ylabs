@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeResearchAreaList, splitDelimitedResearchArea } from '../researchAreaHygiene';
+import {
+  normalizeResearchAreaList,
+  splitDelimitedResearchArea,
+} from '../researchAreaHygiene';
 
 describe('splitDelimitedResearchArea', () => {
   it('splits a bare multi-topic comma list into separate tags', () => {
     expect(
-      splitDelimitedResearchArea(
-        'Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes',
-      ),
+      splitDelimitedResearchArea('Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes'),
     ).toEqual(['Anxiety', 'Depression', 'Psychometrics', 'Treatment', 'Cognitive Processes']);
   });
 
@@ -67,8 +68,8 @@ describe('normalizeResearchAreaList', () => {
   });
 
   it('drops non-string entries', () => {
-    expect(normalizeResearchAreaList(['Neuroscience', undefined as unknown as string, ''])).toEqual(
-      ['Neuroscience'],
-    );
+    expect(
+      normalizeResearchAreaList(['Neuroscience', undefined as unknown as string, '']),
+    ).toEqual(['Neuroscience']);
   });
 });

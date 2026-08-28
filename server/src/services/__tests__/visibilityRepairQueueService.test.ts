@@ -155,7 +155,8 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        bio: 'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
+        bio:
+          'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
         websiteUrl: 'https://medicine.yale.edu/example-lab',
         sourceUrls: ['https://medicine.yale.edu/example-lab'],
       }),
@@ -182,7 +183,8 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        bio: 'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
+        bio:
+          'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
         websiteUrl: 'https://medicine.yale.edu/example-lab',
         sourceUrls: ['https://medicine.yale.edu/example-lab'],
       }),

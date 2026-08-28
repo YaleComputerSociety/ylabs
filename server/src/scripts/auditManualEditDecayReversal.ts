@@ -125,18 +125,10 @@ async function main(): Promise<void> {
 
   const liveAlreadyWrong = flips.filter((f) => f.liveAlreadyCorrect === false).length;
 
-  console.error(
-    `Already resolves to manual-admin-edit under old decay (no change from fix): ${alreadyManualWinner}`,
-  );
-  console.error(
-    `Manual-admin-edit does not win even with the fix (needs individual review, not a decay case): ${noFlip}`,
-  );
-  console.error(
-    `Decay-reversal instances the fix corrects (old decay picked a scraper source, fix restores the manual value): ${flips.length}`,
-  );
-  console.error(
-    `Of those, already live-wrong on the entity document today (not just at future risk): ${liveAlreadyWrong}`,
-  );
+  console.error(`Already resolves to manual-admin-edit under old decay (no change from fix): ${alreadyManualWinner}`);
+  console.error(`Manual-admin-edit does not win even with the fix (needs individual review, not a decay case): ${noFlip}`);
+  console.error(`Decay-reversal instances the fix corrects (old decay picked a scraper source, fix restores the manual value): ${flips.length}`);
+  console.error(`Of those, already live-wrong on the entity document today (not just at future risk): ${liveAlreadyWrong}`);
   console.log(JSON.stringify(flips, null, 2));
 }
 

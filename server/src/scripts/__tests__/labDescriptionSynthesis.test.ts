@@ -80,23 +80,15 @@ describe('synthesisSystemPromptFor', () => {
 describe('synthesisSubjectName (#1781)', () => {
   it('strips a templated "Research"/"- Research" suffix from a person subject so it is not used as the synthesized sentence subject', () => {
     expect(
-      synthesisSubjectName({
-        name: 'Marcus Bosenberg Research',
-        entityType: 'FACULTY_RESEARCH_AREA',
-      }),
+      synthesisSubjectName({ name: 'Marcus Bosenberg Research', entityType: 'FACULTY_RESEARCH_AREA' }),
     ).toBe('Marcus Bosenberg');
     expect(
-      synthesisSubjectName({
-        name: 'Tara Boroushaki - Research',
-        entityType: 'INDIVIDUAL_RESEARCH',
-      }),
+      synthesisSubjectName({ name: 'Tara Boroushaki - Research', entityType: 'INDIVIDUAL_RESEARCH' }),
     ).toBe('Tara Boroushaki');
   });
 
   it('leaves a lab/home subject name untouched, including one that legitimately ends in "Research"', () => {
-    expect(synthesisSubjectName({ name: 'Bosenberg Lab', entityType: 'LAB' })).toBe(
-      'Bosenberg Lab',
-    );
+    expect(synthesisSubjectName({ name: 'Bosenberg Lab', entityType: 'LAB' })).toBe('Bosenberg Lab');
     expect(
       synthesisSubjectName({ name: 'Center for Cancer Systems Research', entityType: 'CENTER' }),
     ).toBe('Center for Cancer Systems Research');
@@ -179,8 +171,7 @@ describe('evaluateSynthesisOutput', () => {
       {
         fullDescription:
           'The lab focuses on neural navigation circuits, two-photon imaging, and optogenetics. The lab investigates the underlying mechanisms associated with these techniques.',
-        shortDescription:
-          'Studies neural navigation circuits, two-photon imaging, and optogenetics.',
+        shortDescription: 'Studies neural navigation circuits, two-photon imaging, and optogenetics.',
       },
       labSource,
       researchAreas,

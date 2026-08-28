@@ -185,9 +185,8 @@ describe('sanitizeObservationField', () => {
     });
 
     it('leaves source URLs, enum kinds, and non-string values alone', () => {
-      expect(
-        sanitizeObservationField('researchEntity', 'sourceUrls', ['https://x.example.edu']),
-      ).toEqual({ value: ['https://x.example.edu'], rejected: false });
+      expect(sanitizeObservationField('researchEntity', 'sourceUrls', ['https://x.example.edu']))
+        .toEqual({ value: ['https://x.example.edu'], rejected: false });
       expect(sanitizeObservationField('researchEntity', 'kind', 'LAB')).toEqual({
         value: 'LAB',
         rejected: false,

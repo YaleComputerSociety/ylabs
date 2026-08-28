@@ -132,11 +132,7 @@ function parseDeadline(value: string | undefined, now: Date): Date | undefined {
   return parsed.getTime() > now.getTime() ? parsed : undefined;
 }
 
-function blockApplyUrl(
-  $: cheerio.CheerioAPI,
-  block: cheerio.Cheerio<any>,
-  pageUrl: string,
-): string | undefined {
+function blockApplyUrl($: cheerio.CheerioAPI, block: cheerio.Cheerio<any>, pageUrl: string): string | undefined {
   const links = block
     .find('a')
     .toArray()

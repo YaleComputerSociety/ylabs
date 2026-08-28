@@ -27,9 +27,7 @@ const candidate = (
   ...overrides,
 });
 
-const gatePlan = (
-  overrides: Partial<StudentVisibilityGatePlan> = {},
-): StudentVisibilityGatePlan => ({
+const gatePlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'research-1',
   label: 'Source Backed Lab',
@@ -101,9 +99,7 @@ describe('launchReviewExceptions CLI helpers', () => {
       parseLaunchReviewExceptionArgs(['--accepted-decisions=--allow-empty-decisions']),
     ).toThrow(/--accepted-decisions requires a path/);
     expect(() =>
-      parseLaunchReviewExceptionArgs([
-        '--accepted-decisions=/var/tmp/launch-review-decisions.json',
-      ]),
+      parseLaunchReviewExceptionArgs(['--accepted-decisions=/var/tmp/launch-review-decisions.json']),
     ).toThrow(/--accepted-decisions must write under/);
   });
 

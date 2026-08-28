@@ -224,9 +224,7 @@ const SimilarResearchEntitiesSection = ({
           </div>
           <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
           {entity.blurb && (
-            <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-gray-600">
-              {entity.blurb}
-            </p>
+            <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-gray-600">{entity.blurb}</p>
           )}
         </Link>
       ))}
@@ -832,10 +830,8 @@ const LabDetail = () => {
   const requestIdRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
-  const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } = useFavorites(
-    'researchPlans',
-    { enabled: isAuthenticated },
-  );
+  const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } =
+    useFavorites('researchPlans', { enabled: isAuthenticated });
   const documentTitleGroup = payload ? (payload.group ?? payload.researchEntity) : null;
   const isNotFound = error === RESEARCH_PROFILE_NOT_FOUND_ERROR && !payload;
   useDocumentTitle(
@@ -954,9 +950,9 @@ const LabDetail = () => {
       researchEntitySummaryKey,
     ),
   );
-  const dedupedSimilarResearchEntities = dedupeResearchEntitySummaries(
-    similarResearchEntities,
-  ).filter((entity) => !structuralResearchEntityKeys.has(researchEntitySummaryKey(entity)));
+  const dedupedSimilarResearchEntities = dedupeResearchEntitySummaries(similarResearchEntities).filter(
+    (entity) => !structuralResearchEntityKeys.has(researchEntitySummaryKey(entity)),
+  );
   const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
   const hasSimilarResearchEntities = dedupedSimilarResearchEntities.length > 0;

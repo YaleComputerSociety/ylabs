@@ -19,10 +19,7 @@ export function useDebouncedLocalStorage(key: string, value: unknown, delayMs = 
     timerRef.current = setTimeout(() => {
       try {
         const serialized = JSON.stringify(value);
-        if (
-          typeof serialized !== 'string' ||
-          serialized.length > MAX_DEBOUNCED_STORAGE_VALUE_LENGTH
-        ) {
+        if (typeof serialized !== 'string' || serialized.length > MAX_DEBOUNCED_STORAGE_VALUE_LENGTH) {
           localStorage.removeItem(safeKey);
           return;
         }

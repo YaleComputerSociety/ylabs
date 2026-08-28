@@ -120,9 +120,7 @@ const FellowshipSortDropdown = () => {
                 key={option.value}
                 onClick={() => handleSelect(option.value)}
                 className={`px-3 py-2 cursor-pointer text-sm flex items-center justify-between ${
-                  focusedIndex === index
-                    ? 'bg-[var(--yr-blue-soft)]'
-                    : 'hover:bg-[var(--yr-panel-muted)]'
+                  focusedIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
                 }`}
                 onMouseDown={(e) => e.preventDefault()}
               >

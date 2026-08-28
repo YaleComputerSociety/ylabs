@@ -149,8 +149,7 @@ function dedupeJoin(parts: string[]): string {
 // as absent so the pipeline falls through to a grant abstract or skips the
 // entity ('no-source') rather than paraphrasing its own echo.
 const isTrustworthySynthesisSource = (text: string, researchAreas: unknown): boolean =>
-  text.length > 0 &&
-  !fullDescriptionQuality(text, researchAreas).flags.includes('area-echo-fallback');
+  text.length > 0 && !fullDescriptionQuality(text, researchAreas).flags.includes('area-echo-fallback');
 
 export function buildSynthesisSources(entity: LabSynthesisSourceFields): SynthesisSources {
   const rawPrimary = sanitizeDescriptionText(entity.fullDescription).text;

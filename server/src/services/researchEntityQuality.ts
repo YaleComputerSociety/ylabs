@@ -6,7 +6,10 @@ export type ResearchEntityDescriptionState =
   | 'thin'
   | 'missing';
 
-export type ResearchEntityLeadState = 'lead_attached' | 'lead_weak' | 'lead_missing';
+export type ResearchEntityLeadState =
+  | 'lead_attached'
+  | 'lead_weak'
+  | 'lead_missing';
 
 export type ResearchEntityRepairFlag =
   | 'missing_description'
@@ -50,7 +53,10 @@ const visibilityReasonsForEntity = (entity: Record<string, any>): string[] =>
 
 const hasStrongLead = (member: Record<string, any>): boolean =>
   Boolean(
-    member.userId || member.user?._id || textValue(member.name) || textValue(member.user?.netid),
+    member.userId ||
+    member.user?._id ||
+    textValue(member.name) ||
+    textValue(member.user?.netid),
   );
 
 function descriptionStateForEntity(

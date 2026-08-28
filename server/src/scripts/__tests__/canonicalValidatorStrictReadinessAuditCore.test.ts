@@ -82,10 +82,7 @@ describe('buildStrictReadinessReport', () => {
       generatedAt: GENERATED_AT,
     });
 
-    expect(report.collections.map((row) => row.collectionName)).toEqual([
-      'accounts',
-      'researchers',
-    ]);
+    expect(report.collections.map((row) => row.collectionName)).toEqual(['accounts', 'researchers']);
     expect(report.collections[0].exists).toBe(false);
     expect(report.collections[0].currentValidationLevel).toBe('unknown');
   });
@@ -105,11 +102,7 @@ describe('parseStrictReadinessArgs', () => {
       '--output',
       '/tmp/report.json',
     ]);
-    expect(args).toEqual({
-      environment: 'development',
-      sampleLimit: 3,
-      output: '/tmp/report.json',
-    });
+    expect(args).toEqual({ environment: 'development', sampleLimit: 3, output: '/tmp/report.json' });
   });
 
   it('rejects an unknown environment and a negative sample limit', () => {

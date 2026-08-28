@@ -137,10 +137,7 @@ const collapseRosterEntriesByPerson = (
     const candidateState = statePrecedence(candidate);
     const incumbentState = statePrecedence(incumbent);
     if (candidateState !== incumbentState) return candidateState < incumbentState;
-    return (
-      canonicalRolePriority(candidate.roleCanonical) <
-      canonicalRolePriority(incumbent.roleCanonical)
-    );
+    return canonicalRolePriority(candidate.roleCanonical) < canonicalRolePriority(incumbent.roleCanonical);
   };
   for (const entry of entries) {
     const personKey = entry.personId.toString();
@@ -219,3 +216,4 @@ export async function getResearchEntityRoster(
   const byEntityId = await getResearchEntityRosterByEntityId([entityId]);
   return byEntityId.get(key) || [];
 }
+

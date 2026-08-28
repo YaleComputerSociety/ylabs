@@ -9,7 +9,9 @@ export const studentVisibilityTiers = [
 
 export type StudentVisibilityTier = (typeof studentVisibilityTiers)[number];
 
-export const publicStudentVisibilityTiers: StudentVisibilityTier[] = ['student_ready'];
+export const publicStudentVisibilityTiers: StudentVisibilityTier[] = [
+  'student_ready',
+];
 
 export const publicSafeStudentVisibilityTiers: StudentVisibilityTier[] = [
   'student_ready',

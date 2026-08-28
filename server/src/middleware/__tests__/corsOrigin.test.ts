@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CorsOriginError, createCorsOriginHandler, isAllowedCorsOrigin } from '../corsOrigin';
 
-const allowedOrigins = new Set(['https://yalelabs.io', 'https://ylabs-gr4v.onrender.com']);
+const allowedOrigins = new Set([
+  'https://yalelabs.io',
+  'https://ylabs-gr4v.onrender.com',
+]);
 
 type HandlerResult = {
   callbackError: Error | null;

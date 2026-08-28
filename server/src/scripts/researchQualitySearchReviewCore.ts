@@ -198,7 +198,10 @@ function hasTypedValue(values: string[] | undefined, allowed: Set<string>): bool
 export function buildResearchQualitySearchReviewRow(
   facts: ResearchQualitySearchFacts,
 ): ResearchQualitySearchReviewRow {
-  const descriptionChars = textLength(facts.shortDescription, facts.fullDescription);
+  const descriptionChars = textLength(
+    facts.shortDescription,
+    facts.fullDescription,
+  );
   const sourceUrls = compactStrings([...(facts.sourceUrls || []), facts.websiteUrl]);
   const sourceDomains = sourceDomainsFor(facts);
   const entityType = normalizedEntityType(facts);

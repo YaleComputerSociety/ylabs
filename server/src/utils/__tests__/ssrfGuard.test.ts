@@ -30,16 +30,14 @@ describe('ssrfGuard', () => {
   });
 
   it('assertPublicHttpUrl blocks private hosts, bad schemes, and embedded credentials', async () => {
-    await expect(
-      assertPublicHttpUrl('http://169.254.169.254/latest/meta-data'),
-    ).rejects.toBeInstanceOf(SsrfBlockedError);
+    await expect(assertPublicHttpUrl('http://169.254.169.254/latest/meta-data')).rejects.toBeInstanceOf(
+      SsrfBlockedError,
+    );
     await expect(assertPublicHttpUrl('http://127.0.0.1/')).rejects.toBeInstanceOf(SsrfBlockedError);
     await expect(assertPublicHttpUrl('http://10.0.0.5/')).rejects.toBeInstanceOf(SsrfBlockedError);
     await expect(assertPublicHttpUrl('https://[::1]/')).rejects.toBeInstanceOf(SsrfBlockedError);
     await expect(assertPublicHttpUrl('ftp://8.8.8.8/')).rejects.toBeInstanceOf(SsrfBlockedError);
-    await expect(assertPublicHttpUrl('file:///etc/passwd')).rejects.toBeInstanceOf(
-      SsrfBlockedError,
-    );
+    await expect(assertPublicHttpUrl('file:///etc/passwd')).rejects.toBeInstanceOf(SsrfBlockedError);
     await expect(assertPublicHttpUrl('http://user:pass@8.8.8.8/')).rejects.toBeInstanceOf(
       SsrfBlockedError,
     );

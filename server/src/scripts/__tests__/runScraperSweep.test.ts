@@ -286,7 +286,11 @@ describe('runScraperSweep', () => {
       expect.arrayContaining(['--strict', '--include-samples', '--progress']),
     );
     expect(stages.find((stage) => stage.name === 'trust-contract')?.args).toEqual(
-      expect.arrayContaining(['--collection=all', '--mode=student-ready-only', '--strict']),
+      expect.arrayContaining([
+        '--collection=all',
+        '--mode=student-ready-only',
+        '--strict',
+      ]),
     );
   });
 

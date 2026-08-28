@@ -49,7 +49,10 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
   beforeEach(async () => {
     setResearchAreaCanonicalizerForTesting(
       createResearchAreaCanonicalizer(
-        buildResearchAreaResolverIndex([{ name: 'Neuroscience' }, { name: 'Immunology' }]),
+        buildResearchAreaResolverIndex([
+          { name: 'Neuroscience' },
+          { name: 'Immunology' },
+        ]),
       ),
     );
     const db = mongoose.connection.db;
@@ -98,9 +101,7 @@ describe('materializeEntity derives LAB/FACULTY_RESEARCH_AREA research areas fro
       slug: 'area-derivation-fixture',
     }).lean<PersistedEntity>();
 
-    expect(new Set(persisted?.researchAreas ?? [])).toEqual(
-      new Set(['Neuroscience', 'Immunology']),
-    );
+    expect(new Set(persisted?.researchAreas ?? [])).toEqual(new Set(['Neuroscience', 'Immunology']));
   });
 
   it('never overwrites an existing non-empty researchAreas value', async () => {

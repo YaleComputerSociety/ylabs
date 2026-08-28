@@ -479,7 +479,9 @@ const FellowshipModal = ({
                     </div>
                     <div>
                       <span className="text-xs text-slate-500">Do you need a mentor first?</span>
-                      <p className="text-sm font-medium text-slate-900">{mentorFirstAnswer}</p>
+                      <p className="text-sm font-medium text-slate-900">
+                        {mentorFirstAnswer}
+                      </p>
                     </div>
                   </div>
                 </section>

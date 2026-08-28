@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { relaxResearchQuery, suggestCorpusResearchAreas } from '../researchZeroResultRecovery';
+import {
+  relaxResearchQuery,
+  suggestCorpusResearchAreas,
+} from '../researchZeroResultRecovery';
 
 describe('relaxResearchQuery', () => {
   it('drops the last term of a multi-term query', () => {

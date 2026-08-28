@@ -75,20 +75,13 @@ function extractExplicitResearchInterestPhrases(value: string): string[] {
   const firstSentence = value.split(/\.\s+/)[0]?.trim() || '';
   const cleaned = firstSentence.replace(/^research\s+areas?:\s*/i, '').trim();
   const includeMatch = cleaned.match(/\bresearch\s+interests?\s+include\s+(?:the\s+)?(.+)$/i);
-  const studiesHowMatch = cleaned.match(
-    /^studies\s+how\s+(.+?)\s+(?:shape|shapes|affect|affects|influence|influences|drive|drives)\b/i,
-  );
+  const studiesHowMatch = cleaned.match(/^studies\s+how\s+(.+?)\s+(?:shape|shapes|affect|affects|influence|influences|drive|drives)\b/i);
   const phraseText = includeMatch?.[1] || studiesHowMatch?.[1] || '';
   if (!phraseText) return [];
 
   return phraseText
     .split(/\s*,\s*|\s+and\s+/)
-    .map((phrase) =>
-      phrase
-        .replace(/^(?:the|a|an)\s+/i, '')
-        .replace(/[.;:,]+$/g, '')
-        .trim(),
-    )
+    .map((phrase) => phrase.replace(/^(?:the|a|an)\s+/i, '').replace(/[.;:,]+$/g, '').trim())
     .filter((phrase) => {
       const wordCount = phrase.split(/\s+/).filter(Boolean).length;
       return wordCount > 0 && wordCount <= 8;
@@ -109,7 +102,8 @@ function isProseResearchBlurb(value: string): boolean {
 const PROSE_CHIP_LEADIN =
   /^(?:and|or|but|which|that|who|whose|whom|we|our|i|my|his|her|their|its|these|those|including|as|to|for|from|with|by|when|where|while|because|although|however|moreover)\b/i;
 
-const RESEARCH_HEADING_CHIP = /^research\s+(?:areas?|interests?|fields?|topics?)\s*:?\s*$/i;
+const RESEARCH_HEADING_CHIP =
+  /^research\s+(?:areas?|interests?|fields?|topics?)\s*:?\s*$/i;
 
 /**
  * A "research area" chip is meant to be a short topical tag. Prose SENTENCES or
@@ -120,9 +114,7 @@ const RESEARCH_HEADING_CHIP = /^research\s+(?:areas?|interests?|fields?|topics?)
  * words, no lead-in) are kept.
  */
 export function isProseResearchAreaChip(value: unknown): boolean {
-  const cleaned = String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const cleaned = String(value || '').replace(/\s+/g, ' ').trim();
   if (!cleaned) return false;
   if (RESEARCH_HEADING_CHIP.test(cleaned)) return true;
   if (/[.!?]$/.test(cleaned)) return true;
@@ -144,9 +136,7 @@ export function sanitizeProfileResearchTerms(values: unknown): string[] {
   const seen = new Set<string>();
 
   for (const raw of values) {
-    const value = String(raw || '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const value = String(raw || '').replace(/\s+/g, ' ').trim();
     if (!value) continue;
     if (RESEARCH_TERM_NOISE_PATTERNS.some((pattern) => pattern.test(value))) continue;
     const candidates = extractExplicitResearchInterestPhrases(value);

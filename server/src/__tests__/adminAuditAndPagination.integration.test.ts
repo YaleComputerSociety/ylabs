@@ -163,9 +163,7 @@ describe('Admin audit log, grant timeline, and user pagination (integration)', (
       actorNetid: 'operator2',
     });
 
-    const byAction = (await (
-      await fetch(`${baseUrl}/audit-events?action=admin_grant.grant`)
-    ).json()) as any;
+    const byAction = (await (await fetch(`${baseUrl}/audit-events?action=admin_grant.grant`)).json()) as any;
     expect(byAction.total).toBe(2);
     expect(byAction.events.every((event: any) => event.action === 'admin_grant.grant')).toBe(true);
   });

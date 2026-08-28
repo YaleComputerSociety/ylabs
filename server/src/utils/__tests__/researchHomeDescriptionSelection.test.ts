@@ -239,9 +239,9 @@ describe('selectResearchHomeDescription', () => {
   });
 
   it('does not blank a loose name-verb lead that is the only candidate (#919)', () => {
-    expect(selectResearchHomeDescription([BIOGRAPHICAL_VERB_BIO], { kind: 'organization' })).toBe(
-      BIOGRAPHICAL_VERB_BIO,
-    );
+    expect(
+      selectResearchHomeDescription([BIOGRAPHICAL_VERB_BIO], { kind: 'organization' }),
+    ).toBe(BIOGRAPHICAL_VERB_BIO);
   });
 
   it('does not blank an organization lead that only looks name-like (#919)', () => {

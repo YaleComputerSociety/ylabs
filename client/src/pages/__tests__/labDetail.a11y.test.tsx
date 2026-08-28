@@ -148,9 +148,7 @@ describe('research-home detail accessibility', () => {
     });
 
     const { container } = render(
-      <UserContext.Provider
-        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
-      >
+      <UserContext.Provider value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}>
         <MemoryRouter initialEntries={[`/research/${SLUG}`]}>
           <Routes>
             <Route path="/research/:slug" element={<LabDetail />} />
@@ -172,9 +170,7 @@ describe('research-home detail accessibility', () => {
     });
 
     const { container } = render(
-      <UserContext.Provider
-        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
-      >
+      <UserContext.Provider value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}>
         <MemoryRouter initialEntries={[`/research/${SLUG}`]}>
           <Routes>
             <Route path="/research/:slug" element={<LabDetail />} />

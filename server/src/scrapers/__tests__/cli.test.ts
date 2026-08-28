@@ -139,9 +139,9 @@ describe('scraper CLI helpers', () => {
       limit: 25,
       offset: 5,
     });
-    expect(cli.parseScraperOptions({ 'logistics-production': true })).toMatchObject({
-      logisticsProductionMode: true,
-    });
+    expect(
+      cli.parseScraperOptions({ 'logistics-production': true }),
+    ).toMatchObject({ logisticsProductionMode: true });
     expect(cli.parseScraperOptions({})).toMatchObject({ logisticsProductionMode: false });
     expect(() => cli.parseScraperOptions({ limit: '12abc' })).toThrow(
       /--limit must be a positive integer/,

@@ -278,10 +278,7 @@ const ENDOWED_CHAIR_TITLE_PATTERN =
   /\b(?:the\s+)?(?:[A-Z][A-Za-z.'-]+\s+){1,4}Professor(?:\s+Emerit(?:us|a))?\s+of\s+[A-Z][A-Za-z]+(?:\s+(?:and|of|the)\s+[A-Z][A-Za-z]+|\s+[A-Z][A-Za-z]+){0,3}/g;
 
 const stripEndowedChairTitles = (text: string): string =>
-  text
-    .replace(ENDOWED_CHAIR_TITLE_PATTERN, ' ')
-    .replace(/[ \t]+/g, ' ')
-    .trim();
+  text.replace(ENDOWED_CHAIR_TITLE_PATTERN, ' ').replace(/[ \t]+/g, ' ').trim();
 
 export function buildStudentSearchTerms(doc: any): string[] {
   const textFields = [
@@ -301,9 +298,7 @@ export function buildStudentSearchTerms(doc: any): string[] {
   if (!haystack) return [];
 
   const cvGuardedHaystack = normalizedAliasHaystack(
-    textFields.map((value) =>
-      typeof value === 'string' ? stripCvFalsePositiveContext(value) : value,
-    ),
+    textFields.map((value) => (typeof value === 'string' ? stripCvFalsePositiveContext(value) : value)),
   );
 
   const terms: string[] = [];

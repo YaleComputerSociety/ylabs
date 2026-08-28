@@ -20,7 +20,11 @@ const normalizedAnonymousRateLimitId = (value: unknown): string | undefined => {
   return RATE_LIMIT_ANONYMOUS_ID_RE.test(value) ? value : undefined;
 };
 
-export const ensureAnonymousRateLimitId = (req: Request, _res: Response, next: NextFunction) => {
+export const ensureAnonymousRateLimitId = (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) => {
   if (req.session && !normalizedAnonymousRateLimitId(req.session.rateLimitId)) {
     req.session.rateLimitId = randomBytes(16).toString('hex');
   }
@@ -40,8 +44,7 @@ const getRateLimitKey = (req: Request): string => {
     : `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
 };
 
-const getPeerIpKey = (req: Request): string =>
-  `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
+const getPeerIpKey = (req: Request): string => `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
 
 // Login availability must not depend on the general API traffic budget.
 // CAS ticket validation already gates the callback, so it is exempt from the

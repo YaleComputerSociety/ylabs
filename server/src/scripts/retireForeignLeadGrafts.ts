@@ -57,10 +57,8 @@ export function parseForeignLeadGraftArgs(argv: string[]): ForeignLeadGraftCliOp
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm') options.confirm = true;
     else if (arg.startsWith('--slug=')) options.slugs.push(arg.slice('--slug='.length));
-    else if (arg.startsWith('--entity-id='))
-      options.entityIds.push(arg.slice('--entity-id='.length));
-    else if (arg.startsWith('--limit='))
-      options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
+    else if (arg.startsWith('--entity-id=')) options.entityIds.push(arg.slice('--entity-id='.length));
+    else if (arg.startsWith('--limit=')) options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
     else if (arg === '--limit') {
       options.limit = parsePositiveInt(argv[i + 1], '--limit');
       i += 1;
@@ -92,11 +90,7 @@ async function planForeignLeadGraftRows(options: {
   if (options.slugs.length) scoped.push({ slug: { $in: options.slugs } });
   if (options.entityIds.length) {
     scoped.push({
-      _id: {
-        $in: options.entityIds
-          .filter(mongoose.isValidObjectId)
-          .map((id) => new mongoose.Types.ObjectId(id)),
-      },
+      _id: { $in: options.entityIds.filter(mongoose.isValidObjectId).map((id) => new mongoose.Types.ObjectId(id)) },
     });
   }
   if (scoped.length) filter.$or = scoped;
@@ -148,11 +142,7 @@ export async function runForeignLeadGraftRetirement(options: {
       recordIds: affectedEntityIds,
     });
     const updatedDocs = await ResearchEntity.find({
-      _id: {
-        $in: affectedEntityIds
-          .filter(mongoose.isValidObjectId)
-          .map((id) => new mongoose.Types.ObjectId(id)),
-      },
+      _id: { $in: affectedEntityIds.filter(mongoose.isValidObjectId).map((id) => new mongoose.Types.ObjectId(id)) },
     }).lean();
     await syncEntities('researchEntity', updatedDocs);
   }

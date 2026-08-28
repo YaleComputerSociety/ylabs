@@ -26,12 +26,7 @@ describe('researchEntityDto', () => {
       name: 'Neuro Lab',
       kind: 'lab',
       researchAreas: ['Neuroimaging', 'Neuropsychology'],
-      methods: [
-        'Behavioral Experiments',
-        'Computational Modeling',
-        'Neuroimaging',
-        'neuropsychology',
-      ],
+      methods: ['Behavioral Experiments', 'Computational Modeling', 'Neuroimaging', 'neuropsychology'],
     });
     expect(dto.researchAreas).toEqual(['Neuroimaging', 'Neuropsychology']);
     expect(dto.methods).toEqual(['Behavioral Experiments', 'Computational Modeling']);
@@ -69,9 +64,7 @@ describe('researchEntityDto', () => {
       shortDescription: '',
       fullDescription: 'This laboratory investigates vascular biology in human disease.',
     });
-    expect(dto.shortDescription).toBe(
-      'This laboratory investigates vascular biology in human disease.',
-    );
+    expect(dto.shortDescription).toBe('This laboratory investigates vascular biology in human disease.');
   });
 
   it('falls back a wholly-absent shortDescription field to fullDescription (#1719)', () => {
@@ -81,8 +74,7 @@ describe('researchEntityDto', () => {
       name: 'Global Health Awards Program',
       kind: 'program',
       entityType: 'PROGRAM',
-      fullDescription:
-        'Funded by the Yale College Fellowships for Research in Global Health Studies.',
+      fullDescription: 'Funded by the Yale College Fellowships for Research in Global Health Studies.',
     });
     expect(dto.shortDescription).toBe(
       'Funded by the Yale College Fellowships for Research in Global Health Studies.',
@@ -662,7 +654,10 @@ describe('researchEntityDto', () => {
     });
 
     const names = result.researchEntities.map((entity) => entity.name);
-    expect(names).toEqual(['The Liu Lab (Microbial Pathogenesis)', 'The Liu Lab (Biostatistics)']);
+    expect(names).toEqual([
+      'The Liu Lab (Microbial Pathogenesis)',
+      'The Liu Lab (Biostatistics)',
+    ]);
   });
 
   it('disambiguates the served displayName the browse card renders (#1211)', () => {

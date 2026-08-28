@@ -15,24 +15,9 @@ import {
 } from '../orgUnitCanonicalization';
 
 const rows = [
-  {
-    slug: 'yale-school-of-medicine',
-    name: 'Yale School of Medicine',
-    kind: 'SCHOOL' as const,
-    aliases: ['YSM', 'School of Medicine'],
-  },
-  {
-    slug: 'neuroscience',
-    name: 'Neuroscience',
-    kind: 'DEPARTMENT' as const,
-    aliases: ['NSCI', 'YSM Neuro'],
-  },
-  {
-    slug: 'molecular-biophysics-and-biochemistry',
-    name: 'Molecular Biophysics and Biochemistry',
-    kind: 'DEPARTMENT' as const,
-    aliases: ['MB&B', 'Molecular Biophysics & Biochemistry'],
-  },
+  { slug: 'yale-school-of-medicine', name: 'Yale School of Medicine', kind: 'SCHOOL' as const, aliases: ['YSM', 'School of Medicine'] },
+  { slug: 'neuroscience', name: 'Neuroscience', kind: 'DEPARTMENT' as const, aliases: ['NSCI', 'YSM Neuro'] },
+  { slug: 'molecular-biophysics-and-biochemistry', name: 'Molecular Biophysics and Biochemistry', kind: 'DEPARTMENT' as const, aliases: ['MB&B', 'Molecular Biophysics & Biochemistry'] },
 ];
 
 const index = buildOrgUnitResolverIndex(rows);
@@ -74,9 +59,7 @@ describe('resolveOrgUnitCanonical', () => {
   it('respects the kind filter', () => {
     expect(resolveOrgUnitCanonical(index, 'Neuroscience', ['SCHOOL'])).toBeNull();
     expect(resolveOrgUnitCanonical(index, 'YSM', ['DEPARTMENT'])).toBeNull();
-    expect(resolveOrgUnitCanonical(index, 'Neuroscience', ['DEPARTMENT'])?.name).toBe(
-      'Neuroscience',
-    );
+    expect(resolveOrgUnitCanonical(index, 'Neuroscience', ['DEPARTMENT'])?.name).toBe('Neuroscience');
   });
 });
 
@@ -230,9 +213,7 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     const deptToSchool = new Map([['Neuroscience', 'Yale School of Medicine']]);
     setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index, deptToSchool));
     const set: Record<string, unknown> = { departments: ['NSCI'] };
-    await applyResearchEntityOrgUnitCanonicalization(set, {
-      school: 'Faculty of Arts and Sciences',
-    });
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: 'Faculty of Arts and Sciences' });
     expect(set.school).toBeUndefined();
     expect(set.schools).toEqual(['Faculty of Arts and Sciences', 'Yale School of Medicine']);
   });
@@ -355,7 +336,10 @@ describe('schoolNameFromProfileHosts', () => {
       'School of Nursing',
     );
     expect(
-      schoolNameFromProfileHosts(['https://research.yale.edu/x', 'https://westcampus.yale.edu/x']),
+      schoolNameFromProfileHosts([
+        'https://research.yale.edu/x',
+        'https://westcampus.yale.edu/x',
+      ]),
     ).toBeNull();
     expect(schoolNameFromProfileHosts([])).toBeNull();
     expect(schoolNameFromProfileHosts(['not a url'])).toBeNull();
@@ -365,10 +349,7 @@ describe('schoolNameFromProfileHosts', () => {
 describe('researchEntityHasSchoolButNoRealDepartment', () => {
   it('flags a school-bearing entity with no departments', () => {
     expect(
-      researchEntityHasSchoolButNoRealDepartment({
-        school: 'Yale School of Management',
-        departments: [],
-      }),
+      researchEntityHasSchoolButNoRealDepartment({ school: 'Yale School of Management', departments: [] }),
     ).toBe(true);
     expect(
       researchEntityHasSchoolButNoRealDepartment({ schools: ['Yale School of Public Health'] }),
@@ -410,20 +391,8 @@ describe('buildDepartmentToSchoolMap', () => {
   it('walks parentOrgUnitId up to the nearest school, including nested sections', () => {
     const map = buildDepartmentToSchoolMap([
       { _id: 's', slug: 'school-of-medicine', name: 'School of Medicine', kind: 'SCHOOL' },
-      {
-        _id: 'd',
-        slug: 'internal-medicine',
-        name: 'Internal Medicine',
-        kind: 'DEPARTMENT',
-        parentOrgUnitId: 's',
-      },
-      {
-        _id: 'sec',
-        slug: 'cardiovascular-medicine',
-        name: 'Cardiovascular Medicine',
-        kind: 'DEPARTMENT',
-        parentOrgUnitId: 'd',
-      },
+      { _id: 'd', slug: 'internal-medicine', name: 'Internal Medicine', kind: 'DEPARTMENT', parentOrgUnitId: 's' },
+      { _id: 'sec', slug: 'cardiovascular-medicine', name: 'Cardiovascular Medicine', kind: 'DEPARTMENT', parentOrgUnitId: 'd' },
       { _id: 'orphan', slug: 'mystery', name: 'Mystery', kind: 'DEPARTMENT' },
     ]);
     expect(map.get('Internal Medicine')).toBe('School of Medicine');

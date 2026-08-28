@@ -101,7 +101,9 @@ export const LEGACY_WRITE_SURFACE_RULES: readonly LegacyWriteSurfaceRule[] = Obj
     description:
       'Raw driver access to a retired collection (research_groups, research_group_members, papers, paper_authors).',
     kind: 'collectionAccess',
-    pattern: new RegExp(`\\.collection\\(\\s*['"](?:${RETIRED_LEGACY_COLLECTIONS.join('|')})['"]`),
+    pattern: new RegExp(
+      `\\.collection\\(\\s*['"](?:${RETIRED_LEGACY_COLLECTIONS.join('|')})['"]`,
+    ),
   },
   {
     id: 'retiredModelWrite',
@@ -180,7 +182,9 @@ export function scanLegacyWriteSurface(
     }
   }
 
-  findings.sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line);
+  findings.sort(
+    (left, right) => left.file.localeCompare(right.file) || left.line - right.line,
+  );
 
   const ruleSummaries = LEGACY_WRITE_SURFACE_RULES.map((rule) => {
     const ruleFindings = findings.filter((finding) => finding.ruleId === rule.id);

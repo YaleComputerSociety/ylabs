@@ -187,10 +187,7 @@ export async function runPersonCentricLabDescriptionBackfill(options: {
       planPersonCentricLabDescriptionRewrite(
         doc.fullDescription,
         reDerived
-          ? {
-              fullDescription: reDerived.fullDescription,
-              shortDescription: reDerived.shortDescription,
-            }
+          ? { fullDescription: reDerived.fullDescription, shortDescription: reDerived.shortDescription }
           : null,
       ),
       doc.manuallyLockedFields,

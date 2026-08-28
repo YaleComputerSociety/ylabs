@@ -20,7 +20,10 @@ const APPLY_BLOCKED_REASON =
   'Apply mode is intentionally unavailable until this dry-run plan is reviewed and a guarded supersession path is implemented.';
 const STALE_OBSERVATION_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
-export type StaleObservationReviewQueue = 'priority_review' | 'context_review' | 'metadata_review';
+export type StaleObservationReviewQueue =
+  | 'priority_review'
+  | 'context_review'
+  | 'metadata_review';
 
 export type StaleObservationReviewCategory =
   | 'identity_or_routing'
@@ -264,7 +267,11 @@ const IDENTITY_OR_ROUTING_CONFLICT_FIELDS = new Set([
   'title',
   'userType',
 ]);
-const CONTENT_CONFLICT_FIELDS = new Set(['description', 'fullDescription', 'shortDescription']);
+const CONTENT_CONFLICT_FIELDS = new Set([
+  'description',
+  'fullDescription',
+  'shortDescription',
+]);
 const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
   'undergradAccessEvidence',
   'undergradEvidenceQuote',
@@ -278,7 +285,10 @@ const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
   'joinPageUrl',
   'applicationUrl',
 ]);
-const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set(['recentGrants', 'recentGrantCount']);
+const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set([
+  'recentGrants',
+  'recentGrantCount',
+]);
 
 const ALL_KNOWN_CONFLICT_FIELDS = new Set([
   ...ADDITIVE_METADATA_CONFLICT_FIELDS,
@@ -293,7 +303,9 @@ const PRIORITY_REVIEW_CATEGORIES = new Set<StaleObservationReviewCategory>([
   'access_evidence',
   'content',
 ]);
-const METADATA_REVIEW_CATEGORIES = new Set<StaleObservationReviewCategory>(['additive_metadata']);
+const METADATA_REVIEW_CATEGORIES = new Set<StaleObservationReviewCategory>([
+  'additive_metadata',
+]);
 
 const REVIEW_QUEUE_DEFINITIONS: Array<{
   queue: StaleObservationReviewQueue;
@@ -402,7 +414,10 @@ export function parseStaleObservationConflictReviewArgs(
       continue;
     }
     if (arg.startsWith('--plan-limit=')) {
-      args.planLimit = parsePositiveIntegerValue(arg.slice('--plan-limit='.length), '--plan-limit');
+      args.planLimit = parsePositiveIntegerValue(
+        arg.slice('--plan-limit='.length),
+        '--plan-limit',
+      );
       continue;
     }
     if (arg === '--plan-limit') {
@@ -412,7 +427,10 @@ export function parseStaleObservationConflictReviewArgs(
       continue;
     }
     if (arg.startsWith('--max-apply=')) {
-      args.maxApply = parsePositiveIntegerValue(arg.slice('--max-apply='.length), '--max-apply');
+      args.maxApply = parsePositiveIntegerValue(
+        arg.slice('--max-apply='.length),
+        '--max-apply',
+      );
       continue;
     }
     if (arg === '--max-apply') {
@@ -535,7 +553,10 @@ export function buildStaleObservationConflictSummary(input: {
   };
 }
 
-export function writeStaleObservationConflictReviewOutput(summary: object, output?: string): void {
+export function writeStaleObservationConflictReviewOutput(
+  summary: object,
+  output?: string,
+): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
@@ -1024,9 +1045,8 @@ function buildCandidateSample(
     return null;
   }
 
-  const distinctValueCount = new Set(
-    observations.map((observation) => serializeValue(observation.value)),
-  ).size;
+  const distinctValueCount = new Set(observations.map((observation) => serializeValue(observation.value)))
+    .size;
 
   return {
     sourceName: group.sourceName,
@@ -1042,9 +1062,7 @@ function buildCandidateSample(
     keepObservedAt: formatOptionalDate(keep.observedAt),
     keepValuePreview: previewValue(keep.value),
     supersedeObservationIds: supersedeCandidates.map((observation) => observation.id),
-    supersedeValuePreviews: supersedeCandidates.map((observation) =>
-      previewValue(observation.value),
-    ),
+    supersedeValuePreviews: supersedeCandidates.map((observation) => previewValue(observation.value)),
   };
 }
 
@@ -1097,9 +1115,7 @@ function compareSamplesForReview(
     right.activeObservationCount - left.activeObservationCount ||
     left.sourceName.localeCompare(right.sourceName) ||
     left.entityType.localeCompare(right.entityType) ||
-    (left.entityKey || left.entityId || '').localeCompare(
-      right.entityKey || right.entityId || '',
-    ) ||
+    (left.entityKey || left.entityId || '').localeCompare(right.entityKey || right.entityId || '') ||
     left.field.localeCompare(right.field)
   );
 }
@@ -1138,9 +1154,8 @@ function buildPolicyBucketCounts(
   }
   return Array.from(counts.entries())
     .map(([policyBucket, count]) => ({ policyBucket, count }))
-    .sort(
-      (left, right) =>
-        right.count - left.count || left.policyBucket.localeCompare(right.policyBucket),
+    .sort((left, right) =>
+      right.count - left.count || left.policyBucket.localeCompare(right.policyBucket),
     );
 }
 
@@ -1161,9 +1176,7 @@ function buildReviewQueues(
   return REVIEW_QUEUE_DEFINITIONS.map((definition) => {
     const categories = categoryCounts
       .filter((item) => reviewQueueForCategory(item.category) === definition.queue)
-      .sort(
-        (left, right) => right.count - left.count || left.category.localeCompare(right.category),
-      );
+      .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category));
     return {
       queue: definition.queue,
       label: definition.label,
@@ -1319,7 +1332,11 @@ function consumeValue(
   return value;
 }
 
-function parseRequiredString(raw: string, flagName: string, requirement = 'a value'): string {
+function parseRequiredString(
+  raw: string,
+  flagName: string,
+  requirement = 'a value',
+): string {
   const value = raw.trim();
   if (!value || value.startsWith('--')) {
     throw new Error(`${flagName} requires ${requirement}`);
@@ -1329,7 +1346,11 @@ function parseRequiredString(raw: string, flagName: string, requirement = 'a val
 
 function parseReviewQueue(raw: string): StaleObservationReviewQueue {
   const value = parseRequiredString(raw, '--queue');
-  if (value === 'priority_review' || value === 'context_review' || value === 'metadata_review') {
+  if (
+    value === 'priority_review' ||
+    value === 'context_review' ||
+    value === 'metadata_review'
+  ) {
     return value;
   }
   throw new Error('--queue must be priority_review, context_review, or metadata_review');

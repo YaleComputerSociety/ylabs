@@ -83,9 +83,7 @@ describe('department ground truth', () => {
 
     const publicHealth = result.departments.find((row) => row.abbreviation === 'EPH');
     expect(publicHealth?.codeSystem).toBe(DepartmentCodeSystem.YSM_ACRONYM);
-    expect(publicHealth?.aliases).toEqual(
-      expect.arrayContaining(['YSPH', 'Yale School of Public Health']),
-    );
+    expect(publicHealth?.aliases).toEqual(expect.arrayContaining(['YSPH', 'Yale School of Public Health']));
 
     const publicHealthAliasKeys = new Set(publicHealth?.aliases.map(normalizeDepartmentKey));
     expect(publicHealthAliasKeys.size).toBe(publicHealth?.aliases.length);
@@ -94,9 +92,7 @@ describe('department ground truth', () => {
     expect(resolverKeys.has(normalizeDepartmentKey('YSPH'))).toBe(true);
     expect(resolverKeys.has(normalizeDepartmentKey('CPSC - Computer Science'))).toBe(true);
     expect(resolverKeys.has(normalizeDepartmentKey('AFAM - Black Studies'))).toBe(true);
-    expect(
-      resolverKeys.has(normalizeDepartmentKey('CEE - Chemical & Environmental Engineering')),
-    ).toBe(true);
+    expect(resolverKeys.has(normalizeDepartmentKey('CEE - Chemical & Environmental Engineering'))).toBe(true);
     expect(resolverKeys.has(normalizeDepartmentKey('SPAN/PORT - Spanish & Portuguese'))).toBe(true);
   });
 
@@ -180,9 +176,7 @@ describe('department seed CLI helpers', () => {
     });
 
     expect(() => parseDepartmentSeedArgs(['--output'])).toThrow(/--output requires a path/);
-    expect(() => parseDepartmentSeedArgs(['prod'])).toThrow(
-      /Unknown department seed argument: prod/,
-    );
+    expect(() => parseDepartmentSeedArgs(['prod'])).toThrow(/Unknown department seed argument: prod/);
   });
 
   it('wraps saved seed artifacts with target metadata and parsed options', () => {
@@ -237,20 +231,14 @@ describe('department seed CLI helpers', () => {
   });
 
   it('classifies unresolved department strings for follow-up cleanup', () => {
-    expect(classifyUnresolvedDepartmentString('users.major', 'Computer Science & Economics')).toBe(
-      'student_major',
-    );
     expect(
-      classifyUnresolvedDepartmentString(
-        'research_entities.departments',
-        'EASCPS Computer Science',
-      ),
+      classifyUnresolvedDepartmentString('users.major', 'Computer Science & Economics'),
+    ).toBe('student_major');
+    expect(
+      classifyUnresolvedDepartmentString('research_entities.departments', 'EASCPS Computer Science'),
     ).toBe('legacy_unit_coded_department');
     expect(
-      classifyUnresolvedDepartmentString(
-        'research_entities.departments',
-        'FASERM Ethnicity, Race & Migration',
-      ),
+      classifyUnresolvedDepartmentString('research_entities.departments', 'FASERM Ethnicity, Race & Migration'),
     ).toBe('legacy_unit_coded_department');
     expect(
       classifyUnresolvedDepartmentString('users.primaryDepartment', "EASCEN SEAS Dean's Office"),
@@ -259,19 +247,13 @@ describe('department seed CLI helpers', () => {
       classifyUnresolvedDepartmentString('users.primaryDepartment', 'ATHSAR Payne Whitney Gym'),
     ).toBe('administrative_unit');
     expect(
-      classifyUnresolvedDepartmentString(
-        'users.departments',
-        'Center for Gastrointestinal Cancers',
-      ),
+      classifyUnresolvedDepartmentString('users.departments', 'Center for Gastrointestinal Cancers'),
     ).toBe('research_center_or_program');
-    expect(classifyUnresolvedDepartmentString('users.departments', 'Global Health Studies')).toBe(
-      'research_center_or_program',
-    );
     expect(
-      classifyUnresolvedDepartmentString(
-        'research_entities.departments',
-        'Cardiovascular Medicine',
-      ),
+      classifyUnresolvedDepartmentString('users.departments', 'Global Health Studies'),
+    ).toBe('research_center_or_program');
+    expect(
+      classifyUnresolvedDepartmentString('research_entities.departments', 'Cardiovascular Medicine'),
     ).toBe('medical_specialty_or_subdepartment');
     expect(
       classifyUnresolvedDepartmentString('research_entities.departments', 'Endocrinology'),
@@ -280,10 +262,7 @@ describe('department seed CLI helpers', () => {
       classifyUnresolvedDepartmentString('research_entities.departments', 'Pediatric Nephrology'),
     ).toBe('medical_specialty_or_subdepartment');
     expect(
-      classifyUnresolvedDepartmentString(
-        'research_entities.departments',
-        'MICROBIOLOGY/IMMUN/VIROLOGY',
-      ),
+      classifyUnresolvedDepartmentString('research_entities.departments', 'MICROBIOLOGY/IMMUN/VIROLOGY'),
     ).toBe('medical_specialty_or_subdepartment');
     expect(
       classifyUnresolvedDepartmentString('users.primaryDepartment', 'PRVADM Provost Admin'),
@@ -292,43 +271,28 @@ describe('department seed CLI helpers', () => {
       classifyUnresolvedDepartmentString('users.primaryDepartment', 'YCORTC Air Force ROTC'),
     ).toBe('administrative_unit');
     expect(
-      classifyUnresolvedDepartmentString(
-        'users.primaryDepartment',
-        'RESSCI Inst for Foundations of Data Science',
-      ),
+      classifyUnresolvedDepartmentString('users.primaryDepartment', 'RESSCI Inst for Foundations of Data Science'),
     ).toBe('research_center_or_program');
     expect(
-      classifyUnresolvedDepartmentString(
-        'users.primaryDepartment',
-        'PRVAIT The Papers of Benjamin Franklin',
-      ),
+      classifyUnresolvedDepartmentString('users.primaryDepartment', 'PRVAIT The Papers of Benjamin Franklin'),
     ).toBe('research_center_or_program');
     expect(
       classifyUnresolvedDepartmentString('users.primaryDepartment', 'YCOYCP Yale Sustainable Food'),
     ).toBe('research_center_or_program');
     expect(
-      classifyUnresolvedDepartmentString(
-        'users.primaryDepartment',
-        'MEDKEC Keck Biotechnology Services',
-      ),
+      classifyUnresolvedDepartmentString('users.primaryDepartment', 'MEDKEC Keck Biotechnology Services'),
     ).toBe('research_center_or_program');
     expect(
-      classifyUnresolvedDepartmentString(
-        'research_entities.departments',
-        'Rheumatology, Allergy, & Immunology',
-      ),
+      classifyUnresolvedDepartmentString('research_entities.departments', 'Rheumatology, Allergy, & Immunology'),
     ).toBe('medical_specialty_or_subdepartment');
-    expect(classifyUnresolvedDepartmentString('users.primaryDepartment', 'YHPPRI Pediatrics')).toBe(
-      'medical_specialty_or_subdepartment',
-    );
+    expect(
+      classifyUnresolvedDepartmentString('users.primaryDepartment', 'YHPPRI Pediatrics'),
+    ).toBe('medical_specialty_or_subdepartment');
     expect(
       classifyUnresolvedDepartmentString('research_entities.departments', 'DIV - Divnity'),
     ).toBe('administrative_unit');
     expect(
-      classifyUnresolvedDepartmentString(
-        'research_entities.departments',
-        'Science and Quantitative Reasoning Education',
-      ),
+      classifyUnresolvedDepartmentString('research_entities.departments', 'Science and Quantitative Reasoning Education'),
     ).toBe('administrative_unit');
     expect(
       classifyUnresolvedDepartmentString('users.primaryDepartment', 'EEICTL Learning to Teach'),
@@ -346,17 +310,13 @@ describe('research area seed CLI helpers', () => {
       output: '/tmp/research-areas.json',
     });
 
-    expect(
-      parseResearchAreaSeedArgs(['--dry-run', '--output=/tmp/research-areas-dry.json']),
-    ).toEqual({
+    expect(parseResearchAreaSeedArgs(['--dry-run', '--output=/tmp/research-areas-dry.json'])).toEqual({
       apply: false,
       output: '/tmp/research-areas-dry.json',
     });
 
     expect(() => parseResearchAreaSeedArgs(['--output'])).toThrow(/--output requires a path/);
-    expect(() => parseResearchAreaSeedArgs(['both'])).toThrow(
-      /Unknown research-area seed argument: both/,
-    );
+    expect(() => parseResearchAreaSeedArgs(['both'])).toThrow(/Unknown research-area seed argument: both/);
   });
 
   it('builds default research area seed rows with color keys', () => {

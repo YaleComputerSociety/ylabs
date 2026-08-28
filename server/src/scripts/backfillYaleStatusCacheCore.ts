@@ -30,12 +30,7 @@ export interface YaleStatusCachePlan {
   flipToSuppressedCount: number;
 }
 
-const VALID_OVERRIDE_TIERS = new Set([
-  'student_ready',
-  'limited_but_safe',
-  'operator_review',
-  'suppressed',
-]);
+const VALID_OVERRIDE_TIERS = new Set(['student_ready', 'limited_but_safe', 'operator_review', 'suppressed']);
 
 function textOr(value: unknown, fallback: string): string {
   return typeof value === 'string' && value ? value : fallback;

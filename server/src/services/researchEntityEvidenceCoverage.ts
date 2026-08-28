@@ -119,11 +119,11 @@ const hasUsefulLead = (members: Array<Record<string, any>>): boolean =>
   members.some((member) =>
     Boolean(
       textValue(member.name) ||
-      textValue(member.netid) ||
-      member.personId ||
-      member.userId ||
-      member.user?._id ||
-      textValue(member.user?.netid),
+        textValue(member.netid) ||
+        member.personId ||
+        member.userId ||
+        member.user?._id ||
+        textValue(member.user?.netid),
     ),
   );
 
@@ -171,7 +171,8 @@ function descriptionState(
   });
   const usefulDescription = quality.full.isUseful || quality.short.isUseful;
   const sources = descriptionObservationSources(observations);
-  const sourceBacked = usefulDescription && (sources.length > 0 || hasEntitySourceUrl(entity));
+  const sourceBacked =
+    usefulDescription && (sources.length > 0 || hasEntitySourceUrl(entity));
 
   if (sourceBacked) return { state: 'supported', rejectedFields, sourceBacked: true };
   if (usefulDescription) return { state: 'weak', rejectedFields, sourceBacked: false };
@@ -284,7 +285,11 @@ function overlayObservation(
   const accessSignals = [...(next.accessSignals || [])];
   const contactRoutes = [...(next.contactRoutes || [])];
 
-  if (['shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(field)) {
+  if (
+    ['shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(
+      field,
+    )
+  ) {
     entity[field] = value;
   }
   if (field === 'sourceUrls') {

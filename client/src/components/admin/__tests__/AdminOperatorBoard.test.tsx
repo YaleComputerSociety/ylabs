@@ -210,7 +210,8 @@ describe('AdminOperatorBoard', () => {
               },
               acceptedDecisionValidation: {
                 inputPath: '/tmp/ylabs-duplicate-entity-name-review-accepted-decisions.json',
-                outputPath: '/tmp/ylabs-duplicate-entity-name-review-decision-validation.json',
+                outputPath:
+                  '/tmp/ylabs-duplicate-entity-name-review-decision-validation.json',
                 expectedArtifactField: 'reviewDecisionValidation',
                 command:
                   'yarn --cwd server research-entity:duplicate-name-review --limit=10000 --plan-limit=20 --accepted-decisions=/tmp/ylabs-duplicate-entity-name-review-accepted-decisions.json --output /tmp/ylabs-duplicate-entity-name-review-decision-validation.json',
@@ -297,7 +298,8 @@ describe('AdminOperatorBoard', () => {
             status: 'blocked',
             command:
               'SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=all --limit=250 --sample-limit=10 --output /tmp/ylabs-launch-acquisition-report.json',
-            note: 'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+            note:
+              'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
             scanned: 75,
             piBlockers: 65,
             actionBlockers: 10,
@@ -312,7 +314,8 @@ describe('AdminOperatorBoard', () => {
             status: 'review_required',
             command:
               'yarn --cwd server production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json',
-            note: 'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+            note:
+              'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
             excludedSyntheticUsers: 2,
             collectionCategoryCount: 3,
           },
@@ -478,14 +481,14 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Promotion Evidence')).toBeTruthy();
     const repairLane = screen.getByText('Must Fix Before Promotion');
     const evidenceLane = screen.getByText('Promotion Evidence');
-    expect(repairLane.compareDocumentPosition(evidenceLane)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(repairLane.compareDocumentPosition(evidenceLane)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(screen.getByText('Can this record show a source-backed next step?')).toBeTruthy();
     expect(
       screen.getByText('Should this stay capped, or is there evidence of a real entry route?'),
     ).toBeTruthy();
-    expect(
-      screen.getByText('Is this ready to promote from evidence to student-facing copy?'),
-    ).toBeTruthy();
+    expect(screen.getByText('Is this ready to promote from evidence to student-facing copy?')).toBeTruthy();
     expect(screen.getAllByText('missing_action_evidence').length).toBeGreaterThan(0);
     expect(screen.getAllByText('formalization_only').length).toBeGreaterThan(0);
     expect(screen.getAllByText('source_backed_description').length).toBeGreaterThan(0);
@@ -537,11 +540,15 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Manual review: same_label_disambiguation 6')).toBeTruthy();
     expect(screen.getByText('Duplicate-name decision template')).toBeTruthy();
     expect(
-      screen.getByText('/tmp/ylabs-duplicate-entity-name-review-accepted-decisions-template.json'),
+      screen.getByText(
+        '/tmp/ylabs-duplicate-entity-name-review-accepted-decisions-template.json',
+      ),
     ).toBeTruthy();
     expect(screen.getByText('Duplicate-name decision validation')).toBeTruthy();
     expect(
-      screen.getByText('/tmp/ylabs-duplicate-entity-name-review-decision-validation.json'),
+      screen.getByText(
+        '/tmp/ylabs-duplicate-entity-name-review-decision-validation.json',
+      ),
     ).toBeTruthy();
     expect(
       screen.getByText(
@@ -551,9 +558,7 @@ describe('AdminOperatorBoard', () => {
     expect(
       screen.getByText('Duplicate-name validation: loaded · 0 valid · 0 invalid · 5 unreviewed'),
     ).toBeTruthy();
-    expect(
-      screen.getByText('Suspicious users: 2 · 2 excluded by Lane A · 0 need review'),
-    ).toBeTruthy();
+    expect(screen.getByText('Suspicious users: 2 · 2 excluded by Lane A · 0 need review')).toBeTruthy();
     expect(screen.getByText('Lane A sample coverage: complete')).toBeTruthy();
     expect(
       screen.getByText(
@@ -568,13 +573,13 @@ describe('AdminOperatorBoard', () => {
     ).toBeTruthy();
     expect(screen.getByText('Same-PI plans: 29 groups · 29 duplicate entities')).toBeTruthy();
     expect(
-      screen.getByText(
-        'Review flags: 29 cross-department · 10 high research-area merges · 1 funding-source',
-      ),
+      screen.getByText('Review flags: 29 cross-department · 10 high research-area merges · 1 funding-source'),
     ).toBeTruthy();
     expect(screen.getByText('/tmp/ylabs-research-entity-dedupe.json')).toBeTruthy();
     expect(
-      screen.getByText('/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json'),
+      screen.getByText(
+        '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
+      ),
     ).toBeTruthy();
     expect(
       screen.getAllByText(
@@ -585,9 +590,7 @@ describe('AdminOperatorBoard', () => {
       screen.getByText('Same-PI validation: loaded · 0 valid · 0 invalid · 29 unreviewed'),
     ).toBeTruthy();
     expect(screen.getByText('Scraper integrity status: pass')).toBeTruthy();
-    expect(
-      screen.getByText('Latest scraper integrity gate artifact passed with 2 warnings.'),
-    ).toBeTruthy();
+    expect(screen.getByText('Latest scraper integrity gate artifact passed with 2 warnings.')).toBeTruthy();
     expect(screen.getByText('Warnings: 2')).toBeTruthy();
     expect(screen.getByText('Data quality recommendation')).toBeTruthy();
     expect(
@@ -597,7 +600,9 @@ describe('AdminOperatorBoard', () => {
     ).toBeTruthy();
     expect(screen.getByText('Scraper integrity recommendation')).toBeTruthy();
     expect(
-      screen.getByText('Source review: 6/6 report artifacts available · 313 actionable conflicts'),
+      screen.getByText(
+        'Source review: 6/6 report artifacts available · 313 actionable conflicts',
+      ),
     ).toBeTruthy();
     expect(screen.getByText('Source Conflict Decision Lanes')).toBeTruthy();
     expect(screen.getByText('Priority review')).toBeTruthy();
@@ -606,7 +611,9 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Funding or uncategorized context')).toBeTruthy();
     expect(screen.getByText('Metadata review')).toBeTruthy();
     expect(screen.getByText('Additive metadata merge review')).toBeTruthy();
-    expect(screen.getByText('Conflict scope: 206 single-source · 107 cross-source')).toBeTruthy();
+    expect(
+      screen.getByText('Conflict scope: 206 single-source · 107 cross-source'),
+    ).toBeTruthy();
     expect(screen.getByText('Stale fields: userType 149 · name 86')).toBeTruthy();
     expect(
       screen.getByText(
@@ -625,13 +632,9 @@ describe('AdminOperatorBoard', () => {
       screen.getByText('Stale validation: 0/6 loaded · 6 missing · 0 invalid · 0 unreviewed'),
     ).toBeTruthy();
     expect(
-      screen.getByText(
-        'Cross-source validation: 1/2 loaded · 1 missing · 0 invalid · 3 unreviewed',
-      ),
+      screen.getByText('Cross-source validation: 1/2 loaded · 1 missing · 0 invalid · 3 unreviewed'),
     ).toBeTruthy();
-    expect(
-      screen.getByText('Next stale validation probe: department-undergrad-research'),
-    ).toBeTruthy();
+    expect(screen.getByText('Next stale validation probe: department-undergrad-research')).toBeTruthy();
     expect(
       screen.getByText(
         'SCRAPER_ENV=beta yarn --cwd server observations:stale-conflict-review --source=department-undergrad-research --queue=priority_review --limit=1000 --sample-size=20 --accepted-decisions=/tmp/ylabs-stale-observation-conflicts-department-undergrad-research-priority_review-accepted-decisions.json --allow-empty-decisions --output /tmp/ylabs-stale-observation-conflicts-department-undergrad-research-priority_review-decision-validation.json',

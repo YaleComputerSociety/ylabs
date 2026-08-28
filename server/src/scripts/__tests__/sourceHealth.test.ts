@@ -26,7 +26,9 @@ describe('sourceHealth CLI helpers', () => {
       strict: true,
       output: '/tmp/ylabs-source-health.json',
     });
-    expect(() => parseSourceHealthArgs(['prod'])).toThrow(/Unknown source health argument: prod/);
+    expect(() => parseSourceHealthArgs(['prod'])).toThrow(
+      /Unknown source health argument: prod/,
+    );
     expect(() => parseSourceHealthArgs(['--days=bad'])).toThrow(
       /--days requires a positive integer/,
     );
@@ -36,7 +38,9 @@ describe('sourceHealth CLI helpers', () => {
     expect(() => parseSourceHealthArgs(['--output', '--strict'])).toThrow(
       /--output requires a path/,
     );
-    expect(() => parseSourceHealthArgs(['--output=--strict'])).toThrow(/--output requires a path/);
+    expect(() => parseSourceHealthArgs(['--output=--strict'])).toThrow(
+      /--output requires a path/,
+    );
     expect(() => parseSourceHealthArgs(['--output=/var/tmp/source-health.json'])).toThrow(
       /--output must write under/,
     );
@@ -65,10 +69,7 @@ describe('sourceHealth CLI helpers', () => {
       riskCounts: { ok: 1, warn: 1, error: 0 },
     });
     expect(() =>
-      writeSourceHealthOutput(
-        { generatedAt: '2026-05-29T23:30:00.000Z' },
-        '/var/tmp/source-health.json',
-      ),
+      writeSourceHealthOutput({ generatedAt: '2026-05-29T23:30:00.000Z' }, '/var/tmp/source-health.json'),
     ).toThrow(/--output must write under/);
   });
 
@@ -838,7 +839,8 @@ describe('sourceHealth CLI helpers', () => {
         staleObservationReview: expect.objectContaining({
           command:
             'SCRAPER_ENV=beta yarn --cwd server observations:stale-conflict-review --source=ysm-atoz-index --queue=priority_review --limit=1000 --sample-size=20 --plan-limit=1000 --output /tmp/ylabs-stale-observation-conflicts-ysm-atoz-index-priority_review.json',
-          outputPath: '/tmp/ylabs-stale-observation-conflicts-ysm-atoz-index-priority_review.json',
+          outputPath:
+            '/tmp/ylabs-stale-observation-conflicts-ysm-atoz-index-priority_review.json',
           sameSourceConflictCount: 2,
           reviewQueue: 'priority_review',
           artifactAvailable: false,
@@ -855,7 +857,8 @@ describe('sourceHealth CLI helpers', () => {
         staleObservationReview: expect.objectContaining({
           command:
             'SCRAPER_ENV=beta yarn --cwd server observations:stale-conflict-review --source=nih-reporter --queue=context_review --limit=1000 --sample-size=20 --plan-limit=1000 --output /tmp/ylabs-stale-observation-conflicts-nih-reporter-context_review.json',
-          outputPath: '/tmp/ylabs-stale-observation-conflicts-nih-reporter-context_review.json',
+          outputPath:
+            '/tmp/ylabs-stale-observation-conflicts-nih-reporter-context_review.json',
           sameSourceConflictCount: 3,
           reviewQueue: 'context_review',
           artifactAvailable: false,
@@ -931,7 +934,9 @@ describe('sourceHealth CLI helpers', () => {
         ) {
           return {
             fieldCounts: [{ field: 'name', count: 2 }],
-            policyBucketCounts: [{ policyBucket: 'stale_identity_or_routing_review', count: 2 }],
+            policyBucketCounts: [
+              { policyBucket: 'stale_identity_or_routing_review', count: 2 },
+            ],
           };
         }
         if (

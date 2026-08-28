@@ -153,7 +153,9 @@ function riskForSource(
 } {
   const latestRunId = stringifyId(latestRun?._id);
   const latestRunReportCommand = latestRunId ? reportCommand(source.name, latestRunId) : undefined;
-  const latestRunReviewArtifact = (reason: SourceHealthReviewArtifactReason) =>
+  const latestRunReviewArtifact = (
+    reason: SourceHealthReviewArtifactReason,
+  ) =>
     latestRunId
       ? {
           reviewArtifact: reviewArtifactForRun({
@@ -214,8 +216,7 @@ function riskForSource(
   if ((latestRun.materializationErrors || 0) > 0) {
     return {
       risk: 'error',
-      action:
-        'Materialization errors exist; run the latest scraper report and fix or document before accepting output.',
+      action: 'Materialization errors exist; run the latest scraper report and fix or document before accepting output.',
       nextCommand: latestRunReportCommand,
       ...latestRunReviewArtifact('materialization_errors'),
     };

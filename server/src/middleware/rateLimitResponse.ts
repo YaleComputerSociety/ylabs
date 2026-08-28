@@ -6,12 +6,13 @@ const retryAfterSeconds = (req: Request): number | undefined => {
   return Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000));
 };
 
-export const createRateLimitHandler = (message: string) => (req: Request, res: Response) => {
-  const retryAfter = retryAfterSeconds(req);
-  if (retryAfter) res.set('Retry-After', String(retryAfter));
-  return res.status(429).json({
-    error: message,
-    code: 'RATE_LIMITED',
-    retryAfterSeconds: retryAfter,
-  });
-};
+export const createRateLimitHandler =
+  (message: string) => (req: Request, res: Response) => {
+    const retryAfter = retryAfterSeconds(req);
+    if (retryAfter) res.set('Retry-After', String(retryAfter));
+    return res.status(429).json({
+      error: message,
+      code: 'RATE_LIMITED',
+      retryAfterSeconds: retryAfter,
+    });
+  };

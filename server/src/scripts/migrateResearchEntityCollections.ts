@@ -180,7 +180,10 @@ async function countSourceRowsWithoutEntityId(
   });
 }
 
-async function countDanglingEntityReferences(db: MongoDb, collectionName: string): Promise<number> {
+async function countDanglingEntityReferences(
+  db: MongoDb,
+  collectionName: string,
+): Promise<number> {
   if (!(await collectionExists(db, collectionName))) return 0;
   const rows = await db
     .collection(collectionName)
@@ -452,7 +455,9 @@ async function main() {
   let drop;
   if (mode === 'dry-run' || mode === 'apply') {
     copy = await Promise.all(
-      COLLECTION_MIGRATIONS.map((migration) => copyCollection(db, migration, mode === 'apply')),
+      COLLECTION_MIGRATIONS.map((migration) =>
+        copyCollection(db, migration, mode === 'apply'),
+      ),
     );
   } else if (mode === 'drop-legacy') {
     drop = await dropLegacyCollections(db);
@@ -491,10 +496,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error(
-        'Failed to migrate dependent ResearchEntity collections:',
-        sanitizeLogValue(error),
-      );
+      console.error('Failed to migrate dependent ResearchEntity collections:', sanitizeLogValue(error));
       process.exitCode = 1;
     })
     .finally(async () => {

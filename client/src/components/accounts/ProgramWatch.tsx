@@ -182,10 +182,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const addProgramDeadlineToCalendar = (program: Fellowship) => {
     const event = upcomingDeadlineEventsByProgramId.get(program.id);
     if (!event) return;
-    downloadIcsCalendar(
-      icsFilenameForProgram(program.title),
-      buildProgramDeadlinesIcsCalendar([event]),
-    );
+    downloadIcsCalendar(icsFilenameForProgram(program.title), buildProgramDeadlinesIcsCalendar([event]));
   };
 
   const addAllDeadlinesToCalendar = () => {

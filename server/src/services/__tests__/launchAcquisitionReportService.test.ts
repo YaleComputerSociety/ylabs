@@ -79,9 +79,7 @@ describe('launchAcquisitionReportService', () => {
           : [],
       ),
       countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
-      countAccessRecords: vi
-        .fn()
-        .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
+      countAccessRecords: vi.fn().mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
     };
 
     const report = await buildLaunchAcquisitionReport(
@@ -245,9 +243,7 @@ describe('launchAcquisitionReportService', () => {
       countSourceObservations: vi.fn().mockResolvedValue(0),
       findUsersByUrls: vi.fn().mockResolvedValue([]),
       countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
-      countAccessRecords: vi
-        .fn()
-        .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
+      countAccessRecords: vi.fn().mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
     };
 
     const report = await buildLaunchAcquisitionReport(
@@ -323,17 +319,11 @@ describe('launchAcquisitionReportService', () => {
           : [],
       ),
       countUndergraduateAccessObservations: vi.fn().mockResolvedValue(0),
-      countAccessRecords: vi
-        .fn()
-        .mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
+      countAccessRecords: vi.fn().mockResolvedValue({ accessSignals: 0, entryPathways: 0, contactRoutes: 0 }),
     };
 
     const report = await buildLaunchAcquisitionReport(
-      {
-        stages: ['source_description', 'action_evidence', 'pi_identity'],
-        limit: 10,
-        sampleLimit: 5,
-      },
+      { stages: ['source_description', 'action_evidence', 'pi_identity'], limit: 10, sampleLimit: 5 },
       deps,
     );
 
@@ -355,8 +345,7 @@ describe('launchAcquisitionReportService', () => {
         stage: 'action_evidence',
         rootCauseCategory: 'grant_not_action_evidence',
         currentSourceUrl: 'https://reporter.nih.gov/project-details/123',
-        requiredFact:
-          'Official Yale page with undergraduate access, application, contact, or outreach instructions.',
+        requiredFact: 'Official Yale page with undergraduate access, application, contact, or outreach instructions.',
       }),
       expect.objectContaining({
         recordId: 'entity-3',
@@ -364,8 +353,7 @@ describe('launchAcquisitionReportService', () => {
         stage: 'pi_identity',
         rootCauseCategory: 'missing_or_ambiguous_lead',
         currentSourceUrl: 'https://medicine.yale.edu/profile/ambiguous-pi/',
-        requiredFact:
-          'Official PI/director identity with a unique Yale user, profile URL, or person-specific Yale email.',
+        requiredFact: 'Official PI/director identity with a unique Yale user, profile URL, or person-specific Yale email.',
       }),
     ]);
   });
@@ -381,9 +369,9 @@ describe('launchAcquisitionReportService', () => {
       countAccessRecords: vi.fn(),
     };
 
-    await expect(buildLaunchAcquisitionReport({ limit: 9007199254740992 }, deps)).rejects.toThrow(
-      '--limit must be a safe positive integer',
-    );
+    await expect(
+      buildLaunchAcquisitionReport({ limit: 9007199254740992 }, deps),
+    ).rejects.toThrow('--limit must be a safe positive integer');
 
     expect(deps.findQueueItems).not.toHaveBeenCalled();
   });

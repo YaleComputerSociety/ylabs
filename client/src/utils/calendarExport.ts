@@ -16,10 +16,7 @@ const validDeadlineDate = (value?: string | null): Date | null => {
 const deadlineEndOfUtcDay = (date: Date): Date =>
   new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
 
-export const fellowshipFutureDeadlineDate = (
-  fellowship: Fellowship,
-  now: Date = new Date(),
-): Date | null => {
+export const fellowshipFutureDeadlineDate = (fellowship: Fellowship, now: Date = new Date()): Date | null => {
   const date = validDeadlineDate(fellowship.deadline);
   if (!date || deadlineEndOfUtcDay(date).getTime() < now.getTime()) return null;
   return date;

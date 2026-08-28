@@ -46,7 +46,9 @@ const defaultResolveResearcherIdByNetid = async (
   if (byIdentifier?._id) return byIdentifier._id;
   const account: any = await Account.findOne({ netid }).select('_id').lean();
   if (!account?._id) return undefined;
-  const researcher: any = await Researcher.findOne({ accountId: account._id }).select('_id').lean();
+  const researcher: any = await Researcher.findOne({ accountId: account._id })
+    .select('_id')
+    .lean();
   return researcher?._id ?? undefined;
 };
 

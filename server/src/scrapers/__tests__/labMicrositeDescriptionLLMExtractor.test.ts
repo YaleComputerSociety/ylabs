@@ -981,7 +981,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         slug: 'dept-physics-charles-brown',
         name: 'Charles Brown Lab',
         websiteUrl: 'https://brownlab.yale.edu/',
-        sourceUrls: ['https://physics.yale.edu/people/keith-baker', 'https://brownlab.yale.edu/'],
+        sourceUrls: [
+          'https://physics.yale.edu/people/keith-baker',
+          'https://brownlab.yale.edu/',
+        ],
       },
     ]);
 
@@ -1041,7 +1044,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
           slug: 'dept-physics-charles-brown',
           name: 'Charles Brown Lab',
           websiteUrl: 'https://brownlab.yale.edu/',
-          sourceUrls: ['https://brownlab.yale.edu/', 'https://physics.yale.edu/people/keith-baker'],
+          sourceUrls: [
+            'https://brownlab.yale.edu/',
+            'https://physics.yale.edu/people/keith-baker',
+          ],
         },
       ],
       fetchPage,
@@ -1060,9 +1066,9 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     for (const call of fetchPage.mock.calls) {
       expect(call[0]).not.toContain('keith-baker');
     }
-    expect(
-      emitted.every((obs) => obs.sourceUrl !== 'https://physics.yale.edu/people/keith-baker'),
-    ).toBe(true);
+    expect(emitted.every((obs) => obs.sourceUrl !== 'https://physics.yale.edu/people/keith-baker')).toBe(
+      true,
+    );
   });
 
   it('skips emission when a source redirects to a different professor page', async () => {

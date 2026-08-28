@@ -7,7 +7,9 @@ import {
   summarizeForeignLeadGraftRetirement,
 } from '../retireForeignLeadGraftsCore';
 
-const rosterEntry = (overrides: Partial<ResearchEntityRosterEntry>): ResearchEntityRosterEntry =>
+const rosterEntry = (
+  overrides: Partial<ResearchEntityRosterEntry>,
+): ResearchEntityRosterEntry =>
   ({
     researchEntityId: undefined as any,
     personId: 'p1' as any,
@@ -49,9 +51,7 @@ describe('buildGateLeadRow', () => {
 
 describe('selectForeignLeadGrafts', () => {
   it('selects a same-surname foreign lead that does not corroborate the profile home', () => {
-    const leadRows = [
-      buildGateLeadRow(rosterEntry({ name: 'Wenjun Hu', roleAssignmentId: 'ra1' as any })),
-    ];
+    const leadRows = [buildGateLeadRow(rosterEntry({ name: 'Wenjun Hu', roleAssignmentId: 'ra1' as any }))];
     const grafts = selectForeignLeadGrafts({ entity: weiHuEntity, leadRows });
     expect(grafts).toHaveLength(1);
     expect(grafts[0].roleAssignmentId).toBe('ra1');
@@ -73,10 +73,7 @@ describe('selectForeignLeadGrafts', () => {
           personId: 'p-correct' as any,
           websiteUrl: 'https://medicine.yale.edu/profile/wei-hu-wh447/',
           profileLinks: [
-            {
-              kind: 'YALE_OFFICIAL',
-              url: 'https://medicine.yale.edu/profile/wei-hu-wh447/',
-            } as any,
+            { kind: 'YALE_OFFICIAL', url: 'https://medicine.yale.edu/profile/wei-hu-wh447/' } as any,
           ],
         }),
       ),
@@ -119,21 +116,9 @@ describe('planForeignLeadGraftRetirement', () => {
 describe('summarizeForeignLeadGraftRetirement', () => {
   it('aggregates retired assignments and orphaned entities', () => {
     const summary = summarizeForeignLeadGraftRetirement([
-      {
-        entityId: 'a',
-        roleAssignmentIds: ['x', 'y'],
-        personIds: ['p'],
-        graftedLeadNames: ['A'],
-        remainingGateLeadCount: 0,
-      } as any,
+      { entityId: 'a', roleAssignmentIds: ['x', 'y'], personIds: ['p'], graftedLeadNames: ['A'], remainingGateLeadCount: 0 } as any,
       null,
-      {
-        entityId: 'b',
-        roleAssignmentIds: ['z'],
-        personIds: ['q'],
-        graftedLeadNames: ['B'],
-        remainingGateLeadCount: 1,
-      } as any,
+      { entityId: 'b', roleAssignmentIds: ['z'], personIds: ['q'], graftedLeadNames: ['B'], remainingGateLeadCount: 1 } as any,
     ]);
     expect(summary).toEqual({
       entitiesScanned: 3,

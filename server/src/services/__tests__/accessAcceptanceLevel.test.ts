@@ -144,9 +144,9 @@ describe('hasDocumentedWayInFromSignals (#1519)', () => {
   it('is true for undergraduate participation or supervised student projects', () => {
     expect(hasDocumentedWayInFromSignals([{ type: 'PAST_UNDERGRADS' }])).toBe(true);
     expect(hasDocumentedWayInFromSignals([{ type: 'CURRENT_UNDERGRADS' }])).toBe(true);
-    expect(hasDocumentedWayInFromSignals([{ type: 'FACULTY_SUPERVISES_STUDENT_PROJECTS' }])).toBe(
-      true,
-    );
+    expect(
+      hasDocumentedWayInFromSignals([{ type: 'FACULTY_SUPERVISES_STUDENT_PROJECTS' }]),
+    ).toBe(true);
   });
 
   it('does not count the REACH_OUT_PLAUSIBLE fallback, even excerpt-backed (#696)', () => {
@@ -164,7 +164,10 @@ describe('hasDocumentedWayInFromSignals (#1519)', () => {
   it('does not count negative signals or an empty signal set', () => {
     expect(hasDocumentedWayInFromSignals([])).toBe(false);
     expect(
-      hasDocumentedWayInFromSignals([{ type: 'NOT_CURRENTLY_AVAILABLE' }, { type: 'NO_EVIDENCE' }]),
+      hasDocumentedWayInFromSignals([
+        { type: 'NOT_CURRENTLY_AVAILABLE' },
+        { type: 'NO_EVIDENCE' },
+      ]),
     ).toBe(false);
   });
 

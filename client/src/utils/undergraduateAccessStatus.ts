@@ -57,7 +57,9 @@ export const deriveUndergraduateAccessStatus = (
 export const isCurrentlyOpenToUndergraduates = (fields: UndergraduateAccessFields): boolean =>
   deriveUndergraduateAccessStatus(fields)?.isCurrentlyOpen === true;
 
-export const undergraduateAccessSortRank = (status: UndergraduateAccessStatus | null): number => {
+export const undergraduateAccessSortRank = (
+  status: UndergraduateAccessStatus | null,
+): number => {
   if (status?.isCurrentlyOpen) return 0;
   if (status?.tone === 'muted') return 2;
   return 1;

@@ -50,11 +50,7 @@ function valueAfterEquals(arg: string, flag: string): string | undefined {
   return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
 }
 
-function consumeValue(
-  argv: string[],
-  index: number,
-  flag: string,
-): { value: string; nextIndex: number } {
+function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
   const arg = argv[index];
   const inline = valueAfterEquals(arg, flag);
   const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
@@ -119,7 +115,10 @@ export function parseScraperIntegrityDuplicateReviewArgs(
   return options;
 }
 
-export function writeScraperIntegrityDuplicateReviewOutput(value: unknown, output?: string): void {
+export function writeScraperIntegrityDuplicateReviewOutput(
+  value: unknown,
+  output?: string,
+): void {
   if (!output) return;
   const resolvedOutput = resolveSafeJsonReportOutputPath(output);
   mkdirSync(path.dirname(resolvedOutput), { recursive: true });

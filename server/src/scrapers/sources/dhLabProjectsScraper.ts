@@ -21,7 +21,8 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const LISTING_API =
   'https://api.github.com/repos/YaleDHLab/dhlab-site/contents/_projects?ref=master';
-const RAW_BASE = 'https://raw.githubusercontent.com/YaleDHLab/dhlab-site/master/_projects/';
+const RAW_BASE =
+  'https://raw.githubusercontent.com/YaleDHLab/dhlab-site/master/_projects/';
 const SOURCE_KEY = 'dh-lab-projects';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30000;
@@ -157,12 +158,7 @@ export function extractOverviewDescription(markdown: string): string {
   flush();
 
   const normalized = paragraphs
-    .map((p) =>
-      p
-        .replace(/[*_`>]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim(),
-    )
+    .map((p) => p.replace(/[*_`>]/g, '').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
   let out = '';
@@ -194,11 +190,7 @@ export function extractProjectFromMarkdown(
 }
 
 export function projectToObservations(project: RawDhProject): ObservationInput[] {
-  const base = {
-    entityType: 'researchEntity' as const,
-    entityKey: project.slug,
-    sourceUrl: project.projectUrl,
-  };
+  const base = { entityType: 'researchEntity' as const, entityKey: project.slug, sourceUrl: project.projectUrl };
   const observations: ObservationInput[] = [
     { ...base, field: 'slug', value: project.slug },
     { ...base, field: 'name', value: project.name },
@@ -253,17 +245,14 @@ export class DhLabProjectsScraper implements IScraper {
     const catalog = parseProjectListing(listingJson);
     ctx.log(`Discovered ${catalog.length} project files in the DHLab catalog seed`);
 
-    const limited = limitOption && limitOption > 0 ? catalog.slice(0, limitOption) : catalog;
+    const limited =
+      limitOption && limitOption > 0 ? catalog.slice(0, limitOption) : catalog;
 
     let totalObs = 0;
     let emittedEntities = 0;
     let skipped = 0;
     for (const entry of limited) {
-      const markdown = await fetchText(
-        entry.downloadUrl,
-        `project:${entry.name}`,
-        ctx.options.useCache,
-      );
+      const markdown = await fetchText(entry.downloadUrl, `project:${entry.name}`, ctx.options.useCache);
       const project = extractProjectFromMarkdown(markdown, entry.name);
       if (!project) {
         skipped += 1;

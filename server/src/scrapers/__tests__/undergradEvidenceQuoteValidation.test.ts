@@ -45,9 +45,9 @@ describe('isPlausibleUndergradEvidenceQuote (#1387)', () => {
         'I do not have bandwidth to respond to inquiries about undergraduate positions.',
       ),
     ).toBe(false);
-    expect(
-      isPlausibleUndergradEvidenceQuote('We are not taking undergraduate researchers this year.'),
-    ).toBe(false);
+    expect(isPlausibleUndergradEvidenceQuote('We are not taking undergraduate researchers this year.')).toBe(
+      false,
+    );
   });
 
   it('rejects a PI or staff member describing their own historical undergraduate degree (#1387)', () => {

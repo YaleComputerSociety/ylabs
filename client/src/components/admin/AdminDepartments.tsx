@@ -75,7 +75,14 @@ const AdminDepartments = () => {
     createInitialInlineCrudState<DepartmentDoc, NewDraft, EditDraft>(INITIAL_NEW_DRAFT),
   );
 
-  const { items: departments, isLoading, search, newDraft, editingId, editDraft } = state;
+  const {
+    items: departments,
+    isLoading,
+    search,
+    newDraft,
+    editingId,
+    editDraft,
+  } = state;
 
   const fetchDepartments = async () => {
     dispatch({ type: 'FETCH_START' });
@@ -195,9 +202,7 @@ const AdminDepartments = () => {
             <label className="block text-xs text-gray-500 mb-1">Abbreviation</label>
             <input
               value={newDraft.abbr}
-              onChange={(e) =>
-                dispatch({ type: 'SET_NEW_DRAFT', payload: { abbr: e.target.value } })
-              }
+              onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { abbr: e.target.value } })}
               placeholder="e.g. CPSC"
               className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
             />
@@ -206,9 +211,7 @@ const AdminDepartments = () => {
             <label className="block text-xs text-gray-500 mb-1">Full Name</label>
             <input
               value={newDraft.name}
-              onChange={(e) =>
-                dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })
-              }
+              onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })}
               placeholder="e.g. Computer Science"
               className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               onKeyDown={(e) => {
@@ -220,9 +223,7 @@ const AdminDepartments = () => {
             <label className="block text-xs text-gray-500 mb-1">Category</label>
             <select
               value={newDraft.category}
-              onChange={(e) =>
-                dispatch({ type: 'SET_NEW_DRAFT', payload: { category: e.target.value } })
-              }
+              onChange={(e) => dispatch({ type: 'SET_NEW_DRAFT', payload: { category: e.target.value } })}
               className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {DEPARTMENT_CATEGORIES.map((c) => (
@@ -333,8 +334,7 @@ const AdminDepartments = () => {
                       ) : (
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            CATEGORY_COLORS[dept.primaryCategory] ||
-                            'bg-[var(--yr-panel-muted)] text-gray-700'
+                            CATEGORY_COLORS[dept.primaryCategory] || 'bg-[var(--yr-panel-muted)] text-gray-700'
                           }`}
                         >
                           {dept.primaryCategory}

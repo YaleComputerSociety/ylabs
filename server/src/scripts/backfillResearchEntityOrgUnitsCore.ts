@@ -104,8 +104,6 @@ export function summarizeOrgUnitBackfill(rows: OrgUnitBackfillPlanRow[]): OrgUni
   };
 }
 
-export function useOrgUnitCanonicalizerForBackfill(
-  canonicalizer: OrgUnitCanonicalizer | null,
-): void {
+export function useOrgUnitCanonicalizerForBackfill(canonicalizer: OrgUnitCanonicalizer | null): void {
   setOrgUnitCanonicalizerForTesting(canonicalizer);
 }

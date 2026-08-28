@@ -480,7 +480,9 @@ passport.use(
     },
     async function (profile, done) {
       try {
-        const principal = await withMongoReconnect(() => resolveLoginPrincipalForCas(profile.user));
+        const principal = await withMongoReconnect(() =>
+          resolveLoginPrincipalForCas(profile.user),
+        );
         done(null, await buildAuthenticatedSessionUser(principal, profile.user));
       } catch (error) {
         console.log('Error in CAS login');
@@ -606,7 +608,9 @@ const casLogin = function (
           return res.redirect(safeTarget);
         }
 
-        const defaultRedirect = isLocalDevelopmentRuntime() ? localDevOriginFromRequest(req) : '/';
+        const defaultRedirect = isLocalDevelopmentRuntime()
+          ? localDevOriginFromRequest(req)
+          : '/';
         return res.redirect(defaultRedirect);
       });
     },

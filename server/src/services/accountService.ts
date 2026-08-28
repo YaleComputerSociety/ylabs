@@ -82,10 +82,14 @@ export interface ReporterIdentity {
   name: string;
 }
 
-export const resolveReporterIdentityByNetid = async (netid: unknown): Promise<ReporterIdentity> => {
+export const resolveReporterIdentityByNetid = async (
+  netid: unknown,
+): Promise<ReporterIdentity> => {
   const normalizedNetid = normalizeNetid(netid);
   if (!normalizedNetid) return { email: '', name: '' };
-  const account: any = await Account.findOne({ netid: normalizedNetid }).select('_id email').lean();
+  const account: any = await Account.findOne({ netid: normalizedNetid })
+    .select('_id email')
+    .lean();
   if (!account?._id) return { email: '', name: '' };
   const researcher: any = await Researcher.findOne({ accountId: account._id })
     .select('displayName')

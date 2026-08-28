@@ -61,12 +61,12 @@ describe('launchAcquisitionReport CLI helpers', () => {
     expect(() => parseLaunchAcquisitionReportArgs(['--output=--stage=all'])).toThrow(
       /--output requires a path/,
     );
-    expect(() =>
-      parseLaunchAcquisitionReportArgs(['--output=/var/tmp/launch-acquisition.json']),
-    ).toThrow(/--output must write under/);
-    expect(() =>
-      parseLaunchAcquisitionReportArgs(['--output=/tmp/launch-acquisition.txt']),
-    ).toThrow(/--output must point to a \.json report file/);
+    expect(() => parseLaunchAcquisitionReportArgs(['--output=/var/tmp/launch-acquisition.json'])).toThrow(
+      /--output must write under/,
+    );
+    expect(() => parseLaunchAcquisitionReportArgs(['--output=/tmp/launch-acquisition.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('writes the launch acquisition report artifact when output is provided', () => {

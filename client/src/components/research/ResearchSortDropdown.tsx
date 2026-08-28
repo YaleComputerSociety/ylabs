@@ -65,8 +65,7 @@ const ResearchSortDropdown = ({
     }
   };
 
-  const currentLabel =
-    sortOptions.find((option) => option.value === sortBy)?.label || 'Recommended';
+  const currentLabel = sortOptions.find((option) => option.value === sortBy)?.label || 'Recommended';
 
   return (
     <div className="relative" ref={outerRef}>
@@ -108,11 +107,7 @@ const ResearchSortDropdown = ({
               type="button"
               onClick={onToggleSortDirection}
               className="flex min-h-[44px] min-w-[44px] items-center justify-center text-slate-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
-              aria-label={
-                sortOrder === 'asc'
-                  ? 'Sorted ascending, switch to descending'
-                  : 'Sorted descending, switch to ascending'
-              }
+              aria-label={sortOrder === 'asc' ? 'Sorted ascending, switch to descending' : 'Sorted descending, switch to ascending'}
               title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
             >
               <svg
@@ -126,10 +121,7 @@ const ResearchSortDropdown = ({
                   sortOrder === 'asc' ? 'rotate-0' : 'rotate-180'
                 }`}
               >
-                <path
-                  d="M12 5l7 7-1.41 1.41L13 8.83V19h-2V8.83L6.41 13.41 5 12l7-7z"
-                  fill="currentColor"
-                />
+                <path d="M12 5l7 7-1.41 1.41L13 8.83V19h-2V8.83L6.41 13.41 5 12l7-7z" fill="currentColor" />
               </svg>
             </button>
           </>
@@ -138,11 +130,7 @@ const ResearchSortDropdown = ({
 
       {isDropdownOpen && (
         <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] shadow-lg">
-          <ul
-            role="listbox"
-            aria-label="Sort research homes"
-            className="max-h-[250px] overflow-y-auto"
-          >
+          <ul role="listbox" aria-label="Sort research homes" className="max-h-[250px] overflow-y-auto">
             {sortOptions.map((option, index) => (
               <li
                 key={option.value}

@@ -8,7 +8,11 @@ export type PathwayBestNextStepCategory =
   | 'save-for-later'
   | 'check-back-later';
 
-export type PathwaySortBy = 'relevance' | 'confidence' | 'lastObservedAt' | 'deadline';
+export type PathwaySortBy =
+  | 'relevance'
+  | 'confidence'
+  | 'lastObservedAt'
+  | 'deadline';
 
 export type PathwayActionability = 'ACTION_READY' | 'REFERENCE_ONLY';
 

@@ -195,8 +195,16 @@ describe('beineckeCollectionsResearchScraper', () => {
 
     const result = await scraper.run(ctx);
 
-    expect(fetchHtml).toHaveBeenCalledWith(SHORT_TERM_URL, false, 'beinecke-collections-research');
-    expect(fetchHtml).not.toHaveBeenCalledWith(GRADUATE_URL, expect.anything(), expect.anything());
+    expect(fetchHtml).toHaveBeenCalledWith(
+      SHORT_TERM_URL,
+      false,
+      'beinecke-collections-research',
+    );
+    expect(fetchHtml).not.toHaveBeenCalledWith(
+      GRADUATE_URL,
+      expect.anything(),
+      expect.anything(),
+    );
     expect(result.entitiesObserved).toBe(1);
   });
 

@@ -6,10 +6,7 @@
 import { useRef, useCallback } from 'react';
 import axios from '../utils/axios';
 
-export function useViewTracking(
-  entityType: 'listing' | 'fellowship' | 'researchGroup',
-  entityId: string,
-) {
+export function useViewTracking(entityType: 'listing' | 'fellowship' | 'researchGroup', entityId: string) {
   const viewedRef = useRef(false);
 
   const trackView = useCallback(() => {

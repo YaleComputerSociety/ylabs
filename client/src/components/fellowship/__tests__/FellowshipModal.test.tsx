@@ -346,8 +346,7 @@ describe('FellowshipModal', () => {
   it('keeps Brief and Full Description headings when the two fields genuinely differ (#1021)', () => {
     renderModal({
       summary: 'A short teaser for the program.',
-      description:
-        'A much longer description with substantially more detail than the teaser above.',
+      description: 'A much longer description with substantially more detail than the teaser above.',
     });
 
     expect(screen.getByRole('heading', { name: 'Brief Description' })).toBeTruthy();

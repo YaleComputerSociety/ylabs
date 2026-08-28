@@ -12,7 +12,10 @@ describe('parseResearchDescriptionBackfillArgs --record-id', () => {
     ]);
 
     expect(options.cardSynthesis).toBe(true);
-    expect(options.recordIds).toEqual(['6a05677d7c6d4fba869fbbc3', '6a057de313fc60d57ec2a09a']);
+    expect(options.recordIds).toEqual([
+      '6a05677d7c6d4fba869fbbc3',
+      '6a057de313fc60d57ec2a09a',
+    ]);
   });
 
   it('rejects a record id that is not a 24-character hex ObjectId', () => {

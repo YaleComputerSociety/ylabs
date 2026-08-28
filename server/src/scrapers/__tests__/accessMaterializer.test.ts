@@ -261,8 +261,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
       obs({
         field: 'undergradEvidenceQuote',
-        value:
-          'The Department of Chemistry maintains a glassblowing facility to benefit the research community.',
+        value: 'The Department of Chemistry maintains a glassblowing facility to benefit the research community.',
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.6,
       }),
@@ -393,8 +392,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
       obs({
         field: 'undergradEvidenceQuote',
-        value:
-          'My research relates to the study of conformal field theories and the conformal bootstrap.',
+        value: 'My research relates to the study of conformal field theories and the conformal bootstrap.',
         sourceName: 'lab-microsite-undergrad-llm',
         confidence: 0.8,
       }),
@@ -711,10 +709,9 @@ describe('deriveAccessArtifactsFromObservations', () => {
 
     const emitted = new Set(
       perBranchFixtures.flatMap((observations) =>
-        deriveAccessArtifactsFromObservations(
-          '64f000000000000000000001',
-          observations,
-        ).accessSignals.map((signal) => signal.type),
+        deriveAccessArtifactsFromObservations('64f000000000000000000001', observations).accessSignals.map(
+          (signal) => signal.type,
+        ),
       ),
     );
 

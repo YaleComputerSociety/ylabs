@@ -38,12 +38,7 @@ describe('buildCanonicalReferenceIntegrityReport', () => {
       databaseName: 'Development',
       generatedAt: GENERATED_AT,
       inputs: [
-        {
-          name: 'signals.researchEntityId -> research_entities',
-          required: true,
-          missingRequired: 0,
-          orphanedPresentRefs: 0,
-        },
+        { name: 'signals.researchEntityId -> research_entities', required: true, missingRequired: 0, orphanedPresentRefs: 0 },
       ],
     });
     expect(report.summary.clean).toBe(true);
@@ -57,18 +52,8 @@ describe('buildCanonicalReferenceIntegrityReport', () => {
       databaseName: 'Development',
       generatedAt: GENERATED_AT,
       inputs: [
-        {
-          name: 'signals.researchEntityId -> research_entities',
-          required: true,
-          missingRequired: 2,
-          orphanedPresentRefs: 1,
-        },
-        {
-          name: 'role_assignments.evidenceClaimIds -> evidence_claims',
-          required: false,
-          missingRequired: 0,
-          orphanedPresentRefs: 4,
-        },
+        { name: 'signals.researchEntityId -> research_entities', required: true, missingRequired: 2, orphanedPresentRefs: 1 },
+        { name: 'role_assignments.evidenceClaimIds -> evidence_claims', required: false, missingRequired: 0, orphanedPresentRefs: 4 },
       ],
     });
     expect(report.summary.clean).toBe(false);
@@ -87,12 +72,7 @@ describe('buildCanonicalReferenceIntegrityReport', () => {
       databaseName: 'Development',
       generatedAt: GENERATED_AT,
       inputs: [
-        {
-          name: 'researchers.accountId -> accounts',
-          required: false,
-          missingRequired: 99,
-          orphanedPresentRefs: 0,
-        },
+        { name: 'researchers.accountId -> accounts', required: false, missingRequired: 99, orphanedPresentRefs: 0 },
       ],
     });
     expect(report.summary.clean).toBe(true);

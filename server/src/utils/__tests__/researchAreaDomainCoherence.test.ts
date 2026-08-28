@@ -13,9 +13,7 @@ describe('hasResearchAreaProvenance', () => {
 
   it('is true when a researchAreas provenance entry is recorded', () => {
     expect(
-      hasResearchAreaProvenance({
-        researchAreas: { sourceUrl: 'https://x.yale.edu', confidence: 0.7 },
-      }),
+      hasResearchAreaProvenance({ researchAreas: { sourceUrl: 'https://x.yale.edu', confidence: 0.7 } }),
     ).toBe(true);
   });
 });
@@ -40,7 +38,7 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
     expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toEqual([]);
   });
 
-  it("keeps a chip that overlaps the entity's own vocabulary and drops only the alien chips", () => {
+  it('keeps a chip that overlaps the entity\'s own vocabulary and drops only the alien chips', () => {
     const campbellContext = {
       name: 'Jill Campbell',
       departments: ['English'],
@@ -55,17 +53,13 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
 
   it('leaves chips untouched when fieldProvenance.researchAreas is recorded, regardless of overlap', () => {
     const areas = ['Parallel Computing and Optimization Techniques'];
-    const provenance = {
-      researchAreas: { sourceUrl: 'https://wgss.yale.edu/people/joseph-fischel' },
-    };
+    const provenance = { researchAreas: { sourceUrl: 'https://wgss.yale.edu/people/joseph-fischel' } };
     expect(dropDomainIncoherentUnsourcedResearchAreas(areas, provenance, wgssContext)).toBe(areas);
   });
 
   it('never drops a generic single-word canonical area name', () => {
     const areas = ['Law'];
-    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toEqual([
-      'Law',
-    ]);
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toEqual(['Law']);
   });
 
   it('leaves areas untouched when the entity has too little of its own text to judge against', () => {
@@ -79,16 +73,16 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
     expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, wgssContext)).toBe(areas);
   });
 
-  it("drops a sole chip that duplicates the entity's own department name even though it self-corroborates (#1763)", () => {
+  it('drops a sole chip that duplicates the entity\'s own department name even though it self-corroborates (#1763)', () => {
     const langstonContext = {
       name: 'Langston Lab',
       departments: ['Pathology'],
       fullDescription:
         'The Langston Lab studies exercise-induced inflammation and muscle healthspan across the lifespan.',
     };
-    expect(
-      dropDomainIncoherentUnsourcedResearchAreas(['Pathology'], undefined, langstonContext),
-    ).toEqual([]);
+    expect(dropDomainIncoherentUnsourcedResearchAreas(['Pathology'], undefined, langstonContext)).toEqual(
+      [],
+    );
   });
 
   it('drops only the department-duplicate chip and keeps a genuine topic chip alongside it', () => {
@@ -105,11 +99,7 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
   });
 
   it('leaves a department-name chip untouched when fieldProvenance.researchAreas is recorded', () => {
-    const context = {
-      name: 'Langston Lab',
-      departments: ['Pathology'],
-      fullDescription: 'x'.repeat(50),
-    };
+    const context = { name: 'Langston Lab', departments: ['Pathology'], fullDescription: 'x'.repeat(50) };
     const areas = ['Pathology'];
     const provenance = { researchAreas: { sourceUrl: 'https://pathology.yale.edu/langston' } };
     expect(dropDomainIncoherentUnsourcedResearchAreas(areas, provenance, context)).toBe(areas);
@@ -128,9 +118,7 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
       'Long-Term Effects of COVID-19',
       'Employment and Welfare Studies',
     ];
-    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, rideshareContext)).toEqual(
-      [],
-    );
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, rideshareContext)).toEqual([]);
   });
 
   it('does not let a genuinely-sourced bio\'s "actively" false-corroborate an unrelated "Activities" chip via the fuzzy prefix (#1730 roberts-cer63)', () => {
@@ -147,8 +135,6 @@ describe('dropDomainIncoherentUnsourcedResearchAreas', () => {
       'Gun Ownership and Violence Research',
       'Substance Abuse Treatment and Outcomes',
     ];
-    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, historianContext)).toEqual(
-      [],
-    );
+    expect(dropDomainIncoherentUnsourcedResearchAreas(areas, undefined, historianContext)).toEqual([]);
   });
 });

@@ -18,22 +18,15 @@ const decide = (signal: RunPresenceSignal, entity: EntityDepartureState, current
 
 describe('isEntityAuthoritativeSnapshot / snapshotDiscoveredEntityKeys', () => {
   it('is authoritative only when complete and discoveredEntityKeys is an array', () => {
-    expect(isEntityAuthoritativeSnapshot({ complete: true, discoveredEntityKeys: ['a'] })).toBe(
-      true,
-    );
-    expect(isEntityAuthoritativeSnapshot({ complete: false, discoveredEntityKeys: ['a'] })).toBe(
+    expect(isEntityAuthoritativeSnapshot({ complete: true, discoveredEntityKeys: ['a'] })).toBe(true);
+    expect(isEntityAuthoritativeSnapshot({ complete: false, discoveredEntityKeys: ['a'] })).toBe(false);
+    expect(isEntityAuthoritativeSnapshot({ complete: true, discoveredEntityKeys: 'a' } as never)).toBe(
       false,
     );
-    expect(
-      isEntityAuthoritativeSnapshot({ complete: true, discoveredEntityKeys: 'a' } as never),
-    ).toBe(false);
   });
 
   it('returns only the string discovered keys', () => {
-    expect(snapshotDiscoveredEntityKeys({ discoveredEntityKeys: ['a', 2, 'b'] })).toEqual([
-      'a',
-      'b',
-    ]);
+    expect(snapshotDiscoveredEntityKeys({ discoveredEntityKeys: ['a', 2, 'b'] })).toEqual(['a', 'b']);
     expect(snapshotDiscoveredEntityKeys({})).toEqual([]);
   });
 });
@@ -156,11 +149,8 @@ describe('decideFacultyRosterDeparture K=2 durability', () => {
 describe('decideFacultyRosterDeparture death precedence', () => {
   it('never overwrites a deceased entity when absent', () => {
     expect(
-      decide(
-        'absent',
-        { yaleStatusReasonCache: 'deceased', absentFromRosterSinceRunId: runA },
-        runB,
-      ).action,
+      decide('absent', { yaleStatusReasonCache: 'deceased', absentFromRosterSinceRunId: runA }, runB)
+        .action,
     ).toBe('noop');
   });
 

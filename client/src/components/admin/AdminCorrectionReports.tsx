@@ -113,7 +113,9 @@ export default function AdminCorrectionReports() {
               <span className="font-semibold text-gray-900">
                 {report.entitySnapshot.name || report.entitySlug}
               </span>
-              <span className="ml-2 text-sm text-gray-600">{CATEGORY_LABELS[report.category]}</span>
+              <span className="ml-2 text-sm text-gray-600">
+                {CATEGORY_LABELS[report.category]}
+              </span>
               <span className="ml-2 text-xs text-gray-500">({report.reporter.role})</span>
               {report.note && (
                 <p className="mt-1 line-clamp-2 text-sm text-gray-700">{report.note}</p>

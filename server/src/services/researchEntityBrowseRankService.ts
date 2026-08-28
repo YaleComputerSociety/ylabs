@@ -253,7 +253,8 @@ export async function recomputeBrowseRankForEntities(
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
-    const documentedWayInUnchanged = (entity.hasDocumentedWayIn ?? false) === documentedWayIn;
+    const documentedWayInUnchanged =
+      (entity.hasDocumentedWayIn ?? false) === documentedWayIn;
     const availabilityUnchanged =
       (entity.undergraduateCurrentAvailability ?? 'UNKNOWN') === currentAvailability;
     const compensationUnchanged =

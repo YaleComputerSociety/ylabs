@@ -45,20 +45,16 @@ describe('legacy department migration CLI safety helpers', () => {
       apply: false,
       confirmLegacyDepartmentMigration: false,
     });
-    expect(
-      parseDepartmentMigrationArgs([
-        '--live',
-        '--confirm-legacy-department-migration',
-        '--output=/tmp/departments.json',
-      ]),
-    ).toEqual({
+    expect(parseDepartmentMigrationArgs([
+      '--live',
+      '--confirm-legacy-department-migration',
+      '--output=/tmp/departments.json',
+    ])).toEqual({
       apply: true,
       confirmLegacyDepartmentMigration: true,
       output: '/tmp/departments.json',
     });
-    expect(
-      parseDepartmentMigrationArgs(['--apply', '--output', '/tmp/departments-apply.json']),
-    ).toEqual({
+    expect(parseDepartmentMigrationArgs(['--apply', '--output', '/tmp/departments-apply.json'])).toEqual({
       apply: true,
       confirmLegacyDepartmentMigration: false,
       output: '/tmp/departments-apply.json',
@@ -119,9 +115,7 @@ describe('legacy department migration CLI safety helpers', () => {
     const { assertDepartmentMigrationApplyAllowed, parseDepartmentMigrationArgs } =
       await importDepartmentMigration();
 
-    expect(
-      parseDepartmentMigrationArgs(['--apply', '--output=/tmp/departments.json']),
-    ).toMatchObject({
+    expect(parseDepartmentMigrationArgs(['--apply', '--output=/tmp/departments.json'])).toMatchObject({
       apply: true,
       confirmLegacyDepartmentMigration: false,
     });

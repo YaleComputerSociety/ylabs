@@ -27,10 +27,7 @@ describe('apiBaseUrl safety helpers', () => {
       'https://fallback.test',
     );
     expect(
-      normalizeBackendOrigin(
-        'https://api.example.test\nhttps://evil.example',
-        'https://fallback.test',
-      ),
+      normalizeBackendOrigin('https://api.example.test\nhttps://evil.example', 'https://fallback.test'),
     ).toBe('https://fallback.test');
     expect(normalizeBackendOrigin('https:\\\\evil.example\\api', 'https://fallback.test')).toBe(
       'https://fallback.test',
@@ -46,10 +43,7 @@ describe('apiBaseUrl safety helpers', () => {
 
   it('rejects oversized backend origins before parsing', () => {
     expect(
-      normalizeBackendOrigin(
-        `https://api.example.test/${'a'.repeat(2049)}`,
-        'https://fallback.test',
-      ),
+      normalizeBackendOrigin(`https://api.example.test/${'a'.repeat(2049)}`, 'https://fallback.test'),
     ).toBe('https://fallback.test');
   });
 });

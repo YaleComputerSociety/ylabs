@@ -49,9 +49,16 @@ const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   'Contact route': 'Open to inquiries',
 };
 
-const ACCESS_SIGNAL_PRIORITY = ['Undergrad evidence', 'Student project evidence', 'Contact route'];
+const ACCESS_SIGNAL_PRIORITY = [
+  'Undergrad evidence',
+  'Student project evidence',
+  'Contact route',
+];
 
-const ELEVATED_ACCESS_SIGNALS = new Set(['Undergrad evidence', 'Student project evidence']);
+const ELEVATED_ACCESS_SIGNALS = new Set([
+  'Undergrad evidence',
+  'Student project evidence',
+]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
 
@@ -90,11 +97,13 @@ const ResearchHomeCard = ({
 }: ResearchHomeCardProps) => {
   const navigate = useNavigate();
   const isCompact = variant === 'compact';
-  const homeEntities = home.entities.slice(0, 3).map((entity) => ({
-    id: entity._id || entity.slug,
-    slug: entity.slug,
-    label: entity.displayName || entity.name || 'Untitled research profile',
-  }));
+  const homeEntities = home.entities
+    .slice(0, 3)
+    .map((entity) => ({
+      id: entity._id || entity.slug,
+      slug: entity.slug,
+      label: entity.displayName || entity.name || 'Untitled research profile',
+    }));
   const primaryLinkedEntity = homeEntities.find((entity) => Boolean(entity.slug));
   const singleLinkedEntity =
     home.entities.length === 1 && primaryLinkedEntity && homeEntities.length === 1
@@ -139,9 +148,7 @@ const ResearchHomeCard = ({
   const mobileMoreCount = topicBadges.length - mobileTopicCap;
   const desktopMoreCount = topicBadges.length - desktopTopicCap;
   const description = sanitizeResearchEntityCopy(home.description, home.entities[0]);
-  const primaryProfileUrl = primaryLinkedEntity
-    ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}`
-    : '';
+  const primaryProfileUrl = primaryLinkedEntity ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}` : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
   const showEvidenceFooter = !isCompact && Boolean(primaryEvidenceUrl);
@@ -241,7 +248,10 @@ const ResearchHomeCard = ({
 
         <div className="flex flex-wrap gap-1.5">
           {metadataBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
+            <span
+              key={label}
+              className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5"
+            >
               {formatTitleCaseLabel(label)}
             </span>
           ))}
@@ -310,10 +320,7 @@ const ResearchHomeCard = ({
       )}
 
       {orderedAccessSignals.length > 0 && (
-        <div
-          className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5"
-          aria-label="Ways to get involved"
-        >
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5" aria-label="Ways to get involved">
           {leadAccessSignal && (
             <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--yr-green)]">
               <svg
@@ -332,7 +339,10 @@ const ResearchHomeCard = ({
             </span>
           )}
           {secondaryAccessSignals.slice(0, isCompact ? 2 : undefined).map((badge) => (
-            <span key={badge} className="yr-pill yr-pill-green min-h-0 rounded px-2 py-0.5">
+            <span
+              key={badge}
+              className="yr-pill yr-pill-green min-h-0 rounded px-2 py-0.5"
+            >
               {accessSignalLabel(badge)}
             </span>
           ))}
@@ -341,7 +351,9 @@ const ResearchHomeCard = ({
 
       {home.entities.length > 0 && !singleLinkedEntity && !isCompact && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">Research homes</p>
+          <p className="yr-kicker mb-2 text-[0.68rem]">
+            Research homes
+          </p>
           <div className="flex flex-col gap-1">
             {homeEntities.map((entity) => {
               if (!entity.slug) {
@@ -373,7 +385,9 @@ const ResearchHomeCard = ({
 
       {showEvidenceFooter && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">Evidence</p>
+          <p className="yr-kicker mb-2 text-[0.68rem]">
+            Evidence
+          </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
             {primaryEvidenceUrl && (
               <a

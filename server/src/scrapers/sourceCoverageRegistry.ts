@@ -385,7 +385,12 @@ export const sourceCoverageRegistry = {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
     artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
+    evidenceCategories: [
+      'ENTITY_IDENTITY',
+      'ENTITY_MEMBERSHIP',
+      'OFFICIAL_PROFILE',
+      'LAB_WEBSITE',
+    ],
     defaultConfidence: 'HIGH',
     notes:
       'Yale University Library online exhibitions catalog (onlineexhibits.library.yale.edu); pilot producer for the COLLECTIONS_INITIATIVE collections-as-data / digital-scholarship research home. The Omeka sites API is a crawl seed only and is never recorded as a source; each individual exhibition page is the cited source. Discovery-only: emits identity, the official-page summary description, and, where an exhibition publishes a "curated by" credit, the named curator as an inferred-director lead (resolved to a Yale User before promotion, fails closed otherwise). Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
@@ -435,7 +440,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
-      "Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Each program's own official Yale page is the cited source; the NSF REU Sites directory is a non-Yale crawl seed used only to discover Yale-hosted site URLs and is never recorded as a source. Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that surface on the /programs catalog. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.",
+      'Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Each program\'s own official Yale page is the cited source; the NSF REU Sites directory is a non-Yale crawl seed used only to discover Yale-hosted site URLs and is never recorded as a source. Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that surface on the /programs catalog. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.',
   },
   'yale-health-sciences-summer-programs': {
     priority: 4,
@@ -444,7 +449,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
-      "Yale health-sciences undergraduate summer research programs hosted across Yale School of Medicine (medicine.yale.edu), Public Health (ysph.yale.edu), Nursing (nursing.yale.edu), and their institutes/centers - the biomedical analogue of the NSF-REU lane (yale-reu-programs), on distinct non-overlapping host domains. Each program's own official Yale page is the cited source; Yale-owned health-sciences listing pages are crawl seeds only, used to discover individual program pages and never recorded as a source (#516/#549). The two already-covered health-sciences seed URLs owned by yale-college-fellowships-office (medicine.yale.edu/whr/training, ycmd.yale.edu summer undergraduate internships) are explicitly excluded so a program is never minted twice (#1712). Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that project to research entities. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.",
+      'Yale health-sciences undergraduate summer research programs hosted across Yale School of Medicine (medicine.yale.edu), Public Health (ysph.yale.edu), Nursing (nursing.yale.edu), and their institutes/centers - the biomedical analogue of the NSF-REU lane (yale-reu-programs), on distinct non-overlapping host domains. Each program\'s own official Yale page is the cited source; Yale-owned health-sciences listing pages are crawl seeds only, used to discover individual program pages and never recorded as a source (#516/#549). The two already-covered health-sciences seed URLs owned by yale-college-fellowships-office (medicine.yale.edu/whr/training, ycmd.yale.edu summer undergraduate internships) are explicitly excluded so a program is never minted twice (#1712). Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that project to research entities. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.',
   },
   'student-grants-database': {
     priority: 4,

@@ -18,11 +18,7 @@ import type { ObservationInput, ScraperContext } from '../types';
 const PHYSICS_URL = 'https://physics.yale.edu/research';
 
 function themeHtml(
-  themes: Array<{
-    heading: string;
-    prose?: string;
-    faculty: Array<{ name: string; slug: string }>;
-  }>,
+  themes: Array<{ heading: string; prose?: string; faculty: Array<{ name: string; slug: string }> }>,
   host = 'physics.yale.edu',
 ): string {
   const blocks = themes

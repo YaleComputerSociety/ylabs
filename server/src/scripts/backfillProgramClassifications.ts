@@ -77,7 +77,10 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsed;
 }
 
-export function writeBackfillProgramClassificationsOutput(report: unknown, output?: string): void {
+export function writeBackfillProgramClassificationsOutput(
+  report: unknown,
+  output?: string,
+): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
@@ -140,11 +143,7 @@ async function main() {
   const query = Fellowship.find({ archived: { $ne: true } }).sort({ title: 1 });
   if (Number.isFinite(options.limit)) query.limit(options.limit);
   const rows = await query.lean();
-  const updates: Array<{
-    id: string;
-    title: string;
-    classification: ReturnType<typeof classifyProgram>;
-  }> = [];
+  const updates: Array<{ id: string; title: string; classification: ReturnType<typeof classifyProgram> }> = [];
 
   for (const row of rows) {
     const classification = classifyProgram({
@@ -187,19 +186,16 @@ async function main() {
     return acc;
   }, {});
 
-  const report = buildBackfillProgramClassificationsOutput(
-    {
-      mode: options.apply ? 'apply' : 'dry-run',
-      scanned: rows.length,
-      counts,
-      sample: updates.slice(0, 20),
-    },
-    {
-      environment: guard.environment,
-      db: guard.dbLabel,
-      options,
-    },
-  );
+  const report = buildBackfillProgramClassificationsOutput({
+    mode: options.apply ? 'apply' : 'dry-run',
+    scanned: rows.length,
+    counts,
+    sample: updates.slice(0, 20),
+  }, {
+    environment: guard.environment,
+    db: guard.dbLabel,
+    options,
+  });
 
   console.log(JSON.stringify(report, null, 2));
   writeBackfillProgramClassificationsOutput(report, options.output);

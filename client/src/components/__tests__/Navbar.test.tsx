@@ -138,9 +138,9 @@ describe('Navbar', () => {
     renderGuestNavbar();
 
     const primaryNav = screen.getByRole('navigation', { name: 'Primary navigation' });
-    expect(
-      within(primaryNav).getByRole('link', { name: 'Yale Research' }).getAttribute('href'),
-    ).toBe('/research');
+    expect(within(primaryNav).getByRole('link', { name: 'Yale Research' }).getAttribute('href')).toBe(
+      '/research',
+    );
     expect(within(primaryNav).getByRole('link', { name: 'About' }).getAttribute('href')).toBe(
       '/about',
     );

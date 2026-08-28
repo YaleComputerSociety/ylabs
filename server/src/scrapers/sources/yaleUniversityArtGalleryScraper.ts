@@ -165,7 +165,9 @@ function extractCuratorialLead($: cheerio.CheerioAPI): YuagCuratorialLead | unde
 
     const profileHref = cleanText(container.find('a[href]').first().attr('href'));
     const profileUrl =
-      /^https?:\/\//i.test(profileHref) && /yale\.edu/i.test(profileHref) ? profileHref : undefined;
+      /^https?:\/\//i.test(profileHref) && /yale\.edu/i.test(profileHref)
+        ? profileHref
+        : undefined;
 
     lead = {
       name,

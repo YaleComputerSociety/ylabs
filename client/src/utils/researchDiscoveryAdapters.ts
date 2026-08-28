@@ -112,7 +112,9 @@ const titleizeValue = (value?: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
-export const getPathwayActionLabel = (category?: PathwayBestNextStepCategory | string): string => {
+export const getPathwayActionLabel = (
+  category?: PathwayBestNextStepCategory | string,
+): string => {
   switch (category) {
     case 'apply':
       return 'Apply';
@@ -243,7 +245,8 @@ const resolveEntitySchool = (entity: {
   return (entity.schools || []).map((value) => (value || '').trim()).find(Boolean) || '';
 };
 
-const normalizeContextText = (value?: string | null): string => normalizeResearchInlineText(value);
+const normalizeContextText = (value?: string | null): string =>
+  normalizeResearchInlineText(value);
 
 const meaningfulMetadata = (values: Array<string | undefined | null>): string[] =>
   normalizeResearchMetadataLabels(values);
@@ -313,7 +316,10 @@ export const buildResearchHomeContextSummary = (
 
   if (descriptionSummary) return descriptionSummary;
 
-  const homeMetadata = uniq([...(input.departments || []), input.school]);
+  const homeMetadata = uniq([
+    ...(input.departments || []),
+    input.school,
+  ]);
   const hasSourceLinks = (input.sourceUrls || []).some(Boolean);
   if (homeMetadata.length > 0) {
     return {
@@ -345,11 +351,9 @@ const parseConfidence = (value?: number | string): number | undefined => {
   if (!Number.isNaN(maybePercent)) {
     return maybePercent > 1 ? maybePercent / 100 : maybePercent;
   }
-  if (['high', 'strong', 'very high', 'confident', 'source-backed'].includes(normalized))
-    return 0.9;
+  if (['high', 'strong', 'very high', 'confident', 'source-backed'].includes(normalized)) return 0.9;
   if (['medium', 'moderate', 'likely', 'moderately'].includes(normalized)) return 0.65;
-  if (['low', 'weak', 'uncertain', 'unresolved', 'possible', 'inferred'].includes(normalized))
-    return 0.35;
+  if (['low', 'weak', 'uncertain', 'unresolved', 'possible', 'inferred'].includes(normalized)) return 0.35;
   return undefined;
 };
 
@@ -449,7 +453,11 @@ const pathwayDisplayKey = (pathway: PathwaySearchHit): string => {
   const entityKey =
     entity?.displayName || entity?.name
       ? entity.displayName || entity.name
-      : entity?.slug || entity?._id || entity?.displayName || entity?.name || 'unknown-entity';
+      : entity?.slug ||
+        entity?._id ||
+        entity?.displayName ||
+        entity?.name ||
+        'unknown-entity';
   const sourceKey =
     pathway.contactRoute?.url ||
     pathway.sourceUrls?.[0] ||
@@ -461,12 +469,18 @@ const pathwayDisplayKey = (pathway: PathwaySearchHit): string => {
     pathway.studentFacingLabel ||
     pathway._id;
 
-  return [entityKey, pathway.pathwayType || 'pathway', opportunityKey]
+  return [
+    entityKey,
+    pathway.pathwayType || 'pathway',
+    opportunityKey,
+  ]
     .map(normalizeDisplayKeyPart)
     .join('|');
 };
 
-export const dedupePathwayDisplayHits = (pathways: PathwaySearchHit[]): PathwaySearchHit[] => {
+export const dedupePathwayDisplayHits = (
+  pathways: PathwaySearchHit[],
+): PathwaySearchHit[] => {
   const seen = new Set<string>();
   const displayHits: PathwaySearchHit[] = [];
 
@@ -482,9 +496,7 @@ export const dedupePathwayDisplayHits = (pathways: PathwaySearchHit[]): PathwayS
 
 const isPathwayResultRelevant = (pathway: PathwaySearchHit): boolean => {
   const evidenceConfidence = parseConfidence(
-    pathway.evidence
-      ?.map((entry) => parseConfidence(entry.confidenceScore))
-      .find((value) => value !== undefined),
+    pathway.evidence?.map((entry) => parseConfidence(entry.confidenceScore)).find((value) => value !== undefined),
   );
   const directConfidence = parseConfidence(pathway.confidence);
   const strongest = Math.max(evidenceConfidence ?? -1, directConfidence ?? -1);
@@ -551,7 +563,9 @@ const buildProfileDiscoveryClusters = (
       evidence: [
         {
           claim: matchReason,
-          sourceType: entity.sourceUrls?.length ? 'Yale research source' : 'Research search match',
+          sourceType: entity.sourceUrls?.length
+            ? 'Yale research source'
+            : 'Research search match',
           url: entity.sourceUrls?.[0],
           confidence: entity.searchMatch?.mode || 'indexed source',
         },
@@ -587,7 +601,8 @@ export function buildIdentityConfidenceRecords(
   return visibleInputs.map((input) => {
     const sameName = byName.get(normalizeName(input.name)) || [];
     const hasMeaningfulAmbiguity =
-      sameName.length > 1 && new Set(sameName.map((item) => identityDifferenceKey(item))).size > 1;
+      sameName.length > 1 &&
+      new Set(sameName.map((item) => identityDifferenceKey(item))).size > 1;
     const evidence = input.evidence || [
       {
         claim: input.sourceContext
@@ -656,36 +671,36 @@ const identitiesFromResearchEntities = (
   };
 
   researchEntities
-    .filter((entity) => {
-      const hasName = (entity.contactName || '').trim().length > 0;
-      return hasName && hasPersonContextForDiscovery(entity);
-    })
-    .map((entity) => {
-      const netid = parseProfileNetidFromEmail(entity.contactEmail);
-      return {
-        id: `${entity._id || entity.slug}-${entity.contactName}`,
-        name: entity.contactName || 'Unknown researcher',
-        title: entity.contactRole || undefined,
-        departments: entity.departments || [],
-        affiliations: uniq([resolveEntitySchool(entity), kindLabel(entity.kind)]),
-        netid,
-        email: entity.contactEmail || undefined,
-        labName: entityDisplayName(entity),
-        labSlug: entity.slug,
-        sourceCount: (entity.sourceUrls || []).length || 1,
-        matchLabel: 'Research profile match: metadata',
-        sourceContext: entityDisplayName(entity),
-        evidence: [
-          {
-            claim: `${entity.contactName} is listed as the contact for ${entityDisplayName(entity)}.`,
-            sourceType: 'Research profile metadata',
-            url: entity.sourceUrls?.[0],
-            confidence: 'unresolved identity',
-          },
-        ],
-      };
-    })
-    .forEach(mergeIdentityInput);
+      .filter((entity) => {
+        const hasName = (entity.contactName || '').trim().length > 0;
+        return hasName && hasPersonContextForDiscovery(entity);
+      })
+      .map((entity) => {
+        const netid = parseProfileNetidFromEmail(entity.contactEmail);
+        return {
+          id: `${entity._id || entity.slug}-${entity.contactName}`,
+          name: entity.contactName || 'Unknown researcher',
+          title: entity.contactRole || undefined,
+          departments: entity.departments || [],
+          affiliations: uniq([resolveEntitySchool(entity), kindLabel(entity.kind)]),
+          netid,
+          email: entity.contactEmail || undefined,
+          labName: entityDisplayName(entity),
+          labSlug: entity.slug,
+          sourceCount: (entity.sourceUrls || []).length || 1,
+          matchLabel: 'Research profile match: metadata',
+          sourceContext: entityDisplayName(entity),
+          evidence: [
+            {
+              claim: `${entity.contactName} is listed as the contact for ${entityDisplayName(entity)}.`,
+              sourceType: 'Research profile metadata',
+              url: entity.sourceUrls?.[0],
+              confidence: 'unresolved identity',
+            },
+          ],
+        };
+      })
+      .forEach(mergeIdentityInput);
 
   return buildIdentityConfidenceRecords(Array.from(byPerson.values()));
 };
@@ -716,11 +731,8 @@ export function buildGroupedSearchResults({
 
   return {
     clusters: buildProfileDiscoveryClusters(researchEntities, { pathways: relevantPathways }),
-    people: people.filter(
-      (person) =>
-        person.identityLabel === 'Identity: Yale-confirmed' ||
-        person.sourceCount > 1 ||
-        person.departments.length > 0,
+    people: people.filter((person) =>
+      person.identityLabel === 'Identity: Yale-confirmed' || person.sourceCount > 1 || person.departments.length > 0,
     ),
     pathways: relevantPathways,
     interpretationChips: parseQueryInterpretationChips(query),

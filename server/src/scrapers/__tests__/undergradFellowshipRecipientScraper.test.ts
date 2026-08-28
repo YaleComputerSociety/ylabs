@@ -624,12 +624,12 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     ].join('\n');
     const fetchPage = vi.fn(async () => csv);
     const advisorResolver = vi.fn(async () => ({
-      _id: 'u-roster',
-      netid: 'rr1',
-      fname: 'Riley',
-      lname: 'Roster',
-      primaryDepartment: 'MCDB',
-    }));
+        _id: 'u-roster',
+        netid: 'rr1',
+        fname: 'Riley',
+        lname: 'Roster',
+        primaryDepartment: 'MCDB',
+      }));
     const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
     const configs: ProgramConfig[] = [
       {
@@ -669,12 +669,12 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
         'utf8',
       );
       const advisorResolver = vi.fn(async () => ({
-        _id: 'u-roster',
-        netid: 'rr1',
-        fname: 'Riley',
-        lname: 'Roster',
-        primaryDepartment: 'MCDB',
-      }));
+          _id: 'u-roster',
+          netid: 'rr1',
+          fname: 'Riley',
+          lname: 'Roster',
+          primaryDepartment: 'MCDB',
+        }));
       const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
       const configs: ProgramConfig[] = [
         {
@@ -720,12 +720,12 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
         'utf8',
       );
       const advisorResolver = vi.fn(async () => ({
-        _id: 'u-roster',
-        netid: 'rr1',
-        fname: 'Riley',
-        lname: 'Roster',
-        primaryDepartment: 'MCDB',
-      }));
+          _id: 'u-roster',
+          netid: 'rr1',
+          fname: 'Riley',
+          lname: 'Roster',
+          primaryDepartment: 'MCDB',
+        }));
       const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
       const scraper = new UndergradFellowshipRecipientScraper(
         [
@@ -767,12 +767,12 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     try {
       await fs.writeFile(path.join(tmpDir, 'stars-ii.pdf'), Buffer.from('fake pdf bytes'));
       const advisorResolver = vi.fn(async () => ({
-        _id: 'u-roster',
-        netid: 'rr1',
-        fname: 'Riley',
-        lname: 'Roster',
-        primaryDepartment: 'MCDB',
-      }));
+          _id: 'u-roster',
+          netid: 'rr1',
+          fname: 'Riley',
+          lname: 'Roster',
+          primaryDepartment: 'MCDB',
+        }));
       const ownerToGroupSlug = vi.fn(async () => 'roster-lab-rr1');
       const pdfTextExtractor = vi.fn(async () =>
         [

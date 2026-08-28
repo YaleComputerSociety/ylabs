@@ -26,10 +26,10 @@ export function isSuspiciousUserEmail(email: string): boolean {
   return getSuspiciousUserEmailReason(email) !== undefined;
 }
 
-export function isExcludedByLaneAProductionCopy(user: UserEmailHygieneInputUser): boolean {
-  const netid = String(user.netid || '')
-    .trim()
-    .toLowerCase();
+export function isExcludedByLaneAProductionCopy(
+  user: UserEmailHygieneInputUser,
+): boolean {
+  const netid = String(user.netid || '').trim().toLowerCase();
   const email = String(user.email || '').trim();
   return (
     netid === 'devadmin' ||

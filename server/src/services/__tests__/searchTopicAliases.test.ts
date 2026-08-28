@@ -31,7 +31,9 @@ describe('searchTopicAliases source of truth', () => {
     );
     expect(QUERY_TOPIC_ALIASES.heart).toEqual(expect.arrayContaining(['cardiology']));
     expect(QUERY_TOPIC_ALIASES.children).toEqual(expect.arrayContaining(['pediatrics']));
-    expect(QUERY_TOPIC_ALIASES.genes).toEqual(expect.arrayContaining(['genetics', 'genomics']));
+    expect(QUERY_TOPIC_ALIASES.genes).toEqual(
+      expect.arrayContaining(['genetics', 'genomics']),
+    );
     expect(QUERY_TOPIC_ALIASES.immune).toEqual(expect.arrayContaining(['immunology']));
     expect(QUERY_TOPIC_ALIASES.climate).toEqual(
       expect.arrayContaining(['climate change', 'environmental science']),
@@ -119,8 +121,12 @@ describe('Meili synonyms derived from the governed research-area alias map', () 
       ['reproductive sciences', 'reproductive medicine'],
     ];
     for (const [variant, canonical] of expansions) {
-      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[variant]).toEqual(expect.arrayContaining([canonical]));
-      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[canonical]).toEqual(expect.arrayContaining([variant]));
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[variant]).toEqual(
+        expect.arrayContaining([canonical]),
+      );
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[canonical]).toEqual(
+        expect.arrayContaining([variant]),
+      );
     }
   });
 
@@ -178,9 +184,9 @@ describe('Meili synonyms derived from the governed research-area alias map', () 
   });
 
   it('is a pure function of the governed map plus curated clusters', () => {
-    expect(
-      buildResearchEntityMeiliSynonyms(RESEARCH_TOPIC_ALIAS_CLUSTERS, RESEARCH_AREA_ALIASES),
-    ).toEqual(RESEARCH_ENTITY_MEILI_SYNONYMS);
+    expect(buildResearchEntityMeiliSynonyms(RESEARCH_TOPIC_ALIAS_CLUSTERS, RESEARCH_AREA_ALIASES)).toEqual(
+      RESEARCH_ENTITY_MEILI_SYNONYMS,
+    );
     expect(buildResearchEntityMeiliSynonyms([], {})).toEqual({});
   });
 });

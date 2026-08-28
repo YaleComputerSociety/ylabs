@@ -120,7 +120,10 @@ export function cardGroundingScore(card: unknown, fullDescription: unknown): num
   return hits / tokens.length;
 }
 
-export function isCardGroundedInFullDescription(card: unknown, fullDescription: unknown): boolean {
+export function isCardGroundedInFullDescription(
+  card: unknown,
+  fullDescription: unknown,
+): boolean {
   const normalizedCard = normalizeForGrounding(textValue(card));
   const normalizedFull = normalizeForGrounding(textValue(fullDescription));
   if (!normalizedCard || !normalizedFull) return false;
@@ -214,9 +217,7 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
     return cleaned;
   }
 
-  const derived = sanitizeResearchEntityShortDescription(
-    deriveShortDescriptionFromFullDescription(full),
-  );
+  const derived = sanitizeResearchEntityShortDescription(deriveShortDescriptionFromFullDescription(full));
   if (
     derived &&
     shortDescriptionQuality(derived, full, researchAreas, { entityType: input.entityType }).isUseful
@@ -345,10 +346,7 @@ export interface ResolveGroundedCardInput {
  */
 const RESEARCHER_VOICE_STUDIES_LEAD_PATTERN = /^Studies\b/i;
 
-function rejectStudiesLeadOnProgramLike(
-  candidate: string,
-  isProgramLike: boolean | undefined,
-): string {
+function rejectStudiesLeadOnProgramLike(candidate: string, isProgramLike: boolean | undefined): string {
   return isProgramLike && RESEARCHER_VOICE_STUDIES_LEAD_PATTERN.test(candidate) ? '' : candidate;
 }
 
@@ -378,10 +376,7 @@ export async function resolveGroundedCardDescription(
   }
   const full = textValue(input.fullDescription);
   if (input.synthesize && full) {
-    const synthesized = rejectStudiesLeadOnProgramLike(
-      await input.synthesize(full),
-      input.isProgramLike,
-    );
+    const synthesized = rejectStudiesLeadOnProgramLike(await input.synthesize(full), input.isProgramLike);
     if (
       synthesized &&
       shortDescriptionQuality(synthesized, full, input.researchAreas, {

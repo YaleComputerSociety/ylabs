@@ -72,13 +72,17 @@ describe('normalizeResearchMetadataLabels', () => {
         'Demyelinating Autoimmune Diseases, CNSYSM Researcher',
         'HistonesYSM Researchers',
       ]),
-    ).toEqual(['Medicare', 'Demyelinating Autoimmune Diseases, CNS', 'Histones']);
+    ).toEqual([
+      'Medicare',
+      'Demyelinating Autoimmune Diseases, CNS',
+      'Histones',
+    ]);
   });
 
   it('drops a bare role label and dedupes the repaired value against a clean duplicate', () => {
-    expect(
-      normalizeResearchMetadataLabels(['YSM Researcher', 'MedicareYSM Researcher', 'Medicare']),
-    ).toEqual(['Medicare']);
+    expect(normalizeResearchMetadataLabels(['YSM Researcher', 'MedicareYSM Researcher', 'Medicare'])).toEqual([
+      'Medicare',
+    ]);
   });
 
   it('leaves clean labels untouched', () => {

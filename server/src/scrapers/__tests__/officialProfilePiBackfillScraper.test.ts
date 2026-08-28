@@ -2173,14 +2173,9 @@ describe('officialProfilePiBackfillScraper', () => {
       slug: 'nih-pi-drew-fixture',
     };
 
-    const identity = extractOfficialProfileIdentity(
-      engineeringProfileHtml,
-      engineeringProfileUrl,
-      entity,
-      {
-        requireEmail: false,
-      },
-    );
+    const identity = extractOfficialProfileIdentity(engineeringProfileHtml, engineeringProfileUrl, entity, {
+      requireEmail: false,
+    });
 
     expect(identity?.displayName).toBe('Drew Fixture');
   });
@@ -2193,14 +2188,9 @@ describe('officialProfilePiBackfillScraper', () => {
       departments: ['Pathology'],
     };
 
-    const identity = extractOfficialProfileIdentity(
-      engineeringProfileHtml,
-      engineeringProfileUrl,
-      entity,
-      {
-        expectedPeople: [{ fname: 'Drew', lname: 'Fixture' }],
-      },
-    );
+    const identity = extractOfficialProfileIdentity(engineeringProfileHtml, engineeringProfileUrl, entity, {
+      expectedPeople: [{ fname: 'Drew', lname: 'Fixture' }],
+    });
 
     expect(identity).toBeNull();
   });
@@ -3330,6 +3320,7 @@ describe('officialProfilePiBackfillScraper', () => {
     });
   });
 
+
   it('runs queued official profile description backfill for source-description entities', async () => {
     const emitted: ObservationInput[] = [];
     const scraper = new OfficialProfilePiBackfillScraper(
@@ -3532,6 +3523,13 @@ describe('officialProfilePiBackfillScraper', () => {
     ]);
   });
 
+
+
+
+
+
+
+
   it('rejects fetched given-name variant profile pages when the identity is another person', async () => {
     const emitted: ObservationInput[] = [];
     const variantProfileUrl = 'https://medicine.yale.edu/profile/mary-jane/';
@@ -3619,6 +3617,8 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
     expect(htmlFetcher).not.toHaveBeenCalled();
   });
+
+
 
   it('throttles repeated profile fetches in large visible bio batches', async () => {
     const emitted: ObservationInput[] = [];
@@ -4318,9 +4318,8 @@ describe('officialProfilePiBackfillScraper', () => {
 
   it('drops a lead-direct custom-subdomain website candidate the lead does not own', async () => {
     const emitted: ObservationInput[] = [];
-    const htmlFetcher = vi.fn(
-      async () =>
-        '<body>News: Dr. Karen Seto awarded a prize. Yale Urban brings together scholars across the university.</body>',
+    const htmlFetcher = vi.fn(async () =>
+      '<body>News: Dr. Karen Seto awarded a prize. Yale Urban brings together scholars across the university.</body>',
     );
     const scraper = new OfficialProfilePiBackfillScraper(
       htmlFetcher,

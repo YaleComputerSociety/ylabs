@@ -140,10 +140,7 @@ export default function EntityCorrectionReportPanel({
               Report an issue
             </h2>
             <p className="mt-1 text-sm text-gray-600">{entityName}</p>
-            <label
-              className="mt-4 block text-sm font-medium text-gray-800"
-              htmlFor="report-category"
-            >
+            <label className="mt-4 block text-sm font-medium text-gray-800" htmlFor="report-category">
               What is wrong?
             </label>
             <select

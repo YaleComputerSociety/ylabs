@@ -156,9 +156,7 @@ describe('directory discovery and de-duplication', () => {
   it('excludes the two programs already minted by the fellowships-office source', () => {
     expect(isExcludedAlreadyCoveredUrl('https://medicine.yale.edu/whr/training/')).toBe(true);
     expect(
-      isExcludedAlreadyCoveredUrl(
-        'https://ycmd.yale.edu/education/summer-undergraduate-internships',
-      ),
+      isExcludedAlreadyCoveredUrl('https://ycmd.yale.edu/education/summer-undergraduate-internships'),
     ).toBe(true);
     expect(isExcludedAlreadyCoveredUrl(surfUrl)).toBe(false);
   });
@@ -199,7 +197,9 @@ describe('YaleHealthSciencesSummerProgramsScraper run', () => {
       throw new Error(`unexpected fetch: ${url}`);
     });
     const scraper = new YaleHealthSciencesSummerProgramsScraper({
-      programSeeds: [{ url: surfUrl, hostingOffice: 'Yale School of Medicine' }],
+      programSeeds: [
+        { url: surfUrl, hostingOffice: 'Yale School of Medicine' },
+      ],
       directoryUrls: [listingUrl],
       fetchPage,
       retryDelay: async () => {},

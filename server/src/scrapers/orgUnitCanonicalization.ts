@@ -225,9 +225,7 @@ export function resetOrgUnitCanonicalizerCache(): void {
   cachedCanonicalizer = null;
 }
 
-export function setOrgUnitCanonicalizerForTesting(
-  canonicalizer: OrgUnitCanonicalizer | null,
-): void {
+export function setOrgUnitCanonicalizerForTesting(canonicalizer: OrgUnitCanonicalizer | null): void {
   cachedCanonicalizer = canonicalizer;
 }
 
@@ -445,8 +443,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       : asStringList(existing?.departments);
     const schools: string[] = [];
     const addSchool = (value: unknown): void => {
-      if (typeof value === 'string' && value.trim() && !schools.includes(value))
-        schools.push(value);
+      if (typeof value === 'string' && value.trim() && !schools.includes(value)) schools.push(value);
     };
     if (typeof effectiveSchool === 'string' && effectiveSchool.trim()) {
       addSchool(canonicalizer.canonicalizeSchool(effectiveSchool).value);

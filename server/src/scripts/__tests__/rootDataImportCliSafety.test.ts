@@ -15,9 +15,7 @@ async function importRootDataImporter(argv: string[] = []) {
   }) as never);
 
   try {
-    return await import(
-      `${pathToFileURL(modulePath).href}?case=${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    return await import(`${pathToFileURL(modulePath).href}?case=${Date.now()}-${Math.random().toString(36).slice(2)}`);
   } finally {
     exitSpy.mockRestore();
     process.argv = originalArgv;
@@ -60,14 +58,14 @@ describe('legacy root data import CLI safety helpers', () => {
       limit: 5,
       output: '/tmp/root-import.json',
     });
-    expect(() => parseRootDataImportArgs(['--limit=bad'])).toThrow(
-      /--limit requires a positive integer/,
-    );
+    expect(() => parseRootDataImportArgs(['--limit=bad'])).toThrow(/--limit requires a positive integer/);
     expect(() => parseRootDataImportArgs(['--output'])).toThrow(/--output requires a path/);
     expect(() => parseRootDataImportArgs(['--output', '--apply'])).toThrow(
       /--output requires a path/,
     );
-    expect(() => parseRootDataImportArgs(['--output=--apply'])).toThrow(/--output requires a path/);
+    expect(() => parseRootDataImportArgs(['--output=--apply'])).toThrow(
+      /--output requires a path/,
+    );
     expect(() => parseRootDataImportArgs(['--confirm-legacy-root-data-import=true'])).toThrow(
       /--confirm-legacy-root-data-import does not accept a value/,
     );
@@ -146,12 +144,7 @@ describe('legacy root data import CLI safety helpers', () => {
         generatedAt: '2026-06-02T12:00:00.000Z',
         environment: 'beta',
         db: 'Beta',
-        options: {
-          apply: false,
-          deleteSourceFiles: false,
-          limit: 4,
-          output: '/tmp/root-import.json',
-        },
+        options: { apply: false, deleteSourceFiles: false, limit: 4, output: '/tmp/root-import.json' },
       },
     );
 
@@ -159,12 +152,7 @@ describe('legacy root data import CLI safety helpers', () => {
       generatedAt: '2026-06-02T12:00:00.000Z',
       environment: 'beta',
       db: 'Beta',
-      options: {
-        apply: false,
-        deleteSourceFiles: false,
-        limit: 4,
-        output: '/tmp/root-import.json',
-      },
+      options: { apply: false, deleteSourceFiles: false, limit: 4, output: '/tmp/root-import.json' },
       physicsRows: 2,
       historyRows: 3,
       medicineRows: 4,

@@ -267,3 +267,4 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     return response.status(500).json({ error: 'Failed to fetch research entity' });
   }
 };
+

@@ -65,7 +65,10 @@ function parsePositiveInt(value: string | undefined): number {
 }
 
 export function assertFellowshipSourceLinkHealthApplyAllowed(
-  options: Pick<FellowshipSourceLinkHealthBackfillOptions, 'dryRun' | 'confirm' | 'explicitLimit'>,
+  options: Pick<
+    FellowshipSourceLinkHealthBackfillOptions,
+    'dryRun' | 'confirm' | 'explicitLimit'
+  >,
 ): void {
   const apply = !options.dryRun;
   if (apply && !options.confirm) {

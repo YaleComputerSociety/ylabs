@@ -39,9 +39,7 @@ describe('filterProseResearchAreaChips', () => {
   });
 
   it('classifies prose fragments and clean multi-word tags correctly', () => {
-    expect(
-      isProseResearchAreaChip('and cultural otherness in contemporary Buddhist thought.'),
-    ).toBe(true);
+    expect(isProseResearchAreaChip('and cultural otherness in contemporary Buddhist thought.')).toBe(true);
     expect(isProseResearchAreaChip('research interests')).toBe(true);
     expect(isProseResearchAreaChip('Scientific Data Visualization')).toBe(false);
     expect(isProseResearchAreaChip('Human-Robot Interaction')).toBe(false);

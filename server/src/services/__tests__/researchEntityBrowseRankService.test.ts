@@ -40,11 +40,7 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
       archived: false,
     });
 
-  const hostAffiliatedLab = async (
-    sourceId: mongoose.Types.ObjectId,
-    targetId: mongoose.Types.ObjectId,
-    archived = false,
-  ) =>
+  const hostAffiliatedLab = async (sourceId: mongoose.Types.ObjectId, targetId: mongoose.Types.ObjectId, archived = false) =>
     ResearchEntityRelationship.create({
       sourceResearchEntityId: sourceId,
       targetResearchEntityId: targetId,
@@ -119,9 +115,7 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     );
 
     const evidenceOf = async (id: mongoose.Types.ObjectId): Promise<boolean> => {
-      const doc = await ResearchEntity.findById(id).lean<{
-        hasUndergradHostingEvidence?: boolean;
-      }>();
+      const doc = await ResearchEntity.findById(id).lean<{ hasUndergradHostingEvidence?: boolean }>();
       return doc?.hasUndergradHostingEvidence ?? false;
     };
 

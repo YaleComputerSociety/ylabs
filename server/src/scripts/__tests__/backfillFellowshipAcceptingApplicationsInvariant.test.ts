@@ -17,7 +17,10 @@ describe('backfillFellowshipAcceptingApplicationsInvariant parseArgs', () => {
   });
 
   it('accepts apply with confirmation', () => {
-    const options = parseArgs(['--apply', '--confirm-accepting-applications-invariant-backfill']);
+    const options = parseArgs([
+      '--apply',
+      '--confirm-accepting-applications-invariant-backfill',
+    ]);
     expect(options.apply).toBe(true);
     expect(options.confirm).toBe(true);
   });

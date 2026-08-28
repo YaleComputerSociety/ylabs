@@ -1867,22 +1867,20 @@ describe('LabDetail page', () => {
       ...basePayload,
       // Deliberately feeds the retired researchActivityLinks field so this stays a
       // guard that a stale server payload renders no publication surface.
-      ...({
-        researchActivityLinks: [
-          {
-            _id: 'link-1',
-            relationshipBasis: 'explicit_entity_link',
-            evidenceLabel: 'Linked to this research profile',
-            title: 'Example research mechanism study',
-            url: EXAMPLE_MECHANISM_DOI,
-            destinationKind: 'DOI',
-            displaySource: 'DOI',
-            discoveredVia: 'OPENALEX',
-            year: 2024,
-            venue: 'Fixture Discovery Journal',
-          },
-        ],
-      } as Record<string, unknown>),
+      ...({ researchActivityLinks: [
+        {
+          _id: 'link-1',
+          relationshipBasis: 'explicit_entity_link',
+          evidenceLabel: 'Linked to this research profile',
+          title: 'Example research mechanism study',
+          url: EXAMPLE_MECHANISM_DOI,
+          destinationKind: 'DOI',
+          displaySource: 'DOI',
+          discoveredVia: 'OPENALEX',
+          year: 2024,
+          venue: 'Fixture Discovery Journal',
+        },
+      ] } as Record<string, unknown>),
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
@@ -1910,22 +1908,20 @@ describe('LabDetail page', () => {
       ],
       // Deliberately feeds the retired researchActivityLinks field so this stays a
       // guard that a stale server payload renders no publication surface.
-      ...({
-        researchActivityLinks: [
-          {
-            _id: 'profile-pub-1',
-            relationshipBasis: 'identity_authorship',
-            evidenceLabel: 'Authored by a listed professor',
-            title: 'Example systems publication',
-            url: EXAMPLE_SYSTEMS_DOI,
-            destinationKind: 'DOI',
-            displaySource: 'DOI',
-            discoveredVia: 'MANUAL',
-            year: 2025,
-            venue: 'Fixture Preprint Archive',
-          },
-        ],
-      } as Record<string, unknown>),
+      ...({ researchActivityLinks: [
+        {
+          _id: 'profile-pub-1',
+          relationshipBasis: 'identity_authorship',
+          evidenceLabel: 'Authored by a listed professor',
+          title: 'Example systems publication',
+          url: EXAMPLE_SYSTEMS_DOI,
+          destinationKind: 'DOI',
+          displaySource: 'DOI',
+          discoveredVia: 'MANUAL',
+          year: 2025,
+          venue: 'Fixture Preprint Archive',
+        },
+      ] } as Record<string, unknown>),
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);

@@ -43,7 +43,11 @@ const DEFAULTS = {
   conflictThreshold: 0.3,
 };
 
-const PROSE_COMPLETENESS_FIELDS = new Set(['bio', 'fullDescription', 'researchInterestSummary']);
+const PROSE_COMPLETENESS_FIELDS = new Set([
+  'bio',
+  'fullDescription',
+  'researchInterestSummary',
+]);
 
 // Curated manual overrides are meant to be authoritative until a human records a
 // newer one, not to age out against scraper re-scrapes on a 90-day half-life like
@@ -227,10 +231,7 @@ function preferGenuineEntityNameGroups<T extends { value: unknown; sources: Set<
       !isFacultyResearchName(group.value),
   );
   const isLowQualityNameGroup = (group: T): boolean => {
-    if (
-      micrositeGenuineExists &&
-      (isSynthesizedNameGroup(group) || isFacultyResearchName(group.value))
-    ) {
+    if (micrositeGenuineExists && (isSynthesizedNameGroup(group) || isFacultyResearchName(group.value))) {
       return true;
     }
     return someGroupHasHeadNoun && isBarePersonName(group.value);

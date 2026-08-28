@@ -676,10 +676,13 @@ const userDisplayName = (user: Record<string, any>): string =>
   textValue(`${textValue(user.fname || user.firstName)} ${textValue(user.lname || user.lastName)}`);
 
 const memberDisplayName = (member: Record<string, any>): string =>
-  userDisplayName(member.user || {}) || textValue(member.name);
+  userDisplayName(member.user || {}) ||
+  textValue(member.name);
 
 const memberEmailLocalTokens = (member: Record<string, any>): string[] => {
-  const email = textValue(member.user?.email || member.email).toLowerCase();
+  const email = textValue(
+    member.user?.email || member.email,
+  ).toLowerCase();
   if (!/^[^@\s]+@yale\.edu$/i.test(email)) return [];
   const localPart = email.split('@')[0] || '';
   return personNameTokens(localPart).filter((token) => token.length > 1);

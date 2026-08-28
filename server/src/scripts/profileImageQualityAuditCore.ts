@@ -34,9 +34,7 @@ const normalizedName = (user: ProfileImageAuditUser): string =>
     .trim();
 
 const normalizedIdentityKey = (user: ProfileImageAuditUser): string =>
-  normalizedName(user) ||
-  textValue(user.netid).toLowerCase() ||
-  textValue(user.email).toLowerCase();
+  normalizedName(user) || textValue(user.netid).toLowerCase() || textValue(user.email).toLowerCase();
 
 export function normalizedProfileImageUrl(value: unknown): string {
   const raw = textValue(value);

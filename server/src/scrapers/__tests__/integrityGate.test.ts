@@ -28,6 +28,7 @@ vi.mock('../../models/roleAssignment', () => ({
   RoleAssignment: { aggregate: modelMocks.aggregate },
 }));
 
+
 import { runPostMaterializationIntegrityGate } from '../integrityGate';
 
 describe('runPostMaterializationIntegrityGate', () => {

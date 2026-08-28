@@ -236,3 +236,4 @@ export const updateWatchedProgramPlan = async (request: Request, response: Respo
     sendPrivateAccountError(response, error, 'Failed to update watched program plan');
   }
 };
+

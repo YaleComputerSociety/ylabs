@@ -157,12 +157,7 @@ export const ensureBootstrapAdminGrant = async (netid: unknown): Promise<void> =
         grantedAt: now,
         note: 'Local dev-login bootstrap admin',
         history: [
-          {
-            action: 'granted',
-            actorNetid: 'system',
-            note: 'Local dev-login bootstrap admin',
-            at: now,
-          },
+          { action: 'granted', actorNetid: 'system', note: 'Local dev-login bootstrap admin', at: now },
         ],
       },
     },

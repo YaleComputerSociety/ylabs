@@ -28,7 +28,10 @@ describe('users routes', () => {
 
     const { res, next } = await invokeMiddleware('setPrivateUserCacheHeaders');
 
-    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Cache-Control',
+      'no-store, private, max-age=0',
+    );
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(next).toHaveBeenCalledOnce();
   });

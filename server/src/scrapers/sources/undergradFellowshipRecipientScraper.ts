@@ -74,7 +74,12 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import type {
+  IScraper,
+  ObservationInput,
+  ScraperContext,
+  ScraperResult,
+} from '../types';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -154,7 +159,10 @@ export interface ExtractorCtx {
 }
 
 /** Pure HTML → recipient rows. No I/O. */
-export type RecipientExtractor = (html: string, ctx: ExtractorCtx) => FellowshipRecipient[];
+export type RecipientExtractor = (
+  html: string,
+  ctx: ExtractorCtx,
+) => FellowshipRecipient[];
 
 export interface ProgramConfig {
   programKey: string;
@@ -223,7 +231,9 @@ export interface UserMatch {
 
 /** Stub used by every config that's currently blocked behind a PDF/gate. */
 export const manualUploadStub: RecipientExtractor = () => {
-  throw new Error('Recipient list not available as scrapable HTML — manual upload required');
+  throw new Error(
+    'Recipient list not available as scrapable HTML — manual upload required',
+  );
 };
 
 function parseCsvRows(input: string): string[][] {
@@ -349,9 +359,7 @@ function likelyProjectTitle(block: string): string | undefined {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter(
-      (line) => !/^(student|presenter|researcher|advisor|adviser|mentor|year)\s*[:-]/i.test(line),
-    );
+    .filter((line) => !/^(student|presenter|researcher|advisor|adviser|mentor|year)\s*[:-]/i.test(line));
   return lines[0] || undefined;
 }
 
@@ -389,9 +397,7 @@ export const manualRecipientPdfTextExtractor: RecipientExtractor = (text, ctx) =
     ]);
     if (!advisorName) continue;
 
-    const parsedYear = parseExactYear(
-      firstLabelValue(block, ['Year', 'Award Year', 'Fellowship Year']),
-    );
+    const parsedYear = parseExactYear(firstLabelValue(block, ['Year', 'Award Year', 'Fellowship Year']));
     const year = parsedYear ?? ctx.defaultYear;
     if (!year) continue;
 
@@ -505,7 +511,8 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     ],
     extractor: manualUploadStub,
     manualUploadRequired: true,
-    skipReason: 'STARS Summer recipient lists not publicly published; symposium booklets are PDFs',
+    skipReason:
+      'STARS Summer recipient lists not publicly published; symposium booklets are PDFs',
   },
   {
     programKey: 'deans-research',
@@ -515,7 +522,8 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     ],
     extractor: manualUploadStub,
     manualUploadRequired: true,
-    skipReason: "Dean's Research / Rosenfeld recipient lists not published; contact program office",
+    skipReason:
+      "Dean's Research / Rosenfeld recipient lists not published; contact program office",
   },
   {
     programKey: 'tetelman',
@@ -642,7 +650,10 @@ export function aggregateAdviseesByAdvisor(
  * The resolver is exposed via the `advisorResolver` dependency so tests can
  * inject a mock without touching mongoose.
  */
-export type AdvisorResearcherResolver = (name: string, orcid?: string) => Promise<UserMatch | null>;
+export type AdvisorResearcherResolver = (
+  name: string,
+  orcid?: string,
+) => Promise<UserMatch | null>;
 
 async function accountNetidForResearcher(accountId: unknown): Promise<string> {
   if (!accountId) return '';
@@ -757,7 +768,11 @@ export function buildObservationsForAdvisor(
 // Internal: HTTP fetch with cache passthrough
 // ---------------------------------------------------------------------------
 
-async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
+async function fetchHtml(
+  url: string,
+  useCache: boolean,
+  sourceName: string,
+): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `page:${safeUrlText}`;
@@ -818,7 +833,8 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
     deps: UndergradFellowshipScraperDeps = {},
   ) {
     const sourceName = this.name;
-    this.fetchPage = deps.fetchPage ?? ((url, useCache) => fetchHtml(url, useCache, sourceName));
+    this.fetchPage =
+      deps.fetchPage ?? ((url, useCache) => fetchHtml(url, useCache, sourceName));
     this.advisorResolver = deps.advisorResolver ?? defaultAdvisorResearcherResolver;
     this.ownerToGroupSlug = deps.ownerToGroupSlug ?? defaultOwnerToGroupSlug;
     this.defaultManualRecipientCsvDir =
@@ -871,7 +887,9 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           };
           ctx.log(`[${config.programKey}] using manual recipient CSV ${csvPath}`);
         } catch (err: any) {
-          ctx.log(`[${config.programKey}] manual CSV not found/readable: ${sanitizeLogValue(err)}`);
+          ctx.log(
+            `[${config.programKey}] manual CSV not found/readable: ${sanitizeLogValue(err)}`,
+          );
         }
       }
       const manualRecipientPdfDir = this.defaultManualRecipientPdfDir;
@@ -896,7 +914,9 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           };
           ctx.log(`[${config.programKey}] using manual recipient PDF ${pdfPath}`);
         } catch (err: any) {
-          ctx.log(`[${config.programKey}] manual PDF not found/readable: ${sanitizeLogValue(err)}`);
+          ctx.log(
+            `[${config.programKey}] manual PDF not found/readable: ${sanitizeLogValue(err)}`,
+          );
         }
       }
 
@@ -936,11 +956,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         const defaultYear = inferYearFromUrl(sourceUrl) || inferYearFromUrl(url);
         let pageRecipients: FellowshipRecipient[];
         try {
-          pageRecipients = effectiveConfig.extractor(html, {
-            pageUrl: url,
-            sourceUrl,
-            defaultYear,
-          });
+          pageRecipients = effectiveConfig.extractor(html, { pageUrl: url, sourceUrl, defaultYear });
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] extractor error on configured source: ${sanitizeLogValue(err)}`,
@@ -964,9 +980,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         continue;
       }
       if (recipients.length === 0) {
-        ctx.log(
-          `[${config.programKey}] 0 recipients found across ${effectiveConfig.urls.length} URL(s)`,
-        );
+        ctx.log(`[${config.programKey}] 0 recipients found across ${effectiveConfig.urls.length} URL(s)`);
         perProgram.push({ key: config.programKey, status: 'empty', count: 0 });
         continue;
       }

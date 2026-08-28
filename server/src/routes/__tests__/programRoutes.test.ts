@@ -26,9 +26,7 @@ const routeByPath = (path: string) =>
   (router as any).stack.map((layer: any) => layer.route).find((route: any) => route?.path === path);
 
 const routeHandlerNames = (path: string): string[] =>
-  routeByPath(path)
-    ?.stack.map((layer: any) => layer.handle?.name)
-    .filter(Boolean) || [];
+  routeByPath(path)?.stack.map((layer: any) => layer.handle?.name).filter(Boolean) || [];
 
 describe('program routes', () => {
   it('uses canonical program handlers instead of exporting the fellowship router', () => {
@@ -42,7 +40,10 @@ describe('program routes', () => {
 
     const { res, next } = await invokeMiddleware('setPrivateProgramCacheHeaders');
 
-    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Cache-Control',
+      'no-store, private, max-age=0',
+    );
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(next).toHaveBeenCalledOnce();
   });

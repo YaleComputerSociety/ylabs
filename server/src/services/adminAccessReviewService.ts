@@ -75,7 +75,9 @@ export function normalizeAccessReviewObjectId(id: unknown): mongoose.Types.Objec
   return new mongoose.Types.ObjectId(value);
 }
 
-async function resolveReviewerAccountId(netid: unknown): Promise<mongoose.Types.ObjectId | null> {
+async function resolveReviewerAccountId(
+  netid: unknown,
+): Promise<mongoose.Types.ObjectId | null> {
   if (typeof netid !== 'string') return null;
   const normalized = netid.trim().toLowerCase();
   if (!normalized) return null;

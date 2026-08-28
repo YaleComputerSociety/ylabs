@@ -70,7 +70,9 @@ export const stripResearchDescriptionChrome = (value: unknown): string => {
 
 export const normalizeResearchStringArray = (values: unknown): string[] =>
   Array.isArray(values)
-    ? values.map((value) => (typeof value === 'string' ? value.trim() : '')).filter(Boolean)
+    ? values
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
     : [];
 
 export const isResearchSourceChromeText = (value: unknown): boolean => {

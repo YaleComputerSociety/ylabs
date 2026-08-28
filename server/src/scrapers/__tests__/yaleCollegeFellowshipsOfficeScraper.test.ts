@@ -113,9 +113,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
 
     expect(candidates).toHaveLength(1);
-    expect(candidates[0].title).toBe(
-      'Fixture Fellowship for International Research in the Sciences',
-    );
+    expect(candidates[0].title).toBe('Fixture Fellowship for International Research in the Sciences');
     expect(candidates[0].sourceKey).toBe(
       'yale-college-fellowships-office:fixture-fellowship-for-international-research-in-the-sciences',
     );
@@ -1374,7 +1372,8 @@ describe('YaleCollegeFellowshipsOfficeScraper find-funding sitemap crawl (#1536)
   const sitemapUrl = 'https://funding.yale.edu/sitemap.xml';
   const externalAwardUrl = 'https://funding.yale.edu/external-award/fixture-goldwater-scholarship';
   const findFundingProgramUrl = 'https://funding.yale.edu/find-funding/fixture-light-fellowship';
-  const communityForceUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=1536';
+  const communityForceUrl =
+    'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=1536';
 
   const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -1730,14 +1729,13 @@ describe('YaleCollegeFellowshipsOfficeScraper cbey funding-opportunities catalog
     expect(grants?.reviewRequired).toBe(true);
     expect(grants?.applicationLink).toBeUndefined();
     expect(grants?.links).toEqual([
-      {
-        label: 'Climate Innovation Grants',
-        url: 'https://cbey.yale.edu/programs/climate-innovation-grants',
-      },
+      { label: 'Climate Innovation Grants', url: 'https://cbey.yale.edu/programs/climate-innovation-grants' },
     ]);
     expect(grants?.contactOffice).toBe('Yale Center for Business and the Environment');
 
-    const prize = candidates.find((candidate) => candidate.title.startsWith('Sobotka Seed Prize'));
+    const prize = candidates.find((candidate) =>
+      candidate.title.startsWith('Sobotka Seed Prize'),
+    );
     expect(prize?.applicationLink).toBe(
       'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=71',
     );
@@ -1781,9 +1779,7 @@ describe('YaleCollegeFellowshipsOfficeScraper cbey funding-opportunities catalog
       new Date('2026-08-23T00:00:00.000Z'),
     );
     const observations = candidateToObservations(candidate);
-    expect(observations.find((obs) => obs.field === 'title')?.value).toBe(
-      'Climate Innovation Grants',
-    );
+    expect(observations.find((obs) => obs.field === 'title')?.value).toBe('Climate Innovation Grants');
     expect(observations.find((obs) => obs.field === 'sourceName')?.value).toBe(
       'yale-college-fellowships-office',
     );
@@ -1846,9 +1842,7 @@ describe('YaleCollegeFellowshipsOfficeScraper student-faculty awards index crawl
       STUDENT_FACULTY_AWARDS_INDEX_URL,
       new Date('2026-01-01T00:00:00Z'),
     );
-    expect(candidates.every((candidate) => candidate.title !== 'Student-Faculty Awards')).toBe(
-      true,
-    );
+    expect(candidates.every((candidate) => candidate.title !== 'Student-Faculty Awards')).toBe(true);
   });
 
   it('cites each discovered program page as its own source and never the index root', async () => {
@@ -1915,10 +1909,7 @@ describe('YaleCollegeFellowshipsOfficeScraper student-faculty awards index crawl
       'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=810',
       expect.anything(),
     );
-    expect(fetchPage).not.toHaveBeenCalledWith(
-      'https://studentgrants.yale.edu/',
-      expect.anything(),
-    );
+    expect(fetchPage).not.toHaveBeenCalledWith('https://studentgrants.yale.edu/', expect.anything());
 
     const applicationLinks = emitted
       .filter((obs) => obs.field === 'applicationLink')
@@ -1970,8 +1961,7 @@ describe('YaleCollegeFellowshipsOfficeScraper STEM fellowships hub crawl (#1564)
   const sumryUrl = 'https://sumry.yale.edu/sumry';
   const crispUrl =
     'https://crisp.yale.edu/education/crisp-research-experiences-undergraduates-reu-program';
-  const gsasUrl =
-    'https://gsas.yale.edu/programs-of-study/summer-undergraduate-research-fellowship-program';
+  const gsasUrl = 'https://gsas.yale.edu/programs-of-study/summer-undergraduate-research-fellowship-program';
   const sroUrl = 'https://economics.yale.edu/undergraduate/sro';
   const hixonPortalUrl = 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=hixon';
 
@@ -2307,14 +2297,11 @@ describe('YaleCollegeFellowshipsOfficeScraper MacMillan council grant pages (#15
       .map((obs) => obs.value)
       .sort();
     expect(sourceUrls).toEqual([latamUrl, southAsiaUrl].sort());
-    expect(
-      emitted.every((obs) => obs.sourceUrl !== MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT),
-    ).toBe(true);
-    expect(fetchPage).not.toHaveBeenCalledWith(communityForcePortalUrl, expect.anything());
-    expect(fetchPage).not.toHaveBeenCalledWith(
-      'https://studentgrants.yale.edu/',
-      expect.anything(),
+    expect(emitted.every((obs) => obs.sourceUrl !== MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT)).toBe(
+      true,
     );
+    expect(fetchPage).not.toHaveBeenCalledWith(communityForcePortalUrl, expect.anything());
+    expect(fetchPage).not.toHaveBeenCalledWith('https://studentgrants.yale.edu/', expect.anything());
     expect(fetchPage).not.toHaveBeenCalledWith(
       MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT,
       expect.anything(),

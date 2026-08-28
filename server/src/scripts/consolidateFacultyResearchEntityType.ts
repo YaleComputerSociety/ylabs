@@ -138,9 +138,7 @@ export async function runFacultyResearchTypeConsolidation(options: {
     try {
       await ResearchEntity.bulkWrite(
         batch.map((row) => {
-          const set: Record<string, string> = {
-            entityType: CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE,
-          };
+          const set: Record<string, string> = { entityType: CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE };
           if (row.kindTo) set.kind = CANONICAL_FACULTY_RESEARCH_KIND;
           return { updateOne: { filter: { _id: row.id }, update: { $set: set } } };
         }),
@@ -151,10 +149,7 @@ export async function runFacultyResearchTypeConsolidation(options: {
       result.synced += fresh.length;
     } catch (error) {
       result.errors += batch.length;
-      console.error(
-        'faculty-research entityType consolidation batch failed:',
-        sanitizeLogValue(error),
-      );
+      console.error('faculty-research entityType consolidation batch failed:', sanitizeLogValue(error));
     }
   }
   return result;

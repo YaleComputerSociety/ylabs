@@ -70,18 +70,11 @@ export async function planCardBackfillRow(
   const isShortUseful = (text: string): boolean =>
     isProgramLike
       ? programCardShortDescriptionQuality(text, full).isUseful
-      : shortDescriptionQuality(text, full, entity.researchAreas, {
-          entityType: resolvedEntityType,
-        }).isUseful;
+      : shortDescriptionQuality(text, full, entity.researchAreas, { entityType: resolvedEntityType })
+          .isUseful;
 
   if (short && isShortUseful(short)) {
-    return {
-      ...base,
-      action: 'short-ok',
-      proposedShort: null,
-      gainedCard: false,
-      wouldPromote: false,
-    };
+    return { ...base, action: 'short-ok', proposedShort: null, gainedCard: false, wouldPromote: false };
   }
   // classifyFullDescription's "genuine" bar (research-focus phrasing, a 120-char
   // thin-full floor) is tuned for lab prose; a program's fullDescription is
@@ -105,13 +98,7 @@ export async function planCardBackfillRow(
     synthesize,
   });
   if (!card || !isShortUseful(card)) {
-    return {
-      ...base,
-      action: 'no-card',
-      proposedShort: null,
-      gainedCard: false,
-      wouldPromote: false,
-    };
+    return { ...base, action: 'no-card', proposedShort: null, gainedCard: false, wouldPromote: false };
   }
 
   const derived = isProgramLike

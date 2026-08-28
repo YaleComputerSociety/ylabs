@@ -123,12 +123,7 @@ describe('officialResearchDescription', () => {
     expect(full.length).toBeGreaterThan(0);
     expect(full.length).toBeLessThanOrEqual(2400);
     expect(full.endsWith('.')).toBe(true);
-    const lastWord =
-      full
-        .replace(/[.!?]+$/, '')
-        .trim()
-        .split(' ')
-        .at(-1) ?? '';
+    const lastWord = full.replace(/[.!?]+$/, '').trim().split(' ').at(-1) ?? '';
     expect(aboutProse).toContain(lastWord);
   });
 

@@ -212,20 +212,8 @@ describe('planCardBackfillRow topic-label-list awareness (#1730/#1680)', () => {
 describe('summarizeCardBackfill', () => {
   it('tallies actions, cards gained, and promotions', () => {
     const rows: CardBackfillRow[] = [
-      {
-        id: '1',
-        action: 'card-synthesized',
-        proposedShort: 'x',
-        gainedCard: true,
-        wouldPromote: true,
-      },
-      {
-        id: '2',
-        action: 'card-derived',
-        proposedShort: 'y',
-        gainedCard: true,
-        wouldPromote: false,
-      },
+      { id: '1', action: 'card-synthesized', proposedShort: 'x', gainedCard: true, wouldPromote: true },
+      { id: '2', action: 'card-derived', proposedShort: 'y', gainedCard: true, wouldPromote: false },
       { id: '3', action: 'no-card', proposedShort: null, gainedCard: false, wouldPromote: false },
       { id: '4', action: 'short-ok', proposedShort: null, gainedCard: false, wouldPromote: false },
     ];

@@ -23,13 +23,7 @@ describe('findOrCreateForOwner canonical PI assignment', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of [
-      'accounts',
-      'researchers',
-      'role_assignments',
-      'users',
-      'research_entities',
-    ]) {
+    for (const name of ['accounts', 'researchers', 'role_assignments', 'users', 'research_entities']) {
       await db.collection(name).deleteMany({});
     }
   });

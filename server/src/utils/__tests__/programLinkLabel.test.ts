@@ -18,32 +18,23 @@ describe('isBareUrlLinkLabel', () => {
 describe('humanizeProgramLinkLabel', () => {
   it('replaces a bare-URL label with a host-based human label', () => {
     expect(
-      humanizeProgramLinkLabel(
-        'http://studentgrants.example.edu/',
-        'https://studentgrants.example.edu/',
-      ),
+      humanizeProgramLinkLabel('http://studentgrants.example.edu/', 'https://studentgrants.example.edu/'),
     ).toBe('studentgrants.example.edu');
     expect(
-      humanizeProgramLinkLabel(
-        'https://sumry.example.edu/sumry',
-        'https://sumry.example.edu/sumry',
-      ),
+      humanizeProgramLinkLabel('https://sumry.example.edu/sumry', 'https://sumry.example.edu/sumry'),
     ).toBe('sumry.example.edu/sumry');
   });
 
   it('derives the label from the canonical url even when the bare-URL label uses a different scheme', () => {
     expect(
-      humanizeProgramLinkLabel(
-        'http://studentgrants.example.edu/',
-        'https://studentgrants.example.edu/',
-      ),
+      humanizeProgramLinkLabel('http://studentgrants.example.edu/', 'https://studentgrants.example.edu/'),
     ).toBe('studentgrants.example.edu');
   });
 
   it('strips a leading www. from the derived label', () => {
-    expect(
-      humanizeProgramLinkLabel('https://www.example.edu/apply', 'https://www.example.edu/apply'),
-    ).toBe('example.edu/apply');
+    expect(humanizeProgramLinkLabel('https://www.example.edu/apply', 'https://www.example.edu/apply')).toBe(
+      'example.edu/apply',
+    );
   });
 
   it('keeps a genuine human label untouched', () => {

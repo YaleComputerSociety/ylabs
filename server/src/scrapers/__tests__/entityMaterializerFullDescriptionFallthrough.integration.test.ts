@@ -39,8 +39,7 @@ const ALTERNATE_CLEAN_FULL =
 const APPOINTMENT_ONLY_ALT =
   'Dr. Avery Park is an Associate Professor of Cell Biology at Yale University.';
 
-const GROUNDED_CARD =
-  'Studies immune regulation and cancer immunotherapy in the tumor microenvironment.';
+const GROUNDED_CARD = 'Studies immune regulation and cancer immunotherapy in the tumor microenvironment.';
 
 type PersistedEntity = { fullDescription?: string; shortDescription?: string };
 
@@ -113,12 +112,7 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
   it('materializes a lower-confidence clean observation when the top-confidence winner sanitizes to empty', async () => {
     await seedEntity();
     await seedFull(PUBLICATIONS_DUMP_FULL, 'ysm-atoz-index', 0.95, '2026-02-01T00:00:00Z');
-    await seedFull(
-      CLEAN_MICROSITE_FULL,
-      'lab-microsite-description-llm',
-      0.75,
-      '2026-01-01T00:00:00Z',
-    );
+    await seedFull(CLEAN_MICROSITE_FULL, 'lab-microsite-description-llm', 0.75, '2026-01-01T00:00:00Z');
 
     const calls: string[] = [];
     await materializeEntity(
@@ -127,9 +121,7 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
       { synthesizeCardDescription: capturingSynthesizer(calls) },
     );
 
-    const persisted = await ResearchEntity.findOne({
-      slug: 'fallthrough-fixture',
-    }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({ slug: 'fallthrough-fixture' }).lean<PersistedEntity>();
 
     expect(persisted?.fullDescription).toBe(CLEAN_MICROSITE_FULL);
     expect(persisted?.fullDescription).not.toContain('Selected Publications');
@@ -140,12 +132,7 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
   it('falls through past a roster-shaped winner to the clean observation', async () => {
     await seedEntity();
     await seedFull(ROSTER_DUMP_FULL, 'ysm-atoz-index', 0.95, '2026-02-01T00:00:00Z');
-    await seedFull(
-      CLEAN_MICROSITE_FULL,
-      'lab-microsite-description-llm',
-      0.7,
-      '2026-01-01T00:00:00Z',
-    );
+    await seedFull(CLEAN_MICROSITE_FULL, 'lab-microsite-description-llm', 0.7, '2026-01-01T00:00:00Z');
 
     await materializeEntity(
       'researchEntity',
@@ -153,21 +140,14 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
       { synthesizeCardDescription: capturingSynthesizer([]) },
     );
 
-    const persisted = await ResearchEntity.findOne({
-      slug: 'fallthrough-fixture',
-    }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({ slug: 'fallthrough-fixture' }).lean<PersistedEntity>();
     expect(persisted?.fullDescription).toBe(CLEAN_MICROSITE_FULL);
   });
 
   it('stays empty when the winner blanks and the only alternative is a non-useful bio fragment', async () => {
     await seedEntity({ name: 'Park Laboratory' });
     await seedFull(PUBLICATIONS_DUMP_FULL, 'ysm-atoz-index', 0.95, '2026-02-01T00:00:00Z');
-    await seedFull(
-      APPOINTMENT_ONLY_ALT,
-      'official-profile-pi-backfill',
-      0.7,
-      '2026-01-01T00:00:00Z',
-    );
+    await seedFull(APPOINTMENT_ONLY_ALT, 'official-profile-pi-backfill', 0.7, '2026-01-01T00:00:00Z');
 
     const calls: string[] = [];
     await materializeEntity(
@@ -176,9 +156,7 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
       { synthesizeCardDescription: capturingSynthesizer(calls) },
     );
 
-    const persisted = await ResearchEntity.findOne({
-      slug: 'fallthrough-fixture',
-    }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({ slug: 'fallthrough-fixture' }).lean<PersistedEntity>();
     expect(persisted?.fullDescription).toBe('');
     expect(calls).toHaveLength(0);
     expect(persisted?.shortDescription ?? '').toBe('');
@@ -186,33 +164,16 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
 
   it('does not displace a useful top-confidence winner with a lower-ranked observation', async () => {
     await seedEntity({ name: 'Park Laboratory' });
-    await seedFull(
-      CLEAN_WINNER_FULL,
-      'lab-microsite-description-llm',
-      0.95,
-      '2026-02-01T00:00:00Z',
-    );
-    await seedFull(
-      ALTERNATE_CLEAN_FULL,
-      'department-undergrad-research',
-      0.7,
-      '2026-01-01T00:00:00Z',
-    );
+    await seedFull(CLEAN_WINNER_FULL, 'lab-microsite-description-llm', 0.95, '2026-02-01T00:00:00Z');
+    await seedFull(ALTERNATE_CLEAN_FULL, 'department-undergrad-research', 0.7, '2026-01-01T00:00:00Z');
 
     await materializeEntity(
       'researchEntity',
       { entityKey: 'fallthrough-fixture' },
-      {
-        synthesizeCardDescription: capturingSynthesizer(
-          [],
-          'Studies tissue regeneration and epithelial signaling.',
-        ),
-      },
+      { synthesizeCardDescription: capturingSynthesizer([], 'Studies tissue regeneration and epithelial signaling.') },
     );
 
-    const persisted = await ResearchEntity.findOne({
-      slug: 'fallthrough-fixture',
-    }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({ slug: 'fallthrough-fixture' }).lean<PersistedEntity>();
     expect(persisted?.fullDescription).toBe(CLEAN_WINNER_FULL);
   });
 });

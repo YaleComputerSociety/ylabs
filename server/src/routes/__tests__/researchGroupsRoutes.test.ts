@@ -2,14 +2,10 @@ import { describe, expect, it } from 'vitest';
 import router from '../researchGroups';
 
 const routesByPath = (path: string) =>
-  (router as any).stack
-    .map((layer: any) => layer.route)
-    .filter((route: any) => route?.path === path);
+  (router as any).stack.map((layer: any) => layer.route).filter((route: any) => route?.path === path);
 
 const routeMethods = (path: string) =>
-  routesByPath(path).flatMap((route: any) =>
-    Object.keys(route.methods).filter((m) => route.methods[m]),
-  );
+  routesByPath(path).flatMap((route: any) => Object.keys(route.methods).filter((m) => route.methods[m]));
 
 const routeHandlerNames = (path: string, method: string): string[] =>
   routesByPath(path)

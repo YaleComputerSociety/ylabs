@@ -1089,10 +1089,7 @@ const recoverBioFromSubjectlessOpener = (value: string): string => {
   if (!text) return '';
   if (startsWithUppercaseAlpha(text)) return text;
   for (const endIndex of profileBioSentenceEndIndices(text)) {
-    const remainder = text
-      .slice(endIndex + 1)
-      .replace(/^["'“”\s]+/, '')
-      .trim();
+    const remainder = text.slice(endIndex + 1).replace(/^["'“”\s]+/, '').trim();
     if (!remainder || WEAK_SUBJECT_BIO_OPENER.test(remainder)) continue;
     if (startsWithUppercaseAlpha(remainder)) return remainder;
   }
@@ -1991,3 +1988,4 @@ const sanitizeAdminProfileScalarFields = (update: Record<string, any>) => {
     else delete update.userType;
   }
 };
+

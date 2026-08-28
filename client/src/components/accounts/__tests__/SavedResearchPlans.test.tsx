@@ -377,7 +377,9 @@ describe('SavedResearchPlans', () => {
     expect(screen.getByRole('button', { name: /^Compare/ })).not.toBeDisabled();
   });
 
-  const withStagedPlans = (plans: Record<string, { privateNotes?: string; stage?: string }>) => {
+  const withStagedPlans = (
+    plans: Record<string, { privateNotes?: string; stage?: string }>,
+  ) => {
     mockedAxios.get.mockImplementation((url: string) => {
       if (url === '/users/savedResearchEntityIds') {
         return Promise.resolve({ data: { savedResearchEntityIds: ['owner-lab', 'other-lab'] } });

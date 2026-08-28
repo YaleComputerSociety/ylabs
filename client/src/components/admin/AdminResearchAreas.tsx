@@ -61,10 +61,7 @@ type ResearchAreaAction = InlineCrudAction<ResearchArea, NewDraft, EditDraft>;
 
 const AdminResearchAreas = () => {
   const [state, dispatch] = useReducer(
-    inlineCrudReducer as (
-      state: ResearchAreaState,
-      action: ResearchAreaAction,
-    ) => ResearchAreaState,
+    inlineCrudReducer as (state: ResearchAreaState, action: ResearchAreaAction) => ResearchAreaState,
     createInitialInlineCrudState<ResearchArea, NewDraft, EditDraft>(INITIAL_NEW_DRAFT),
   );
   const { items: areas, isLoading, search, newDraft, editingId, editDraft } = state;

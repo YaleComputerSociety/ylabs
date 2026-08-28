@@ -41,7 +41,11 @@ const DEFAULT_LIMIT = 1000;
 const DEFAULT_SAMPLE_SIZE = 25;
 const DEFAULT_OUTPUT = '/tmp/ylabs-beta-student-analytics-cleanup.json';
 
-export const BETA_STUDENT_ANALYTICS_USER_TYPES = ['student', 'undergraduate', 'graduate'] as const;
+export const BETA_STUDENT_ANALYTICS_USER_TYPES = [
+  'student',
+  'undergraduate',
+  'graduate',
+] as const;
 
 export function buildClearBetaStudentAnalyticsApplyCommand(limit: number): string {
   return `SCRAPER_ENV=beta yarn --cwd server beta:clear-student-analytics --apply --confirm-clear-student-analytics --limit=${limit} --output ${DEFAULT_OUTPUT}`;
@@ -68,7 +72,9 @@ function parsePositiveIntegerOption(
   return parsed;
 }
 
-export function parseClearBetaStudentAnalyticsArgs(argv: string[]): ClearBetaStudentAnalyticsArgs {
+export function parseClearBetaStudentAnalyticsArgs(
+  argv: string[],
+): ClearBetaStudentAnalyticsArgs {
   const args: ClearBetaStudentAnalyticsArgs = {
     apply: false,
     limit: DEFAULT_LIMIT,
@@ -168,7 +174,9 @@ export function buildClearBetaStudentAnalyticsSummary(args: {
       ...(toIsoString(sample.firstEventAt)
         ? { firstEventAt: toIsoString(sample.firstEventAt) }
         : {}),
-      ...(toIsoString(sample.lastEventAt) ? { lastEventAt: toIsoString(sample.lastEventAt) } : {}),
+      ...(toIsoString(sample.lastEventAt)
+        ? { lastEventAt: toIsoString(sample.lastEventAt) }
+        : {}),
     })),
   };
 }

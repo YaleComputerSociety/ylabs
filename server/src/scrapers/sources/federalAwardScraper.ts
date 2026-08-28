@@ -39,7 +39,8 @@ import { resolveResearcherIdForPersonName } from '../../services/researcherPerso
 import { resolveUserForPi, piGroupKey, type FederalPiResolverDeps } from './nsfAwardScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
-const USASPENDING_SEARCH_URL = 'https://api.usaspending.gov/api/v2/search/spending_by_award/';
+const USASPENDING_SEARCH_URL =
+  'https://api.usaspending.gov/api/v2/search/spending_by_award/';
 const AWARD_PUBLIC_URL_PREFIX = 'https://www.usaspending.gov/award/';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -162,10 +163,7 @@ export function awardPublicUrl(award: UsaspendingAward): string | null {
   return null;
 }
 
-export function awardToRecord(
-  entry: FederalAward,
-  role: 'pi' | 'copi' = 'pi',
-): RecentGrantRecord | null {
+export function awardToRecord(entry: FederalAward, role: 'pi' | 'copi' = 'pi'): RecentGrantRecord | null {
   const url = awardPublicUrl(entry.award);
   const id = (entry.award.generated_internal_id || entry.award['Award ID'] || '').trim();
   if (!url || !id) return null;
@@ -325,10 +323,9 @@ function defaultTimePeriod(): { start_date: string; end_date: string } {
   const start = new Date();
   start.setFullYear(start.getFullYear() - DEFAULT_LOOKBACK_YEARS);
   const iso = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(
-      2,
-      '0',
-    )}`;
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate(),
+    ).padStart(2, '0')}`;
   return { start_date: iso(start), end_date: iso(end) };
 }
 
@@ -340,9 +337,7 @@ export class FederalAwardScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const timePeriod = this.deps.timePeriod ?? defaultTimePeriod();
-    const resolverDeps: FederalPiResolverDeps = {
-      resolveResearcherId: this.deps.resolveResearcherId,
-    };
+    const resolverDeps: FederalPiResolverDeps = { resolveResearcherId: this.deps.resolveResearcherId };
     const fetcher = this.deps.fetchAgencyPage ?? fetchAgencyPage;
     const agencies = this.deps.agencies ?? FEDERAL_AGENCIES;
     const researchHomeResolver =

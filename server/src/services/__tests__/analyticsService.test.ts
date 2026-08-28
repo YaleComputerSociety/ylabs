@@ -667,10 +667,12 @@ describe('getAnalytics research coverage and range scoping', () => {
       },
     ]);
 
-    const chainableFindReturning = (docs: unknown[]) => () => ({
-      select: () => ({ lean: async () => docs }),
-      lean: async () => docs,
-    });
+    const chainableFindReturning =
+      (docs: unknown[]) =>
+      () => ({
+        select: () => ({ lean: async () => docs }),
+        lean: async () => docs,
+      });
     mocks.getListingModel.mockReturnValue({
       aggregate: vi.fn().mockResolvedValue([listingFacetStub]),
       find: chainableFindReturning([{ _id: listingId, title: 'Legacy Listing Title' }]),
@@ -853,10 +855,12 @@ describe('getUserAnalyticsDrilldown', () => {
         }),
       }),
     });
-    const chainableFindReturning = (docs: unknown[]) => () => ({
-      select: () => ({ lean: async () => docs }),
-      lean: async () => docs,
-    });
+    const chainableFindReturning =
+      (docs: unknown[]) =>
+      () => ({
+        select: () => ({ lean: async () => docs }),
+        lean: async () => docs,
+      });
     mocks.getListingModel.mockReturnValue({
       find: chainableFindReturning([{ _id: listingId, title: 'Genomics Lab Position' }]),
     });

@@ -108,10 +108,9 @@ async function collectSamples(
 
   if (edge.required) {
     const missingRows = await collection
-      .aggregate<{
-        id?: unknown;
-        value?: unknown;
-      }>(buildMissingRequiredRefSamplePipeline(edge.localField, sampleLimit, ownerFilter))
+      .aggregate<{ id?: unknown; value?: unknown }>(
+        buildMissingRequiredRefSamplePipeline(edge.localField, sampleLimit, ownerFilter),
+      )
       .toArray();
     for (const row of missingRows) {
       samples.push({
@@ -172,12 +171,7 @@ async function auditEdge(
       })
     : 0;
   const orphanedPresentRefs = edge.isArray
-    ? await countArrayRefOrphans(
-        collection,
-        edge.localField,
-        edge.targetCollectionName,
-        ownerFilter,
-      )
+    ? await countArrayRefOrphans(collection, edge.localField, edge.targetCollectionName, ownerFilter)
     : await countScalarRefOrphans(
         collection,
         edge.localField,

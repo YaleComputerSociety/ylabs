@@ -29,11 +29,7 @@ function valueAfterEquals(arg: string, flag: string): string | undefined {
   return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
 }
 
-function consumeValue(
-  argv: string[],
-  index: number,
-  flag: string,
-): { value: string; nextIndex: number } {
+function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
   const arg = argv[index];
   const inline = valueAfterEquals(arg, flag);
   const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
@@ -109,9 +105,7 @@ export function writeIntegrityGateOutput(value: unknown, output?: string): void 
 }
 
 export function buildScraperIntegrityGateOutput<
-  T extends PostMaterializationIntegritySummary & {
-    claimGate?: ReturnType<typeof buildClaimGateReport>;
-  },
+  T extends PostMaterializationIntegritySummary & { claimGate?: ReturnType<typeof buildClaimGateReport> },
 >(
   result: T,
   metadata: {
@@ -141,9 +135,8 @@ async function main(): Promise<void> {
 
   const options = parseScraperIntegrityGateArgs(process.argv.slice(2));
   await mongoose.connect(mongoUrl);
-  const result: PostMaterializationIntegritySummary & {
-    claimGate?: ReturnType<typeof buildClaimGateReport>;
-  } = await runPostMaterializationIntegrityGate(options);
+  const result: PostMaterializationIntegritySummary & { claimGate?: ReturnType<typeof buildClaimGateReport> } =
+    await runPostMaterializationIntegrityGate(options);
   if (options.includeClaimGate) {
     const artifacts = await loadResearchAccessArtifacts(options.limit);
     result.claimGate = buildClaimGateReport({

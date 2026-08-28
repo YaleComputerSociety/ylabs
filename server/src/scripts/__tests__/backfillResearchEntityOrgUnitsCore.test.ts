@@ -11,12 +11,7 @@ import {
 } from '../backfillResearchEntityOrgUnitsCore';
 
 const rows = [
-  {
-    slug: 'yale-school-of-medicine',
-    name: 'Yale School of Medicine',
-    kind: 'SCHOOL' as const,
-    aliases: ['YSM'],
-  },
+  { slug: 'yale-school-of-medicine', name: 'Yale School of Medicine', kind: 'SCHOOL' as const, aliases: ['YSM'] },
   { slug: 'neuroscience', name: 'Neuroscience', kind: 'DEPARTMENT' as const, aliases: ['NSCI'] },
 ];
 const deptToSchool = new Map([['Neuroscience', 'Yale School of Medicine']]);

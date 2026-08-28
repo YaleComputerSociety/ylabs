@@ -19,15 +19,13 @@ const Login = () => {
     if (returnPath.startsWith('/research') || returnPath.startsWith('/listings')) {
       return {
         heading: 'Continue to Yale Research',
-        description:
-          'Use your Yale account to save research homes, keep private notes, and reach out.',
+        description: 'Use your Yale account to save research homes, keep private notes, and reach out.',
       };
     }
     if (returnPath.startsWith('/programs') || returnPath.startsWith('/fellowships')) {
       return {
         heading: 'Continue to Programs & Fellowships',
-        description:
-          'Use your Yale account to review structured programs, funding cycles, and planning context.',
+        description: 'Use your Yale account to review structured programs, funding cycles, and planning context.',
       };
     }
     if (returnPath.startsWith('/dashboard')) {
@@ -90,9 +88,15 @@ const Login = () => {
           aria-label="Yale CAS sign in"
           className="yr-panel mx-auto w-full max-w-[390px] rounded-md p-5 sm:p-6"
         >
-          <p className="yr-kicker">Yale CAS</p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-950">{destination.heading}</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">{destination.description}</p>
+          <p className="yr-kicker">
+            Yale CAS
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950">
+            {destination.heading}
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            {destination.description}
+          </p>
           <div className="yr-muted-surface mt-5 rounded-md p-3">
             <p className="text-xs font-semibold text-slate-500">
               Authentication is handled by Yale CAS. Yale Research does not ask for your password.

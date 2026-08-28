@@ -614,13 +614,7 @@ describe('auth environment guards', () => {
 
       expect(res.json).toHaveBeenCalledWith({
         auth: true,
-        user: {
-          netId: 'abc123',
-          userType,
-          userConfirmed: true,
-          profileVerified: false,
-          isAdmin: false,
-        },
+        user: { netId: 'abc123', userType, userConfirmed: true, profileVerified: false, isAdmin: false },
       });
     }
   });

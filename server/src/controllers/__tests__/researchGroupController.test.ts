@@ -312,4 +312,5 @@ describe('researchGroupController', () => {
       },
     );
   });
+
 });

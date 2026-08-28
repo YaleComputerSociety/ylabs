@@ -39,7 +39,7 @@ describe('normalizeResearchEntityNameDashes', () => {
 
 describe('normalizeResearchEntityNameSmartQuotes', () => {
   it('folds a curly single quote to an ASCII apostrophe (#1866)', () => {
-    expect(normalizeResearchEntityNameSmartQuotes('Corey O’Hern Lab')).toBe("Corey O'Hern Lab");
+    expect(normalizeResearchEntityNameSmartQuotes('Corey O’Hern Lab')).toBe('Corey O\'Hern Lab');
     expect(
       normalizeResearchEntityNameSmartQuotes(
         'Yale’s Center for the Study of Representative Institutions',
@@ -49,13 +49,17 @@ describe('normalizeResearchEntityNameSmartQuotes', () => {
 
   it('folds curly double quotes to ASCII double quotes (#1866)', () => {
     expect(
-      normalizeResearchEntityNameSmartQuotes('Street Life: The “Cries” in British Visual Culture'),
+      normalizeResearchEntityNameSmartQuotes(
+        'Street Life: The “Cries” in British Visual Culture',
+      ),
     ).toBe('Street Life: The "Cries" in British Visual Culture');
   });
 
   it('folds the low-9 and reversed curly variants', () => {
     expect(normalizeResearchEntityNameSmartQuotes('‚Example‘ Lab')).toBe("'Example' Lab");
-    expect(normalizeResearchEntityNameSmartQuotes('„Example‟ Center')).toBe('"Example" Center');
+    expect(normalizeResearchEntityNameSmartQuotes('„Example‟ Center')).toBe(
+      '"Example" Center',
+    );
   });
 
   it('leaves ASCII-quote and quote-free names untouched', () => {
@@ -75,7 +79,9 @@ describe('normalizeResearchEntityNameSmartQuotes', () => {
 describe('hasSmartQuoteVariants', () => {
   it('detects curly-quote names and ignores clean or non-string inputs', () => {
     expect(hasSmartQuoteVariants('Corey O’Hern Lab')).toBe(true);
-    expect(hasSmartQuoteVariants('Street Life: The “Cries” in British Visual Culture')).toBe(true);
+    expect(hasSmartQuoteVariants('Street Life: The “Cries” in British Visual Culture')).toBe(
+      true,
+    );
     expect(hasSmartQuoteVariants("Corey O'Hern Lab")).toBe(false);
     expect(hasSmartQuoteVariants('Example Lab')).toBe(false);
     expect(hasSmartQuoteVariants(undefined as unknown as string)).toBe(false);
@@ -163,9 +169,7 @@ describe('collapseDuplicateResearchHomeSuffix', () => {
   it('preserves legitimate repeated personal-name tokens', () => {
     expect(collapseDuplicateResearchHomeSuffix('Lu Lu Lab')).toBe('Lu Lu Lab');
     expect(collapseDuplicateResearchHomeSuffix('Yang Yang Research')).toBe('Yang Yang Research');
-    expect(collapseDuplicateResearchHomeSuffix('Liang Liang Research')).toBe(
-      'Liang Liang Research',
-    );
+    expect(collapseDuplicateResearchHomeSuffix('Liang Liang Research')).toBe('Liang Liang Research');
   });
 
   it('leaves clean names and non-string input untouched', () => {

@@ -688,28 +688,26 @@ describe('resolveFieldRanked', () => {
       { now: D('2026-02-10') },
     );
     expect(ranked.map((r) => r.value)).toEqual(['winner', 'lower']);
-    expect(ranked[0].value).toBe(
-      resolveField(
-        'fullDescription',
-        [
-          {
-            field: 'fullDescription',
-            value: 'lower',
-            sourceName: 'lab-microsite-description-llm',
-            confidence: 0.7,
-            observedAt: D('2026-01-01'),
-          },
-          {
-            field: 'fullDescription',
-            value: 'winner',
-            sourceName: 'ysm-atoz-index',
-            confidence: 0.95,
-            observedAt: D('2026-02-01'),
-          },
-        ],
-        { now: D('2026-02-10') },
-      )?.value,
-    );
+    expect(ranked[0].value).toBe(resolveField(
+      'fullDescription',
+      [
+        {
+          field: 'fullDescription',
+          value: 'lower',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.7,
+          observedAt: D('2026-01-01'),
+        },
+        {
+          field: 'fullDescription',
+          value: 'winner',
+          sourceName: 'ysm-atoz-index',
+          confidence: 0.95,
+          observedAt: D('2026-02-01'),
+        },
+      ],
+      { now: D('2026-02-10') },
+    )?.value);
   });
 
   it('collapses duplicate values across sources into a single ranked entry', () => {
@@ -749,10 +747,7 @@ describe('resolveFieldRanked', () => {
           observedAt: D('2026-02-01'),
         },
       ],
-      {
-        manuallyLockedFields: ['fullDescription'],
-        manualValues: { fullDescription: 'locked value' },
-      },
+      { manuallyLockedFields: ['fullDescription'], manualValues: { fullDescription: 'locked value' } },
     );
     expect(ranked).toHaveLength(1);
     expect(ranked[0].value).toBe('locked value');

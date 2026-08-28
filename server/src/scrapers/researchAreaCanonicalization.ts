@@ -575,8 +575,7 @@ export async function applyResearchEntityResearchAreaCanonicalization(
     const canonicalizer = await getResearchAreaCanonicalizer();
     const canonical = canonicalizer.canonicalizeResearchAreas(set.researchAreas);
     const departmentKeys = departmentMatchKeys(departments);
-    const isDepartmentDuplicate = (value: string) =>
-      departmentKeys.has(researchAreaMatchKey(value));
+    const isDepartmentDuplicate = (value: string) => departmentKeys.has(researchAreaMatchKey(value));
     const isRejected = (value: string) =>
       isDepartmentDuplicate(value) || isDivisionLevelResearchAreaLabel(value);
     set.researchAreas = canonical.values.filter((value) => !isRejected(value));

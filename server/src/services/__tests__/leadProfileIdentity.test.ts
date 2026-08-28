@@ -22,9 +22,9 @@ describe('isLikelyOfficialPersonProfileUrl', () => {
   });
 
   it('rejects department roster/listing pages whose category segment is a hyphenated compound (#1203)', () => {
-    expect(
-      isLikelyOfficialPersonProfileUrl('https://ling.yale.edu/people/linguistics-faculty'),
-    ).toBe(false);
+    expect(isLikelyOfficialPersonProfileUrl('https://ling.yale.edu/people/linguistics-faculty')).toBe(
+      false,
+    );
     expect(isLikelyOfficialPersonProfileUrl('https://english.yale.edu/people/ladder-faculty')).toBe(
       false,
     );
@@ -421,9 +421,7 @@ describe('detectProfileIdentityRisk', () => {
         detectProfileIdentityRisk({
           entity: {
             websiteUrl: `https://som.yale.edu/faculty-research/faculty-directory/${subdiscipline}`,
-            sourceUrls: [
-              `https://som.yale.edu/faculty-research/faculty-directory/${subdiscipline}`,
-            ],
+            sourceUrls: [`https://som.yale.edu/faculty-research/faculty-directory/${subdiscipline}`],
           },
           leadMembers: [{ user: { netid: 'ff123', fname: 'Fixture', lname: 'Faculty' } }],
         }),

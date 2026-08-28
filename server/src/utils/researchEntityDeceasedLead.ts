@@ -22,9 +22,7 @@ const isDeceasedHumanLifespan = (
 ): boolean => {
   if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) return false;
   const span = endYear - startYear;
-  return (
-    span >= MIN_HUMAN_LIFESPAN_YEARS && span <= MAX_HUMAN_LIFESPAN_YEARS && endYear <= currentYear
-  );
+  return span >= MIN_HUMAN_LIFESPAN_YEARS && span <= MAX_HUMAN_LIFESPAN_YEARS && endYear <= currentYear;
 };
 
 export function stripTrailingPersonNameLifespan(
@@ -36,10 +34,7 @@ export function stripTrailingPersonNameLifespan(
   const match = trimmed.match(TRAILING_PERSON_NAME_LIFESPAN_RE);
   if (!match) return trimmed;
   if (!isDeceasedHumanLifespan(Number(match[1]), Number(match[2]), currentYear)) return trimmed;
-  const stripped = trimmed
-    .slice(0, match.index)
-    .replace(/[\s,(]+$/, '')
-    .trim();
+  const stripped = trimmed.slice(0, match.index).replace(/[\s,(]+$/, '').trim();
   return stripped || trimmed;
 }
 
@@ -47,9 +42,7 @@ export function personNameCarriesLifespan(
   name: unknown,
   currentYear: number = currentUtcYear(),
 ): boolean {
-  return (
-    typeof name === 'string' && stripTrailingPersonNameLifespan(name, currentYear) !== name.trim()
-  );
+  return typeof name === 'string' && stripTrailingPersonNameLifespan(name, currentYear) !== name.trim();
 }
 
 export function descriptionOpensWithDeceasedLifespan(
@@ -57,10 +50,7 @@ export function descriptionOpensWithDeceasedLifespan(
   currentYear: number = currentUtcYear(),
 ): boolean {
   if (typeof description !== 'string') return false;
-  const opening = description
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, DECEASED_DESCRIPTION_SCAN_WINDOW);
+  const opening = description.replace(/\s+/g, ' ').trim().slice(0, DECEASED_DESCRIPTION_SCAN_WINDOW);
   const match = opening.match(DECEASED_DESCRIPTION_LIFESPAN_RE);
   if (!match) return false;
   return isDeceasedHumanLifespan(Number(match[1]), Number(match[2]), currentYear);

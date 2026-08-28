@@ -26,9 +26,9 @@ describe('scraperIntegrityDuplicateReview CLI helpers', () => {
   });
 
   it('rejects malformed paired CLI values before running duplicate review', () => {
-    expect(() => parseScraperIntegrityDuplicateReviewArgs(['--output', '--type=all'])).toThrow(
-      '--output requires a value',
-    );
+    expect(() =>
+      parseScraperIntegrityDuplicateReviewArgs(['--output', '--type=all']),
+    ).toThrow('--output requires a value');
     expect(() =>
       parseScraperIntegrityDuplicateReviewArgs([
         '--output',

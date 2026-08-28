@@ -1010,8 +1010,7 @@ const leadingTransitionalPronounSubjectPattern =
  * funds, not a pitch addressed to "you", so this fails closed the same way a
  * dangling pronoun opener does.
  */
-const fundingProgramSecondPersonCtaOpenerPattern =
-  /^If\s+you\b|\bwe\s+encourage\s+you\s+to\s+apply\b/i;
+const fundingProgramSecondPersonCtaOpenerPattern = /^If\s+you\b|\bwe\s+encourage\s+you\s+to\s+apply\b/i;
 
 /**
  * A funding-program card blurb that opens mid-eligibility-criteria rather than
@@ -1163,8 +1162,7 @@ const synthesisBlurbFirstPersonPluralReferencePattern = /\b(?:us|we|our)\b/;
  */
 function synthesisBlurbHasDanglingFirstPersonPluralReference(text: string): boolean {
   return (
-    synthesisBlurbLeadPattern.test(text) &&
-    synthesisBlurbFirstPersonPluralReferencePattern.test(text)
+    synthesisBlurbLeadPattern.test(text) && synthesisBlurbFirstPersonPluralReferencePattern.test(text)
   );
 }
 

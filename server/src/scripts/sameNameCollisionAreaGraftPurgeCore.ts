@@ -18,7 +18,10 @@
  */
 
 export function normalizeGraftToken(value: string): string {
-  return String(value).toLowerCase().replace(/\s+/g, ' ').trim();
+  return String(value)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export interface AreaGraftRemovalInput {

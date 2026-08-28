@@ -36,8 +36,7 @@ describe('CombinedFilterDropdown', () => {
             key: 'programKind',
             label: 'Program Kind',
             options: ['SENIOR_THESIS_FUNDING'],
-            labelFn: (item) =>
-              item === 'SENIOR_THESIS_FUNDING' ? 'Senior research funding' : item,
+            labelFn: (item) => (item === 'SENIOR_THESIS_FUNDING' ? 'Senior research funding' : item),
             selected: [],
             setSelected,
           },

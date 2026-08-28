@@ -93,11 +93,7 @@ export function normalizeSurnameLabObjectId(value: unknown): mongoose.Types.Obje
   return new mongoose.Types.ObjectId(trimmed);
 }
 
-function consumeValue(
-  argv: string[],
-  index: number,
-  flag: string,
-): { value: string; nextIndex: number } {
+function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
   const value = argv[index + 1];
   if (value === undefined || value.trim() === '' || value.startsWith('--')) {
     throw new Error(`${flag} requires a value`);
@@ -191,9 +187,7 @@ export function assertDisambiguateSurnameLabApplyAllowed(
     );
   }
   if (args.apply && (!args.limitExplicit || !Number.isFinite(args.limit))) {
-    throw new Error(
-      '--limit is required when --apply is set for research-entity:disambiguate-surname-labs.',
-    );
+    throw new Error('--limit is required when --apply is set for research-entity:disambiguate-surname-labs.');
   }
   return assertScriptApplyAllowed({
     apply: args.apply,
@@ -287,9 +281,7 @@ export function buildSurnameLabDisambiguationPlans(input: {
         .map((member) => usersById.get(member.userId || ''))
         .filter((user): user is SurnameLabUserInput => !!user)
         .filter((user) => lnameMatchesSurname(user.lname, surname));
-      const uniqueUsers = Array.from(
-        new Map(matchingUsers.map((user) => [user.id, user])).values(),
-      );
+      const uniqueUsers = Array.from(new Map(matchingUsers.map((user) => [user.id, user])).values());
 
       if (uniqueUsers.length !== 1) {
         skipped.push({
@@ -320,8 +312,7 @@ export function buildSurnameLabDisambiguationPlans(input: {
       }
 
       const updateDisplayName =
-        !entity.displayName ||
-        normalizeNameKey(entity.displayName) === normalizeNameKey(entity.name);
+        !entity.displayName || normalizeNameKey(entity.displayName) === normalizeNameKey(entity.name);
       proposedForCluster.push({
         entityId: entity.id,
         slug: entity.slug,
@@ -335,13 +326,8 @@ export function buildSurnameLabDisambiguationPlans(input: {
       });
     }
 
-    const proposedNameKeys = new Set(
-      proposedForCluster.map((plan) => normalizeNameKey(plan.newName)),
-    );
-    if (
-      proposedForCluster.length !== entities.length ||
-      proposedNameKeys.size !== proposedForCluster.length
-    ) {
+    const proposedNameKeys = new Set(proposedForCluster.map((plan) => normalizeNameKey(plan.newName)));
+    if (proposedForCluster.length !== entities.length || proposedNameKeys.size !== proposedForCluster.length) {
       for (const entity of entities) {
         if (!proposedForCluster.some((plan) => plan.entityId === entity.id)) continue;
         skipped.push({
@@ -356,10 +342,7 @@ export function buildSurnameLabDisambiguationPlans(input: {
     plans.push(...proposedForCluster);
   }
 
-  plans.sort(
-    (left, right) =>
-      left.oldName.localeCompare(right.oldName) || left.newName.localeCompare(right.newName),
-  );
+  plans.sort((left, right) => left.oldName.localeCompare(right.oldName) || left.newName.localeCompare(right.newName));
   return { plans, skipped };
 }
 
@@ -373,10 +356,7 @@ function writeOutput(report: unknown, output?: string): void {
   console.log(serialized);
 }
 
-async function applyPlans(
-  plans: SurnameLabDisambiguationPlan[],
-  maxApply: number,
-): Promise<ApplyResult[]> {
+async function applyPlans(plans: SurnameLabDisambiguationPlan[], maxApply: number): Promise<ApplyResult[]> {
   const bounded = plans.slice(0, maxApply);
   const applied: ApplyResult[] = [];
   for (const plan of bounded) {

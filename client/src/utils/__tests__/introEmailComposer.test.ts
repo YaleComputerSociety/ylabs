@@ -32,10 +32,7 @@ describe('composeStudentIntroEmailDraft', () => {
   });
 
   it('omits the research-areas phrase entirely when none are given', () => {
-    const draft = composeStudentIntroEmailDraft({
-      entityName: 'Example Lab',
-      leadName: 'Jane Doe',
-    });
+    const draft = composeStudentIntroEmailDraft({ entityName: 'Example Lab', leadName: 'Jane Doe' });
 
     expect(draft.body).toContain('research opportunities with Example Lab');
   });

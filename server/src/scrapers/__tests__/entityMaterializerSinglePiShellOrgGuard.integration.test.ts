@@ -190,8 +190,7 @@ describe('materializeEntity guards named multi-PI orgs from a single-PI/grant sh
       field: 'fullDescription',
       value: ORG_CENTER_MISSION,
       sourceName: 'lab-microsite-description-llm',
-      sourceUrl:
-        'https://riverbend-research.example/health-professionals/neuropsychiatry-research-center/',
+      sourceUrl: 'https://riverbend-research.example/health-professionals/neuropsychiatry-research-center/',
     });
 
     await materializeEntity('researchEntity', {
@@ -254,9 +253,7 @@ describe('materializeEntity guards named multi-PI orgs from a single-PI/grant sh
 
     await materializeEntity('researchEntity', { entityKey: 'harbor-brain-institute' });
 
-    const persisted = await ResearchEntity.findOne({
-      slug: 'harbor-brain-institute',
-    }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({ slug: 'harbor-brain-institute' }).lean<PersistedEntity>();
 
     expect(persisted?.fullDescription).toBe(PI_STUDY_ABSTRACT);
   });

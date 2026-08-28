@@ -17,10 +17,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import {
-  planSignalConsolidation,
-  type SignalConsolidationPlan,
-} from './signalConsolidationMigrationCore';
+import { planSignalConsolidation, type SignalConsolidationPlan } from './signalConsolidationMigrationCore';
 
 dotenv.config();
 

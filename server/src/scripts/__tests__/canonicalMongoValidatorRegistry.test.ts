@@ -77,16 +77,9 @@ describe('canonical MongoDB validator registry', () => {
 
   it('flips every audit-clean collection to strict once no drifted collections remain', () => {
     const levelByCollection = new Map(
-      CANONICAL_MONGO_VALIDATORS.map((desired) => [
-        desired.collectionName,
-        desired.validationLevel,
-      ]),
+      CANONICAL_MONGO_VALIDATORS.map((desired) => [desired.collectionName, desired.validationLevel]),
     );
-    expect(
-      [...levelByCollection.entries()]
-        .filter(([, level]) => level === 'strict')
-        .map(([name]) => name),
-    ).toEqual([
+    expect([...levelByCollection.entries()].filter(([, level]) => level === 'strict').map(([name]) => name)).toEqual([
       'accounts',
       'evidence_claims',
       'org_units',
@@ -97,11 +90,7 @@ describe('canonical MongoDB validator registry', () => {
       'source_documents',
       'taxonomy_terms',
     ]);
-    expect(
-      [...levelByCollection.entries()]
-        .filter(([, level]) => level === 'moderate')
-        .map(([name]) => name),
-    ).toEqual([]);
+    expect([...levelByCollection.entries()].filter(([, level]) => level === 'moderate').map(([name]) => name)).toEqual([]);
   });
 
   it('retains Mongoose structural contracts and important bounded-array safeguards', () => {

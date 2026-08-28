@@ -16,7 +16,11 @@ describe('parseResearchEntityNameDashBackfillArgs', () => {
 
   it('parses apply, confirm, and explicit limit', () => {
     expect(
-      parseResearchEntityNameDashBackfillArgs(['--apply', '--confirm-name-dashes', '--limit=50']),
+      parseResearchEntityNameDashBackfillArgs([
+        '--apply',
+        '--confirm-name-dashes',
+        '--limit=50',
+      ]),
     ).toMatchObject({ dryRun: false, confirm: true, explicitLimit: true, limit: 50 });
   });
 

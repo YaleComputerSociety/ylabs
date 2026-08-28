@@ -242,12 +242,7 @@ function yaleSchoolTokenFromUrl(value: unknown): string | null {
     return null;
   }
   if (!/(^|\.)yale\.edu$/i.test(hostname)) return null;
-  const label =
-    hostname
-      .replace(/\.yale\.edu$/i, '')
-      .split('.')
-      .filter(Boolean)
-      .at(-1) || '';
+  const label = hostname.replace(/\.yale\.edu$/i, '').split('.').filter(Boolean).at(-1) || '';
   if (!CONTRADICTION_SOURCE_SUBDOMAINS.has(label)) return null;
   return YALE_SCHOOL_TOKEN_BY_SUBDOMAIN[label] || null;
 }
@@ -337,12 +332,7 @@ function toleratedSchoolTokenFromUrl(value: unknown): string | null {
     return null;
   }
   if (!/(^|\.)yale\.edu$/i.test(hostname)) return null;
-  const label =
-    hostname
-      .replace(/\.yale\.edu$/i, '')
-      .split('.')
-      .filter(Boolean)
-      .at(-1) || '';
+  const label = hostname.replace(/\.yale\.edu$/i, '').split('.').filter(Boolean).at(-1) || '';
   return TOLERANT_DIVERGENT_SCHOOL_SUBDOMAINS.get(label) || null;
 }
 
@@ -463,10 +453,7 @@ function entityProseNameTokens(entity: ResearchEntityIdentity): Set<string> {
     }
   }
   const tokens = new Set<string>();
-  for (const token of parts
-    .join(' ')
-    .toLowerCase()
-    .split(/[^a-z]+/i)) {
+  for (const token of parts.join(' ').toLowerCase().split(/[^a-z]+/i)) {
     if (token.length >= 2 && !CREDENTIAL_TOKENS.has(token)) tokens.add(token);
   }
   return tokens;

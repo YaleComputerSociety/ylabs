@@ -17,11 +17,7 @@ afterEach(() => {
 
 describe('fellowshipFutureDeadlineDate', () => {
   it('returns the parsed date for a future deadline', () => {
-    const fellowship = createFellowship({
-      id: 'p1',
-      title: 'Fixture Grant',
-      deadline: '2026-06-30',
-    });
+    const fellowship = createFellowship({ id: 'p1', title: 'Fixture Grant', deadline: '2026-06-30' });
     expect(fellowshipFutureDeadlineDate(fellowship, NOW)?.toISOString().slice(0, 10)).toBe(
       '2026-06-30',
     );
@@ -33,20 +29,12 @@ describe('fellowshipFutureDeadlineDate', () => {
   });
 
   it('fails closed for an unparseable deadline', () => {
-    const fellowship = createFellowship({
-      id: 'p1',
-      title: 'Fixture Grant',
-      deadline: 'not-a-date',
-    });
+    const fellowship = createFellowship({ id: 'p1', title: 'Fixture Grant', deadline: 'not-a-date' });
     expect(fellowshipFutureDeadlineDate(fellowship, NOW)).toBeNull();
   });
 
   it('fails closed for an expired deadline', () => {
-    const fellowship = createFellowship({
-      id: 'p1',
-      title: 'Fixture Grant',
-      deadline: '2025-01-01',
-    });
+    const fellowship = createFellowship({ id: 'p1', title: 'Fixture Grant', deadline: '2025-01-01' });
     expect(fellowshipFutureDeadlineDate(fellowship, NOW)).toBeNull();
   });
 });
@@ -66,9 +54,7 @@ describe('upcomingProgramDeadlineEvents', () => {
   });
 
   it('returns an empty list when nothing has a valid future deadline', () => {
-    const fellowships = [
-      createFellowship({ id: 'p1', title: 'Expired Grant', deadline: '2025-01-01' }),
-    ];
+    const fellowships = [createFellowship({ id: 'p1', title: 'Expired Grant', deadline: '2025-01-01' })];
     expect(upcomingProgramDeadlineEvents(fellowships, NOW)).toEqual([]);
   });
 });

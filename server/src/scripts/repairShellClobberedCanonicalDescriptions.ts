@@ -77,13 +77,7 @@ async function buildPlans(): Promise<RepairPlan[]> {
     for (const shell of shellsForCanonical) {
       const shellFull = (shell.fullDescription || '').trim();
       const shellShort = (shell.shortDescription || '').trim();
-      if (
-        !fullClobberedBy &&
-        ownFull &&
-        shellFull &&
-        liveFull === shellFull &&
-        liveFull !== ownFull
-      ) {
+      if (!fullClobberedBy && ownFull && shellFull && liveFull === shellFull && liveFull !== ownFull) {
         fullClobberedBy = shell;
       }
       if (
@@ -105,8 +99,7 @@ async function buildPlans(): Promise<RepairPlan[]> {
       else set.fullDescription = ownFull;
     }
     if (shortClobberedBy) {
-      if (looksTruncated(ownShort))
-        skipped.push('shortDescription(own observation looks truncated)');
+      if (looksTruncated(ownShort)) skipped.push('shortDescription(own observation looks truncated)');
       else set.shortDescription = ownShort;
     }
 
@@ -173,9 +166,7 @@ async function main(): Promise<void> {
   console.log(`mode: ${apply ? 'APPLY' : 'DRY-RUN'} | db: ${pathname}`);
 
   const plans = await buildPlans();
-  console.log(
-    `\ncanonical entities clobbered by an archived nsf-pi-/nih-pi- shell merge: ${plans.length}`,
-  );
+  console.log(`\ncanonical entities clobbered by an archived nsf-pi-/nih-pi- shell merge: ${plans.length}`);
   for (const plan of plans) {
     console.log(`\n[${plan.canonicalSlug}] <- ${plan.shellSlug}`);
     console.log(`  set: ${JSON.stringify(plan.set)}`);
@@ -187,19 +178,14 @@ async function main(): Promise<void> {
 
   if (apply) {
     const scopedPlans = plans.filter((plan) => allowedSlugs!.has(plan.canonicalSlug));
-    console.log(
-      `\napplying to ${scopedPlans.length} of ${plans.length} detected entities (scoped by --slugs)`,
-    );
+    console.log(`\napplying to ${scopedPlans.length} of ${plans.length} detected entities (scoped by --slugs)`);
     const collection = mongoose.connection.collection('research_entities');
     const updatedIds: mongoose.Types.ObjectId[] = [];
     for (const plan of scopedPlans) {
       const update: Record<string, unknown> = { ...plan.set };
       if (plan.researchAreasAfter) update.researchAreas = plan.researchAreasAfter;
       if (Object.keys(update).length === 0) continue;
-      await collection.updateOne(
-        { _id: new mongoose.Types.ObjectId(plan.canonicalId) },
-        { $set: update },
-      );
+      await collection.updateOne({ _id: new mongoose.Types.ObjectId(plan.canonicalId) }, { $set: update });
       updatedIds.push(new mongoose.Types.ObjectId(plan.canonicalId));
     }
     if (updatedIds.length > 0) {
@@ -208,9 +194,7 @@ async function main(): Promise<void> {
     }
     console.log(`\nAPPLIED to ${updatedIds.length} entities and re-synced them to Meilisearch.`);
   } else {
-    console.log(
-      '\ndry-run complete; re-run with --apply --slugs=<slug1,slug2> to write and re-sync a scoped subset.',
-    );
+    console.log('\ndry-run complete; re-run with --apply --slugs=<slug1,slug2> to write and re-sync a scoped subset.');
   }
 
   await mongoose.disconnect();

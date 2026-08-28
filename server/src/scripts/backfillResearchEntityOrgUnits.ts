@@ -194,9 +194,7 @@ async function main(): Promise<void> {
     }
     console.log(JSON.stringify(result.summary, null, 2));
     if (apply && result.summary.changed > 0) {
-      console.log(
-        'Resynced the changed entities to Meilisearch so the department facet reflects them.',
-      );
+      console.log('Resynced the changed entities to Meilisearch so the department facet reflects them.');
     }
   } finally {
     await mongoose.disconnect();

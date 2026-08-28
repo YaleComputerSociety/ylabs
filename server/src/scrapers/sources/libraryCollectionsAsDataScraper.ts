@@ -9,7 +9,8 @@ const SOURCE_NAME = 'library-collections-as-data';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
-export const DEFAULT_ONLINE_EXHIBITS_BASE_URL = 'https://onlineexhibits.library.yale.edu';
+export const DEFAULT_ONLINE_EXHIBITS_BASE_URL =
+  'https://onlineexhibits.library.yale.edu';
 
 const SITES_API_PATH = '/api/sites?per_page=200';
 
@@ -40,7 +41,11 @@ export interface OnlineExhibit extends OnlineExhibitLink {
   lead?: LibraryCuratorialLead;
 }
 
-export type TextFetcher = (url: string, useCache: boolean, sourceName: string) => Promise<string>;
+export type TextFetcher = (
+  url: string,
+  useCache: boolean,
+  sourceName: string,
+) => Promise<string>;
 
 function cleanText(value: string | undefined | null): string {
   return String(value || '')
@@ -56,7 +61,10 @@ export function exhibitUrl(slug: string, baseUrl: string): string {
   return `${baseUrl.replace(/\/$/, '')}/s/${slug}`;
 }
 
-export function parseExhibitsIndex(json: string, baseUrl: string): OnlineExhibitLink[] {
+export function parseExhibitsIndex(
+  json: string,
+  baseUrl: string,
+): OnlineExhibitLink[] {
   let sites: unknown;
   try {
     sites = JSON.parse(json);

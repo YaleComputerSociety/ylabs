@@ -372,9 +372,7 @@ describe('departmentUndergradResearchScraper', () => {
   });
 
   it('keys the MCDB department page on its own department, not a cross-listed foreign program (#598)', () => {
-    const mcdbConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
-      (page) => page.key === 'mcdb',
-    );
+    const mcdbConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === 'mcdb');
 
     expect(mcdbConfig).toMatchObject({
       url: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
@@ -425,9 +423,7 @@ describe('departmentUndergradResearchScraper', () => {
   });
 
   it('drops sourceChrome, URL fragments, subject-less fragments, and leaked headings (#598)', () => {
-    const historyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
-      (page) => page.key === 'history',
-    )!;
+    const historyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === 'history')!;
     const neuroscienceConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
       (page) => page.key === 'neuroscience',
     )!;
@@ -447,9 +443,7 @@ describe('departmentUndergradResearchScraper', () => {
     expect(urlFragment.description).not.toMatch(/https?:\/\//);
 
     const [leakedHeading] = parseGeneralDepartmentResearchPage(LEAKED_HEADING_HTML, historyConfig);
-    expect(leakedHeading.description).toContain(
-      'History majors make extensive use of library resources',
-    );
+    expect(leakedHeading.description).toContain('History majors make extensive use of library resources');
     expect(leakedHeading.description).not.toContain('Undergraduate Program History majors');
 
     const [subjectLess] = parseGeneralDepartmentResearchPage(SUBJECT_LESS_HTML, mbbConfig);
@@ -476,9 +470,7 @@ describe('departmentUndergradResearchScraper', () => {
     expect(record.description).not.toMatch(/click here/i);
 
     const observations = departmentUndergradResearchRecordsToObservations([record]);
-    expect(observations.map((observation) => observation.field)).not.toContain(
-      'undergradEvidenceQuote',
-    );
+    expect(observations.map((observation) => observation.field)).not.toContain('undergradEvidenceQuote');
   });
 
   it('emits fellowship observations for a department program page', () => {
@@ -495,16 +487,8 @@ describe('departmentUndergradResearchScraper', () => {
     expect(observations.every((observation) => observation.entityType === 'fellowship')).toBe(true);
     expect(observations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          entityKey: record.entityKey,
-          field: 'sourceKey',
-          value: record.entityKey,
-        }),
-        expect.objectContaining({
-          entityKey: record.entityKey,
-          field: 'title',
-          value: record.name,
-        }),
+        expect.objectContaining({ entityKey: record.entityKey, field: 'sourceKey', value: record.entityKey }),
+        expect.objectContaining({ entityKey: record.entityKey, field: 'title', value: record.name }),
         expect.objectContaining({ entityKey: record.entityKey, field: 'programKind' }),
         expect.objectContaining({ entityKey: record.entityKey, field: 'applicationLink' }),
       ]),
@@ -553,9 +537,7 @@ describe('departmentUndergradResearchScraper', () => {
     const astronomyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
       (page) => page.key === 'astronomy',
     );
-    const eebConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
-      (page) => page.key === 'eeb',
-    );
+    const eebConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === 'eeb');
 
     expect(astronomyConfig).toMatchObject({
       url: 'https://astronomy.yale.edu/academics/undergraduate-program/undergraduate-research',
@@ -650,14 +632,8 @@ describe('departmentUndergradResearchScraper', () => {
 
     const records = [
       ...parseGeneralDepartmentResearchPage(ANTHROPOLOGY_HTML, configsByKey.get('anthropology')!),
-      ...parseGeneralDepartmentResearchPage(
-        EARTH_HTML,
-        configsByKey.get('earth-planetary-sciences')!,
-      ),
-      ...parseGeneralDepartmentResearchPage(
-        POLITICAL_SCIENCE_HTML,
-        configsByKey.get('political-science')!,
-      ),
+      ...parseGeneralDepartmentResearchPage(EARTH_HTML, configsByKey.get('earth-planetary-sciences')!),
+      ...parseGeneralDepartmentResearchPage(POLITICAL_SCIENCE_HTML, configsByKey.get('political-science')!),
       ...parseGeneralDepartmentResearchPage(HISTORY_HTML, configsByKey.get('history')!),
     ];
 
@@ -732,7 +708,8 @@ describe('departmentUndergradResearchScraper', () => {
           sourceUrl: 'https://neuroscience.yale.edu/research-opportunities',
         }),
         expect.objectContaining({
-          entityKey: 'department-undergrad-research-molecular-biophysics-and-biochemistry',
+          entityKey:
+            'department-undergrad-research-molecular-biophysics-and-biochemistry',
           name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
           undergradAccessEvidence: true,
           sourceUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
@@ -777,9 +754,7 @@ describe('departmentUndergradResearchScraper', () => {
         joinPageUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform',
       },
     ]);
-    expect(records[0].description).toMatch(
-      /^Supports undergraduate research in Computer Science\./,
-    );
+    expect(records[0].description).toMatch(/^Supports undergraduate research in Computer Science\./);
 
     const observations = departmentUndergradResearchRecordsToObservations(records);
     expect(observations.map((observation) => observation.field)).not.toEqual(
@@ -805,9 +780,7 @@ describe('departmentUndergradResearchScraper', () => {
 
     const [record] = parseStructuredOpportunityPage(CS_RESEARCH_INTERNSHIP_HTML, csConfig);
 
-    expect(record.joinPageUrl).toBe(
-      'https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform',
-    );
+    expect(record.joinPageUrl).toBe('https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform');
     expect(record.joinPageUrl).not.toContain('admissions.yale.edu');
   });
 
@@ -853,12 +826,7 @@ describe('departmentUndergradResearchScraper', () => {
 
     const observations = departmentUndergradResearchRecordsToObservations(records);
     expect(observations.map((observation) => observation.field)).not.toEqual(
-      expect.arrayContaining([
-        'postedOpportunityTitle',
-        'applicationUrl',
-        'deadline',
-        'joinPageUrl',
-      ]),
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),
     );
   });
 
@@ -904,10 +872,7 @@ describe('departmentUndergradResearchScraper', () => {
       (page) => page.key === 'english',
     )!;
 
-    const [record] = parseGeneralDepartmentResearchPage(
-      HUMANITIES_SENIOR_ESSAY_HTML,
-      englishConfig,
-    );
+    const [record] = parseGeneralDepartmentResearchPage(HUMANITIES_SENIOR_ESSAY_HTML, englishConfig);
 
     expect(record).toMatchObject({
       entityKey: 'department-undergrad-research-english',
@@ -961,12 +926,7 @@ describe('departmentUndergradResearchScraper', () => {
     );
     expect(fields).toContain('description');
     expect(fields).not.toEqual(
-      expect.arrayContaining([
-        'postedOpportunityTitle',
-        'applicationUrl',
-        'deadline',
-        'joinPageUrl',
-      ]),
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),
     );
   });
 
@@ -1065,12 +1025,7 @@ describe('departmentUndergradResearchScraper', () => {
       expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
     );
     expect(fields).not.toEqual(
-      expect.arrayContaining([
-        'postedOpportunityTitle',
-        'applicationUrl',
-        'deadline',
-        'joinPageUrl',
-      ]),
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline', 'joinPageUrl']),
     );
   });
 

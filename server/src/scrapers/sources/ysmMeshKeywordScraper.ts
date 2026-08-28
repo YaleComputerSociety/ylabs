@@ -414,10 +414,7 @@ async function defaultDirectoryLoader(
 
 const YSM_PROFILE_URL_MONGO_REGEX = '^https?://medicine\\.yale\\.edu/profile/';
 
-export function buildYsmMeshCandidateMatch(
-  only: string[],
-  exhaustive?: boolean,
-): Record<string, unknown> {
+export function buildYsmMeshCandidateMatch(only: string[], exhaustive?: boolean): Record<string, unknown> {
   const onlyObjectIds = only
     .filter((value) => OBJECT_ID_RE.test(value))
     .map((value) => new mongoose.Types.ObjectId(value));
@@ -454,18 +451,21 @@ async function defaultEntityFinder(
   options: { only?: string[]; exhaustive?: boolean } = {},
 ): Promise<YsmMeshCandidateEntity[]> {
   const only = uniqueStrings(options.only || []);
-  const query = ResearchEntity.find(buildYsmMeshCandidateMatch(only, options.exhaustive), {
-    _id: 1,
-    slug: 1,
-    name: 1,
-    displayName: 1,
-    contactName: 1,
-    websiteUrl: 1,
-    website: 1,
-    sourceUrls: 1,
-    researchAreas: 1,
-    manuallyLockedFields: 1,
-  }).sort({ _id: 1 });
+  const query = ResearchEntity.find(
+    buildYsmMeshCandidateMatch(only, options.exhaustive),
+    {
+      _id: 1,
+      slug: 1,
+      name: 1,
+      displayName: 1,
+      contactName: 1,
+      websiteUrl: 1,
+      website: 1,
+      sourceUrls: 1,
+      researchAreas: 1,
+      manuallyLockedFields: 1,
+    },
+  ).sort({ _id: 1 });
   if (!only.length && !options.exhaustive) query.limit(MAX_CANDIDATE_SCAN);
   const docs = (await query.lean()) as YsmMeshCandidateEntityDoc[];
   const emptyAreaFirst = [
@@ -493,9 +493,7 @@ export function selectYsmLeadProfileUrls(
       .filter((link) => link?.kind === 'YALE_OFFICIAL')
       .map((link) => link?.url),
   );
-  const rosterProfileUrls = assignments.map(
-    (assignment) => assignment.rosterProvenance?.profileUrl,
-  );
+  const rosterProfileUrls = assignments.map((assignment) => assignment.rosterProvenance?.profileUrl);
   return uniqueStrings([...officialProfileUrls, ...rosterProfileUrls]).filter(isYsmProfileUrl);
 }
 
@@ -511,9 +509,7 @@ async function defaultLeadProfileUrlLoader(entity: YsmMeshCandidateEntity): Prom
     },
     { personId: 1, 'rosterProvenance.profileUrl': 1 },
   ).lean<YsmLeadRoleAssignment[]>();
-  const personObjectIds = uniqueStrings(
-    assignments.map((assignment) => idValue(assignment.personId)),
-  )
+  const personObjectIds = uniqueStrings(assignments.map((assignment) => idValue(assignment.personId)))
     .filter((id) => OBJECT_ID_RE.test(id))
     .map((id) => new mongoose.Types.ObjectId(id));
   const researchers = personObjectIds.length

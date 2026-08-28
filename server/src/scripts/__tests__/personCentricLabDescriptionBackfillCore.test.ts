@@ -44,24 +44,14 @@ describe('selectPersonCentricLabDescriptionTargets', () => {
   it('skips individual/faculty-research-area entities even with a person-centric lead', () => {
     const targets = selectPersonCentricLabDescriptionTargets([
       { id: '1', kind: 'individual', fullDescription: CREDENTIAL_LEAD_BIO },
-      {
-        id: '2',
-        kind: 'lab',
-        entityType: 'FACULTY_RESEARCH_AREA',
-        fullDescription: CREDENTIAL_LEAD_BIO,
-      },
+      { id: '2', kind: 'lab', entityType: 'FACULTY_RESEARCH_AREA', fullDescription: CREDENTIAL_LEAD_BIO },
     ]);
     expect(targets).toEqual([]);
   });
 
   it('skips a manually locked fullDescription', () => {
     const targets = selectPersonCentricLabDescriptionTargets([
-      {
-        id: '1',
-        kind: 'lab',
-        fullDescription: CREDENTIAL_LEAD_BIO,
-        manuallyLockedFields: ['fullDescription'],
-      },
+      { id: '1', kind: 'lab', fullDescription: CREDENTIAL_LEAD_BIO, manuallyLockedFields: ['fullDescription'] },
     ]);
     expect(targets).toEqual([]);
   });

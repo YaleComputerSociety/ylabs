@@ -46,7 +46,8 @@ describe('resolveResearchHomeCardSummary', () => {
 
   it('falls back to a usable shortDescription when the fullDescription trips the unusable-content guard', () => {
     const summary = resolveResearchHomeCardSummary({
-      shortDescription: 'Studies the molecular basis of neurotransmitter signaling in C. elegans.',
+      shortDescription:
+        'Studies the molecular basis of neurotransmitter signaling in C. elegans.',
       fullDescription: 'Course Director ENGL 1020, Introduction to Literary Study.',
     });
 

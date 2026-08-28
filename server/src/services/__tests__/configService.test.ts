@@ -105,9 +105,7 @@ describe('configService', () => {
     expect(config.deployment).toEqual({
       provider: 'render',
     });
-    expect(JSON.stringify(config.deployment)).not.toContain(
-      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    );
+    expect(JSON.stringify(config.deployment)).not.toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     expect(JSON.stringify(config.deployment)).not.toContain('main');
   });
 });

@@ -23,9 +23,7 @@ describe('legacy v4 migration utility safety helpers', () => {
       output: '/tmp/v4.json',
     });
 
-    expect(
-      parseMigrationOptions(['--live', '--limit=10', '--output', '/tmp/v4-live.json']),
-    ).toEqual({
+    expect(parseMigrationOptions(['--live', '--limit=10', '--output', '/tmp/v4-live.json'])).toEqual({
       apply: true,
       confirmV4Migration: false,
       limit: 10,
@@ -35,7 +33,9 @@ describe('legacy v4 migration utility safety helpers', () => {
     expect(() => parseMigrationOptions(['--limit', 'not-a-number'])).toThrow(
       /--limit requires a positive integer/,
     );
-    expect(() => parseMigrationOptions(['--output=--apply'])).toThrow(/--output requires a path/);
+    expect(() => parseMigrationOptions(['--output=--apply'])).toThrow(
+      /--output requires a path/,
+    );
     expect(() => parseMigrationOptions(['prod'])).toThrow(
       /Unknown legacy v4 migration argument: prod/,
     );

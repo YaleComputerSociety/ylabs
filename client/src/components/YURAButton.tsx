@@ -21,7 +21,9 @@ const YURAButton = () => {
         className="mr-2"
         style={{ width: '32px', height: '32px' }}
       />
-      <span className="yr-wordmark text-xl text-[var(--yr-blue)]">Yale Research</span>
+      <span className="yr-wordmark text-xl text-[var(--yr-blue)]">
+        Yale Research
+      </span>
     </Button>
   );
 };

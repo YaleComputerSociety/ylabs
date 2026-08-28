@@ -76,8 +76,7 @@ describe('fellowship public serializer', () => {
       title: 'Rationale-laden fellowship',
       description:
         'The Example Travel Fellowships are listed by a residential college among its fellowship options. Because the source supports residential-college travel funding rather than a direct research placement, this record should stay restrained until a richer program page is attached.',
-      summary:
-        'Residential-college travel fellowship for students with a concrete summer research plan.',
+      summary: 'Residential-college travel fellowship for students with a concrete summer research plan.',
     });
 
     expect(payload.description).toBe('');

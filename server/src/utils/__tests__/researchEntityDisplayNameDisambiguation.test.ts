@@ -55,11 +55,7 @@ describe('disambiguateCollidingResearchEntityNames', () => {
   it('falls back to school when department does not distinguish', () => {
     const entities = disambiguateCollidingResearchEntityNames([
       { name: 'The Chen Lab', departments: ['Immunobiology'], school: 'School of Medicine' },
-      {
-        name: 'The Chen Lab',
-        departments: ['Immunobiology'],
-        schools: ['Faculty of Arts and Sciences'],
-      },
+      { name: 'The Chen Lab', departments: ['Immunobiology'], schools: ['Faculty of Arts and Sciences'] },
     ]);
 
     expect(entities.map((entity) => entity.name)).toEqual([
