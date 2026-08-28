@@ -68,6 +68,32 @@ describe('decideShellMerge', () => {
       decideShellMerge({ displayName: 'Jane Roe', orcid: '0000-0001-0000-0000' }, index),
     ).toEqual({ merge: false, reason: 'ORCID_CONFLICT' });
   });
+
+  const netidIndex = buildCanonicalNameIndex([
+    { id: 'canonical-netid', displayName: 'Nina Netid', netid: 'nn42' },
+  ]);
+
+  it('folds a name-only shell into a netid-backed canonical of the same name', () => {
+    expect(decideShellMerge({ displayName: 'Nina Netid' }, netidIndex)).toEqual({
+      merge: true,
+      canonicalId: 'canonical-netid',
+      reason: 'MERGEABLE',
+    });
+  });
+
+  it('merges when the shell netid matches the canonical netid', () => {
+    expect(decideShellMerge({ displayName: 'Nina Netid', netid: 'NN42' }, netidIndex)).toEqual({
+      merge: true,
+      canonicalId: 'canonical-netid',
+      reason: 'MERGEABLE',
+    });
+  });
+
+  it('excludes on netid conflict against the sole canonical', () => {
+    expect(
+      decideShellMerge({ displayName: 'Nina Netid', netid: 'other99' }, netidIndex),
+    ).toEqual({ merge: false, reason: 'NETID_CONFLICT' });
+  });
 });
 
 describe('roleAssignmentEdgeKey', () => {

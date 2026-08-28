@@ -275,11 +275,12 @@ async function loadDuplicatePeopleIntegrity(): Promise<{
   groups: DuplicatePersonGroup[];
   warnings: PostMaterializationIntegrityWarning[];
 }> {
-  const [emailGroups, orcidGroups] = await Promise.all([
+  const [emailGroups, orcidGroups, netidGroups] = await Promise.all([
     loadIdentityCollisionGroups(Account, 'email', 'email'),
     loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid'),
+    loadIdentityCollisionGroups(Researcher, 'netid', 'identifiers.netid'),
   ]);
-  return { groups: [...emailGroups, ...orcidGroups], warnings: [] };
+  return { groups: [...emailGroups, ...orcidGroups, ...netidGroups], warnings: [] };
 }
 
 async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameDuplicateGroup[]> {

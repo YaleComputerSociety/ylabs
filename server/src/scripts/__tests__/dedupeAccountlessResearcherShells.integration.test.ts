@@ -128,6 +128,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       NO_CANONICAL: 1,
       AMBIGUOUS_MULTIPLE_CANONICAL: 1,
       ORCID_CONFLICT: 1,
+      NETID_CONFLICT: 0,
     });
     expect(result.shellsMerged).toBe(1);
     expect(result.roleAssignmentsRepointed).toBe(1);
@@ -254,5 +255,40 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const shell = await db.collection('researchers').findOne({ _id: orcidShell });
     expect(shell!.archived).toBe(true);
     expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
+  });
+
+  it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {
+    const netidCanonical = new mongoose.Types.ObjectId();
+    const nameOnlyShell = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').deleteMany({});
+    await db.collection('role_assignments').deleteMany({});
+    await db.collection('researchers').insertMany([
+      {
+        _id: netidCanonical,
+        displayName: 'Nate Netid',
+        archived: false,
+        identifiers: { netid: 'nn7' },
+        profileLinks: [],
+      },
+      {
+        _id: nameOnlyShell,
+        displayName: 'Nate Netid',
+        archived: false,
+        identifiers: {},
+        profileLinks: [],
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.byReason.MERGEABLE).toBe(1);
+
+    const shell = await db.collection('researchers').findOne({ _id: nameOnlyShell });
+    expect(shell!.archived).toBe(true);
+    expect(String(shell!.dedupedIntoResearcherId)).toBe(String(netidCanonical));
+
+    const canonical = await db.collection('researchers').findOne({ _id: netidCanonical });
+    expect(canonical!.archived).toBe(false);
+    expect((canonical!.identifiers as { netid?: string }).netid).toBe('nn7');
   });
 });

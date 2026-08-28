@@ -10,15 +10,23 @@ const cleanOrcid = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const cleanNetid = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
 export interface CanonicalCandidate {
   id: string;
   orcid?: string;
+  netid?: string;
 }
 
 export interface CanonicalNameEntry {
   displayName?: unknown;
   id: string;
   orcid?: unknown;
+  netid?: unknown;
 }
 
 export function buildCanonicalNameIndex(
@@ -29,7 +37,7 @@ export function buildCanonicalNameIndex(
     const name = normalizeResearcherName(entry.displayName);
     if (!name) continue;
     const list = index.get(name) ?? [];
-    list.push({ id: entry.id, orcid: cleanOrcid(entry.orcid) });
+    list.push({ id: entry.id, orcid: cleanOrcid(entry.orcid), netid: cleanNetid(entry.netid) });
     index.set(name, list);
   }
   return index;
@@ -40,7 +48,8 @@ export type ShellMergeReason =
   | 'NO_NAME'
   | 'NO_CANONICAL'
   | 'AMBIGUOUS_MULTIPLE_CANONICAL'
-  | 'ORCID_CONFLICT';
+  | 'ORCID_CONFLICT'
+  | 'NETID_CONFLICT';
 
 export interface ShellMergeDecision {
   merge: boolean;
@@ -49,7 +58,7 @@ export interface ShellMergeDecision {
 }
 
 export function decideShellMerge(
-  shell: { displayName?: unknown; orcid?: unknown },
+  shell: { displayName?: unknown; orcid?: unknown; netid?: unknown },
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
 ): ShellMergeDecision {
   const name = normalizeResearcherName(shell.displayName);
@@ -63,6 +72,10 @@ export function decideShellMerge(
   const shellOrcid = cleanOrcid(shell.orcid);
   if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
     return { merge: false, reason: 'ORCID_CONFLICT' };
+  }
+  const shellNetid = cleanNetid(shell.netid);
+  if (shellNetid && target.netid && shellNetid !== target.netid) {
+    return { merge: false, reason: 'NETID_CONFLICT' };
   }
 
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE' };
@@ -93,8 +106,8 @@ export interface ResearcherAttributeSnapshot {
   profile?: Record<string, unknown>;
 }
 
-export const RESEARCHER_UNION_IDENTIFIER_FIELDS = ['orcid', 'googleScholarId'] as const;
-export const RESEARCHER_UNIQUE_IDENTIFIER_FIELDS: ReadonlySet<string> = new Set(['orcid']);
+export const RESEARCHER_UNION_IDENTIFIER_FIELDS = ['orcid', 'googleScholarId', 'netid'] as const;
+export const RESEARCHER_UNIQUE_IDENTIFIER_FIELDS: ReadonlySet<string> = new Set(['orcid', 'netid']);
 export const RESEARCHER_UNION_PROFILE_FIELDS = [
   'title',
   'primaryDepartment',
