@@ -51,8 +51,6 @@ const leadPoints = (summary: ResearchEntityQualitySummary): number => {
       return 25;
     case 'lead_weak':
       return 8;
-    case 'lead_conflict':
-      return -10;
     default:
       return 0; // lead_missing
   }

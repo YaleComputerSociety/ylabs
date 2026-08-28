@@ -68,7 +68,6 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
       'blank_public_description',
       'missing_lead',
       'profile_identity_risk',
-      'pi_identity_conflict',
       'duplicate_risk',
       'exact_url_duplicate_risk',
       'lab_name_org_type_mismatch',
@@ -1201,31 +1200,6 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('operator_review');
     expect(result.reasons).toEqual(expect.arrayContaining(['missing_lead', 'missing_source_url']));
-  });
-
-  it('keeps records with conflicting PI identity out of public tiers', () => {
-    const result = computeResearchEntityStudentVisibility({
-      entity: {
-        shortDescription:
-          'Studies film and media theory, communication history, cultural technique, and humanities approaches to transmission.',
-        fullDescription:
-          'The research examines film and media theory, communication history, cultural technique, and humanities approaches to transmission, infrastructure, and materiality.',
-        sourceUrls: ['https://filmstudies.yale.edu/people/john-durham-peters'],
-      },
-      leadMembers: [
-        {
-          role: 'pi',
-          userId: 'wrong-user',
-          facultyMemberId: 'correct-faculty',
-          user: { facultyMemberId: 'wrong-faculty' },
-        },
-      ],
-      accessSignalCount: 1,
-      actionablePathwayCount: 1,
-    });
-
-    expect(result.tier).toBe('operator_review');
-    expect(result.reasons).toContain('pi_identity_conflict');
   });
 
   it('lets manual suppression override computed readiness', () => {

@@ -540,7 +540,6 @@ const classifyReason = (reason: string): QueueKind => {
     [
       'content_page_risk',
       'inactive_at_yale',
-      'pi_identity_conflict',
       'profile_fallback_only',
       'thin_description',
     ].includes(reason)
@@ -857,7 +856,6 @@ const queueDecisionPrompt = (reason: string): string => {
     case 'missing_alternate_access_path':
       return 'Can a related lab, faculty area, hosted program, or a people/get-involved page give students a real way in?';
     case 'missing_lead':
-    case 'pi_identity_conflict':
       return 'Can ownership or PI identity be verified?';
     case 'missing_description':
     case 'missing_card_description':

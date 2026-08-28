@@ -30,7 +30,6 @@ export type ResearchEntityRepairFlag =
   | 'thin_description'
   | 'profile_fallback_only'
   | 'missing_lead'
-  | 'pi_identity_conflict'
   | 'duplicate_risk'
   | 'missing_source_url';
 

@@ -886,7 +886,7 @@ describe('researchEntityDto', () => {
       name: 'Lead Review Lab',
       leadIdentityStatus: 'under_review',
       leadProfessorPublicKey: 'reviewed-professor-pi',
-      qualitySummary: { repairFlags: ['pi_identity_conflict'], privateNote: 'operator only' },
+      qualitySummary: { repairFlags: ['missing_lead'], privateNote: 'operator only' },
     });
 
     expect(dto).toMatchObject({

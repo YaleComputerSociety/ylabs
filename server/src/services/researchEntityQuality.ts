@@ -9,8 +9,7 @@ export type ResearchEntityDescriptionState =
 export type ResearchEntityLeadState =
   | 'lead_attached'
   | 'lead_weak'
-  | 'lead_missing'
-  | 'lead_conflict';
+  | 'lead_missing';
 
 export type ResearchEntityRepairFlag =
   | 'missing_description'
@@ -18,7 +17,6 @@ export type ResearchEntityRepairFlag =
   | 'profile_fallback_only'
   | 'missing_card_description'
   | 'missing_lead'
-  | 'pi_identity_conflict'
   | 'missing_source_url'
   | 'duplicate_risk';
 
@@ -57,24 +55,9 @@ const hasStrongLead = (member: Record<string, any>): boolean =>
   Boolean(
     member.userId ||
     member.user?._id ||
-    member.facultyMemberId ||
-    member.facultyMember?._id ||
     textValue(member.name) ||
     textValue(member.user?.netid),
   );
-
-const hasLeadIdentityConflict = (member: Record<string, any>): boolean => {
-  const rowFacultyId = textValue(member.facultyMemberId);
-  if (!rowFacultyId) return false;
-
-  const userFacultyId = textValue(member.user?.facultyMemberId);
-  if (member.userId && userFacultyId && userFacultyId !== rowFacultyId) return true;
-
-  const facultyUserId = textValue(member.facultyMember?.userId);
-  if (member.userId && facultyUserId && facultyUserId !== textValue(member.userId)) return true;
-
-  return false;
-};
 
 function descriptionStateForEntity(
   entity: Record<string, any>,
@@ -89,7 +72,6 @@ function descriptionStateForEntity(
 }
 
 function leadStateForMembers(leadMembers: Array<Record<string, any>>): ResearchEntityLeadState {
-  if (leadMembers.some(hasLeadIdentityConflict)) return 'lead_conflict';
   if (leadMembers.some(hasStrongLead)) return 'lead_attached';
   if (leadMembers.length > 0) return 'lead_weak';
   return 'lead_missing';
@@ -114,7 +96,6 @@ export function buildResearchEntityQualitySummary({
   if (descriptionState === 'thin') repairFlags.push('thin_description');
   if (descriptionState === 'profile_synthesis') repairFlags.push('profile_fallback_only');
   if (cardState !== 'complete') repairFlags.push('missing_card_description');
-  if (leadState === 'lead_conflict') repairFlags.push('pi_identity_conflict');
   if (leadState !== 'lead_attached') repairFlags.push('missing_lead');
   if (!hasSourceUrl(entity)) repairFlags.push('missing_source_url');
   if (visibilityReasonsForEntity(entity).includes('duplicate_risk'))
@@ -127,7 +108,6 @@ export function buildResearchEntityQualitySummary({
   if (descriptionState === 'source_backed' && cardState !== 'complete') score += 12;
   if (leadState === 'lead_missing') score += 35;
   if (leadState === 'lead_weak') score += 18;
-  if (leadState === 'lead_conflict') score += 44;
   if (!hasSourceUrl(entity)) score += 16;
   if (repairFlags.includes('duplicate_risk')) score += 14;
 

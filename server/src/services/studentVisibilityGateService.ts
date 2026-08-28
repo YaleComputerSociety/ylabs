@@ -150,7 +150,6 @@ const piRepairReasons = new Set([
   'missing_lead',
   'duplicate_name_risk',
   'duplicate_risk',
-  'pi_identity_conflict',
   'profile_identity_risk',
 ]);
 const actionRepairReasons = new Set([

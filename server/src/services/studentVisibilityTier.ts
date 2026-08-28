@@ -521,7 +521,6 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'duplicate_name_risk',
   'duplicate_risk',
   'exact_url_duplicate_risk',
-  'pi_identity_conflict',
   'profile_identity_risk',
   'generic_directory_shell',
   'profile_biography_shell',
@@ -654,7 +653,6 @@ export function computeResearchEntityStudentVisibility({
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
   if (quality.repairFlags.includes('missing_card_description'))
     reasons.push('missing_card_description');
-  if (quality.repairFlags.includes('pi_identity_conflict')) reasons.push('pi_identity_conflict');
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
   if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
   if (organizationalDeadEnd) reasons.push('missing_alternate_access_path');
@@ -680,9 +678,7 @@ export function computeResearchEntityStudentVisibility({
     descriptionCoherent: publicDescription.invariant.pass && quality.cardState === 'complete',
     entityContentMatchesCard: !labNameOrgTypeMismatch,
     rightLeadAttached:
-      (!requiresLead || quality.leadState === 'lead_attached') &&
-      !quality.repairFlags.includes('pi_identity_conflict') &&
-      !profileIdentityRisk,
+      (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
     notDuplicate: !duplicateRisk,
   };
 
@@ -705,7 +701,6 @@ export function computeResearchEntityStudentVisibility({
     quality.cardState === 'complete' &&
     (!requiresLead || quality.leadState === 'lead_attached') &&
     !organizationalDeadEnd &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
