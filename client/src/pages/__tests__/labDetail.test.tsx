@@ -1866,7 +1866,9 @@ describe('LabDetail page', () => {
   it('does not render paper-derived research evidence', async () => {
     renderLabDetail({
       ...basePayload,
-      researchActivityLinks: [
+      // Deliberately feeds the retired researchActivityLinks field so this stays a
+      // guard that a stale server payload renders no publication surface.
+      ...({ researchActivityLinks: [
         {
           _id: 'link-1',
           relationshipBasis: 'explicit_entity_link',
@@ -1879,7 +1881,7 @@ describe('LabDetail page', () => {
           year: 2024,
           venue: 'Fixture Discovery Journal',
         },
-      ],
+      ] } as Record<string, unknown>),
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
@@ -1905,7 +1907,9 @@ describe('LabDetail page', () => {
           },
         },
       ],
-      researchActivityLinks: [
+      // Deliberately feeds the retired researchActivityLinks field so this stays a
+      // guard that a stale server payload renders no publication surface.
+      ...({ researchActivityLinks: [
         {
           _id: 'profile-pub-1',
           relationshipBasis: 'identity_authorship',
@@ -1918,7 +1922,7 @@ describe('LabDetail page', () => {
           year: 2025,
           venue: 'Fixture Preprint Archive',
         },
-      ],
+      ] } as Record<string, unknown>),
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);

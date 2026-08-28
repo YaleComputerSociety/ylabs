@@ -63,7 +63,7 @@ const CONTACT_REDACTED_QUOTE_FIELDS = new Set([
 ]);
 
 function isResearchEntityObservationType(entityType: ObservedEntityType): boolean {
-  return entityType === 'researchEntity' || entityType === 'researchGroup';
+  return entityType === 'researchEntity';
 }
 
 function accepted(value: unknown): SanitizedObservationField {

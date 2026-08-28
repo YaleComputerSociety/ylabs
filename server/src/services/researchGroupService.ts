@@ -25,8 +25,6 @@ import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { Listing } from '../models/listing';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
-import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
-import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -61,7 +59,6 @@ import {
   type PublicResearchEntityDto,
   type PublicResearchEntitySummaryDto,
 } from './researchEntityDto';
-import { isPublicResearchPaperLink, scholarlyLinkToPublicLink } from './profileService';
 import {
   isLikelyPublicProfileImageUrl,
   isSharedProfileImageAcrossDifferentNames,
@@ -77,11 +74,6 @@ import {
 } from '../utils/researchEntityDeceasedLead';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
-import {
-  canonicalScholarlyWorkKey,
-  evaluateResearchActivityIntegrity,
-  type ResearchActivityCandidate,
-} from './researchActivityIntegrity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
 import {
@@ -2580,110 +2572,6 @@ export function dropUncorroboratedPhantomLeads<T extends { role: string; row?: a
   return members.filter((member) => !isUncorroboratedPhantomLeadMember(member));
 }
 
-export function buildResearchActivityLinkPayload({
-  researchEntityId,
-  entityTopicEvidence = [],
-  entityScholarlyLinks = [],
-  memberScholarlyLinkPairs = [],
-}: {
-  researchEntityId: unknown;
-  entityTopicEvidence?: unknown;
-  entityScholarlyLinks?: Array<Record<string, any>>;
-  memberScholarlyLinkPairs?: Array<{
-    link: Record<string, any>;
-    memberDisplayId?: unknown;
-    relationshipBasis?: string;
-    evidenceLabel?: string;
-    confidence?: number;
-    observedAt?: unknown;
-    sourceName?: string;
-    sourceUrl?: string;
-    appointmentStartedAt?: unknown;
-    appointmentEndedAt?: unknown;
-  }>;
-}) {
-  const seen = new Set<string>();
-  const seenCanonicalWorks = new Set<string>();
-  const uniqueKey = (basis: string, id: unknown, owner?: unknown) =>
-    [basis, researchGroupDocumentId(id), researchGroupDocumentId(owner)].join(':');
-
-  const withoutInternalResearchActivityIds = (link: Record<string, any>) => {
-    const { researchEntityId: _researchEntityId, userId: _userId, ...publicLink } = link;
-    return publicLink;
-  };
-
-  const scholarlyLinks = [
-    ...entityScholarlyLinks.map((link) =>
-      withoutInternalResearchActivityIds(
-        scholarlyLinkToPublicLink(link, {
-          researchEntityId,
-          relationshipBasis: 'explicit_entity_link',
-          evidenceLabel: 'Linked to this research profile',
-        }),
-      ),
-    ),
-  ].filter((link) => {
-    const key = uniqueKey(link.relationshipBasis || '', link._id);
-    const canonicalKey = canonicalScholarlyWorkKey(link);
-    if (seen.has(key) || seenCanonicalWorks.has(canonicalKey) || !isPublicResearchPaperLink(link))
-      return false;
-    seen.add(key);
-    seenCanonicalWorks.add(canonicalKey);
-    return true;
-  });
-
-  const integrityDecisions = evaluateResearchActivityIntegrity(
-    memberScholarlyLinkPairs.filter((pair) => pair.memberDisplayId) as ResearchActivityCandidate[],
-    entityTopicEvidence,
-  );
-  const publicMemberLink = (pair: ResearchActivityCandidate, earlier = false) => ({
-    ...withoutInternalResearchActivityIds(
-      scholarlyLinkToPublicLink(pair.link, {
-        relationshipBasis: pair.relationshipBasis || 'identity_authorship',
-        evidenceLabel: earlier
-          ? 'Earlier work by a listed professor, before the documented current appointment'
-          : pair.evidenceLabel || 'Authored by a verified Yale faculty identity',
-        confidence: pair.confidence,
-        observedAt: pair.observedAt,
-        sourceName: pair.sourceName,
-        sourceUrl: pair.sourceUrl,
-      }),
-    ),
-    memberKey: pair.memberDisplayId,
-  });
-
-  const memberScholarlyLinks = [
-    ...integrityDecisions
-      .filter((decision) => decision.disposition === 'current')
-      .map((pair) => publicMemberLink(pair.candidate)),
-  ].filter((link: any) => {
-    const key = uniqueKey(link.relationshipBasis || '', link._id, link.memberKey);
-    const canonicalKey = canonicalScholarlyWorkKey(link);
-    if (seen.has(key) || seenCanonicalWorks.has(canonicalKey) || !isPublicResearchPaperLink(link))
-      return false;
-    seen.add(key);
-    seenCanonicalWorks.add(canonicalKey);
-    return true;
-  });
-
-  const earlierMemberScholarlyLinks = integrityDecisions
-    .filter((decision) => decision.disposition === 'earlier')
-    .map((decision) => publicMemberLink(decision.candidate, true))
-    .filter((link) => {
-      const canonicalKey = canonicalScholarlyWorkKey(link);
-      if (seenCanonicalWorks.has(canonicalKey) || !isPublicResearchPaperLink(link)) return false;
-      seenCanonicalWorks.add(canonicalKey);
-      return true;
-    });
-
-  return {
-    scholarlyLinks,
-    memberScholarlyLinks,
-    researchActivityLinks: [...scholarlyLinks, ...memberScholarlyLinks],
-    earlierResearchActivityLinks: earlierMemberScholarlyLinks,
-  };
-}
-
 const publicHttpUrl = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   try {
@@ -2859,10 +2747,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
   roster: PublicRosterDisclosure;
-  researchActivityLinks: any[];
-  earlierResearchActivityLinks: any[];
-  scholarlyLinks: any[];
-  memberScholarlyLinks: any[];
   activeListings: any[];
   accessSignals: any[];
   undergraduateLogistics: PublicUndergraduateLogistics;
@@ -3021,50 +2905,12 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const attributionRows = memberDisplayIds.length
-    ? await ResearchScholarlyAttribution.find({
-        targetUserId: { $in: memberDisplayIds },
-        archived: { $ne: true },
-      })
-        .select(
-          'scholarlyLinkId targetUserId relationshipBasis evidenceLabel confidence observedAt sourceName sourceUrl',
-        )
-        .sort({ observedAt: -1, updatedAt: -1 })
-        .limit(80)
-        .lean()
-    : [];
-  const attributedScholarlyLinkIds = Array.from(
-    new Set(
-      attributionRows
-        .map((row: any) => researchGroupDocumentId(row.scholarlyLinkId))
-        .filter(Boolean),
-    ),
-  );
-
   const [
-    entityScholarlyLinks,
-    attributedScholarlyLinks,
     activeListingsRaw,
     accessSignals,
     planningContexts,
     undergraduateLogistics,
   ] = await Promise.all([
-    ResearchScholarlyLink.find({
-      researchEntityId: (group as any)._id,
-      archived: { $ne: true },
-    })
-      .sort({ observedAt: -1, year: -1, updatedAt: -1 })
-      .limit(10)
-      .lean(),
-    attributedScholarlyLinkIds.length
-      ? ResearchScholarlyLink.find({
-          _id: { $in: attributedScholarlyLinkIds },
-          archived: { $ne: true },
-        })
-          .sort({ observedAt: -1, year: -1, updatedAt: -1 })
-          .limit(20)
-          .lean()
-      : Promise.resolve([]),
     Listing.find({ researchEntityId: (group as any)._id, archived: false })
       .sort({ updatedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_LISTINGS)
@@ -3080,48 +2926,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     optionalPlanningContexts([(group as any)._id]),
     optionalUndergraduateLogistics((group as any)._id),
   ]);
-
-  const scholarlyLinksById = new Map(
-    (attributedScholarlyLinks as any[]).flatMap((link) => {
-      const id = researchGroupDocumentId(link._id);
-      return id ? [[id, link] as const] : [];
-    }),
-  );
-  const memberScholarlyLinkPairs = (attributionRows as any[]).flatMap((row) => {
-    const link = scholarlyLinksById.get(researchGroupDocumentId(row.scholarlyLinkId));
-    if (!link) return [];
-    const appointment = memberAppointmentsByInternalId.get(
-      researchGroupDocumentId(row.targetUserId),
-    );
-    return [
-      {
-        link,
-        memberDisplayId: publicMemberKeysByInternalId.get(
-          researchGroupDocumentId(row.targetUserId),
-        ),
-        relationshipBasis: row.relationshipBasis,
-        evidenceLabel: row.evidenceLabel,
-        confidence: row.confidence,
-        observedAt: row.observedAt,
-        sourceName: row.sourceName,
-        sourceUrl: row.sourceUrl,
-        appointmentStartedAt: appointment?.startedAt,
-        appointmentEndedAt: appointment?.endedAt,
-      },
-    ];
-  });
-  const researchActivity = buildResearchActivityLinkPayload({
-    researchEntityId: (group as any)._id,
-    entityTopicEvidence: [
-      (group as any).researchAreas,
-      (group as any).methods,
-      (group as any).shortDescription,
-      (group as any).fullDescription,
-      (group as any).name,
-    ],
-    entityScholarlyLinks: entityScholarlyLinks as any[],
-    memberScholarlyLinkPairs,
-  });
 
   const activeListings = activeListingsRaw.map(publicListingForResearchDetail);
   const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
@@ -3143,7 +2947,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     },
     members,
     roster,
-    ...researchActivity,
     activeListings,
     accessSignals: publicAccessSignals,
     undergraduateLogistics,

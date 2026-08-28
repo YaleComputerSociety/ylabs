@@ -2,7 +2,7 @@
  * Types for the research detail page payload (`GET /api/research/:slug`).
  *
  * The server returns canonical `researchEntity` detail data, along
- * with denormalized member info, curated scholarly activity, and active listings. The UI
+ * with denormalized member info and active listings. The UI
  * consumes those collections directly — no further joins on the client.
  */
 import { Listing } from './types';
@@ -60,51 +60,6 @@ export interface LabRosterDisclosure {
   sourceUrl?: string;
   observedAt?: string;
   freshnessExpiresAt?: string;
-}
-
-export interface LabScholarlyLink {
-  _id: string;
-  memberKey?: string;
-  title: string;
-  url: string;
-  destinationKind:
-    | 'DOI'
-    | 'PUBLISHER'
-    | 'PUBMED'
-    | 'PMC'
-    | 'ARXIV'
-    | 'ORCID'
-    | 'OPENALEX'
-    | 'OFFICIAL_PROFILE'
-    | 'OTHER';
-  displaySource: string;
-  freeFullTextUrl?: string;
-  freeFullTextLabel?: string;
-  openAccessStatus?: string;
-  discoveredVia: 'OPENALEX' | 'ORCID' | 'OFFICIAL_PROFILE' | 'MANUAL';
-  year?: number;
-  venue?: string;
-  confidence?: number;
-  observedAt?: string;
-  externalIds?: {
-    doi?: string;
-    openAlexId?: string;
-    arxivId?: string;
-    pmid?: string;
-    pmcid?: string;
-  };
-}
-
-export type LabResearchActivityRelationshipBasis =
-  | 'explicit_entity_link'
-  | 'entity_source'
-  | 'member_authorship'
-  | 'identity_authorship'
-  | 'manual';
-
-export interface LabResearchActivityLink extends LabScholarlyLink {
-  relationshipBasis: LabResearchActivityRelationshipBasis;
-  evidenceLabel: string;
 }
 
 export interface LabAccessSignal {
@@ -184,10 +139,6 @@ export interface LabDetailPayload {
   researchEntity?: ResearchEntity;
   members: LabMember[];
   roster?: LabRosterDisclosure;
-  researchActivityLinks?: LabResearchActivityLink[];
-  earlierResearchActivityLinks?: LabResearchActivityLink[];
-  scholarlyLinks?: LabScholarlyLink[];
-  memberScholarlyLinks?: LabScholarlyLink[];
   activeListings: Listing[];
   accessSignals?: LabAccessSignal[];
   undergraduateLogistics?: UndergraduateLogisticsPayload;

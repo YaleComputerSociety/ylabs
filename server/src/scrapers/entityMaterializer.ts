@@ -425,7 +425,7 @@ function isOfficialProfileBioChromeObservation(observation: MaterializerObservat
 }
 
 function isResearchEntityObservationType(entityType: ObservedEntityType): boolean {
-  return entityType === 'researchEntity' || entityType === 'researchGroup';
+  return entityType === 'researchEntity';
 }
 
 function hasNonEmptyStringArray(...values: unknown[]): boolean {
@@ -2345,7 +2345,6 @@ export function addPostMaterializationMetrics(
 function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | null {
   switch (entityType) {
     case 'researchEntity':
-    case 'researchGroup':
       return ResearchEntity;
     case 'fellowship':
       return Fellowship;
@@ -2359,7 +2358,6 @@ function uniqueKeyFieldFor(entityType: ObservedEntityType): string | null {
     case 'user':
       return 'netid';
     case 'researchEntity':
-    case 'researchGroup':
       return 'slug';
     case 'fellowship':
       return 'sourceKey';
@@ -3576,10 +3574,9 @@ export async function materializeEntity(
     }
   }
 
-  const syncEntityType = entityType === 'researchGroup' ? 'researchEntity' : entityType;
-  if (isSyncableEntityType(syncEntityType) && entityIdString && !entityScalarUnchanged) {
+  if (isSyncableEntityType(entityType) && entityIdString && !entityScalarUnchanged) {
     const fresh = await Model.findById(entityIdString).lean();
-    if (fresh) await syncEntity(syncEntityType, fresh);
+    if (fresh) await syncEntity(entityType, fresh);
   }
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;

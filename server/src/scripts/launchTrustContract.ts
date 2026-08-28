@@ -52,10 +52,6 @@ export function parseLaunchTrustContractArgs(argv: string[]): CliOptions {
     const arg = argv[index];
     if (arg === '--strict') {
       options.strict = true;
-    } else if (arg === '--include-research-activity') {
-      options.includeResearchActivity = true;
-    } else if (arg === '--include-paper-quality') {
-      options.includePaperQuality = true;
     } else if (arg === '--mode=student-ready-only' || arg === '--student-ready-only') {
       options.mode = 'student-ready-only';
     } else if (arg === '--mode=public-safe' || arg === '--public-safe') {
