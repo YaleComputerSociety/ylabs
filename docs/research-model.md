@@ -93,6 +93,7 @@ Historical `paper` observations and source rows are retained as read-only archiv
 The "program" split-brain is resolved: programs and fellowships live only on the `/programs` surface.
 The Fellowship to `ResearchEntity` projection that mirrored each `Fellowship` into `/research` as an `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` entity was removed, along with those two `entityType` values, the `/research` "Related programs & fellowships" cross-surface module, and the now-dead funding-program topic derivation that only enriched projected programs.
 The `PROGRAM` `entityType` was then removed entirely (see `docs/decisions.md` 2026-08-26), so no program is a `/research` citizen: every program lives only on `/programs` (backed by `Fellowship`), and department "undergraduate research" pages materialize as `Fellowship` records rather than research homes.
+Residual rows that still carried the retired type were archived rather than hard-deleted, and `entityMaterializer` now refuses the retired type at its entry, so a re-scrape neither mints a new `PROGRAM` entity nor resurrects an archived one (see `docs/decisions.md` 2026-08-28).
 
 ## Canonicalization
 

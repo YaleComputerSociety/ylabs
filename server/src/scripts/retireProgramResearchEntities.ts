@@ -127,9 +127,11 @@ async function loadProgramResearchEntityCandidates(): Promise<ProgramResearchEnt
     .select('_id slug name archived')
     .lean()) as Array<{ _id: unknown; slug?: string; name?: string; archived?: boolean }>;
 
-  const fellowships = (await Fellowship.find({})
-    .select('_id title sourceKey')
-    .lean()) as Array<{ _id: unknown; title?: string; sourceKey?: string }>;
+  const fellowships = (await Fellowship.find({}).select('_id title sourceKey').lean()) as Array<{
+    _id: unknown;
+    title?: string;
+    sourceKey?: string;
+  }>;
 
   const fellowshipSourceKeys = new Set<string>();
   const fellowshipTitles = new Set<string>();

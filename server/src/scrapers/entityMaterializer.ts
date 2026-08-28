@@ -439,8 +439,7 @@ export const RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE = 'PROGRAM';
 
 export function isRetiredProgramResearchEntityType(value: unknown): boolean {
   return (
-    typeof value === 'string' &&
-    value.trim().toUpperCase() === RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE
+    typeof value === 'string' && value.trim().toUpperCase() === RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE
   );
 }
 
