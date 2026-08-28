@@ -37,6 +37,7 @@
     "research-entity:rematerialize": "tsx src/scripts/rematerializeResearchEntities.ts",
     "research-entity:retire-foreign-lead-grafts": "tsx src/scripts/retireForeignLeadGrafts.ts",
     "research-entity:consolidate-faculty-type": "tsx src/scripts/consolidateFacultyResearchEntityType.ts",
+    "research-entity:resync-kind": "tsx src/scripts/resyncResearchEntityKind.ts",
     "research-entity:project-faculty": "tsx src/scripts/projectActiveFacultyToResearchModel.ts",
     "research-entity:person-centric-lab-description-backfill": "tsx src/scripts/personCentricLabDescriptionBackfill.ts",
     "users:dedupe-by-identity": "tsx src/scripts/dedupeUsersByIdentity.ts",

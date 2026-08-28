@@ -1,7 +1,14 @@
 import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { Signal } from '../signal';
-import { mapResearchGroupKindToEntityType, researchEntityTypes } from '../researchAccessTypes';
+import {
+  EntityTypeToResearchGroupKind,
+  ResearchGroupKindToEntityType,
+  mapEntityTypeToResearchGroupKind,
+  mapResearchGroupKindToEntityType,
+  researchEntityTypes,
+  researchGroupKinds,
+} from '../researchAccessTypes';
 import { Source } from '../source';
 
 const oid = () => new mongoose.Types.ObjectId();
@@ -19,6 +26,25 @@ describe('research access models', () => {
     expect(researchEntityTypes).not.toContain('PROGRAM');
     expect(mapResearchGroupKindToEntityType('program')).not.toBe('PROGRAM');
     expect(mapResearchGroupKindToEntityType('program')).toBe('INITIATIVE');
+  });
+
+  it('derives a valid research group kind for every entity type', () => {
+    for (const entityType of researchEntityTypes) {
+      const kind = mapEntityTypeToResearchGroupKind(entityType);
+      expect(kind).toBe(EntityTypeToResearchGroupKind[entityType]);
+      expect(researchGroupKinds).toContain(kind);
+    }
+    expect(mapEntityTypeToResearchGroupKind('CORE_FACILITY')).toBe('core_facility');
+    expect(mapEntityTypeToResearchGroupKind('unknown')).toBe('lab');
+  });
+
+  it('round-trips every legacy kind back to its own entity type through the inverse map', () => {
+    for (const kind of researchGroupKinds) {
+      const entityType = ResearchGroupKindToEntityType[kind];
+      expect(mapResearchGroupKindToEntityType(mapEntityTypeToResearchGroupKind(entityType))).toBe(
+        entityType,
+      );
+    }
   });
 
   it('validates access signals with source-backed confidence fields', () => {

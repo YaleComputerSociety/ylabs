@@ -67,6 +67,27 @@ describe('projectFromLog', () => {
     expect(result.conflicts).toBe(1);
   });
 
+  it('derives a consistent kind from a resolved core-facility entity type', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      baseInput({
+        resolved: {
+          name: resolvedField('Synthetic Imaging Core'),
+          entityType: resolvedField('CORE_FACILITY'),
+        },
+        entityDoc: { _id: 'b'.repeat(24), kind: 'lab', confidenceByField: {} },
+        applyDescriptionResearchAreaDerivation:
+          noopCanonicalizer as ProjectFromLogInput['applyDescriptionResearchAreaDerivation'],
+        applyResearchEntityOrgUnitCanonicalization:
+          noopCanonicalizer as ProjectFromLogInput['applyResearchEntityOrgUnitCanonicalization'],
+        applyResearchEntityResearchAreaCanonicalization:
+          noopCanonicalizer as ProjectFromLogInput['applyResearchEntityResearchAreaCanonicalization'],
+      }),
+    );
+    expect(result.set.entityType).toBe('CORE_FACILITY');
+    expect(result.set.kind).toBe('core_facility');
+  });
+
   it('unsets a clearable field with no live observation', async () => {
     const result = await projectFromLog(
       'researchEntity',

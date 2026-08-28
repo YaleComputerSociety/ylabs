@@ -9,7 +9,11 @@ import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
-import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
+import {
+  researchGroupKinds,
+  researchEntityTypes,
+  mapEntityTypeToResearchGroupKind,
+} from '../models/researchAccessTypes';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
 import {
@@ -2899,6 +2903,16 @@ export async function projectFromLog(
     }
     if (r.hasConflict) conflicts++;
     fieldsWritten++;
+  }
+  if (isResearchEntityObservationType(entityType)) {
+    const effectiveEntityType = textValue(set.entityType ?? entityDoc?.entityType);
+    if (researchEntityTypes.includes(effectiveEntityType as never)) {
+      const derivedKind = mapEntityTypeToResearchGroupKind(effectiveEntityType);
+      if ((set.kind ?? entityDoc?.kind) !== derivedKind) {
+        set.kind = derivedKind;
+        fieldsWritten++;
+      }
+    }
   }
   if (isResearchEntityObservationType(entityType)) {
     if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
