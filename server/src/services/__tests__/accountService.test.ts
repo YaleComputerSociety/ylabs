@@ -85,6 +85,48 @@ describe('accountService', () => {
     );
   });
 
+  it('persists a sanitized Yalies profile alongside the login stamp', async () => {
+    accountModelMock.findOneAndUpdate.mockReturnValue(
+      leanResult({ _id: 'acc-4', netid: 'stud1', email: 'stud1@yale.edu', status: 'ACTIVE' }),
+    );
+
+    await recordAccountLogin({
+      netid: 'stud1',
+      email: 'stud1@yale.edu',
+      profile: {
+        firstName: 'Sam',
+        lastName: 'Student',
+        userType: 'undergraduate',
+        college: 'Berkeley',
+        year: '2027',
+        major: ['Physics'],
+        title: '  ',
+      },
+    });
+
+    const update = accountModelMock.findOneAndUpdate.mock.calls[0][1];
+    expect(update.$set.profile).toEqual({
+      firstName: 'Sam',
+      lastName: 'Student',
+      userType: 'undergraduate',
+      college: 'Berkeley',
+      year: '2027',
+      major: ['Physics'],
+    });
+    expect(update.$set.profile).not.toHaveProperty('title');
+  });
+
+  it('omits profile from the update when no profile fields are present', async () => {
+    accountModelMock.findOneAndUpdate.mockReturnValue(
+      leanResult({ _id: 'acc-5', netid: 'nofields1', email: 'nofields1@yale.edu', status: 'ACTIVE' }),
+    );
+
+    await recordAccountLogin({ netid: 'nofields1', profile: { firstName: '  ', major: [] } });
+
+    const update = accountModelMock.findOneAndUpdate.mock.calls[0][1];
+    expect(update.$set).not.toHaveProperty('profile');
+  });
+
   it('rejects a malformed netid before writing', async () => {
     await expect(recordAccountLogin({ netid: 'a' })).rejects.toThrow(
       'Invalid authentication principal',

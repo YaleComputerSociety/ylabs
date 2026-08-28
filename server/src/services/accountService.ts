@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Account } from '../models/account';
+import { Account, type AccountProfile } from '../models/account';
 import { Researcher } from '../models/researcher';
 
 const NETID_INPUT_RE = /^[A-Za-z0-9]{2,12}$/;
@@ -8,7 +8,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export interface AccountLoginInput {
   netid: string;
   email?: string;
+  profile?: AccountProfile;
 }
+
+const sanitizeLoginProfile = (profile?: AccountProfile): AccountProfile | undefined => {
+  if (!profile) return undefined;
+  const entries = Object.entries(profile).filter(([, value]) =>
+    Array.isArray(value) ? value.length > 0 : typeof value === 'string' && value.trim().length > 0,
+  );
+  return entries.length > 0 ? (Object.fromEntries(entries) as AccountProfile) : undefined;
+};
 
 export interface AccountRecordView {
   _id: string;
@@ -97,10 +106,11 @@ export const recordAccountLogin = async (input: AccountLoginInput): Promise<Acco
     throw new Error('Invalid authentication principal');
   }
 
+  const profile = sanitizeLoginProfile(input.profile);
   const account = await Account.findOneAndUpdate(
     { netid: normalizedNetid },
     {
-      $set: { lastLoginAt: new Date() },
+      $set: { lastLoginAt: new Date(), ...(profile ? { profile } : {}) },
       $setOnInsert: {
         netid: normalizedNetid,
         email: normalizeLoginEmail(input.email, normalizedNetid),

@@ -305,7 +305,9 @@ This metadata is a planning and review contract, not a substitute for evidence. 
 
 ORCID may disambiguate a Yale-confirmed researcher and support a reviewed outbound profile link, but it must not act as an account-creation shortcut or a works feed.
 
-Create a `Researcher` only from Yale-controlled or Yale-corroborated identity evidence such as netid, Yale email, Yalies/Directory records, or an official Yale profile.
+Create a `Researcher` only when a research signal attaches the person to the corpus (a roster or PI/director role on a research entity); bare directory identity (a Yalies/Directory record with a netid and a faculty-ish title) no longer mints a `Researcher` or `Account` on its own.
+Directory identity instead enriches an already-existing researcher: it records the netid on `Researcher.identifiers.netid` (the disambiguation spine, replacing the retired scraper-minted `Account` lookup) and fills profile fields, but never creates the person record.
+Accounts are created only at login; the pruned directory people become login-provisioned identities if and when they actually sign in.
 Reviewed ORCID and Google Scholar profiles may support disambiguation and outbound navigation, while NIH and NSF may enrich grant context, but none should create a Yale person record by itself.
 
 Official Yale sources may emit ORCID identity observations with source provenance.

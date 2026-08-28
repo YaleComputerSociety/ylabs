@@ -9,14 +9,42 @@ export const accountSchemaVersion = defineCanonicalSchemaVersion({ currentVersio
 export const accountStatuses = ['ACTIVE', 'DISABLED', 'UNKNOWN'] as const;
 export type AccountStatus = (typeof accountStatuses)[number];
 
+export interface AccountProfile {
+  firstName?: string;
+  lastName?: string;
+  userType?: string;
+  title?: string;
+  department?: string;
+  college?: string;
+  year?: string;
+  major?: string[];
+}
+
 export interface AccountRecord {
   schemaVersion: number;
   netid: string;
   email: string;
   status: AccountStatus;
   lastLoginAt?: Date;
+  profile?: AccountProfile;
   archived: boolean;
 }
+
+export const accountProfileSchema = new mongoose.Schema<AccountProfile>(
+  {
+    firstName: { type: String, trim: true, maxlength: 120 },
+    lastName: { type: String, trim: true, maxlength: 120 },
+    userType: { type: String, trim: true, maxlength: 40 },
+    title: { type: String, trim: true, maxlength: 240 },
+    department: { type: String, trim: true, maxlength: 240 },
+    college: { type: String, trim: true, maxlength: 120 },
+    year: { type: String, trim: true, maxlength: 12 },
+    major: { type: [String], default: undefined },
+  },
+  {
+    _id: false,
+  },
+);
 
 export const accountSchema = new mongoose.Schema<AccountRecord>(
   {
@@ -47,6 +75,10 @@ export const accountSchema = new mongoose.Schema<AccountRecord>(
     lastLoginAt: {
       type: Date,
       required: false,
+    },
+    profile: {
+      type: accountProfileSchema,
+      default: undefined,
     },
     archived: {
       type: Boolean,

@@ -5,6 +5,7 @@ import express from 'express';
 import passport from 'passport';
 import { Strategy } from 'passport-cas';
 import { recordAccountLogin, validateAccount } from './services/accountService';
+import type { AccountProfile } from './models/account';
 import { classifyYalieByNetid } from './services/yaliesService';
 import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
 import { logEvent } from './services/analyticsService';
@@ -425,12 +426,21 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
   let userType = 'unknown';
   let userConfirmed = false;
   let email: string | undefined;
+  let profile: AccountProfile | undefined;
 
   const yalie = await classifyYalieByNetid(netid);
   if (yalie) {
     userType = yalie.userType;
     userConfirmed = yalie.userConfirmed;
     email = yalie.email;
+    profile = {
+      firstName: yalie.fname,
+      lastName: yalie.lname,
+      userType: yalie.userType,
+      college: yalie.college,
+      year: yalie.year != null ? String(yalie.year) : undefined,
+      major: yalie.major,
+    };
     authDebug(`resolveLoginPrincipalForCas: Yalies success, type=${userType}`);
   } else {
     try {
@@ -440,6 +450,13 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
         userType = facultyTitle ? 'professor' : 'unknown';
         userConfirmed = facultyTitle;
         email = dirPerson.email || undefined;
+        profile = {
+          firstName: dirPerson.firstName,
+          lastName: dirPerson.lastName,
+          userType,
+          title: dirPerson.title,
+          department: dirPerson.department,
+        };
         authDebug(`resolveLoginPrincipalForCas: Directory record found, type=${userType}`);
       }
     } catch {
@@ -447,7 +464,7 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
     }
   }
 
-  await recordAccountLogin({ netid, email });
+  await recordAccountLogin({ netid, email, profile });
 
   return { netid, userType, userConfirmed, profileVerified: false };
 }
