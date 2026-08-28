@@ -1,4 +1,5 @@
 import {
+  EntityTypeToResearchGroupKind,
   mapEntityTypeToResearchGroupKind,
   researchEntityTypes,
   type ResearchGroupKind,
@@ -21,6 +22,22 @@ export interface ResearchEntityKindPlanRow {
 
 function hasResearchEntityType(value?: string): value is string {
   return typeof value === 'string' && researchEntityTypes.includes(value as never);
+}
+
+/**
+ * Selects only rows whose stored `kind` disagrees with the kind derived from
+ * their `entityType`. Apply mode requires an explicit `--limit`, so the scan has
+ * to be restricted to drifted rows: limiting an unfiltered `_id`-ordered scan
+ * would re-examine the same lowest-`_id` window on every run and never finish
+ * the backfill.
+ */
+export function researchEntityKindDriftFilter(): Record<string, unknown> {
+  return {
+    $or: researchEntityTypes.map((entityType) => ({
+      entityType,
+      kind: { $ne: EntityTypeToResearchGroupKind[entityType] },
+    })),
+  };
 }
 
 export function planResearchEntityKindResync(

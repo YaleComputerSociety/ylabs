@@ -223,12 +223,38 @@ describe('entityToObservations', () => {
       'https://environment.yale.edu/research/centers',
     );
     const fields = obs.map((o) => o.field);
-    expect(fields).toEqual(['slug', 'name', 'kind', 'school', 'websiteUrl', 'sourceUrls']);
+    expect(fields).toEqual([
+      'slug',
+      'name',
+      'kind',
+      'entityType',
+      'school',
+      'websiteUrl',
+      'sourceUrls',
+    ]);
     expect(obs.find((o) => o.field === 'openness')).toBeUndefined();
     expect(obs.every((o) => o.entityKey === 'yse-industrial-ecology')).toBe(true);
     expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
     const schoolObs = obs.find((o) => o.field === 'school');
     expect(schoolObs!.value).toBe('Yale School of the Environment');
+  });
+
+  it('observes the canonical entityType alongside the inferred legacy kind', () => {
+    const observedEntityType = (kind: 'center' | 'program' | 'institute' | 'initiative') =>
+      entityToObservations(
+        {
+          name: 'Synthetic YSE Entity',
+          url: 'https://environment.yale.edu/research/centers/synthetic',
+          slug: 'yse-synthetic',
+          kind,
+        },
+        'https://environment.yale.edu/research/centers',
+      ).find((o) => o.field === 'entityType')!.value;
+
+    expect(observedEntityType('center')).toBe('CENTER');
+    expect(observedEntityType('institute')).toBe('INSTITUTE');
+    expect(observedEntityType('initiative')).toBe('INITIATIVE');
+    expect(observedEntityType('program')).toBe('INITIATIVE');
   });
 });
 

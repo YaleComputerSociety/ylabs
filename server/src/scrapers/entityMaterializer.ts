@@ -13,6 +13,7 @@ import {
   researchGroupKinds,
   researchEntityTypes,
   mapEntityTypeToResearchGroupKind,
+  type ResearchGroupKind,
 } from '../models/researchAccessTypes';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
@@ -1604,6 +1605,26 @@ const idValue = (value: unknown): string => {
   return serializedDocumentId(value) || '';
 };
 
+/**
+ * The legacy `kind` field is a pure function of the canonical `entityType`
+ * (#2144), so it is derived here rather than resolved from `kind` observations.
+ * Mirrors `materializedFieldValue`'s entityType fallback: an unrecognized
+ * observed entityType keeps the stored one, and an entity with no recognizable
+ * entityType at all has no derivable kind yet (kind observations still mint it).
+ */
+function derivedResearchGroupKind(
+  observedEntityType: unknown,
+  storedEntityType: unknown,
+): ResearchGroupKind | undefined {
+  const observed = textValue(observedEntityType);
+  const effective = researchEntityTypes.includes(observed as never)
+    ? observed
+    : textValue(storedEntityType);
+  return researchEntityTypes.includes(effective as never)
+    ? mapEntityTypeToResearchGroupKind(effective)
+    : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // ResearchEntity relationship materialization (umbrella center → faculty).
 //
@@ -2872,6 +2893,12 @@ export async function projectFromLog(
     : undefined;
   let conflicts = 0;
   let fieldsWritten = 0;
+  const derivedKind = isResearchEntityObservationType(entityType)
+    ? derivedResearchGroupKind(
+        manuallyLockedFields.includes('entityType') ? undefined : resolved.entityType?.value,
+        entityDoc?.entityType,
+      )
+    : undefined;
   for (const [field, r] of Object.entries(resolved)) {
     if (manuallyLockedFields.includes(field)) continue;
     const nextValue = r.value;
@@ -2882,7 +2909,7 @@ export async function projectFromLog(
         nextValue,
         resolved.fullDescription?.value ?? entityDoc?.fullDescription,
         isProgramLikeResearchEntity({
-          kind: resolved.kind?.value ?? entityDoc?.kind,
+          kind: derivedKind ?? resolved.kind?.value ?? entityDoc?.kind,
           entityType: resolved.entityType?.value ?? entityDoc?.entityType,
         }),
       )
@@ -2904,15 +2931,13 @@ export async function projectFromLog(
     if (r.hasConflict) conflicts++;
     fieldsWritten++;
   }
-  if (isResearchEntityObservationType(entityType)) {
-    const effectiveEntityType = textValue(set.entityType ?? entityDoc?.entityType);
-    if (researchEntityTypes.includes(effectiveEntityType as never)) {
-      const derivedKind = mapEntityTypeToResearchGroupKind(effectiveEntityType);
-      if ((set.kind ?? entityDoc?.kind) !== derivedKind) {
-        set.kind = derivedKind;
-        fieldsWritten++;
-      }
-    }
+  if (
+    derivedKind &&
+    !manuallyLockedFields.includes('kind') &&
+    (set.kind ?? entityDoc?.kind) !== derivedKind
+  ) {
+    set.kind = derivedKind;
+    fieldsWritten++;
   }
   if (isResearchEntityObservationType(entityType)) {
     if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
@@ -3180,12 +3205,13 @@ export async function projectFromLog(
   }
 
   if (input.writeOnlyFields && input.writeOnlyFields.length > 0) {
-    fieldsWritten = restrictMaterializerSetToFields(
-      set,
-      unset,
-      confidenceByField,
-      input.writeOnlyFields,
-    );
+    // `kind` is derived from `entityType`, so a field-scoped rematerialization
+    // that writes one without the other would reintroduce the drift (#2144).
+    const scopedFields =
+      input.writeOnlyFields.includes('entityType') && !input.writeOnlyFields.includes('kind')
+        ? [...input.writeOnlyFields, 'kind']
+        : input.writeOnlyFields;
+    fieldsWritten = restrictMaterializerSetToFields(set, unset, confidenceByField, scopedFields);
   }
   return { set, unset, confidenceByField, conflicts, fieldsWritten };
 }

@@ -10,6 +10,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   planResearchEntityKindResync,
+  researchEntityKindDriftFilter,
   summarizeResearchEntityKindResync,
   type ResearchEntityKindPlanRow,
 } from './resyncResearchEntityKindCore';
@@ -96,9 +97,12 @@ export async function runResearchEntityKindResync(options: {
   dryRun: boolean;
   limit?: number;
 }): Promise<ResearchEntityKindResyncResult> {
-  const query = ResearchEntity.find({}, { _id: 1, slug: 1, entityType: 1, kind: 1 }).sort({
+  const query = ResearchEntity.find(researchEntityKindDriftFilter(), {
     _id: 1,
-  });
+    slug: 1,
+    entityType: 1,
+    kind: 1,
+  }).sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
 
   const candidates = (await query.lean()) as Array<Record<string, unknown>>;

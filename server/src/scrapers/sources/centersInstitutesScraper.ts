@@ -42,6 +42,7 @@ import type {
   ScraperFetchMetric,
 } from '../types';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
@@ -1205,6 +1206,10 @@ export function centerToGroupObservations(
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: config.centerName },
     { ...base, field: 'kind', value: config.kind },
+    // `entityType` is the canonical taxonomy and `kind` is derived from it
+    // (#2144), so the org classification has to be observed on the canonical
+    // field or it can never correct an entity another source minted as a lab.
+    { ...base, field: 'entityType', value: mapResearchGroupKindToEntityType(config.kind) },
     { ...base, field: 'sourceUrls', value: sourceUrls },
   ];
   // In enrichment mode (`entityKey` overrides to an entity another source
@@ -1361,6 +1366,7 @@ export function childCenterToObservations(
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: child.name },
     { ...base, field: 'kind', value: child.kind },
+    { ...base, field: 'entityType', value: mapResearchGroupKindToEntityType(child.kind) },
     { ...base, field: 'websiteUrl', value: child.url },
     { ...base, field: 'sourceUrls', value: sourceUrls },
   ];

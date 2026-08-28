@@ -412,6 +412,7 @@ describe('MacMillan constituent councils', () => {
       'Council on Middle East Studies',
     );
     expect(observations.find((o) => o.field === 'kind')!.value).toBe('center');
+    expect(observations.find((o) => o.field === 'entityType')!.value).toBe('CENTER');
     expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
       'https://macmillan.yale.edu/middleeast',
     );
@@ -419,6 +420,27 @@ describe('MacMillan constituent councils', () => {
       'https://macmillan.yale.edu/middleeast/people',
       'https://macmillan.yale.edu/middleeast',
     ]);
+  });
+
+  it('observes the canonical entityType for every configured center kind', () => {
+    const entityTypeForKind = (kind: CenterConfig['kind']) =>
+      centerToGroupObservations(
+        {
+          centerKey: 'synthetic',
+          centerName: 'Synthetic Center',
+          schoolName: '',
+          kind,
+          url: 'https://example.yale.edu/people',
+          extractor: () => ({ members: [] }),
+        },
+        [],
+        'https://example.yale.edu/people',
+      ).observations.find((o) => o.field === 'entityType')!.value;
+
+    expect(entityTypeForKind('center')).toBe('CENTER');
+    expect(entityTypeForKind('institute')).toBe('INSTITUTE');
+    expect(entityTypeForKind('initiative')).toBe('INITIATIVE');
+    expect(entityTypeForKind('program')).toBe('INITIATIVE');
   });
 });
 

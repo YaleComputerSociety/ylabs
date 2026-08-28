@@ -5,6 +5,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const PAGE_URL = 'https://environment.yale.edu/research/centers';
@@ -149,6 +150,9 @@ export function entityToObservations(entity: RawYseEntity, sourceUrl: string): O
     { ...base, field: 'slug', value: entity.slug },
     { ...base, field: 'name', value: entity.name },
     { ...base, field: 'kind', value: entity.kind },
+    // `kind` is derived from the canonical `entityType` (#2144), so the inferred
+    // org classification has to reach the canonical field to survive.
+    { ...base, field: 'entityType', value: mapResearchGroupKindToEntityType(entity.kind) },
     { ...base, field: 'school', value: 'Yale School of the Environment' },
     { ...base, field: 'websiteUrl', value: entity.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, entity.url] },

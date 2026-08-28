@@ -47,6 +47,28 @@ describe('research access models', () => {
     }
   });
 
+  it('collapses the legacy kinds that share an entity type with another kind', () => {
+    const derivedFromOwnEntityType = Object.fromEntries(
+      researchGroupKinds.map((kind) => [
+        kind,
+        mapEntityTypeToResearchGroupKind(ResearchGroupKindToEntityType[kind]),
+      ]),
+    );
+
+    expect(derivedFromOwnEntityType).toEqual({
+      lab: 'lab',
+      center: 'center',
+      institute: 'institute',
+      program: 'initiative',
+      initiative: 'initiative',
+      group: 'group',
+      individual: 'individual',
+      solo: 'individual',
+      core_facility: 'core_facility',
+    });
+    expect(mapEntityTypeToResearchGroupKind('COURSE_SEQUENCE')).toBe('program');
+  });
+
   it('validates access signals with source-backed confidence fields', () => {
     const doc = new Signal({
       researchEntityId: oid(),

@@ -44,7 +44,9 @@ Its roster is **not** embedded: membership lives in canonical `RoleAssignment` r
 Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `DIGITAL_HUMANITIES_PROJECT`, `COLLECTIONS_INITIATIVE`, `COURSE_SEQUENCE`, `ARCHIVE_OR_MUSEUM_PROJECT`, `INITIATIVE`, `GROUP`, `INDIVIDUAL_RESEARCH`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
 It does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact fields, or a paper cache.
 Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are the sole canonical prose pair.
-The legacy `kind` field (migration residue from the retired `ResearchGroup` model) is no longer an independent taxonomy: the materializer deterministically derives it from the canonical `entityType` via `mapEntityTypeToResearchGroupKind` (#2144), so it can never drift, and `research-entity:resync-kind` backfills any historically drifted rows.
+The legacy `kind` field (migration residue from the retired `ResearchGroup` model) is no longer an independent taxonomy: the materializer deterministically derives it from the canonical `entityType` via `mapEntityTypeToResearchGroupKind` (#2144), and `research-entity:resync-kind` backfills historically drifted rows.
+The derivation is enforced in the scraper projection rather than in the schema, so every other writer must set the pair together (`researchGroupService` and the entity-type consolidation script already do); a direct `$set: { entityType }` elsewhere would reintroduce drift.
+Classify a research home by observing `entityType`: a source that observes only `kind` cannot correct an entity another source already minted under a different `entityType`.
 
 ### `RoleAssignment` (`role_assignments`)
 
