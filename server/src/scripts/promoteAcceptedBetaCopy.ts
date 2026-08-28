@@ -40,7 +40,6 @@ const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'signals', category: 'research-discovery' },
   { name: 'research_scholarly_links', category: 'research-discovery' },
   { name: 'research_scholarly_attributions', category: 'research-discovery' },
-  { name: 'grants', category: 'research-discovery' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },

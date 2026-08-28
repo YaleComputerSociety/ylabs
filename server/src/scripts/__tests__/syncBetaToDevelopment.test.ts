@@ -201,7 +201,6 @@ describe('Beta to Development sync guards', () => {
         'research_entity_stats',
         'research_scholarly_links',
         'research_scholarly_attributions',
-        'grants',
         'sources',
         'scrape_runs',
         'observations',
