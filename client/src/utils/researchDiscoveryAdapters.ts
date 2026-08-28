@@ -217,26 +217,6 @@ export const getEvidenceSignalLabel = (value?: string): string => {
   }
 };
 
-export const buildPathwayEvidenceRows = (
-  pathway: PathwaySearchHit,
-): EvidenceSourceRowData[] => {
-  const evidence = pathway.evidence?.[0];
-  return [
-    {
-      claim:
-        pathway.explanation ||
-        pathway.bestNextStep ||
-        pathway.studentFacingLabel ||
-        'This pathway is connected to the current search.',
-      sourceType: getEvidenceSignalLabel(evidence?.signalType || pathway.pathwayType),
-      url: evidence?.sourceUrl || pathway.sourceUrls?.[0],
-      excerpt: evidence?.excerpt,
-      observedDate: evidence?.observedAt || pathway.lastObservedAt,
-      confidence: evidence?.confidenceScore ?? pathway.confidence,
-    },
-  ];
-};
-
 const STOPWORDS = new Set([
   'a',
   'an',
