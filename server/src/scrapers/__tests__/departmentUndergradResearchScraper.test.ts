@@ -1115,6 +1115,97 @@ describe('departmentUndergradResearchScraper', () => {
       new Set(['https://chem.yale.edu/undergrad']),
     );
     expect(result.notes).toContain('1 page(s) skipped after fetch/parse failure');
+    expect(result.fetchMetrics?.summary).toMatchObject({ total: 2, succeeded: 1, failed: 1 });
+    expect(result.fetchMetrics?.attempts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: 'https://physics.yale.edu/dead-page',
+          success: false,
+          statusCode: 404,
+        }),
+        expect.objectContaining({ target: 'https://chem.yale.edu/undergrad', success: true }),
+      ]),
+    );
+  });
+
+  it('skips a page whose body cannot be parsed and still processes the remaining pages (#2171)', async () => {
+    const scraper = new DepartmentUndergradResearchScraper({
+      pageConfigs: [
+        {
+          key: 'physics',
+          url: 'https://physics.yale.edu/dead-page',
+          department: 'Physics',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'physics-project-list',
+        },
+        {
+          key: 'chemistry',
+          url: 'https://chem.yale.edu/undergrad',
+          department: 'Chemistry',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'general-guidance',
+          title: 'Chemistry Undergraduate Research',
+        },
+      ],
+      fetchHtml: async (url) =>
+        url.includes('physics') ? (null as unknown as string) : CHEM_HTML,
+    });
+    const emitted: ObservationInput[] = [];
+
+    const result = await scraper.run(buildContext(scraper, emitted));
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.observationCount).toBe(emitted.length);
+    expect(new Set(emitted.map((obs) => obs.sourceUrl))).toEqual(
+      new Set(['https://chem.yale.edu/undergrad']),
+    );
+    expect(result.notes).toContain('1 page(s) skipped after fetch/parse failure');
+    expect(result.fetchMetrics?.summary).toMatchObject({
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+      selectorBreakages: 1,
+    });
+    expect(result.fetchMetrics?.attempts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: 'https://physics.yale.edu/dead-page',
+          success: false,
+          selectorBreakage: true,
+        }),
+      ]),
+    );
+  });
+
+  it('fails the run when every attempted page fails so source health stays loud (#2171)', async () => {
+    const scraper = new DepartmentUndergradResearchScraper({
+      pageConfigs: [
+        {
+          key: 'physics',
+          url: 'https://physics.yale.edu/dead-page',
+          department: 'Physics',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'physics-project-list',
+        },
+        {
+          key: 'chemistry',
+          url: 'https://chem.yale.edu/dead-page',
+          department: 'Chemistry',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'general-guidance',
+          title: 'Chemistry Undergraduate Research',
+        },
+      ],
+      fetchHtml: async () => {
+        throw new Error('Request failed with status code 404');
+      },
+    });
+    const emitted: ObservationInput[] = [];
+
+    await expect(scraper.run(buildContext(scraper, emitted))).rejects.toThrow(
+      /Every attempted department undergraduate research page failed \(2\/2\)/,
+    );
+    expect(emitted).toEqual([]);
   });
 
   it('rejects unsafe runtime bounds before fetching department pages', async () => {
