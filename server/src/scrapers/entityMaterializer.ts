@@ -440,6 +440,38 @@ function isResearchEntityObservationType(entityType: ObservedEntityType): boolea
   return entityType === 'researchEntity';
 }
 
+export const RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE = 'PROGRAM';
+
+export function isRetiredProgramResearchEntityType(value: unknown): boolean {
+  return (
+    typeof value === 'string' && value.trim().toUpperCase() === RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE
+  );
+}
+
+/**
+ * `entityType` keeps a value-bearing fingerprint, so an observation asserting the
+ * retired `PROGRAM` type is never superseded by a later `INITIATIVE` assertion from
+ * the same source and is never pruned. Matching any retained row would therefore
+ * freeze every live entity whose type has since healed, so this mirrors the write
+ * side and asks only what the projection would actually resolve as the winner.
+ */
+export function winningObservedEntityTypeIsRetiredProgram(
+  observations: MaterializerObservationLike[],
+): boolean {
+  const entityTypeObservations: ResolverObservation[] = observations
+    .filter((observation) => observation.field === 'entityType')
+    .map((observation) => ({
+      field: 'entityType',
+      value: observation.value,
+      sourceName: observation.sourceName || '',
+      confidence: typeof observation.confidence === 'number' ? observation.confidence : 0,
+      observedAt: observation.observedAt instanceof Date ? observation.observedAt : new Date(0),
+    }));
+  if (entityTypeObservations.length === 0) return false;
+  const [winner] = resolveFieldRanked('entityType', entityTypeObservations);
+  return isRetiredProgramResearchEntityType(winner?.value);
+}
+
 function hasNonEmptyStringArray(...values: unknown[]): boolean {
   return values.some((value) => Array.isArray(value) && value.length > 0);
 }
@@ -3413,6 +3445,23 @@ export async function materializeEntity(
       created: false,
       resolved: {},
       skipped: 'merged-into-canonical',
+    };
+  }
+
+  if (
+    isResearchEntityObservationType(entityType) &&
+    (isRetiredProgramResearchEntityType(entityDoc?.entityType) ||
+      (!entityDoc && winningObservedEntityTypeIsRetiredProgram(obs)))
+  ) {
+    return {
+      entityType,
+      entityId: entityDoc ? materializerDocumentId(entityDoc._id) : undefined,
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      skipped: 'program-entity-type-retired',
     };
   }
 

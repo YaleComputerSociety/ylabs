@@ -148,7 +148,8 @@ Ambiguous, non-eponymous same-PI clusters are never auto-selected here and conti
 
 Once a merge is redirect-backed the archived shell is inert and can be physically deleted, which the `research-entity:cleanup-archived --merge-residue-only` command does under a fail-closed invariant.
 It deletes a shell only when it is archived, carries a `canonicalGroupId`, has a matching `research_entity_redirects` row, and has zero live references across signals, `role_assignments` `target.id`, relationships, members, scholarly links, canonical children, and observations.
-Any candidate that fails the invariant is deferred with a reason (`has_live_references` or `missing_redirect`) rather than deleted, so legacy non-inert residue is left untouched.
+Any candidate that fails the invariant is deferred with a reason (`has_live_references`, `missing_redirect`, or `retired_entity_type`) rather than deleted, so legacy non-inert residue is left untouched.
+`retired_entity_type` defers any archived row whose `entityType` is no longer in `researchEntityTypes`, in every mode rather than only `--merge-residue-only`, so this command cannot complete a hard deletion that a retirement operation deliberately declined (see the 2026-08-28 entry in [`decisions.md`](decisions.md)).
 The redirect row is preserved on delete, so a later re-scrape still resolves the source to the surviving canonical through `materializeEntity`.
 
 The command is report-only by default; applying requires `--apply --confirm-archived-entity-cleanup`, an explicit `--limit`, and a `--max-apply` bound, and is env-gated Dev-first through the same `assertScriptApplyAllowed` guard.
