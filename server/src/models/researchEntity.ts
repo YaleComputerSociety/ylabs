@@ -195,10 +195,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [String],
       default: [],
     },
-    lastGrantAtCache: {
-      type: Date,
-      required: false,
-    },
     typicalUndergradRoles: {
       type: [String],
       default: [],

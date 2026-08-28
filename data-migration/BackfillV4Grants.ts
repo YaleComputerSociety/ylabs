@@ -67,14 +67,11 @@ export async function backfillV4Grants(
     let groupsUpdated = 0;
 
     for (const group of groups) {
-      let lastGrantAt: Date | undefined;
       for (const legacyGrant of group.recentGrants || []) {
         if (!legacyGrant.id && !legacyGrant.title) continue;
         grantsSeen++;
         const agency = normalizeAgency(legacyGrant.agency);
         const externalId = String(legacyGrant.id || `${agency}:${group._id}:${legacyGrant.title}`).trim();
-        const endDate = legacyGrant.endDate ? new Date(legacyGrant.endDate) : undefined;
-        if (endDate && (!lastGrantAt || endDate > lastGrantAt)) lastGrantAt = endDate;
 
         if (options.apply) {
           await Grant.updateOne(
@@ -107,7 +104,6 @@ export async function backfillV4Grants(
           {
             $set: {
               recentGrantCount: (group.recentGrants || []).length,
-              lastGrantAtCache: lastGrantAt,
             },
           },
         );
