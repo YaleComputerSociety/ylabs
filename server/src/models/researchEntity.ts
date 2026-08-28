@@ -140,10 +140,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: String,
       default: '',
     },
-    availableFrom: {
-      type: Date,
-      required: false,
-    },
     currentUndergradCount: {
       type: Number,
       required: false,
@@ -198,38 +194,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     fundingAgencies: {
       type: [String],
       default: [],
-    },
-    lastGrantAtCache: {
-      type: Date,
-      required: false,
-    },
-    activityComputedAt: {
-      type: Date,
-      required: false,
-    },
-    lastViewAtCache: {
-      type: Date,
-      required: false,
-    },
-    lastSaveAtCache: {
-      type: Date,
-      required: false,
-    },
-    lastOutreachAtCache: {
-      type: Date,
-      required: false,
-    },
-    lastInquiryAtCache: {
-      type: Date,
-      required: false,
-    },
-    totalInquiriesCache: {
-      type: Number,
-      default: 0,
-    },
-    lastFacultyNotificationAt: {
-      type: Date,
-      required: false,
     },
     typicalUndergradRoles: {
       type: [String],

@@ -23,10 +23,6 @@ const grantSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
-    plainSummary: {
-      type: String,
-      default: '',
-    },
     amount: {
       type: Number,
       required: false,
@@ -39,14 +35,6 @@ const grantSchema = new mongoose.Schema(
       type: Date,
       required: false,
     },
-    piFacultyMemberId: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: false,
-    },
-    coPiFacultyMemberIds: {
-      type: [mongoose.Schema.Types.ObjectId],
-      default: [],
-    },
     researchEntityIds: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: 'ResearchEntity',
@@ -55,10 +43,6 @@ const grantSchema = new mongoose.Schema(
     sourceUrl: {
       type: String,
       default: '',
-    },
-    fiscalYear: {
-      type: Number,
-      required: false,
     },
     status: {
       type: String,
@@ -103,14 +87,11 @@ const grantSchema = new mongoose.Schema(
 
 grantSchema.index({ agency: 1, externalId: 1 }, { unique: true });
 grantSchema.index({ researchEntityIds: 1 });
-grantSchema.index({ piFacultyMemberId: 1 });
-grantSchema.index({ coPiFacultyMemberIds: 1 });
-grantSchema.index({ fiscalYear: -1 });
 grantSchema.index({ status: 1 });
 grantSchema.index({ endDate: 1 });
 grantSchema.index({ archived: 1 });
 grantSchema.index({ lastObservedAt: 1 });
-grantSchema.index({ title: 'text', abstract: 'text', plainSummary: 'text', keywords: 'text' });
+grantSchema.index({ title: 'text', abstract: 'text', keywords: 'text' });
 
 export const Grant = mongoose.model('Grant', grantSchema);
 
