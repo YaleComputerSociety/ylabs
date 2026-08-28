@@ -191,19 +191,6 @@ export const listEntityCorrectionReports = async (params: {
   };
 };
 
-export const readEntityCorrectionReport = async (id: string) => {
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    throw new ObjectIdError('Did not received expected id type ObjectId');
-  }
-
-  const report = await EntityCorrectionReport.findById(id).lean();
-  if (!report) {
-    throw new NotFoundError(`Correction report not found with ObjectId: ${id}`);
-  }
-
-  return report;
-};
-
 export const reviewEntityCorrectionReport = async (
   id: string,
   reviewerNetId: string,

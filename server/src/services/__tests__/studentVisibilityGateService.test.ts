@@ -19,7 +19,6 @@ import {
   isProfileAreaDuplicateCounterpart,
   isBlockingVisibilityReason,
   isStudentVisibilityGatePlanMateriallyChanged,
-  listVisibilityReleaseQueue,
   normalizeStudentVisibilityGateObjectId,
   reachOutPlausibleSignalCreditsActionEvidence,
   researchEntityGateProjection,
@@ -94,56 +93,6 @@ describe('studentVisibilityGateService', () => {
     expect(researchEntityGateProjection.split(/\s+/)).toEqual(
       expect.arrayContaining(['activeAtYaleCache', 'yaleStatusCache']),
     );
-  });
-
-  it('caps release queue page before building Mongo skip and limit values', async () => {
-    const chain = {
-      sort: vi.fn().mockReturnThis(),
-      skip: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([]),
-    };
-    mocks.queueFind.mockReturnValue(chain);
-    mocks.queueCountDocuments.mockResolvedValue(0);
-
-    const result = await listVisibilityReleaseQueue({
-      page: 999_999_999,
-      pageSize: 500,
-    });
-
-    expect(chain.skip).toHaveBeenCalledWith(99_900);
-    expect(chain.limit).toHaveBeenCalledWith(100);
-    expect(result).toMatchObject({
-      page: 1000,
-      pageSize: 100,
-      totalPages: 0,
-    });
-  });
-
-  it('bounds release queue filters before building Mongo queries', async () => {
-    const chain = {
-      sort: vi.fn().mockReturnThis(),
-      skip: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([]),
-    };
-    mocks.queueFind.mockReturnValue(chain);
-    mocks.queueCountDocuments.mockResolvedValue(0);
-
-    await listVisibilityReleaseQueue({
-      status: '$where',
-      reason: 'x'.repeat(121),
-      sourceName: '  ysm-atoz-index  ',
-    });
-
-    expect(mocks.queueFind).toHaveBeenCalledWith({
-      status: 'open',
-      sourceNames: 'ysm-atoz-index',
-    });
-    expect(mocks.queueCountDocuments).toHaveBeenCalledWith({
-      status: 'open',
-      sourceNames: 'ysm-atoz-index',
-    });
   });
 
   it('does not treat center directorships as profile-area duplicate counterparts', () => {

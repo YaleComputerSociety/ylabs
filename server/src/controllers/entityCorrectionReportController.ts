@@ -5,7 +5,6 @@ import { Request, Response, NextFunction } from 'express';
 import {
   createEntityCorrectionReport,
   listEntityCorrectionReports,
-  readEntityCorrectionReport,
   reviewEntityCorrectionReport,
 } from '../services/entityCorrectionReportService';
 
@@ -68,19 +67,6 @@ export const listAdminEntityCorrectionReports = async (
       pageSize: request.query.pageSize as string | undefined,
     });
     response.json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const getAdminEntityCorrectionReport = async (
-  request: Request,
-  response: Response,
-  next: NextFunction,
-) => {
-  try {
-    const report = await readEntityCorrectionReport(request.params.id);
-    response.json({ report });
   } catch (error) {
     next(error);
   }

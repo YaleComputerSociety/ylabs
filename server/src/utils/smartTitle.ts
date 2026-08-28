@@ -314,28 +314,3 @@ export async function generateSmartTitle(
  * @param lookup - Optional pre-built department lookup map
  * @returns The title to use (either original custom title or newly generated smart title)
  */
-export async function processListingTitle(
-  currentTitle: string | undefined | null,
-  firstName: string,
-  lastName: string,
-  departments: string[],
-  lookup?: Map<string, DepartmentDoc>,
-): Promise<string> {
-  if (!lastName) {
-    return currentTitle || '';
-  }
-
-  const isPlaceholder =
-    !currentTitle || currentTitle.includes("* Your Lab's Name") || currentTitle.trim() === '';
-
-  if (!isPlaceholder && isCustomTitle(currentTitle, firstName, lastName)) {
-    return currentTitle;
-  }
-
-  if (departments && departments.length > 0) {
-    const result = await generateSmartTitle(lastName, departments, lookup);
-    return result.title;
-  }
-
-  return `${lastName} ${DEFAULT_SUFFIX}`;
-}

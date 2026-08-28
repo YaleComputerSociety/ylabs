@@ -51,7 +51,6 @@ const mocks = vi.hoisted(() => {
     findOrCreateForOwner: vi.fn(),
     materializePostedOpportunityFromListing: vi.fn(),
     mutateProjection: vi.fn(),
-    processListingTitle: vi.fn(async (title: string) => title),
     researchEntityFindById: vi.fn(),
     researchEntityUpdateOne: vi.fn(),
     resolveResearcherIdForPersonName: vi.fn(),
@@ -81,7 +80,6 @@ vi.mock('../researcherPersonNameResolver', () => ({
 }));
 
 vi.mock('../../utils/smartTitle', () => ({
-  processListingTitle: mocks.processListingTitle,
   isCustomTitle: vi.fn(() => true),
   generateSmartTitle: vi.fn(),
 }));
@@ -102,13 +100,7 @@ vi.mock('../researchGroupService', () => ({
   findOrCreateForOwner: mocks.findOrCreateForOwner,
 }));
 
-import {
-  archiveListing,
-  createListing,
-  normalizeListingObjectId,
-  readListings,
-  updateListing,
-} from '../listingService';
+import { normalizeListingObjectId, updateListing } from '../listingService';
 
 describe('listingService', () => {
   beforeEach(() => {
@@ -123,7 +115,6 @@ describe('listingService', () => {
     mocks.mutateProjection.mockImplementation(
       (_id: unknown, mutate: (session: mongoose.ClientSession) => unknown) => mutate({} as any),
     );
-    mocks.processListingTitle.mockClear();
     mocks.researchEntityFindById.mockReset();
     mocks.researchEntityUpdateOne.mockReset();
     mocks.resolveResearcherIdForPersonName.mockReset();
@@ -138,49 +129,6 @@ describe('listingService', () => {
     }));
   });
 
-  it('does not let a faculty user attach a new listing to an unrelated research entity', async () => {
-    const ownerEntityId = '64a000000000000000000001';
-    const forgedEntityId = '64a000000000000000000002';
-    const ownerUserId = '64a000000000000000000003';
-
-    mocks.findOrCreateForOwner.mockResolvedValue({
-      group: { _id: ownerEntityId },
-      created: false,
-    });
-    mocks.resolveResearcherIdForPersonName.mockResolvedValue({
-      status: 'matched',
-      researcherId: new mongoose.Types.ObjectId('64a0000000000000000000aa'),
-    });
-    mocks.roleAssignmentFindOne.mockReturnValue({
-      select: () => ({
-        lean: async () => null,
-      }),
-    });
-
-    const listing = await createListing(
-      {
-        title: 'Research assistant',
-        description: 'Help with a research project.',
-        professorIds: [],
-        researchEntityId: forgedEntityId,
-      },
-      {
-        _id: ownerUserId,
-        netid: 'abc123',
-        email: 'abc123@yale.edu',
-        fname: 'Ada',
-        lname: 'Lovelace',
-        userConfirmed: true,
-      },
-    );
-
-    expect(mocks.findOrCreateForOwner).toHaveBeenCalledWith(
-      expect.objectContaining({ _id: ownerUserId, netid: 'abc123' }),
-    );
-    expect(String(listing.researchEntityId)).toBe(ownerEntityId);
-    expect(String(listing.createdByUserId)).toBe(ownerUserId);
-  });
-
   it('normalizes listing ObjectIds without arbitrary object coercion', () => {
     const id = '64a000000000000000000001';
 
@@ -191,10 +139,6 @@ describe('listingService', () => {
         toString: () => id,
       }),
     ).toBeUndefined();
-  });
-
-  it('ignores non-array bulk listing reads before per-id work', async () => {
-    await expect(readListings({ 0: '64a000000000000000000001' } as any)).resolves.toEqual([]);
   });
 
   it('rejects object-shaped listing ids before update model work', async () => {
@@ -208,150 +152,6 @@ describe('listingService', () => {
     ).rejects.toThrow(/expected id type ObjectId/);
 
     expect(mocks.state.lastFindByIdAndUpdate).toBeNull();
-  });
-
-  it('keeps a supplied research entity when the owner is an authorized current member', async () => {
-    const authorizedEntityId = '64a000000000000000000004';
-    const ownerUserId = '64a000000000000000000005';
-
-    const authorizedPersonId = new mongoose.Types.ObjectId('64a0000000000000000000bb');
-    mocks.resolveResearcherIdForPersonName.mockResolvedValue({
-      status: 'matched',
-      researcherId: authorizedPersonId,
-    });
-    mocks.roleAssignmentFindOne.mockReturnValue({
-      select: () => ({
-        lean: async () => ({ _id: 'role-assignment-1' }),
-      }),
-    });
-
-    const listing = await createListing(
-      {
-        title: 'Research assistant',
-        description: 'Help with a research project.',
-        professorIds: [],
-        researchEntityId: authorizedEntityId,
-      },
-      {
-        _id: ownerUserId,
-        netid: 'def456',
-        email: 'def456@yale.edu',
-        fname: 'Grace',
-        lname: 'Hopper',
-        userConfirmed: true,
-      },
-    );
-
-    expect(mocks.resolveResearcherIdForPersonName).toHaveBeenCalledWith('Grace Hopper', {
-      netid: 'def456',
-    });
-    expect(mocks.roleAssignmentFindOne).toHaveBeenCalledWith(
-      expect.objectContaining({
-        personId: authorizedPersonId,
-        'target.kind': 'RESEARCH_ENTITY',
-      }),
-    );
-    expect(mocks.findOrCreateForOwner).not.toHaveBeenCalled();
-    expect(String(listing.researchEntityId)).toBe(authorizedEntityId);
-  });
-
-  it('does not let a faculty user add forged collaborators while creating a listing', async () => {
-    const ownerEntityId = '64a000000000000000000006';
-    const ownerUserId = '64a000000000000000000007';
-
-    mocks.findOrCreateForOwner.mockResolvedValue({
-      group: { _id: ownerEntityId },
-      created: false,
-    });
-
-    const listing = await createListing(
-      {
-        title: 'Research assistant',
-        description: 'Help with a research project.',
-        professorIds: ['victim123'],
-        professorNames: ['Victim Professor'],
-        emails: ['victim123@yale.edu'],
-      },
-      {
-        _id: ownerUserId,
-        netid: 'ghi789',
-        email: 'ghi789@yale.edu',
-        fname: 'Katherine',
-        lname: 'Johnson',
-        userConfirmed: true,
-      },
-    );
-
-    expect(listing.professorIds).toEqual([]);
-    expect(listing.professorNames).toEqual([]);
-    expect(listing.emails).toEqual([]);
-  });
-
-  it('sanitizes self-service listing create payloads before storage and indexing', async () => {
-    const ownerEntityId = '64a000000000000000000011';
-    const ownerUserId = '64a000000000000000000012';
-
-    mocks.findOrCreateForOwner.mockResolvedValue({
-      group: { _id: ownerEntityId },
-      created: false,
-    });
-
-    const cappedWebsites = Array.from(
-      { length: 20 },
-      (_, index) => `https://example.yale.edu/apply/${index}`,
-    );
-    Object.defineProperty(cappedWebsites, '20', {
-      get: () => {
-        throw new Error('website sanitizer read past the self-service website cap');
-      },
-      enumerable: true,
-    });
-
-    const cappedResearchAreas = Array.from({ length: 50 }, (_, index) =>
-      index === 0 ? ' Systems ' : `Topic ${index}`,
-    );
-    Object.defineProperty(cappedResearchAreas, '50', {
-      get: () => {
-        throw new Error('array sanitizer read past the self-service array cap');
-      },
-      enumerable: true,
-    });
-
-    const listing = await createListing(
-      {
-        title: `  ${'A'.repeat(180)}  `,
-        description: `  ${'D'.repeat(5100)}  `,
-        applicantDescription: `  ${'P'.repeat(3100)}  `,
-        websites: cappedWebsites,
-        researchAreas: cappedResearchAreas,
-        keywords: 'not-an-array',
-        departments: [' Computer Science ', { nested: true }],
-        commitment: `  ${'C'.repeat(200)}  `,
-        type: ' ra ',
-        compensationType: ' paid ',
-      },
-      {
-        _id: ownerUserId,
-        netid: 'safe123',
-        email: 'safe123@yale.edu',
-        fname: 'Safe',
-        lname: 'Owner',
-        userConfirmed: true,
-      },
-    );
-
-    expect(listing.title).toHaveLength(160);
-    expect(listing.description).toHaveLength(5000);
-    expect(listing.applicantDescription).toHaveLength(3000);
-    expect(listing.websites).toHaveLength(20);
-    expect(listing.websites[0]).toBe('https://example.yale.edu/apply/0');
-    expect(listing.researchAreas).toHaveLength(50);
-    expect(listing.researchAreas[0]).toBe('Systems');
-    expect(listing.keywords).toEqual(listing.researchAreas);
-    expect(listing.departments).toEqual(['Computer Science']);
-    expect(listing.commitment).toHaveLength(160);
-    expect(listing.type).toBe('ra');
-    expect(listing.compensationType).toBe('paid');
   });
 
   it('does not let an owner add forged collaborators while updating a listing', async () => {
@@ -523,27 +323,4 @@ describe('listingService', () => {
     expect(listing.archived).toBe(false);
   });
 
-  it('keeps the explicit owner archive path working outside generic updates', async () => {
-    const listingId = '64a000000000000000000010';
-    mocks.state.findByIdDoc = new mocks.MockListing({
-      _id: listingId,
-      ownerId: 'owner123',
-      ownerFirstName: 'Owner',
-      ownerLastName: 'Professor',
-      professorIds: [],
-      title: 'Original title',
-      confirmed: false,
-      archived: false,
-    });
-    mocks.state.findByIdDoc._id = listingId;
-
-    const listing = await archiveListing(listingId, 'owner123');
-
-    expect(mocks.state.lastFindByIdAndUpdate).toMatchObject({
-      id: listingId,
-      data: { archived: true },
-    });
-    expect(listing.archived).toBe(true);
-    expect(listing.confirmed).toBe(false);
-  });
 });

@@ -17,13 +17,11 @@ import {
   unarchiveFellowship,
 } from '../services/fellowshipService';
 import {
-  getAdminListingClaimRequest,
   listAdminListingClaimRequests,
   reviewAdminListingClaimRequest,
   applyAdminListingClaimRequest,
 } from '../controllers/listingClaimRequestController';
 import {
-  getAdminEntityCorrectionReport,
   listAdminEntityCorrectionReports,
   reviewAdminEntityCorrectionReport,
 } from '../controllers/entityCorrectionReportController';
@@ -46,7 +44,6 @@ import {
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
 import { listAdminAuditEvents } from '../services/adminAuditService';
 import { adminAuditMutationLogger } from '../middleware/adminAuditLogger';
-import { listVisibilityReleaseQueue } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { publicHttpUrl } from '../utils/urlSafety';
@@ -440,27 +437,6 @@ router.get('/operator-board', async (_req: Request, res: Response) => {
   }
 });
 
-router.get('/release-queue', async (req: Request, res: Response) => {
-  try {
-    res.json(
-      await listVisibilityReleaseQueue({
-        collection:
-          req.query.collection === 'research' || req.query.collection === 'programs'
-            ? req.query.collection
-            : undefined,
-        reason: typeof req.query.reason === 'string' ? req.query.reason : undefined,
-        sourceName: typeof req.query.sourceName === 'string' ? req.query.sourceName : undefined,
-        status: typeof req.query.status === 'string' ? req.query.status : undefined,
-        page: req.query.page,
-        pageSize: req.query.pageSize,
-      }),
-    );
-  } catch (error) {
-    console.error('Admin: Error fetching release queue:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch release queue' });
-  }
-});
-
 router.get('/access-review', async (req: Request, res: Response) => {
   try {
     const result = await listAccessReviewEntities({
@@ -539,7 +515,6 @@ router.put(
 );
 
 router.get('/listing-claims', listAdminListingClaimRequests);
-router.get('/listing-claims/:id', validateObjectId('id'), getAdminListingClaimRequest);
 router.put(
   '/listing-claims/:id',
   writeLimit,
@@ -554,7 +529,6 @@ router.put(
 );
 
 router.get('/correction-reports', listAdminEntityCorrectionReports);
-router.get('/correction-reports/:id', validateObjectId('id'), getAdminEntityCorrectionReport);
 router.put(
   '/correction-reports/:id',
   writeLimit,
