@@ -136,7 +136,7 @@ describe('canonical MongoDB validator registry', () => {
 
   it('requires an explicit review when generated validator contracts drift', () => {
     expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      'fe610b2a66267deedd0969de9e8fe9a82df98aca12154818f93d12b5207be3fc',
+      '146dae0fd86bfcec264f452d869ab1912117289877252233b8652a2c920b0c1d',
     );
   });
 });

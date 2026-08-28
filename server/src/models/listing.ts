@@ -173,11 +173,6 @@ const listingSchema = new mongoose.Schema(
         type: [evidenceSourceSchema],
         default: [],
       },
-      internalNotes: {
-        type: String,
-        required: false,
-        select: false,
-      },
     },
     expiresAt: {
       type: Date,

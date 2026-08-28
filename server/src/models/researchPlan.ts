@@ -87,11 +87,6 @@ const researchPlanDeadlineSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
-    sourceDocumentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'SourceDocument',
-      required: false,
-    },
   },
   { _id: true },
 );
