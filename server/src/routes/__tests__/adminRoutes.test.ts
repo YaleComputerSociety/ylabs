@@ -329,7 +329,7 @@ describe('admin routes', () => {
       sourceFingerprint: 'fingerprint',
       sourceLastVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
       studentVisibilityTier: 'PUBLIC',
-      studentVisibilityReviewedByUserId: 'reviewer-1',
+      studentVisibilityReviewedByAccountId: 'reviewer-1',
       studentVisibilityReasons: ['reason'],
       __v: 9,
     };
@@ -369,7 +369,7 @@ describe('admin routes', () => {
     expect(serialized).not.toHaveProperty('sourceFingerprint');
     expect(serialized).not.toHaveProperty('sourceLastVerifiedAt');
     expect(serialized).not.toHaveProperty('studentVisibilityTier');
-    expect(serialized).not.toHaveProperty('studentVisibilityReviewedByUserId');
+    expect(serialized).not.toHaveProperty('studentVisibilityReviewedByAccountId');
     expect(serialized).not.toHaveProperty('studentVisibilityReasons');
     expect(serialized).not.toHaveProperty('__v');
   });
@@ -399,7 +399,7 @@ describe('admin routes', () => {
       archived: true,
       review: {
         status: 'approved',
-        reviewedByUserId: 'internal-reviewer-id',
+        reviewedByAccountId: 'internal-reviewer-id',
         reviewedAt: '2026-06-11T12:00:00.000Z',
         note: 'Reviewed note',
         lockedFields: ['bestNextStep', 'sourceEvidenceIds'],

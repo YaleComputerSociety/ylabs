@@ -527,7 +527,7 @@ router.put(
         status: req.body?.status,
         note: req.body?.note,
         lockedFields: req.body?.lockedFields,
-        reviewerId: (req.user as any)?._id,
+        reviewerNetid: (req.user as { netId?: string } | undefined)?.netId,
       });
       if (!record) return res.status(400).json({ error: 'Invalid review update' });
       res.json({ record: adminAccessReviewRecordUpdateDto(record) });

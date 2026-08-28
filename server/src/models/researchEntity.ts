@@ -395,19 +395,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: Boolean,
       default: false,
     },
-    claimedByUserId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: false,
-    },
-    claimedByFaculty: {
-      type: Boolean,
-      default: false,
-    },
-    claimedAt: {
-      type: Date,
-      required: false,
-    },
     embedding: {
       type: [Number],
       required: false,

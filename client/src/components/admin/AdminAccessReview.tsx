@@ -32,7 +32,7 @@ type ReviewStatus = 'unreviewed' | 'approved' | 'needs_source' | 'disputed' | 'a
 
 interface RecordReview {
   status?: ReviewStatus;
-  reviewedByUserId?: string;
+  reviewedByAccountId?: string;
   reviewedAt?: string;
   note?: string;
   lockedFields?: string[];

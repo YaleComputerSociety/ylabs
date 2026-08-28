@@ -715,7 +715,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
       const forgedReview = {
         status: 'approved',
         reviewedAt: '2026-07-01T00:00:00.000Z',
-        reviewedByUserId: 'forged-reviewer',
+        reviewedByAccountId: 'forged-reviewer',
         urls: [profileUrl],
       };
       const users =
@@ -771,7 +771,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
         personProfileReview: {
           status: 'approved',
           reviewedAt: '2026-07-01T00:00:00.000Z',
-          reviewedByUserId: 'forged-reviewer',
+          reviewedByAccountId: 'forged-reviewer',
           urls: [profileUrl],
         },
       },

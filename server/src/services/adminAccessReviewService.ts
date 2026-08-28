@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { Account } from '../models/account';
 import { ResearchEntity } from '../models/researchEntity';
 import { AdminAccessReviewProjection } from '../models/adminAccessReviewProjection';
 import { Signal } from '../models/signal';
@@ -72,6 +73,16 @@ export function normalizeAccessReviewObjectId(id: unknown): mongoose.Types.Objec
         : '';
   if (!/^[a-f0-9]{24}$/i.test(value)) return null;
   return new mongoose.Types.ObjectId(value);
+}
+
+async function resolveReviewerAccountId(
+  netid: unknown,
+): Promise<mongoose.Types.ObjectId | null> {
+  if (typeof netid !== 'string') return null;
+  const normalized = netid.trim().toLowerCase();
+  if (!normalized) return null;
+  const account = await Account.findOne({ netid: normalized }).select('_id').lean();
+  return (account as { _id?: mongoose.Types.ObjectId } | null)?._id ?? null;
 }
 
 function normalizePage(input?: unknown): number {
@@ -446,7 +457,7 @@ export async function updateAccessReviewRecordReview(input: {
   status?: unknown;
   note?: unknown;
   lockedFields?: unknown;
-  reviewerId?: unknown;
+  reviewerNetid?: unknown;
 }): Promise<any | null> {
   const model = reviewModelForRecordType(input.type);
   const id = normalizeAccessReviewObjectId(input.id);
@@ -473,9 +484,9 @@ export async function updateAccessReviewRecordReview(input: {
     update['review.lockedFields'] = normalizeAccessReviewLockedFields(input.lockedFields) || [];
   }
 
-  const reviewerId = normalizeAccessReviewObjectId(input.reviewerId);
-  if (reviewerId) {
-    update['review.reviewedByUserId'] = reviewerId;
+  const reviewerAccountId = await resolveReviewerAccountId(input.reviewerNetid);
+  if (reviewerAccountId) {
+    update['review.reviewedByAccountId'] = reviewerAccountId;
   }
 
   if (Object.keys(update).length === 0) return null;

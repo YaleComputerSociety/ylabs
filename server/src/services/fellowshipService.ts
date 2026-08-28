@@ -526,7 +526,7 @@ const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
   'studentVisibilitySuppressionReason',
   'studentVisibilityComputedAt',
   'studentVisibilityReviewedAt',
-  'studentVisibilityReviewedByUserId',
+  'studentVisibilityReviewedByAccountId',
   'archived',
   'audited',
 ] as const;
@@ -648,10 +648,10 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
   if ('programKind' in update && !PROGRAM_KINDS.has(update.programKind)) delete update.programKind;
   if ('entryMode' in update && !PROGRAM_ENTRY_MODES.has(update.entryMode)) delete update.entryMode;
 
-  if ('studentVisibilityReviewedByUserId' in update) {
-    const id = normalizeFellowshipObjectId(update.studentVisibilityReviewedByUserId);
-    if (id !== undefined) update.studentVisibilityReviewedByUserId = id;
-    else delete update.studentVisibilityReviewedByUserId;
+  if ('studentVisibilityReviewedByAccountId' in update) {
+    const id = normalizeFellowshipObjectId(update.studentVisibilityReviewedByAccountId);
+    if (id !== undefined) update.studentVisibilityReviewedByAccountId = id;
+    else delete update.studentVisibilityReviewedByAccountId;
   }
 
   return update;

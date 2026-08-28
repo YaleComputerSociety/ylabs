@@ -1251,7 +1251,7 @@ test('admin access-review record update responses are minimized', () => {
     serializer[0],
     /lockedFields: adminAccessReviewLockedFields\(review\.lockedFields\)/,
   );
-  assert.doesNotMatch(serializer[0], /reviewedByUserId/);
+  assert.doesNotMatch(serializer[0], /reviewedByAccountId/);
   assert.doesNotMatch(serializer[0], /sourceEvidence/);
   assert.doesNotMatch(serializer[0], /observationId/);
   assert.doesNotMatch(serializer[0], /evidenceItems/);
@@ -1298,8 +1298,17 @@ test('admin access-review lock fields are bounded before persistence', () => {
   assert.match(source, /normalized\.length >= MAX_ACCESS_REVIEW_LOCKED_FIELDS/);
   assert.match(source, /for \(const rawId of rawIds\.slice\(0, MAX_ACCESS_REVIEW_EVIDENCE_IDS\)\)/);
   assert.match(source, /const objectId = normalizeAccessReviewObjectId\(rawId\)/);
-  assert.match(source, /const reviewerId = normalizeAccessReviewObjectId\(input\.reviewerId\)/);
-  assert.match(source, /update\['review\.reviewedByUserId'\] = reviewerId/);
+  // Reviewer attribution never persists a caller-supplied id. The netid is
+  // normalized and the stored value is the Account's own _id from a lookup.
+  assert.match(
+    source,
+    /const reviewerAccountId = await resolveReviewerAccountId\(input\.reviewerNetid\)/,
+  );
+  assert.match(source, /update\['review\.reviewedByAccountId'\] = reviewerAccountId/);
+  assert.match(source, /if \(typeof netid !== 'string'\) return null/);
+  assert.match(source, /const normalized = netid\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(source, /Account\.findOne\(\{ netid: normalized \}\)\.select\('_id'\)\.lean\(\)/);
+  assert.doesNotMatch(source, /update\['review\.reviewedByAccountId'\] = input\./);
   assert.match(source, /const manuallyLockedFields = normalizeAccessReviewLockedFields\(fields\)/);
   assert.match(
     source,
@@ -1307,7 +1316,7 @@ test('admin access-review lock fields are bounded before persistence', () => {
   );
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(id\)\)/);
   assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(String\(id\)\)/);
-  assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(input\.reviewerId\)\)/);
+  assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(input\.reviewerNetid\)\)/);
   assert.doesNotMatch(source, /String\(row\._id\)/);
   assert.doesNotMatch(source, /String\(record\._id\)/);
   assert.doesNotMatch(source, /String\(obs\._id\)/);
@@ -2969,7 +2978,7 @@ test('program and fellowship search bound query and filter inputs before search 
   assert.match(fellowshipService, /!PROGRAM_CATEGORIES\.has\(update\.programCategory\)/);
   assert.match(
     fellowshipService,
-    /normalizeFellowshipObjectId\(update\.studentVisibilityReviewedByUserId\)/,
+    /normalizeFellowshipObjectId\(update\.studentVisibilityReviewedByAccountId\)/,
   );
 });
 

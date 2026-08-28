@@ -37,7 +37,7 @@ const privateFellowship = {
   studentVisibilityOverrideTier: 'operator_review',
   studentVisibilityReasons: ['public reason'],
   studentVisibilitySuppressionReason: 'private suppression note',
-  studentVisibilityReviewedByUserId: '64a000000000000000000099',
+  studentVisibilityReviewedByAccountId: '64a000000000000000000099',
   archived: false,
   audited: true,
   views: 99,
@@ -65,7 +65,7 @@ const expectPublicFellowship = (payload: any) => {
   expect(payload).not.toHaveProperty('studentVisibilityReasons');
   expect(payload).not.toHaveProperty('studentVisibilityOverrideTier');
   expect(payload).not.toHaveProperty('studentVisibilitySuppressionReason');
-  expect(payload).not.toHaveProperty('studentVisibilityReviewedByUserId');
+  expect(payload).not.toHaveProperty('studentVisibilityReviewedByAccountId');
   expect(payload).not.toHaveProperty('archived');
   expect(payload).not.toHaveProperty('audited');
   expect(payload).not.toHaveProperty('views');
