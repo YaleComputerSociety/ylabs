@@ -532,6 +532,20 @@ describe('researchEntityDto', () => {
     expect(Object.keys(dto.qualitySummary as Record<string, unknown>)).toHaveLength(100);
   });
 
+  it('serves the grant funding recency cache the v4 grant backfill maintains', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-grant-cache',
+      slug: 'grant-cache-lab',
+      name: 'Grant Cache Lab',
+      kind: 'lab',
+      recentGrantCount: 2,
+      lastGrantAtCache: new Date('2026-03-01T00:00:00.000Z'),
+    });
+
+    expect(dto.recentGrantCount).toBe(2);
+    expect(dto.lastGrantAtCache).toEqual(new Date('2026-03-01T00:00:00.000Z'));
+  });
+
   it('strips internal review, ownership, and provenance fields from public DTOs', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-private-fields',

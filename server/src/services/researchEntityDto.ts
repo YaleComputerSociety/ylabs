@@ -318,6 +318,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'recentGrants',
   'recentGrantCount',
   'fundingAgencies',
+  'lastGrantAtCache',
   'typicalUndergradRoles',
   'prerequisiteCourses',
   'creditOptions',

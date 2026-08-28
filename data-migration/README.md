@@ -42,6 +42,17 @@ MEILISEARCH_INDEX_PREFIX=dev npm run migrate:meilisearch:execute -- --target dev
 
 The Meilisearch migration reads listings from `MONGODBURL`, strips Mongo-only fields and private evidence notes (`_id`, `__v`, `embedding`, `evidence.internalNotes`), validates the indexing payload, and writes only when `--execute --target ...` is present.
 
+Retired grant index reconciliation:
+
+```sh
+npm run migrate:drop-retired-grant-indexes
+npm run migrate:drop-retired-grant-indexes -- --apply --confirm-v4-migration
+```
+
+The `grants` schema no longer declares `plainSummary`, `piFacultyMemberId`, `coPiFacultyMemberIds`, or `fiscalYear`, so any deployed index over those paths is stale.
+MongoDB allows only one text index per collection, so the deployed `plainSummary` text index blocks the narrowed `{ title, abstract, keywords }` text index the server declares, and every boot fails that autoIndex build with `IndexOptionsConflict`.
+Run this against each environment before deploying the schema change; the server rebuilds the declared index set on its next boot.
+
 Production and shared services:
 
 - Do not run destructive or external data acquisition jobs against production from a disposable worktree.
