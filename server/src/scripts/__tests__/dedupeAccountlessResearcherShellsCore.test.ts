@@ -6,6 +6,7 @@ import {
   normalizeResearcherName,
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
+  researcherIdentityTier,
   roleAssignmentEdgeKey,
 } from '../dedupeAccountlessResearcherShellsCore';
 
@@ -20,12 +21,31 @@ describe('normalizeResearcherName', () => {
   });
 });
 
+describe('researcherIdentityTier', () => {
+  it('ranks an account link above a netid and a netid above a bare name', () => {
+    expect(researcherIdentityTier({ accountId: 'account-1', netid: 'ab12' })).toBe('ACCOUNT');
+    expect(researcherIdentityTier({ netid: 'ab12' })).toBe('NETID');
+    expect(researcherIdentityTier({})).toBe('NAME_ONLY');
+  });
+
+  it('treats a blank or non-string netid as no identity at all', () => {
+    expect(researcherIdentityTier({ netid: '   ' })).toBe('NAME_ONLY');
+    expect(researcherIdentityTier({ netid: null })).toBe('NAME_ONLY');
+    expect(researcherIdentityTier({ accountId: null, netid: '' })).toBe('NAME_ONLY');
+  });
+});
+
 describe('decideShellMerge', () => {
   const index = buildCanonicalNameIndex([
-    { id: 'canonical-roe', displayName: 'Jane Roe', orcid: '0000-0001-2222-3333' },
-    { id: 'canonical-doe', displayName: 'John Doe' },
-    { id: 'namesake-a', displayName: 'Sam Twin' },
-    { id: 'namesake-b', displayName: 'Sam Twin' },
+    {
+      id: 'canonical-roe',
+      displayName: 'Jane Roe',
+      accountId: 'account-roe',
+      orcid: '0000-0001-2222-3333',
+    },
+    { id: 'canonical-doe', displayName: 'John Doe', accountId: 'account-doe' },
+    { id: 'namesake-a', displayName: 'Sam Twin', accountId: 'account-twin-a' },
+    { id: 'namesake-b', displayName: 'Sam Twin', accountId: 'account-twin-b' },
   ]);
 
   it('merges when exactly one same-name account-linked canonical exists', () => {
@@ -74,24 +94,74 @@ describe('decideShellMerge', () => {
   ]);
 
   it('folds a name-only shell into a netid-backed canonical of the same name', () => {
-    expect(decideShellMerge({ displayName: 'Nina Netid' }, netidIndex)).toEqual({
+    expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, netidIndex)).toEqual({
       merge: true,
       canonicalId: 'canonical-netid',
       reason: 'MERGEABLE',
     });
   });
 
-  it('merges when the shell netid matches the canonical netid', () => {
-    expect(decideShellMerge({ displayName: 'Nina Netid', netid: 'NN42' }, netidIndex)).toEqual({
+  it('never folds a netid-backed shell into a same-name netid-backed peer', () => {
+    expect(
+      decideShellMerge({ id: 'other-netid', displayName: 'Nina Netid', netid: 'nn99' }, netidIndex),
+    ).toEqual({ merge: false, reason: 'NO_CANONICAL' });
+  });
+
+  it('never folds a canonical into itself', () => {
+    expect(
+      decideShellMerge(
+        { id: 'canonical-netid', displayName: 'Nina Netid', netid: 'nn42' },
+        netidIndex,
+      ),
+    ).toEqual({ merge: false, reason: 'NO_CANONICAL' });
+  });
+
+  const mixedIndex = buildCanonicalNameIndex([
+    { id: 'account-backed', displayName: 'Nina Netid', accountId: 'account-nina' },
+    { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
+  ]);
+
+  it('prefers the account-backed canonical over a same-name netid-backed one', () => {
+    expect(decideShellMerge({ id: 'name-only', displayName: 'Nina Netid' }, mixedIndex)).toEqual({
       merge: true,
-      canonicalId: 'canonical-netid',
+      canonicalId: 'account-backed',
       reason: 'MERGEABLE',
     });
+  });
+
+  it('folds a netid-backed shell into the account-backed canonical of the same name', () => {
+    expect(
+      decideShellMerge(
+        { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
+        mixedIndex,
+      ),
+    ).toEqual({ merge: true, canonicalId: 'account-backed', reason: 'MERGEABLE' });
+  });
+
+  const accountWithNetidIndex = buildCanonicalNameIndex([
+    {
+      id: 'canonical-account-netid',
+      displayName: 'Nina Netid',
+      accountId: 'account-nina',
+      netid: 'nn42',
+    },
+  ]);
+
+  it('merges when the shell netid matches the canonical netid', () => {
+    expect(
+      decideShellMerge(
+        { id: 'netid-shell', displayName: 'Nina Netid', netid: 'NN42' },
+        accountWithNetidIndex,
+      ),
+    ).toEqual({ merge: true, canonicalId: 'canonical-account-netid', reason: 'MERGEABLE' });
   });
 
   it('excludes on netid conflict against the sole canonical', () => {
     expect(
-      decideShellMerge({ displayName: 'Nina Netid', netid: 'other99' }, netidIndex),
+      decideShellMerge(
+        { id: 'netid-shell', displayName: 'Nina Netid', netid: 'other99' },
+        accountWithNetidIndex,
+      ),
     ).toEqual({ merge: false, reason: 'NETID_CONFLICT' });
   });
 });

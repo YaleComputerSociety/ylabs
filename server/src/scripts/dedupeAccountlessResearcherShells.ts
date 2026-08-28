@@ -12,6 +12,7 @@ import {
   decideShellMerge,
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
+  researcherIdentityTier,
   roleAssignmentEdgeKey,
   RESEARCHER_UNIQUE_IDENTIFIER_FIELDS,
   type ResearcherAttributeSnapshot,
@@ -102,6 +103,7 @@ export interface DedupeAccountlessResearcherShellsResult {
   mode: 'apply' | 'dry-run';
   accountLinkedResearchers: number;
   accountlessResearchers: number;
+  netidBackedAccountlessResearchers: number;
   byReason: Record<ShellMergeReason, number>;
   shellsMerged: number;
   roleAssignmentsRepointed: number;
@@ -126,36 +128,34 @@ export async function dedupeAccountlessResearcherShells(options: {
   const Researcher = mongoose.connection.collection('researchers');
   const RoleAssignment = mongoose.connection.collection('role_assignments');
 
-  const identityBacked = await Researcher.find(
+  const liveResearchers = await Researcher.find(
+    { archived: { $ne: true } },
     {
-      archived: { $ne: true },
-      $or: [
-        { accountId: { $exists: true, $ne: null } },
-        { 'identifiers.netid': { $exists: true, $ne: null } },
-      ],
+      projection: {
+        displayName: 1,
+        accountId: 1,
+        'identifiers.orcid': 1,
+        'identifiers.netid': 1,
+      },
     },
-    { projection: { displayName: 1, 'identifiers.orcid': 1, 'identifiers.netid': 1 } },
   ).toArray();
 
-  const nameOnlyShells = await Researcher.find(
-    {
-      archived: { $ne: true },
-      $and: [
-        { $or: [{ accountId: { $exists: false } }, { accountId: null }] },
-        { $or: [{ 'identifiers.netid': { $exists: false } }, { 'identifiers.netid': null }] },
-      ],
-    },
-    { projection: { displayName: 1, 'identifiers.orcid': 1, 'identifiers.netid': 1 } },
-  ).toArray();
+  const researcherIdentities = (liveResearchers as any[]).map((doc) => ({
+    id: idKey(doc._id),
+    displayName: doc.displayName,
+    accountId: doc.accountId,
+    orcid: doc.identifiers?.orcid,
+    netid: doc.identifiers?.netid,
+  }));
 
-  const canonicalIndex = buildCanonicalNameIndex(
-    identityBacked.map((doc: any) => ({
-      id: idKey(doc._id),
-      displayName: doc.displayName,
-      orcid: doc.identifiers?.orcid,
-      netid: doc.identifiers?.netid,
-    })),
+  const canonicalIndex = buildCanonicalNameIndex(researcherIdentities);
+
+  const foldableShells = researcherIdentities.filter(
+    (entry) => researcherIdentityTier(entry) !== 'ACCOUNT',
   );
+  const netidBackedAccountlessResearchers = foldableShells.filter(
+    (entry) => researcherIdentityTier(entry) === 'NETID',
+  ).length;
 
   const byReason: Record<ShellMergeReason, number> = {
     MERGEABLE: 0,
@@ -167,18 +167,11 @@ export async function dedupeAccountlessResearcherShells(options: {
   };
 
   const mergeTargetByShellId = new Map<string, string>();
-  for (const shell of nameOnlyShells as any[]) {
-    const decision = decideShellMerge(
-      {
-        displayName: shell.displayName,
-        orcid: shell.identifiers?.orcid,
-        netid: shell.identifiers?.netid,
-      },
-      canonicalIndex,
-    );
+  for (const shell of foldableShells) {
+    const decision = decideShellMerge(shell, canonicalIndex);
     byReason[decision.reason] += 1;
-    if (decision.merge && decision.canonicalId) {
-      mergeTargetByShellId.set(idKey(shell._id), decision.canonicalId);
+    if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
+      mergeTargetByShellId.set(shell.id, decision.canonicalId);
     }
   }
 
@@ -403,8 +396,9 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   return {
     mode: options.apply ? 'apply' : 'dry-run',
-    accountLinkedResearchers: identityBacked.length,
-    accountlessResearchers: nameOnlyShells.length,
+    accountLinkedResearchers: researcherIdentities.length - foldableShells.length,
+    accountlessResearchers: foldableShells.length,
+    netidBackedAccountlessResearchers,
     byReason,
     shellsMerged: mergeTargetByShellId.size,
     roleAssignmentsRepointed,
