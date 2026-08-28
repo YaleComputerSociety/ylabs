@@ -189,7 +189,6 @@ const piReasons = new Set([
   'missing_lead',
   'duplicate_name_risk',
   'duplicate_risk',
-  'pi_identity_conflict',
   'profile_identity_risk',
 ]);
 
@@ -252,10 +251,8 @@ const sourceUrlsForLeadMembers = (leadMembers: Array<Record<string, any>> = []):
       [
         member.sourceUrl,
         ...objectValues(member.user?.profileUrls),
-        member.facultyMember?.profileUrl,
         member.user?.website,
         member.user?.websiteUrl,
-        member.facultyMember?.website,
       ].filter((url) => hasHttpUrl(url) && profileUrlMatchesMemberName(url, member)),
     ),
   );
@@ -321,9 +318,6 @@ const leadResearchInterestCandidates = (
     const interests = uniqueStrings([
       ...(Array.isArray(member.user?.researchInterests) ? member.user.researchInterests : []),
       ...(Array.isArray(member.user?.topics) ? member.user.topics : []),
-      ...(Array.isArray(member.facultyMember?.researchInterests)
-        ? member.facultyMember.researchInterests
-        : []),
     ])
       .map(cleanResearchInterest)
       .filter(Boolean)
@@ -683,12 +677,11 @@ const userDisplayName = (user: Record<string, any>): string =>
 
 const memberDisplayName = (member: Record<string, any>): string =>
   userDisplayName(member.user || {}) ||
-  textValue(member.facultyMember?.name) ||
   textValue(member.name);
 
 const memberEmailLocalTokens = (member: Record<string, any>): string[] => {
   const email = textValue(
-    member.user?.email || member.facultyMember?.email || member.email,
+    member.user?.email || member.email,
   ).toLowerCase();
   if (!/^[^@\s]+@yale\.edu$/i.test(email)) return [];
   const localPart = email.split('@')[0] || '';
@@ -775,8 +768,6 @@ const profileSourceUrlForMember = (
       member.user?.website,
       member.user?.websiteUrl,
       ...objectValues(member.user?.profileUrls),
-      member.facultyMember?.website,
-      member.facultyMember?.profileUrl,
       member.sourceUrl,
     ]).filter(
       (url) =>
@@ -794,10 +785,8 @@ const profileSourceUrlForMember = (
 const profileDescriptionSourceUrlForMember = (member: Record<string, any>): string => {
   const urls = uniqueStrings([
     ...objectValues(member.user?.profileUrls),
-    member.facultyMember?.profileUrl,
     member.user?.website,
     member.user?.websiteUrl,
-    member.facultyMember?.website,
     member.sourceUrl,
   ]).filter((url) => hasHttpUrl(url) && profileUrlMatchesMemberName(url, member));
   return (
@@ -909,8 +898,6 @@ function trustedActionLeadForEntity(
       member.user?.website,
       member.user?.websiteUrl,
       ...objectValues(member.user?.profileUrls),
-      member.facultyMember?.website,
-      member.facultyMember?.profileUrl,
       member.sourceUrl,
     ]).filter(
       (url) =>
@@ -1337,7 +1324,6 @@ async function attemptResearchActionEvidenceRepair(
     quality.cardState === 'complete' &&
     quality.leadState === 'lead_attached' &&
     !quality.repairFlags.includes('missing_source_url') &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
     actionLead &&
     Boolean(actionEvidenceSourceUrl);
   const evidenceIds =
@@ -1354,7 +1340,6 @@ async function attemptResearchActionEvidenceRepair(
     quality.cardState === 'complete' &&
     !quality.repairFlags.includes('missing_source_url') &&
     !quality.repairFlags.includes('duplicate_risk') &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
     Boolean(actionEvidenceSourceUrl);
 
   if (!deps.upsertSignal) {

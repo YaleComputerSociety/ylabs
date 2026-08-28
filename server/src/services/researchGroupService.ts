@@ -2331,10 +2331,6 @@ export function researchDetailLeadIdentity(
     leadMembers:
       rawLeadMembers || leadMembers.map((member) => ({ ...member.row, user: member.user })),
   });
-  if (qualitySummary.repairFlags.includes('pi_identity_conflict')) {
-    return { leadIdentityStatus: 'under_review' };
-  }
-
   const entityProfileDestinations = entityOfficialPersonProfileDestinations(group);
   const matchingMembers = leadMembers.filter((member) =>
     entityProfileDestinations.has(

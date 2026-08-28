@@ -266,7 +266,7 @@ async function main() {
     'profile_fallback_only',
   ]);
   const DUPLICATE_BLOCKERS = new Set(['duplicate_risk', 'exact_url_duplicate_risk']);
-  const LEAD_BLOCKERS = new Set(['missing_lead', 'pi_identity_conflict', 'profile_identity_risk']);
+  const LEAD_BLOCKERS = new Set(['missing_lead', 'profile_identity_risk']);
   const HARD_BLOCKERS = new Set([
     ...DUPLICATE_BLOCKERS,
     ...LEAD_BLOCKERS,

@@ -81,7 +81,6 @@ const adminQualityLabels = (home: ResearchCluster): string[] => {
   }
   if (flags.has('profile_fallback_only')) labels.push('Profile fallback');
   if (flags.has('missing_lead')) labels.push('Missing lead');
-  if (flags.has('pi_identity_conflict')) labels.push('Lead conflict');
   if (flags.has('missing_source_url')) labels.push('Missing source');
   if (flags.has('duplicate_risk')) labels.push('Duplicate review');
 

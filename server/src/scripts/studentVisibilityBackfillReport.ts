@@ -89,7 +89,6 @@ export function nextRepairActionForReasons(reasons: string[]): string {
   }
   if (reasons.includes('duplicate_risk')) return 'Resolve duplicate or disambiguation risk.';
   if (reasons.includes('content_page_risk')) return 'Suppress content pages or remap to a real research home.';
-  if (reasons.includes('pi_identity_conflict')) return 'Resolve mismatched PI identity before promotion.';
   if (reasons.includes('profile_identity_risk')) {
     return 'Resolve the person-derived identity: attach the lead whose official profile matches the entity, or suppress the contaminated shell.';
   }

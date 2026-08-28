@@ -3757,18 +3757,6 @@ describe('researchDetailLeadIdentity', () => {
     ).toEqual({ leadIdentityStatus: 'under_review' });
   });
 
-  it('derives the public review state from canonical PI identity conflicts', () => {
-    expect(
-      researchDetailLeadIdentity({}, [
-        {
-          role: 'pi',
-          user: { displayName: 'Disputed Investigator', facultyMemberId: 'faculty-user' },
-          row: { userId: 'user-1', facultyMemberId: 'faculty-row' },
-        },
-      ]),
-    ).toEqual({ leadIdentityStatus: 'under_review' });
-  });
-
   it('preserves a review state when entity profile evidence names a different person than the displayed lead', () => {
     expect(
       researchDetailLeadIdentity(

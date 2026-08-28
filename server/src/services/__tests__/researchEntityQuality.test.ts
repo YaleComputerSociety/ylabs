@@ -45,45 +45,6 @@ describe('buildResearchEntityQualitySummary', () => {
     expect(summary.score).toBeLessThan(90);
   });
 
-  it('treats a faculty-member-only lead as attached academic identity', () => {
-    const summary = buildResearchEntityQualitySummary({
-      entity: {
-        fullDescription:
-          'The project studies film, media theory, and communication history using humanities methods, archival sources, and interpretive analysis.',
-        shortDescription:
-          'Studies film, media theory, and communication history using humanities methods and archival sources.',
-        sourceUrls: ['https://filmstudies.yale.edu/people/john-durham-peters'],
-      },
-      leadMembers: [{ role: 'pi', facultyMemberId: 'correct-faculty' }],
-    });
-
-    expect(summary.leadState).toBe('lead_attached');
-    expect(summary.repairFlags).not.toContain('missing_lead');
-  });
-
-  it('flags lead identity conflicts when member user and faculty identities disagree', () => {
-    const summary = buildResearchEntityQualitySummary({
-      entity: {
-        fullDescription:
-          'The project studies film, media theory, and communication history using humanities methods, archival sources, and interpretive analysis.',
-        shortDescription:
-          'Studies film, media theory, and communication history using humanities methods and archival sources.',
-        sourceUrls: ['https://filmstudies.yale.edu/people/john-durham-peters'],
-      },
-      leadMembers: [
-        {
-          role: 'pi',
-          userId: 'wrong-user',
-          facultyMemberId: 'correct-faculty',
-          user: { facultyMemberId: 'wrong-faculty' },
-        },
-      ],
-    });
-
-    expect(summary.leadState).toBe('lead_conflict');
-    expect(summary.repairFlags).toContain('pi_identity_conflict');
-  });
-
   it('treats a canonical roster lead with a resolved researcher name and no faculty divergence as attached without identity conflict', () => {
     const summary = buildResearchEntityQualitySummary({
       entity: {
@@ -104,7 +65,6 @@ describe('buildResearchEntityQualitySummary', () => {
     });
 
     expect(summary.leadState).toBe('lead_attached');
-    expect(summary.repairFlags).not.toContain('pi_identity_conflict');
     expect(summary.repairFlags).not.toContain('missing_lead');
   });
 

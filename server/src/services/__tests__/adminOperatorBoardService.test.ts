@@ -28,7 +28,6 @@ describe('adminOperatorBoardService', () => {
   it('separates blocking repair reasons from positive evidence signals', () => {
     expect(classifyOperatorQueueReason('missing_action_evidence')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
-    expect(classifyOperatorQueueReason('pi_identity_conflict')).toBe('blocking');
     expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
     expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
     expect(classifyOperatorQueueReason('application_source_only')).toBe('review');

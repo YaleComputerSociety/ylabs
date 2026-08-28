@@ -372,7 +372,6 @@ export function classifyOperatorQueueReason(reason: string): QueueKind {
       'content_page_risk',
       'inactive_at_yale',
       'missing_card_description',
-      'pi_identity_conflict',
       'profile_fallback_only',
       'thin_description',
     ].includes(reason)
@@ -1836,8 +1835,6 @@ const researchReasonActions: Record<string, string> = {
     'Derive or backfill a student-facing short description from the source-backed full description.',
   missing_lead:
     'Attach PI, director, or owner evidence, or mark a reviewed non-person-owner exception.',
-  pi_identity_conflict:
-    'Resolve the conflicting canonical researcher identity before student visibility promotion.',
   missing_source_url: 'Attach an official source URL before public promotion.',
   thin_description: 'Replace thin text with a fuller source-backed description.',
   profile_fallback_only:
