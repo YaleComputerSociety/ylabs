@@ -297,7 +297,7 @@ describe('program search service', () => {
         sourceLastChangedAt: new Date('2026-01-02T00:00:00Z'),
         studentVisibilityTier: 'student_ready',
         studentVisibilityReasons: ['operator note'],
-        studentVisibilityReviewedByUserId: 'operator-user-id',
+        studentVisibilityReviewedByAccountId: 'operator-user-id',
         archived: false,
         audited: true,
         views: 12,
@@ -321,7 +321,7 @@ describe('program search service', () => {
     expect(result.programs[0]).not.toHaveProperty('sourceLastChangedAt');
     expect(result.programs[0]).not.toHaveProperty('studentVisibilityTier');
     expect(result.programs[0]).not.toHaveProperty('studentVisibilityReasons');
-    expect(result.programs[0]).not.toHaveProperty('studentVisibilityReviewedByUserId');
+    expect(result.programs[0]).not.toHaveProperty('studentVisibilityReviewedByAccountId');
     expect(result.programs[0]).not.toHaveProperty('archived');
     expect(result.programs[0]).not.toHaveProperty('audited');
     expect(result.programs[0]).not.toHaveProperty('views');
@@ -379,7 +379,7 @@ describe('program search service', () => {
         sourceLastChangedAt: new Date('2026-01-02T00:00:00Z'),
         studentVisibilityTier: 'student_ready',
         studentVisibilityReasons: ['operator note'],
-        studentVisibilityReviewedByUserId: 'operator-user-id',
+        studentVisibilityReviewedByAccountId: 'operator-user-id',
         archived: false,
         audited: true,
         views: 12,
@@ -403,7 +403,7 @@ describe('program search service', () => {
     expect(program).not.toHaveProperty('sourceLastChangedAt');
     expect(program).not.toHaveProperty('studentVisibilityTier');
     expect(program).not.toHaveProperty('studentVisibilityReasons');
-    expect(program).not.toHaveProperty('studentVisibilityReviewedByUserId');
+    expect(program).not.toHaveProperty('studentVisibilityReviewedByAccountId');
     expect(program).not.toHaveProperty('archived');
     expect(program).not.toHaveProperty('audited');
     expect(program).not.toHaveProperty('views');

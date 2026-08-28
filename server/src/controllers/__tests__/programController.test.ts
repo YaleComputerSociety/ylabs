@@ -78,7 +78,7 @@ const privateProgram = {
   studentVisibilitySuppressionReason: 'private suppression note',
   studentVisibilityComputedAt: new Date('2026-01-04T00:00:00.000Z'),
   studentVisibilityReviewedAt: new Date('2026-01-05T00:00:00.000Z'),
-  studentVisibilityReviewedByUserId: '64a000000000000000000099',
+  studentVisibilityReviewedByAccountId: '64a000000000000000000099',
   archived: false,
   audited: true,
   views: 99,
@@ -110,7 +110,7 @@ const expectPublicProgram = (payload: any) => {
   expect(payload).not.toHaveProperty('studentVisibilitySuppressionReason');
   expect(payload).not.toHaveProperty('studentVisibilityComputedAt');
   expect(payload).not.toHaveProperty('studentVisibilityReviewedAt');
-  expect(payload).not.toHaveProperty('studentVisibilityReviewedByUserId');
+  expect(payload).not.toHaveProperty('studentVisibilityReviewedByAccountId');
   expect(payload).not.toHaveProperty('archived');
   expect(payload).not.toHaveProperty('audited');
   expect(payload).not.toHaveProperty('views');

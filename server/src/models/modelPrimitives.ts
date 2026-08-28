@@ -52,9 +52,9 @@ export const recordReviewSchema = new mongoose.Schema(
       enum: [...recordReviewStatuses],
       default: 'unreviewed',
     },
-    reviewedByUserId: {
+    reviewedByAccountId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'Account',
       required: false,
     },
     reviewedAt: {

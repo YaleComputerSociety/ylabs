@@ -547,7 +547,7 @@ describe('researchEntityDto', () => {
       manuallyLockedFields: ['description'],
       studentVisibilityOverrideTier: 'suppressed',
       studentVisibilitySuppressionReason: 'private operator note',
-      studentVisibilityReviewedByUserId: 'reviewer-private',
+      studentVisibilityReviewedByAccountId: 'reviewer-private',
       studentVisibilityReviewedAt: new Date('2026-01-02T00:00:00.000Z'),
       lastFacultyNotificationAt: new Date('2026-01-03T00:00:00.000Z'),
       lastInquiryAtCache: new Date('2026-01-04T00:00:00.000Z'),
@@ -568,7 +568,7 @@ describe('researchEntityDto', () => {
     expect(dto).not.toHaveProperty('manuallyLockedFields');
     expect(dto).not.toHaveProperty('studentVisibilityOverrideTier');
     expect(dto).not.toHaveProperty('studentVisibilitySuppressionReason');
-    expect(dto).not.toHaveProperty('studentVisibilityReviewedByUserId');
+    expect(dto).not.toHaveProperty('studentVisibilityReviewedByAccountId');
     expect(dto).not.toHaveProperty('studentVisibilityReviewedAt');
     expect(dto).not.toHaveProperty('lastFacultyNotificationAt');
     expect(dto).not.toHaveProperty('lastInquiryAtCache');

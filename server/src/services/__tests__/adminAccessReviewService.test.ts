@@ -17,6 +17,17 @@ const mocks = vi.hoisted(() => ({
   mutateProjection: vi.fn(),
   signalFindByIdAndUpdate: vi.fn(),
   countDocuments: vi.fn(),
+  accountFindOne: vi.fn(),
+  accountLean: vi.fn(),
+}));
+
+vi.mock('../../models/account', () => ({
+  Account: {
+    findOne: (...args: unknown[]) => {
+      mocks.accountFindOne(...args);
+      return { select: () => ({ lean: mocks.accountLean }) };
+    },
+  },
 }));
 
 vi.mock('../../models/researchEntity', () => ({
@@ -290,26 +301,60 @@ describe('adminAccessReviewService', () => {
     });
   });
 
-  it('ignores object-shaped reviewer ids before persisting review metadata', async () => {
+  it('ignores non-string reviewer netids before persisting review metadata', async () => {
     const id = '64f222222222222222222222';
-    const chain = {
+    mocks.signalFindByIdAndUpdate.mockReturnValue({
       lean: vi.fn().mockResolvedValue({ _id: id }),
-    };
-    mocks.signalFindByIdAndUpdate.mockReturnValue(chain);
+    });
 
     await updateAccessReviewRecordReview({
       type: 'accessSignal',
       id,
       status: 'approved',
-      reviewerId: {
-        toString: () => '64f333333333333333333333',
-      },
+      reviewerNetid: { toString: () => 'abc123' },
     });
 
     const [, update] = mocks.signalFindByIdAndUpdate.mock.calls[0];
-    expect(update.$set).toMatchObject({
-      'review.status': 'approved',
+    expect(update.$set).toMatchObject({ 'review.status': 'approved' });
+    expect(update.$set).not.toHaveProperty('review.reviewedByAccountId');
+    expect(mocks.accountFindOne).not.toHaveBeenCalled();
+  });
+
+  it('resolves the reviewer netid to an account id when persisting review metadata', async () => {
+    const id = '64f222222222222222222222';
+    const accountId = new mongoose.Types.ObjectId('64f333333333333333333333');
+    mocks.signalFindByIdAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ _id: id }),
     });
-    expect(update.$set).not.toHaveProperty('review.reviewedByUserId');
+    mocks.accountLean.mockResolvedValue({ _id: accountId });
+
+    await updateAccessReviewRecordReview({
+      type: 'accessSignal',
+      id,
+      status: 'approved',
+      reviewerNetid: '  ABC123  ',
+    });
+
+    expect(mocks.accountFindOne).toHaveBeenCalledWith({ netid: 'abc123' });
+    const [, update] = mocks.signalFindByIdAndUpdate.mock.calls[0];
+    expect(update.$set['review.reviewedByAccountId']).toBe(accountId);
+  });
+
+  it('omits reviewer attribution when the netid matches no account', async () => {
+    const id = '64f222222222222222222222';
+    mocks.signalFindByIdAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ _id: id }),
+    });
+    mocks.accountLean.mockResolvedValue(null);
+
+    await updateAccessReviewRecordReview({
+      type: 'accessSignal',
+      id,
+      status: 'approved',
+      reviewerNetid: 'ghost',
+    });
+
+    const [, update] = mocks.signalFindByIdAndUpdate.mock.calls[0];
+    expect(update.$set).not.toHaveProperty('review.reviewedByAccountId');
   });
 });

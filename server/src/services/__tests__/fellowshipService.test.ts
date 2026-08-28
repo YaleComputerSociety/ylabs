@@ -326,11 +326,11 @@ describe('fellowship public serializer', () => {
     };
 
     await updateFellowship('67d8928150621bcef434a1d5', {
-      studentVisibilityReviewedByUserId: unsafeId,
+      studentVisibilityReviewedByAccountId: unsafeId,
     });
 
     const update = fellowshipModelMock.findByIdAndUpdate.mock.calls[0][1];
-    expect(update).not.toHaveProperty('studentVisibilityReviewedByUserId');
+    expect(update).not.toHaveProperty('studentVisibilityReviewedByAccountId');
   });
 
   it('bounds and allowlists admin fellowship update payloads before persistence', async () => {
@@ -366,7 +366,7 @@ describe('fellowship public serializer', () => {
       applicationOpenDate: '2026-01-01T00:00:00.000Z',
       studentVisibilityTier: 'student_ready',
       studentVisibilityOverrideTier: 'not-a-tier',
-      studentVisibilityReviewedByUserId: '67d8928150621bcef434a1d6',
+      studentVisibilityReviewedByAccountId: '67d8928150621bcef434a1d6',
       archived: true,
       audited: 'yes',
       raw: { private: true },
@@ -391,7 +391,7 @@ describe('fellowship public serializer', () => {
     expect(update.applicationOpenDate).toBeInstanceOf(Date);
     expect(update.studentVisibilityTier).toBe('student_ready');
     expect(update).not.toHaveProperty('studentVisibilityOverrideTier');
-    expect(update.studentVisibilityReviewedByUserId).toBe('67d8928150621bcef434a1d6');
+    expect(update.studentVisibilityReviewedByAccountId).toBe('67d8928150621bcef434a1d6');
     expect(update.archived).toBe(true);
     expect(update).not.toHaveProperty('audited');
     expect(update).not.toHaveProperty('raw');

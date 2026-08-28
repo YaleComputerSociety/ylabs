@@ -50,9 +50,9 @@ export const studentVisibilityFields = {
     type: Date,
     required: false,
   },
-  studentVisibilityReviewedByUserId: {
+  studentVisibilityReviewedByAccountId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'Account',
     required: false,
   },
 };

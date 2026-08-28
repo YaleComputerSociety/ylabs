@@ -164,17 +164,17 @@ describe('reference-integrity sample pipelines', () => {
       { $limit: 5 },
     ]);
 
-    expect(buildScalarRefOrphanSamplePipeline('review.reviewedByUserId', 'users', 5)).toEqual(
+    expect(buildScalarRefOrphanSamplePipeline('review.reviewedByAccountId', 'users', 5)).toEqual(
       expect.arrayContaining([
-        { $match: { 'review.reviewedByUserId': { $exists: true, $nin: [null, ''] } } },
+        { $match: { 'review.reviewedByAccountId': { $exists: true, $nin: [null, ''] } } },
         expect.objectContaining({
           $lookup: expect.objectContaining({
             from: 'users',
-            localField: 'review.reviewedByUserId',
+            localField: 'review.reviewedByAccountId',
           }),
         }),
         { $match: { _refTarget: { $size: 0 } } },
-        { $project: { id: { $toString: '$_id' }, value: '$review.reviewedByUserId' } },
+        { $project: { id: { $toString: '$_id' }, value: '$review.reviewedByAccountId' } },
         { $limit: 5 },
       ]),
     );
