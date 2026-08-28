@@ -2755,7 +2755,16 @@ async function materializeUserIdentityToResearcher(
     fieldsWritten += 1;
   }
 
-  await researcher.save();
+  try {
+    await researcher.save();
+  } catch (error) {
+    if (!isOrcidDuplicateKeyError(error)) throw error;
+    researcher.set('identifiers.orcid', undefined);
+    researcher.profileLinks = (researcher.profileLinks || []).filter(
+      (link: ResearcherProfileLink) => link.kind !== 'ORCID',
+    );
+    await researcher.save();
+  }
 
   return {
     entityType: 'user',
@@ -3134,6 +3143,15 @@ export async function projectFromLog(
 
 function isDuplicateKeyMongoError(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && (error as { code?: number }).code === 11000);
+}
+
+function isOrcidDuplicateKeyError(error: unknown): boolean {
+  if (!isDuplicateKeyMongoError(error)) return false;
+  const keyPattern = (error as { keyPattern?: Record<string, unknown> }).keyPattern;
+  if (keyPattern && Object.keys(keyPattern).some((key) => key.includes('identifiers.orcid'))) {
+    return true;
+  }
+  return ((error as { message?: string }).message || '').includes('identifiers.orcid');
 }
 
 function c4ResolveAtMintEntitiesEnabled(): boolean {

@@ -124,4 +124,56 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(await Researcher.countDocuments({})).toBe(0);
     expect(await Account.countDocuments({})).toBe(1);
   });
+
+  it('yields a colliding ORCID to its existing holder instead of crashing the source', async () => {
+    await Researcher.init();
+    const sharedOrcid = '9999-9999-9999-9994';
+
+    const holder = await Researcher.create({
+      displayName: 'Original Holder',
+      identifiers: { orcid: sharedOrcid },
+    });
+
+    const account = await Account.create({
+      netid: 'collide1',
+      email: 'collide1@yale.edu',
+      status: 'ACTIVE',
+    });
+    const enrichTarget = await Researcher.create({
+      displayName: 'Collide Investigator',
+      accountId: account._id,
+    });
+
+    await seedDirectoryIdentity('collide1', 'Collide', 'Investigator');
+    await Observation.create({
+      entityType: 'user',
+      entityKey: 'collide1',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'yale-directory',
+      sourceUrl: 'https://directory.yale.edu/collide1',
+      confidence: 0.7,
+      observedAt: new Date('2026-02-01T00:00:00Z'),
+      superseded: false,
+      field: 'orcid',
+      value: sharedOrcid,
+    });
+
+    await expect(materializeEntity('user', { entityKey: 'collide1' }, {})).resolves.toBeDefined();
+
+    const enriched = await Researcher.findById(enrichTarget._id).lean<{
+      profile?: { title?: string };
+      identifiers?: { netid?: string; orcid?: string };
+      profileLinks?: Array<{ kind: string }>;
+    }>();
+    expect(enriched?.profile?.title).toBe('Professor of Physics');
+    expect(enriched?.identifiers?.netid).toBe('collide1');
+    expect(enriched?.identifiers?.orcid).toBeUndefined();
+    expect((enriched?.profileLinks || []).some((link) => link.kind === 'ORCID')).toBe(false);
+
+    const stillHeld = await Researcher.findById(holder._id).lean<{
+      identifiers?: { orcid?: string };
+    }>();
+    expect(stillHeld?.identifiers?.orcid).toBe(sharedOrcid);
+    expect(await Researcher.countDocuments({ 'identifiers.orcid': sharedOrcid })).toBe(1);
+  });
 });

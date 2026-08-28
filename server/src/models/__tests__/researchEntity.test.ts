@@ -30,3 +30,20 @@ describe('ResearchEntity canonical schema version', () => {
     expect(document.validateSync()?.errors.schemaVersion).toBeTruthy();
   });
 });
+
+describe('ResearchEntity kind enum', () => {
+  it.each(['lab', 'center', 'institute', 'program', 'core_facility'])(
+    'accepts canonical research group kind %s',
+    (kind) => {
+      const document = validEntity({ kind });
+
+      expect(document.validateSync()?.errors.kind).toBeUndefined();
+    },
+  );
+
+  it('rejects a kind outside the canonical research group kinds', () => {
+    const document = validEntity({ kind: 'not_a_kind' });
+
+    expect(document.validateSync()?.errors.kind).toBeTruthy();
+  });
+});

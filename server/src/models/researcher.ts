@@ -225,7 +225,7 @@ function orcidProfileMatchesIdentifier(
 
 export const researcherDisplayProfileSchema = new mongoose.Schema<ResearcherDisplayProfile>(
   {
-    title: { type: String, trim: true, maxlength: 240 },
+    title: { type: String, trim: true, maxlength: 400 },
     primaryDepartment: { type: String, trim: true, maxlength: 240 },
     imageUrl: { type: String, trim: true, maxlength: 2048 },
     websiteUrl: { type: String, trim: true, maxlength: 2048 },

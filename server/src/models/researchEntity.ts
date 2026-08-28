@@ -10,6 +10,7 @@ import { fieldProvenanceSchema } from './modelPrimitives';
 import {
   mapResearchGroupKindToEntityType,
   researchEntityTypes,
+  researchGroupKinds,
   type ResearchEntityType,
 } from './researchAccessTypes';
 import { studentVisibilityFields } from './studentVisibility';
@@ -67,7 +68,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     },
     kind: {
       type: String,
-      enum: ['lab', 'center', 'institute', 'program', 'initiative', 'group', 'individual', 'solo'],
+      enum: [...researchGroupKinds],
       default: 'lab',
     },
     entityType: {
