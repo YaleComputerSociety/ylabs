@@ -1,15 +1,21 @@
+import { researchEntityTypes } from '../models/researchAccessTypes';
+
 export interface ArchivedEntityLiveReference {
   collection: string;
   field: string;
   count: number;
 }
 
-export type ArchivedResearchEntityDeferralReason = 'has_live_references' | 'missing_redirect';
+export type ArchivedResearchEntityDeferralReason =
+  | 'has_live_references'
+  | 'missing_redirect'
+  | 'retired_entity_type';
 
 export interface ArchivedResearchEntityCandidate {
   id: string;
   name?: string;
   slug?: string;
+  entityType?: string;
   liveReferences: ArchivedEntityLiveReference[];
   redirectPresent?: boolean;
 }
@@ -31,6 +37,20 @@ export interface ArchivedResearchEntityCleanupPlan {
   deferredByReason: Record<ArchivedResearchEntityDeferralReason, number>;
 }
 
+/**
+ * Retirement residue: rows archived because their `entityType` was retired from the
+ * product model (see `research-entity:retire-program-entities`). Archiving them was
+ * chosen over hard deletion precisely because it is reversible, so this op must not
+ * quietly complete the deletion its sibling deliberately declined to do.
+ */
+export function isRetiredEntityTypeResidue(entityType: string | undefined): boolean {
+  return (
+    typeof entityType === 'string' &&
+    entityType !== '' &&
+    !(researchEntityTypes as readonly string[]).includes(entityType)
+  );
+}
+
 export function buildArchivedResearchEntityCleanupPlan(input: {
   candidates: ArchivedResearchEntityCandidate[];
   requireRedirect?: boolean;
@@ -40,6 +60,7 @@ export function buildArchivedResearchEntityCleanupPlan(input: {
   const deferredByReason: Record<ArchivedResearchEntityDeferralReason, number> = {
     has_live_references: 0,
     missing_redirect: 0,
+    retired_entity_type: 0,
   };
 
   for (const candidate of input.candidates) {
@@ -52,6 +73,11 @@ export function buildArchivedResearchEntityCleanupPlan(input: {
     if (references.length > 0) {
       blocked.push({ ...identity, reason: 'has_live_references', references });
       deferredByReason.has_live_references += 1;
+      continue;
+    }
+    if (isRetiredEntityTypeResidue(candidate.entityType)) {
+      blocked.push({ ...identity, reason: 'retired_entity_type', references: [] });
+      deferredByReason.retired_entity_type += 1;
       continue;
     }
     if (input.requireRedirect && candidate.redirectPresent !== true) {

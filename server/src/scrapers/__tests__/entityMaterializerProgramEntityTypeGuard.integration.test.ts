@@ -30,7 +30,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import {
   isRetiredProgramResearchEntityType,
   materializeEntity,
-  observationsAssertRetiredProgramResearchEntityType,
+  winningObservedEntityTypeIsRetiredProgram,
 } from '../entityMaterializer';
 
 describe('materializeEntity refuses to mint or resurrect a PROGRAM research entity', () => {
@@ -62,6 +62,7 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
     entityKey: string,
     field: string,
     value: unknown,
+    overrides: { observedAt?: Date; confidence?: number } = {},
   ): Promise<void> => {
     await Observation.create({
       entityType: 'researchEntity',
@@ -71,8 +72,8 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
       sourceId: new mongoose.Types.ObjectId(),
       sourceName: 'yale-research-official',
       sourceUrl: 'https://research.example.edu/program/example/',
-      confidence: 0.9,
-      observedAt: new Date('2026-02-01T00:00:00Z'),
+      confidence: overrides.confidence ?? 0.9,
+      observedAt: overrides.observedAt ?? new Date('2026-02-01T00:00:00Z'),
       superseded: false,
     });
   };
@@ -81,13 +82,34 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
     expect(isRetiredProgramResearchEntityType('PROGRAM')).toBe(true);
     expect(isRetiredProgramResearchEntityType(' program ')).toBe(true);
     expect(isRetiredProgramResearchEntityType('LAB')).toBe(false);
+  });
+
+  it('asks only what the projection would resolve as the winning entityType', () => {
+    const observation = (
+      value: string,
+      daysAgo: number,
+    ): {
+      field: string;
+      value: string;
+      sourceName: string;
+      confidence: number;
+      observedAt: Date;
+    } => ({
+      field: 'entityType',
+      value,
+      sourceName: 'yale-research-official',
+      confidence: 0.9,
+      observedAt: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000),
+    });
+
+    expect(winningObservedEntityTypeIsRetiredProgram([observation('PROGRAM', 180)])).toBe(true);
+    expect(winningObservedEntityTypeIsRetiredProgram([observation('LAB', 180)])).toBe(false);
+    expect(winningObservedEntityTypeIsRetiredProgram([])).toBe(false);
     expect(
-      observationsAssertRetiredProgramResearchEntityType([
-        { field: 'entityType', value: 'PROGRAM' },
+      winningObservedEntityTypeIsRetiredProgram([
+        observation('PROGRAM', 180),
+        observation('INITIATIVE', 1),
       ]),
-    ).toBe(true);
-    expect(
-      observationsAssertRetiredProgramResearchEntityType([{ field: 'entityType', value: 'LAB' }]),
     ).toBe(false);
   });
 
@@ -135,6 +157,45 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
     }>();
     expect(doc?.archived).toBe(true);
     expect(doc?.name).toBe('Legacy Program Residue');
+  });
+
+  it('keeps materializing a live entity whose type healed away from PROGRAM', async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    await db.collection('research_entities').insertOne({
+      _id: new mongoose.Types.ObjectId(),
+      slug: 'center-macmillan-example',
+      name: 'MacMillan Example Sub-program',
+      kind: 'center',
+      entityType: 'INITIATIVE',
+      archived: false,
+    });
+    await seedObservation('center-macmillan-example', 'entityType', 'PROGRAM', {
+      observedAt: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000),
+    });
+    await seedObservation('center-macmillan-example', 'entityType', 'INITIATIVE', {
+      observedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    });
+    await seedObservation(
+      'center-macmillan-example',
+      'name',
+      'MacMillan Example Research Initiative',
+      { observedAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    );
+
+    const result = await materializeEntity('researchEntity', {
+      entityKey: 'center-macmillan-example',
+    });
+
+    expect(result.skipped).not.toBe('program-entity-type-retired');
+    expect(result.fieldsWritten).toBeGreaterThan(0);
+
+    const doc = await ResearchEntity.findOne({ slug: 'center-macmillan-example' }).lean<{
+      entityType?: string;
+      name?: string;
+    }>();
+    expect(doc?.entityType).toBe('INITIATIVE');
+    expect(doc?.name).toBe('MacMillan Example Research Initiative');
   });
 
   it('still materializes a valid non-PROGRAM research entity', async () => {

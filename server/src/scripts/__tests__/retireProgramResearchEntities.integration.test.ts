@@ -2,17 +2,6 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const meiliMocks = vi.hoisted(() => ({
-  deleteFromIndex: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../services/meiliSyncService', async () => {
-  const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
-    '../../services/meiliSyncService',
-  );
-  return { ...actual, deleteFromIndex: meiliMocks.deleteFromIndex };
-});
-
 import {
   parseRetireProgramResearchEntitiesArgs,
   assertRetireProgramResearchEntitiesApplyAllowed,
@@ -89,13 +78,17 @@ describe('retireProgramResearchEntities with MongoDB', () => {
     await replSet.stop();
   });
 
+  let deleteDocuments: ReturnType<typeof vi.fn>;
+  let getIndex: any;
+
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     for (const name of ['research_entities', 'fellowships', 'signals']) {
       await db.collection(name).deleteMany({});
     }
-    meiliMocks.deleteFromIndex.mockClear();
+    deleteDocuments = vi.fn().mockResolvedValue(undefined);
+    getIndex = vi.fn().mockResolvedValue({ deleteDocuments });
   });
 
   const insertProgramEntity = async (overrides: Record<string, unknown>): Promise<void> => {
@@ -112,16 +105,55 @@ describe('retireProgramResearchEntities with MongoDB', () => {
     const db = mongoose.connection.db!;
     await insertProgramEntity({ slug: 'program-residue-one', name: 'Program Residue One' });
 
-    const result = await retireProgramResearchEntities({ apply: false });
+    const result = await retireProgramResearchEntities({
+      apply: false,
+      confirmProgramEntityRetirement: false,
+      getIndex,
+    });
 
     expect(result.mode).toBe('dry-run');
     expect(result.plan.toArchiveCount).toBe(1);
     expect(result.archivedResearchEntities).toBe(0);
-    expect(meiliMocks.deleteFromIndex).not.toHaveBeenCalled();
-    const doc = await db
-      .collection('research_entities')
+    expect(result.search).toMatchObject({ requested: 0, deleted: false });
+    expect(getIndex).not.toHaveBeenCalled();
+    const doc = await db.collection('research_entities').findOne({ slug: 'program-residue-one' });
+    expect(doc?.archived).toBeFalsy();
+  });
+
+  it('refuses to archive without the confirmation flag even when called directly', async () => {
+    await insertProgramEntity({ slug: 'program-residue-one', name: 'Program Residue One' });
+
+    await expect(
+      retireProgramResearchEntities({
+        apply: true,
+        confirmProgramEntityRetirement: false,
+        getIndex,
+      }),
+    ).rejects.toThrow(/--confirm-program-entity-retirement is required/);
+
+    const doc = await mongoose.connection
+      .db!.collection('research_entities')
       .findOne({ slug: 'program-residue-one' });
     expect(doc?.archived).toBeFalsy();
+    expect(getIndex).not.toHaveBeenCalled();
+  });
+
+  it('enforces the max-apply cap against the plan it is about to apply', async () => {
+    await insertProgramEntity({ slug: 'program-residue-one', name: 'Program Residue One' });
+    await insertProgramEntity({ slug: 'program-residue-two', name: 'Program Residue Two' });
+
+    await expect(
+      retireProgramResearchEntities({
+        apply: true,
+        confirmProgramEntityRetirement: true,
+        maxApply: 1,
+        getIndex,
+      }),
+    ).rejects.toThrow(/above --max-apply/);
+
+    await expect(
+      mongoose.connection.db!.collection('research_entities').countDocuments({ archived: true }),
+    ).resolves.toBe(0);
   });
 
   it('archives non-archived PROGRAM rows and removes their search documents on apply', async () => {
@@ -138,19 +170,41 @@ describe('retireProgramResearchEntities with MongoDB', () => {
       title: 'Program Residue One',
     });
 
-    const result = await retireProgramResearchEntities({ apply: true });
+    const result = await retireProgramResearchEntities({
+      apply: true,
+      confirmProgramEntityRetirement: true,
+      getIndex,
+    });
 
     expect(result.mode).toBe('apply');
     expect(result.archivedResearchEntities).toBe(1);
-    expect(result.searchDocumentsRemoved).toBe(1);
+    expect(result.search).toMatchObject({ requested: 1, deleted: true });
     expect(result.plan.withFellowship).toBe(1);
-    expect(meiliMocks.deleteFromIndex).toHaveBeenCalledWith('researchEntity', expect.any(String));
+    expect(deleteDocuments).toHaveBeenCalledWith(result.plan.toArchive);
 
     await expect(
-      db.collection('research_entities').countDocuments({ entityType: 'PROGRAM', archived: { $ne: true } }),
+      db
+        .collection('research_entities')
+        .countDocuments({ entityType: 'PROGRAM', archived: { $ne: true } }),
     ).resolves.toBe(0);
     await expect(
       db.collection('research_entities').countDocuments({ entityType: 'PROGRAM' }),
     ).resolves.toBe(2);
+  });
+
+  it('reports a failed search deletion instead of claiming the index is clean', async () => {
+    await insertProgramEntity({ slug: 'program-residue-one', name: 'Program Residue One' });
+    deleteDocuments.mockRejectedValue(new Error('meili unreachable'));
+
+    const result = await retireProgramResearchEntities({
+      apply: true,
+      confirmProgramEntityRetirement: true,
+      getIndex,
+    });
+
+    expect(result.archivedResearchEntities).toBe(1);
+    expect(result.search.requested).toBe(1);
+    expect(result.search.deleted).toBe(false);
+    expect(result.search.error).toContain('meili unreachable');
   });
 });

@@ -15,7 +15,11 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     expect(plan).toMatchObject({ scanned: 2, eligibleCount: 2, blockedCount: 0 });
     expect(plan.eligible).toEqual(['a', 'b']);
     expect(plan.blocked).toEqual([]);
-    expect(plan.deferredByReason).toEqual({ has_live_references: 0, missing_redirect: 0 });
+    expect(plan.deferredByReason).toEqual({
+      has_live_references: 0,
+      missing_redirect: 0,
+      retired_entity_type: 0,
+    });
   });
 
   it('fails closed by blocking entities that still have a live reference', () => {
@@ -43,7 +47,11 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
         references: [{ collection: 'posted_opportunities', field: 'researchEntityId', count: 3 }],
       },
     ]);
-    expect(plan.deferredByReason).toEqual({ has_live_references: 1, missing_redirect: 0 });
+    expect(plan.deferredByReason).toEqual({
+      has_live_references: 1,
+      missing_redirect: 0,
+      retired_entity_type: 0,
+    });
   });
 
   it('requires a redirect row when requireRedirect is set and defers residue without one', () => {
@@ -60,7 +68,11 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       { id: 'no-redirect', slug: 'b', reason: 'missing_redirect', references: [] },
       { id: 'redirect-undefined', slug: 'c', reason: 'missing_redirect', references: [] },
     ]);
-    expect(plan.deferredByReason).toEqual({ has_live_references: 0, missing_redirect: 2 });
+    expect(plan.deferredByReason).toEqual({
+      has_live_references: 0,
+      missing_redirect: 2,
+      retired_entity_type: 0,
+    });
   });
 
   it('prefers the live-reference deferral over a missing redirect', () => {
@@ -76,7 +88,35 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     });
     expect(plan.eligible).toEqual([]);
     expect(plan.blocked[0]).toMatchObject({ reason: 'has_live_references' });
-    expect(plan.deferredByReason).toEqual({ has_live_references: 1, missing_redirect: 0 });
+    expect(plan.deferredByReason).toEqual({
+      has_live_references: 1,
+      missing_redirect: 0,
+      retired_entity_type: 0,
+    });
+  });
+
+  it('defers retirement residue carrying an entityType retired from the product model', () => {
+    const plan = buildArchivedResearchEntityCleanupPlan({
+      candidates: [
+        { id: 'live-lab', slug: 'lab-a', entityType: 'LAB', liveReferences: [] },
+        {
+          id: 'program-residue',
+          slug: 'center-macmillan-example',
+          entityType: 'PROGRAM',
+          liveReferences: [],
+        },
+      ],
+    });
+    expect(plan.eligible).toEqual(['live-lab']);
+    expect(plan.blocked).toEqual([
+      {
+        id: 'program-residue',
+        slug: 'center-macmillan-example',
+        reason: 'retired_entity_type',
+        references: [],
+      },
+    ]);
+    expect(plan.deferredByReason.retired_entity_type).toBe(1);
   });
 
   it('does not require a redirect when requireRedirect is unset', () => {
@@ -93,7 +133,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       blockedCount: 0,
       eligible: [],
       blocked: [],
-      deferredByReason: { has_live_references: 0, missing_redirect: 0 },
+      deferredByReason: { has_live_references: 0, missing_redirect: 0, retired_entity_type: 0 },
     });
   });
 });

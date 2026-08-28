@@ -278,7 +278,7 @@ async function loadArchivedResearchEntityCandidates(
     query.canonicalGroupId = { $exists: true, $ne: null };
   }
   const archivedEntities = await ResearchEntity.find(query)
-    .select('_id name slug')
+    .select('_id name slug entityType')
     .limit(limit)
     .lean();
   const db = mongoose.connection.db;
@@ -315,6 +315,7 @@ async function loadArchivedResearchEntityCandidates(
     id: stringId(entity._id),
     ...(entity.name ? { name: String(entity.name) } : {}),
     ...(entity.slug ? { slug: String(entity.slug) } : {}),
+    ...(entity.entityType ? { entityType: String(entity.entityType) } : {}),
     liveReferences: references.get(stringId(entity._id)) || [],
     ...(redirectPresence ? { redirectPresent: redirectPresence.has(stringId(entity._id)) } : {}),
   }));

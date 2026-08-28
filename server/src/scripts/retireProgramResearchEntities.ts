@@ -7,7 +7,8 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Fellowship } from '../models/fellowship';
 import { Signal } from '../models/signal';
-import { deleteFromIndex } from '../services/meiliSyncService';
+import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
+import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -163,21 +164,55 @@ async function loadProgramResearchEntityCandidates(): Promise<ProgramResearchEnt
   return candidates;
 }
 
+export interface ProgramSearchDocumentRemoval {
+  requested: number;
+  deleted: boolean;
+  error?: string;
+  rebuildGuidance?: string;
+}
+
+// `deleteFromIndex` logs and swallows Meilisearch failures, which would let the JSON
+// report claim the search index is clean while every archived PROGRAM row is still a
+// live search hit. Delete through the index directly so the outcome is reported.
+async function deleteProgramSearchDocuments(
+  ids: string[],
+  getIndex: typeof getMeiliIndex,
+): Promise<ProgramSearchDocumentRemoval> {
+  if (ids.length === 0) return { requested: 0, deleted: false };
+  try {
+    const index = await getIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+    await index.deleteDocuments(ids);
+    return { requested: ids.length, deleted: true };
+  } catch (error) {
+    return { requested: ids.length, deleted: false, error: String(sanitizeLogValue(error)) };
+  }
+}
+
 export interface RetireProgramResearchEntitiesResult {
   mode: 'dry-run' | 'apply';
   plan: RetireProgramResearchEntitiesPlan;
   archivedResearchEntities: number;
-  searchDocumentsRemoved: number;
+  search: ProgramSearchDocumentRemoval;
 }
 
 export async function retireProgramResearchEntities(options: {
   apply: boolean;
+  confirmProgramEntityRetirement: boolean;
+  maxApply?: number;
+  getIndex?: typeof getMeiliIndex;
 }): Promise<RetireProgramResearchEntitiesResult> {
   const candidates = await loadProgramResearchEntityCandidates();
   const plan = buildRetireProgramResearchEntitiesPlan({ candidates });
 
+  assertRetireProgramResearchEntitiesApplyAllowed({
+    apply: options.apply,
+    confirmProgramEntityRetirement: options.confirmProgramEntityRetirement,
+    maxApply: options.maxApply ?? DEFAULT_MAX_APPLY,
+    plannedArchives: plan.toArchiveCount,
+  });
+
   let archivedResearchEntities = 0;
-  let searchDocumentsRemoved = 0;
+  let search: ProgramSearchDocumentRemoval = { requested: 0, deleted: false };
 
   if (options.apply && plan.toArchive.length > 0) {
     const objectIds = plan.toArchive
@@ -188,17 +223,18 @@ export async function retireProgramResearchEntities(options: {
       { $set: { archived: true } },
     );
     archivedResearchEntities = result.modifiedCount || 0;
-    for (const id of plan.toArchive) {
-      await deleteFromIndex('researchEntity', id);
-      searchDocumentsRemoved += 1;
-    }
+    search = {
+      ...(await deleteProgramSearchDocuments(plan.toArchive, options.getIndex || getMeiliIndex)),
+      rebuildGuidance:
+        'If search documents were not deleted, rebuild with meili:rebuild-research-entities --clear --confirm-meili-rebuild.',
+    };
   }
 
   return {
     mode: options.apply ? 'apply' : 'dry-run',
     plan,
     archivedResearchEntities,
-    searchDocumentsRemoved,
+    search,
   };
 }
 
@@ -222,16 +258,11 @@ async function main(): Promise<void> {
 
   await initializeConnections();
   try {
-    const candidates = await loadProgramResearchEntityCandidates();
-    const plan = buildRetireProgramResearchEntitiesPlan({ candidates });
-    assertRetireProgramResearchEntitiesApplyAllowed({
+    const result = await retireProgramResearchEntities({
       apply: options.apply,
       confirmProgramEntityRetirement: options.confirmProgramEntityRetirement,
       maxApply: options.maxApply,
-      plannedArchives: plan.toArchiveCount,
     });
-
-    const result = await retireProgramResearchEntities({ apply: options.apply });
 
     const report = {
       generatedAt: new Date().toISOString(),
@@ -245,7 +276,7 @@ async function main(): Promise<void> {
       withFellowship: result.plan.withFellowship,
       withoutFellowship: result.plan.withoutFellowship,
       archivedResearchEntities: result.archivedResearchEntities,
-      searchDocumentsRemoved: result.searchDocumentsRemoved,
+      search: result.search,
       rows: result.plan.rows,
     };
 
@@ -255,6 +286,12 @@ async function main(): Promise<void> {
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
       fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
       console.log(`Saved report to ${safeOutput}`);
+    }
+    if (result.search.requested > 0 && !result.search.deleted) {
+      console.error(
+        `Archived ${result.archivedResearchEntities} PROGRAM research entities but failed to remove ${result.search.requested} Meilisearch documents; they are still live search hits.`,
+      );
+      process.exitCode = 1;
     }
   } finally {
     await mongoose.disconnect();
