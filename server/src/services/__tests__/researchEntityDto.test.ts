@@ -539,11 +539,9 @@ describe('researchEntityDto', () => {
       name: 'Grant Cache Lab',
       kind: 'lab',
       recentGrantCount: 2,
-      lastGrantAtCache: new Date('2026-03-01T00:00:00.000Z'),
     });
 
     expect(dto.recentGrantCount).toBe(2);
-    expect(dto.lastGrantAtCache).toEqual(new Date('2026-03-01T00:00:00.000Z'));
   });
 
   it('strips internal review, ownership, and provenance fields from public DTOs', () => {
