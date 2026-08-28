@@ -131,6 +131,10 @@ the review to decide whether conflicts are benign metadata churn, source-specifi
 review work, or materializer/source bugs. It does not by itself clear the conservative
 source-health warning.
 
+Not every counted conflict is an observation conflict.
+The user-identity enrichment path also counts one when a source-resolved ORCID is already claimed by another `Researcher`: the existing holder keeps the ORCID, the enriched researcher keeps the identity it already had, and the collision is logged rather than failing the run.
+Such a conflict has no matching sample in the review, so the run log line naming the colliding ORCID is the signal that upstream directory data carries a duplicate to fix at the source.
+
 Useful source-health summary:
 
 ```bash

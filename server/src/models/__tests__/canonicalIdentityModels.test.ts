@@ -198,6 +198,18 @@ describe('canonical identity and reference models', () => {
     expect(person.validateSync()).toBeUndefined();
   });
 
+  it('accepts a research profile title longer than 240 characters', () => {
+    const person = validPerson({ profile: { title: 'A'.repeat(300) } });
+
+    expect(person.validateSync()?.errors?.['profile.title']).toBeUndefined();
+  });
+
+  it('rejects a research profile title beyond the 400 character bound', () => {
+    const person = validPerson({ profile: { title: 'A'.repeat(401) } });
+
+    expect(person.validateSync()?.errors?.['profile.title']).toBeTruthy();
+  });
+
   it('rejects duplicate profile-link kinds', () => {
     const person = validPerson({
       profileLinks: [validProfileLinks[0], { ...validProfileLinks[0] }],

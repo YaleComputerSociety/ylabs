@@ -43,6 +43,8 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
   Promoting a director also lets the access materializer upgrade an organizational home from its "no named director" `DEPARTMENT_CONTACT` fallback to a named-lead `FACULTY_PI` ways-in on the same pass.
   - Official roster rows use stable profile identity and membership keys.
   Only a complete non-empty snapshot archives disappeared source-owned rows; failed, empty, partial, stale, or withheld snapshots preserve current history.
+  - `materializeUserIdentityToResearcher` (directory/user identity enrichment) must not let one bad source row abort the rest of the source run: over-long resolved `profile` text is clamped to that field's own `researcherDisplayProfileSchema` `maxlength` instead of throwing a validation error, and an ORCID another `Researcher` already holds is yielded to that holder with the enriched researcher's prior ORCID identity restored (the identity contract lives in `docs/research-model.md`).
+  Read bounds from the schema; never re-declare them here or in the materializer.
   - After field resolution and canonicalization it derives `websiteUrl`, reusing `resolveBackfillWebsiteUrl` from `scripts/backfillResearchEntityWebsiteUrlsCore.ts` (the #404 backfill core) so every exclusion rule and the never-overwrite-a-usable-value rule stay single-sourced.
   A source-observed `websiteUrl` always wins.
   - The URL-exclusion rules are enforced by exported predicates rather than a frozen list here; consult those functions for the authoritative patterns.

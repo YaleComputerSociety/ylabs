@@ -108,7 +108,13 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { resolveResearcherIdForPersonName } from '../services/researcherPersonNameResolver';
-import { Researcher, isValidOrcid, type ResearcherProfileLink } from '../models/researcher';
+import {
+  Researcher,
+  isValidOrcid,
+  researcherDisplayProfileSchema,
+  type ResearcherDisplayProfile,
+  type ResearcherProfileLink,
+} from '../models/researcher';
 import { Account } from '../models/account';
 import { composeOfficialProfileLink } from '../scripts/backfillResearcherOfficialProfileLinksCore';
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
@@ -2103,19 +2109,6 @@ function deptUserNameFilters(
   ]);
 }
 
-function departmentValuesForInferredPiLookup(
-  observations: MaterializerObservationLike[],
-): string[] {
-  return uniqueStrings(
-    observations.flatMap((observation) => {
-      if (observation.field !== 'departments' && observation.field !== 'primaryDepartment') {
-        return [];
-      }
-      return Array.isArray(observation.value) ? observation.value : [observation.value];
-    }),
-  );
-}
-
 export function userLookupFiltersForInferredPiUserKey(
   value: unknown,
   departments: string[] = [],
@@ -2311,7 +2304,6 @@ export function selectOfficialProfileObservationUserMatch(
 
   return null;
 }
-
 
 export function emptyPostMaterializationMetrics(): Required<ReportPostMaterializationMetrics> {
   return {
@@ -2638,6 +2630,16 @@ function orcidProfileLink(orcid: string, verifiedAt: Date): ResearcherProfileLin
   };
 }
 
+function boundedResearcherProfileText(
+  key: keyof ResearcherDisplayProfile,
+  value: string | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  const bound = researcherDisplayProfileSchema.path(key).options.maxlength;
+  if (typeof bound !== 'number' || value.length <= bound) return value;
+  return value.slice(0, bound).trim() || undefined;
+}
+
 async function materializeUserIdentityToResearcher(
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
@@ -2721,14 +2723,20 @@ async function materializeUserIdentityToResearcher(
     ['imageUrl', imageUrl],
     ['websiteUrl', websiteUrl],
   ] as const) {
-    if (value && researcher.profile[key] !== value) {
-      researcher.profile[key] = value;
+    const bounded = boundedResearcherProfileText(key, value);
+    if (bounded && researcher.profile[key] !== bounded) {
+      researcher.profile[key] = bounded;
       fieldsWritten += 1;
     }
   }
-  if (orcid && researcher.identifiers?.orcid !== orcid) {
+  const priorOrcid: string | undefined = researcher.identifiers?.orcid;
+  const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(
+    (link: ResearcherProfileLink) => link.kind === 'ORCID',
+  );
+  let orcidFieldsWritten = 0;
+  if (orcid && priorOrcid !== orcid) {
     researcher.identifiers = { ...(researcher.identifiers || {}), orcid };
-    fieldsWritten += 1;
+    orcidFieldsWritten += 1;
   }
   if (netid && researcher.identifiers?.netid !== netid) {
     researcher.identifiers = { ...(researcher.identifiers || {}), netid };
@@ -2744,24 +2752,59 @@ async function materializeUserIdentityToResearcher(
     researcher.profileLinks.push(officialLink);
     fieldsWritten += 1;
   }
-  const scholarUrl = profileUrls ? canonicalScholarCitationUrl(profileUrls.googleScholar) : undefined;
+  const scholarUrl = profileUrls
+    ? canonicalScholarCitationUrl(profileUrls.googleScholar)
+    : undefined;
   if (scholarUrl && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
     researcher.profileLinks.push(scholarProfileLink(scholarUrl, now));
     fieldsWritten += 1;
   }
-  if (orcid && !existingLinkKinds.has('ORCID')) {
-    researcher.profileLinks.push(orcidProfileLink(orcid, now));
-    fieldsWritten += 1;
+  if (orcid) {
+    const currentOrcidLink = orcidProfileLink(orcid, now);
+    if (priorOrcidLinks.every((link) => link.url !== currentOrcidLink.url)) {
+      researcher.profileLinks = [
+        ...(researcher.profileLinks || []).filter(
+          (link: ResearcherProfileLink) => link.kind !== 'ORCID',
+        ),
+        currentOrcidLink,
+      ];
+      orcidFieldsWritten += 1;
+    }
   }
 
-  await researcher.save();
+  fieldsWritten += orcidFieldsWritten;
+  let conflicts = 0;
+
+  try {
+    await researcher.save();
+  } catch (error) {
+    if (!isOrcidDuplicateKeyError(error)) throw error;
+    researcher.set('identifiers.orcid', priorOrcid);
+    researcher.profileLinks = [
+      ...(researcher.profileLinks || []).filter(
+        (link: ResearcherProfileLink) => link.kind !== 'ORCID',
+      ),
+      ...priorOrcidLinks,
+    ];
+    fieldsWritten -= orcidFieldsWritten;
+    conflicts += 1;
+    console.warn(
+      'Directory identity ORCID already claimed by another researcher; keeping prior identity:',
+      sanitizeLogValue({
+        researcherId: materializerDocumentId(researcher._id),
+        entityKey: identifier.entityKey,
+        collidingOrcid: orcid,
+      }),
+    );
+    await researcher.save();
+  }
 
   return {
     entityType: 'user',
     entityId: materializerDocumentId(researcher._id),
     entityKey: identifier.entityKey,
     fieldsWritten,
-    conflicts: 0,
+    conflicts,
     created,
     resolved,
   };
@@ -3135,6 +3178,15 @@ export async function projectFromLog(
 
 function isDuplicateKeyMongoError(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && (error as { code?: number }).code === 11000);
+}
+
+function isOrcidDuplicateKeyError(error: unknown): boolean {
+  if (!isDuplicateKeyMongoError(error)) return false;
+  const keyPattern = (error as { keyPattern?: Record<string, unknown> }).keyPattern;
+  if (keyPattern && Object.keys(keyPattern).some((key) => key.includes('identifiers.orcid'))) {
+    return true;
+  }
+  return ((error as { message?: string }).message || '').includes('identifiers.orcid');
 }
 
 function c4ResolveAtMintEntitiesEnabled(): boolean {
