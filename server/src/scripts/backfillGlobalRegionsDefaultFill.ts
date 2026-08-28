@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import path from 'path';
@@ -6,10 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import {
-  assertScriptApplyAllowed,
-  resolveSafeJsonReportOutputPath,
-} from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   planGlobalRegionsDefaultFillCollapse,
   type GlobalRegionsDoc,
@@ -73,6 +71,13 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsed;
 }
 
+export function writeBackfillGlobalRegionsOutput(report: unknown, output?: string): void {
+  if (!output) return;
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
+}
+
 export function assertDevelopmentTarget(mongoUrl: string | undefined): void {
   let database = '';
   try {
@@ -88,7 +93,10 @@ export function assertDevelopmentTarget(mongoUrl: string | undefined): void {
 }
 
 export function assertBackfillGlobalRegionsApplyAllowed(
-  options: Pick<BackfillGlobalRegionsCliOptions, 'apply' | 'confirmGlobalRegionsBackfill' | 'limit'>,
+  options: Pick<
+    BackfillGlobalRegionsCliOptions,
+    'apply' | 'confirmGlobalRegionsBackfill' | 'limit'
+  >,
   env: NodeJS.ProcessEnv = process.env,
   mongoUrl?: string,
 ) {
@@ -96,7 +104,9 @@ export function assertBackfillGlobalRegionsApplyAllowed(
     throw new Error(`--limit is required when --apply is set for ${SCRIPT_NAME}`);
   }
   if (options.apply && !options.confirmGlobalRegionsBackfill) {
-    throw new Error(`--confirm-global-regions-backfill is required when --apply is set for ${SCRIPT_NAME}`);
+    throw new Error(
+      `--confirm-global-regions-backfill is required when --apply is set for ${SCRIPT_NAME}`,
+    );
   }
   if (options.apply) {
     assertDevelopmentTarget(mongoUrl);
@@ -106,7 +116,11 @@ export function assertBackfillGlobalRegionsApplyAllowed(
 
 async function main() {
   const options = parseBackfillGlobalRegionsArgs(process.argv.slice(2));
-  const guard = assertBackfillGlobalRegionsApplyAllowed(options, process.env, process.env.MONGODBURL);
+  const guard = assertBackfillGlobalRegionsApplyAllowed(
+    options,
+    process.env,
+    process.env.MONGODBURL,
+  );
   await initializeConnections();
 
   const query = Fellowship.find({ archived: { $ne: true } }).sort({ title: 1 });
@@ -140,6 +154,7 @@ async function main() {
   };
 
   console.log(JSON.stringify(report, null, 2));
+  writeBackfillGlobalRegionsOutput(report, options.output);
 }
 
 const isDirectRun = process.argv[1]

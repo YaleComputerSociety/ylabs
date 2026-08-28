@@ -5,38 +5,79 @@ import { describe, expect, it } from 'vitest';
 import { buildOrchestrator } from '../../scrapers/registry';
 import {
   DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
-  SCRAPER_SWEEP_SOURCES,
+  FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS,
+  FELLOWSHIP_SWEEP_SOURCES,
+  MANUAL_ONLY_SWEEP_SOURCES,
+  RESEARCH_SWEEP_SOURCES,
   buildDevelopmentPostRunStages,
+  buildFellowshipPostRunStages,
   buildScraperSweepChildArgs,
+  fellowshipCatalogRefreshBlocker,
+  fellowshipPostRunArtifactError,
   orderedScraperSweepPhases,
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
   parseResearcherDedupeResult,
   parseScraperSweepArgs,
   resolveDevelopmentPostRunOptions,
+  resolveFellowshipPostRunOptions,
   resolvePhaseConcurrency,
   resolveSweepChildPerHostConcurrency,
   runWithBoundedConcurrency,
   scraperSweepArtifactError,
+  sweepFellowshipRefreshTarget,
+  sweepSourcesForMode,
   validateScraperSweepEnvironment,
   validateScraperSweepManifest,
   validateScraperSweepSourceRows,
 } from '../runScraperSweep';
 
 describe('runScraperSweep', () => {
-  it('includes every registered scraper exactly once', () => {
+  it('partitions every registered scraper across the two engines minus the manual-only source', () => {
     const registeredNames = buildOrchestrator()
       .list()
       .map((source) => source.name);
     expect(() => validateScraperSweepManifest(registeredNames)).not.toThrow();
-    expect(new Set(SCRAPER_SWEEP_SOURCES.map((source) => source.name)).size).toBe(
-      registeredNames.length,
+    const researchNames = RESEARCH_SWEEP_SOURCES.map((source) => source.name);
+    const fellowshipNames = FELLOWSHIP_SWEEP_SOURCES.map((source) => source.name);
+    const union = new Set([...researchNames, ...fellowshipNames]);
+    expect(union.size).toBe(researchNames.length + fellowshipNames.length);
+    const expected = registeredNames.filter((name) => !MANUAL_ONLY_SWEEP_SOURCES.includes(name));
+    expect([...union].sort()).toEqual([...expected].sort());
+    expect(MANUAL_ONLY_SWEEP_SOURCES).toContain('undergrad-fellowships-recipients');
+    expect(union.has('undergrad-fellowships-recipients')).toBe(false);
+  });
+
+  it('keeps the fellowship catalog sources in the fellowship engine', () => {
+    expect(FELLOWSHIP_SWEEP_SOURCES.map((source) => source.name).sort()).toEqual(
+      [
+        'student-grants-database',
+        'yale-college-fellowships-office',
+        'yale-health-sciences-summer-programs',
+        'yale-reu-programs',
+      ].sort(),
     );
+  });
+
+  it('keeps the dual-writing department-undergrad-research source in the research engine', () => {
+    expect(RESEARCH_SWEEP_SOURCES.map((source) => source.name)).toContain(
+      'department-undergrad-research',
+    );
+    expect(FELLOWSHIP_SWEEP_SOURCES.map((source) => source.name)).not.toContain(
+      'department-undergrad-research',
+    );
+  });
+
+  it('selects the engine sources by mode', () => {
+    expect(sweepSourcesForMode('development-full')).toBe(RESEARCH_SWEEP_SOURCES);
+    expect(sweepSourcesForMode('development-incremental')).toBe(RESEARCH_SWEEP_SOURCES);
+    expect(sweepSourcesForMode('beta-fetch')).toBe(RESEARCH_SWEEP_SOURCES);
+    expect(sweepSourcesForMode('fellowship-development-full')).toBe(FELLOWSHIP_SWEEP_SOURCES);
   });
 
   it('blocks a sweep manifest that omits a registered scraper', () => {
     expect(() => validateScraperSweepManifest(['yale-directory', 'future-source'])).toThrow(
-      /missing from sweep|unknown sweep sources/,
+      /missing from both sweep engines|unknown sweep sources/,
     );
   });
 
@@ -59,6 +100,16 @@ describe('runScraperSweep', () => {
     expect(
       parseScraperSweepArgs(['--mode=beta-fetch', '--confirm-beta-release-candidate']).mode,
     ).toBe('beta-fetch');
+  });
+
+  it('requires explicit confirmation for the fellowship Development sweep', () => {
+    expect(() => parseScraperSweepArgs(['--mode=fellowship-development-full'])).toThrow(
+      /confirm-fellowship-sweep/,
+    );
+    expect(
+      parseScraperSweepArgs(['--mode=fellowship-development-full', '--confirm-fellowship-sweep'])
+        .mode,
+    ).toBe('fellowship-development-full');
   });
 
   it('requires explicit confirmation for the incremental Development sweep', () => {
@@ -286,11 +337,7 @@ describe('runScraperSweep', () => {
       expect.arrayContaining(['--strict', '--include-samples', '--progress']),
     );
     expect(stages.find((stage) => stage.name === 'trust-contract')?.args).toEqual(
-      expect.arrayContaining([
-        '--collection=all',
-        '--mode=student-ready-only',
-        '--strict',
-      ]),
+      expect.arrayContaining(['--collection=all', '--mode=student-ready-only', '--strict']),
     );
   });
 
@@ -503,12 +550,183 @@ describe('runScraperSweep', () => {
     },
   );
 
-  it.each(['beta-plan', 'beta-fetch', 'development-plan', 'development-sample'] as const)(
-    'produces no post-run stage options for the %s mode',
-    (mode) => {
-      expect(resolveDevelopmentPostRunOptions(mode, {}, sinceIso)).toBeUndefined();
-    },
-  );
+  it.each([
+    'beta-plan',
+    'beta-fetch',
+    'development-plan',
+    'development-sample',
+    'fellowship-development-full',
+  ] as const)('produces no development post-run stage options for the %s mode', (mode) => {
+    expect(resolveDevelopmentPostRunOptions(mode, {}, sinceIso)).toBeUndefined();
+  });
+
+  it.each([
+    'beta-plan',
+    'beta-fetch',
+    'development-plan',
+    'development-sample',
+    'development-full',
+    'development-incremental',
+  ] as const)('produces no fellowship post-run stage options for the %s mode', (mode) => {
+    expect(resolveFellowshipPostRunOptions(mode, {})).toBeUndefined();
+  });
+
+  it('builds the fellowship post-run pipeline wiring the existing programs scripts in order', () => {
+    const stages = buildFellowshipPostRunStages('/tmp/fellowship-sweep');
+    expect(stages.map((stage) => stage.name)).toEqual([
+      'classification-backfill',
+      'global-regions-backfill',
+      'link-labels-backfill',
+      'accepting-applications-invariant',
+      'source-link-health',
+      'research-relevance-audit',
+      'freshness-audit',
+    ]);
+    expect(stages.every((stage) => stage.artifactPath?.startsWith('/tmp/fellowship-sweep/'))).toBe(
+      true,
+    );
+    expect(stages.find((stage) => stage.name === 'classification-backfill')?.args).toEqual([
+      '--cwd',
+      'server',
+      'programs:backfill-classification',
+      '--apply',
+      '--confirm-program-classification-backfill',
+      '--limit=10000',
+      '--output=/tmp/fellowship-sweep/fellowship-classification-backfill.json',
+    ]);
+    expect(stages.find((stage) => stage.name === 'link-labels-backfill')?.args).toEqual([
+      '--cwd',
+      'server',
+      'programs:backfill-link-labels',
+      '--apply',
+      '--confirm-program-link-label-backfill',
+      '--output=/tmp/fellowship-sweep/fellowship-link-labels-backfill.json',
+    ]);
+    expect(stages.find((stage) => stage.name === 'research-relevance-audit')?.args).toEqual([
+      '--cwd',
+      'server',
+      'programs:audit-research-relevance',
+      '--output=/tmp/fellowship-sweep/fellowship-research-relevance-audit.json',
+    ]);
+  });
+
+  it('omits the beta/prod-only catalog refresh stage in the Development fellowship sweep by default', () => {
+    const options = resolveFellowshipPostRunOptions('fellowship-development-full', {});
+    expect(options).toMatchObject({ refreshFellowshipCatalog: false });
+    expect(
+      buildFellowshipPostRunStages('/tmp/fellowship-sweep', options).map((stage) => stage.name),
+    ).not.toContain('catalog-refresh');
+  });
+
+  it('skips the catalog refresh in a Development sweep even when fully opted in', () => {
+    const options = resolveFellowshipPostRunOptions('fellowship-development-full', {
+      SCRAPER_SWEEP_REFRESH_FELLOWSHIPS: 'true',
+      SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET: 'beta',
+      SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN: 'restore-abc',
+    });
+    expect(sweepFellowshipRefreshTarget('fellowship-development-full')).toBeUndefined();
+    expect(fellowshipCatalogRefreshBlocker(options!)).toMatch(/beta or prod target/);
+    expect(
+      buildFellowshipPostRunStages('/tmp/fellowship-sweep', options).map((stage) => stage.name),
+    ).not.toContain('catalog-refresh');
+  });
+
+  it('rejects a refresh target that disagrees with the sweep target', () => {
+    expect(
+      fellowshipCatalogRefreshBlocker({
+        refreshFellowshipCatalog: true,
+        fellowshipRefreshTarget: 'prod',
+        fellowshipRefreshRestoreToken: 'restore-abc',
+        sweepRefreshTarget: 'beta',
+      }),
+    ).toMatch(/does not match/);
+  });
+
+  it('wires a beta-targeted catalog refresh without putting the restore token in argv', () => {
+    const refresh = buildFellowshipPostRunStages('/tmp/fellowship-sweep', {
+      refreshFellowshipCatalog: true,
+      fellowshipRefreshTarget: 'beta',
+      fellowshipRefreshRestoreToken: 'restore-abc',
+      sweepRefreshTarget: 'beta',
+    }).find((stage) => stage.name === 'catalog-refresh');
+    expect(refresh?.args).toEqual([
+      '--cwd',
+      'server',
+      'fellowships:refresh',
+      '--target=beta',
+      '--confirm=execute-fellowship-refresh-beta',
+      '--execute',
+      '--limit=50',
+    ]);
+    expect(refresh?.args.join(' ')).not.toContain('restore-abc');
+    expect(refresh?.secretEnv).toEqual({ FELLOWSHIP_REFRESH_RESTORE_TOKEN: 'restore-abc' });
+    expect(refresh?.artifactPath).toBeUndefined();
+  });
+
+  it('keeps catalog refresh disabled when opted in without a target or restore token', () => {
+    const optedInOnly = resolveFellowshipPostRunOptions('fellowship-development-full', {
+      SCRAPER_SWEEP_REFRESH_FELLOWSHIPS: 'true',
+    });
+    expect(fellowshipCatalogRefreshBlocker(optedInOnly!)).toMatch(/both required/);
+    expect(
+      buildFellowshipPostRunStages('/tmp/fellowship-sweep', optedInOnly).map((stage) => stage.name),
+    ).not.toContain('catalog-refresh');
+  });
+
+  it('keeps the one-shot official-source change-set replay opt-in', () => {
+    expect(resolveFellowshipPostRunOptions('fellowship-development-full', {})).toMatchObject({
+      applyOfficialSourceChangeSet: false,
+    });
+    expect(
+      buildFellowshipPostRunStages('/tmp/fellowship-sweep').map((stage) => stage.name),
+    ).not.toContain('official-sources-backfill');
+    const optedIn = resolveFellowshipPostRunOptions('fellowship-development-full', {
+      SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET: 'yes',
+    });
+    expect(
+      buildFellowshipPostRunStages('/tmp/fellowship-sweep', optedIn).find(
+        (stage) => stage.name === 'official-sources-backfill',
+      )?.args,
+    ).toEqual([
+      '--cwd',
+      'server',
+      'programs:backfill-official-sources',
+      '--apply',
+      '--confirm-program-official-source-backfill',
+      '--limit=10000',
+      '--output=/tmp/fellowship-sweep/fellowship-official-sources-backfill.json',
+    ]);
+  });
+
+  it('fails a fellowship stage whose declared report artifact is missing or malformed', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fellowship-report-contract-'));
+    const missing = path.join(directory, 'missing.json');
+    expect(fellowshipPostRunArtifactError(missing)).toMatch(/was not written/);
+    const malformed = path.join(directory, 'malformed.json');
+    fs.writeFileSync(malformed, 'not json');
+    expect(fellowshipPostRunArtifactError(malformed)).toMatch(/not valid JSON/);
+    const valid = path.join(directory, 'valid.json');
+    fs.writeFileSync(valid, JSON.stringify({ scanned: 1 }));
+    expect(fellowshipPostRunArtifactError(valid)).toBeUndefined();
+  });
+
+  it('derives the fellowship post-run plan from a single registry with unique artifacts', () => {
+    const registryNames = FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.map(
+      (definition) => definition.name,
+    );
+    const alwaysOnNames = FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
+      definition.isEnabled({}),
+    ).map((definition) => definition.name);
+    expect(
+      buildFellowshipPostRunStages('/tmp/fellowship-sweep').map((stage) => stage.name),
+    ).toEqual(alwaysOnNames);
+    expect(new Set(FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.map((d) => d.artifactName)).size).toBe(
+      registryNames.length,
+    );
+    for (const definition of FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS) {
+      expect(definition.buildArgs({}).some((arg) => arg.startsWith('--output'))).toBe(false);
+    }
+  });
 
   it('requires an exact Development database and local unprefixed Meilisearch for writes', () => {
     expect(() =>
@@ -535,6 +753,24 @@ describe('runScraperSweep', () => {
         MEILISEARCH_HOST: 'https://search.example.test',
       }),
     ).toThrow(/non-local/);
+  });
+
+  it('holds the fellowship sweep to the same Development guards as the research sweep', () => {
+    expect(() =>
+      validateScraperSweepEnvironment('fellowship-development-full', {
+        SCRAPER_ENV: 'development',
+        MONGODBURL: 'mongodb+srv://example.invalid/Development',
+        ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+        MEILISEARCH_HOST: 'http://127.0.0.1:7700',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateScraperSweepEnvironment('fellowship-development-full', {
+        SCRAPER_ENV: 'development',
+        MONGODBURL: 'mongodb+srv://example.invalid/Development',
+        MEILISEARCH_HOST: 'http://127.0.0.1:7700',
+      }),
+    ).toThrow(/ALLOW_NON_PROD_SCRAPER_WRITES/);
   });
 
   it('requires Beta writes and never accepts a Production target', () => {

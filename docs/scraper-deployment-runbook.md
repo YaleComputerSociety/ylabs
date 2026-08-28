@@ -494,7 +494,9 @@ yarn --cwd server fellowships:refresh --target=beta --limit=50
 ```
 
 Review the aggregate created, updated, unchanged, review-required, and reopened counts plus the private review queue before execute mode.
-Execute mode additionally requires `--execute --confirm=execute-fellowship-refresh-beta --restore-token=<restore-id>`.
+Execute mode additionally requires `--execute --confirm=execute-fellowship-refresh-beta` and a restore token, supplied either as `--restore-token=<restore-id>` or in the `FELLOWSHIP_REFRESH_RESTORE_TOKEN` environment variable.
+Prefer the environment variable so the token never appears in the host process table; the sweep's `catalog-refresh` stage passes it that way.
+Because the environment value satisfies the same per-run backup attestation as the flag, keep it out of any persisted `.env` or shell profile and set it only for the run you have just taken a backup for.
 Production requires the corresponding `prod` target and confirmation, plus `--confirm-prod=confirm-production-fellowship-refresh`.
 Never put a restore token in scheduler configuration committed to this repository.
 Use the secret manager provided by the deployment platform and rotate the token after the verified rollback window closes.

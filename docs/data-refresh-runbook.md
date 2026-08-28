@@ -326,6 +326,15 @@ The incremental command runs the same sources exhaustively, reuses the fetch cac
 It differs by honoring WorkPlanner freshness skips instead of re-fetching every entity, so already-fresh entities are skipped and routine sweeps stay cheap.
 Reserve the full sweep for periodic deep coverage refreshes where you intentionally re-fetch every eligible entity.
 
+To refresh only the `/programs` fellowship catalog, run the fellowship engine instead of the research engine:
+
+```bash
+yarn scrape:development:fellowships:full
+```
+
+That command runs only the fellowship catalog sources and the fellowship post-run chain (the `programs:*` backfills plus the two report-only `programs:audit-*` stages), so it never touches `ResearchEntity` data.
+Both of its opt-in stages stay off unless you set their flags: `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` to replay the curated official-source change-set, and `SCRAPER_SWEEP_REFRESH_FELLOWSHIPS=1` (plus a target and restore token) for `fellowships:refresh`, which no Development sweep can satisfy and which therefore stays skipped here.
+
 Use targeted single-source commands while repairing a failed source:
 
 ```bash
