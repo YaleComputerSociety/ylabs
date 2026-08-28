@@ -249,7 +249,9 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
     expect(applied.mode).toBe('apply');
     expect(applied.deletedResearchEntities).toBe(1);
-    expect(applied.deletedDependents).toMatchObject({ signals: 1 });
+    // Keyed `collection.field` so the reference field used for each cascade is
+    // visible in operator output; a wrong key shows up as a missing entry.
+    expect(applied.deletedDependents).toMatchObject({ 'signals.researchEntityId': 1 });
     expect(deleted).toEqual([[String(eligibleId)]]);
 
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(0);
