@@ -19,6 +19,7 @@ import {
   stripLeadingSectionHeadingChrome,
 } from '../../utils/descriptionHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
 import { classifyProgram } from '../../services/programClassifier';
 
@@ -68,13 +69,6 @@ export interface DepartmentUndergradResearchScraperDeps {
 }
 
 export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradResearchPageConfig[] = [
-  {
-    key: 'physics',
-    url: 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
-    department: 'Physics',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'physics-project-list',
-  },
   {
     key: 'chemistry',
     url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
@@ -779,14 +773,31 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     });
     let totalObs = 0;
     let totalEntities = 0;
+    let failedPages = 0;
     const summaries: string[] = [];
 
     const pages = this.pageConfigs.filter((page) => !only || only.has(page.key.toLowerCase()));
     for (const page of pages) {
       if (totalEntities >= limit) break;
       ctx.log(`Fetching ${page.url}`);
-      const html = await this.fetchHtml(page.url, ctx.options.useCache);
-      const parsed = parsePage(html, page);
+      let html: string;
+      try {
+        html = await this.fetchHtml(page.url, ctx.options.useCache);
+      } catch (err: unknown) {
+        failedPages += 1;
+        ctx.log(`[${page.key}] fetch failed, skipping page: ${sanitizeLogValue(err)}`);
+        summaries.push(`${page.key}=fetch-failed`);
+        continue;
+      }
+      let parsed: DepartmentUndergradResearchRecord[];
+      try {
+        parsed = parsePage(html, page);
+      } catch (err: unknown) {
+        failedPages += 1;
+        ctx.log(`[${page.key}] parse failed, skipping page: ${sanitizeLogValue(err)}`);
+        summaries.push(`${page.key}=parse-failed`);
+        continue;
+      }
       const selected = parsed.slice(offset, offset + Math.max(0, limit - totalEntities));
       const observations = departmentUndergradResearchRecordsToObservations(selected);
       if (observations.length > 0) await ctx.emit(observations);
@@ -795,10 +806,11 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       summaries.push(`${page.key}=${selected.length}`);
     }
 
+    const failureNote = failedPages > 0 ? ` (${failedPages} page(s) skipped after fetch/parse failure)` : '';
     return {
       observationCount: totalObs,
       entitiesObserved: totalEntities,
-      notes: `Department undergraduate research evidence rows: ${summaries.join(', ')}`,
+      notes: `Department undergraduate research evidence rows: ${summaries.join(', ')}${failureNote}`,
     };
   }
 }

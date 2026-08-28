@@ -291,7 +291,7 @@ describe('departmentUndergradResearchScraper', () => {
   it('parses Physics project rows into source-backed lab access records', () => {
     const records = parsePhysicsUndergradResearchPage(PHYSICS_HTML, {
       key: 'physics',
-      url: 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+      url: 'https://physics.yale.edu/undergrad',
       department: 'Physics',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'physics-project-list',
@@ -329,7 +329,7 @@ describe('departmentUndergradResearchScraper', () => {
       `,
       {
         key: 'physics',
-        url: 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+        url: 'https://physics.yale.edu/undergrad',
         department: 'Physics',
         school: 'Yale Faculty of Arts and Sciences',
         parser: 'physics-project-list',
@@ -1074,6 +1074,47 @@ describe('departmentUndergradResearchScraper', () => {
       new Set(['https://physics.yale.edu/undergrad']),
     );
     expect(scraper.name).toBe(DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE);
+  });
+
+  it('skips a page whose fetch fails and still processes the remaining pages (#2171)', async () => {
+    const scraper = new DepartmentUndergradResearchScraper({
+      pageConfigs: [
+        {
+          key: 'physics',
+          url: 'https://physics.yale.edu/dead-page',
+          department: 'Physics',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'physics-project-list',
+        },
+        {
+          key: 'chemistry',
+          url: 'https://chem.yale.edu/undergrad',
+          department: 'Chemistry',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'general-guidance',
+          title: 'Chemistry Undergraduate Research',
+        },
+      ],
+      fetchHtml: async (url) => {
+        if (url.includes('physics')) {
+          const error = new Error('Request failed with status code 404') as Error & { response?: { status: number } };
+          error.response = { status: 404 };
+          throw error;
+        }
+        return CHEM_HTML;
+      },
+    });
+    const emitted: ObservationInput[] = [];
+
+    const result = await scraper.run(buildContext(scraper, emitted));
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.observationCount).toBe(emitted.length);
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(new Set(emitted.map((obs) => obs.sourceUrl))).toEqual(
+      new Set(['https://chem.yale.edu/undergrad']),
+    );
+    expect(result.notes).toContain('1 page(s) skipped after fetch/parse failure');
   });
 
   it('rejects unsafe runtime bounds before fetching department pages', async () => {
