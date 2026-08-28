@@ -187,9 +187,7 @@ describe('sortGrantsByRecency / maxStartDate', () => {
 
 describe('federalPiSlug', () => {
   it('keys the shell slug on the resolved user id', () => {
-    expect(federalPiSlug('507f1f77bcf86cd799439011')).toBe(
-      'federal-pi-507f1f77bcf86cd799439011',
-    );
+    expect(federalPiSlug('507f1f77bcf86cd799439011')).toBe('federal-pi-507f1f77bcf86cd799439011');
   });
 });
 
@@ -250,7 +248,9 @@ describe('FederalAwardScraper.run', () => {
   });
 
   it('skips awards with no inline PI (fail closed)', async () => {
-    const fetchAgencyPage = vi.fn().mockResolvedValueOnce({ awards: [NO_PI_AWARD], hasNext: false });
+    const fetchAgencyPage = vi
+      .fn()
+      .mockResolvedValueOnce({ awards: [NO_PI_AWARD], hasNext: false });
     const resolveResearcherId = vi.fn(async () => ({ status: 'absent' as const }));
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
@@ -328,7 +328,9 @@ describe('FederalAwardScraper.run', () => {
       .mockResolvedValue({ status: 'canonical', slug: 'dept-physics-john-harris' });
     const scraper = new FederalAwardScraper({
       fetchAgencyPage: fetchAgencyPage as any,
-      resolveResearcherId: fakeUserFinder([{ _id: '507f1f77bcf86cd799439011', fname: 'John', lname: 'Harris' }]) as any,
+      resolveResearcherId: fakeUserFinder([
+        { _id: '507f1f77bcf86cd799439011', fname: 'John', lname: 'Harris' },
+      ]) as any,
       researchHomeResolver,
       agencies: ONE_AGENCY,
       timePeriod: TIME_PERIOD,

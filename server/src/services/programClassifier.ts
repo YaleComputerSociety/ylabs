@@ -66,7 +66,8 @@ function baseFundingClassification(): ProgramClassification {
     studentFacingCategory: 'Funding after mentor',
     requiresMentorBeforeApply: true,
     mentorMatching: false,
-    bestNextStep: 'Identify a research home or mentor, then use this funding record to plan the application.',
+    bestNextStep:
+      'Identify a research home or mentor, then use this funding record to plan the application.',
     prepSteps: ['Research plan', 'Faculty mentor or sponsor', 'Official application'],
   };
 }
@@ -80,7 +81,8 @@ function archiveReviewClassification(): ProgramClassification {
     requiresMentorBeforeApply: false,
     mentorMatching: false,
     undergraduateOnly: false,
-    bestNextStep: 'Review carefully before relying on this record; it may not be an undergraduate option.',
+    bestNextStep:
+      'Review carefully before relying on this record; it may not be an undergraduate option.',
     prepSteps: ['Eligibility check', 'Official source review'],
   };
 }
@@ -156,7 +158,12 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       compensationSummary: 'Stipend plus housing/board',
       programDates: 'Summer',
       bestNextStep: 'Secure a Yale lab commitment before applying.',
-      prepSteps: ['Yale lab commitment', 'Research proposal', 'Mentor support', 'Official application'],
+      prepSteps: [
+        'Yale lab commitment',
+        'Research proposal',
+        'Mentor support',
+        'Official application',
+      ],
     });
   }
 
@@ -169,7 +176,8 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       mentorMatching: true,
       compensationSummary: 'Summer stipend',
       programDates: 'Summer',
-      bestNextStep: 'Apply to the Wu Tsai undergraduate fellowship and identify possible mentors if listed.',
+      bestNextStep:
+        'Apply to the Wu Tsai undergraduate fellowship and identify possible mentors if listed.',
       prepSteps: ['Interest statement', 'Potential mentor fit', 'Official application'],
     });
   }
@@ -203,7 +211,9 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\bycmd\b|center for molecular discovery|summer undergraduate internships/.test(identityLower)) {
+  if (
+    /\bycmd\b|center for molecular discovery|summer undergraduate internships/.test(identityLower)
+  ) {
     return structuredProgram({
       programCategory: 'CENTER_INTERNSHIP',
       programKind: 'CENTER_INTERNSHIP',
@@ -223,7 +233,8 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       entryMode: 'DIRECT_FACULTY_MATCHING',
       studentFacingCategory: 'Faculty matching program',
       mentorMatching: true,
-      bestNextStep: 'Apply to the CS research internship so the committee can consider faculty matches.',
+      bestNextStep:
+        'Apply to the CS research internship so the committee can consider faculty matches.',
       prepSteps: ['Research interests', 'Relevant coursework', 'Official application'],
     });
   }
@@ -248,7 +259,8 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       undergraduateOnly: true,
       yaleCollegeOnly: true,
       programDates: 'Summer',
-      bestNextStep: 'Find a Yale faculty mentor and prepare a proposed summer research project before applying.',
+      bestNextStep:
+        'Find a Yale faculty mentor and prepare a proposed summer research project before applying.',
       prepSteps: ['Faculty mentor', 'Project proposal', 'Mentor letter', 'Official application'],
     };
   }
@@ -261,7 +273,8 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       undergraduateOnly: true,
       yaleCollegeOnly: true,
       programDates: 'Summer',
-      bestNextStep: 'Develop an independent research plan and faculty support before applying for travel funding.',
+      bestNextStep:
+        'Develop an independent research plan and faculty support before applying for travel funding.',
       prepSteps: ['Independent research plan', 'Faculty support', 'Budget', 'Official application'],
     };
   }
@@ -277,7 +290,11 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     };
   }
 
-  if (/senior (?:research|essay)|senior project|mellon senior|residential college|richter/.test(identityLower)) {
+  if (
+    /senior (?:research|essay)|senior project|mellon senior|residential college|richter/.test(
+      identityLower,
+    )
+  ) {
     return {
       ...baseFundingClassification(),
       programKind: 'SENIOR_THESIS_FUNDING',

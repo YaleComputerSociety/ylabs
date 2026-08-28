@@ -181,7 +181,9 @@ export function parseNehAmount(s: string | undefined | null): number | undefined
 
 export function parseYear(s: string | undefined | null): number | undefined {
   if (!s) return undefined;
-  const m = String(s).trim().match(/(\d{4})/);
+  const m = String(s)
+    .trim()
+    .match(/(\d{4})/);
   if (!m) return undefined;
   const year = Number(m[1]);
   return Number.isFinite(year) ? year : undefined;
@@ -546,7 +548,13 @@ export class NehGrantScraper implements IScraper {
 
       const slug =
         canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
-      const coPiObs = await buildCoPiObservations(group, slug, group.fullName, sourceUrl, resolverDeps);
+      const coPiObs = await buildCoPiObservations(
+        group,
+        slug,
+        group.fullName,
+        sourceUrl,
+        resolverDeps,
+      );
       if (coPiObs.length > 0) {
         await ctx.emit(coPiObs);
         totalObs += coPiObs.length;

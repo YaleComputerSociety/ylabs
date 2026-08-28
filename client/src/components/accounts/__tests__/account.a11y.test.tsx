@@ -46,7 +46,13 @@ describe('account dashboard accessibility', () => {
         return Promise.resolve({
           data: {
             savedResearchEntities: [
-              { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: ['CS'] },
+              {
+                _id: 'id1',
+                slug: 'owner-lab',
+                name: 'Owner Lab',
+                kind: 'lab',
+                departments: ['CS'],
+              },
               { _id: 'id2', slug: 'other-lab', name: 'Other Lab', kind: 'center', departments: [] },
             ],
           },

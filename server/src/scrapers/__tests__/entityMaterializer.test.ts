@@ -66,9 +66,7 @@ describe('materializedFieldValue research-entity name hygiene', () => {
   });
 
   it('rejects a kind observation value outside the researchGroupKinds enum, keeping the existing value (#observation-array-integrity)', () => {
-    expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', 'lab')).toBe(
-      'lab',
-    );
+    expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', 'lab')).toBe('lab');
     expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', undefined)).toBe(
       undefined,
     );
@@ -78,9 +76,9 @@ describe('materializedFieldValue research-entity name hygiene', () => {
   });
 
   it('rejects an entityType observation value outside the researchEntityTypes enum, keeping the existing value (#observation-array-integrity)', () => {
-    expect(
-      materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH', 'LAB'),
-    ).toBe('LAB');
+    expect(materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH', 'LAB')).toBe(
+      'LAB',
+    );
     expect(
       materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH_AREA', 'LAB'),
     ).toBe('FACULTY_RESEARCH_AREA');

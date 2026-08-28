@@ -47,7 +47,9 @@ describe('isDirectoryIndexChromeText', () => {
 describe('isAcademicAppointmentDescription', () => {
   it('flags a short appointment-only title fragment', () => {
     expect(
-      isAcademicAppointmentDescription('Jane Doe is Associate Professor of Biomedical Engineering.'),
+      isAcademicAppointmentDescription(
+        'Jane Doe is Associate Professor of Biomedical Engineering.',
+      ),
     ).toBe(true);
   });
 
@@ -71,17 +73,21 @@ describe('isMidCvContinuationOpener', () => {
       ),
     ).toBe(true);
     expect(
-      isMidCvContinuationOpener('After completing his fellowship, he joined Geneva University Hospital.'),
+      isMidCvContinuationOpener(
+        'After completing his fellowship, he joined Geneva University Hospital.',
+      ),
     ).toBe(true);
     expect(
-      isMidCvContinuationOpener('In 2018, he joined the Department of Neuroscience at Yale University.'),
+      isMidCvContinuationOpener(
+        'In 2018, he joined the Department of Neuroscience at Yale University.',
+      ),
     ).toBe(true);
   });
 
   it('does not flag a genuine research-focused description', () => {
-    expect(isMidCvContinuationOpener('Studies chromatin dynamics and nuclear envelope assembly.')).toBe(
-      false,
-    );
+    expect(
+      isMidCvContinuationOpener('Studies chromatin dynamics and nuclear envelope assembly.'),
+    ).toBe(false);
     expect(isMidCvContinuationOpener('')).toBe(false);
     expect(isMidCvContinuationOpener(undefined)).toBe(false);
   });
@@ -426,7 +432,8 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       entityType: 'CENTER',
       kind: 'center',
       fullDescription: PROGRAM_DIRECTOR_BIO,
-      shortDescription: 'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication.',
+      shortDescription:
+        'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication.',
     };
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(program);
 
@@ -469,7 +476,9 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     };
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
 
-    expect(sanitized.shortDescription).toBe('Studies coral reef resilience under ocean acidification.');
+    expect(sanitized.shortDescription).toBe(
+      'Studies coral reef resilience under ocean acidification.',
+    );
   });
 
   it('applies the biography/advising guard to faculty-research entities too (#1526)', () => {
@@ -949,10 +958,14 @@ describe('isCredentialOrTitleLeadBiography', () => {
 
   it('flags a name-lead opening naming a director/lecturer/fellow title (#1638)', () => {
     expect(
-      isCredentialOrTitleLeadBiography('William Casey King is a senior lecturer at the Jackson School.'),
+      isCredentialOrTitleLeadBiography(
+        'William Casey King is a senior lecturer at the Jackson School.',
+      ),
     ).toBe(true);
     expect(
-      isCredentialOrTitleLeadBiography('Stephen R. Latham, JD, PhD is Director of the Yale Center for Bioethics.'),
+      isCredentialOrTitleLeadBiography(
+        'Stephen R. Latham, JD, PhD is Director of the Yale Center for Bioethics.',
+      ),
     ).toBe(true);
   });
 
@@ -1071,7 +1084,9 @@ describe('revoiceFirstPersonResearchLead', () => {
       'Decreases preventable blindness. This team employs quantitative and qualitative methods.',
     );
     expect(
-      revoiceFirstPersonResearchLead('Our research group seeks to understand autoimmune processes.'),
+      revoiceFirstPersonResearchLead(
+        'Our research group seeks to understand autoimmune processes.',
+      ),
     ).toBe('This research group seeks to understand autoimmune processes.');
     expect(revoiceFirstPersonResearchLead('Our laboratory develops in vivo imaging.')).toBe(
       'This laboratory develops in vivo imaging.',
@@ -1123,9 +1138,9 @@ describe('revoiceFirstPersonResearchLead', () => {
   });
 
   it('re-voices "I\'m"/"I\'ve" contractions, capitalized only at a true sentence start (#1745)', () => {
-    expect(revoiceFirstPersonResearchLead("I'm a chemist, and I've published widely on catalysis.")).toBe(
-      "This researcher is a chemist, and this researcher has published widely on catalysis.",
-    );
+    expect(
+      revoiceFirstPersonResearchLead("I'm a chemist, and I've published widely on catalysis."),
+    ).toBe('This researcher is a chemist, and this researcher has published widely on catalysis.');
   });
 
   it('drops a leading personal-page greeting only when substantive copy remains', () => {
@@ -1147,9 +1162,11 @@ describe('revoiceFirstPersonResearchLead', () => {
     expect(revoiceFirstPersonResearchLead(undefined)).toBe('');
   });
 
-  it('agrees the demonstrative with the noun phrase\'s actual head noun before a copula, not the first captured word (#1806)', () => {
+  it("agrees the demonstrative with the noun phrase's actual head noun before a copula, not the first captured word (#1806)", () => {
     expect(
-      revoiceFirstPersonResearchLead('My research interests are broad and span several disciplines.'),
+      revoiceFirstPersonResearchLead(
+        'My research interests are broad and span several disciplines.',
+      ),
     ).toBe('These research interests are broad and span several disciplines.');
     expect(
       revoiceFirstPersonResearchLead(
@@ -1253,7 +1270,9 @@ describe('repairSubjectlessResearchLead', () => {
       'Research interests include machine learning.',
     );
     expect(
-      repairSubjectlessResearchLead("The Kramer-Bottiglio Lab's research investigates soft robots."),
+      repairSubjectlessResearchLead(
+        "The Kramer-Bottiglio Lab's research investigates soft robots.",
+      ),
     ).toBe("The Kramer-Bottiglio Lab's research investigates soft robots.");
     expect(repairSubjectlessResearchLead('Research in the Altman Lab centers on catalysis.')).toBe(
       'Research in the Altman Lab centers on catalysis.',
@@ -1283,7 +1302,9 @@ describe('isPersonBiographyOrAdvisingDescription', () => {
 
   it('flags a biography with a slash-separated title', () => {
     expect(
-      isPersonBiographyOrAdvisingDescription('Jane Doe is the Founding/Senior Professor of Genetics.'),
+      isPersonBiographyOrAdvisingDescription(
+        'Jane Doe is the Founding/Senior Professor of Genetics.',
+      ),
     ).toBe(true);
   });
 
@@ -1305,7 +1326,11 @@ describe('isPersonBiographyOrAdvisingDescription', () => {
 
 describe('sanitizeResearchHomeSelfReferenceText', () => {
   it('rewrites stray "the lab" body copy to the center noun for CENTER entities (#807)', () => {
-    const center = { name: 'Yale Center for Genome Analysis', entityType: 'CENTER', kind: 'center' };
+    const center = {
+      name: 'Yale Center for Genome Analysis',
+      entityType: 'CENTER',
+      kind: 'center',
+    };
     expect(
       sanitizeResearchHomeSelfReferenceText(
         'The Yale Center for Genome Analysis specializes in genomics. The lab offers DNA sequencing services.',
@@ -1360,7 +1385,11 @@ describe('sanitizeResearchHomeSelfReferenceText', () => {
   it('leaves LAB and faculty-research entities untouched', () => {
     const labText = 'The lab studies neurons. The lab offers rotations.';
     expect(
-      sanitizeResearchHomeSelfReferenceText(labText, { name: 'Smith Lab', entityType: 'LAB', kind: 'lab' }),
+      sanitizeResearchHomeSelfReferenceText(labText, {
+        name: 'Smith Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+      }),
     ).toBe(labText);
     expect(
       sanitizeResearchHomeSelfReferenceText(labText, {
@@ -1385,7 +1414,8 @@ describe('sanitizeResearchHomeSelfReferenceCopyFields', () => {
       entityType: 'CENTER',
       kind: 'center',
       shortDescription: 'The lab offers sequencing.',
-      fullDescription: 'Yale Forests manages forestland. The lab provides educational opportunities.',
+      fullDescription:
+        'Yale Forests manages forestland. The lab provides educational opportunities.',
     });
     expect(sanitized.shortDescription).toBe('The center offers sequencing.');
     expect(sanitized.fullDescription).toBe(
@@ -1453,7 +1483,11 @@ describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1
         'The Mammalian Evolutionary Morphology Lab studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
       shortDescription:
         'Studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
-      researchAreas: ['Mammalian evolutionary morphology', 'Functional morphology', 'Primate evolution'],
+      researchAreas: [
+        'Mammalian evolutionary morphology',
+        'Functional morphology',
+        'Primate evolution',
+      ],
     };
     expect(sanitizeServedResearchEntityCopyFields(entity)).toBe(entity);
   });

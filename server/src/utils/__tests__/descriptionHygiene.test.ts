@@ -468,10 +468,13 @@ describe('descriptionHygiene staff-contact-block fail-closed (#926)', () => {
     'Jordan Avery, Program Coordinator, Yale Whitney Humanities Center P.O. Box 208298 New Haven, Conn 06520-8298',
   ];
 
-  it.each(CONTACT_BLOCKS)('flags a staff-contact/mailing-address block and rejects it: %s', (block) => {
-    expect(isStaffContactBlockText(block)).toBe(true);
-    expect(sanitizeCatalogDescription(block)).toBe('');
-  });
+  it.each(CONTACT_BLOCKS)(
+    'flags a staff-contact/mailing-address block and rejects it: %s',
+    (block) => {
+      expect(isStaffContactBlockText(block)).toBe(true);
+      expect(sanitizeCatalogDescription(block)).toBe('');
+    },
+  );
 
   it('keeps a genuine description that merely names a director', () => {
     const clean =
@@ -525,7 +528,10 @@ describe('descriptionHygiene provenance-hedge strip (#1053)', () => {
     ['Paid internship when source-confirmed', 'Paid internship'],
     ['Summer stipend when source-confirmed', 'Summer stipend'],
     ['Stipend plus housing/board when source-confirmed', 'Stipend plus housing/board'],
-    ['Academic-year and summer research support when source-confirmed', 'Academic-year and summer research support'],
+    [
+      'Academic-year and summer research support when source-confirmed',
+      'Academic-year and summer research support',
+    ],
   ])('strips the internal hedge but keeps the figure: %s', (before, after) => {
     expect(stripProvenanceHedge(before)).toBe(after);
     expect(sanitizeCatalogDescription(before)).toBe(after);
@@ -602,7 +608,9 @@ describe('descriptionHygiene read-time mid-sentence truncation repair (#671)', (
   });
 
   it('is a no-op on a long value that already ends on terminal punctuation', () => {
-    const clean = buildLongTruncatedTail('Applicants identify up to three mentors before the deadline.');
+    const clean = buildLongTruncatedTail(
+      'Applicants identify up to three mentors before the deadline.',
+    );
     expect(repairMidSentenceTruncation(clean)).toBe(clean.replace(/\s+/g, ' ').trim());
   });
 
@@ -996,7 +1004,8 @@ describe('descriptionHygiene trailing research-home affiliation strip (#1616)', 
   });
 
   it('never truncates a mid-sentence "at <University>" that a research clause follows', () => {
-    const prose = 'The Lin Lab at Yale University focuses on the biology of stem cells and RNA regulation.';
+    const prose =
+      'The Lin Lab at Yale University focuses on the biology of stem cells and RNA regulation.';
     expect(stripTrailingResearchHomeAffiliationClause(prose)).toBe(prose);
   });
 
@@ -1362,7 +1371,13 @@ describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {
     expect(
       isStudiesResearchAreaEchoDescription(
         'Studies biological physics, including statistical physics, immunology, protein science, and machine learning.',
-        ['Biological Physics', 'Statistical Physics', 'Immunology', 'Protein Science', 'Machine Learning'],
+        [
+          'Biological Physics',
+          'Statistical Physics',
+          'Immunology',
+          'Protein Science',
+          'Machine Learning',
+        ],
       ),
     ).toBe(true);
   });
@@ -1383,11 +1398,14 @@ describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {
 
   it('does not flag without a researchAreas list, preserving isResearchAreaEchoDescription callers', () => {
     expect(
-      isStudiesResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.', undefined),
+      isStudiesResearchAreaEchoDescription(
+        'Studies HIV Infections, Veterans, and Aging.',
+        undefined,
+      ),
     ).toBe(false);
-    expect(isStudiesResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.', [])).toBe(
-      false,
-    );
+    expect(
+      isStudiesResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.', []),
+    ).toBe(false);
   });
 
   it('keeps genuine prose that opens with a synthesis verb but is not a chip echo', () => {
@@ -1412,10 +1430,10 @@ describe('descriptionHygiene "Studies <chips>" area echo (#1466)', () => {
 
   it('keeps a real one-liner that is not grounded in the supplied researchAreas', () => {
     expect(
-      isStudiesResearchAreaEchoDescription('The Takyar lab studies liver fibrosis and vascular biology.', [
-        'Liver Fibrosis',
-        'Vascular Biology',
-      ]),
+      isStudiesResearchAreaEchoDescription(
+        'The Takyar lab studies liver fibrosis and vascular biology.',
+        ['Liver Fibrosis', 'Vascular Biology'],
+      ),
     ).toBe(false);
   });
 });
@@ -1457,7 +1475,9 @@ describe('isBareLabelOrTopicEnumerationText provenance-independent bare-list sha
 
   it('keeps a short three-item "Studies <A>, <B>, and <C>." sentence', () => {
     expect(
-      isBareLabelOrTopicEnumerationText('Studies Condensed Matter Physics, Stochastic Processes, and climate dynamics.'),
+      isBareLabelOrTopicEnumerationText(
+        'Studies Condensed Matter Physics, Stochastic Processes, and climate dynamics.',
+      ),
     ).toBe(false);
   });
 
@@ -1885,9 +1905,9 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
   });
 
   it('leaves genuine prose without a repeated citation-author shape untouched', () => {
-    expect(isCitationAuthorListDumpText('Studies cardiovascular development in zebrafish embryos.')).toBe(
-      false,
-    );
+    expect(
+      isCitationAuthorListDumpText('Studies cardiovascular development in zebrafish embryos.'),
+    ).toBe(false);
   });
 
   it('fails the fullDescription hygiene chain closed on a citation-list dump', () => {
@@ -2203,7 +2223,8 @@ describe('isNonSelfContainedShortDescription enumerated-strand and welded-method
   });
 
   it('keeps a summary that mentions a single research line without the enumerating "One ... of" frame', () => {
-    const named = 'Investigates the regulation of cell proliferation and neuronal migration in the developing cortex.';
+    const named =
+      'Investigates the regulation of cell proliferation and neuronal migration in the developing cortex.';
     expect(isNonSelfContainedShortDescription(named)).toBe(false);
   });
 });
@@ -2224,7 +2245,8 @@ describe('isNonSelfContainedShortDescription role/title-header opener guard (#17
   });
 
   it('keeps a real research sentence that happens to use "serves as" as connective content', () => {
-    const text = 'Develops a computational model that serves as a testbed for new diagnostic algorithms.';
+    const text =
+      'Develops a computational model that serves as a testbed for new diagnostic algorithms.';
     expect(isNonSelfContainedShortDescription(text)).toBe(false);
   });
 
@@ -2396,8 +2418,7 @@ describe('isStudiesTemplateGlueMalformed non-topic enumeration guard (#1681)', (
   });
 
   it('flags a publications-citation list enumerated as topics', () => {
-    const text =
-      'Studies Prabhakar et al. 2008, Dutrow et al. 2019, and Cotney et al. 2012.';
+    const text = 'Studies Prabhakar et al. 2008, Dutrow et al. 2019, and Cotney et al. 2012.';
     expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
     expect(sanitizeResearchEntityShortDescription(text)).toBe('');
   });
@@ -2425,9 +2446,9 @@ describe('collapseDoubledConjunction (#1681)', () => {
   });
 
   it('repairs the doubled conjunction at read time via sanitizeResearchEntityShortDescription', () => {
-    expect(sanitizeResearchEntityShortDescription('Studies Algorithms, Data, and and Market Design.')).toBe(
-      'Studies Algorithms, Data, and Market Design.',
-    );
+    expect(
+      sanitizeResearchEntityShortDescription('Studies Algorithms, Data, and and Market Design.'),
+    ).toBe('Studies Algorithms, Data, and Market Design.');
   });
 
   it('leaves a single conjunction untouched', () => {
@@ -2520,11 +2541,9 @@ describe('descriptionHygiene page-layout-referential caveat strip (#994)', () =>
   });
 
   it('leaves ordinary research prose untouched', () => {
-    const clean =
-      'The lab studies protein folding and left-handed helices in structural biology.';
+    const clean = 'The lab studies protein folding and left-handed helices in structural biology.';
     expect(stripPageLayoutReferentialSentences(clean)).toBe(clean);
-    const rightHand =
-      'The study measured activity in the right hemisphere of the brain.';
+    const rightHand = 'The study measured activity in the right hemisphere of the brain.';
     expect(stripPageLayoutReferentialSentences(rightHand)).toBe(rightHand);
   });
 
@@ -2568,9 +2587,7 @@ describe('descriptionHygiene repeated-sentence collapse (#994)', () => {
 
   it('is a no-op for empty or single-sentence input', () => {
     expect(collapseRepeatedSentences('')).toBe('');
-    expect(collapseRepeatedSentences('Only one sentence here.')).toBe(
-      'Only one sentence here.',
-    );
+    expect(collapseRepeatedSentences('Only one sentence here.')).toBe('Only one sentence here.');
   });
 });
 
@@ -2669,8 +2686,7 @@ describe('descriptionHygiene shortDescription first-person voice fail-closed (#1
 describe('stripUrlTopicsFromCardSummary + shortDescription URL-topic leak (#1079)', () => {
   const REPORTED =
     'Studies https://www.ncbi.nlm.nih.gov/myncbi/hong-bo.zhao.1/bibliography/public/, Hearing, Cochlea, Tinnitus, Genetics, and Connexins and lens biology.';
-  const REPAIRED =
-    'Studies Hearing, Cochlea, Tinnitus, Genetics, and Connexins and lens biology.';
+  const REPAIRED = 'Studies Hearing, Cochlea, Tinnitus, Genetics, and Connexins and lens biology.';
 
   it('strips a leading URL topic and preserves the remaining clean topics', () => {
     expect(stripUrlTopicsFromCardSummary(REPORTED)).toBe(REPAIRED);
@@ -2679,14 +2695,16 @@ describe('stripUrlTopicsFromCardSummary + shortDescription URL-topic leak (#1079
 
   it('strips a mid-list URL topic and repairs the oxford list', () => {
     expect(
-      stripUrlTopicsFromCardSummary('Studies Hearing, https://x.com/foo/bar, Cochlea, and Genetics.'),
+      stripUrlTopicsFromCardSummary(
+        'Studies Hearing, https://x.com/foo/bar, Cochlea, and Genetics.',
+      ),
     ).toBe('Studies Hearing, Cochlea, and Genetics.');
   });
 
   it('strips a trailing URL topic and re-terminates the sentence', () => {
-    expect(
-      stripUrlTopicsFromCardSummary('Studies Hearing, Cochlea, and https://x.com/foo.'),
-    ).toBe('Studies Hearing, Cochlea.');
+    expect(stripUrlTopicsFromCardSummary('Studies Hearing, Cochlea, and https://x.com/foo.')).toBe(
+      'Studies Hearing, Cochlea.',
+    );
     expect(stripUrlTopicsFromCardSummary('Studies Hearing and https://x.com/foo.')).toBe(
       'Studies Hearing.',
     );
@@ -2857,7 +2875,9 @@ describe('descriptionHygiene bibliographic-reference artifact strip (#415)', () 
       stripBibliographicReferenceArtifacts(
         'The Smith Lab studies gene regulation and shares open protocols at protocols.io with the wider community.',
       ),
-    ).toBe('The Smith Lab studies gene regulation and shares open protocols with the wider community.');
+    ).toBe(
+      'The Smith Lab studies gene regulation and shares open protocols with the wider community.',
+    );
   });
 
   it('is a no-op on genuine prose with abbreviations and inequalities', () => {
@@ -2901,7 +2921,8 @@ describe('evergreenizeStaleCycleDatePhrase stale fellowship/grant cycle date nor
   });
 
   it('drops a stale year from a "the <year> <Name> Fellowship" mention', () => {
-    const input = 'The Institute invites applications for the 2024 Alden Family Research Fellowship.';
+    const input =
+      'The Institute invites applications for the 2024 Alden Family Research Fellowship.';
     expect(evergreenizeStaleCycleDatePhrase(input)).toBe(
       'The Institute invites applications for the Alden Family Research Fellowship.',
     );
@@ -2934,7 +2955,8 @@ describe('evergreenizeStaleCycleDatePhrase stale fellowship/grant cycle date nor
   });
 
   it('is applied inside sanitizeResearchEntityDescription so a full description carries no stale cycle date', () => {
-    const input = 'The lab invites applications for the 2024 Alden Fellowship. It supports summer research.';
+    const input =
+      'The lab invites applications for the 2024 Alden Fellowship. It supports summer research.';
     expect(sanitizeResearchEntityDescription(input)).toBe(
       'The lab invites applications for the Alden Fellowship. It supports summer research.',
     );
@@ -2948,7 +2970,8 @@ describe('evergreenizeStaleCycleDatePhrase stale fellowship/grant cycle date nor
   });
 
   it('is applied inside sanitizeStoredCatalogDescription so the write-time stored copy carries no stale cycle date', () => {
-    const input = 'The lab invites applications for the 2024 Alden Fellowship. It supports summer research.';
+    const input =
+      'The lab invites applications for the 2024 Alden Fellowship. It supports summer research.';
     expect(sanitizeStoredCatalogDescription(input)).toBe(
       'The lab invites applications for the Alden Fellowship. It supports summer research.',
     );
@@ -3032,9 +3055,9 @@ describe('isAdministrativeTitleEnumerationText (#1745 round 4)', () => {
   });
 
   it('does not flag ordinary research prose with no admin-title opener', () => {
-    expect(isAdministrativeTitleEnumerationText('Studies the mechanics of soft robotic materials.')).toBe(
-      false,
-    );
+    expect(
+      isAdministrativeTitleEnumerationText('Studies the mechanics of soft robotic materials.'),
+    ).toBe(false);
     expect(isAdministrativeTitleEnumerationText('')).toBe(false);
   });
 

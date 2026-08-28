@@ -13,7 +13,9 @@ const PROGRAM_LIKE_ENTITY_TYPES = new Set(['COURSE_SEQUENCE']);
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
-export function isProgramLikeResearchEntity(entity: Record<string, unknown> | null | undefined): boolean {
+export function isProgramLikeResearchEntity(
+  entity: Record<string, unknown> | null | undefined,
+): boolean {
   if (!entity) return false;
   return (
     textValue(entity.kind).toLowerCase() === 'program' ||

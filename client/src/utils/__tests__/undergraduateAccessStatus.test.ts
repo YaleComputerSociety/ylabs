@@ -63,7 +63,9 @@ describe('deriveUndergraduateAccessStatus', () => {
 
 describe('isCurrentlyOpenToUndergraduates', () => {
   it('is true only for open or rolling availability', () => {
-    expect(isCurrentlyOpenToUndergraduates({ undergraduateCurrentAvailability: 'OPEN' })).toBe(true);
+    expect(isCurrentlyOpenToUndergraduates({ undergraduateCurrentAvailability: 'OPEN' })).toBe(
+      true,
+    );
     expect(isCurrentlyOpenToUndergraduates({ undergraduateCurrentAvailability: 'ROLLING' })).toBe(
       true,
     );
@@ -86,9 +88,7 @@ describe('undergraduateAccessSortRank', () => {
     const evidence = deriveUndergraduateAccessStatus({ hasUndergradHostingEvidence: true });
 
     expect(undergraduateAccessSortRank(open)).toBeLessThan(undergraduateAccessSortRank(evidence));
-    expect(undergraduateAccessSortRank(evidence)).toBeLessThan(
-      undergraduateAccessSortRank(muted),
-    );
+    expect(undergraduateAccessSortRank(evidence)).toBeLessThan(undergraduateAccessSortRank(muted));
     expect(undergraduateAccessSortRank(null)).toBe(1);
   });
 });

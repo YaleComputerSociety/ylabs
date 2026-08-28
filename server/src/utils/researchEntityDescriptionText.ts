@@ -35,12 +35,7 @@ function textValue(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 }
 
-const LEAD_NAME_TOKENIZERS = [
-  /\bdr\.?\b/gi,
-  /\bprof\.?\b/gi,
-  /\bprofessor\b/gi,
-  /\bm\.?d\.?\b/gi,
-];
+const LEAD_NAME_TOKENIZERS = [/\bdr\.?\b/gi, /\bprof\.?\b/gi, /\bprofessor\b/gi, /\bm\.?d\.?\b/gi];
 
 function normalizePersonNameTokens(value: unknown): string[] {
   return String(value || '')
@@ -52,15 +47,14 @@ function normalizePersonNameTokens(value: unknown): string[] {
     .split(/\s+/)
     .map((token) => token.trim())
     .filter(Boolean)
-    .map((token) => LEAD_NAME_TOKENIZERS.reduce((next, pattern) => next.replace(pattern, ''), token))
+    .map((token) =>
+      LEAD_NAME_TOKENIZERS.reduce((next, pattern) => next.replace(pattern, ''), token),
+    )
     .map((token) => token.trim())
     .filter(Boolean);
 }
 
-function leadNamesMatchTextValue(
-  candidate: string,
-  leadMemberNames: readonly string[],
-): boolean {
+function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly string[]): boolean {
   const candidateTokens = normalizePersonNameTokens(candidate);
   if (candidateTokens.length < 2) return false;
   const lastIndex = candidateTokens[candidateTokens.length - 1];
@@ -87,9 +81,7 @@ function sanitizeLeadingMismatchedPersonNamePrefix(
   leadMemberNames: readonly string[] = [],
 ): string {
   if (!leadMemberNames.length) return value;
-  const match = value.match(
-    /^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u,
-  );
+  const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
   if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
   if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
@@ -340,7 +332,8 @@ const PERSON_BIOGRAPHY_OPENER_PATTERN =
   /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:(?:the|an?)\s+)?(?:[\p{L}][\p{L}'’.-]*[\s,/-]+){0,8}Professor\b/u;
 
 const NAME_LEAD_PATTERN = /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4}\b/u;
-const DECEASED_LEAD_DATE_RANGE_PATTERN = /\(\s*(?:1[6-9]|20)\d{2}\s*[-–—]\s*(?:1[6-9]|20)\d{2}\s*\)/;
+const DECEASED_LEAD_DATE_RANGE_PATTERN =
+  /\(\s*(?:1[6-9]|20)\d{2}\s*[-–—]\s*(?:1[6-9]|20)\d{2}\s*\)/;
 const EMERITUS_APPOINTMENT_PATTERN = /\bEmeritus\b/i;
 
 /**
@@ -358,10 +351,13 @@ export function isDeceasedOrEmeritusLeadBiography(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned || !NAME_LEAD_PATTERN.test(cleaned)) return false;
   const opening = cleaned.slice(0, 220);
-  return DECEASED_LEAD_DATE_RANGE_PATTERN.test(opening) || EMERITUS_APPOINTMENT_PATTERN.test(opening);
+  return (
+    DECEASED_LEAD_DATE_RANGE_PATTERN.test(opening) || EMERITUS_APPOINTMENT_PATTERN.test(opening)
+  );
 }
 
-const DEGREE_SUFFIX_CLAUSE = '(?:,\\s*(?:PhD|Ph\\.D\\.?|MD|M\\.D\\.?|MPH|ScD|Sc\\.D\\.?|DPhil|JD|MS|MA|MBA|EdD)\\b\\.?)*';
+const DEGREE_SUFFIX_CLAUSE =
+  '(?:,\\s*(?:PhD|Ph\\.D\\.?|MD|M\\.D\\.?|MPH|ScD|Sc\\.D\\.?|DPhil|JD|MS|MA|MBA|EdD)\\b\\.?)*';
 
 /**
  * `PERSON_BIOGRAPHY_OPENER_PATTERN` only recognizes a present-tense "is
@@ -410,7 +406,10 @@ const DEGREE_ABBREVIATION_ALTERNATION =
  * the loop-strip's sentence-boundary scan (not this pattern) is responsible
  * for finding where the run-on actually ends.
  */
-const LEADING_BARE_DEGREE_LIST_PATTERN = new RegExp(`^${DEGREE_ABBREVIATION_ALTERNATION}\\s*,`, 'u');
+const LEADING_BARE_DEGREE_LIST_PATTERN = new RegExp(
+  `^${DEGREE_ABBREVIATION_ALTERNATION}\\s*,`,
+  'u',
+);
 
 /**
  * A name-lead opener whose whole sentence is a degree-receipt CV line rather
@@ -543,7 +542,10 @@ export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean 
  * INDIVIDUAL_RESEARCH carry the identical name+appointment-lead shape and are
  * now covered too (#1793).
  */
-function firstBiographyOpenerMatch(value: string, allowCredentialTitlePatterns: boolean): RegExpMatchArray | null {
+function firstBiographyOpenerMatch(
+  value: string,
+  allowCredentialTitlePatterns: boolean,
+): RegExpMatchArray | null {
   return (
     value.match(PERSON_BIOGRAPHY_OPENER_PATTERN) ||
     (allowCredentialTitlePatterns
@@ -579,7 +581,10 @@ const MAX_BIOGRAPHY_OPENER_SENTENCES_STRIPPED = 8;
  * leading CV sentence, if any, until either a non-matching sentence is
  * reached or the text is exhausted.
  */
-function stripPersonBiographyOpenerSentence(value: string, allowCredentialTitlePatterns: boolean): string {
+function stripPersonBiographyOpenerSentence(
+  value: string,
+  allowCredentialTitlePatterns: boolean,
+): string {
   let remaining = value;
   let strippedAny = false;
   for (let iteration = 0; iteration < MAX_BIOGRAPHY_OPENER_SENTENCES_STRIPPED; iteration += 1) {
@@ -601,7 +606,10 @@ function stripPersonBiographyOpenerSentence(value: string, allowCredentialTitleP
  * sentence and keep the remainder when it still reads as a research
  * description on its own, instead of blanking the whole field (#1586).
  */
-function repairFacultyBiographyOpener(value: string, allowCredentialTitlePatterns: boolean): string {
+function repairFacultyBiographyOpener(
+  value: string,
+  allowCredentialTitlePatterns: boolean,
+): string {
   const stripped = stripPersonBiographyOpenerSentence(value, allowCredentialTitlePatterns);
   if (!stripped || stripped === value) return '';
   return isLikelyResearchFocusedText(stripped) && !isPersonBiographyOrAdvisingDescription(stripped)
@@ -794,7 +802,9 @@ function isAtSentenceStart(offset: number, full: string): boolean {
   return precedingChar === '' || /[.!?]/.test(precedingChar);
 }
 
-const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string | ((...args: any[]) => string)]> = [
+const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
+  readonly [RegExp, string | ((...args: any[]) => string)]
+> = [
   [
     /\bI['’]m\b/g,
     (_match: string, offset: number, full: string) =>
@@ -904,7 +914,8 @@ export function revoiceFirstPersonResearchLead(
   const possessiveSubject = possessiveLeadSubject(entity);
   next = next.replace(
     ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN,
-    (_match: string, lead: string, nounPhrase: string) => `${lead}${possessiveSubject} ${nounPhrase}`,
+    (_match: string, lead: string, nounPhrase: string) =>
+      `${lead}${possessiveSubject} ${nounPhrase}`,
   );
   for (const [pattern, replacement] of FIRST_PERSON_LEAD_REVOICE_RULES) {
     next = next.replace(pattern, replacement as any);
@@ -1016,7 +1027,9 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
 
   if ('summary' in next) {
     const summaryBiographyRepair = repairBiographyOrDeceasedEmeritusLead(next.summary, next);
-    const guardedSummary = summaryBiographyRepair.changed ? summaryBiographyRepair.value : next.summary;
+    const guardedSummary = summaryBiographyRepair.changed
+      ? summaryBiographyRepair.value
+      : next.summary;
     const cleaned = publicResearchEntityDescriptionText(guardedSummary);
     if (cleaned !== next.summary) {
       next.summary = cleaned;
@@ -1030,10 +1043,10 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
 export function isFacultyResearchTextEntity(entity?: FacultyResearchTextEntity | null): boolean {
   return Boolean(
     entity &&
-      (entity.kind === 'individual' ||
-        entity.kind === 'solo' ||
-        entity.entityType === 'FACULTY_RESEARCH_AREA' ||
-        entity.entityType === 'INDIVIDUAL_RESEARCH'),
+    (entity.kind === 'individual' ||
+      entity.kind === 'solo' ||
+      entity.entityType === 'FACULTY_RESEARCH_AREA' ||
+      entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
 }
 
@@ -1085,10 +1098,7 @@ export function sanitizeFacultyResearchEntityText(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+investigates\b/i,
       `${possessive} research investigates`,
     )
-    .replace(
-      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i,
-      `${possessive} research studies`,
-    )
+    .replace(/^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i, `${possessive} research studies`)
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+is\s+connected\s+to\b/i,
       `${possessive} research is connected to`,
@@ -1104,16 +1114,25 @@ export function sanitizeFacultyResearchEntityText(
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
+      '$1 research focuses on',
+    )
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu, '$1 research investigates')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
+      '$1 research investigates',
+    )
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g, '$1 research investigates')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g, '$1 research examines')
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
+      '$1 research examines',
+    )
     .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
     .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
     .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')
@@ -1349,7 +1368,10 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     if (!Array.isArray(next[field])) continue;
     const cleaned = sanitizeServedResearchAreaChips(next[field]);
     const current = next[field] as unknown[];
-    if (cleaned.length !== current.length || cleaned.some((value, index) => value !== current[index])) {
+    if (
+      cleaned.length !== current.length ||
+      cleaned.some((value, index) => value !== current[index])
+    ) {
       next[field] = cleaned;
       changed = true;
     }

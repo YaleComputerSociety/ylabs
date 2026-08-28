@@ -145,7 +145,10 @@ describe('researchEntitySearchIndexService', () => {
       archived: false,
       methods: ['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
     });
-    expect(withMethods?.methods).toEqual(['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing']);
+    expect(withMethods?.methods).toEqual([
+      'CRISPR-Cas9 Gene Editing',
+      'Single-cell RNA sequencing',
+    ]);
 
     const withoutMethods = buildResearchEntitySearchIndexDocument({
       _id: 'entity-no-methods',
@@ -209,7 +212,8 @@ describe('researchEntitySearchIndexService', () => {
       _id: 'entity-neurology',
       name: 'Neurology Metabolism Lab',
       departments: ['Neurology'],
-      fullDescription: 'Recent publications include Mobbs CV, Yang X. Hypothalamic control of metabolism.',
+      fullDescription:
+        'Recent publications include Mobbs CV, Yang X. Hypothalamic control of metabolism.',
       archived: false,
     });
 
@@ -222,7 +226,8 @@ describe('researchEntitySearchIndexService', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-real-cv',
       name: 'Vision Systems Lab',
-      fullDescription: 'Our CV group builds algorithms for object detection and scene understanding.',
+      fullDescription:
+        'Our CV group builds algorithms for object detection and scene understanding.',
       archived: false,
     });
 

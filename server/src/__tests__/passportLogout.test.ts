@@ -1,9 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
-let logoutHandlerImport: Promise<
-  typeof import('../passport').logoutRouteHandler
-> | null = null;
+let logoutHandlerImport: Promise<typeof import('../passport').logoutRouteHandler> | null = null;
 
 const importLogoutHandler = async () => {
   if (!logoutHandlerImport) {
@@ -55,10 +53,7 @@ describe('logoutRouteHandler', () => {
 
     expect(logOut).toHaveBeenCalledWith(expect.any(Function));
     expect(next).not.toHaveBeenCalled();
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(res.setHeader).toHaveBeenCalledWith('Surrogate-Control', 'no-store');
     expect(res.redirect).toHaveBeenCalledWith(
@@ -117,9 +112,7 @@ describe('logoutRouteHandler', () => {
       user: undefined,
       logOut,
       get: vi.fn((header: string) =>
-        header.toLowerCase() === 'origin'
-          ? `https://yalelabs.io/${'a'.repeat(2049)}`
-          : undefined,
+        header.toLowerCase() === 'origin' ? `https://yalelabs.io/${'a'.repeat(2049)}` : undefined,
       ),
     } as unknown as Request;
     const res = mockResponse();

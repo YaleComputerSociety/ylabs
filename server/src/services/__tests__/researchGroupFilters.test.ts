@@ -181,9 +181,7 @@ describe('buildResearchGroupFilterString', () => {
   describe('currentAvailability filter', () => {
     it('single value → filters the current-availability field', () => {
       const filter = buildResearchGroupFilterString({ currentAvailability: ['OPEN'] });
-      expect(filter).toBe(
-        'archived = false AND (undergraduateCurrentAvailability = "OPEN")',
-      );
+      expect(filter).toBe('archived = false AND (undergraduateCurrentAvailability = "OPEN")');
     });
 
     it('two values → ORs them within the field', () => {

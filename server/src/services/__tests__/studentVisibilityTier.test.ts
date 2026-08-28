@@ -1968,7 +1968,12 @@ describe('computeProgramStudentVisibility', () => {
 });
 
 describe('enforceStudentReadyDescriptionInvariant', () => {
-  const blankRecord = { fullDescription: '   ', shortDescription: '', description: '', summary: '' };
+  const blankRecord = {
+    fullDescription: '   ',
+    shortDescription: '',
+    description: '',
+    summary: '',
+  };
   const describedRecord = {
     fullDescription: 'The lab studies causal inference methods for public health research.',
   };
@@ -2023,7 +2028,11 @@ describe('enforceStudentReadyDescriptionInvariant', () => {
     expect(recordHasNoUsablePublicDescription(echoOnlyRecord)).toBe(true);
 
     const result = enforceStudentReadyDescriptionInvariant(
-      { tier: 'student_ready', computedTier: 'student_ready', reasons: ['source_backed_description'] },
+      {
+        tier: 'student_ready',
+        computedTier: 'student_ready',
+        reasons: ['source_backed_description'],
+      },
       echoOnlyRecord,
     );
     expect(result.tier).toBe('operator_review');
@@ -2041,7 +2050,11 @@ describe('enforceStudentReadyDescriptionInvariant', () => {
     expect(recordHasNoUsablePublicDescription(realFullEchoShortRecord)).toBe(false);
 
     const result = enforceStudentReadyDescriptionInvariant(
-      { tier: 'student_ready', computedTier: 'student_ready', reasons: ['source_backed_description'] },
+      {
+        tier: 'student_ready',
+        computedTier: 'student_ready',
+        reasons: ['source_backed_description'],
+      },
       realFullEchoShortRecord,
     );
     expect(result.tier).toBe('student_ready');

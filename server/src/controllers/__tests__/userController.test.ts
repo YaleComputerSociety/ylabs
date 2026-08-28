@@ -213,7 +213,6 @@ describe('userController', () => {
     vi.clearAllMocks();
   });
 
-
   it('allowlists watched program payloads for authenticated account readers', async () => {
     mocks.getWatchedPrograms.mockResolvedValue([privateProgram]);
 

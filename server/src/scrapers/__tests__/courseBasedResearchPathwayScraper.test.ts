@@ -136,8 +136,12 @@ describe('courseBasedResearchPathwayScraper', () => {
       sourceUrl: 'https://psychology.yale.edu/what-directed-research-course',
     });
     expect(records[0].fullDescription).toContain('directed research course');
-    expect(records[0].fullDescription).toMatch(/^A for-credit, course-based research pathway in Psychology\./);
-    expect(records[0].fullDescription).not.toMatch(/Copyright|Privacy policy|Accessibility at Yale/);
+    expect(records[0].fullDescription).toMatch(
+      /^A for-credit, course-based research pathway in Psychology\./,
+    );
+    expect(records[0].fullDescription).not.toMatch(
+      /Copyright|Privacy policy|Accessibility at Yale/,
+    );
   });
 
   it('parses the History senior-essay page and fails closed on contact data', () => {
@@ -195,14 +199,16 @@ describe('courseBasedResearchPathwayScraper', () => {
     const entityTypeObs = observations.find((observation) => observation.field === 'entityType');
     expect(entityTypeObs?.value).toBe('COURSE_SEQUENCE');
     const sourceUrlsObs = observations.find((observation) => observation.field === 'sourceUrls');
-    expect(sourceUrlsObs?.value).toEqual(['https://psychology.yale.edu/what-directed-research-course']);
-    expect(observations.every((observation) => observation.sourceUrl === psychologyConfig.url)).toBe(true);
+    expect(sourceUrlsObs?.value).toEqual([
+      'https://psychology.yale.edu/what-directed-research-course',
+    ]);
+    expect(
+      observations.every((observation) => observation.sourceUrl === psychologyConfig.url),
+    ).toBe(true);
   });
 
   it('fails closed when a page has no course-based research evidence', () => {
-    expect(
-      parseCourseBasedResearchPathwayPage(NO_EVIDENCE_HTML, psychologyConfig),
-    ).toEqual([]);
+    expect(parseCourseBasedResearchPathwayPage(NO_EVIDENCE_HTML, psychologyConfig)).toEqual([]);
   });
 
   it('never cites a catalog or course-search index root', () => {
@@ -210,7 +216,9 @@ describe('courseBasedResearchPathwayScraper', () => {
     expect(isCatalogOrCourseSearchIndexRootUrl('https://catalog.yale.edu/ycps/')).toBe(true);
     expect(isCatalogOrCourseSearchIndexRootUrl('https://courses.yale.edu/')).toBe(true);
     expect(
-      isCatalogOrCourseSearchIndexRootUrl('https://psychology.yale.edu/what-directed-research-course'),
+      isCatalogOrCourseSearchIndexRootUrl(
+        'https://psychology.yale.edu/what-directed-research-course',
+      ),
     ).toBe(false);
     expect(
       isCatalogOrCourseSearchIndexRootUrl(
@@ -225,7 +233,9 @@ describe('courseBasedResearchPathwayScraper', () => {
       department: 'Yale College',
       school: 'Yale College',
     };
-    expect(parseCourseBasedResearchPathwayPage(CATALOG_INDEX_ROOT_HTML, indexRootConfig)).toEqual([]);
+    expect(parseCourseBasedResearchPathwayPage(CATALOG_INDEX_ROOT_HTML, indexRootConfig)).toEqual(
+      [],
+    );
     expect(
       courseBasedResearchPathwayRecordsToObservations([
         {
@@ -302,7 +312,9 @@ const BROADENED_FIXTURE_KEYS = [
 describe('courseBasedResearchPathwayScraper broadened corpus', () => {
   it('expands well beyond the three-department pilot', () => {
     const keys = DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES.map((page) => page.key);
-    expect(keys).toEqual(expect.arrayContaining(['psychology-directed-research', ...BROADENED_FIXTURE_KEYS]));
+    expect(keys).toEqual(
+      expect.arrayContaining(['psychology-directed-research', ...BROADENED_FIXTURE_KEYS]),
+    );
     expect(DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES.length).toBeGreaterThanOrEqual(13);
     expect(new Set(keys).size).toBe(keys.length);
     expect(new Set(DEFAULT_COURSE_BASED_RESEARCH_PATHWAY_PAGES.map((page) => page.url)).size).toBe(
@@ -358,7 +370,9 @@ describe('courseBasedResearchPathwayScraper broadened corpus', () => {
       it('produces a source-backed description free of chrome and contact data', () => {
         const { fullDescription, shortDescription } = records[0];
         expect(fullDescription).toMatch(
-          new RegExp(`^A for-credit, course-based research pathway in ${escapeRegExp(config.department)}\\.`),
+          new RegExp(
+            `^A for-credit, course-based research pathway in ${escapeRegExp(config.department)}\\.`,
+          ),
         );
         expect(fullDescription.length).toBeGreaterThan(
           `A for-credit, course-based research pathway in ${config.department}.`.length,
@@ -367,7 +381,9 @@ describe('courseBasedResearchPathwayScraper broadened corpus', () => {
         for (const text of [fullDescription, shortDescription]) {
           expect(text).not.toMatch(/@[a-z0-9.-]+\.(?:edu|com|org)/i);
           expect(text).not.toMatch(/\(?\b\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/);
-          expect(text).not.toMatch(/Copyright|Privacy policy|Accessibility at Yale|Skip to main content/i);
+          expect(text).not.toMatch(
+            /Copyright|Privacy policy|Accessibility at Yale|Skip to main content/i,
+          );
           expect(text).not.toMatch(/https?:\/\//);
         }
       });
@@ -379,10 +395,16 @@ describe('courseBasedResearchPathwayScraper broadened corpus', () => {
           expect.arrayContaining(['slug', 'name', 'entityType', 'departments', 'sourceUrls']),
         );
         expect(fields).not.toEqual(expect.arrayContaining(FABRICATED_EVIDENCE_FIELDS));
-        expect(observations.every((observation) => observation.sourceUrl === config.url)).toBe(true);
-        const sourceUrlsObs = observations.find((observation) => observation.field === 'sourceUrls');
+        expect(observations.every((observation) => observation.sourceUrl === config.url)).toBe(
+          true,
+        );
+        const sourceUrlsObs = observations.find(
+          (observation) => observation.field === 'sourceUrls',
+        );
         expect(sourceUrlsObs?.value).toEqual([config.url]);
-        const entityTypeObs = observations.find((observation) => observation.field === 'entityType');
+        const entityTypeObs = observations.find(
+          (observation) => observation.field === 'entityType',
+        );
         expect(entityTypeObs?.value).toBe('COURSE_SEQUENCE');
       });
     });

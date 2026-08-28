@@ -45,7 +45,9 @@ const isSafeTrackingId = (value: unknown): value is string =>
   typeof value === 'string' && TRACKING_ID_RE.test(value);
 
 const redactTrackingContactInfo = (value: string): string =>
-  value.replace(TRACKING_EMAIL_RE, '[email redacted]').replace(TRACKING_PHONE_RE, '[phone redacted]');
+  value
+    .replace(TRACKING_EMAIL_RE, '[email redacted]')
+    .replace(TRACKING_PHONE_RE, '[phone redacted]');
 
 const normalizeTrackingNote = (value: unknown): string =>
   typeof value === 'string'

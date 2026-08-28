@@ -37,7 +37,10 @@ export async function setCached<T = unknown>(
   );
 }
 
-export async function invalidateCache(sourceName: string, requestKeyPrefix?: string): Promise<number> {
+export async function invalidateCache(
+  sourceName: string,
+  requestKeyPrefix?: string,
+): Promise<number> {
   const filter: any = { sourceName };
   if (requestKeyPrefix) {
     if (requestKeyPrefix.length > MAX_REQUEST_KEY_PREFIX_LENGTH) {

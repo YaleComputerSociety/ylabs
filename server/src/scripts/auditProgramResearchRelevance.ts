@@ -63,8 +63,7 @@ function parseArgs(argv: string[]): CliOptions {
       options.limit = Number(raw);
     } else if (arg.startsWith('--output=')) {
       options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
-    }
-    else throw new Error(`Unknown argument: ${arg}`);
+    } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.apply && options.archive && !options.confirmDelete) {
     throw new Error('--confirm-delete-non-research is required when --apply --archive is set.');
@@ -88,7 +87,9 @@ async function main() {
   await initializeConnections();
 
   const programs: any[] = await Fellowship.find({ archived: false })
-    .select('title purpose studentFacingCategory programKind summary description eligibility studentVisibilityTier studentVisibilityOverrideTier')
+    .select(
+      'title purpose studentFacingCategory programKind summary description eligibility studentVisibilityTier studentVisibilityOverrideTier',
+    )
     .lean();
 
   const nonResearch: any[] = [];
@@ -139,7 +140,14 @@ async function main() {
       // Close any open release-queue items for the archived programs.
       await VisibilityReleaseQueueItem.updateMany(
         { collection: 'programs', recordId: { $in: slice.map((r) => r.recordId) }, status: 'open' },
-        { $set: { status: 'suppressed', repairStatus: 'resolved', resolvedAt: now, lastSeenAt: now } },
+        {
+          $set: {
+            status: 'suppressed',
+            repairStatus: 'resolved',
+            resolvedAt: now,
+            lastSeenAt: now,
+          },
+        },
       );
       modified = slice.length;
     } else {

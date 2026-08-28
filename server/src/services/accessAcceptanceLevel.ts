@@ -100,8 +100,7 @@ export function hasUndergradHostingEvidenceFromSignals(
   signals: AccessSignalConfidenceInput[],
 ): boolean {
   return signals.some(
-    (signal) =>
-      typeof signal.type === 'string' && UNDERGRAD_HOSTING_SIGNAL_TYPES.has(signal.type),
+    (signal) => typeof signal.type === 'string' && UNDERGRAD_HOSTING_SIGNAL_TYPES.has(signal.type),
   );
 }
 
@@ -132,11 +131,8 @@ export const DOCUMENTED_WAY_IN_SIGNAL_TYPES: ReadonlySet<string> = new Set([
   'FACULTY_SUPERVISES_STUDENT_PROJECTS',
 ]);
 
-export function hasDocumentedWayInFromSignals(
-  signals: AccessSignalConfidenceInput[],
-): boolean {
+export function hasDocumentedWayInFromSignals(signals: AccessSignalConfidenceInput[]): boolean {
   return signals.some(
-    (signal) =>
-      typeof signal.type === 'string' && DOCUMENTED_WAY_IN_SIGNAL_TYPES.has(signal.type),
+    (signal) => typeof signal.type === 'string' && DOCUMENTED_WAY_IN_SIGNAL_TYPES.has(signal.type),
   );
 }

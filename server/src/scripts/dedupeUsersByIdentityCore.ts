@@ -113,4 +113,3 @@ export function emailLooksPersonSpecific(identityValue: string, normalizedName: 
     ),
   );
 }
-

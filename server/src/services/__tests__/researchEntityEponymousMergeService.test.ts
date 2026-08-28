@@ -21,7 +21,9 @@ import {
   selectEponymousFraLabMergeGroups,
 } from '../researchEntityEponymousMergeService';
 
-function eponymousShellRow(overrides: Partial<ResearchEntityPiDedupeRow> = {}): ResearchEntityPiDedupeRow {
+function eponymousShellRow(
+  overrides: Partial<ResearchEntityPiDedupeRow> = {},
+): ResearchEntityPiDedupeRow {
   return {
     userId: 'pi-ada-lovelace',
     normalizedName: 'same-pi:pi-ada-lovelace',

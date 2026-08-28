@@ -87,10 +87,7 @@ const sentenceList = (value: string): string[] => {
     .replace(/\bU\.S\./g, `U${INITIAL_DOT_TOKEN}S${INITIAL_DOT_TOKEN}`)
     .replace(/\bPh\.D\./g, `Ph${INITIAL_DOT_TOKEN}D${INITIAL_DOT_TOKEN}`)
     .replace(/\b(Dr|Prof|Mr|Mrs|Ms|St)\./g, `$1${INITIAL_DOT_TOKEN}`)
-    .replace(
-      /\b([A-Z])\.(?=\s+[A-Z][A-Za-z.'-]+)/g,
-      `$1${INITIAL_DOT_TOKEN}`,
-    );
+    .replace(/\b([A-Z])\.(?=\s+[A-Z][A-Za-z.'-]+)/g, `$1${INITIAL_DOT_TOKEN}`);
   return (
     protectedText
       .match(/[^.!?]+[.!?]+(?:\s|$|(?=[A-Z]))|[^.!?]+$/g)
@@ -135,7 +132,9 @@ const isSolicitationCallToActionShort = (value: string): boolean =>
   /\bif you(?:'re| are)\s+interested in\b[^.!?]{0,140}\b(?:please\s+(?:provide|send|submit|view|apply|contact|email|reach out)|send (?:your |an )?(?:inquiry|application|cv|cover letter)|apply\b)/i.test(
     value,
   ) ||
-  /\bplease provide the following\b[^.!?]{0,80}\b(?:cover letter|curriculum vitae|\bcv\b)/i.test(value);
+  /\bplease provide the following\b[^.!?]{0,80}\b(?:cover letter|curriculum vitae|\bcv\b)/i.test(
+    value,
+  );
 
 const isConsentBoilerplateSentence = (sentence: string): boolean =>
   /\bwe use cookies\b/i.test(sentence) ||
@@ -176,7 +175,9 @@ const hasSourceNewsFragment = (value: string): boolean =>
   /^research focuses\b/.test(value) ||
   /\balleged actions reflect broader trends in statecraft\b/i.test(value) ||
   /\band\s+(?:a\s+)?yale-led study\b/i.test(value) ||
-  /\b(?:read more|learn more|view full profile|related publications|continue reading)\b/i.test(value) ||
+  /\b(?:read more|learn more|view full profile|related publications|continue reading)\b/i.test(
+    value,
+  ) ||
   /\bNews\s+People\s+Projects\s+Publications\s+Opportunities\s+Contact\b/i.test(value) ||
   /\b(?:see\s+)?lab permissions and copyright statement\b/i.test(value) ||
   /\bphishing alert\b/i.test(value) ||
@@ -191,20 +192,30 @@ const hasSourceNewsFragment = (value: string): boolean =>
   /(?:\.{3}|…)$/i.test(value) ||
   /\bjoined Yale University in\b/i.test(value) ||
   /\bjoined (?:the\s+)?Yale\b.{0,80}\bfaculty in\b/i.test(value) ||
-  /\breceived (?:his|her|their)\s+(?:undergraduate|graduate|medical|doctoral)?\s*degree\b/i.test(value) ||
-  /\bearned (?:his|her|their)\s+(?:undergraduate|graduate|medical|doctoral)?\s*degree\b/i.test(value) ||
+  /\breceived (?:his|her|their)\s+(?:undergraduate|graduate|medical|doctoral)?\s*degree\b/i.test(
+    value,
+  ) ||
+  /\bearned (?:his|her|their)\s+(?:undergraduate|graduate|medical|doctoral)?\s*degree\b/i.test(
+    value,
+  ) ||
   /\breceived\s+(?:[a-z'’]+\s+){0,4}degrees?\s+(?:at|from)\b/i.test(value) ||
   /\bearned\s+(?:[a-z'’]+\s+){0,4}degrees?\s+(?:at|from)\b/i.test(value) ||
-  /\b(?:before\s+)?completing\s+(?:his|her|their|a|an)\s*(?:ph\.?d|doctorate|degree)\b/i.test(value) ||
+  /\b(?:before\s+)?completing\s+(?:his|her|their|a|an)\s*(?:ph\.?d|doctorate|degree)\b/i.test(
+    value,
+  ) ||
   /\bpreviously,\s+(?:i|he|she|they)\s+was\b/i.test(value) ||
-  /\b(?:i|he|she|they)\s+(?:received|earned|completed)\s+(?:my|his|her|their)?\s*(?:ph\.?d|doctorate|degree|sc\.?m|m\.?s|b\.?s|b\.?a)\b/i.test(value) ||
+  /\b(?:i|he|she|they)\s+(?:received|earned|completed)\s+(?:my|his|her|their)?\s*(?:ph\.?d|doctorate|degree|sc\.?m|m\.?s|b\.?s|b\.?a)\b/i.test(
+    value,
+  ) ||
   /\bholds?\s+(?:an?\s+)?(?:[a-z'’-]+\s+){0,8}(?:degree|doctorate)\b/i.test(value) ||
   /\binternational\s+reputation\b/i.test(value) ||
   /\b(?:i|he|she|they)\s+was\s+(?:an?\s+)?[A-Za-z -]{0,60}\bFellow\b/i.test(value) ||
   /\bunder the supervision of Professor\b/i.test(value) ||
   /\bcarried out (?:his|her|their)\s+graduate work\b/i.test(value) ||
   /\bduring undergraduate\b/i.test(value) ||
-  /\bstudied\s+[A-Za-z,& -]{3,120}\s+at\s+(?:the\s+)?(?:University|College|Institute|EMBL|CBM)\b/i.test(value) ||
+  /\bstudied\s+[A-Za-z,& -]{3,120}\s+at\s+(?:the\s+)?(?:University|College|Institute|EMBL|CBM)\b/i.test(
+    value,
+  ) ||
   /\bdid (?:his|her|their)\s+(?:ph\.?d|doctorate)\b/i.test(value) ||
   /\bdid (?:his|her|their)\s+postdoctoral work\b/i.test(value) ||
   /\bpost-?doc(?:toral)? (?:work|training|fellowship)\b/i.test(value) ||
@@ -216,7 +227,9 @@ const hasSourceNewsFragment = (value: string): boolean =>
 const hasPaperFragment = (value: string): boolean =>
   /^(?:this|the)\s+(?:paper|article|chapter|book|review|preprint)\b/i.test(value) ||
   /\bin\s+this\s+(?:paper|article|chapter|review|preprint)\b/i.test(value) ||
-  /\bwe\s+(?:show|prove|introduce|present|derive|explain)\b.{0,160}\b(?:paper|article|preprint)\b/i.test(value) ||
+  /\bwe\s+(?:show|prove|introduce|present|derive|explain)\b.{0,160}\b(?:paper|article|preprint)\b/i.test(
+    value,
+  ) ||
   /\bWorking\s+Paper\b/i.test(value) ||
   /\b(?:University|Press|Publisher)\b.{0,80}\((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\)/i.test(
     value,
@@ -248,8 +261,12 @@ const hasResearchFocusPhrase = (rawValue: string): boolean => {
   return (
     hasResearchDescriptionVerb(value) ||
     hasPluralSubjectResearchVerb(value) ||
-    /\bwe\s+(?:study|investigate|examine|explore|develop|use|employ|analyze|analyse|model|measure|research|aim\s+to|seek\s+to|want\s+to\s+understand|work\s+(?:on|towards))\b/i.test(value) ||
-    /\bour\s+(?:research|work|lab|group|goal|mission)\b.{0,80}\b(?:is\s+to|focuses|centers?|revolves|examines|explores|investigates|aims?|seeks?|develops?|studies|understand)\b/i.test(value) ||
+    /\bwe\s+(?:study|investigate|examine|explore|develop|use|employ|analyze|analyse|model|measure|research|aim\s+to|seek\s+to|want\s+to\s+understand|work\s+(?:on|towards))\b/i.test(
+      value,
+    ) ||
+    /\bour\s+(?:research|work|lab|group|goal|mission)\b.{0,80}\b(?:is\s+to|focuses|centers?|revolves|examines|explores|investigates|aims?|seeks?|develops?|studies|understand)\b/i.test(
+      value,
+    ) ||
     /\bI\s+study\b/i.test(value) ||
     /\b(?:research\s+and\s+teaching|teaching\s+and\s+research)\s+focus\s+on\b/i.test(value) ||
     /\binterested\s+in\b/i.test(value) ||
@@ -258,7 +275,9 @@ const hasResearchFocusPhrase = (rawValue: string): boolean => {
     /\bour\s+research\s+program\s+uses\b/i.test(value) ||
     /\bour\s+lab\s+is\s+focused\s+on\b/i.test(value) ||
     /\b(?:program|group|working\s+group)['’]?\s+aims?\s+to\b/i.test(value) ||
-    /\bmission\s+is\s+to\s+(?:serve|enhance|improve|advance|create|develop|support)\b/i.test(value) ||
+    /\bmission\s+is\s+to\s+(?:serve|enhance|improve|advance|create|develop|support)\b/i.test(
+      value,
+    ) ||
     /\b(?:my|his|her|their|our)\s+work\s+advances\b/i.test(value) ||
     /\bresearch\s+focused\s+on\b/i.test(value) ||
     /\bresearch\s+is\s+(?:primarily\s+)?focused\s+on\b/i.test(value) ||
@@ -290,7 +309,9 @@ const IS_LOCATED_AT_YALE_CAMPUS_RE = new RegExp(
 );
 
 const isAffiliationOnlyLabDescription = (value: string): boolean =>
-  ((/\b(?:lab|laboratory|group|center|centre|program|initiative)\b.{0,180}\bis\s+part\s+of\b/i.test(value) &&
+  ((/\b(?:lab|laboratory|group|center|centre|program|initiative)\b.{0,180}\bis\s+part\s+of\b/i.test(
+    value,
+  ) &&
     /\b(?:center|centre|institute|department|school|university|yale)\b/i.test(value)) ||
     IS_LOCATED_AT_YALE_CAMPUS_RE.test(value)) &&
   !hasResearchDescriptionVerb(value);
@@ -473,7 +494,10 @@ function isUngroundedSingleClauseStudiesShort(text: string, full: string): boole
 const RESEARCH_AREA_CHIP_ECHO_MIN_FULL_LENGTH = 220;
 
 const normalizeResearchAreaChipText = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
 function isBareResearchAreaChipEnumeration(fields: string[], researchAreas: unknown[]): boolean {
   if (fields.length < 3) return false;
@@ -566,8 +590,12 @@ const hasRawGroupVoiceFullLead = (value: string): boolean =>
   /[.!?]\s+we\s+are\s+also\s+involved\s+in\b/i.test(value);
 
 const hasGenericMissionStatementLead = (value: string): boolean =>
-  /^(?:create and communicate|conduct high-quality|advance knowledge|develop innovative)\b/i.test(value) ||
-  /^The Department (?:of [\p{L},& -]+ )?(?:also )?accomplishes its research mission\b/iu.test(value) ||
+  /^(?:create and communicate|conduct high-quality|advance knowledge|develop innovative)\b/i.test(
+    value,
+  ) ||
+  /^The Department (?:of [\p{L},& -]+ )?(?:also )?accomplishes its research mission\b/iu.test(
+    value,
+  ) ||
   /^The Department of Laboratory Medicine provides comprehensive\b/i.test(value);
 
 // A scraped undergraduate-research form template that names no actual research:
@@ -614,7 +642,13 @@ const isTruncatedCardCopy = (value: string): boolean =>
 
 function hasDuplicatedLongFragment(value: string): boolean {
   const sentences = sentenceList(value)
-    .map((sentence) => sentence.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim())
+    .map((sentence) =>
+      sentence
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
     .filter((sentence) => sentence.split(/\s+/).length >= 8);
   if (new Set(sentences).size !== sentences.length) return true;
 
@@ -633,7 +667,9 @@ function hasDuplicatedLongFragment(value: string): boolean {
 
 const isUndergraduateResearchProgramDescription = (value: string): boolean =>
   /\b(?:supports|offers|provides|gives)\s+undergraduates?\b.{0,180}\bresearch\b/i.test(value) ||
-  /\bundergraduates?\b.{0,180}\b(?:research assistantships?|research opportunities|conducting research)\b/i.test(value);
+  /\bundergraduates?\b.{0,180}\b(?:research assistantships?|research opportunities|conducting research)\b/i.test(
+    value,
+  );
 
 const hasLaterResearchFocusSentence = (value: string): boolean =>
   sentenceList(value)
@@ -690,10 +726,11 @@ const hasLaterResearchFocusSentence = (value: string): boolean =>
     );
 
 const hasExplicitProfileResearchFocus = (value: string): boolean =>
-  sentenceList(value).some((sentence) =>
-    /\b(?:my|his|her|their|our|[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,3}['’]s)\s+research\s+(?:examines|investigates|explores|focuses\s+on|is\s+(?:primarily\s+)?focused\s+on)\s+.+/iu.test(
-      sentence,
-    ) ||
+  sentenceList(value).some(
+    (sentence) =>
+      /\b(?:my|his|her|their|our|[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,3}['’]s)\s+research\s+(?:examines|investigates|explores|focuses\s+on|is\s+(?:primarily\s+)?focused\s+on)\s+.+/iu.test(
+        sentence,
+      ) ||
       /\b(?:my|his|her|their|our|[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,3}['’]s)\s+(?:main\s+)?research\s+interests?\s+lie\s+(?:in|at)\b/iu.test(
         sentence,
       ) ||
@@ -712,9 +749,7 @@ const hasExplicitProfileResearchFocus = (value: string): boolean =>
       /\bhas\s+written\s+or\s+edited\b.+?\barticles\s+on\b/i.test(sentence) ||
       /\bexpertise\s+lies\s+in\b/i.test(sentence) ||
       /\bworking\s+to\s+expand\b.+?\bclinical\s+trials\b/i.test(sentence) ||
-      /\bprimary\s+areas?\s+of\s+interest\b.+?\bteaching\s+and\s+research\b.+?:/i.test(
-        sentence,
-      ) ||
+      /\bprimary\s+areas?\s+of\s+interest\b.+?\bteaching\s+and\s+research\b.+?:/i.test(sentence) ||
       /\bteaches(?:\s+and\s+writes)?\s+on\s+.+/i.test(sentence) ||
       /\bteaches\s+the\s+history\s+of\s+.+/i.test(sentence) ||
       /\bwriting\s+interests\s+(?:mainly\s+)?concerned\s+.+/i.test(sentence) ||
@@ -1030,7 +1065,9 @@ const isAppointmentOnly = (value: string): boolean => {
       value,
     ) ||
     (!/^The\b/i.test(value) &&
-      /^[A-Z].{0,180}\bis\s+(?:an?\s+|the\s+)?.{0,180}\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i.test(value)) ||
+      /^[A-Z].{0,180}\bis\s+(?:an?\s+|the\s+)?.{0,180}\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i.test(
+        value,
+      )) ||
     /\bwill be appointed as an?\s+(?:assistant|associate|full|adjunct|clinical|visiting)?\s*professor\b/i.test(
       value,
     )
@@ -1069,7 +1106,9 @@ export function fullDescriptionQuality(
   if (
     text &&
     (!/[.!?]$/.test(text) || /:\s*$/.test(text)) &&
-    (text.length < 260 || /\b(?:and|or|of|in|with|for|to|the|on)$/i.test(text) || /:\s*$/.test(text))
+    (text.length < 260 ||
+      /\b(?:and|or|of|in|with|for|to|the|on)$/i.test(text) ||
+      /:\s*$/.test(text))
   ) {
     flags.push('incomplete-sentence');
   }
@@ -1120,7 +1159,11 @@ export function fullDescriptionQuality(
     flags.push('profile-chrome');
   }
   if (text && isTeachingOnlyProfileDescription(text)) flags.push('profile-chrome');
-  if (text && isResearchAreaPlaceholderDescription(text) && !isConciseSpecificResearchDescription(text)) {
+  if (
+    text &&
+    isResearchAreaPlaceholderDescription(text) &&
+    !isConciseSpecificResearchDescription(text)
+  ) {
     flags.push('research-area-placeholder');
   }
   if (text && isAppointmentOnly(text)) flags.push('appointment-only');
@@ -1298,7 +1341,11 @@ export function shortDescriptionQuality(
   }
   if (text && isResearchEntitySourceChromeText(text)) flags.push('profile-chrome');
   if (text && isTeachingOnlyProfileDescription(text)) flags.push('profile-chrome');
-  if (text && isResearchAreaPlaceholderDescription(text) && !isConciseSpecificResearchDescription(text)) {
+  if (
+    text &&
+    isResearchAreaPlaceholderDescription(text) &&
+    !isConciseSpecificResearchDescription(text)
+  ) {
     flags.push('research-area-placeholder');
   }
   if (text && isAppointmentOnly(text)) flags.push('appointment-only');
@@ -1306,7 +1353,10 @@ export function shortDescriptionQuality(
   if (text && isBareChairTitleFragment(text)) flags.push('appointment-only');
   if (text && isCitationFragmentShort(text)) flags.push('incomplete-sentence');
   if (text && hasFirstPersonShortLead(text)) flags.push('first-person');
-  if (text && /^my lab (?:focuses|studies|investigates|examines|works) (?:on|in|with)\b/i.test(text)) {
+  if (
+    text &&
+    /^my lab (?:focuses|studies|investigates|examines|works) (?:on|in|with)\b/i.test(text)
+  ) {
     flags.push('generic-lead');
   }
   if (text && isVacuousGenericFocusSummary(text)) flags.push('generic-lead');
@@ -1314,7 +1364,8 @@ export function shortDescriptionQuality(
   if (text && isAffiliationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && isLocationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && hasGenericMissionStatementLead(text)) flags.push('generic-lead');
-  if (text && isGrantSignificanceBoilerplateShort(text)) flags.push('grant-significance-boilerplate');
+  if (text && isGrantSignificanceBoilerplateShort(text))
+    flags.push('grant-significance-boilerplate');
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isNonSelfContainedShortDescription(text)) flags.push('non-self-contained');
@@ -1396,7 +1447,10 @@ const isProgramCardAdministrativeAnnouncementChrome = (value: string): boolean =
 const STRAY_FOOTNOTE_MARK_PATTERN = /\*+/g;
 
 const stripStrayFootnoteMarks = (value: string): string =>
-  value.replace(STRAY_FOOTNOTE_MARK_PATTERN, '').replace(/\s{2,}/g, ' ').trim();
+  value
+    .replace(STRAY_FOOTNOTE_MARK_PATTERN, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 
 const STALE_ABSOLUTE_YEAR_SEASON_PATTERN =
   /\b(?:in|during)\s+the\s+(fall|winter|spring|summer)\s+of\s+(?:19|20)\d{2}\b/gi;
@@ -1448,8 +1502,10 @@ export function programCardShortDescriptionQuality(
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
   if (text && isNonOfferProgramCardClause(text)) flags.push('non-offer-clause');
-  if (text && isProgramCardAdministrativeAnnouncementChrome(text)) flags.push('administrative-chrome');
-  if (text && isGrantSignificanceBoilerplateShort(text)) flags.push('grant-significance-boilerplate');
+  if (text && isProgramCardAdministrativeAnnouncementChrome(text))
+    flags.push('administrative-chrome');
+  if (text && isGrantSignificanceBoilerplateShort(text))
+    flags.push('grant-significance-boilerplate');
   if (!full) flags.push('full-not-useful');
 
   return {
@@ -1615,33 +1671,72 @@ function normalizeLead(sentence: string): string {
     .replace(/^The lab investigates\b/i, 'Investigates')
     .replace(/^This lab investigates\b/i, 'Investigates')
     .replace(/^The laboratory investigates\b/i, 'Investigates')
-    .replace(/^The\s+.+?\s+(?:Lab|Laboratory)(?:\s+at\s+[\p{L} .'-]+?)?(?:\s+\([^)]+\))?\s+studies\b/iu, 'Studies')
+    .replace(
+      /^The\s+.+?\s+(?:Lab|Laboratory)(?:\s+at\s+[\p{L} .'-]+?)?(?:\s+\([^)]+\))?\s+studies\b/iu,
+      'Studies',
+    )
     .replace(/^In\s+the\s+.+?\s+(?:Lab|Laboratory),\s+we\s+investigate\b/i, 'Investigates')
-    .replace(/^In\s+the\s+.+?\s+(?:Lab|Laboratory),\s+our\s+focus\s+of\s+research\s+is\b/i, 'Focuses on')
+    .replace(
+      /^In\s+the\s+.+?\s+(?:Lab|Laboratory),\s+our\s+focus\s+of\s+research\s+is\b/i,
+      'Focuses on',
+    )
     .replace(/^I\s+am\s+a\s+labor\s+economist\s+who\s+studies\b/i, 'Studies')
     .replace(/^The\s+.+?\s+(?:Lab|Laboratory)(?:\s+\([^)]+\))?\s+investigates\b/i, 'Investigates')
     .replace(/^The\s+.+?\s+(?:Lab|Laboratory)(?:\s+\([^)]+\))?\s+focuses\s+on\b/i, 'Focuses on')
-    .replace(/^[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}\s+(?:Lab|Laboratory)(?:\s+\([^)]+\))?\s+focuses\s+on\b/iu, 'Focuses on')
+    .replace(
+      /^[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}\s+(?:Lab|Laboratory)(?:\s+\([^)]+\))?\s+focuses\s+on\b/iu,
+      'Focuses on',
+    )
     .replace(/^The\s+.+?\s+(?:Lab|Laboratory)(?:\s+\([^)]+\))?\s+explores\b/i, 'Explores')
-    .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+investigates\b/i, 'Investigates')
-    .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+focuses\s+on\b/i, 'Focuses on')
-    .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+explores\b/i, 'Explores')
-    .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+supports\b/i, 'Supports')
-    .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+develops\b/i, 'Develops')
-    .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+advances\b/i, 'Advances')
-    .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+works\s+towards\b/i, 'Works towards')
+    .replace(
+      /^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+investigates\b/i,
+      'Investigates',
+    )
+    .replace(
+      /^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+focuses\s+on\b/i,
+      'Focuses on',
+    )
+    .replace(
+      /^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+explores\b/i,
+      'Explores',
+    )
+    .replace(
+      /^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+supports\b/i,
+      'Supports',
+    )
+    .replace(
+      /^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+develops\b/i,
+      'Develops',
+    )
+    .replace(
+      /^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+advances\b/i,
+      'Advances',
+    )
+    .replace(
+      /^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+works\s+towards\b/i,
+      'Works towards',
+    )
     .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:\s+.+?)?\s+fosters\b/i, 'Fosters')
-    .replace(/^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:['’]s\s+mission\s+is\s+to)?\s+unite\b/i, 'Unites')
+    .replace(
+      /^The\s+.+?\s+(?:Program|Center|Centre|Initiative)(?:['’]s\s+mission\s+is\s+to)?\s+unite\b/i,
+      'Unites',
+    )
     .replace(/^The\s+(?:center|centre)\s+supports\b/i, 'Supports')
     .replace(/^The\s+(?:center|centre)\s+fosters\b/i, 'Fosters')
     .replace(/^The\s+initiative\s+advances\b/i, 'Advances')
     .replace(/^The\s+initiative\s+works\s+towards\b/i, 'Works towards')
     .replace(/^The\s+ILC\s+develops\b/i, 'Develops')
     .replace(/^Dr\.\s+[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}\s+studies\b/iu, 'Studies')
-    .replace(/^The research led by\s+[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}\s+focuses\s+on\b/iu, 'Studies')
+    .replace(
+      /^The research led by\s+[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}\s+focuses\s+on\b/iu,
+      'Studies',
+    )
     .replace(/^[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}['’]s\s+research examines\b/iu, 'Examines')
     .replace(/^[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}['’]s\s+research focuses on\b/iu, 'Focuses on')
-    .replace(/^[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}['’]s\s+research interests are in\b/iu, 'Studies')
+    .replace(
+      /^[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,4}['’]s\s+research interests are in\b/iu,
+      'Studies',
+    )
     .replace(/^(?:My|Our)\s+research\s+and\s+teaching\s+focus\s+on\b/i, 'Studies')
     .replace(
       /^(?:His|Her|Their|[\p{L}.'’-]+(?:\s+[\p{L}.'’-]+){0,3}['’]s)\s+(?:research\s+and\s+teaching|teaching\s+and\s+research)\s+focus\s+on\b/iu,
@@ -1721,9 +1816,7 @@ function primaryInterestTechnologySummary(sentences: string[]): string {
   if (!focus || !technologyArea) return '';
 
   const candidate = `Develops next-generation technologies for ${technologyArea}, with a focus on ${focus}.`;
-  if (
-    shortDescriptionQuality(candidate, sentences.join(' ')).isUseful
-  ) {
+  if (shortDescriptionQuality(candidate, sentences.join(' ')).isUseful) {
     return candidate;
   }
   return '';
@@ -1818,7 +1911,9 @@ function officialLabHomepageSummary(sentences: string[], full: string): string {
     );
     if (missionImproveMatch?.[1]) {
       const focus = missionImproveMatch[1].replace(/[.!?]+$/g, '').trim();
-      const domain = full.match(/\b(?:collaboration|diversity|innovation|insights)\s+in\s+([^.!?]*?\bresearch)\b/i)?.[1];
+      const domain = full.match(
+        /\b(?:collaboration|diversity|innovation|insights)\s+in\s+([^.!?]*?\bresearch)\b/i,
+      )?.[1];
       const candidate = domain
         ? `Improves ${focus} through ${domain.replace(/[.!?]+$/g, '').trim()}.`
         : `Improves ${focus}.`;
@@ -1890,7 +1985,10 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   if (/^(?:in\s+)?(?:my|our|i|we)\b/i.test(first)) return '';
   if (!/[,\s]\b(?:especially|and|or)\b|,/.test(first)) return '';
   if (startsWithPersonNameSubjectPredicate(first)) return '';
-  if (hasResearchDescriptionVerb(first) || /\b(?:is|are|was|were|has|have|had|teaches?|taught|edited|editing)\b/i.test(first)) {
+  if (
+    hasResearchDescriptionVerb(first) ||
+    /\b(?:is|are|was|were|has|have|had|teaches?|taught|edited|editing)\b/i.test(first)
+  ) {
     return '';
   }
   if (
@@ -2056,18 +2154,14 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
     }
 
-    const specialistInMatch = sentence.match(
-      /\bis\s+a\s+specialist\s+in\s+(.+?)(?:[.!?]|$)/i,
-    );
+    const specialistInMatch = sentence.match(/\bis\s+a\s+specialist\s+in\s+(.+?)(?:[.!?]|$)/i);
     if (specialistInMatch?.[1]) {
       const focus = specialistInMatch[1].replace(/[.!?]+$/g, '').trim();
       const candidate = `Studies ${focus}.`;
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
     }
 
-    const writtenAboutMatch = sentence.match(
-      /\bhas\s+written\s+about\s+(.+?)(?:[.!?]|$)/i,
-    );
+    const writtenAboutMatch = sentence.match(/\bhas\s+written\s+about\s+(.+?)(?:[.!?]|$)/i);
     if (writtenAboutMatch?.[1]) {
       const focus = writtenAboutMatch[1].replace(/[.!?]+$/g, '').trim();
       const candidate = `Studies ${focus}.`;
@@ -2083,9 +2177,7 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
     }
 
-    const expertiseLiesInMatch = sentence.match(
-      /\bexpertise\s+lies\s+in\s+(.+?)(?:[.!?]|$)/i,
-    );
+    const expertiseLiesInMatch = sentence.match(/\bexpertise\s+lies\s+in\s+(.+?)(?:[.!?]|$)/i);
     if (expertiseLiesInMatch?.[1]) {
       const focus = expertiseLiesInMatch[1].replace(/[.!?]+$/g, '').trim();
       const candidate = `Studies ${focus}.`;
@@ -2188,7 +2280,9 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
     );
     if (teachesHistoryMatch?.[1]) {
       const focus = teachesHistoryMatch[1].replace(/[.!?]+$/g, '').trim();
-      const nextFocus = sentence.match(/\bdirects\s+.+?Center\s+for\s+the\s+Study\s+of\s+(.+?)(?:[.!?]|$)/i)?.[1];
+      const nextFocus = sentence.match(
+        /\bdirects\s+.+?Center\s+for\s+the\s+Study\s+of\s+(.+?)(?:[.!?]|$)/i,
+      )?.[1];
       const candidate = nextFocus
         ? `Studies ${focus} and ${nextFocus.replace(/[.!?]+$/g, '').trim()}.`
         : `Studies ${focus}.`;
@@ -2308,9 +2402,7 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
     }
 
-    const studyOfMatch = sentence.match(
-      /\b(?:a\s+)?(?:study|history)\s+of\s+(.+?)(?:[.!?]|$)/i,
-    );
+    const studyOfMatch = sentence.match(/\b(?:a\s+)?(?:study|history)\s+of\s+(.+?)(?:[.!?]|$)/i);
     // As with contributionsMatch above: "X's study of <focus>" only names a
     // clean topic when <focus> is a noun phrase. A sentence with no internal
     // period after that clause ("Jaynes' study of the reorganization of
@@ -2318,7 +2410,11 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
     // understanding of the rise of sharecropping.") lets this capture run to
     // the sentence's own final verb clause instead, producing "Studies X
     // reshaped Y." - a run-on, not a summary (#1533 reopen).
-    if (studyOfMatch?.[1] && wordCount(studyOfMatch[1]) <= 12 && !isPronounLeadFragment(studyOfMatch[1])) {
+    if (
+      studyOfMatch?.[1] &&
+      wordCount(studyOfMatch[1]) <= 12 &&
+      !isPronounLeadFragment(studyOfMatch[1])
+    ) {
       const focus = studyOfMatch[1].replace(/[.!?]+$/g, '').trim();
       const candidate = `Studies ${focus}.`;
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
@@ -2342,9 +2438,7 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
     }
 
-    const researchConcernsMatch = sentence.match(
-      /\bresearch\s+concerns\s+(.+?)(?:[.!?]|$)/i,
-    );
+    const researchConcernsMatch = sentence.match(/\bresearch\s+concerns\s+(.+?)(?:[.!?]|$)/i);
     if (researchConcernsMatch?.[1]) {
       const focus = researchConcernsMatch[1].replace(/[.!?]+$/g, '').trim();
       const candidate = `Studies ${focus}.`;
@@ -2360,9 +2454,7 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
     }
 
-    const contributionsMatch = sentence.match(
-      /\bcontributions?\s+to\s+(.+?)(?:[.!?]|$)/i,
-    );
+    const contributionsMatch = sentence.match(/\bcontributions?\s+to\s+(.+?)(?:[.!?]|$)/i);
     // A genuine "contributions to X" clause names a compact noun phrase - a
     // capture this long means the sentence had a subordinate clause
     // ("...include research and testimony before Congress and the U.S.
@@ -2410,21 +2502,25 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
       const candidate = `Studies steps leading from ${from} to ${to}.`;
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
     }
-
   }
 
   if (
     /\bmany\s+other\s+plays,\s+which\s+include\b/i.test(combined) &&
     /\b(?:screenplays?|teleplays?|pilots?)\b/i.test(combined)
   ) {
-    const candidate = 'Creative work spans playwriting, theater, screenwriting, and dramatic storytelling.';
+    const candidate =
+      'Creative work spans playwriting, theater, screenwriting, and dramatic storytelling.';
     if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
   }
 
   const combinedStudyOfMatch = combined.match(
     /\b(?:a\s+)?(?:study|history)\s+of\s+(.+?)(?:[.!?]|$)/i,
   );
-  if (combinedStudyOfMatch?.[1] && wordCount(combinedStudyOfMatch[1]) <= 12 && !isPronounLeadFragment(combinedStudyOfMatch[1])) {
+  if (
+    combinedStudyOfMatch?.[1] &&
+    wordCount(combinedStudyOfMatch[1]) <= 12 &&
+    !isPronounLeadFragment(combinedStudyOfMatch[1])
+  ) {
     const focus = combinedStudyOfMatch[1].replace(/[.!?]+$/g, '').trim();
     const candidate = `Studies ${focus}.`;
     if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
@@ -2468,7 +2564,8 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     /\bmany\s+other\s+plays,\s+which\s+include\b/i.test(full) &&
     /\b(?:screenplays?|teleplays?|pilots?)\b/i.test(full)
   ) {
-    const candidate = 'Creative work spans playwriting, theater, screenwriting, and dramatic storytelling.';
+    const candidate =
+      'Creative work spans playwriting, theater, screenwriting, and dramatic storytelling.';
     if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
   }
 
@@ -2550,16 +2647,19 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     /^(?:one of the grand challenges|a frontier of this understanding|the discovery and development)/i.test(
       leadSentence,
     )
-      ? sentences.find((sentence, index) =>
-          index > 0 &&
-          (/\b(?:our group|the lab|the group)\s+(?:uses|develops|studies|investigates|explores|focuses|is interested|works on)\b/i.test(
-            sentence,
-          ) ||
-            hasResearchFocusPhrase(sentence)),
+      ? sentences.find(
+          (sentence, index) =>
+            index > 0 &&
+            (/\b(?:our group|the lab|the group)\s+(?:uses|develops|studies|investigates|explores|focuses|is interested|works on)\b/i.test(
+              sentence,
+            ) ||
+              hasResearchFocusPhrase(sentence)),
         ) || leadSentence
       : leadSentence;
   const lead = normalizeLead(researchFocusSentence);
-  const method = methodPhrase(sentences.filter((sentence) => sentence !== researchFocusSentence).join(' '));
+  const method = methodPhrase(
+    sentences.filter((sentence) => sentence !== researchFocusSentence).join(' '),
+  );
   if (method && !new RegExp(method.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(lead)) {
     const candidate = `${lead.replace(/[.!?]+$/g, '')}, using ${method}.`;
     if (shortDescriptionQuality(candidate, rawFull).isUseful) return candidate;
@@ -2574,5 +2674,7 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
   // make, not a new synthesis (#1533 reopen: schmidt-camacho-ask8's "Her
   // scholarship examines..." only needs "Her" grounded to her own name).
   const namedLead = restoreDanglingPronounSubject(lead, sentences[0]);
-  return namedLead !== lead && shortDescriptionQuality(namedLead, rawFull).isUseful ? namedLead : '';
+  return namedLead !== lead && shortDescriptionQuality(namedLead, rawFull).isUseful
+    ? namedLead
+    : '';
 }

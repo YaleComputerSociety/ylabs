@@ -3,7 +3,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const modulePath = path.resolve(__dirname, '../../../../data-migration/MigratePublicationsToPapers.ts');
+const modulePath = path.resolve(
+  __dirname,
+  '../../../../data-migration/MigratePublicationsToPapers.ts',
+);
 
 async function importPublicationMigration() {
   const originalMongoUrl = process.env.MONGODBURL;
@@ -51,7 +54,9 @@ describe('legacy publication migration CLI safety helpers', () => {
       limit: 25,
       output: '/tmp/publications.json',
     });
-    expect(parsePublicationMigrationArgs(['--apply', '--output', '/tmp/publications-apply.json'])).toEqual({
+    expect(
+      parsePublicationMigrationArgs(['--apply', '--output', '/tmp/publications-apply.json']),
+    ).toEqual({
       apply: true,
       confirmLegacyPublicationMigration: false,
       output: '/tmp/publications-apply.json',

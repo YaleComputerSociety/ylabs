@@ -31,8 +31,7 @@ const SOURCE_NAME = 'peabody-collections-research';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
-export const DEFAULT_PEABODY_DIVISIONS_INDEX_URL =
-  'https://peabody.yale.edu/explore/collections';
+export const DEFAULT_PEABODY_DIVISIONS_INDEX_URL = 'https://peabody.yale.edu/explore/collections';
 
 const DIVISION_PATH_RE = /^\/explore\/collections\/[a-z0-9-]+$/i;
 
@@ -100,10 +99,7 @@ export function slugifyPeabodyDivision(name: string): string {
   return `peabody-${slugify(name)}`.slice(0, 100);
 }
 
-export function parsePeabodyDivisionsIndex(
-  html: string,
-  pageUrl: string,
-): PeabodyDivisionLink[] {
+export function parsePeabodyDivisionsIndex(html: string, pageUrl: string): PeabodyDivisionLink[] {
   const $ = cheerio.load(html);
   const seen = new Set<string>();
   const divisions: PeabodyDivisionLink[] = [];
@@ -160,9 +156,7 @@ function extractCuratorialLead($: cheerio.CheerioAPI): PeabodyCuratorialLead | u
       container.find('.staff-info-text-website a[href]').first().attr('href'),
     );
     const profileUrl =
-      /^https?:\/\//i.test(profileHref) && /yale\.edu/i.test(profileHref)
-        ? profileHref
-        : undefined;
+      /^https?:\/\//i.test(profileHref) && /yale\.edu/i.test(profileHref) ? profileHref : undefined;
 
     lead = {
       name,

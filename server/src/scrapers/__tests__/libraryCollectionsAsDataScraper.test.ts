@@ -82,18 +82,24 @@ describe('libraryCollectionsAsDataScraper', () => {
 
   it('extracts a librarian curator and keeps only the first named curator', () => {
     expect(
-      extractCuratorialLead('Credits: Curated by Mike Widener, Rare Book Librarian, with Ryan Martins.'),
+      extractCuratorialLead(
+        'Credits: Curated by Mike Widener, Rare Book Librarian, with Ryan Martins.',
+      ),
     ).toEqual({ name: 'Mike Widener', role: 'director' });
   });
 
   it('fails closed when no personal curator credit is published', () => {
-    expect(extractCuratorialLead('Organized by the Lillian Goldman Law Library staff.')).toBeUndefined();
+    expect(
+      extractCuratorialLead('Organized by the Lillian Goldman Law Library staff.'),
+    ).toBeUndefined();
     expect(extractCuratorialLead('An exhibition of rare books and manuscripts.')).toBeUndefined();
     expect(extractCuratorialLead('Curated by the Exhibitions Committee.')).toBeUndefined();
   });
 
   it('fails closed on plural-doctor and honorific credits that name no single person', () => {
-    expect(extractCuratorialLead('Curated by Drs. Jean Bolognia, Yale School of Medicine.')).toBeUndefined();
+    expect(
+      extractCuratorialLead('Curated by Drs. Jean Bolognia, Yale School of Medicine.'),
+    ).toBeUndefined();
     expect(extractCuratorialLead('Curated by Prof. Sample.')).toBeUndefined();
   });
 

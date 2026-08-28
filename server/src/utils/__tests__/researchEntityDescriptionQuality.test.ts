@@ -157,7 +157,9 @@ describe('fullDescriptionQuality', () => {
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
-    expect(fullDescriptionQuality(fullDescription).flags).not.toContain('research-area-placeholder');
+    expect(fullDescriptionQuality(fullDescription).flags).not.toContain(
+      'research-area-placeholder',
+    );
     expect(fullDescriptionQuality(fullDescription).isUseful).toBe(true);
     expect(shortDescription).toBe(fullDescription);
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
@@ -297,7 +299,7 @@ describe('fullDescriptionQuality', () => {
 
   it('rejects a fluent area-echo fullDescription closing on a generic "contribute to overall health" tail (#1699)', () => {
     const fullDescription =
-      "The Renata Solis Lab studies the interconnections between sleep and various factors such as obesity, physical activity, diet, child abuse and trauma, as well as early childhood education and development. The lab focuses on understanding how these elements influence each other and contribute to overall health and well-being.";
+      'The Renata Solis Lab studies the interconnections between sleep and various factors such as obesity, physical activity, diet, child abuse and trauma, as well as early childhood education and development. The lab focuses on understanding how these elements influence each other and contribute to overall health and well-being.';
     const researchAreas = [
       'Sleep and related disorders',
       'Obesity, Physical Activity, Diet',
@@ -344,7 +346,11 @@ describe('fullDescriptionQuality', () => {
   it('matches a chip word against its closer-sentence morphological variant via stem comparison (#1625 residual)', () => {
     const fullDescription =
       'The lab focuses on cardiac ischemia and reperfusion and platelet disorders. The lab investigates therapeutic strategies for these cardiovascular conditions.';
-    const researchAreas = ['Cardiac ischemia and reperfusion', 'Platelet disorders', 'Antiplatelet therapy'];
+    const researchAreas = [
+      'Cardiac ischemia and reperfusion',
+      'Platelet disorders',
+      'Antiplatelet therapy',
+    ];
 
     const quality = fullDescriptionQuality(fullDescription, researchAreas);
     expect(quality.flags).toContain('area-echo-fallback');
@@ -460,16 +466,16 @@ describe('fullDescriptionQuality', () => {
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
-    expect(shortDescription).toBe('Studies critical theory, Jewish thought, philosophy, and European literatures.');
+    expect(shortDescription).toBe(
+      'Studies critical theory, Jewish thought, philosophy, and European literatures.',
+    );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
   it('does not glue a "Studies " prefix onto a first sentence that already has the person as subject', () => {
     const kachru =
       'Sonam Kachru specializes in the history of premodern South Asian philosophy and literature, with an emphasis on Buddhist philosophy. His first book examined the philosophy of mind of the Buddhist philosopher Vasubandhu.';
-    expect(deriveShortDescriptionFromFullDescription(kachru)).not.toMatch(
-      /^Studies Sonam Kachru/,
-    );
+    expect(deriveShortDescriptionFromFullDescription(kachru)).not.toMatch(/^Studies Sonam Kachru/);
 
     const dembroff =
       'Robin Dembroff works in the philosophy of gender and social ontology. Their research asks how social categories shape the structure of the social world.';
@@ -655,7 +661,9 @@ describe('fullDescriptionQuality', () => {
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
-    expect(shortDescription).toBe('Improves vascular health outcomes through vascular outcomes research.');
+    expect(shortDescription).toBe(
+      'Improves vascular health outcomes through vascular outcomes research.',
+    );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
@@ -665,7 +673,9 @@ describe('fullDescriptionQuality', () => {
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
-    expect(shortDescription).toBe('Enhances accessibility and precision of 3D tumor growth analysis.');
+    expect(shortDescription).toBe(
+      'Enhances accessibility and precision of 3D tumor growth analysis.',
+    );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
@@ -687,7 +697,9 @@ describe('fullDescriptionQuality', () => {
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
-    expect(shortDescription).toBe('Advances personalized care and precision medicine to improve outcomes in lupus.');
+    expect(shortDescription).toBe(
+      'Advances personalized care and precision medicine to improve outcomes in lupus.',
+    );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
@@ -912,7 +924,9 @@ describe('fullDescriptionQuality', () => {
 
     expect(fullQuality.flags).not.toContain('appointment-only');
     expect(fullQuality.isUseful).toBe(true);
-    expect(shortDescription).toBe('Studies conflict of laws, federal jurisdiction, and jurisprudence.');
+    expect(shortDescription).toBe(
+      'Studies conflict of laws, federal jurisdiction, and jurisprudence.',
+    );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
@@ -991,8 +1005,10 @@ describe('fullDescriptionQuality', () => {
       ).isUseful,
     ).toBe(false);
     expect(
-      shortDescriptionQuality('Studies nuclear physics, including research areas:.', fullDescription)
-        .isUseful,
+      shortDescriptionQuality(
+        'Studies nuclear physics, including research areas:.',
+        fullDescription,
+      ).isUseful,
     ).toBe(false);
     expect(
       shortDescriptionQuality(
@@ -1008,8 +1024,18 @@ describe('fullDescriptionQuality', () => {
     const degreeFull =
       'Dr. Tish Knobf is a Professor of Nursing at Yale University with a focus on the clinical practice and research related to women with breast cancer. Her research has been foundational in understanding symptom distress in cancer patients.';
 
-    expect(shortDescriptionQuality('Dr. Sznol has an international reputation in cancer drug development.', reputationFull).isUseful).toBe(false);
-    expect(shortDescriptionQuality("Dr. Knobf holds a master's degree from the Yale School of Nursing.", degreeFull).isUseful).toBe(false);
+    expect(
+      shortDescriptionQuality(
+        'Dr. Sznol has an international reputation in cancer drug development.',
+        reputationFull,
+      ).isUseful,
+    ).toBe(false);
+    expect(
+      shortDescriptionQuality(
+        "Dr. Knobf holds a master's degree from the Yale School of Nursing.",
+        degreeFull,
+      ).isUseful,
+    ).toBe(false);
     expect(deriveShortDescriptionFromFullDescription(reputationFull)).toBe(
       'Studies cancer immunotherapy, drug development for cancer, and the treatment of patients with melanoma and renal cell carcinoma.',
     );
@@ -1185,7 +1211,12 @@ describe('fullDescriptionQuality', () => {
     expect(shortDescription).toBe(
       'Studies British romanticism, the history of literary criticism, contemporary literary theory, and literature in relation to the visual arts.',
     );
-    expect(shortDescriptionQuality('Martins, 1999), and Wordsworth and the Poetry of What We Are.', fullDescription).isUseful).toBe(false);
+    expect(
+      shortDescriptionQuality(
+        'Martins, 1999), and Wordsworth and the Poetry of What We Are.',
+        fullDescription,
+      ).isUseful,
+    ).toBe(false);
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
@@ -1207,7 +1238,9 @@ describe('fullDescriptionQuality', () => {
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
-    expect(shortDescription).toBe('Studies Middle English especially Chaucer and Langland, Medieval Latin.');
+    expect(shortDescription).toBe(
+      'Studies Middle English especially Chaucer and Langland, Medieval Latin.',
+    );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
@@ -1228,8 +1261,18 @@ describe('fullDescriptionQuality', () => {
     const fullDescription =
       'The profile includes a list of publications and books before the research summary.';
 
-    expect(shortDescriptionQuality('Louis, the Interdisciplinary PhD in Theatre at Northwestern University.', fullDescription).isUseful).toBe(false);
-    expect(shortDescriptionQuality('Her book, Southern Horrors: Women and the Politics of Rape and Lynching, focuses on two women journalists, Ida B.', fullDescription).isUseful).toBe(false);
+    expect(
+      shortDescriptionQuality(
+        'Louis, the Interdisciplinary PhD in Theatre at Northwestern University.',
+        fullDescription,
+      ).isUseful,
+    ).toBe(false);
+    expect(
+      shortDescriptionQuality(
+        'Her book, Southern Horrors: Women and the Politics of Rape and Lynching, focuses on two women journalists, Ida B.',
+        fullDescription,
+      ).isUseful,
+    ).toBe(false);
   });
 
   it('derives card copy from study/history-of book descriptions when no clearer research sentence exists', () => {
@@ -1248,7 +1291,9 @@ describe('fullDescriptionQuality', () => {
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
-    expect(shortDescription).toBe('Works on the intertwined histories of Islam and colonial America.');
+    expect(shortDescription).toBe(
+      'Works on the intertwined histories of Islam and colonial America.',
+    );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
@@ -1317,7 +1362,9 @@ describe('fullDescriptionQuality', () => {
 
     const shortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
 
-    expect(shortDescription).toBe('Studies comparative constitutional law and emergency powers reform.');
+    expect(shortDescription).toBe(
+      'Studies comparative constitutional law and emergency powers reform.',
+    );
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
@@ -1390,7 +1437,10 @@ describe('shortDescriptionQuality Studies-template glue guard (#978)', () => {
       'Studies veterinary education have been through her membership on the Council on Education.',
       'Studies Art at Yale University in 1990 and was awarded tenure in 1998.',
     ]) {
-      const quality = shortDescriptionQuality(bad, 'Some faculty bio full description sentence here.');
+      const quality = shortDescriptionQuality(
+        bad,
+        'Some faculty bio full description sentence here.',
+      );
       expect(quality.isUseful).toBe(false);
       expect(quality.flags).toContain('malformed-generated-text');
     }
@@ -1508,7 +1558,8 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
   it('keeps a "Studies <tags>." short whose tags are drawn from a richer, distinct fullDescription', () => {
     const full =
       'Ray C. Fair is the John M. Musser Professor of Economics at Yale University. His main research is in macroeconometrics, but he has also done work in the areas of finance, voting behavior, and aging in sports.';
-    const short = 'Studies econometrics, financial economics, international finance, and international trade.';
+    const short =
+      'Studies econometrics, financial economics, international finance, and international trade.';
     const quality = shortDescriptionQuality(short, full, undefined, fraOptions);
     expect(quality.flags).not.toContain('topic-label-list');
   });
@@ -1536,7 +1587,12 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
   it('rejects a single-clause "Studies <topic>." short whose topic is entirely absent from the full (ungrounded cherry-pick)', () => {
     const full =
       'The analysis in Making Morocco focuses on interactions between state and society during the Protectorate period, and how they politicized religion, ethnicity, territory, and the role of the Alawid monarchy.';
-    const quality = shortDescriptionQuality('Studies Texas from the first.', full, undefined, fraOptions);
+    const quality = shortDescriptionQuality(
+      'Studies Texas from the first.',
+      full,
+      undefined,
+      fraOptions,
+    );
     expect(quality.flags).toContain('ungrounded-topic-short');
     expect(quality.isUseful).toBe(false);
   });
@@ -1589,7 +1645,8 @@ describe('fullDescriptionQuality / shortDescriptionQuality provenance-independen
     const quality = assessResearchEntityDescriptionQuality({
       fullDescription:
         'Professor of Internal Medicine (Hematology) Acting Director, Stem Cell Transplantation; Chairman, Car-T Cell Joint Steering Committee; Director, Unrelated Donor Transplant Program, Stem Cell Transplantation; Co-Director, Immune Effector Cell Therapy; Co-Director, Adult CAR T-Cell Therapy Program',
-      shortDescription: 'Studies Hodgkin Disease, Lymphoma, Non-Hodgkin, and Hematopoietic Stem Cells.',
+      shortDescription:
+        'Studies Hodgkin Disease, Lymphoma, Non-Hodgkin, and Hematopoietic Stem Cells.',
       researchAreas: ['Cell Therapy'],
       entityType: 'FACULTY_RESEARCH_AREA',
     });
@@ -1602,42 +1659,65 @@ describe('isReplaceableResearchAreaChipEchoShort (#1680)', () => {
   const richDistinctFull =
     'Stephen Darwall is the Andrew Downey Orrick Professor of Philosophy at Yale University and the John Dewey Distinguished University Professor Emeritus at the University of Michigan. He has taught in the Department of Philosophy at Yale University. His research interests include moral philosophy, particularly in the areas of second-fixtureal ethics, moral reasoning, and the relationship between morality and authority.';
 
-  it('flags a short that only restates the entity\'s own researchArea chips over a rich, distinct full', () => {
+  it("flags a short that only restates the entity's own researchArea chips over a rich, distinct full", () => {
     const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
     const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
     expect(
-      isReplaceableResearchAreaChipEchoShort(short, richDistinctFull, researchAreas, 'FACULTY_RESEARCH_AREA'),
+      isReplaceableResearchAreaChipEchoShort(
+        short,
+        richDistinctFull,
+        researchAreas,
+        'FACULTY_RESEARCH_AREA',
+      ),
     ).toBe(true);
   });
 
-  it('does not flag a fluent list-shaped short whose items are not literally the entity\'s researchAreas', () => {
-    const short = 'Studies econometrics, financial economics, international finance, and international trade.';
+  it("does not flag a fluent list-shaped short whose items are not literally the entity's researchAreas", () => {
+    const short =
+      'Studies econometrics, financial economics, international finance, and international trade.';
     const full =
       'Ray C. Fair is the John M. Musser Professor of Economics at Yale University. His main research is in macroeconometrics, but he has also done work in the areas of finance, voting behavior, and aging in sports.';
     expect(
-      isReplaceableResearchAreaChipEchoShort(short, full, ['Macroeconometrics'], 'FACULTY_RESEARCH_AREA'),
+      isReplaceableResearchAreaChipEchoShort(
+        short,
+        full,
+        ['Macroeconometrics'],
+        'FACULTY_RESEARCH_AREA',
+      ),
     ).toBe(false);
   });
 
   it('does not flag a chip echo when the fullDescription is too thin to be worth compressing', () => {
     const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
     const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
-    expect(isReplaceableResearchAreaChipEchoShort(short, 'A short bio.', researchAreas, 'FACULTY_RESEARCH_AREA')).toBe(
-      false,
-    );
+    expect(
+      isReplaceableResearchAreaChipEchoShort(
+        short,
+        'A short bio.',
+        researchAreas,
+        'FACULTY_RESEARCH_AREA',
+      ),
+    ).toBe(false);
   });
 
   it('does not flag a chip echo for an entityType outside LAB/FACULTY_RESEARCH_AREA', () => {
     const short = 'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.';
     const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
-    expect(isReplaceableResearchAreaChipEchoShort(short, richDistinctFull, researchAreas, 'CENTER')).toBe(false);
+    expect(
+      isReplaceableResearchAreaChipEchoShort(short, richDistinctFull, researchAreas, 'CENTER'),
+    ).toBe(false);
   });
 
   it('does not flag a short that is only a partial, not total, chip echo', () => {
     const short = 'Studies Moral Philosophy, Ethics of War, and Moral Reasoning.';
     const researchAreas = ['Moral Philosophy', 'Second-Fixtureal Ethics', 'Moral Reasoning'];
     expect(
-      isReplaceableResearchAreaChipEchoShort(short, richDistinctFull, researchAreas, 'FACULTY_RESEARCH_AREA'),
+      isReplaceableResearchAreaChipEchoShort(
+        short,
+        richDistinctFull,
+        researchAreas,
+        'FACULTY_RESEARCH_AREA',
+      ),
     ).toBe(false);
   });
 });
@@ -1690,7 +1770,8 @@ describe('programCardShortDescriptionQuality administrative-announcement chrome 
   });
 
   it('rejects a bare "invites applications" announcement that never states the offer', () => {
-    const text = 'The Council on Middle East Studies invites applications to the Ganzfried Family Travel Fellowship competition.';
+    const text =
+      'The Council on Middle East Studies invites applications to the Ganzfried Family Travel Fellowship competition.';
     const quality = programCardShortDescriptionQuality(text, text);
     expect(quality.isUseful).toBe(false);
     expect(quality.flags).toContain('administrative-chrome');
@@ -1812,7 +1893,8 @@ describe('isFullDescriptionRestatementOfShortDescription (#1721)', () => {
   });
 
   it('does not flag a full description that is genuinely richer than the short', () => {
-    const short = 'Studies immune regulation and cancer immunotherapy in the tumor microenvironment.';
+    const short =
+      'Studies immune regulation and cancer immunotherapy in the tumor microenvironment.';
     const full =
       'The Chen Lab investigates the molecular mechanisms of immune regulation and cancer immunotherapy, focusing on how T cells recognize and respond to the tumor microenvironment, and develops single-cell and spatial approaches to map the signaling circuits that shape durable anti-tumor responses in patients.';
     expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(false);

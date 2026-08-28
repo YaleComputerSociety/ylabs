@@ -37,7 +37,9 @@ describe('longTextParagraphs', () => {
         'Examples include shared beliefs (e.g. religion), shared origins (e.g. nationality), and shared traits (e.g. introverts).',
         'The group studies how those categories shape attention.',
       ].join(' '),
-      ['Students use experimental methods.', 'Projects often compare adults and children.'].join(' '),
+      ['Students use experimental methods.', 'Projects often compare adults and children.'].join(
+        ' ',
+      ),
     ]);
   });
 
@@ -50,7 +52,9 @@ describe('longTextParagraphs', () => {
       'Projects connect physics, chemistry, engineering, and neuroscience.',
     ].join(' ');
 
-    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+    expect(
+      longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 }),
+    ).toEqual([
       [
         'Dr. D. S. Fahmeed Hyder studies brain energy metabolism.',
         'The lab applies calibrated fMRI and molecular imaging.',
@@ -72,7 +76,9 @@ describe('longTextParagraphs', () => {
       'The profile is retained as planning context.',
     ].join(' ');
 
-    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+    expect(
+      longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 }),
+    ).toEqual([
       [
         'The lab maintains a bibliography at https://www.ncbi.nlm.nih.gov/myncbi/profile/public/.',
         'The profile-derived summary should be checked against linked sources.',
@@ -94,7 +100,9 @@ describe('longTextParagraphs', () => {
       'The profile is retained as planning context.',
     ].join(' ');
 
-    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+    expect(
+      longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 }),
+    ).toEqual([
       [
         'The lab maintains an online atlas at www.SampleAtlas.org for shared use.',
         'More information is available on the book website, www.example-lab.school.edu.',
@@ -153,7 +161,9 @@ describe('longTextParagraphs', () => {
       'Current work connects education, health, and implementation.',
     ].join(' ');
 
-    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+    expect(
+      longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 }),
+    ).toEqual([
       [
         'Nicole represented the school in Washington, D.C., at an annual leadership conference.',
         'The project was led by a Principal Investigator and Co-P.I., with collaborators from multiple departments.',
@@ -176,7 +186,9 @@ describe('longTextParagraphs', () => {
       'The page includes enough context for a focused outreach note.',
     ].join(' ');
 
-    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+    expect(
+      longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 }),
+    ).toEqual([
       [
         'The profile lists Ph.D. training in economics and an M.Phil., also in economics.',
         'It also lists an M.A. and B.A. before B.Sc. and M.Sc. training.',
@@ -198,7 +210,9 @@ describe('longTextParagraphs', () => {
       'Current methods include genetics, microscopy, and computation.',
     ].join(' ');
 
-    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+    expect(
+      longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 }),
+    ).toEqual([
       [
         'The lab studies synapse assembly in C. elegans.',
         'Students use imaging and behavioral assays.',
@@ -221,7 +235,9 @@ describe('longTextParagraphs', () => {
       'Students can use the profile to decide whether the methods fit their interests.',
     ].join(' ');
 
-    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+    expect(
+      longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 }),
+    ).toEqual([
       [
         'The lab studies sensory systems in changing environments.',
         'Students use imaging, computation, and behavioral experiments.',

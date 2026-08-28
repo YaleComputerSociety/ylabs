@@ -47,9 +47,9 @@ describe('leadSectionHeading', () => {
 
   it('uses Director headings for director-role leads', () => {
     expect(leadSectionHeading([lead('director', 'Professor')])).toBe('Director');
-    expect(leadSectionHeading([lead('director', 'Professor'), lead('co-director', 'Professor')])).toBe(
-      'Directors',
-    );
+    expect(
+      leadSectionHeading([lead('director', 'Professor'), lead('co-director', 'Professor')]),
+    ).toBe('Directors');
   });
 
   it('falls back to a neutral Leadership heading for mixed or trainee-titled leads', () => {

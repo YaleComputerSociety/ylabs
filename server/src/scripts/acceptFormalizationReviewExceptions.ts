@@ -42,8 +42,7 @@ export function parseArgs(argv: string[]): CliOptions {
     else if (arg === '--confirm-accept-formalization-exceptions') options.confirm = true;
     else if (arg.startsWith('--output=')) {
       options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length).trim());
-    }
-    else throw new Error(`Unknown argument: ${arg}`);
+    } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.apply && !options.confirm) {
     throw new Error('--confirm-accept-formalization-exceptions is required when --apply is set.');

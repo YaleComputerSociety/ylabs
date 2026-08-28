@@ -40,9 +40,8 @@ describe('deprecated v4 backfill safety helpers', () => {
   });
 
   it('returns a structured blocked artifact for the removed paper graph surface', async () => {
-    const { buildV4PaperGraphBlockedOutput } = await importDeprecatedV4Backfill(
-      'BackfillV4PaperGraph.ts',
-    );
+    const { buildV4PaperGraphBlockedOutput } =
+      await importDeprecatedV4Backfill('BackfillV4PaperGraph.ts');
 
     const output = buildV4PaperGraphBlockedOutput({
       generatedAt: '2026-06-02T12:00:00.000Z',

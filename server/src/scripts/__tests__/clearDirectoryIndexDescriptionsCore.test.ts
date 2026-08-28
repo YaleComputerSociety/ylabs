@@ -80,7 +80,10 @@ describe('planDirectoryIndexCleanup', () => {
   it('re-derives when a grounded official description is available', () => {
     const plan = planDirectoryIndexCleanup(
       { id: '1', fullDescription: AZ_BOILERPLATE, shortDescription: AZ_BOILERPLATE },
-      { fullDescription: 'Studies airway inflammation in asthma.', shortDescription: 'Studies asthma.' },
+      {
+        fullDescription: 'Studies airway inflammation in asthma.',
+        shortDescription: 'Studies asthma.',
+      },
     );
     expect(plan.descriptionAction).toBe('re-derived');
     expect(plan.reDerivedDescription).toBe(true);
@@ -96,7 +99,10 @@ describe('planDirectoryIndexCleanup', () => {
         fullDescription: 'Studies chromatin dynamics and nuclear envelope assembly.',
         shortDescription: AZ_BOILERPLATE,
       },
-      { fullDescription: 'Studies airway inflammation in asthma.', shortDescription: 'Studies asthma.' },
+      {
+        fullDescription: 'Studies airway inflammation in asthma.',
+        shortDescription: 'Studies asthma.',
+      },
     );
     expect(plan.descriptionAction).toBe('cleared');
     expect(plan.clearedDescription).toBe(true);
@@ -121,7 +127,9 @@ describe('planDirectoryIndexCleanup', () => {
       {
         id: '1',
         fullDescription: AZ_BOILERPLATE,
-        researchAreas: ['Natural Language Processing9 YSM ResearchersView 121 Related Publications'],
+        researchAreas: [
+          'Natural Language Processing9 YSM ResearchersView 121 Related Publications',
+        ],
       },
       null,
     );
@@ -176,7 +184,10 @@ describe('filterCleanupPlanByManualLocks', () => {
   it('does not count a re-derivation whose fullDescription is locked', () => {
     const plan = planDirectoryIndexCleanup(
       { id: '1', fullDescription: AZ_BOILERPLATE, shortDescription: AZ_BOILERPLATE },
-      { fullDescription: 'Studies airway inflammation in asthma.', shortDescription: 'Studies asthma.' },
+      {
+        fullDescription: 'Studies airway inflammation in asthma.',
+        shortDescription: 'Studies asthma.',
+      },
     );
     const filtered = filterCleanupPlanByManualLocks(plan, ['fullDescription']);
     expect(filtered.reDerivedDescription).toBe(false);

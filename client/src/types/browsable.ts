@@ -227,4 +227,3 @@ export function getDaysUntilDeadline(item: BrowsableItem): number | null {
   const d = new Date(item.data.deadline);
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
-

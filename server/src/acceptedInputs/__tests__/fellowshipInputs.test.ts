@@ -42,11 +42,7 @@ async function writeReviewCsv(root: string, programKey: string, body: string) {
 describe('candidateRowsFromText', () => {
   it('extracts review candidates from labelled PDF text', () => {
     const rows = candidateRowsFromText(
-      [
-        'Student: Ada Lovelace',
-        'Project: RNA switches',
-        'Advisor: Riley Roster',
-      ].join('\n'),
+      ['Student: Ada Lovelace', 'Project: RNA switches', 'Advisor: Riley Roster'].join('\n'),
       testConfig,
       'https://example.yale.edu/2025-stars.pdf',
       2025,
@@ -77,8 +73,7 @@ describe('generateFellowshipCandidates', () => {
       const result = await generateFellowshipCandidates(root, {
         configs: [testConfig],
         fetchUrl: async () => ({ body: Buffer.from('pdf'), contentType: 'application/pdf' }),
-        pdfTextExtractor: async () =>
-          ['Student: Ada Lovelace', 'Advisor: Riley Roster'].join('\n'),
+        pdfTextExtractor: async () => ['Student: Ada Lovelace', 'Advisor: Riley Roster'].join('\n'),
       });
 
       expect(result[0]).toMatchObject({
@@ -86,10 +81,7 @@ describe('generateFellowshipCandidates', () => {
         status: 'candidates',
         candidateCount: 1,
       });
-      const csv = await fs.readFile(
-        path.join(root, FELLOWSHIP_REVIEW_DIR, 'stars-ii.csv'),
-        'utf8',
-      );
+      const csv = await fs.readFile(path.join(root, FELLOWSHIP_REVIEW_DIR, 'stars-ii.csv'), 'utf8');
       expect(csv).toContain('needs-review');
       expect(csv).toContain('Riley Roster');
     });
@@ -108,10 +100,7 @@ describe('generateFellowshipCandidates', () => {
         status: 'manual-required',
         candidateCount: 0,
       });
-      const csv = await fs.readFile(
-        path.join(root, FELLOWSHIP_REVIEW_DIR, 'stars-ii.csv'),
-        'utf8',
-      );
+      const csv = await fs.readFile(path.join(root, FELLOWSHIP_REVIEW_DIR, 'stars-ii.csv'), 'utf8');
       expect(csv).toContain('manual-required');
       expect(csv).toContain('PDF review required');
     });
@@ -309,14 +298,18 @@ describe('exportAcceptedFellowshipRows and status', () => {
   });
 
   it('rejects unsafe accepted-input roots and program keys before filesystem work', async () => {
-    await expect(validateAcceptedFellowshipFiles('/etc/ylabs-accepted-inputs', {
-      configs: [testConfig],
-    })).rejects.toThrow(/--root must stay under/);
+    await expect(
+      validateAcceptedFellowshipFiles('/etc/ylabs-accepted-inputs', {
+        configs: [testConfig],
+      }),
+    ).rejects.toThrow(/--root must stay under/);
 
     await withTempRoot(async (root) => {
-      await expect(exportAcceptedFellowshipRows(root, '../escape', {
-        configs: [{ ...testConfig, programKey: '../escape' }],
-      })).rejects.toThrow(/programKey must contain only/);
+      await expect(
+        exportAcceptedFellowshipRows(root, '../escape', {
+          configs: [{ ...testConfig, programKey: '../escape' }],
+        }),
+      ).rejects.toThrow(/programKey must contain only/);
     });
   });
 });

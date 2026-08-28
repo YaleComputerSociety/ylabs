@@ -136,10 +136,7 @@ describe('yaleCenterBritishArtScraper', () => {
 
   it('skips a department whose page is unavailable rather than emitting a shell', async () => {
     const fetchHtml = vi.fn(async () => '');
-    const scraper = new YaleCenterBritishArtScraper(
-      [PAINTINGS_SEED],
-      fetchHtml,
-    );
+    const scraper = new YaleCenterBritishArtScraper([PAINTINGS_SEED], fetchHtml);
     const { ctx, emitted } = makeContext();
 
     const result = await scraper.run(ctx);

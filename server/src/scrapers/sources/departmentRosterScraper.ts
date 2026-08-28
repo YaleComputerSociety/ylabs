@@ -3033,8 +3033,7 @@ export class DepartmentRosterScraper implements IScraper {
           labs++;
         }
         if (labObs.length > 0 && typeof labKey === 'string' && labKey) {
-          const deptDiscovered =
-            discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+          const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptDiscovered.add(labKey);
           discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
         }

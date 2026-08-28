@@ -35,7 +35,10 @@ export function slugify(input: string): string {
  */
 export function netidFromEmail(email: string | undefined | null): string | null {
   if (!email) return null;
-  const cleaned = String(email).trim().toLowerCase().replace(/^mailto:/, '');
+  const cleaned = String(email)
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
   const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
   if (!match) return null;
   return match[1].toLowerCase();
@@ -61,7 +64,10 @@ export function isLikelyPersonSpecificYaleEmail(
   email: string | undefined | null,
   personName: string | undefined | null,
 ): boolean {
-  const cleaned = String(email || '').trim().toLowerCase().replace(/^mailto:/, '');
+  const cleaned = String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
   const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
   if (!match) return false;
 
@@ -131,7 +137,11 @@ export function normalizeName(name: string | undefined | null): string {
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
   // drop parenthetical nicknames/asides e.g. "Ruby (Hsin-Fang) Tu" -> "Ruby Tu",
   // then clear any stray unmatched parenthesis left by upstream truncation
-  n = n.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+  n = n
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/[()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   // strip trailing credential clauses after the last comma, repeating so that
   // stacked degrees collapse fully e.g. "Avery Sloan, MD, PhD" -> "Avery Sloan"
   const credentialClause =
@@ -142,7 +152,10 @@ export function normalizeName(name: string | undefined | null): string {
     stripped = n.replace(credentialClause, '');
   }
   // strip trailing parenthetical/credential-like trailing tokens
-  n = n.trim().replace(/[,;]+$/, '').trim();
+  n = n
+    .trim()
+    .replace(/[,;]+$/, '')
+    .trim();
   return n;
 }
 

@@ -136,34 +136,30 @@ function extractDepartmentDescription($: cheerio.CheerioAPI): string | undefined
 function extractCuratorialLead($: cheerio.CheerioAPI): YcbaCuratorialLead | undefined {
   let lead: YcbaCuratorialLead | undefined;
 
-  $('.x-staff-credit, .field--name-field-curator, .staff-info-container-table').each(
-    (_i, el) => {
-      if (lead) return;
-      const container = $(el);
-      const roleText = cleanText(
-        container.find('.staff-role, .field--name-field-role em, em').first().text(),
-      );
-      if (!CURATOR_ROLE_RE.test(roleText)) return;
+  $('.x-staff-credit, .field--name-field-curator, .staff-info-container-table').each((_i, el) => {
+    if (lead) return;
+    const container = $(el);
+    const roleText = cleanText(
+      container.find('.staff-role, .field--name-field-role em, em').first().text(),
+    );
+    if (!CURATOR_ROLE_RE.test(roleText)) return;
 
-      const name = cleanText(
-        container.find('.staff-name, .field--name-field-person-name, strong').first().text(),
-      );
-      if (!name) return;
+    const name = cleanText(
+      container.find('.staff-name, .field--name-field-person-name, strong').first().text(),
+    );
+    if (!name) return;
 
-      const profileHref = cleanText(container.find('a[href]').first().attr('href'));
-      const profileUrl =
-        /^https?:\/\//i.test(profileHref) && /yale\.edu/i.test(profileHref)
-          ? profileHref
-          : undefined;
+    const profileHref = cleanText(container.find('a[href]').first().attr('href'));
+    const profileUrl =
+      /^https?:\/\//i.test(profileHref) && /yale\.edu/i.test(profileHref) ? profileHref : undefined;
 
-      lead = {
-        name,
-        role: 'director',
-        ...(roleText ? { title: roleText } : {}),
-        ...(profileUrl ? { profileUrl } : {}),
-      };
-    },
-  );
+    lead = {
+      name,
+      role: 'director',
+      ...(roleText ? { title: roleText } : {}),
+      ...(profileUrl ? { profileUrl } : {}),
+    };
+  });
 
   return lead;
 }

@@ -93,16 +93,12 @@ export function longTextParagraphs(
   const displayText = normalizeCommonAcademicAbbreviations(normalized);
 
   if (/\n/.test(displayText)) {
-    return displayText
-      .split(/\n+/)
-      .map(normalizeInlineWhitespace)
-      .filter(Boolean);
+    return displayText.split(/\n+/).map(normalizeInlineWhitespace).filter(Boolean);
   }
 
   const minAutoSplitCharacters =
     options.minAutoSplitCharacters ?? DEFAULT_MIN_AUTO_SPLIT_CHARACTERS;
-  const sentencesPerParagraph =
-    options.sentencesPerParagraph ?? DEFAULT_SENTENCES_PER_PARAGRAPH;
+  const sentencesPerParagraph = options.sentencesPerParagraph ?? DEFAULT_SENTENCES_PER_PARAGRAPH;
 
   if (displayText.length < minAutoSplitCharacters) {
     return [displayText];

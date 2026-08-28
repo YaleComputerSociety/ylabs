@@ -340,7 +340,7 @@ describe('loadAccountTrackingFromStorage', () => {
       }),
       [scopedKey('lab-notes')]: JSON.stringify({
         abc: 'a'.repeat(2500),
-        '$bad': 'drop',
+        $bad: 'drop',
       }),
       [scopedKey('fellowship-stages')]: JSON.stringify({
         f1: 'applied',
@@ -348,7 +348,7 @@ describe('loadAccountTrackingFromStorage', () => {
       }),
       [scopedKey('fellowship-notes')]: JSON.stringify({
         f1: 'b'.repeat(2500),
-        '$bad': 'drop',
+        $bad: 'drop',
       }),
     });
     const state = loadAccountTrackingFromStorage(storage, 'avery1');
@@ -427,9 +427,14 @@ describe('persistAccountTrackingToStorage', () => {
       removeItem: vi.fn(),
     };
 
-    persistAccountTrackingToStorage(storage, 'fellowship-notes', {
-      safe: 'x'.repeat(MAX_TRACKING_STORAGE_VALUE_LENGTH + 1),
-    }, 'avery1');
+    persistAccountTrackingToStorage(
+      storage,
+      'fellowship-notes',
+      {
+        safe: 'x'.repeat(MAX_TRACKING_STORAGE_VALUE_LENGTH + 1),
+      },
+      'avery1',
+    );
 
     expect(storage.setItem).not.toHaveBeenCalled();
     expect(storage.removeItem).toHaveBeenCalledWith('yale-research-avery1-fellowship-notes');

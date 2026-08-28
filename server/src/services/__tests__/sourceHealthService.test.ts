@@ -203,7 +203,7 @@ describe('sourceHealthService', () => {
     const rows = buildSourceHealthRows(
       [
         {
-          name: "unsafe-source; touch /tmp/pwned #",
+          name: 'unsafe-source; touch /tmp/pwned #',
           displayName: 'Unsafe source',
           enabled: true,
           coverage: { priority: 1, artifactTypes: ['Observation'] },

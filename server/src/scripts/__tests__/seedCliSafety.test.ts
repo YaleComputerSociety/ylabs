@@ -32,23 +32,15 @@ describe('data migration seed CLI safety helpers', () => {
       output: '/tmp/sources.json',
     });
     expect(
-      parseSeedSourcesArgs([
-        '--apply',
-        '--confirm-seed-apply',
-        '--output=/tmp/sources-apply.json',
-      ]),
+      parseSeedSourcesArgs(['--apply', '--confirm-seed-apply', '--output=/tmp/sources-apply.json']),
     ).toEqual({
       apply: true,
       confirmSeedApply: true,
       reset: false,
       output: '/tmp/sources-apply.json',
     });
-    expect(() => parseSeedSourcesArgs(['--output', '--apply'])).toThrow(
-      /--output requires a path/,
-    );
-    expect(() => parseSeedSourcesArgs(['--output=--apply'])).toThrow(
-      /--output requires a path/,
-    );
+    expect(() => parseSeedSourcesArgs(['--output', '--apply'])).toThrow(/--output requires a path/);
+    expect(() => parseSeedSourcesArgs(['--output=--apply'])).toThrow(/--output requires a path/);
     expect(() => parseSeedSourcesArgs(['--output=/etc/sources.json'])).toThrow(
       /--output must write under/,
     );
@@ -75,7 +67,13 @@ describe('data migration seed CLI safety helpers', () => {
     const { assertDepartmentSeedApplyAllowed, parseDepartmentSeedArgs } =
       await importDepartmentSeed();
 
-    expect(parseDepartmentSeedArgs(['--apply', '--confirm-seed-apply', '--output=/tmp/departments.json'])).toEqual({
+    expect(
+      parseDepartmentSeedArgs([
+        '--apply',
+        '--confirm-seed-apply',
+        '--output=/tmp/departments.json',
+      ]),
+    ).toEqual({
       apply: true,
       confirmSeedApply: true,
       output: '/tmp/departments.json',
@@ -83,9 +81,7 @@ describe('data migration seed CLI safety helpers', () => {
     expect(() => parseDepartmentSeedArgs(['--output', '--apply'])).toThrow(
       /--output requires a path/,
     );
-    expect(() => parseDepartmentSeedArgs(['--output=--apply'])).toThrow(
-      /--output requires a path/,
-    );
+    expect(() => parseDepartmentSeedArgs(['--output=--apply'])).toThrow(/--output requires a path/);
     expect(() =>
       assertDepartmentSeedApplyAllowed({
         apply: true,
@@ -107,7 +103,13 @@ describe('data migration seed CLI safety helpers', () => {
     const { assertResearchAreaSeedApplyAllowed, parseResearchAreaSeedArgs } =
       await importResearchAreaSeed();
 
-    expect(parseResearchAreaSeedArgs(['--apply', '--confirm-seed-apply', '--output=/tmp/research-areas.json'])).toEqual({
+    expect(
+      parseResearchAreaSeedArgs([
+        '--apply',
+        '--confirm-seed-apply',
+        '--output=/tmp/research-areas.json',
+      ]),
+    ).toEqual({
       apply: true,
       confirmSeedApply: true,
       output: '/tmp/research-areas.json',

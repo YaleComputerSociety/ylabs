@@ -113,7 +113,6 @@ describe('INVENTORY_COLLECTIONS', () => {
     expect(residue.map((spec) => spec.collection)).toContain('applications');
   });
 
-
   it('retains the existing ResearchEntityRelationship identity and collection', () => {
     expect(
       INVENTORY_COLLECTIONS.find((spec) => spec.collection === 'research_entity_relationships'),

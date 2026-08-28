@@ -437,7 +437,8 @@ describe('programController search visibility', () => {
       programs: [
         {
           ...privateProgram,
-          summary: 'Applications are reviewed each spring. Email prose-contact@yale.edu or call 203-555-1212 before applying.',
+          summary:
+            'Applications are reviewed each spring. Email prose-contact@yale.edu or call 203-555-1212 before applying.',
           description: 'The grant funds summer study. Questions: office@example.edu.',
           applicationInformation: 'Complete the online form. Call 203.555.3434 for the form.',
           eligibility: 'Open to juniors and seniors. Ask hidden@yale.edu about eligibility.',

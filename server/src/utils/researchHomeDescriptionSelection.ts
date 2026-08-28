@@ -33,7 +33,8 @@ export function describesResearchHome(text: string): boolean {
   );
 }
 
-const ACADEMIC_CREDENTIAL = 'M\\.?D|Ph\\.?D|MBBS|MPH|D\\.?O|DVM|DDS|Sc\\.?D|Pharm\\.?D|D\\.?Phil|Dr\\.?PH';
+const ACADEMIC_CREDENTIAL =
+  'M\\.?D|Ph\\.?D|MBBS|MPH|D\\.?O|DVM|DDS|Sc\\.?D|Pharm\\.?D|D\\.?Phil|Dr\\.?PH';
 
 const CREDENTIAL_NAME_LEAD = new RegExp(
   `\\b[A-Z][a-z]+(?:\\s+(?:[A-Z]\\.?|van|von|de|del|della|di|da|la|le|[A-Z][a-z]+)){1,3},\\s*(?:${ACADEMIC_CREDENTIAL})\\b`,
@@ -74,7 +75,8 @@ const FIRST_PERSON_TITLE_LEAD = new RegExp(
 // at Yale School of Medicine, Dr. Russi focuses on ...") pushes the Dr./Prof.
 // name out of sentence-initial position, but it is the same third-person
 // credential lead as the bare "Dr./Prof. ..." check above.
-const TITLE_CLAUSE_THEN_NAME_LEAD = /^as\s+(?:an?|the)\s+[^,]{0,120},\s*(?:dr|prof|professor)\.?\s+[A-Z]/i;
+const TITLE_CLAUSE_THEN_NAME_LEAD =
+  /^as\s+(?:an?|the)\s+[^,]{0,120},\s*(?:dr|prof|professor)\.?\s+[A-Z]/i;
 
 // A first-person career/experience narrative ("I have a broad background in
 // ..."; "I have twenty five plus years of experience in ...") is a CV lead

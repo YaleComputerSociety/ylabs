@@ -2,7 +2,9 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const syncEntitiesMock = vi.fn(async (_entityType: string, _docs: Array<Record<string, unknown>>) => {});
+const syncEntitiesMock = vi.fn(
+  async (_entityType: string, _docs: Array<Record<string, unknown>>) => {},
+);
 
 vi.mock('../../services/meiliSyncService', () => ({
   syncEntities: (entityType: string, docs: Array<Record<string, unknown>>) =>
@@ -104,8 +106,8 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
     expect(result.syncedToMeili).toBe(0);
     expect(syncEntitiesMock).not.toHaveBeenCalled();
 
-    const drifted = await mongoose.connection.db!
-      .collection('research_entities')
+    const drifted = await mongoose.connection
+      .db!.collection('research_entities')
       .findOne({ _id: driftedId });
     expect(drifted?.researchAreas).toEqual(['Machine Learning, Neuroscience']);
   });
@@ -116,18 +118,21 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
     expect(result.mode).toBe('apply');
     expect(result.syncedToMeili).toBe(1);
 
-    const drifted = await mongoose.connection.db!
-      .collection('research_entities')
+    const drifted = await mongoose.connection
+      .db!.collection('research_entities')
       .findOne({ _id: driftedId });
     expect(drifted?.researchAreas).toEqual(['Machine Learning', 'Neuroscience']);
 
-    const clean = await mongoose.connection.db!
-      .collection('research_entities')
+    const clean = await mongoose.connection
+      .db!.collection('research_entities')
       .findOne({ _id: cleanId });
     expect(clean?.researchAreas).toEqual(['Economics']);
 
     expect(syncEntitiesMock).toHaveBeenCalledTimes(1);
-    const [entityType, docs] = syncEntitiesMock.mock.calls[0] as [string, Array<Record<string, unknown>>];
+    const [entityType, docs] = syncEntitiesMock.mock.calls[0] as [
+      string,
+      Array<Record<string, unknown>>,
+    ];
     expect(entityType).toBe('researchEntity');
     expect(docs).toHaveLength(1);
     expect(String(docs[0]._id)).toBe(driftedId.toString());
@@ -136,9 +141,11 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
 
   it('syncs the freshly persisted values, never the pre-write chips (write-before-sync)', async () => {
     let observedAreasAtSyncTime: unknown;
-    syncEntitiesMock.mockImplementationOnce(async (_type: string, docs: Array<Record<string, unknown>>) => {
-      observedAreasAtSyncTime = docs[0]?.researchAreas;
-    });
+    syncEntitiesMock.mockImplementationOnce(
+      async (_type: string, docs: Array<Record<string, unknown>>) => {
+        observedAreasAtSyncTime = docs[0]?.researchAreas;
+      },
+    );
 
     await runResearchAreaBackfill({ ...options, dryRun: false });
 
@@ -154,8 +161,8 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
 
     expect(result.summary.considered).toBe(1);
 
-    const drifted = await mongoose.connection.db!
-      .collection('research_entities')
+    const drifted = await mongoose.connection
+      .db!.collection('research_entities')
       .findOne({ _id: driftedId });
     expect(drifted?.researchAreas).toEqual(['Machine Learning, Neuroscience']);
   });

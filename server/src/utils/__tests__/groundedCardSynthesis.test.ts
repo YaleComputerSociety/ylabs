@@ -33,9 +33,9 @@ describe('grounding', () => {
   });
 
   it('treats a verbatim slice of the full description as grounded', () => {
-    expect(
-      isCardGroundedInFullDescription('the biology of aging', RICH_FIRST_PERSON_FULL),
-    ).toBe(true);
+    expect(isCardGroundedInFullDescription('the biology of aging', RICH_FIRST_PERSON_FULL)).toBe(
+      true,
+    );
   });
 });
 
@@ -65,9 +65,9 @@ describe('isUngroundedSynthesizedCard', () => {
   });
 
   it('never touches a source-derived blurb that does not lead with a synthesis verb', () => {
-    expect(isUngroundedSynthesizedCard('The lab in Austin explores rodeo culture.', MOROCCO_FULL)).toBe(
-      false,
-    );
+    expect(
+      isUngroundedSynthesizedCard('The lab in Austin explores rodeo culture.', MOROCCO_FULL),
+    ).toBe(false);
   });
 
   it('keeps a synthesized card when there is no full description to verify against', () => {
@@ -87,9 +87,9 @@ describe('normalizeCardText', () => {
   });
 
   it('reduces multi-sentence output to its first sentence', () => {
-    expect(
-      normalizeCardText('Studies antiviral signaling. It also trains students.'),
-    ).toBe('Studies antiviral signaling.');
+    expect(normalizeCardText('Studies antiviral signaling. It also trains students.')).toBe(
+      'Studies antiviral signaling.',
+    );
   });
 
   it('returns empty for empty input', () => {
@@ -102,9 +102,11 @@ describe('synthesizeGroundedCardDescription', () => {
   it('returns a grounded, quality-passing card from rich prose the regex funnel cannot card', async () => {
     expect(deriveShortDescriptionFromFullDescription(RICH_FIRST_PERSON_FULL)).toBe('');
 
-    const callLLM = vi.fn().mockResolvedValue(
-      'Studies the biology of aging and how metabolism shapes lifespan across species.',
-    );
+    const callLLM = vi
+      .fn()
+      .mockResolvedValue(
+        'Studies the biology of aging and how metabolism shapes lifespan across species.',
+      );
     const card = await synthesizeGroundedCardDescription({
       fullDescription: RICH_FIRST_PERSON_FULL,
       callLLM,
@@ -193,8 +195,8 @@ describe('resolveGroundedCardDescription', () => {
   it('falls back to grounded synthesis only when the derivation returns nothing', async () => {
     expect(deriveShortDescriptionFromFullDescription(RICH_FIRST_PERSON_FULL)).toBe('');
 
-    const synthesize = vi.fn(async () =>
-      'Studies the biology of aging and how metabolism shapes lifespan across species.',
+    const synthesize = vi.fn(
+      async () => 'Studies the biology of aging and how metabolism shapes lifespan across species.',
     );
     const resolved = await resolveGroundedCardDescription({
       fullDescription: RICH_FIRST_PERSON_FULL,
@@ -317,13 +319,16 @@ describe('resolveServedShortDescription bare researchArea-chip-echo residual (#1
       entityType: 'FACULTY_RESEARCH_AREA',
     });
     expect(resolved).toBe(deriveShortDescriptionFromFullDescription(richDistinctFull));
-    expect(resolved).not.toBe('Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.');
+    expect(resolved).not.toBe(
+      'Studies Moral Philosophy, Second-Fixtureal Ethics, and Moral Reasoning.',
+    );
   });
 
-  it('keeps a fluent list-shaped short whose items are not literally the entity\'s researchAreas', () => {
+  it("keeps a fluent list-shaped short whose items are not literally the entity's researchAreas", () => {
     const full =
       'Ray C. Fair is the John M. Musser Professor of Economics at Yale University. His main research is in macroeconometrics, but he has also done work in the areas of finance, voting behavior, and aging in sports.';
-    const short = 'Studies econometrics, financial economics, international finance, and international trade.';
+    const short =
+      'Studies econometrics, financial economics, international finance, and international trade.';
     const resolved = resolveServedShortDescription({
       shortDescription: short,
       fullDescription: full,
@@ -422,7 +427,9 @@ describe('resolveGroundedCardDescription rejects researcher-voice "Studies" on p
   });
 
   it('never invokes the LLM synthesizer for a program-like entity and fails closed', async () => {
-    const synthesize = vi.fn(async () => 'Studies Slavery, Resistance, and Abolition at the Whitney.');
+    const synthesize = vi.fn(
+      async () => 'Studies Slavery, Resistance, and Abolition at the Whitney.',
+    );
     const resolved = await resolveGroundedCardDescription({
       fullDescription: 'Gilder Lehrman fellowship.',
       isProgramLike: true,

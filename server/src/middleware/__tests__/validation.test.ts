@@ -69,7 +69,11 @@ describe('validation middleware', () => {
   });
 
   it('validateResearchEntityId accepts a research-entity slug or a hex id (#1051)', () => {
-    for (const entityId of ['ysm-goodman', 'nsf-pi-67d8929250621bcef434a59f', '507f1f77bcf86cd799439011']) {
+    for (const entityId of [
+      'ysm-goodman',
+      'nsf-pi-67d8929250621bcef434a59f',
+      '507f1f77bcf86cd799439011',
+    ]) {
       const response = createResponse();
       const next = vi.fn() as unknown as NextFunction;
       const request = { params: { entityId } } as unknown as Request;

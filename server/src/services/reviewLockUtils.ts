@@ -12,9 +12,10 @@ export async function findReviewLockedRecord(
   filter: Record<string, unknown>,
 ): Promise<ReviewLockedRecord | null> {
   if (typeof (model as any).findOne !== 'function') return null;
-  return (await model.findOne(filter).select('review.status review.lockedFields').lean()) as
-    | ReviewLockedRecord
-    | null;
+  return (await model
+    .findOne(filter)
+    .select('review.status review.lockedFields')
+    .lean()) as ReviewLockedRecord | null;
 }
 
 export function omitReviewLockedFields<T extends Record<string, unknown>>(

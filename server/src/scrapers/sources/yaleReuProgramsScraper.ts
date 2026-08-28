@@ -57,9 +57,7 @@ export const CURATED_YALE_REU_PROGRAM_SEEDS: ReuProgramSeed[] = [
  * These are non-Yale hosts: parsed for yale.edu links, never emitted as a source
  * citation (self-referential / index-page source guards #516/#549).
  */
-export const NSF_REU_DIRECTORY_SEED_URLS = [
-  'https://www.nsf.gov/crssprgm/reu/reu_search.jsp',
-];
+export const NSF_REU_DIRECTORY_SEED_URLS = ['https://www.nsf.gov/crssprgm/reu/reu_search.jsp'];
 
 const MAX_DISCOVERED_YALE_PROGRAM_PAGES = 60;
 const MAX_PROGRAM_LINKS = 8;
@@ -181,7 +179,8 @@ function inferTerm(text: string): string[] {
   return Array.from(terms);
 }
 
-const ELIGIBILITY_HEADING_RE = /\beligibility|who (?:can|may) apply|who is eligible|requirements?\b/i;
+const ELIGIBILITY_HEADING_RE =
+  /\beligibility|who (?:can|may) apply|who is eligible|requirements?\b/i;
 const APPLICATION_HEADING_RE =
   /(?:how to apply|application (?:process|information|requirements?|materials?)|to apply)/i;
 
@@ -212,15 +211,19 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
 
 function nearestDeadlineText(text: string): string {
   const normalized = normalizeWhitespace(text);
-  const label = /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/i.exec(
-    normalized,
-  );
+  const label =
+    /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/i.exec(
+      normalized,
+    );
   if (!label || label.index === undefined) return '';
   const monthPattern = Object.keys(MONTHS).join('|');
   const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
   const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
   const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'i');
-  const after = normalized.slice(label.index + label[0].length, label.index + label[0].length + 120);
+  const after = normalized.slice(
+    label.index + label[0].length,
+    label.index + label[0].length + 120,
+  );
   return datePattern.exec(after)?.[0] || '';
 }
 
@@ -245,10 +248,7 @@ export function parseDeadlineToUtcEndOfDay(
   }
   const monthPattern = Object.keys(MONTHS).join('|');
   const match = normalized.match(
-    new RegExp(
-      `(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`,
-      'i',
-    ),
+    new RegExp(`(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`, 'i'),
   );
   if (!match) return undefined;
   const month = MONTHS[match[1].toLowerCase()];
@@ -368,7 +368,10 @@ export function parseReuProgramPage(
     if (!isApplyLink(url, rawLabel)) continue;
     if (isUnhelpfulProgramUrl(url, pageUrl)) continue;
     seenUrls.add(url);
-    links.push({ label: humanizeProgramLinkLabel(rawLabel, url) || rawLabel || 'Application', url });
+    links.push({
+      label: humanizeProgramLinkLabel(rawLabel, url) || rawLabel || 'Application',
+      url,
+    });
     if (links.length >= MAX_PROGRAM_LINKS) break;
   }
   const applicationLink = links.find((link) => isApplyLink(link.url, link.label))?.url;
@@ -578,12 +581,7 @@ export class YaleReuProgramsScraper implements IScraper {
         try {
           const html = await this.fetchPage(url, ctx.options.useCache);
           fetched = true;
-          parsed = parseReuProgramPage(
-            html,
-            url,
-            officeByUrl.get(url) || 'Yale',
-            referenceDate,
-          );
+          parsed = parseReuProgramPage(html, url, officeByUrl.get(url) || 'Yale', referenceDate);
           break;
         } catch (error) {
           lastError = error;

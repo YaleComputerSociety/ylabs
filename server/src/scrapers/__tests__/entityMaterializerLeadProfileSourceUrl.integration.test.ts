@@ -97,7 +97,9 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
 
     expect(result.skipped).toBeUndefined();
 
-    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'ysm-steele-fixture',
+    }).lean<PersistedEntity>();
     const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
 
     expect(sourceUrls).toContain(OFFICIAL_PROFILE_URL);
@@ -113,7 +115,9 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
 
     await materializeEntity('researchEntity', { entityKey: 'ysm-steele-fixture' }, {});
 
-    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'ysm-steele-fixture',
+    }).lean<PersistedEntity>();
     const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
 
     expect(sourceUrls.filter((url) => url === OFFICIAL_PROFILE_URL)).toHaveLength(1);
@@ -126,7 +130,9 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
 
     await materializeEntity('researchEntity', { entityKey: 'ysm-steele-fixture' }, {});
 
-    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'ysm-steele-fixture',
+    }).lean<PersistedEntity>();
     const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
 
     expect(sourceUrls).not.toContain(OFFICIAL_PROFILE_URL);

@@ -37,7 +37,10 @@ function makeContext(options: Partial<ScraperContext['options']> = {}) {
 
 describe('yaleUniversityArtGalleryScraper', () => {
   it('extracts curatorial areas from the index and cites each area page', () => {
-    const areas = parseYuagCuratorialAreasIndex(INDEX_HTML, DEFAULT_YUAG_CURATORIAL_AREAS_INDEX_URL);
+    const areas = parseYuagCuratorialAreasIndex(
+      INDEX_HTML,
+      DEFAULT_YUAG_CURATORIAL_AREAS_INDEX_URL,
+    );
 
     expect(areas).toEqual([
       {
@@ -103,7 +106,8 @@ describe('yaleUniversityArtGalleryScraper', () => {
       slug: 'yuag-european-art',
     });
     const observations = areaToObservations(area);
-    const areaUrl = 'https://artgallery.yale.edu/research-and-learning/curatorial-areas/european-art';
+    const areaUrl =
+      'https://artgallery.yale.edu/research-and-learning/curatorial-areas/european-art';
 
     for (const observation of observations) {
       expect(observation.entityType).toBe('researchEntity');

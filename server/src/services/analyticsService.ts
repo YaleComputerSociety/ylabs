@@ -843,7 +843,6 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     const updateFields: any = {
       lastActive: now,
     };
-
   } catch (error) {
     console.error('Error logging analytics event:', sanitizeLogValue(error));
   }
@@ -2460,7 +2459,9 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
     uniqueViewers: number;
   }>;
   const topEntityIdsFor = (entityType: string): string[] =>
-    topEntitiesRaw.filter((entity) => entity.entityType === entityType).map((entity) => entity.entityId);
+    topEntitiesRaw
+      .filter((entity) => entity.entityType === entityType)
+      .map((entity) => entity.entityId);
   const [topResearchEntityDocs, topFellowshipDocs, topListingDocs, topProfileDocs] =
     await Promise.all([
       topEntityIdsFor('research_entity').length
@@ -2505,9 +2506,14 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
         : Promise.resolve([]),
     ]);
   const researchEntityById = new Map(
-    (topResearchEntityDocs as Array<{ _id: unknown; name?: string; displayName?: string; slug?: string }>).map(
-      (doc) => [String(doc._id), doc] as const,
-    ),
+    (
+      topResearchEntityDocs as Array<{
+        _id: unknown;
+        name?: string;
+        displayName?: string;
+        slug?: string;
+      }>
+    ).map((doc) => [String(doc._id), doc] as const),
   );
   const fellowshipTitleById = new Map(
     (topFellowshipDocs as Array<{ _id: unknown; title?: string }>).map(

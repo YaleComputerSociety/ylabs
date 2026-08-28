@@ -94,12 +94,8 @@ describe('claimGate CLI helpers', () => {
     expect(() => parseClaimGateArgs(['--collection', '--strict'])).toThrow(
       '--collection requires a value',
     );
-    expect(() => parseClaimGateArgs(['--limit=bad'])).toThrow(
-      '--limit must be a positive integer',
-    );
-    expect(() => parseClaimGateArgs(['--limit=1e3'])).toThrow(
-      '--limit must be a positive integer',
-    );
+    expect(() => parseClaimGateArgs(['--limit=bad'])).toThrow('--limit must be a positive integer');
+    expect(() => parseClaimGateArgs(['--limit=1e3'])).toThrow('--limit must be a positive integer');
     expect(() => parseClaimGateArgs(['prod'])).toThrow('Unknown claim-gate option: prod');
   });
 

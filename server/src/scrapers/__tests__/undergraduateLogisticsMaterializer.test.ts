@@ -221,16 +221,13 @@ describe('undergraduate logistics materialization', () => {
     ['this is a fully in-person position.', ['IN_PERSON']],
     ['This is a remote role.', ['REMOTE']],
     ['The position is a hybrid opportunity.', ['HYBRID']],
-  ])(
-    'accepts a subject-less declarative modality statement: %s',
-    (evidenceQuote, modes) => {
-      const result = validateUndergraduateLogisticsObservation(
-        observation('undergraduateLogisticsModality', 'MODALITY', { modes }, evidenceQuote),
-      );
+  ])('accepts a subject-less declarative modality statement: %s', (evidenceQuote, modes) => {
+    const result = validateUndergraduateLogisticsObservation(
+      observation('undergraduateLogisticsModality', 'MODALITY', { modes }, evidenceQuote),
+    );
 
-      expect(result.accepted?.value).toEqual({ modes });
-    },
-  );
+    expect(result.accepted?.value).toEqual({ modes });
+  });
 
   it.each([
     ['This is a fully remote postdoctoral position.'],
@@ -302,7 +299,9 @@ describe('undergraduate logistics materialization', () => {
     [
       'The Clark Relationship Science Laboratory is always looking for intelligent and motivated undergraduate research assistants.',
     ],
-    ['We are actively recruiting undergraduate and graduate researchers and postdoctoral scholars.'],
+    [
+      'We are actively recruiting undergraduate and graduate researchers and postdoctoral scholars.',
+    ],
   ])('accepts explicit present-tense undergraduate recruiting language: %s', (evidenceQuote) => {
     const result = validateUndergraduateLogisticsObservation(
       observation(
@@ -1203,18 +1202,21 @@ describe('lab-as-subject non-acceptance availability (symmetric to direct recrui
     'We are not accepting late applications.',
     'Graduate students are not accepted for this position.',
     'We are recruiting undergraduate students to join our lab.',
-  ])('rejects NOT_CURRENTLY_AVAILABLE for non-availability or positive phrasing: %s', (evidenceQuote) => {
-    const result = validateUndergraduateLogisticsObservation(
-      observation(
-        'undergraduateLogisticsCurrentAvailability',
-        'CURRENT_AVAILABILITY',
-        { status: 'NOT_CURRENTLY_AVAILABLE' },
-        evidenceQuote,
-      ),
-    );
+  ])(
+    'rejects NOT_CURRENTLY_AVAILABLE for non-availability or positive phrasing: %s',
+    (evidenceQuote) => {
+      const result = validateUndergraduateLogisticsObservation(
+        observation(
+          'undergraduateLogisticsCurrentAvailability',
+          'CURRENT_AVAILABILITY',
+          { status: 'NOT_CURRENTLY_AVAILABLE' },
+          evidenceQuote,
+        ),
+      );
 
-    expect(result).toEqual({ rejectedReason: 'evidence_does_not_support_exact_claim' });
-  });
+      expect(result).toEqual({ rejectedReason: 'evidence_does_not_support_exact_claim' });
+    },
+  );
 
   it('exposes quoteExplicitlyDeclinesUndergraduates for scraper-side derivation', () => {
     expect(quoteExplicitlyDeclinesUndergraduates('not accepting undergraduates')).toBe(true);
@@ -1259,7 +1261,14 @@ describe('currentUndergradAvailabilityFromSignals', () => {
   it('returns the status from a fresh KNOWN CURRENT_AVAILABILITY signal', () => {
     expect(
       currentUndergradAvailabilityFromSignals(
-        [{ type: 'CURRENT_AVAILABILITY', status: 'KNOWN', value: { status: 'OPEN' }, expiresAt: freshExpiry }],
+        [
+          {
+            type: 'CURRENT_AVAILABILITY',
+            status: 'KNOWN',
+            value: { status: 'OPEN' },
+            expiresAt: freshExpiry,
+          },
+        ],
         NOW,
       ),
     ).toBe('OPEN');
@@ -1281,7 +1290,14 @@ describe('currentUndergradAvailabilityFromSignals', () => {
   it('fails closed to UNKNOWN when the signal has expired, even if status is still KNOWN', () => {
     expect(
       currentUndergradAvailabilityFromSignals(
-        [{ type: 'CURRENT_AVAILABILITY', status: 'KNOWN', value: { status: 'OPEN' }, expiresAt: staleExpiry }],
+        [
+          {
+            type: 'CURRENT_AVAILABILITY',
+            status: 'KNOWN',
+            value: { status: 'OPEN' },
+            expiresAt: staleExpiry,
+          },
+        ],
         NOW,
       ),
     ).toBe('UNKNOWN');

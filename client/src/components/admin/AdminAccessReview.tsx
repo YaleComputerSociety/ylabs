@@ -683,7 +683,10 @@ const AdminAccessReview = () => {
             <input
               type="checkbox"
               checked={hasUnreviewed}
-              onChange={(event) => { setHasUnreviewed(event.target.checked); setPage(1); }}
+              onChange={(event) => {
+                setHasUnreviewed(event.target.checked);
+                setPage(1);
+              }}
             />
             Has unreviewed
           </label>
@@ -692,7 +695,10 @@ const AdminAccessReview = () => {
             <select
               aria-label="Queue order"
               value={queueSort}
-              onChange={(event) => { setQueueSort(event.target.value); setPage(1); }}
+              onChange={(event) => {
+                setQueueSort(event.target.value);
+                setPage(1);
+              }}
               className="min-h-[44px] border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm"
             >
               <option value="unreviewed">Most unreviewed</option>
@@ -719,8 +725,12 @@ const AdminAccessReview = () => {
               Page {page} of {totalPages}
             </p>
           </div>
-          <div className="px-4 py-2 border-b border-[var(--yr-line)] text-xs text-gray-600" role="status">
-            <strong>{queueProgress.reviewedToday}</strong> reviewed today · <strong>{queueProgress.remaining}</strong> remaining
+          <div
+            className="px-4 py-2 border-b border-[var(--yr-line)] text-xs text-gray-600"
+            role="status"
+          >
+            <strong>{queueProgress.reviewedToday}</strong> reviewed today ·{' '}
+            <strong>{queueProgress.remaining}</strong> remaining
           </div>
 
           {isLoadingList && entities.length === 0 ? (
@@ -757,13 +767,26 @@ const AdminAccessReview = () => {
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-3">
-                    <CountPill label={`pathways (${entity.unreviewedCounts.entryPathways} new)`} value={entity.counts.entryPathways} />
-                    <CountPill label={`signals (${entity.unreviewedCounts.accessSignals} new)`} value={entity.counts.accessSignals} />
-                    <CountPill label={`routes (${entity.unreviewedCounts.contactRoutes} new)`} value={entity.counts.contactRoutes} />
-                    <CountPill label={`posts (${entity.unreviewedCounts.postedOpportunities} new)`} value={entity.counts.postedOpportunities} />
+                    <CountPill
+                      label={`pathways (${entity.unreviewedCounts.entryPathways} new)`}
+                      value={entity.counts.entryPathways}
+                    />
+                    <CountPill
+                      label={`signals (${entity.unreviewedCounts.accessSignals} new)`}
+                      value={entity.counts.accessSignals}
+                    />
+                    <CountPill
+                      label={`routes (${entity.unreviewedCounts.contactRoutes} new)`}
+                      value={entity.counts.contactRoutes}
+                    />
+                    <CountPill
+                      label={`posts (${entity.unreviewedCounts.postedOpportunities} new)`}
+                      value={entity.counts.postedOpportunities}
+                    />
                   </div>
                   <p className="mt-2 text-xs font-semibold text-gray-700">
-                    {entity.totalUnreviewed} unreviewed{entity.hasOfficialApplication ? ' · official application' : ''}
+                    {entity.totalUnreviewed} unreviewed
+                    {entity.hasOfficialApplication ? ' · official application' : ''}
                   </p>
                   {(entity.manuallyLockedFields || []).length > 0 && (
                     <p className="text-xs text-amber-700 mt-2">
@@ -1017,7 +1040,13 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Access Signals</h4>
                 <div className="space-y-3">
                   {filteredRecords.accessSignals.map((signal) => (
-                    <div key={signal._id} id={`accessSignal-${signal._id}`} data-review-record tabIndex={-1} className="border border-[var(--yr-line)] rounded-lg p-4">
+                    <div
+                      key={signal._id}
+                      id={`accessSignal-${signal._id}`}
+                      data-review-record
+                      tabIndex={-1}
+                      className="border border-[var(--yr-line)] rounded-lg p-4"
+                    >
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">
                           {formatToken(signal.signalType)}
@@ -1065,7 +1094,13 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Contact Routes</h4>
                 <div className="space-y-3">
                   {filteredRecords.contactRoutes.map((route) => (
-                    <div key={route._id} id={`contactRoute-${route._id}`} data-review-record tabIndex={-1} className="border border-[var(--yr-line)] rounded-lg p-4">
+                    <div
+                      key={route._id}
+                      id={`contactRoute-${route._id}`}
+                      data-review-record
+                      tabIndex={-1}
+                      className="border border-[var(--yr-line)] rounded-lg p-4"
+                    >
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">
                           {route.label ||

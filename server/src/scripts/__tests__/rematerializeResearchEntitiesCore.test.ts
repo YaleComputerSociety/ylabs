@@ -135,7 +135,10 @@ describe('assertRematerializeApplyAllowed', () => {
 
   it('requires the confirmation flag on apply', () => {
     expect(() =>
-      assertRematerializeApplyAllowed({ ...base, confirmRematerialize: false }, 'cluster/Development'),
+      assertRematerializeApplyAllowed(
+        { ...base, confirmRematerialize: false },
+        'cluster/Development',
+      ),
     ).toThrow('--confirm-rematerialize is required');
   });
 
@@ -222,7 +225,11 @@ describe('buildRematerializeFieldChanges', () => {
   });
 
   it('treats unset fields as removed', () => {
-    const changes = buildRematerializeFieldChanges({ websiteUrl: 'https://x' }, {}, { websiteUrl: '' });
+    const changes = buildRematerializeFieldChanges(
+      { websiteUrl: 'https://x' },
+      {},
+      { websiteUrl: '' },
+    );
     expect(changes).toEqual([{ field: 'websiteUrl', before: 'https://x', after: undefined }]);
   });
 

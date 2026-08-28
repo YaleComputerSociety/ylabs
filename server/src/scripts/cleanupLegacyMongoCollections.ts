@@ -95,7 +95,9 @@ export function assertLegacyCleanupWriteAllowed(
   mongoUrl?: string,
 ) {
   if (args.mode === 'drop-legacy' && !args.confirmDropLegacy) {
-    throw new Error('--confirm-drop-legacy is required when --drop-legacy is set for legacy:cleanup');
+    throw new Error(
+      '--confirm-drop-legacy is required when --drop-legacy is set for legacy:cleanup',
+    );
   }
 
   return assertScriptApplyAllowed({

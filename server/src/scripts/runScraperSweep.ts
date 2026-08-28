@@ -757,11 +757,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     name: 'trust-contract',
     command: 'launch:trust-contract',
     artifactName: 'development-trust-contract.json',
-    buildArgs: () => [
-      '--collection=all',
-      '--mode=student-ready-only',
-      '--strict',
-    ],
+    buildArgs: () => ['--collection=all', '--mode=student-ready-only', '--strict'],
     isEnabled: () => true,
   },
   {

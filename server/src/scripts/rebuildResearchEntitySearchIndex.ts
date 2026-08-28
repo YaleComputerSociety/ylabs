@@ -86,11 +86,13 @@ export function writeRebuildResearchEntitySearchIndexOutput(
   fs.writeFileSync(safeOutput, `${JSON.stringify(result, null, 2)}\n`);
 }
 
-export function assertRebuildResearchEntitySearchIndexAllowed(args: {
-  env?: NodeJS.ProcessEnv;
-  mongoUrl?: string;
-  confirmMeiliRebuild?: boolean;
-} = {}): ScriptApplyGuardResult {
+export function assertRebuildResearchEntitySearchIndexAllowed(
+  args: {
+    env?: NodeJS.ProcessEnv;
+    mongoUrl?: string;
+    confirmMeiliRebuild?: boolean;
+  } = {},
+): ScriptApplyGuardResult {
   if (!args.confirmMeiliRebuild) {
     throw new Error('--confirm-meili-rebuild is required when rebuilding Meilisearch indexes');
   }
@@ -146,7 +148,10 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to rebuild research entity Meilisearch index:', sanitizeLogValue(error));
+      console.error(
+        'Failed to rebuild research entity Meilisearch index:',
+        sanitizeLogValue(error),
+      );
       process.exitCode = 1;
     })
     .finally(async () => {

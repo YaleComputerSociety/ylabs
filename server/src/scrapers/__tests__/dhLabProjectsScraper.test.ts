@@ -230,7 +230,9 @@ describe('projectToObservations', () => {
     expect(obs.every((o) => o.entityKey === 'dh-photogrammar')).toBe(true);
     expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
     expect(obs.every((o) => o.sourceUrl === 'http://photogrammar.yale.edu')).toBe(true);
-    expect(obs.find((o) => o.field === 'sourceUrls')!.value).toEqual(['http://photogrammar.yale.edu']);
+    expect(obs.find((o) => o.field === 'sourceUrls')!.value).toEqual([
+      'http://photogrammar.yale.edu',
+    ]);
   });
 
   it('omits topics, methods, and description when absent', () => {
@@ -242,7 +244,14 @@ describe('projectToObservations', () => {
       methods: [],
       description: '',
     });
-    expect(obs.map((o) => o.field)).toEqual(['slug', 'name', 'kind', 'entityType', 'websiteUrl', 'sourceUrls']);
+    expect(obs.map((o) => o.field)).toEqual([
+      'slug',
+      'name',
+      'kind',
+      'entityType',
+      'websiteUrl',
+      'sourceUrls',
+    ]);
   });
 });
 

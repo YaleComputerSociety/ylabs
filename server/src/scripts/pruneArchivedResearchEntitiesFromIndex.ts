@@ -129,7 +129,10 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to prune archived research entities from index:', sanitizeLogValue(error));
+      console.error(
+        'Failed to prune archived research entities from index:',
+        sanitizeLogValue(error),
+      );
       process.exitCode = 1;
     })
     .finally(async () => {

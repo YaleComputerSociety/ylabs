@@ -238,17 +238,14 @@ describe('inferPiNameFromLabName', () => {
 
 describe('findPiUserId surname-only safeguard (issue #562)', () => {
   it('never attaches on a surname alone, even to a lone medicine-department candidate', async () => {
-
     expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
   });
 
   it('never attaches on a surname alone when several faculty share the surname', async () => {
-
     expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
   });
 
   it('does not attach a surname-only lab name to a lone same-surname faculty (Schwartz)', async () => {
-
     expect(await findPiUserId(inferPiNameFromLabName('Schwartz Lab'))).toBeNull();
   });
 

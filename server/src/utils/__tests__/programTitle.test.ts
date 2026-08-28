@@ -22,9 +22,13 @@ describe('normalizedProgramTitleKey', () => {
 
   it('folds an ampersand to the word "and" so & and and titles collide (#655)', () => {
     expect(
-      normalizedProgramTitleKey('First-Year Summer Research Fellowship in the Sciences & Engineering'),
+      normalizedProgramTitleKey(
+        'First-Year Summer Research Fellowship in the Sciences & Engineering',
+      ),
     ).toBe(
-      normalizedProgramTitleKey('First-Year Summer Research Fellowship in the Sciences and Engineering'),
+      normalizedProgramTitleKey(
+        'First-Year Summer Research Fellowship in the Sciences and Engineering',
+      ),
     );
   });
 
@@ -79,9 +83,12 @@ describe('shareAndConcatenatedTitleComponent', () => {
   });
 
   it('returns false when either title is not AND-concatenated', () => {
-    expect(shareAndConcatenatedTitleComponent('Wu Tsai Undergraduate Fellowships', 'Undergraduate Fellowships')).toBe(
-      false,
-    );
+    expect(
+      shareAndConcatenatedTitleComponent(
+        'Wu Tsai Undergraduate Fellowships',
+        'Undergraduate Fellowships',
+      ),
+    ).toBe(false);
   });
 
   it('returns false for identical AND-concatenated titles, which the exact-key lever already handles', () => {
@@ -112,7 +119,9 @@ describe('primaryConcatenatedAwardTitle', () => {
   });
 
   it('does not split on the lowercase word "and" inside an ordinary title', () => {
-    expect(primaryConcatenatedAwardTitle('Research and Travel Grant')).toBe('Research and Travel Grant');
+    expect(primaryConcatenatedAwardTitle('Research and Travel Grant')).toBe(
+      'Research and Travel Grant',
+    );
   });
 
   it('returns titles with no AND join unchanged', () => {
@@ -130,7 +139,10 @@ describe('primaryConcatenatedAwardTitle', () => {
 describe('isProgramTitleQualifierDrift', () => {
   it('recognizes a dropped leading qualifier (Wu Tsai / STARS II repro shape, #609)', () => {
     expect(
-      isProgramTitleQualifierDrift('Wu Tsai Undergraduate Fellowships', 'Undergraduate Fellowships'),
+      isProgramTitleQualifierDrift(
+        'Wu Tsai Undergraduate Fellowships',
+        'Undergraduate Fellowships',
+      ),
     ).toBe(true);
     expect(isProgramTitleQualifierDrift('STARS II Academic Year Program', 'STARS II Program')).toBe(
       true,
@@ -145,7 +157,10 @@ describe('isProgramTitleQualifierDrift', () => {
       ),
     ).toBe(false);
     expect(
-      isProgramTitleQualifierDrift('Josef Albers Traveling Fellowship Fund', 'Michael Coe Summer Fieldwork Fund'),
+      isProgramTitleQualifierDrift(
+        'Josef Albers Traveling Fellowship Fund',
+        'Michael Coe Summer Fieldwork Fund',
+      ),
     ).toBe(false);
   });
 

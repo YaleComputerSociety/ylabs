@@ -45,7 +45,13 @@ describe('buildOrgUnitSeedRows', () => {
 
   it('seeds School of Management research disciplines under the school (#1377)', () => {
     const bySlug = new Map(rows.map((row) => [row.slug, row]));
-    for (const slug of ['finance', 'marketing', 'accounting', 'operations', 'organizational-behavior']) {
+    for (const slug of [
+      'finance',
+      'marketing',
+      'accounting',
+      'operations',
+      'organizational-behavior',
+    ]) {
       expect(bySlug.get(slug)?.kind).toBe('DEPARTMENT');
       expect(bySlug.get(slug)?.parentSlug).toBe('yale-school-of-management');
     }
@@ -65,7 +71,9 @@ describe('buildOrgUnitSeedRows', () => {
 
 describe('resolveOrgUnitCanonical over the full ground truth', () => {
   it('canonicalizes fragmented department and school strings', () => {
-    expect(resolveOrgUnitCanonical(index, 'Dept. of Physics', ['DEPARTMENT'])?.name).toBe('Physics');
+    expect(resolveOrgUnitCanonical(index, 'Dept. of Physics', ['DEPARTMENT'])?.name).toBe(
+      'Physics',
+    );
     expect(resolveOrgUnitCanonical(index, 'Computer Science', ['DEPARTMENT'])?.slug).toBe(
       'computer-science',
     );
@@ -98,33 +106,56 @@ describe('resolveOrgUnitCanonical over the full ground truth', () => {
     expect(resolveOrgUnitCanonical(index, 'PHYSIOLOGY', ['DEPARTMENT'])?.name).toBe(
       'Cellular & Molecular Physiology',
     );
-    expect(resolveOrgUnitCanonical(index, 'RADIATION-DIAGNOSTIC/ONCOLOGY', ['DEPARTMENT'])?.name).toBe(
-      'Therapeutic Radiology',
-    );
+    expect(
+      resolveOrgUnitCanonical(index, 'RADIATION-DIAGNOSTIC/ONCOLOGY', ['DEPARTMENT'])?.name,
+    ).toBe('Therapeutic Radiology');
     expect(resolveOrgUnitCanonical(index, 'EASBME BME Faculty', ['DEPARTMENT'])?.name).toBe(
       'Biomedical Engineering',
     );
-    expect(resolveOrgUnitCanonical(index, 'FASGSS Womens,Gender and Sexuality Studies', ['DEPARTMENT'])?.name).toBe(
-      "Women's, Gender, and Sexuality Studies",
-    );
-    expect(resolveOrgUnitCanonical(index, 'ISM Institute of Sacred Music', ['SCHOOL', 'DIVISION'])?.name).toBe(
-      'Yale Institute of Sacred Music',
-    );
+    expect(
+      resolveOrgUnitCanonical(index, 'FASGSS Womens,Gender and Sexuality Studies', ['DEPARTMENT'])
+        ?.name,
+    ).toBe("Women's, Gender, and Sexuality Studies");
+    expect(
+      resolveOrgUnitCanonical(index, 'ISM Institute of Sacred Music', ['SCHOOL', 'DIVISION'])?.name,
+    ).toBe('Yale Institute of Sacred Music');
   });
 });
 
 describe('validateOrgUnitRows', () => {
   it('flags a resolver-key collision between two units', () => {
     const colliding: OrgUnitSeedRow[] = [
-      { slug: 'a', name: 'Neuroscience', kind: 'DEPARTMENT', aliases: [], status: 'ACTIVE', archived: false },
-      { slug: 'b', name: 'Neuroscience', kind: 'DEPARTMENT', aliases: [], status: 'ACTIVE', archived: false },
+      {
+        slug: 'a',
+        name: 'Neuroscience',
+        kind: 'DEPARTMENT',
+        aliases: [],
+        status: 'ACTIVE',
+        archived: false,
+      },
+      {
+        slug: 'b',
+        name: 'Neuroscience',
+        kind: 'DEPARTMENT',
+        aliases: [],
+        status: 'ACTIVE',
+        archived: false,
+      },
     ];
     expect(validateOrgUnitRows(colliding).some((error) => error.includes('collision'))).toBe(true);
   });
 
   it('flags an unseeded parent slug', () => {
     const orphan: OrgUnitSeedRow[] = [
-      { slug: 'a', name: 'A', kind: 'DEPARTMENT', aliases: [], parentSlug: 'missing', status: 'ACTIVE', archived: false },
+      {
+        slug: 'a',
+        name: 'A',
+        kind: 'DEPARTMENT',
+        aliases: [],
+        parentSlug: 'missing',
+        status: 'ACTIVE',
+        archived: false,
+      },
     ];
     expect(validateOrgUnitRows(orphan).some((error) => error.includes('parentSlug'))).toBe(true);
   });

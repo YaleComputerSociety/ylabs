@@ -70,7 +70,13 @@ describe('accountService', () => {
 
   it('keeps a caller-supplied valid email but falls back to a Yale placeholder otherwise', async () => {
     accountModelMock.findOneAndUpdate.mockReturnValue(
-      leanResult({ _id: 'acc-3', netid: 'devuser1', email: 'x', status: 'ACTIVE', archived: false }),
+      leanResult({
+        _id: 'acc-3',
+        netid: 'devuser1',
+        email: 'x',
+        status: 'ACTIVE',
+        archived: false,
+      }),
     );
 
     await recordAccountLogin({ netid: 'devuser1', email: 'devuser1@example.invalid' });
@@ -118,7 +124,12 @@ describe('accountService', () => {
 
   it('omits profile from the update when no profile fields are present', async () => {
     accountModelMock.findOneAndUpdate.mockReturnValue(
-      leanResult({ _id: 'acc-5', netid: 'nofields1', email: 'nofields1@yale.edu', status: 'ACTIVE' }),
+      leanResult({
+        _id: 'acc-5',
+        netid: 'nofields1',
+        email: 'nofields1@yale.edu',
+        status: 'ACTIVE',
+      }),
     );
 
     await recordAccountLogin({ netid: 'nofields1', profile: { firstName: '  ', major: [] } });

@@ -284,8 +284,7 @@ const GRANT_ABSTRACT_UNAVAILABLE =
 const GRANT_ABSTRACT_FUNDING_DISCLAIMER =
   /^(?:this (?:award|project|research) (?:is|was) funded\b[^.]*\.\s+|funds? (?:are|is) provided\b[^.]*\.\s+)/i;
 
-const normalizeAbstractWhitespace = (value: string): string =>
-  value.replace(/\s+/g, ' ').trim();
+const normalizeAbstractWhitespace = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
 const SENTENCE_SPLIT = /(?<=[.!?])\s+/;
 
@@ -360,7 +359,9 @@ function stripPdfHyphenationArtifacts(text: string): string {
  * framing, so the scraper emits nothing rather than junk (issues #1418, #1739).
  */
 export function grantAbstractToDescription(abstract: string | undefined | null): string {
-  const normalized = stripPdfHyphenationArtifacts(normalizeAbstractWhitespace(String(abstract || '')));
+  const normalized = stripPdfHyphenationArtifacts(
+    normalizeAbstractWhitespace(String(abstract || '')),
+  );
   if (!normalized || GRANT_ABSTRACT_UNAVAILABLE.test(normalized)) return '';
   const withoutInlineMarker = normalized.replace(GRANT_ABSTRACT_INLINE_MARKER, '');
   const withoutHeaders = stripGrantAbstractHeaders(withoutInlineMarker);

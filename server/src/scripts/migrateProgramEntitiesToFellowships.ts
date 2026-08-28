@@ -41,7 +41,8 @@ export function parseArgs(argv: string[]): CliOptions {
     if (arg === '--apply' || arg === '--mode=apply') options.dryRun = false;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-program-entity-migration') options.confirm = true;
-    else if (arg.startsWith('--limit=')) options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
+    else if (arg.startsWith('--limit='))
+      options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
     else if (arg === '--limit') {
       options.limit = parsePositiveInt(argv[i + 1], '--limit');
       i += 1;
@@ -58,7 +59,10 @@ export function parseArgs(argv: string[]): CliOptions {
 }
 
 const normalizeTitle = (value: string | undefined): string =>
-  (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  (value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
 const firstNonEmpty = (...values: Array<unknown>): string => {
   for (const value of values) {
@@ -100,12 +104,16 @@ interface MigrationPlan {
 
 async function planMigration(limit?: number): Promise<MigrationPlan> {
   const query = ResearchEntity.find({ entityType: 'PROGRAM' as never })
-    .select('_id slug name fullDescription shortDescription officialUrl primaryUrl websiteUrl joinPageUrl departments')
+    .select(
+      '_id slug name fullDescription shortDescription officialUrl primaryUrl websiteUrl joinPageUrl departments',
+    )
     .lean();
   if (Number.isFinite(limit) && (limit as number) > 0) query.limit(limit as number);
   const entities = (await query) as unknown as ProgramEntityRow[];
 
-  const existingFellowships = (await Fellowship.find({}).select('_id title sourceKey').lean()) as Array<{
+  const existingFellowships = (await Fellowship.find({})
+    .select('_id title sourceKey')
+    .lean()) as Array<{
     _id: unknown;
     title?: string;
     sourceKey?: string;
@@ -260,7 +268,9 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const apply = !options.dryRun;
   if (apply && !options.confirm) {
-    throw new Error(`--confirm-program-entity-migration is required when --apply is set for ${SCRIPT_NAME}`);
+    throw new Error(
+      `--confirm-program-entity-migration is required when --apply is set for ${SCRIPT_NAME}`,
+    );
   }
 
   const guard = assertScriptApplyAllowed({

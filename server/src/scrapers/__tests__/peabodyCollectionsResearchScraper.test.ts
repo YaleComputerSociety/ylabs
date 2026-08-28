@@ -37,10 +37,7 @@ function makeContext(options: Partial<ScraperContext['options']> = {}) {
 
 describe('peabodyCollectionsResearchScraper', () => {
   it('extracts collections divisions from the index and cites each division page', () => {
-    const divisions = parsePeabodyDivisionsIndex(
-      INDEX_HTML,
-      DEFAULT_PEABODY_DIVISIONS_INDEX_URL,
-    );
+    const divisions = parsePeabodyDivisionsIndex(INDEX_HTML, DEFAULT_PEABODY_DIVISIONS_INDEX_URL);
 
     expect(divisions).toEqual([
       {
@@ -62,15 +59,12 @@ describe('peabodyCollectionsResearchScraper', () => {
   });
 
   it('excludes non-curatorial support areas and sub-pages from the index', () => {
-    const slugs = parsePeabodyDivisionsIndex(
-      INDEX_HTML,
-      DEFAULT_PEABODY_DIVISIONS_INDEX_URL,
-    ).map((division) => division.slug);
+    const slugs = parsePeabodyDivisionsIndex(INDEX_HTML, DEFAULT_PEABODY_DIVISIONS_INDEX_URL).map(
+      (division) => division.slug,
+    );
 
     expect(slugs).not.toContain('peabody-information-science');
-    expect(
-      slugs.some((slug) => slug.includes('native-american-graves')),
-    ).toBe(false);
+    expect(slugs.some((slug) => slug.includes('native-american-graves'))).toBe(false);
   });
 
   it('extracts the division title, description, and single Curator-in-charge lead', () => {
@@ -100,9 +94,7 @@ describe('peabodyCollectionsResearchScraper', () => {
 
     expect(division.lead?.name).toBe('Rowan Casey');
     expect(division.lead?.role).toBe('director');
-    expect(division.lead?.profileUrl).toBe(
-      'https://anthropology.yale.edu/people/rowan-casey',
-    );
+    expect(division.lead?.profileUrl).toBe('https://anthropology.yale.edu/people/rowan-casey');
   });
 
   it('fails closed on the lead when no Curator-in-charge is named', () => {

@@ -35,7 +35,9 @@ describe('errorHandler', () => {
   it('preserves explicit client error statuses without leaking raw messages', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const response = createResponse();
-    const error = Object.assign(new Error('mongodb://user:pass@example.invalid leaked'), { status: 403 });
+    const error = Object.assign(new Error('mongodb://user:pass@example.invalid leaked'), {
+      status: 403,
+    });
 
     errorHandler(error, {} as Request, response, vi.fn() as unknown as NextFunction);
 

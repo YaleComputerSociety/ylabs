@@ -215,7 +215,8 @@ function inferTerm(text: string): string[] {
   return Array.from(terms);
 }
 
-const ELIGIBILITY_HEADING_RE = /\beligibility|who (?:can|may) apply|who is eligible|requirements?\b/i;
+const ELIGIBILITY_HEADING_RE =
+  /\beligibility|who (?:can|may) apply|who is eligible|requirements?\b/i;
 const APPLICATION_HEADING_RE =
   /(?:how to apply|application (?:process|information|requirements?|materials?)|to apply)/i;
 
@@ -246,15 +247,19 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
 
 function nearestDeadlineText(text: string): string {
   const normalized = normalizeWhitespace(text);
-  const label = /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/i.exec(
-    normalized,
-  );
+  const label =
+    /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/i.exec(
+      normalized,
+    );
   if (!label || label.index === undefined) return '';
   const monthPattern = Object.keys(MONTHS).join('|');
   const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
   const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
   const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'i');
-  const after = normalized.slice(label.index + label[0].length, label.index + label[0].length + 120);
+  const after = normalized.slice(
+    label.index + label[0].length,
+    label.index + label[0].length + 120,
+  );
   return datePattern.exec(after)?.[0] || '';
 }
 
@@ -278,7 +283,9 @@ export function parseDeadlineToUtcEndOfDay(
     }
   }
   const monthPattern = Object.keys(MONTHS).join('|');
-  const match = normalized.match(new RegExp(`(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`, 'i'));
+  const match = normalized.match(
+    new RegExp(`(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`, 'i'),
+  );
   if (!match) return undefined;
   const month = MONTHS[match[1].toLowerCase()];
   const day = Number(match[2]);
@@ -312,7 +319,9 @@ function isApplyLink(url: string, label: string): boolean {
   return /\bapply|application|register\b/i.test(label) || /\bapply|application\b/i.test(url);
 }
 
-function fingerprintCandidate(candidate: Omit<HealthSciencesProgramCandidate, 'sourceFingerprint'>): string {
+function fingerprintCandidate(
+  candidate: Omit<HealthSciencesProgramCandidate, 'sourceFingerprint'>,
+): string {
   const stable = {
     title: candidate.title,
     description: candidate.description || '',
@@ -393,7 +402,10 @@ export function parseHealthSciencesProgramPage(
     if (!isApplyLink(url, rawLabel)) continue;
     if (isUnhelpfulProgramUrl(url, pageUrl)) continue;
     seenUrls.add(url);
-    links.push({ label: humanizeProgramLinkLabel(rawLabel, url) || rawLabel || 'Application', url });
+    links.push({
+      label: humanizeProgramLinkLabel(rawLabel, url) || rawLabel || 'Application',
+      url,
+    });
     if (links.length >= MAX_PROGRAM_LINKS) break;
   }
   const applicationLink = links.find((link) => isApplyLink(link.url, link.label))?.url;
@@ -478,7 +490,9 @@ function currentSourceObservation(
   };
 }
 
-export function candidateToObservations(candidate: HealthSciencesProgramCandidate): ObservationInput[] {
+export function candidateToObservations(
+  candidate: HealthSciencesProgramCandidate,
+): ObservationInput[] {
   const classification = classifyProgram({
     title: candidate.title,
     competitionType: candidate.competitionType,

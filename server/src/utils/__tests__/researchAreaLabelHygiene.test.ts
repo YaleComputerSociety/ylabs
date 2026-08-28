@@ -189,7 +189,11 @@ describe('sanitizeResearchAreaLabelList', () => {
 
   it('collapses an all-junk area list to empty', () => {
     expect(
-      sanitizeResearchAreaLabelList(['Smith 1989b)', 'three and four', 'has occupied morphologists']),
+      sanitizeResearchAreaLabelList([
+        'Smith 1989b)',
+        'three and four',
+        'has occupied morphologists',
+      ]),
     ).toEqual([]);
   });
 });

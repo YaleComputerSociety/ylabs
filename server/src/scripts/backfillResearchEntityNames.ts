@@ -250,9 +250,7 @@ export async function runResearchEntityNameBackfill(
     for (let i = 0; i < allChanges.length; i += options.batchSize) {
       const batch = allChanges.slice(i, i + options.batchSize);
       await deps.persistBatch(batch);
-      syncedToMeili += await deps.syncBatch(
-        Array.from(new Set(batch.map((change) => change.id))),
-      );
+      syncedToMeili += await deps.syncBatch(Array.from(new Set(batch.map((change) => change.id))));
     }
   }
 

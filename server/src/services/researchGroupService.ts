@@ -2557,7 +2557,6 @@ const publicStringArray = (values: unknown): string[] =>
     ? values.slice(0, MAX_PUBLIC_DETAIL_ARRAY_ITEMS).flatMap((value) => publicString(value) ?? [])
     : [];
 
-
 const publicResearchDetailSourceUrl = (value: unknown): string | undefined => {
   const url = publicHttpUrl(value);
   if (!url || isDisallowedResearchEntitySourceUrl(url)) return undefined;
@@ -2847,11 +2846,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const [
-    accessSignals,
-    planningContexts,
-    undergraduateLogistics,
-  ] = await Promise.all([
+  const [accessSignals, planningContexts, undergraduateLogistics] = await Promise.all([
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
