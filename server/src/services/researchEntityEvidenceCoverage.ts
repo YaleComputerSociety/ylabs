@@ -122,7 +122,6 @@ const hasUsefulLead = (members: Array<Record<string, any>>): boolean =>
         textValue(member.netid) ||
         member.personId ||
         member.userId ||
-        member.facultyMemberId ||
         member.user?._id ||
         textValue(member.user?.netid),
     ),

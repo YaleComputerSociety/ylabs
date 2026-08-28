@@ -14,8 +14,6 @@ const mocks = vi.hoisted(() => ({
   personFind: vi.fn(),
   accountFind: vi.fn(),
   userFind: vi.fn(),
-  researchScholarlyAttributionFind: vi.fn(),
-  researchScholarlyLinkFind: vi.fn(),
   entryPathwayFind: vi.fn(),
   accessSignalFind: vi.fn(),
   contactRouteFind: vi.fn(),
@@ -70,18 +68,6 @@ vi.mock('../../models/account', () => ({
   },
 }));
 
-
-vi.mock('../../models/researchScholarlyAttribution', () => ({
-  ResearchScholarlyAttribution: {
-    find: mocks.researchScholarlyAttributionFind,
-  },
-}));
-
-vi.mock('../../models/researchScholarlyLink', () => ({
-  ResearchScholarlyLink: {
-    find: mocks.researchScholarlyLinkFind,
-  },
-}));
 
 vi.mock('../../models/signal', () => ({
   Signal: {
@@ -167,8 +153,6 @@ beforeEach(() => {
   mocks.personFind.mockReset();
   mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
-  mocks.researchScholarlyAttributionFind.mockReset();
-  mocks.researchScholarlyLinkFind.mockReset();
   mocks.entryPathwayFind.mockReset();
   mocks.accessSignalFind.mockReset();
   mocks.contactRouteFind.mockReset();
@@ -181,8 +165,6 @@ beforeEach(() => {
   mocks.personFind.mockReturnValue(queryResult([]));
   mocks.accountFind.mockReturnValue(queryResult([]));
   mocks.userFind.mockReturnValue(leanResult([]));
-  mocks.researchScholarlyAttributionFind.mockReturnValue(selectSortLimitLeanResult([]));
-  mocks.researchScholarlyLinkFind.mockReturnValue(sortLimitLeanResult([]));
   mocks.entryPathwayFind.mockReturnValue(queryResult([]));
   mocks.accessSignalFind.mockReturnValue(queryResult([]));
   mocks.contactRouteFind.mockReturnValue(queryResult([]));
