@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   collectDescriptionCandidates,
+  isHighConfidencePersonBio,
   isMissionOrCultureProse,
   isRecruitingNoticeLead,
   selectResearchHomeDescription,
 } from '../researchHomeDescriptionSelection';
+
+const WEAK_JOURNAL_CLUB_PASSAGE =
+  'Members of the lab are interested in a broad range of questions and meet weekly for journal club, where we discuss recent preprints and take turns presenting works in progress.';
 
 const LAB_RESEARCH_BLOCK =
   'The Marlowe Lab studies how coastal wetlands store carbon and how tidal cycles reshape sediment chemistry. We combine field sampling, stable-isotope analysis, and numerical models to understand how these ecosystems respond to rising seas.';
@@ -292,12 +296,53 @@ describe('selectResearchHomeDescription', () => {
     expect(selectResearchHomeDescription([HIRING_LEAD])).toBe(HIRING_LEAD);
   });
 
-  it('does not let an off-topic demotion blank a person entity description (#2176)', () => {
-    const PERSON_MISSION_BIO =
-      'The lab is committed to fostering an inclusive training environment. My research examines carbon storage in tidal wetlands and the chemistry of estuary sediments, combining fieldwork with numerical modeling of coastal systems.';
-    expect(isMissionOrCultureProse(PERSON_MISSION_BIO)).toBe(true);
-    expect(selectResearchHomeDescription([PERSON_MISSION_BIO], { kind: 'person' })).toBe(
-      PERSON_MISSION_BIO,
+  it('does not let an off-topic demotion blank a high-confidence person bio (#2176)', () => {
+    // Both demotion-marked and a high-confidence bio, which is the only shape
+    // the fail-closed blanking guard actually reaches.
+    const CREDENTIALED_CULTURE_BIO =
+      'Dr. Chen is committed to fostering an inclusive lab. Her research examines carbon storage in tidal wetlands and the chemistry of estuary sediments, combining fieldwork with numerical modeling of coastal systems.';
+    expect(isMissionOrCultureProse(CREDENTIALED_CULTURE_BIO)).toBe(true);
+    expect(isHighConfidencePersonBio(CREDENTIALED_CULTURE_BIO)).toBe(true);
+    expect(selectResearchHomeDescription([CREDENTIALED_CULTURE_BIO], { kind: 'person' })).toBe(
+      CREDENTIALED_CULTURE_BIO,
     );
+  });
+
+  it('does not demote research prose that merely closes with a recruiting invitation (#2176)', () => {
+    const RESEARCH_THEN_INVITE =
+      "The Smith Lab studies the neural circuits underlying decision-making, mapping how cortical populations accumulate evidence over time. If you're interested in joining, reach out.";
+
+    expect(isRecruitingNoticeLead(RESEARCH_THEN_INVITE)).toBe(false);
+    expect(selectResearchHomeDescription([RESEARCH_THEN_INVITE, WEAK_JOURNAL_CLUB_PASSAGE])).toBe(
+      RESEARCH_THEN_INVITE,
+    );
+  });
+
+  it('does not read ordinary research aims as a recruiting pitch (#2176)', () => {
+    const BUILDING_AIM =
+      'We are building a comprehensive atlas of cell types in the developing human brain, and we are looking for the genetic determinants of cortical folding across primate species.';
+    const BUILDING_A_TEAM =
+      "The Craven Lab launched in fall 2025 and we're building a team. We investigate organic reaction mechanisms, so reach out about a postdoc position if that excites you.";
+
+    expect(isRecruitingNoticeLead(BUILDING_AIM)).toBe(false);
+    expect(isRecruitingNoticeLead(BUILDING_A_TEAM)).toBe(true);
+  });
+
+  it('treats mission and vision as headings, not as topic words (#2176)', () => {
+    const VISION_SCIENCE =
+      'Vision is our most important sense, and we study how retinal circuits encode motion, colour, and contrast before that signal ever reaches the cortex.';
+    const CENTER_MISSION_STATEMENT =
+      'The mission of the Wetlands Center is to advance the diagnosis and treatment of coastal erosion, and our research examines how sediment chemistry responds to rising seas.';
+    const MISSION_HEADING = 'Our Mission Foster an inclusive, welcoming community of scholars.';
+
+    expect(isMissionOrCultureProse(VISION_SCIENCE)).toBe(false);
+    expect(isMissionOrCultureProse(CENTER_MISSION_STATEMENT)).toBe(false);
+    expect(isMissionOrCultureProse(MISSION_HEADING)).toBe(true);
+    expect(selectResearchHomeDescription([VISION_SCIENCE, WEAK_JOURNAL_CLUB_PASSAGE])).toBe(
+      VISION_SCIENCE,
+    );
+    expect(
+      selectResearchHomeDescription([CENTER_MISSION_STATEMENT, WEAK_JOURNAL_CLUB_PASSAGE]),
+    ).toBe(CENTER_MISSION_STATEMENT);
   });
 });

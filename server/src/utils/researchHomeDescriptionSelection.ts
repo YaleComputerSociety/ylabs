@@ -127,8 +127,35 @@ export function isPersonCentricLead(text: string): boolean {
   return false;
 }
 
-const MISSION_OR_CULTURE_LEAD =
-  /^(?:(?:our|the|lab|laboratory|group)\s+)?(?:mission|vision|core\s+values|values|guiding\s+principles|diversity(?:\s+(?:statement|,\s*equity))?|code\s+of\s+conduct|lab(?:oratory)?\s+(?:culture|policies|philosophy))\b/i;
+// The off-topic markers below scan the whole passage, so on their own they also
+// fire on research prose that merely closes with a mission line, a recruiting
+// invitation, or a pointer to another page ("The Smith Lab studies the neural
+// circuits underlying decision-making. If you're interested in joining, reach
+// out."). A passage that opens by saying what the home studies reads as a
+// research description whatever follows, so it is exempt from the marker-based
+// demotions. The lead patterns stay absolute: they describe the opening itself.
+function opensWithResearchFocus(value: string): boolean {
+  return describesResearchFocus(firstSentence(value));
+}
+
+const CULTURE_SECTION_LEAD =
+  /^(?:(?:our|the|lab|laboratory|group)\s+)?(?:core\s+values|guiding\s+principles|diversity(?:\s+(?:statement|,\s*equity))?|code\s+of\s+conduct|lab(?:oratory)?\s+(?:culture|policies|philosophy))\b/i;
+
+// "Mission", "Vision", and "Values" are section headings only when punctuation
+// or a run-in capital follows them ("Our Mission Create and communicate ...";
+// "Our Values: we believe ..."). The same words open ordinary research prose
+// ("Vision is our most important sense ..."; "The mission of the Center is to
+// advance the diagnosis and treatment of ..."), which must not be demoted.
+const MISSION_TOPIC_WORD_LEAD =
+  /^(?:(?:our|the|lab|laboratory|group)\s+)?(?:mission|vision|values)(?:\s+statement)?\b/i;
+
+const HEADING_RUN_IN = /^(?:\s*[:\-–—]|\s+[A-Z])/;
+
+function hasMissionTopicHeadingLead(value: string): boolean {
+  const lead = value.match(MISSION_TOPIC_WORD_LEAD);
+  if (!lead) return false;
+  return HEADING_RUN_IN.test(value.slice(lead[0].length));
+}
 
 const MISSION_OR_CULTURE_MARKERS = [
   /\b(?:personal|professional)\s+and\s+(?:scientific|professional|personal)\s+growth\b/i,
@@ -147,7 +174,8 @@ const MISSION_OR_CULTURE_MARKERS = [
 export function isMissionOrCultureProse(text: unknown): boolean {
   const value = textValue(text);
   if (!value) return false;
-  if (MISSION_OR_CULTURE_LEAD.test(value)) return true;
+  if (CULTURE_SECTION_LEAD.test(value) || hasMissionTopicHeadingLead(value)) return true;
+  if (opensWithResearchFocus(value)) return false;
   return MISSION_OR_CULTURE_MARKERS.some((pattern) => pattern.test(value));
 }
 
@@ -162,9 +190,20 @@ const RECRUITING_NOTICE_LEAD =
 // count as recruitment when an applicant or a position sits in the same
 // sentence. Otherwise this demotion would reorder candidates on any page that
 // merely invites contact.
+// "We are building" and "we are looking for" are also how research prose states
+// its aims ("We are building a comprehensive atlas of cell types in the
+// developing human brain"), so those two need a position or an applicant in the
+// same sentence before they count as a pitch.
+const RECRUITING_ROLE_OBJECT =
+  '(?:team|position|opening|vacancy|postdoc(?:toral)?|graduate\\s+student|phd\\s+student|rotation\\s+student|student|applicant|candidate|(?:lab|group)\\s+member|technician|to\\s+join)';
+
 const RECRUITING_SOLICITATION_MARKERS = [
   /\bif\s+you(?:['’]re|\s+are)\s+(?:excited|interested|passionate|enthusiastic)\b/i,
-  /\b(?:we\s+are|we['’]re)\s+(?:building|recruiting|hiring|looking\s+for)\b/i,
+  /\b(?:we\s+are|we['’]re)\s+(?:recruiting|hiring)\b/i,
+  new RegExp(
+    `\\b(?:we\\s+are|we['’]re)\\s+(?:building|looking\\s+for)\\b[^.]{0,60}\\b${RECRUITING_ROLE_OBJECT}\\b`,
+    'i',
+  ),
   /\b(?:accepting|seeking)\s+(?:new\s+)?(?:students|applicants|postdocs?|rotation\s+students)\b/i,
   /\b(?:students?|postdocs?|applicants?|candidates?)\b[^.]{0,80}\b(?:reach\s+out|get\s+in\s+touch|contact\s+(?:me|us)|apply|application)\b/i,
   /\b(?:reach\s+out|get\s+in\s+touch|contact\s+(?:me|us))\b[^.]{0,80}\b(?:position|opening|opportunit|join\s+(?:us|the|our)|apply|application)/i,
@@ -179,6 +218,7 @@ export function isRecruitingNoticeLead(text: unknown): boolean {
   const value = textValue(text);
   if (!value) return false;
   if (RECRUITING_NOTICE_LEAD.test(firstSentence(value))) return true;
+  if (opensWithResearchFocus(value)) return false;
   return RECRUITING_SOLICITATION_MARKERS.some((pattern) => pattern.test(value));
 }
 
@@ -198,6 +238,7 @@ const NAVIGATIONAL_CROSS_REFERENCE_MARKERS = [
 export function isNavigationalCrossReferenceProse(text: unknown): boolean {
   const value = textValue(text);
   if (!value) return false;
+  if (opensWithResearchFocus(value)) return false;
   return NAVIGATIONAL_CROSS_REFERENCE_MARKERS.some((pattern) => pattern.test(value));
 }
 

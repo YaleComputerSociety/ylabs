@@ -280,7 +280,6 @@ const RESEARCH_SUBPAGE_ANCHOR_RE =
   /^(?:our\s+|the\s+|current\s+)?(?:research(?:\s+(?:areas?|interests?|overview|projects?|topics?|themes?))?|projects?|research\s+&\s+publications|science|what\s+we\s+(?:do|study)|areas\s+of\s+research)$/i;
 
 const MAX_RESEARCH_SUBPAGE_CANDIDATES = 2;
-const MAX_RESEARCH_SUBPAGES_FETCHED = 2;
 
 function sameRegistrableHost(a: string, b: string): boolean {
   try {
@@ -300,13 +299,14 @@ const withoutTrailingSlash = (value: string): string => value.replace(/\/+$/, ''
  * research content. The home page alone often carries only a mission or welcome
  * blurb while the site's `/research` page carries the actual research prose, so
  * the lane has to enumerate the site rather than stop at the root (#2176).
+ *
+ * Enumeration is uncapped and deduped on the trailing-slash-insensitive key so
+ * that a nav publishing both `/research` and `/research/` yields one target
+ * rather than consuming two of the crawl budget. The fetch budget belongs to
+ * researchSubPageCrawlUrls(), which is the single cap.
  */
-export function discoverResearchSubPageUrls(
-  html: string,
-  pageUrl: string,
-  maxUrls: number = MAX_RESEARCH_SUBPAGE_CANDIDATES,
-): string[] {
-  if (!html || maxUrls <= 0) return [];
+export function discoverResearchSubPageUrls(html: string, pageUrl: string): string[] {
+  if (!html) return [];
   let $: cheerio.CheerioAPI;
   try {
     $ = cheerio.load(html);
@@ -314,18 +314,17 @@ export function discoverResearchSubPageUrls(
     return [];
   }
   const found: string[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<string>([withoutTrailingSlash(pageUrl.split('#')[0])]);
   $('a[href]').each((_i, el) => {
-    if (found.length >= maxUrls) return;
     const text = textValue($(el).text());
     if (!text || !RESEARCH_SUBPAGE_ANCHOR_RE.test(text)) return;
     try {
       const absolute = new URL($(el).attr('href') || '', pageUrl).toString().split('#')[0];
       if (!/^https?:\/\//i.test(absolute)) return;
       if (!sameRegistrableHost(absolute, pageUrl)) return;
-      if (withoutTrailingSlash(absolute) === withoutTrailingSlash(pageUrl.split('#')[0])) return;
-      if (seen.has(absolute)) return;
-      seen.add(absolute);
+      const key = withoutTrailingSlash(absolute);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
       found.push(absolute);
     } catch {
       /* ignore unparseable hrefs */
@@ -349,17 +348,9 @@ export function researchSubPageCrawlUrls(
   maxUrls: number = MAX_RESEARCH_SUBPAGE_CANDIDATES,
 ): string[] {
   if (maxUrls <= 0) return [];
-  const seen = new Set<string>([withoutTrailingSlash(homeUrl.split('#')[0])]);
-  const out: string[] = [];
-  for (const url of discoverResearchSubPageUrls(homeHtml, homeUrl, maxUrls)) {
-    const key = withoutTrailingSlash(url);
-    if (!key || seen.has(key)) continue;
-    if (isRejectedDescriptionSourceUrl(url)) continue;
-    seen.add(key);
-    out.push(url);
-    if (out.length >= maxUrls) break;
-  }
-  return out;
+  return discoverResearchSubPageUrls(homeHtml, homeUrl)
+    .filter((url) => !isRejectedDescriptionSourceUrl(url))
+    .slice(0, maxUrls);
 }
 
 export interface DescriptionPageProse {
@@ -989,22 +980,40 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // site's own research page carries the research prose, so enumerate the
         // site instead of stopping at whichever URL happened to be stored (#2176).
         const pages: FetchedDescriptionPage[] = [page];
+        let crawlIncomplete = false;
         for (const researchUrl of researchSubPageCrawlUrls(page.html, page.url)) {
-          if (pages.length >= 1 + MAX_RESEARCH_SUBPAGES_FETCHED) break;
           if (isKnownUnavailableSourceUrl(researchUrl, lab.sourceLinkHealth)) continue;
           let researchPage: FetchedDescriptionPage | null = null;
           try {
             researchPage = await this.fetchPage(researchUrl);
           } catch (error) {
+            crawlIncomplete = true;
             ctx.log(
               `[${lab.slug || 'candidate'}] research subpage skipped: ${sanitizeLogValue(error)}`,
             );
             continue;
           }
-          if (!researchPage?.html) continue;
+          if (!researchPage?.html) {
+            crawlIncomplete = true;
+            continue;
+          }
           if (!personProfileSourceMatchesEntity(researchPage.url, lab)) continue;
           if (pages.some((fetched) => fetched.url === researchPage.url)) continue;
           pages.push(researchPage);
+        }
+
+        // A run that could not read every research page the home page links has
+        // seen strictly less than the run that produced the stored description,
+        // so extracting from the remaining pages would supersede a research-page
+        // description with the home page's mission blurb on a single timeout,
+        // and flip back on the next run at full LLM cost. Keep what is stored
+        // instead. An entity with no description yet still proceeds, so a
+        // permanently broken research link never starves it (#2176).
+        if (crawlIncomplete && textValue(lab.fullDescription)) {
+          ctx.log(
+            `[${lab.slug || 'candidate'}] skipping description extraction: a linked research page could not be read, keeping the stored description.`,
+          );
+          return;
         }
 
         // Raw HTML covers both extraction paths below: the visible-text LLM path
@@ -1060,8 +1069,18 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         const bestCrawledProse = selectBestDescriptionPageProse(crawledProse, kind);
 
         const primaryPageText = htmlToText(primaryPage.html);
+
+        // When the primary page has deterministic prose of its own and a crawled
+        // research page already beats it, the winner is settled without the LLM,
+        // so calling it on the primary page would pay for a result nothing reads.
+        const crawledBeatsPrimaryProse =
+          bestCrawledProse !== null &&
+          primaryProse !== null &&
+          scoreResearchHomeDescriptionCandidate(bestCrawledProse.fullDescription, kind) >
+            scoreResearchHomeDescriptionCandidate(primaryProse.fullDescription, kind);
+
         const llmExtraction =
-          primaryPageText.length >= 120
+          !crawledBeatsPrimaryProse && primaryPageText.length >= 120
             ? await this.callLLM({
                 model: this.model,
                 apiKey: this.apiKey as string,
@@ -1100,7 +1119,22 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
 
         // Methods are grounded in the text of the page that is actually cited, so
         // a crawled winner never attributes home-page methods to its own URL.
+        // They are therefore extracted from that page too: grounding the primary
+        // page's methods against a crawled winner's text would discard all of
+        // them and lose the winning page's own method language (#2176).
         const pageText = page === primaryPage ? primaryPageText : htmlToText(page.html);
+        const citedPageExtraction =
+          page === primaryPage
+            ? llmExtraction
+            : pageText.length >= 120
+              ? await this.callLLM({
+                  model: this.model,
+                  apiKey: this.apiKey as string,
+                  labName: lab.name,
+                  sourceUrl: page.url,
+                  pageText,
+                })
+              : null;
 
         // Methods are LLM-extracted and word-grounded before use, and are
         // emitted regardless of which description path wins - the deterministic
@@ -1108,7 +1142,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // page names no groundable methods, fall back to deriving them from the
         // entity's already-stored description so research homes without method
         // language on the page still surface techniques.
-        let methods = llmExtraction ? groundMethods(llmExtraction.methods, pageText) : [];
+        let methods = citedPageExtraction
+          ? groundMethods(citedPageExtraction.methods, pageText)
+          : [];
         const storedDescription = textValue(lab.fullDescription);
         if (methods.length === 0 && storedDescription.length >= 120) {
           const descExtraction = await this.callLLM({

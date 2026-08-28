@@ -1238,4 +1238,49 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(full?.value).toBe(HOME_PROSE);
     expect(full?.sourceUrl).toBe('https://examplelab.org/');
   });
+
+  it('emits nothing when a linked research page cannot be read (#2176)', async () => {
+    const { ctx, emitted, logs } = makeContext();
+    const STORED_RESEARCH_PROSE =
+      'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics and microscopy to dissect regeneration.';
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription: '',
+      shortDescription: '',
+      topics: [],
+      methods: [],
+    });
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html:
+            '<main><h1>Laboratory of Tissue Biology</h1>' +
+            '<p>Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease.</p>' +
+            '<a href="/research_page/">Our Research</a></main>',
+        };
+      }
+      throw new Error('socket hang up');
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'example-lab',
+          name: 'Example Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: STORED_RESEARCH_PROSE,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(logs.some((line) => /linked research page could not be read/.test(line))).toBe(true);
+  });
 });
