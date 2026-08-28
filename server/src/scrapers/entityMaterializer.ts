@@ -2108,19 +2108,6 @@ function deptUserNameFilters(
   ]);
 }
 
-function departmentValuesForInferredPiLookup(
-  observations: MaterializerObservationLike[],
-): string[] {
-  return uniqueStrings(
-    observations.flatMap((observation) => {
-      if (observation.field !== 'departments' && observation.field !== 'primaryDepartment') {
-        return [];
-      }
-      return Array.isArray(observation.value) ? observation.value : [observation.value];
-    }),
-  );
-}
-
 export function userLookupFiltersForInferredPiUserKey(
   value: unknown,
   departments: string[] = [],
