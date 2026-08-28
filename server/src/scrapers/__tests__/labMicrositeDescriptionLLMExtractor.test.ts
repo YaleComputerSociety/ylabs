@@ -4,7 +4,10 @@ import {
   candidateDescriptionLabsFromDocs,
   descriptionExtractionToObservations,
   groundDescriptionExtraction,
+  discoverResearchSubPageUrls,
   normalizeDescriptionLlmObjectId,
+  researchSubPageCrawlUrls,
+  selectBestDescriptionPageProse,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -1098,5 +1101,185 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(callLLM).not.toHaveBeenCalled();
     expect(emitted).toHaveLength(0);
     expect(logs.some((line) => /names a different person/.test(line))).toBe(true);
+  });
+  it('discovers a site’s own research page from home-page anchors (#2176)', () => {
+    const html =
+      '<nav><a href="/">Home</a><a href="/research_page/">Research</a>' +
+      '<a href="/team_page/">Team</a><a href="https://elsewhere.example/research">Research</a>' +
+      '<a href="/">Research</a></nav>';
+
+    expect(discoverResearchSubPageUrls(html, 'https://examplelab.org/')).toEqual([
+      'https://examplelab.org/research_page/',
+    ]);
+  });
+
+  it('crawls only links the site publishes, never blind origin probes (#2176)', () => {
+    const linked = researchSubPageCrawlUrls(
+      '<a href="/research_page/">Our Research</a>',
+      'https://examplelab.org/',
+    );
+    expect(linked).toEqual(['https://examplelab.org/research_page/']);
+
+    // No research anchor means no crawl at all, so a home with nothing to find
+    // costs no extra requests.
+    expect(researchSubPageCrawlUrls('<a href="/team">Team</a>', 'https://examplelab.org/')).toEqual(
+      [],
+    );
+  });
+
+  it('prefers research prose over a mission statement regardless of which page it sits on (#2176)', () => {
+    const mission = {
+      url: 'https://examplelab.org/research',
+      fullDescription:
+        'Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology. To foster personal and scientific growth and excellence.',
+      shortDescription: '',
+    };
+    const research = {
+      url: 'https://examplelab.org/',
+      fullDescription:
+        'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics, cell culture models, genomics, and microscopy.',
+      shortDescription: '',
+    };
+
+    expect(selectBestDescriptionPageProse([mission, research], 'organization')).toBe(research);
+    expect(selectBestDescriptionPageProse([research, mission], 'organization')).toBe(research);
+  });
+
+  it('reads the research subpage when the home page carries only a mission blurb (#2176)', async () => {
+    const { ctx, emitted } = makeContext();
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html:
+            '<main><h1>Laboratory of Tissue Biology</h1>' +
+            '<p>Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease.</p>' +
+            '<a href="/research_page/">Our Research</a></main>',
+        };
+      }
+      if (url === 'https://examplelab.org/research_page/') {
+        return {
+          url: 'https://examplelab.org/research_page/',
+          html: '<main><h1>Research</h1><p>We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics, cell culture models, genomics, and microscopy to dissect regeneration.</p></main>',
+        };
+      }
+      throw new Error('not found');
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'example-lab',
+          name: 'Example Lab',
+          websiteUrl: 'https://examplelab.org/',
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: '',
+        shortDescription: '',
+        topics: [],
+        methods: [],
+      }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full?.value).toContain('dynamic interactions between non-epithelial cells');
+    expect(full?.value).not.toContain('Our Mission');
+    expect(full?.sourceUrl).toBe('https://examplelab.org/research_page/');
+    expect(fetchPage).toHaveBeenCalledWith('https://examplelab.org/research_page/');
+  });
+  it('keeps the primary page prose when a crawled research page merely ties it (#2176)', async () => {
+    const { ctx, emitted } = makeContext();
+    const HOME_PROSE =
+      'The Hat Lab studies quantum information using superconducting microwave circuits, building multi-qubit modules and the amplifiers that read them out with minimal added noise.';
+    const CRAWLED_PROSE =
+      'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html: `<main><h1>Hat Lab</h1><div>${HOME_PROSE}</div><a href="/research">Research</a></main>`,
+        };
+      }
+      return {
+        url: 'https://examplelab.org/research',
+        html: `<main><p>${CRAWLED_PROSE}</p></main>`,
+      };
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'hat-lab',
+          name: 'Hat Lab',
+          websiteUrl: 'https://examplelab.org/',
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: HOME_PROSE,
+        shortDescription: '',
+        topics: [],
+        methods: [],
+      }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full?.value).toBe(HOME_PROSE);
+    expect(full?.sourceUrl).toBe('https://examplelab.org/');
+  });
+
+  it('emits nothing when a linked research page cannot be read (#2176)', async () => {
+    const { ctx, emitted, logs } = makeContext();
+    const STORED_RESEARCH_PROSE =
+      'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics and microscopy to dissect regeneration.';
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription: '',
+      shortDescription: '',
+      topics: [],
+      methods: [],
+    });
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html:
+            '<main><h1>Laboratory of Tissue Biology</h1>' +
+            '<p>Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease.</p>' +
+            '<a href="/research_page/">Our Research</a></main>',
+        };
+      }
+      throw new Error('socket hang up');
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'example-lab',
+          name: 'Example Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: STORED_RESEARCH_PROSE,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(logs.some((line) => /linked research page could not be read/.test(line))).toBe(true);
   });
 });

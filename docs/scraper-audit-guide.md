@@ -274,6 +274,7 @@ Audit focus:
 - A profile-page extraction may improve stored text but still leave the row in `operator_review` when the visibility gate flags `thin_description`, missing lead, or missing action evidence.
 - It must not emit access evidence, join pages, contacts, or applications.
 - Review `quality.conflictCandidateCount`, missing source URL counts, and source URL provenance before applying.
+- An emitted `sourceUrl` may be a same-host research page the entity's own page links (`/research`, `/research_page/`) rather than a stored `websiteUrl`/`website`/`sourceUrls` value, so an unfamiliar subpage URL is expected provenance here, not a defect; `skills/scrapers/SKILL.md` owns the crawl and page-selection rules (#2176).
 
 Project impact:
 

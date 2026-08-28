@@ -1,8 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   collectDescriptionCandidates,
+  isHighConfidencePersonBio,
+  isMissionOrCultureProse,
+  isRecruitingNoticeLead,
   selectResearchHomeDescription,
 } from '../researchHomeDescriptionSelection';
+
+const WEAK_JOURNAL_CLUB_PASSAGE =
+  'Members of the lab are interested in a broad range of questions and meet weekly for journal club, where we discuss recent preprints and take turns presenting works in progress.';
 
 const LAB_RESEARCH_BLOCK =
   'The Marlowe Lab studies how coastal wetlands store carbon and how tidal cycles reshape sediment chemistry. We combine field sampling, stable-isotope analysis, and numerical models to understand how these ecosystems respond to rising seas.';
@@ -259,5 +265,84 @@ describe('selectResearchHomeDescription', () => {
     expect(selectResearchHomeDescription([A_TO_Z_INDEX_BLOCK, LAB_RESEARCH_BLOCK])).toBe(
       LAB_RESEARCH_BLOCK,
     );
+  });
+  it('ranks a research passage above a mission statement from the same site (#2176)', () => {
+    const MISSION_BLOCK =
+      'Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease. To foster personal and scientific growth and excellence.';
+    const RESEARCH_BLOCK =
+      'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment. Using mouse genetics, cell culture models, genomics, and microscopy, we tackle the cell-intrinsic and cell-extrinsic factors behind regeneration.';
+
+    expect(isMissionOrCultureProse(MISSION_BLOCK)).toBe(true);
+    expect(isMissionOrCultureProse(RESEARCH_BLOCK)).toBe(false);
+    expect(selectResearchHomeDescription([MISSION_BLOCK, RESEARCH_BLOCK])).toBe(RESEARCH_BLOCK);
+    expect(selectResearchHomeDescription([RESEARCH_BLOCK, MISSION_BLOCK])).toBe(RESEARCH_BLOCK);
+  });
+
+  it('still keeps a mission statement when the home publishes nothing else (#2176)', () => {
+    const MISSION_ONLY =
+      'Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease. Our research uses multiple epithelial tissues to explore these scientific interests.';
+    expect(selectResearchHomeDescription([MISSION_ONLY])).toBe(MISSION_ONLY);
+  });
+
+  it('ranks a research passage above a recruiting-notice lead, but keeps it alone (#2176)', () => {
+    const HIRING_LEAD =
+      'Hiring! Our group has open positions for a postdoc and a graduate student. We study quantum many-body systems out of equilibrium using ultracold atomic gases as a platform for these experiments.';
+
+    expect(isRecruitingNoticeLead(HIRING_LEAD)).toBe(true);
+    expect(isRecruitingNoticeLead(LAB_RESEARCH_BLOCK)).toBe(false);
+    expect(selectResearchHomeDescription([HIRING_LEAD, LAB_RESEARCH_BLOCK])).toBe(
+      LAB_RESEARCH_BLOCK,
+    );
+    expect(selectResearchHomeDescription([HIRING_LEAD])).toBe(HIRING_LEAD);
+  });
+
+  it('does not let an off-topic demotion blank a high-confidence person bio (#2176)', () => {
+    // Both demotion-marked and a high-confidence bio, which is the only shape
+    // the fail-closed blanking guard actually reaches.
+    const CREDENTIALED_CULTURE_BIO =
+      'Dr. Chen is committed to fostering an inclusive lab. Her research examines carbon storage in tidal wetlands and the chemistry of estuary sediments, combining fieldwork with numerical modeling of coastal systems.';
+    expect(isMissionOrCultureProse(CREDENTIALED_CULTURE_BIO)).toBe(true);
+    expect(isHighConfidencePersonBio(CREDENTIALED_CULTURE_BIO)).toBe(true);
+    expect(selectResearchHomeDescription([CREDENTIALED_CULTURE_BIO], { kind: 'person' })).toBe(
+      CREDENTIALED_CULTURE_BIO,
+    );
+  });
+
+  it('does not demote research prose that merely closes with a recruiting invitation (#2176)', () => {
+    const RESEARCH_THEN_INVITE =
+      "The Smith Lab studies the neural circuits underlying decision-making, mapping how cortical populations accumulate evidence over time. If you're interested in joining, reach out.";
+
+    expect(isRecruitingNoticeLead(RESEARCH_THEN_INVITE)).toBe(false);
+    expect(selectResearchHomeDescription([RESEARCH_THEN_INVITE, WEAK_JOURNAL_CLUB_PASSAGE])).toBe(
+      RESEARCH_THEN_INVITE,
+    );
+  });
+
+  it('does not read ordinary research aims as a recruiting pitch (#2176)', () => {
+    const BUILDING_AIM =
+      'We are building a comprehensive atlas of cell types in the developing human brain, and we are looking for the genetic determinants of cortical folding across primate species.';
+    const BUILDING_A_TEAM =
+      "The Craven Lab launched in fall 2025 and we're building a team. We investigate organic reaction mechanisms, so reach out about a postdoc position if that excites you.";
+
+    expect(isRecruitingNoticeLead(BUILDING_AIM)).toBe(false);
+    expect(isRecruitingNoticeLead(BUILDING_A_TEAM)).toBe(true);
+  });
+
+  it('treats mission and vision as headings, not as topic words (#2176)', () => {
+    const VISION_SCIENCE =
+      'Vision is our most important sense, and we study how retinal circuits encode motion, colour, and contrast before that signal ever reaches the cortex.';
+    const CENTER_MISSION_STATEMENT =
+      'The mission of the Wetlands Center is to advance the diagnosis and treatment of coastal erosion, and our research examines how sediment chemistry responds to rising seas.';
+    const MISSION_HEADING = 'Our Mission Foster an inclusive, welcoming community of scholars.';
+
+    expect(isMissionOrCultureProse(VISION_SCIENCE)).toBe(false);
+    expect(isMissionOrCultureProse(CENTER_MISSION_STATEMENT)).toBe(false);
+    expect(isMissionOrCultureProse(MISSION_HEADING)).toBe(true);
+    expect(selectResearchHomeDescription([VISION_SCIENCE, WEAK_JOURNAL_CLUB_PASSAGE])).toBe(
+      VISION_SCIENCE,
+    );
+    expect(
+      selectResearchHomeDescription([CENTER_MISSION_STATEMENT, WEAK_JOURNAL_CLUB_PASSAGE]),
+    ).toBe(CENTER_MISSION_STATEMENT);
   });
 });

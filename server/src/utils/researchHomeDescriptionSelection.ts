@@ -127,9 +127,141 @@ export function isPersonCentricLead(text: string): boolean {
   return false;
 }
 
-function scoreDescriptionCandidate(text: string, kind: DescriptionEntityKind): number {
-  if (kind === 'organization' && isPersonCentricLead(text)) return -100;
-  return 0;
+// The off-topic markers below scan the whole passage, so on their own they also
+// fire on research prose that merely closes with a mission line, a recruiting
+// invitation, or a pointer to another page ("The Smith Lab studies the neural
+// circuits underlying decision-making. If you're interested in joining, reach
+// out."). A passage that opens by saying what the home studies reads as a
+// research description whatever follows, so it is exempt from the marker-based
+// demotions. The lead patterns stay absolute: they describe the opening itself.
+function opensWithResearchFocus(value: string): boolean {
+  return describesResearchFocus(firstSentence(value));
+}
+
+const CULTURE_SECTION_LEAD =
+  /^(?:(?:our|the|lab|laboratory|group)\s+)?(?:core\s+values|guiding\s+principles|diversity(?:\s+(?:statement|,\s*equity))?|code\s+of\s+conduct|lab(?:oratory)?\s+(?:culture|policies|philosophy))\b/i;
+
+// "Mission", "Vision", and "Values" are section headings only when punctuation
+// or a run-in capital follows them ("Our Mission Create and communicate ...";
+// "Our Values: we believe ..."). The same words open ordinary research prose
+// ("Vision is our most important sense ..."; "The mission of the Center is to
+// advance the diagnosis and treatment of ..."), which must not be demoted.
+const MISSION_TOPIC_WORD_LEAD =
+  /^(?:(?:our|the|lab|laboratory|group)\s+)?(?:mission|vision|values)(?:\s+statement)?\b/i;
+
+const HEADING_RUN_IN = /^(?:\s*[:\-–—]|\s+[A-Z])/;
+
+function hasMissionTopicHeadingLead(value: string): boolean {
+  const lead = value.match(MISSION_TOPIC_WORD_LEAD);
+  if (!lead) return false;
+  return HEADING_RUN_IN.test(value.slice(lead[0].length));
+}
+
+const MISSION_OR_CULTURE_MARKERS = [
+  /\b(?:personal|professional)\s+and\s+(?:scientific|professional|personal)\s+growth\b/i,
+  /\b(?:foster|fostering|cultivate|cultivating|promote|promoting|maintain|maintaining)\s+(?:an?\s+)?(?:inclusive|welcoming|equitable|collaborative|supportive|respectful|safe)\b/i,
+  /\b(?:mentoring|mentorship|training)\s+philosophy\b/i,
+  /\blab(?:oratory)?['’]?s?\s+(?:policies|culture|values|code\s+of\s+conduct)\b/i,
+  /\bcommitted\s+to\s+(?:building\s+|creating\s+|maintaining\s+)?(?:an?\s+)?(?:diversity|equity|inclusion|inclusive|welcoming|respectful|safe)\b/i,
+];
+
+/**
+ * A research home's mission, values, or lab-culture statement is legitimate
+ * prose about the group, but it does not say what the group studies. It is
+ * demoted rather than rejected so a home that publishes nothing else still
+ * keeps a description (#2176).
+ */
+export function isMissionOrCultureProse(text: unknown): boolean {
+  const value = textValue(text);
+  if (!value) return false;
+  if (CULTURE_SECTION_LEAD.test(value) || hasMissionTopicHeadingLead(value)) return true;
+  if (opensWithResearchFocus(value)) return false;
+  return MISSION_OR_CULTURE_MARKERS.some((pattern) => pattern.test(value));
+}
+
+const RECRUITING_NOTICE_LEAD =
+  /^(?:hiring\b|we\s+are\s+hiring\b|we\s+(?:are|have)\s+(?:currently\s+)?(?:recruiting|looking\s+for\s+(?:a\s+)?(?:new\s+)?(?:postdoc|graduate|phd|student|lab))|(?:our\s+)?(?:group|lab|laboratory)\s+(?:has|is)\s+(?:open\s+positions|hiring|recruiting)|open\s+positions\b|positions?\s+(?:are\s+)?available\b|join\s+(?:our|the)\s+(?:lab|group|team)\b)/i;
+
+// A solicitation can also sit past the opening sentence ("The Craven Lab
+// launched in fall 2025 and we're building a team. If you're excited about
+// organic chemistry, reach out"). A passage whose purpose is recruitment is not
+// a research description wherever the pitch appears.
+// A bare "contact us" is ordinary page copy, so the reach-out phrasings only
+// count as recruitment when an applicant or a position sits in the same
+// sentence. Otherwise this demotion would reorder candidates on any page that
+// merely invites contact.
+// "We are building" and "we are looking for" are also how research prose states
+// its aims ("We are building a comprehensive atlas of cell types in the
+// developing human brain"), so those two need a position or an applicant in the
+// same sentence before they count as a pitch.
+const RECRUITING_ROLE_OBJECT =
+  '(?:team|position|opening|vacancy|postdoc(?:toral)?|graduate\\s+student|phd\\s+student|rotation\\s+student|student|applicant|candidate|(?:lab|group)\\s+member|technician|to\\s+join)';
+
+const RECRUITING_SOLICITATION_MARKERS = [
+  /\bif\s+you(?:['’]re|\s+are)\s+(?:excited|interested|passionate|enthusiastic)\b/i,
+  /\b(?:we\s+are|we['’]re)\s+(?:recruiting|hiring)\b/i,
+  new RegExp(
+    `\\b(?:we\\s+are|we['’]re)\\s+(?:building|looking\\s+for)\\b[^.]{0,60}\\b${RECRUITING_ROLE_OBJECT}\\b`,
+    'i',
+  ),
+  /\b(?:accepting|seeking)\s+(?:new\s+)?(?:students|applicants|postdocs?|rotation\s+students)\b/i,
+  /\b(?:students?|postdocs?|applicants?|candidates?)\b[^.]{0,80}\b(?:reach\s+out|get\s+in\s+touch|contact\s+(?:me|us)|apply|application)\b/i,
+  /\b(?:reach\s+out|get\s+in\s+touch|contact\s+(?:me|us))\b[^.]{0,80}\b(?:position|opening|opportunit|join\s+(?:us|the|our)|apply|application)/i,
+];
+
+/**
+ * A research page that sells open positions ("Hiring! Our group has open
+ * positions for a postdoc ...") buries whatever research prose follows. Demoted
+ * so a cleaner passage from the same site wins (#2176).
+ */
+export function isRecruitingNoticeLead(text: unknown): boolean {
+  const value = textValue(text);
+  if (!value) return false;
+  if (RECRUITING_NOTICE_LEAD.test(firstSentence(value))) return true;
+  if (opensWithResearchFocus(value)) return false;
+  return RECRUITING_SOLICITATION_MARKERS.some((pattern) => pattern.test(value));
+}
+
+// "You can see our individual websites linked from the People page for more
+// information about particular research projects" points at the research
+// instead of describing it.
+const NAVIGATIONAL_CROSS_REFERENCE_MARKERS = [
+  /\b(?:see|find|listed|linked)\b[^.]{0,60}\b(?:People|Team|Members|Publications|Projects)\s+page\b/i,
+  /\bsee\s+our\s+individual\s+(?:websites|pages)\b/i,
+  /\bfor\s+more\s+information\s+about\s+(?:particular|specific|individual)\b/i,
+];
+
+/**
+ * Prose that directs the reader elsewhere rather than saying what the home
+ * studies. Demoted, not rejected, so it still survives as a last resort (#2176).
+ */
+export function isNavigationalCrossReferenceProse(text: unknown): boolean {
+  const value = textValue(text);
+  if (!value) return false;
+  if (opensWithResearchFocus(value)) return false;
+  return NAVIGATIONAL_CROSS_REFERENCE_MARKERS.some((pattern) => pattern.test(value));
+}
+
+const PERSON_CENTRIC_PENALTY = -100;
+
+function personCentricPenalty(text: string, kind: DescriptionEntityKind): number {
+  return kind === 'organization' && isPersonCentricLead(text) ? PERSON_CENTRIC_PENALTY : 0;
+}
+
+// The off-topic demotions rank a weaker passage below a research passage from
+// the same site, but they must never on their own make a candidate look
+// person-centric to the caller's bio guard, which would blank a description
+// that has no better replacement.
+export function scoreResearchHomeDescriptionCandidate(
+  text: unknown,
+  kind: DescriptionEntityKind = 'organization',
+): number {
+  const value = textValue(text);
+  let score = personCentricPenalty(value, kind);
+  if (isNavigationalCrossReferenceProse(value)) score -= 40;
+  if (isRecruitingNoticeLead(value)) score -= 30;
+  if (isMissionOrCultureProse(value)) score -= 20;
+  return score;
 }
 
 export function collectDescriptionCandidates(
@@ -160,15 +292,15 @@ export function selectResearchHomeDescription(
   if (candidates.length === 0) return null;
 
   let best = candidates[0];
-  let bestScore = scoreDescriptionCandidate(best, kind);
+  let bestScore = scoreResearchHomeDescriptionCandidate(best, kind);
   for (let index = 1; index < candidates.length; index += 1) {
     const candidate = candidates[index];
-    const candidateScore = scoreDescriptionCandidate(candidate, kind);
+    const candidateScore = scoreResearchHomeDescriptionCandidate(candidate, kind);
     if (candidateScore > bestScore) {
       best = candidate;
       bestScore = candidateScore;
     }
   }
-  if (bestScore < 0 && isHighConfidencePersonBio(best)) return null;
+  if (personCentricPenalty(best, kind) < 0 && isHighConfidencePersonBio(best)) return null;
   return best;
 }
