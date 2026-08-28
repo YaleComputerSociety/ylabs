@@ -613,6 +613,7 @@ Use these controls before spending cloud or API money:
 - Complete the WorkPlanner cost-control tasks in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before unattended recurring paid/broad jobs.
 - `lab-microsite-description-llm` and `lab-microsite-undergrad-llm` skip the paid LLM call when a per-entity `sourceContentHash` observation matches the fresh page bytes, so repeat runs (including `--exhaustive` sweeps that bypass WorkPlanner freshness) do not re-pay for unchanged pages.
   Pass `--force-llm` only when intentionally re-extracting a source whose hash is up to date.
+  `lab-microsite-description-llm` also budgets for its research-page crawl: an entity whose page publishes a research anchor costs up to two extra HTTP fetches per run because the crawl feeds the hash input and therefore runs before that gate, and a crawled page that wins the description can add one LLM call for its own methods (#2176).
 
 ## Report Checklist
 

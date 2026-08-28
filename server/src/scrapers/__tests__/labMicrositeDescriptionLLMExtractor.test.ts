@@ -1122,9 +1122,9 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     // No research anchor means no crawl at all, so a home with nothing to find
     // costs no extra requests.
-    expect(
-      researchSubPageCrawlUrls('<a href="/team">Team</a>', 'https://examplelab.org/'),
-    ).toEqual([]);
+    expect(researchSubPageCrawlUrls('<a href="/team">Team</a>', 'https://examplelab.org/')).toEqual(
+      [],
+    );
   });
 
   it('prefers research prose over a mission statement regardless of which page it sits on (#2176)', () => {
@@ -1160,8 +1160,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       if (url === 'https://examplelab.org/research_page/') {
         return {
           url: 'https://examplelab.org/research_page/',
-          html:
-            '<main><h1>Research</h1><p>We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics, cell culture models, genomics, and microscopy to dissect regeneration.</p></main>',
+          html: '<main><h1>Research</h1><p>We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics, cell culture models, genomics, and microscopy to dissect regeneration.</p></main>',
         };
       }
       throw new Error('not found');
