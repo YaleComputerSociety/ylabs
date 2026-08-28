@@ -586,9 +586,9 @@ describe('runScraperSweep', () => {
       'research-relevance-audit',
       'freshness-audit',
     ]);
-    expect(
-      stages.every((stage) => stage.artifactPath?.startsWith('/tmp/fellowship-sweep/')),
-    ).toBe(true);
+    expect(stages.every((stage) => stage.artifactPath?.startsWith('/tmp/fellowship-sweep/'))).toBe(
+      true,
+    );
     expect(stages.find((stage) => stage.name === 'classification-backfill')?.args).toEqual([
       '--cwd',
       'server',
@@ -678,9 +678,9 @@ describe('runScraperSweep', () => {
   });
 
   it('keeps the one-shot official-source change-set replay opt-in', () => {
-    expect(
-      resolveFellowshipPostRunOptions('fellowship-development-full', {}),
-    ).toMatchObject({ applyOfficialSourceChangeSet: false });
+    expect(resolveFellowshipPostRunOptions('fellowship-development-full', {})).toMatchObject({
+      applyOfficialSourceChangeSet: false,
+    });
     expect(
       buildFellowshipPostRunStages('/tmp/fellowship-sweep').map((stage) => stage.name),
     ).not.toContain('official-sources-backfill');
@@ -715,7 +715,9 @@ describe('runScraperSweep', () => {
   });
 
   it('derives the fellowship post-run plan from a single registry with unique artifacts', () => {
-    const registryNames = FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.map((definition) => definition.name);
+    const registryNames = FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.map(
+      (definition) => definition.name,
+    );
     const alwaysOnNames = FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS.filter((definition) =>
       definition.isEnabled({}),
     ).map((definition) => definition.name);

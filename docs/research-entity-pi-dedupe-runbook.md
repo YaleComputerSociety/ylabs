@@ -128,7 +128,7 @@ A second sweep pass over the same data therefore performs zero additional merges
 ## Automatic URL-identity dedupe in the sweep
 
 The `--profile-lab-url-only` lane can also run automatically inside the scraper sweep as the `url-identity-dedupe` stage (`research-entity:dedupe-by-pi --profile-lab-url-only --apply --confirm-research-entity-pi-dedupe --limit=10000 --max-apply=<max>`), wired into the `development-full` post-run pipeline after `eponymous-fra-merge` and before `visibility-gate` so the gate and search index evaluate each surviving canonical.
-It is flag-gated OFF by default and only runs when `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES=1` (or `=true`) is set in the sweep environment, so Beta and Prod sweeps are unaffected until it is deliberately enabled after Dev validation.
+It is flag-gated OFF by default and only runs when `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set to a truthy value in the sweep environment (the accepted values are the ones shared by every sweep stage flag, see [`docs/research-data-pipeline.md`](./research-data-pipeline.md)), so Beta and Prod sweeps are unaffected until it is deliberately enabled after Dev validation.
 `--max-apply` defaults to 500 (overridable per run) so the stage is capped rather than a full-corpus rewrite.
 Because the lane merges never-demote (see `--profile-lab-url-only` above), the sweep can collapse URL-duplicate homes without any risk of dropping a `student_ready` lab out of student view.
 
