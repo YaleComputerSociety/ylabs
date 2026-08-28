@@ -40,6 +40,10 @@ const defaultFindResearchersBySurname = async (
 const defaultResolveResearcherIdByNetid = async (
   netid: string,
 ): Promise<mongoose.Types.ObjectId | undefined> => {
+  const byIdentifier: any = await Researcher.findOne({ 'identifiers.netid': netid })
+    .select('_id')
+    .lean();
+  if (byIdentifier?._id) return byIdentifier._id;
   const account: any = await Account.findOne({ netid }).select('_id').lean();
   if (!account?._id) return undefined;
   const researcher: any = await Researcher.findOne({ accountId: account._id })

@@ -24,13 +24,13 @@ Eight live collections carry runtime research data.
 ### `Researcher` (`researchers`)
 
 Public research identity, and a first-class findable entity in its own right: a grad student, PhD student, or researcher is findable even with no lab.
-[`server/src/models/researcher.ts`](../server/src/models/researcher.ts) defines `displayName`, an optional `accountId` link to the private login principal, `profileLinks[]` (`kind`: `YALE_OFFICIAL` | `LAB_ABOUT` | `PERSONAL_ACADEMIC` | `GOOGLE_SCHOLAR` | `ORCID`, each with `url`, `verifiedAt`, and `healthStatus`), an optional `identifiers.orcid`, a `profile` display projection (`title`, `primaryDepartment`, `imageUrl`, `websiteUrl`), `status` (`ACTIVE` | `DEPARTED` | `UNKNOWN`), and `archived`.
+[`server/src/models/researcher.ts`](../server/src/models/researcher.ts) defines `displayName`, an optional `accountId` link to the private login principal, `profileLinks[]` (`kind`: `YALE_OFFICIAL` | `LAB_ABOUT` | `PERSONAL_ACADEMIC` | `GOOGLE_SCHOLAR` | `ORCID`, each with `url`, `verifiedAt`, and `healthStatus`), an optional `identifiers.orcid` and `identifiers.netid` (the netid disambiguation spine), a `profile` display projection (`title`, `primaryDepartment`, `imageUrl`, `websiteUrl`), `status` (`ACTIVE` | `DEPARTED` | `UNKNOWN`), and `archived`.
 `Researcher` rows are created only from Yale-confirmed evidence; an external identifier such as ORCID never creates one by itself.
 
 ### `Account` (`accounts`)
 
 The private login principal: the student or user who logs in.
-[`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, and `archived`.
+[`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, an optional descriptive `profile` (name, `userType`, faculty title/department or student college/year/major) persisted from the Yalies/Directory record at login, and `archived`.
 Authentication is wired onto `Account` (#367): CAS, dev-login, and the local bypass resolve-or-create an `Account` by netid and stamp `lastLoginAt`.
 The legacy `User` model has been retired (#2014): no runtime code reads or writes `User`, and identity lives entirely on `Account` (login) plus `Researcher` (public identity).
 Dropping the now-orphaned `users` collection is a separate, human-gated database cleanup.
@@ -51,7 +51,7 @@ The person-to-research-entity membership edge (the roster); replaces the retired
 [`server/src/models/roleAssignment.ts`](../server/src/models/roleAssignment.ts) defines `personId` (a `Researcher` reference), `target` (`{ kind: 'RESEARCH_ENTITY' | 'ORG_UNIT', id }`), `role` (`PI` | `CO_PI` | `DIRECTOR` | `CO_DIRECTOR` | `CORE_FACULTY` | `AFFILIATED` | `STAFF` | `POSTDOC` | `GRADUATE_STUDENT` | `UNDERGRADUATE`), `state` (`CURRENT` | `HISTORICAL` | `UNKNOWN`), `reviewStatus`, `confidence`, and a bounded `rosterProvenance` subdoc (source name/url, profile url, section label, evidence status, membership key, observed and freshness-expiry timestamps) that feeds the roster-freshness disclosure.
 `evidenceClaimIds` stays empty while the evidence claim-graph is frozen (see [Frozen Evidence-Claim Scaffolding](#frozen-evidence-claim-scaffolding)).
 Read via `getResearchEntityRoster`/`getResearchEntityRosterByEntityId` in [`researchEntityMembershipAccessor.ts`](../server/src/services/researchEntityMembershipAccessor.ts) (joins `Researcher`).
-The continuous canonical materializer write path (`entityMaterializer.ts`) is the sole roster write path (#353, #361): it resolves a scraped person name to a canonical `Researcher` via `resolveResearcherIdForPersonName` in [`researcherPersonNameResolver.ts`](../server/src/services/researcherPersonNameResolver.ts) (netid to `Account` to `Researcher.accountId`, then a surname-plus-given-name match against `Researcher.displayName`, returning `absent`/`ambiguous`/`matched` and failing closed rather than merging distinct identities) before writing `RoleAssignment.personId`, so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
+The continuous canonical materializer write path (`entityMaterializer.ts`) is the sole roster write path (#353, #361): it resolves a scraped person name to a canonical `Researcher` via `resolveResearcherIdForPersonName` in [`researcherPersonNameResolver.ts`](../server/src/services/researcherPersonNameResolver.ts) (netid to `Researcher.identifiers.netid`, else netid to `Account` to `Researcher.accountId`, then a surname-plus-given-name match against `Researcher.displayName`, returning `absent`/`ambiguous`/`matched` and failing closed rather than merging distinct identities) before writing `RoleAssignment.personId`, so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
 
 ### `Signal` (`signals`)
 
@@ -123,12 +123,12 @@ Mongo `ResearchEntity` is the source of truth; the Meilisearch `researchentities
 
 The identity split is complete (#2014): the former `User` document is fully replaced by `Account` (the private login principal, keyed on netid) plus `Researcher` (the public research identity).
 The `User` model, `userService`, `facultyResearcherProjection`, and the one-time `User` backfill/dedupe/hygiene/audit scripts were deleted; no runtime code reads or writes `User`.
-Roster reads and writes resolve identity to a canonical `Researcher` directly (netid to `Account` to `Researcher.accountId`, then name matching via `resolveResearcherIdForPersonName`), so public payloads and `RoleAssignment` rows are canonical.
+Roster reads and writes resolve identity to a canonical `Researcher` directly (netid to `Researcher.identifiers.netid`, else netid to `Account` to `Researcher.accountId`, then name matching via `resolveResearcherIdForPersonName`), so public payloads and `RoleAssignment` rows are canonical.
 Dropping the now-orphaned `users` collection is the only remaining step and stays human-gated; do not treat the collection's continued existence as a live runtime dependency.
 
 Accepted operator inputs should prefer ORCID over Yale netid.
 ORCID may enrich or disambiguate an existing Yale-confirmed `Researcher` (`Researcher.identifiers.orcid`), but ORCID must not create a Yale person record by itself.
-Netid remains an internal `Account`/scraper compatibility key and should appear only as diagnostic or converted internal target data in accepted-input workflows.
+Netid is the internal disambiguation spine (`Researcher.identifiers.netid`, plus `Account.netid` for login) and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 
 Researcher dedupe note: scraper-created same-person `Researcher` shells are merged by rewriting active references onto the canonical `Researcher` and marking the duplicate with `archived` and `dedupedIntoResearcherId`.
 Integrity scans should ignore archived shells.
@@ -305,7 +305,9 @@ This metadata is a planning and review contract, not a substitute for evidence. 
 
 ORCID may disambiguate a Yale-confirmed researcher and support a reviewed outbound profile link, but it must not act as an account-creation shortcut or a works feed.
 
-Create a `Researcher` only from Yale-controlled or Yale-corroborated identity evidence such as netid, Yale email, Yalies/Directory records, or an official Yale profile.
+Create a `Researcher` only when a research signal attaches the person to the corpus (a roster or PI/director role on a research entity); bare directory identity (a Yalies/Directory record with a netid and a faculty-ish title) no longer mints a `Researcher` or `Account` on its own.
+Directory identity instead enriches an already-existing researcher: it records the netid on `Researcher.identifiers.netid` (the disambiguation spine, replacing the retired scraper-minted `Account` lookup) and fills profile fields, but never creates the person record.
+Accounts are created only at login; the pruned directory people become login-provisioned identities if and when they actually sign in.
 Reviewed ORCID and Google Scholar profiles may support disambiguation and outbound navigation, while NIH and NSF may enrich grant context, but none should create a Yale person record by itself.
 
 Official Yale sources may emit ORCID identity observations with source provenance.

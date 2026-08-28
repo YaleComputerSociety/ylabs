@@ -35,6 +35,7 @@ export type ResearcherStatus = (typeof researcherStatuses)[number];
 
 export interface ResearcherIdentifiers {
   orcid?: string;
+  netid?: string;
 }
 
 export interface ResearcherDisplayProfile {
@@ -186,6 +187,13 @@ export const researcherIdentifiersSchema = new mongoose.Schema<ResearcherIdentif
         message: 'identifiers.orcid must be a valid ORCID identifier.',
       },
     },
+    netid: {
+      type: String,
+      required: false,
+      trim: true,
+      lowercase: true,
+      maxlength: 64,
+    },
   },
   {
     _id: false,
@@ -290,6 +298,7 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
 
 researcherSchema.index({ accountId: 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.orcid': 1 }, { unique: true, sparse: true });
+researcherSchema.index({ 'identifiers.netid': 1 }, { unique: true, sparse: true });
 researcherSchema.index({ displayName: 1, status: 1, archived: 1 });
 
 export const Researcher =

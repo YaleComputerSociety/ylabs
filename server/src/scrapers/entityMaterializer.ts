@@ -2619,16 +2619,10 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
 }
 
 const ACCOUNT_NETID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
-const ACCOUNT_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizedAccountNetid(value: unknown): string | undefined {
   const netid = textValue(value).trim().toLowerCase();
   return netid && ACCOUNT_NETID_PATTERN.test(netid) ? netid : undefined;
-}
-
-function normalizedAccountEmail(value: unknown): string | undefined {
-  const email = textValue(value).trim().toLowerCase();
-  return email && ACCOUNT_EMAIL_PATTERN.test(email) ? email : undefined;
 }
 
 function scholarProfileLink(url: string, verifiedAt: Date): ResearcherProfileLink {
@@ -2675,7 +2669,6 @@ async function materializeUserIdentityToResearcher(
   const netid =
     normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
     normalizedAccountNetid(resolvedValue('netid'));
-  const email = normalizedAccountEmail(resolvedValue('email'));
   const displayName =
     textValue(resolvedValue('displayName')) ||
     [textValue(resolvedValue('fname')), textValue(resolvedValue('lname'))]
@@ -2696,16 +2689,7 @@ async function materializeUserIdentityToResearcher(
 
   let accountId: mongoose.Types.ObjectId | undefined;
   if (netid) {
-    let account: any = await Account.findOne({ netid }).lean();
-    if (!account && email) {
-      account = await Account.findOneAndUpdate(
-        { netid },
-        { $set: { email }, $setOnInsert: { status: 'ACTIVE' } },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
-      ).lean();
-    } else if (account && email && !textValue(account.email)) {
-      await Account.updateOne({ _id: account._id }, { $set: { email } });
-    }
+    const account: any = await Account.findOne({ netid }).lean();
     if (account?._id) accountId = account._id;
   }
 
@@ -2717,11 +2701,10 @@ async function materializeUserIdentityToResearcher(
     }
   }
 
-  const created = !researcher;
   if (!researcher) {
-    if (!accountId || !displayName) return skipped('insufficient-identity-for-researcher');
-    researcher = new Researcher({ displayName, accountId, status: 'UNKNOWN', profileLinks: [] });
+    return skipped('directory-identity-without-research-signal');
   }
+  const created = false;
 
   let fieldsWritten = 0;
   if (displayName && researcher.displayName !== displayName) {
@@ -2746,6 +2729,10 @@ async function materializeUserIdentityToResearcher(
   }
   if (orcid && researcher.identifiers?.orcid !== orcid) {
     researcher.identifiers = { ...(researcher.identifiers || {}), orcid };
+    fieldsWritten += 1;
+  }
+  if (netid && researcher.identifiers?.netid !== netid) {
+    researcher.identifiers = { ...(researcher.identifiers || {}), netid };
     fieldsWritten += 1;
   }
 
