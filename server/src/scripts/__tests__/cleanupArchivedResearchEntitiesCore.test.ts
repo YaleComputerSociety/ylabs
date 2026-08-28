@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildArchivedResearchEntityCleanupPlan } from '../cleanupArchivedResearchEntitiesCore';
+import { DEPENDENT_DELETE_SPECS } from '../cleanupArchivedResearchEntities';
 
 describe('buildArchivedResearchEntityCleanupPlan', () => {
   it('marks archived entities with no live references as eligible', () => {
@@ -135,5 +136,43 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
       blocked: [],
       deferredByReason: { has_live_references: 0, missing_redirect: 0, retired_entity_type: 0 },
     });
+  });
+});
+
+describe('dependent artifact cascade specs', () => {
+  it('keys role assignments on the polymorphic target, not researchEntityId', () => {
+    const roleSpecs = DEPENDENT_DELETE_SPECS.filter(
+      (spec) => spec.collection === 'role_assignments',
+    );
+
+    expect(roleSpecs).toHaveLength(1);
+    expect(roleSpecs[0].field).toBe('target.id');
+    expect(roleSpecs[0].extraFilter).toEqual({ 'target.kind': 'RESEARCH_ENTITY' });
+    expect(roleSpecs[0].field).not.toBe('researchEntityId');
+  });
+
+  it('cascades both sides of a research entity relationship', () => {
+    const fields = DEPENDENT_DELETE_SPECS.filter(
+      (spec) => spec.collection === 'research_entity_relationships',
+    ).map((spec) => spec.field);
+
+    expect(fields).toEqual(
+      expect.arrayContaining(['sourceResearchEntityId', 'targetResearchEntityId']),
+    );
+  });
+
+  it('never cascades redirects, saved plans, or append-only observations', () => {
+    const collections = DEPENDENT_DELETE_SPECS.map((spec) => spec.collection);
+
+    expect(collections).not.toContain('research_entity_redirects');
+    expect(collections).not.toContain('research_plans');
+    expect(collections).not.toContain('observations');
+  });
+
+  it('does not list collections that no longer exist', () => {
+    const collections = DEPENDENT_DELETE_SPECS.map((spec) => spec.collection);
+
+    expect(collections).not.toContain('research_entity_members');
+    expect(collections).not.toContain('research_scholarly_links');
   });
 });

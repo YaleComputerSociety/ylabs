@@ -68,10 +68,37 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
   },
 ];
 
-const DEPENDENT_DELETE_COLLECTIONS = [
-  'research_entity_members',
-  'signals',
-  'research_scholarly_links',
+/**
+ * Dependent artifacts to delete alongside an entity, each with the field that
+ * actually holds its entity reference.
+ *
+ * The reference field must be declared per collection: assuming
+ * `researchEntityId` everywhere silently no-ops on collections that key the
+ * entity differently, which is how role_assignments accumulated 465 orphans
+ * (it keys the polymorphic `target.id`, never `researchEntityId`).
+ *
+ * Deliberately excluded:
+ * - `research_entity_redirects` - a redirect whose `mergedEntityId` is gone is
+ *   the point of a redirect, not an orphan.
+ * - `research_plans` - account-owned saved planning. A plan pointing at a
+ *   removed entity is student data and must not be deleted as a side effect.
+ * - `observations` - append-only provenance, repaired by its own lane.
+ */
+export const DEPENDENT_DELETE_SPECS: Array<{
+  collection: string;
+  field: string;
+  extraFilter?: Record<string, unknown>;
+}> = [
+  { collection: 'signals', field: 'researchEntityId' },
+  {
+    collection: 'role_assignments',
+    field: 'target.id',
+    extraFilter: { 'target.kind': 'RESEARCH_ENTITY' },
+  },
+  { collection: 'research_entity_relationships', field: 'sourceResearchEntityId' },
+  { collection: 'research_entity_relationships', field: 'targetResearchEntityId' },
+  { collection: 'admin_access_review_projections', field: 'researchEntityId' },
+  { collection: 'entitycorrectionreports', field: 'researchEntityId' },
 ];
 
 export interface CleanupArchivedResearchEntitiesCliOptions {
@@ -368,12 +395,16 @@ async function deleteDependentArtifacts(eligibleIds: string[]): Promise<Record<s
   const deleted: Record<string, number> = {};
   if (!db || eligibleIds.length === 0) return deleted;
   const matchValues = referenceMatchValues(eligibleIds);
-  for (const collectionName of DEPENDENT_DELETE_COLLECTIONS) {
-    if (!(await collectionExists(collectionName))) continue;
-    const result = await db
-      .collection(collectionName)
-      .deleteMany({ researchEntityId: { $in: matchValues } });
-    if (result.deletedCount) deleted[collectionName] = result.deletedCount;
+  for (const spec of DEPENDENT_DELETE_SPECS) {
+    if (!(await collectionExists(spec.collection))) continue;
+    const result = await db.collection(spec.collection).deleteMany({
+      ...(spec.extraFilter || {}),
+      [spec.field]: { $in: matchValues },
+    });
+    if (result.deletedCount) {
+      const key = `${spec.collection}.${spec.field}`;
+      deleted[key] = (deleted[key] || 0) + result.deletedCount;
+    }
   }
   return deleted;
 }
