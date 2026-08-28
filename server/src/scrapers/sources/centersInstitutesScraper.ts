@@ -8,8 +8,9 @@
  * For each center config we fetch the people-listing page, run a per-center
  * extractor (HTML in → { name, profileUrl?, title? }[]), and emit:
  *   - one ResearchGroup observation set keyed by `center-<centerKey>`
- *     (kind, websiteUrl, school, sourceUrls, plus an `affiliatedNames` list of
- *     the raw member names so downstream tooling can join against User by name)
+ *     (kind, the canonical `entityType` derived from it, websiteUrl, school,
+ *     sourceUrls, plus an `affiliatedNames` list of the raw member names so
+ *     downstream tooling can join against User by name)
  *   - one ResearchGroupMember observation per member, keyed
  *     `center-<centerKey>:<member-slug>` with role 'core-faculty' (default) or
  *     'director' when the title clearly indicates leadership. The materializer
@@ -42,6 +43,7 @@ import type {
   ScraperFetchMetric,
 } from '../types';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
@@ -281,8 +283,10 @@ export const yaleCancerCenterExtractor: CenterExtractor =
  * Medicine/Nursing/Public Health/University sections, each rendering the same
  * flat `/yigh/profile/<slug>/` list.
  */
-export const yighAffiliatedFacultyExtractor: CenterExtractor =
-  profileHyperlinkDirectoryExtractor('/yigh/profile/', 'affiliated');
+export const yighAffiliatedFacultyExtractor: CenterExtractor = profileHyperlinkDirectoryExtractor(
+  '/yigh/profile/',
+  'affiliated',
+);
 
 /**
  * Yale Child Study Center faculty A-Z (`/childstudy/faculty/`). A broad
@@ -672,7 +676,9 @@ export const jacksonProfileItemExtractor: CenterExtractor = (html, ctx) => {
   $('.profile__item').each((_i, el) => {
     const card = $(el);
     const link = card
-      .find('.profile__content h3 a, .profile__content a[href*="/directory/"], a[href*="/directory/"]')
+      .find(
+        '.profile__content h3 a, .profile__content a[href*="/directory/"], a[href*="/directory/"]',
+      )
       .first();
     const name = link.text().replace(/\s+/g, ' ').trim();
     if (!name) return;
@@ -695,9 +701,43 @@ export const jacksonProfileItemExtractor: CenterExtractor = (html, ctx) => {
  * `organizationalDeadEnd` gate.
  */
 const CHILD_ENGAGEMENT_TOKEN_TIERS: readonly (readonly string[])[] = [
-  ['people', 'staff', 'team', 'members', 'member', 'membership', 'our-people', 'who-we-are', 'leadership'],
-  ['get-involved', 'getinvolved', 'join', 'join-us', 'participate', 'volunteer', 'opportunities', 'apply', 'how-to-apply', 'admissions'],
-  ['programs', 'program', 'education', 'academics', 'training', 'courses', 'course', 'fellowships', 'internships', 'research-opportunities', 'for-students', 'students'],
+  [
+    'people',
+    'staff',
+    'team',
+    'members',
+    'member',
+    'membership',
+    'our-people',
+    'who-we-are',
+    'leadership',
+  ],
+  [
+    'get-involved',
+    'getinvolved',
+    'join',
+    'join-us',
+    'participate',
+    'volunteer',
+    'opportunities',
+    'apply',
+    'how-to-apply',
+    'admissions',
+  ],
+  [
+    'programs',
+    'program',
+    'education',
+    'academics',
+    'training',
+    'courses',
+    'course',
+    'fellowships',
+    'internships',
+    'research-opportunities',
+    'for-students',
+    'students',
+  ],
 ];
 
 function pathSegmentCarriesToken(lastSegment: string, token: string): boolean {
@@ -1068,7 +1108,8 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     url: 'https://westcampus.yale.edu/institutes/yale-institute-of-biomolecular-design-and-discovery/yale-institute-of-biomolecular',
-    homeUrl: 'https://westcampus.yale.edu/institutes/yale-institute-of-biomolecular-design-and-discovery',
+    homeUrl:
+      'https://westcampus.yale.edu/institutes/yale-institute-of-biomolecular-design-and-discovery',
     paginated: false,
     extractor: directoryListingCardExtractor,
   },
@@ -1205,6 +1246,10 @@ export function centerToGroupObservations(
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: config.centerName },
     { ...base, field: 'kind', value: config.kind },
+    // `entityType` is the canonical taxonomy and `kind` is derived from it
+    // (#2144), so the org classification has to be observed on the canonical
+    // field or it can never correct an entity another source minted as a lab.
+    { ...base, field: 'entityType', value: mapResearchGroupKindToEntityType(config.kind) },
     { ...base, field: 'sourceUrls', value: sourceUrls },
   ];
   // In enrichment mode (`entityKey` overrides to an entity another source
@@ -1361,6 +1406,7 @@ export function childCenterToObservations(
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: child.name },
     { ...base, field: 'kind', value: child.kind },
+    { ...base, field: 'entityType', value: mapResearchGroupKindToEntityType(child.kind) },
     { ...base, field: 'websiteUrl', value: child.url },
     { ...base, field: 'sourceUrls', value: sourceUrls },
   ];
@@ -1516,7 +1562,8 @@ export class CentersInstitutesScraper implements IScraper {
         const rendered = await measureRenderedFetch(
           config.url,
           'scrapling',
-          () => fetchRenderedCenterPage(this.name, ctx.options.useCache, config, this.renderedFetcher),
+          () =>
+            fetchRenderedCenterPage(this.name, ctx.options.useCache, config, this.renderedFetcher),
           { selectorName: config.renderWaitSelector },
         );
         fetchAttempts.push(rendered.metric);
@@ -1531,7 +1578,9 @@ export class CentersInstitutesScraper implements IScraper {
         const pageUrl = rendered.result.url || config.url;
         let result: ExtractorResult;
         try {
-          result = (config.renderedExtractor || config.extractor)(rendered.result.html, { pageUrl });
+          result = (config.renderedExtractor || config.extractor)(rendered.result.html, {
+            pageUrl,
+          });
         } catch (err: any) {
           ctx.log(`[${config.centerKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
           perCenter.push({ key: config.centerKey, status: 'rendered-extractor-error', count: 0 });

@@ -110,6 +110,32 @@ export const mapResearchGroupKindToEntityType = (kind?: string): ResearchEntityT
 
 export const researchEntityTypeForResearchGroupKind = mapResearchGroupKindToEntityType;
 
+export const EntityTypeToResearchGroupKind: Record<ResearchEntityType, ResearchGroupKind> = {
+  LAB: 'lab',
+  CENTER: 'center',
+  INSTITUTE: 'institute',
+  FACULTY_RESEARCH_AREA: 'individual',
+  FACULTY_PROJECT: 'individual',
+  DIGITAL_HUMANITIES_PROJECT: 'initiative',
+  COLLECTIONS_INITIATIVE: 'initiative',
+  COURSE_SEQUENCE: 'program',
+  ARCHIVE_OR_MUSEUM_PROJECT: 'initiative',
+  INITIATIVE: 'initiative',
+  GROUP: 'group',
+  INDIVIDUAL_RESEARCH: 'individual',
+  CORE_FACILITY: 'core_facility',
+};
+
+export const mapEntityTypeToResearchGroupKind = (entityType?: string): ResearchGroupKind => {
+  if (entityType && researchEntityTypes.includes(entityType as ResearchEntityType)) {
+    return EntityTypeToResearchGroupKind[entityType as ResearchEntityType];
+  }
+
+  return 'lab';
+};
+
+export const researchGroupKindForResearchEntityType = mapEntityTypeToResearchGroupKind;
+
 export const ResearchEntityTypes = researchEntityTypes;
 export const PostedOpportunityStatuses = postedOpportunityStatuses;
 export const AccessSignalTypes = accessSignalTypes;

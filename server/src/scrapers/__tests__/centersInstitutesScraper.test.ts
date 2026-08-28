@@ -381,9 +381,7 @@ describe('childStudyCenterExtractor', () => {
 });
 
 describe('MacMillan constituent councils', () => {
-  const councilKeys = DEFAULT_CENTER_CONFIGS.filter((c) =>
-    c.centerKey.startsWith('macmillan-'),
-  );
+  const councilKeys = DEFAULT_CENTER_CONFIGS.filter((c) => c.centerKey.startsWith('macmillan-'));
 
   it('wires every council as a distinct entity under its own /{council} home, not folded into macmillan', () => {
     expect(councilKeys.length).toBeGreaterThanOrEqual(16);
@@ -399,9 +397,7 @@ describe('MacMillan constituent councils', () => {
   });
 
   it('emits each council as its own center-<key> entity with the council landing page as the website', () => {
-    const middleEast = DEFAULT_CENTER_CONFIGS.find(
-      (c) => c.centerKey === 'macmillan-middle-east',
-    )!;
+    const middleEast = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'macmillan-middle-east')!;
     const { entityKey, observations } = centerToGroupObservations(
       middleEast,
       [{ name: 'Jane Doe', role: 'core-faculty' }],
@@ -412,6 +408,7 @@ describe('MacMillan constituent councils', () => {
       'Council on Middle East Studies',
     );
     expect(observations.find((o) => o.field === 'kind')!.value).toBe('center');
+    expect(observations.find((o) => o.field === 'entityType')!.value).toBe('CENTER');
     expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
       'https://macmillan.yale.edu/middleeast',
     );
@@ -419,6 +416,27 @@ describe('MacMillan constituent councils', () => {
       'https://macmillan.yale.edu/middleeast/people',
       'https://macmillan.yale.edu/middleeast',
     ]);
+  });
+
+  it('observes the canonical entityType for every configured center kind', () => {
+    const entityTypeForKind = (kind: CenterConfig['kind']) =>
+      centerToGroupObservations(
+        {
+          centerKey: 'synthetic',
+          centerName: 'Synthetic Center',
+          schoolName: '',
+          kind,
+          url: 'https://example.yale.edu/people',
+          extractor: () => ({ members: [] }),
+        },
+        [],
+        'https://example.yale.edu/people',
+      ).observations.find((o) => o.field === 'entityType')!.value;
+
+    expect(entityTypeForKind('center')).toBe('CENTER');
+    expect(entityTypeForKind('institute')).toBe('INSTITUTE');
+    expect(entityTypeForKind('initiative')).toBe('INITIATIVE');
+    expect(entityTypeForKind('program')).toBe('INITIATIVE');
   });
 });
 
@@ -508,7 +526,10 @@ const WC_CANCER_FIXTURE = readFileSync(
   join(__dirname, 'fixtures', 'westCampusCancerBiologyLabs.html'),
   'utf8',
 );
-const MSI_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'microbialSciencesFaculty.html'), 'utf8');
+const MSI_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures', 'microbialSciencesFaculty.html'),
+  'utf8',
+);
 
 describe('directoryListingCardExtractor', () => {
   it('extracts QBio members from the saved live-HTML fixture, keeping each member profile link', () => {
@@ -674,7 +695,9 @@ describe('directoryListingCardExtractor on a West Campus institute member-labs s
       expect(member.profileUrl).not.toMatch(/westcampus\.yale\.edu\/institutes\/?$/);
     }
     const sathish = out.members.find((m) => m.name === 'Sathish Ramakrishnan, PhD');
-    expect(sathish?.profileUrl).toBe('https://westcampus.yale.edu/profile/sathish-ramakrishnan-phd');
+    expect(sathish?.profileUrl).toBe(
+      'https://westcampus.yale.edu/profile/sathish-ramakrishnan-phd',
+    );
   });
 });
 
@@ -1265,7 +1288,11 @@ describe('CentersInstitutesScraper.run', () => {
     const renderedExt = vi.fn(
       (): ExtractorResult => ({
         members: [
-          { name: 'Ada Lovelace', profileUrl: 'https://gated.invalid/people/ada/', role: 'director' },
+          {
+            name: 'Ada Lovelace',
+            profileUrl: 'https://gated.invalid/people/ada/',
+            role: 'director',
+          },
         ],
       }),
     );
@@ -1574,9 +1601,9 @@ describe('deriveChildEngagementCandidates', () => {
 
   it('returns nothing for a child with only school-wide links (genuine dead end)', () => {
     const html = `<a href="/about/leadership">Leadership</a><a href="/directory">Directory</a>`;
-    expect(deriveChildEngagementCandidates(html, 'https://jackson.yale.edu/leitner-program')).toEqual(
-      [],
-    );
+    expect(
+      deriveChildEngagementCandidates(html, 'https://jackson.yale.edu/leitner-program'),
+    ).toEqual([]);
   });
 });
 
@@ -1591,7 +1618,11 @@ describe('CentersInstitutesScraper.run child crawl', () => {
       members: [],
       childCenters: [
         { name: 'Blue Center', url: 'https://jackson.yale.edu/blue-center', kind: 'center' },
-        { name: 'Leitner Program', url: 'https://jackson.yale.edu/leitner-program', kind: 'program' },
+        {
+          name: 'Leitner Program',
+          url: 'https://jackson.yale.edu/leitner-program',
+          kind: 'program',
+        },
       ],
     }),
     crawlChildCenters: true,
@@ -1602,7 +1633,8 @@ describe('CentersInstitutesScraper.run child crawl', () => {
       'https://jackson.yale.edu/centers-initiatives/': '<html></html>',
       'https://jackson.yale.edu/blue-center': BLUE_CENTER_HOME_HTML,
       'https://jackson.yale.edu/blue-center/people': JACKSON_PEOPLE_HTML,
-      'https://jackson.yale.edu/leitner-program': '<html><body><a href="/directory">Directory</a></body></html>',
+      'https://jackson.yale.edu/leitner-program':
+        '<html><body><a href="/directory">Directory</a></body></html>',
     };
     const fetcher = vi.fn(async (url: string) => {
       if (url in pages) return pages[url];
@@ -1656,11 +1688,9 @@ describe('CentersInstitutesScraper.run child crawl', () => {
     await scraper.run(ctx);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(childCenterEntityKey(jacksonConfig, { name: 'Blue Center', url: 'x', kind: 'center' })).toBe(
-      'center-jackson-centers-blue-center',
-    );
     expect(
-      emitted.some((o) => o.entityType === 'researchGroupMember'),
-    ).toBe(false);
+      childCenterEntityKey(jacksonConfig, { name: 'Blue Center', url: 'x', kind: 'center' }),
+    ).toBe('center-jackson-centers-blue-center');
+    expect(emitted.some((o) => o.entityType === 'researchGroupMember')).toBe(false);
   });
 });
