@@ -21,6 +21,9 @@ const priorRun = new mongoose.Types.ObjectId().toString();
 const DEAD = { status: 404 };
 const ALIVE = { status: 200 };
 
+const readEntity = (slug: string): Promise<any> =>
+  ResearchEntity.findOne({ slug }).lean() as Promise<any>;
+
 describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () => {
   let replSet: MongoMemoryReplSet;
 
@@ -86,11 +89,11 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.suppressed).toBe(1);
-    const gone = await ResearchEntity.findOne({ slug: 'lab-gone' }).lean();
+    const gone = await readEntity('lab-gone');
     expect(gone?.activeAtYaleCache).toBe(false);
     expect(gone?.yaleStatusCache).toBe('departed');
     expect(gone?.yaleStatusReasonCache).toBe('departed');
-    const present = await ResearchEntity.findOne({ slug: 'lab-present' }).lean();
+    const present = await readEntity('lab-present');
     expect(present?.activeAtYaleCache).not.toBe(false);
   });
 
@@ -105,7 +108,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
 
     expect(result.suppressed).toBe(0);
     expect(result.held).toBe(1);
-    const gone = await ResearchEntity.findOne({ slug: 'lab-gone' }).lean();
+    const gone = await readEntity('lab-gone');
     expect(gone?.activeAtYaleCache).not.toBe(false);
   });
 
@@ -122,7 +125,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
 
     expect(result.frozenDepartments).toBe(1);
     expect(result.suppressed).toBe(0);
-    const gone = await ResearchEntity.findOne({ slug: 'lab-gone' }).lean();
+    const gone = await readEntity('lab-gone');
     expect(gone?.activeAtYaleCache).not.toBe(false);
   });
 
@@ -140,7 +143,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.cleared).toBe(1);
-    const back = await ResearchEntity.findOne({ slug: 'lab-back' }).lean();
+    const back = await readEntity('lab-back');
     expect(back?.activeAtYaleCache).toBe(true);
     expect(back?.yaleStatusCache).toBe('active');
     expect(back?.yaleStatusReasonCache).toBe('');
