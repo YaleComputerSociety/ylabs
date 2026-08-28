@@ -128,6 +128,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       NO_CANONICAL: 1,
       AMBIGUOUS_MULTIPLE_CANONICAL: 1,
       ORCID_CONFLICT: 1,
+      NETID_CONFLICT: 0,
     });
     expect(result.shellsMerged).toBe(1);
     expect(result.roleAssignmentsRepointed).toBe(1);
@@ -254,5 +255,151 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const shell = await db.collection('researchers').findOne({ _id: orcidShell });
     expect(shell!.archived).toBe(true);
     expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
+  });
+
+  it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {
+    const netidCanonical = new mongoose.Types.ObjectId();
+    const nameOnlyShell = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').deleteMany({});
+    await db.collection('role_assignments').deleteMany({});
+    await db.collection('researchers').insertMany([
+      {
+        _id: netidCanonical,
+        displayName: 'Nate Netid',
+        archived: false,
+        identifiers: { netid: 'nn7' },
+        profileLinks: [],
+      },
+      {
+        _id: nameOnlyShell,
+        displayName: 'Nate Netid',
+        archived: false,
+        identifiers: {},
+        profileLinks: [],
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.byReason.MERGEABLE).toBe(1);
+
+    const shell = await db.collection('researchers').findOne({ _id: nameOnlyShell });
+    expect(shell!.archived).toBe(true);
+    expect(String(shell!.dedupedIntoResearcherId)).toBe(String(netidCanonical));
+
+    const canonical = await db.collection('researchers').findOne({ _id: netidCanonical });
+    expect(canonical!.archived).toBe(false);
+    expect((canonical!.identifiers as { netid?: string }).netid).toBe('nn7');
+  });
+
+  it('folds both a netid-backed twin and a name-only shell into the account-backed canonical', async () => {
+    const accountCanonical = new mongoose.Types.ObjectId();
+    const netidTwin = new mongoose.Types.ObjectId();
+    const nameOnlyShell = new mongoose.Types.ObjectId();
+    const netidTwinEdge = new mongoose.Types.ObjectId();
+    const nameOnlyShellEdge = new mongoose.Types.ObjectId();
+    const twinEntity = new mongoose.Types.ObjectId();
+    const shellEntity = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').insertMany([
+      {
+        _id: accountCanonical,
+        displayName: 'Jane Roe',
+        accountId: new mongoose.Types.ObjectId(),
+        archived: false,
+        identifiers: {},
+        profileLinks: [],
+      },
+      {
+        _id: netidTwin,
+        displayName: 'Jane Roe',
+        archived: false,
+        identifiers: { netid: 'jr55' },
+        profileLinks: [],
+      },
+      {
+        _id: nameOnlyShell,
+        displayName: 'Jane Roe',
+        archived: false,
+        identifiers: {},
+        profileLinks: [],
+      },
+    ]);
+    await db.collection('role_assignments').insertMany([
+      {
+        _id: netidTwinEdge,
+        personId: netidTwin,
+        target: { kind: 'RESEARCH_ENTITY', id: twinEntity },
+        role: 'PI',
+        archived: false,
+      },
+      {
+        _id: nameOnlyShellEdge,
+        personId: nameOnlyShell,
+        target: { kind: 'RESEARCH_ENTITY', id: shellEntity },
+        role: 'PI',
+        archived: false,
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.byReason.MERGEABLE).toBe(2);
+    expect(result.byReason.AMBIGUOUS_MULTIPLE_CANONICAL).toBe(0);
+    expect(result.roleAssignmentsRepointed).toBe(2);
+    expect(result.netidBackedAccountlessResearchers).toBe(1);
+    expect(result.accountLinkedResearchers).toBe(1);
+    expect(result.accountlessResearchers).toBe(2);
+
+    for (const shellId of [netidTwin, nameOnlyShell]) {
+      const shell = await db.collection('researchers').findOne({ _id: shellId });
+      expect(shell!.archived).toBe(true);
+      expect(String(shell!.dedupedIntoResearcherId)).toBe(String(accountCanonical));
+    }
+
+    const twin = await db.collection('researchers').findOne({ _id: netidTwin });
+    expect((twin!.identifiers as { netid?: string } | undefined)?.netid).toBeUndefined();
+
+    const canonical = await db.collection('researchers').findOne({ _id: accountCanonical });
+    expect(canonical!.archived).toBe(false);
+    expect((canonical!.identifiers as { netid?: string }).netid).toBe('jr55');
+
+    for (const edgeId of [netidTwinEdge, nameOnlyShellEdge]) {
+      const edge = await db.collection('role_assignments').findOne({ _id: edgeId });
+      expect(String(edge!.personId)).toBe(String(accountCanonical));
+      expect(edge!.archived).toBe(false);
+    }
+  });
+
+  it('leaves a netid-backed twin unmerged when its netid conflicts with the canonical', async () => {
+    const accountCanonical = new mongoose.Types.ObjectId();
+    const conflictingTwin = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').insertMany([
+      {
+        _id: accountCanonical,
+        displayName: 'Kim Lee',
+        accountId: new mongoose.Types.ObjectId(),
+        archived: false,
+        identifiers: { netid: 'kl10' },
+        profileLinks: [],
+      },
+      {
+        _id: conflictingTwin,
+        displayName: 'Kim Lee',
+        archived: false,
+        identifiers: { netid: 'kl99' },
+        profileLinks: [],
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.byReason.NETID_CONFLICT).toBe(1);
+    expect(result.shellsMerged).toBe(0);
+
+    const twin = await db.collection('researchers').findOne({ _id: conflictingTwin });
+    expect(twin!.archived).toBe(false);
+    expect((twin!.identifiers as { netid?: string }).netid).toBe('kl99');
   });
 });

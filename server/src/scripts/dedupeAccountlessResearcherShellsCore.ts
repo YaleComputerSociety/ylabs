@@ -10,15 +10,42 @@ const cleanOrcid = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const cleanNetid = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+export const RESEARCHER_IDENTITY_TIERS = ['NAME_ONLY', 'NETID', 'ACCOUNT'] as const;
+export type ResearcherIdentityTier = (typeof RESEARCHER_IDENTITY_TIERS)[number];
+
+export interface ResearcherIdentityLike {
+  accountId?: unknown;
+  netid?: unknown;
+}
+
+export function researcherIdentityTier(researcher: ResearcherIdentityLike): ResearcherIdentityTier {
+  if (researcher.accountId !== undefined && researcher.accountId !== null) return 'ACCOUNT';
+  if (cleanNetid(researcher.netid)) return 'NETID';
+  return 'NAME_ONLY';
+}
+
+const identityTierStrength = (tier: ResearcherIdentityTier): number =>
+  RESEARCHER_IDENTITY_TIERS.indexOf(tier);
+
 export interface CanonicalCandidate {
   id: string;
   orcid?: string;
+  netid?: string;
+  tier: ResearcherIdentityTier;
 }
 
 export interface CanonicalNameEntry {
   displayName?: unknown;
   id: string;
   orcid?: unknown;
+  netid?: unknown;
+  accountId?: unknown;
 }
 
 export function buildCanonicalNameIndex(
@@ -29,7 +56,12 @@ export function buildCanonicalNameIndex(
     const name = normalizeResearcherName(entry.displayName);
     if (!name) continue;
     const list = index.get(name) ?? [];
-    list.push({ id: entry.id, orcid: cleanOrcid(entry.orcid) });
+    list.push({
+      id: entry.id,
+      orcid: cleanOrcid(entry.orcid),
+      netid: cleanNetid(entry.netid),
+      tier: researcherIdentityTier(entry),
+    });
     index.set(name, list);
   }
   return index;
@@ -40,7 +72,8 @@ export type ShellMergeReason =
   | 'NO_NAME'
   | 'NO_CANONICAL'
   | 'AMBIGUOUS_MULTIPLE_CANONICAL'
-  | 'ORCID_CONFLICT';
+  | 'ORCID_CONFLICT'
+  | 'NETID_CONFLICT';
 
 export interface ShellMergeDecision {
   merge: boolean;
@@ -48,21 +81,42 @@ export interface ShellMergeDecision {
   reason: ShellMergeReason;
 }
 
+export interface ShellIdentity extends ResearcherIdentityLike {
+  id?: string;
+  displayName?: unknown;
+  orcid?: unknown;
+}
+
 export function decideShellMerge(
-  shell: { displayName?: unknown; orcid?: unknown },
+  shell: ShellIdentity,
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
 ): ShellMergeDecision {
   const name = normalizeResearcherName(shell.displayName);
   if (!name) return { merge: false, reason: 'NO_NAME' };
 
-  const canonical = canonicalNameIndex.get(name);
-  if (!canonical || canonical.length === 0) return { merge: false, reason: 'NO_CANONICAL' };
-  if (canonical.length > 1) return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' };
+  const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const outranking = (canonicalNameIndex.get(name) ?? []).filter(
+    (candidate) =>
+      candidate.id !== shell.id && identityTierStrength(candidate.tier) > shellStrength,
+  );
+  if (outranking.length === 0) return { merge: false, reason: 'NO_CANONICAL' };
 
-  const target = canonical[0];
+  const strongestStrength = Math.max(
+    ...outranking.map((candidate) => identityTierStrength(candidate.tier)),
+  );
+  const strongest = outranking.filter(
+    (candidate) => identityTierStrength(candidate.tier) === strongestStrength,
+  );
+  if (strongest.length > 1) return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' };
+
+  const target = strongest[0];
   const shellOrcid = cleanOrcid(shell.orcid);
   if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
     return { merge: false, reason: 'ORCID_CONFLICT' };
+  }
+  const shellNetid = cleanNetid(shell.netid);
+  if (shellNetid && target.netid && shellNetid !== target.netid) {
+    return { merge: false, reason: 'NETID_CONFLICT' };
   }
 
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE' };
@@ -93,8 +147,8 @@ export interface ResearcherAttributeSnapshot {
   profile?: Record<string, unknown>;
 }
 
-export const RESEARCHER_UNION_IDENTIFIER_FIELDS = ['orcid', 'googleScholarId'] as const;
-export const RESEARCHER_UNIQUE_IDENTIFIER_FIELDS: ReadonlySet<string> = new Set(['orcid']);
+export const RESEARCHER_UNION_IDENTIFIER_FIELDS = ['orcid', 'googleScholarId', 'netid'] as const;
+export const RESEARCHER_UNIQUE_IDENTIFIER_FIELDS: ReadonlySet<string> = new Set(['orcid', 'netid']);
 export const RESEARCHER_UNION_PROFILE_FIELDS = [
   'title',
   'primaryDepartment',

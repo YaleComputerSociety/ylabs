@@ -149,7 +149,11 @@ const RECOMMENDED_COMMANDS_BY_FAILURE: Record<PostMaterializationIntegrityFailur
       'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --official-lab-url-only --output /tmp/ylabs-research-entity-dedupe-official-lab-url.json',
     ),
   ],
-  duplicatePeople: [betaCommand('yarn --cwd server users:dedupe-by-identity --limit=1000')],
+  duplicatePeople: [
+    betaCommand(
+      'yarn --cwd server researchers:dedupe-accountless-shells --output /tmp/ylabs-accountless-researcher-shell-dedupe.json',
+    ),
+  ],
   duplicateCurrentMembers: [SAME_PI_DEDUPE_REVIEW_COMMAND],
   currentMembersOnArchivedEntities: [
     betaCommand(
@@ -245,6 +249,12 @@ function enrichIntegrityWarnings(
   }));
 }
 
+const PLACEHOLDER_IDENTITY_VALUES = ['', 'na', 'n/a', 'unknown'];
+
+const normalizedIdentityValue = (expression: unknown): Record<string, unknown> => ({
+  $trim: { input: { $toLower: { $ifNull: [expression, ''] } } },
+});
+
 async function loadIdentityCollisionGroups(
   model: mongoose.Model<any>,
   identityField: DuplicatePersonGroup['identityField'],
@@ -254,11 +264,11 @@ async function loadIdentityCollisionGroups(
     { $match: { archived: { $ne: true } } },
     {
       $project: {
-        identityValue: { $trim: { input: { $toLower: `$${valuePath}` } } },
+        identityValue: normalizedIdentityValue(`$${valuePath}`),
         personId: { $toString: '$_id' },
       },
     },
-    { $match: { identityValue: { $nin: ['', 'na', 'n/a', 'unknown'] } } },
+    { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },
     { $group: { _id: '$identityValue', personIds: { $push: '$personId' } } },
     { $match: { 'personIds.1': { $exists: true } } },
     { $limit: DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD },
@@ -271,15 +281,53 @@ async function loadIdentityCollisionGroups(
   }));
 }
 
+async function loadResearcherNetidCollisionGroups(): Promise<DuplicatePersonGroup[]> {
+  const rows = await Researcher.aggregate([
+    { $match: { archived: { $ne: true } } },
+    {
+      $lookup: {
+        from: 'accounts',
+        localField: 'accountId',
+        foreignField: '_id',
+        as: 'account',
+      },
+    },
+    {
+      $project: {
+        personId: { $toString: '$_id' },
+        identityValues: {
+          $setUnion: [
+            [normalizedIdentityValue('$identifiers.netid')],
+            [normalizedIdentityValue({ $arrayElemAt: ['$account.netid', 0] })],
+          ],
+        },
+      },
+    },
+    { $unwind: '$identityValues' },
+    { $project: { personId: 1, identityValue: '$identityValues' } },
+    { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },
+    { $group: { _id: '$identityValue', personIds: { $addToSet: '$personId' } } },
+    { $match: { 'personIds.1': { $exists: true } } },
+    { $limit: DUPLICATE_PEOPLE_SCAN_LIMIT_PER_FIELD },
+  ]);
+
+  return rows.map((row: any) => ({
+    identityField: 'netid' as const,
+    identityValue: stringId(row._id),
+    userIds: row.personIds || [],
+  }));
+}
+
 async function loadDuplicatePeopleIntegrity(): Promise<{
   groups: DuplicatePersonGroup[];
   warnings: PostMaterializationIntegrityWarning[];
 }> {
-  const [emailGroups, orcidGroups] = await Promise.all([
+  const [emailGroups, orcidGroups, netidGroups] = await Promise.all([
     loadIdentityCollisionGroups(Account, 'email', 'email'),
     loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid'),
+    loadResearcherNetidCollisionGroups(),
   ]);
-  return { groups: [...emailGroups, ...orcidGroups], warnings: [] };
+  return { groups: [...emailGroups, ...orcidGroups, ...netidGroups], warnings: [] };
 }
 
 async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameDuplicateGroup[]> {
