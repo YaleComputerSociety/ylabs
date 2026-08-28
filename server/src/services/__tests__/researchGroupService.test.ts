@@ -2843,7 +2843,7 @@ describe('getResearchGroupDetail', () => {
     });
   });
 
-  it('removes private listing ownership and contact fields from public detail payloads', async () => {
+  it('omits retired listings and strips private access-signal fields from public detail payloads', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
@@ -2925,31 +2925,7 @@ describe('getResearchGroupDetail', () => {
     const detail = await getResearchGroupDetail('privacy-lab');
 
     expect(detail?.undergraduateLogistics).toEqual({ status: 'ready', claims: [] });
-    expect(detail?.activeListings).toEqual([
-      expect.objectContaining({
-        id: '67d8928150621bcef434a1d6',
-        title: 'Undergraduate research assistant',
-        description: 'Help with public research tasks.',
-        websites: ['https://privacy-lab.example.test/apply'],
-      }),
-    ]);
-    expect(detail?.activeListings[0]).not.toHaveProperty('ownerId');
-    expect(detail?.activeListings[0]).not.toHaveProperty('createdByUserId');
-    expect(detail?.activeListings[0]).not.toHaveProperty('ownerFirstName');
-    expect(detail?.activeListings[0]).not.toHaveProperty('ownerLastName');
-    expect(detail?.activeListings[0]).not.toHaveProperty('ownerEmail');
-    expect(detail?.activeListings[0]).not.toHaveProperty('ownerTitle');
-    expect(detail?.activeListings[0]).not.toHaveProperty('ownerPrimaryDepartment');
-    expect(detail?.activeListings[0]).not.toHaveProperty('professorIds');
-    expect(detail?.activeListings[0]).not.toHaveProperty('professorNames');
-    expect(detail?.activeListings[0]).not.toHaveProperty('emails');
-    expect(detail?.activeListings[0]).not.toHaveProperty('views');
-    expect(detail?.activeListings[0]).not.toHaveProperty('favorites');
-    expect(detail?.activeListings[0]).not.toHaveProperty('archived');
-    expect(detail?.activeListings[0]).not.toHaveProperty('confirmed');
-    expect(detail?.activeListings[0]).not.toHaveProperty('audited');
-    expect(detail?.activeListings[0]).not.toHaveProperty('archivedAt');
-    expect(detail?.activeListings[0]).not.toHaveProperty('embedding');
+    expect(detail).not.toHaveProperty('activeListings');
 
     expect(detail?.accessSignals[0]).toEqual(
       expect.objectContaining({

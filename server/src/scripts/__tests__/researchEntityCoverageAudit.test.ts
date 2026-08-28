@@ -32,7 +32,6 @@ function baseFacts(): CoverageAuditFacts {
       sourceUrls: 2,
       members: 0,
       accessSignals: 0,
-      activeListings: 0,
     },
     observationFlags: {
       hasMicrositeObservation: true,

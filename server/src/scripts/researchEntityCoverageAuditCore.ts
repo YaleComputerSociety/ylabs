@@ -3,7 +3,6 @@ export interface CoverageAuditCounts {
   sourceUrls: number;
   members: number;
   accessSignals: number;
-  activeListings: number;
 }
 
 export interface CoverageObservationFlags {
@@ -75,9 +74,9 @@ export function extractSuspiciousConstraintQuotes(
 export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
   const shortDescriptionChars = textLength(facts.shortDescription);
   const fullDescriptionChars = textLength(facts.fullDescription);
-  const { researchAreas, members, accessSignals, activeListings } = facts.counts;
+  const { researchAreas, members, accessSignals } = facts.counts;
 
-  const noActionableAccess = accessSignals === 0 && activeListings === 0;
+  const noActionableAccess = accessSignals === 0;
   const issues: string[] = [];
 
   if (shortDescriptionChars === 0 && fullDescriptionChars === 0) {

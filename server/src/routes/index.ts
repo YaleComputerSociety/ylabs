@@ -3,20 +3,16 @@
  */
 import { Router } from 'express';
 import UsersRoutes from './users';
-import ListingsRoutes from './listings';
 import FellowshipsRoutes from './fellowships';
 import ProgramsRoutes from './programs';
 import AnalyticsRoutes from './analytics';
 import ResearchAreasRoutes from './researchAreas';
 import ConfigRoutes from './config';
 import AdminRoutes from './admin';
-import SeedRoutes from './seed';
 import ResearchGroupsRoutes from './researchGroups';
-import { isLocalDevelopmentRuntime } from '../utils/environment';
 
 const router = Router();
 
-router.use('/listings', ListingsRoutes);
 router.use('/programs', ProgramsRoutes);
 router.use(
   '/fellowships',
@@ -33,9 +29,5 @@ router.use('/analytics', AnalyticsRoutes);
 router.use('/research-areas', ResearchAreasRoutes);
 router.use('/config', ConfigRoutes);
 router.use('/admin', AdminRoutes);
-
-if (isLocalDevelopmentRuntime()) {
-  router.use('/seed', SeedRoutes);
-}
 
 export default router;

@@ -88,7 +88,7 @@ Retired legacy models: `ResearchGroup` and `ResearchGroupMember` (superseded by 
 The `faculty_members` and `papers`/`paper_authors` collections are left in place pending a gated, human-approved collection drop tracked under #210's collection-drop scope; this is not imminent and code should not treat their presence as launch evidence.
 Historical `paper` observations and source rows are retained as read-only archived evidence and are never materialized.
 
-`Fellowship` and `Listing` are their own adjacent domain (the programs and funding page), not classified into the removed `EntryPathway`/`PostedOpportunity` concepts.
+`Fellowship` is its own adjacent domain (the programs and funding page), not classified into the removed `EntryPathway`/`PostedOpportunity` concepts.
 [`server/src/models/fellowship.ts`](../server/src/models/fellowship.ts) uses `programCategory` (`FELLOWSHIP` | `CENTER_INTERNSHIP` | `RECURRING_PROGRAM` | `SUMMER_RESEARCH_PROGRAM`), `programKind`, and `entryMode` enums, not a stored reference to any removed model.
 The "program" split-brain is resolved: programs and fellowships live only on the `/programs` surface.
 The Fellowship to `ResearchEntity` projection that mirrored each `Fellowship` into `/research` as an `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` entity was removed, along with those two `entityType` values, the `/research` "Related programs & fellowships" cross-surface module, and the now-dead funding-program topic derivation that only enriched projected programs.
@@ -187,7 +187,7 @@ Course credit, fellowship funding, and thesis advising remain formalization outc
 
 Yale Research does not host faculty-authored labs or opportunities.
 Research homes and official application routes enter the product only through source-backed ingestion; there is no runtime faculty authoring surface.
-Legacy `Listing` reads, outreach, claims, and view tracking remain as authenticated compatibility routes, but listing authoring is retired; creating or updating a listing now only syncs its `ResearchEntity` profile.
+The `Listing` product surface is retired. The `/api/listings` routes, listing controllers and services, claim requests, admin claim review, the detail-page claim panel, and the `listings` and `listingclaimrequests` collections are all removed. `models/listing.ts` survives only as an internal read model for the admin analytics aggregations, which are tracked for removal separately.
 
 ## Research Detail Projection
 
@@ -206,7 +206,7 @@ The detail page shows exactly one verified principal investigator once as the fu
 
 The PI action is the official profile link-out. `resolveDecisionProfileUrl` derives it from profile-like `websiteUrl`/`sourceUrls`, excluding department-roster provenance URLs and the entity's own non-profile website, and returns nothing while lead identity is under review. When the entity itself yields no profile-like target (for example its own site is a lab or research-home page), the detail page falls back to the single unambiguous lead PI's own official Yale person-profile URL from `Researcher.profileLinks` (`YALE_OFFICIAL`), never a lab website, and this fallback is likewise gated off while lead identity is under review. Public cards or detail sections may link to that guarded official URL, but must not expose raw scraped emails or imply yLabs has verified a reachable official outreach channel.
 
-Legacy active listings may still appear inside public research detail payloads for backwards compatibility, but those embedded listing summaries must be field allowlisted. Do not expose listing owner ids, creator ids, owner emails, collaborator emails, view counts, favorite counts, audit flags, or other authenticated/admin-oriented fields through `/api/research/:slug`.
+Public research detail payloads no longer carry `activeListings`, and browse payloads no longer carry `hasActiveListing`.
 
 ## Saved Research Entities
 
@@ -227,7 +227,7 @@ Current behavior:
 
 The `favPathways` saving feature was removed (#363): the `/users/favPathways*` endpoints and the client saved-pathways section are gone, and saving is covered entirely by saved research entities and their plans.
 The embedded `User.favPathways` field declaration has since been dropped from the schema as well.
-The `favListings` listing-favorites feature was likewise removed (#2010): its `/users/favListings*` endpoints, the generic favorite-objectid helper chain and `logFavoriteEvent` middleware, the client `useFavorites` listings kind and `favoritesReducer` listing state, and the `User.favListings` field are all gone; the live Listing model, `/listings` endpoints, and `LISTING_*` analytics enums are untouched.
+The `favListings` listing-favorites feature was likewise removed (#2010): its `/users/favListings*` endpoints, the generic favorite-objectid helper chain and `logFavoriteEvent` middleware, the client `useFavorites` listings kind and `favoritesReducer` listing state, and the `User.favListings` field are all gone; the `LISTING_*` analytics enums remain until the analytics listing surface is retired.
 All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; with the `User` model retired (#2014), no embedded planning fields remain in code (see [`ResearchPlan`](#researchplan-research_plans) for the human-gated #725 backfill of any legacy values in the orphaned `users` collection).
 
 Program watching (the account Program Watch surface and the `/programs` watch affordance) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.

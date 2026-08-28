@@ -73,7 +73,6 @@ const basePayload: LabDetailPayload = {
     sourceUrls: [],
   },
   members: [],
-  activeListings: [],
   accessSignals: [],
 };
 

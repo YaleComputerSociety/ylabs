@@ -5,7 +5,6 @@
  * with denormalized member info and active listings. The UI
  * consumes those collections directly — no further joins on the client.
  */
-import { Listing } from './types';
 import { ResearchEntity, ResearchGroup } from './researchGroup';
 
 export type LabMemberRole =
@@ -139,7 +138,6 @@ export interface LabDetailPayload {
   researchEntity?: ResearchEntity;
   members: LabMember[];
   roster?: LabRosterDisclosure;
-  activeListings: Listing[];
   accessSignals?: LabAccessSignal[];
   undergraduateLogistics?: UndergraduateLogisticsPayload;
   entityRelationships?: LabEntityRelationship[];

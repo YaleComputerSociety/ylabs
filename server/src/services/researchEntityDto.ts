@@ -325,7 +325,6 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'fundingPrograms',
   'timeCommitmentHoursPerWeek',
   'lastObservedAt',
-  'hasActiveListing',
   'searchMatch',
   'waysIn',
   'planningContext',

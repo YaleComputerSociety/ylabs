@@ -1,6 +1,5 @@
 /**
  * Service layer for canonical ResearchEntity browse/detail plus the
- * find-or-create helper that gives every Listing a parent entity on creation.
  *
  * Strategy for findOrCreateForOwner:
  *   1. Look for an existing group where the owner holds a canonical PI role assignment.
@@ -23,7 +22,6 @@ import {
 } from './researchEntityMembershipAccessor';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
-import { Listing } from '../models/listing';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
@@ -982,23 +980,12 @@ export async function searchResearchGroupsViaMeili(
       });
     const pageEntities = filteredCandidates.slice(offset, offset + safePageSize);
     const pageEntityIds = pageEntities.map((entity) => entity._id);
-    const activeListingGroupIds =
-      pageEntityIds.length > 0
-        ? await Listing.distinct('researchEntityId', {
-            researchEntityId: { $in: pageEntityIds },
-            archived: false,
-          })
-        : [];
-    const activeListingGroupIdSet = new Set(
-      activeListingGroupIds.map((id: any) => researchGroupDocumentId(id)).filter(Boolean),
-    );
     const planningContextResult = await optionalPlanningContexts(pageEntityIds);
     return addResearchEntitySearchAliases(
       {
         hits: pageEntities.map((entity) => ({
           ...entity,
           _id: researchGroupDocumentId(entity._id),
-          hasActiveListing: activeListingGroupIdSet.has(researchGroupDocumentId(entity._id)),
           planningContext: planningContextResult.contexts.get(researchGroupDocumentId(entity._id)),
         })),
         estimatedTotalHits: filteredCandidates.length,
@@ -1393,17 +1380,6 @@ export async function searchResearchGroupsViaMeili(
   const visibleHitIds = hitIds.filter((id: any) =>
     visibleEntitiesById.has(researchGroupDocumentId(id)),
   );
-  const activeListingGroupIds =
-    visibleHitIds.length > 0
-      ? await Listing.distinct('researchEntityId', {
-          researchEntityId: { $in: visibleHitIds },
-          archived: false,
-        })
-      : [];
-  const activeListingGroupIdSet = new Set(
-    activeListingGroupIds.map((id: any) => researchGroupDocumentId(id)).filter(Boolean),
-  );
-
   // Map Meilisearch's `id` back to `_id` for client backward compatibility.
   const planningContextResult = await optionalPlanningContexts(visibleHitIds);
   const normalizedHits = orderedHits.flatMap((hit: any) => {
@@ -1414,7 +1390,6 @@ export async function searchResearchGroupsViaMeili(
     return {
       ...entity,
       _id: id,
-      hasActiveListing: activeListingGroupIdSet.has(entityId),
       planningContext: planningContextResult.contexts.get(entityId),
       ...(hit.searchMatch ? { searchMatch: hit.searchMatch } : {}),
     };
@@ -1650,22 +1625,11 @@ const searchResearchGroupsViaMongoFallback = async (
   );
   const pageEntities = sortedCandidates.slice(offset, offset + safePageSize);
   const pageEntityIds = pageEntities.map((entity) => entity._id);
-  const activeListingGroupIds =
-    pageEntityIds.length > 0
-      ? await Listing.distinct('researchEntityId', {
-          researchEntityId: { $in: pageEntityIds },
-          archived: false,
-        })
-      : [];
-  const activeListingGroupIdSet = new Set(
-    activeListingGroupIds.map((id: any) => researchGroupDocumentId(id)).filter(Boolean),
-  );
   return addResearchEntitySearchAliases(
     {
       hits: pageEntities.map((entity) => ({
         ...entity,
         _id: researchGroupDocumentId(entity._id),
-        hasActiveListing: activeListingGroupIdSet.has(researchGroupDocumentId(entity._id)),
       })),
       estimatedTotalHits: sortedCandidates.length,
       page: safePage,
@@ -2065,7 +2029,6 @@ export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => 
 });
 
 const MAX_PUBLIC_DETAIL_MEMBERS = 100;
-const MAX_PUBLIC_DETAIL_LISTINGS = 50;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
@@ -2598,22 +2561,6 @@ const publicStringArray = (values: unknown): string[] =>
     ? values.slice(0, MAX_PUBLIC_DETAIL_ARRAY_ITEMS).flatMap((value) => publicString(value) ?? [])
     : [];
 
-const publicListingForResearchDetail = (listing: any) => ({
-  _id: researchGroupDocumentId(listing._id),
-  id: researchGroupDocumentId(listing._id),
-  title: publicString(listing.title),
-  description: publicString(listing.description),
-  type: publicString(listing.type),
-  commitment: publicString(listing.commitment),
-  compensationType: publicString(listing.compensationType),
-  applicantDescription: publicString(listing.applicantDescription),
-  hiringStatus: publicString(listing.hiringStatus),
-  websites: publicHttpUrls(listing.websites),
-  departments: publicStringArray(listing.departments),
-  researchAreas: publicStringArray(listing.researchAreas),
-  keywords: publicStringArray(listing.keywords),
-  expiresAt: listing.expiresAt,
-});
 
 const publicResearchDetailSourceUrl = (value: unknown): string | undefined => {
   const url = publicHttpUrl(value);
@@ -2747,7 +2694,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
   roster: PublicRosterDisclosure;
-  activeListings: any[];
   accessSignals: any[];
   undergraduateLogistics: PublicUndergraduateLogistics;
   entityRelationships: any[];
@@ -2906,15 +2852,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     availableRosterMembers.map((member) => member.row),
   );
   const [
-    activeListingsRaw,
     accessSignals,
     planningContexts,
     undergraduateLogistics,
   ] = await Promise.all([
-    Listing.find({ researchEntityId: (group as any)._id, archived: false })
-      .sort({ updatedAt: -1 })
-      .limit(MAX_PUBLIC_DETAIL_LISTINGS)
-      .lean(),
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
@@ -2927,7 +2868,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     optionalUndergraduateLogistics((group as any)._id),
   ]);
 
-  const activeListings = activeListingsRaw.map(publicListingForResearchDetail);
   const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
   const publicAccessSignals = (accessSignals as any[]).map(publicAccessSignalForResearchDetail);
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
@@ -2947,7 +2887,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     },
     members,
     roster,
-    activeListings,
     accessSignals: publicAccessSignals,
     undergraduateLogistics,
     ...relationshipPayload,

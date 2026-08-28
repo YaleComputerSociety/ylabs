@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { ResearchGroup } from '../../types/researchGroup';
 import { ResearchEntityDetailPayload } from '../../types/researchEntity';
-import { Listing } from '../../types/types';
 import { createInitialLabDetailState, labDetailReducer } from '../labDetailReducer';
 
 const sampleGroup: ResearchGroup = {
@@ -26,33 +25,6 @@ const sampleGroup: ResearchGroup = {
   sourceUrls: [],
 };
 
-const sampleListing: Listing = {
-  id: 'l1',
-  ownerId: 'fixture_owner',
-  ownerFirstName: 'Fixture',
-  ownerLastName: 'Owner',
-  ownerEmail: 'fixture.owner@example.test',
-  professorIds: [],
-  professorNames: [],
-  title: 'Undergrad RA opening',
-  departments: ['Computer Science'],
-  emails: [],
-  websites: [],
-  description: 'desc',
-  applicantDescription: '',
-  keywords: [],
-  researchAreas: [],
-  established: '',
-  views: 0,
-  favorites: 0,
-  hiringStatus: 0,
-  archived: false,
-  updatedAt: '',
-  createdAt: '',
-  confirmed: true,
-  audited: false,
-};
-
 const samplePayload: ResearchEntityDetailPayload = {
   group: sampleGroup,
   researchEntity: sampleGroup,
@@ -69,7 +41,6 @@ const samplePayload: ResearchEntityDetailPayload = {
       role: 'pi',
     },
   ],
-  activeListings: [sampleListing],
 };
 
 const otherPayload: ResearchEntityDetailPayload = {

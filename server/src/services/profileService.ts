@@ -1,7 +1,6 @@
 /**
  * Faculty profile service for self-editing, verification, and department cascading.
  */
-import { getListingModel } from '../db/connections';
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -1761,12 +1760,6 @@ export const normalizePublicProfile = (
     researchEntities: publicResearchEntities,
   };
 };
-
-/**
- * Cascade a professor's department data to all their listings.
- * - For owned listings: set departments from owner's profile
- * - For co-PI listings: merge departments from all PIs (owner's primary first)
- */
 
 /**
  * Fields an account was allowed to self-edit. Retained as the base allowlist

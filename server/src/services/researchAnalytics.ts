@@ -18,7 +18,6 @@ import mongoose from 'mongoose';
 import { AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType } from '../models/analytics';
 import { Fellowship, ResearchEntity } from '../models/index';
 import { Account } from '../models/account';
-import { getListingModel } from '../db/connections';
 import { logEvent } from './analyticsService';
 import type { LogEventParams } from './analyticsService';
 import {
@@ -144,7 +143,6 @@ export const WAYS_IN_KINDS = [
   'best_next_step',
   'apply',
   'email_intro',
-  'view_listings',
   'view_publications',
   'view_courses',
   'other',
@@ -328,10 +326,6 @@ export const researchEntityExists = async (
 
   if (!mongoose.isValidObjectId(id)) {
     return false;
-  }
-
-  if (entityType === 'listing') {
-    return Boolean(await getListingModel().exists({ _id: id }));
   }
 
   return Boolean(await Fellowship.exists({ _id: id }));

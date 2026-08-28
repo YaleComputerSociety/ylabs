@@ -70,7 +70,6 @@ const richPayload: LabDetailPayload = {
       },
     },
   ],
-  activeListings: [],
   accessSignals: [],
   relatedResearchEntities: [
     {

@@ -8,47 +8,6 @@ import {
 } from '../researchEntityEvidenceCoverage';
 
 describe('assessResearchEntityEvidenceCoverage', () => {
-  it('classifies listing-only records as thin even when they have access evidence', () => {
-    const assessment = assessResearchEntityEvidenceCoverage({
-      entity: {
-        name: 'Peters Lab',
-        description: '',
-        shortDescription: '',
-        fullDescription: '',
-        sourceUrls: ['http://filmstudies.yale.edu/people/john-durham-peters'],
-      },
-      listings: [
-        {
-          ownerId: 'fx1003',
-          title: 'John Durham Peters',
-          websites: ['http://filmstudies.yale.edu/people/john-durham-peters'],
-        },
-      ],
-      members: [],
-      accessSignals: [{ signalType: 'POSTED_OPENING', confidence: 'HIGH' }],
-      contactRoutes: [],
-      observations: [{ sourceName: 'ylabs-listing', field: 'description' }],
-    });
-
-    expect(assessment.coverageTier).toBe('thin');
-    expect(assessment.claimStates).toMatchObject({
-      description: 'missing',
-      lead: 'missing',
-      access: 'supported',
-      action: 'supported',
-    });
-    expect(assessment.blockers).toEqual(
-      expect.arrayContaining([
-        'missing_source_backed_description',
-        'missing_verified_lead',
-        'listing_only_profile',
-      ]),
-    );
-    expect(assessment.suggestedSourceTypes).toEqual(
-      expect.arrayContaining(['official-profile-page', 'official-lab-homepage']),
-    );
-  });
-
   it('rejects publication blurbs as description evidence but keeps them as topic support', () => {
     const assessment = assessResearchEntityEvidenceCoverage({
       entity: {
@@ -57,7 +16,6 @@ describe('assessResearchEntityEvidenceCoverage', () => {
           'This book explores the materiality of communication and provides a genealogy of the information age.',
         sourceUrls: ['http://filmstudies.yale.edu/people/john-durham-peters'],
       },
-      listings: [{ ownerId: 'fx1003' }],
       members: [{ role: 'pi', userId: 'fixture-user' }],
       accessSignals: [{ signalType: 'POSTED_OPENING' }],
       contactRoutes: [],
@@ -88,7 +46,6 @@ describe('assessResearchEntityEvidenceCoverage', () => {
         name: 'Ho Lab',
         sourceUrls: ['https://medicine.yale.edu/lab/ho/'],
       },
-      listings: [],
       members: [{ role: 'pi', personId: 'person-abc', netid: 'ab123' }],
       accessSignals: [],
       contactRoutes: [],
@@ -105,7 +62,6 @@ describe('assessResearchEntityEvidenceCoverage', () => {
         name: 'Ho Lab',
         sourceUrls: ['https://medicine.yale.edu/lab/ho/'],
       },
-      listings: [],
       members: [],
       accessSignals: [],
       contactRoutes: [],
@@ -125,7 +81,6 @@ describe('assessResearchEntityEvidenceCoverage', () => {
         sourceUrls: ['https://medicine.yale.edu/lab/ho/'],
         websiteUrl: 'https://medicine.yale.edu/lab/ho/',
       },
-      listings: [],
       members: [
         { role: 'pi', userId: 'fixture-user', sourceUrl: 'https://medicine.yale.edu/lab/ho/' },
       ],
@@ -153,7 +108,6 @@ describe('buildEvidenceCoverageImpact', () => {
           description: '',
           sourceUrls: ['http://filmstudies.yale.edu/people/john-durham-peters'],
         },
-        listings: [{ websites: ['http://filmstudies.yale.edu/people/john-durham-peters'] }],
         members: [],
         accessSignals: [{ signalType: 'POSTED_OPENING' }],
         contactRoutes: [],
@@ -177,8 +131,8 @@ describe('buildEvidenceCoverageImpact', () => {
       entityKey: 'peters-lab-fx1003',
       beforeCoverageTier: 'thin',
       afterCoverageTier: 'thin',
-      resolvedBlockers: ['missing_source_backed_description', 'listing_only_profile'],
-      remainingBlockers: ['missing_verified_lead'],
+      resolvedBlockers: ['missing_source_backed_description'],
+      remainingBlockers: ['missing_verified_lead', 'missing_action_route'],
     });
   });
 
@@ -202,7 +156,6 @@ describe('buildEvidenceCoverageImpact', () => {
             description: '',
             sourceUrls: ['http://filmstudies.yale.edu/people/john-durham-peters'],
           },
-          listings: [{ websites: ['http://filmstudies.yale.edu/people/john-durham-peters'] }],
           members: [],
           accessSignals: [{ signalType: 'POSTED_OPENING' }],
           contactRoutes: [],
@@ -218,7 +171,7 @@ describe('buildEvidenceCoverageImpact', () => {
         {
           entityType: 'researchEntity',
           entityKey: 'peters-lab-fx1003',
-          resolvedBlockers: ['missing_source_backed_description', 'listing_only_profile'],
+          resolvedBlockers: ['missing_source_backed_description'],
         },
       ],
     });

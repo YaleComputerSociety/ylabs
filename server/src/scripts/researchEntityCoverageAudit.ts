@@ -6,7 +6,6 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { Listing } from '../models/listing';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import {
@@ -286,18 +285,14 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
   const memberCounts = new Map<string, number>(
     [...rosterByEntityId].map(([key, roster]) => [key, roster.length]),
   );
-  const [signalCounts, listingCounts, observationHints] = await Promise.all([
+  const [signalCounts, observationHints] = await Promise.all([
     aggregateCountMap(Signal, {
       researchEntityId: { $in: entityIds },
       type: { $in: [...accessSignalTypes] },
       archived: { $ne: true },
     }),
-    aggregateCountMap(Listing, {
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-    }),
     Observation.find({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: 'researchEntity',
       superseded: false,
       $and: [
         {
@@ -342,7 +337,6 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
         sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
         members: memberCounts.get(entityId) || 0,
         accessSignals: signalCounts.get(entityId) || 0,
-        activeListings: listingCounts.get(entityId) || 0,
       },
       observationFlags: buildObservationFlags(observationsBySlug.get(entity.slug) || []),
     };
@@ -425,7 +419,7 @@ async function buildSlugAudit(slug: string) {
   }
 
   const entityId = stringId(entity._id);
-  const [members, signals, listings, observations] = await Promise.all([
+  const [members, signals, observations] = await Promise.all([
     getResearchEntityRoster(entity._id),
     Signal.find({
       researchEntityId: entity._id,
@@ -435,11 +429,8 @@ async function buildSlugAudit(slug: string) {
       .select('type confidence confidenceScore source observedAt derivationKey')
       .sort({ observedAt: -1 })
       .lean(),
-    Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('title deadline website')
-      .lean(),
     Observation.find({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: 'researchEntity',
       superseded: false,
       $or: [{ entityId: entity._id }, { entityKey: slug }],
     })
@@ -462,7 +453,6 @@ async function buildSlugAudit(slug: string) {
       sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
       members: members.length,
       accessSignals: signals.length,
-      activeListings: listings.length,
     },
     observationFlags: buildObservationFlags(observationHints),
     signalTypes: signals.map((signal) => signal.type),
@@ -505,7 +495,6 @@ async function buildSlugAudit(slug: string) {
     accessArtifacts: {
       members,
       accessSignals: signals,
-      activeListings: listings,
     },
     recentObservations: observationHints.slice(0, 40),
   };

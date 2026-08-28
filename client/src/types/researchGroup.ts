@@ -154,7 +154,6 @@ export interface ResearchGroup {
    * has any non-archived Listings. Optional because the search endpoint does
    * not include it.
    */
-  hasActiveListing?: boolean;
   planningContext?: ResearchPlanningContext;
   studentDecisionExplanation?: StudentDecisionExplanation;
   leadIdentityStatus?: 'verified' | 'under_review';
