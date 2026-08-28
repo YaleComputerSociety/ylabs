@@ -435,6 +435,24 @@ function isResearchEntityObservationType(entityType: ObservedEntityType): boolea
   return entityType === 'researchEntity';
 }
 
+export const RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE = 'PROGRAM';
+
+export function isRetiredProgramResearchEntityType(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    value.trim().toUpperCase() === RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE
+  );
+}
+
+export function observationsAssertRetiredProgramResearchEntityType(
+  observations: Array<{ field?: unknown; value?: unknown }>,
+): boolean {
+  return observations.some(
+    (observation) =>
+      observation.field === 'entityType' && isRetiredProgramResearchEntityType(observation.value),
+  );
+}
+
 function hasNonEmptyStringArray(...values: unknown[]): boolean {
   return values.some((value) => Array.isArray(value) && value.length > 0);
 }
@@ -3373,6 +3391,23 @@ export async function materializeEntity(
       created: false,
       resolved: {},
       skipped: 'merged-into-canonical',
+    };
+  }
+
+  if (
+    isResearchEntityObservationType(entityType) &&
+    (isRetiredProgramResearchEntityType(entityDoc?.entityType) ||
+      observationsAssertRetiredProgramResearchEntityType(obs))
+  ) {
+    return {
+      entityType,
+      entityId: entityDoc ? materializerDocumentId(entityDoc._id) : undefined,
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      skipped: 'program-entity-type-retired',
     };
   }
 

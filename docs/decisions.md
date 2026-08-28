@@ -4,6 +4,15 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-28: Archive Residual `PROGRAM` Research Entities And Guard The Materializer
+
+A first force-llm development run surfaced 12 `research_entities` carrying the retired `entityType='PROGRAM'` (all `center-macmillan-*`/Jackson center sub-programs), residue that re-entered through the materializer's no-validator `updateOne`/create path after the 2026-08-26 retirement below.
+Decision: archive this residue rather than hard-delete it, and stop it at the source.
+The guarded, idempotent `research-entity:retire-program-entities` data operation (dry-run by default, `--apply` plus `--confirm-program-entity-retirement`, production-blocked, `--output` under `$TMPDIR`) sets `archived: true` on every non-archived `PROGRAM` research entity and removes its Meilisearch document, so no `PROGRAM` row is a live `/research` citizen or search hit.
+Archiving was chosen over the hard-deleting `programs:migrate-program-entities-to-fellowships` op because it is lossless and reversible: only 5 of the 12 already had a `Fellowship` equivalent, and auto-minting classified `Fellowship` records for the other 7 center sub-programs is a curation decision, not a safe mechanical migration.
+`entityMaterializer` now refuses the retired type at the entry: `materializeEntity` skips with reason `program-entity-type-retired` whenever the existing doc is `PROGRAM` or an incoming observation asserts `entityType='PROGRAM'`, so a re-scrape neither mints a new `PROGRAM` entity nor resurrects or re-syncs an archived one.
+This was applied on Development only; Beta and Production were untouched.
+
 ## 2026-08-27: Remove The Dead StudentProfile / Follow-up / Outreach-recording Subsystem
 
 The student-side personalization, follow-up, and outreach-recording subsystem was built but never wired end-to-end, so it was dead scaffolding carried at a maintenance cost for no product value.
