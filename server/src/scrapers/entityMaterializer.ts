@@ -21,6 +21,7 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
 import {
   buildResearchAreasCardSummary,
+  entityDocShortDescriptionForRestatementGuard,
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
   programCardShortDescriptionQuality,
@@ -981,46 +982,6 @@ function resolvedFieldSourcedOnlyFromPersonProfilePages(
   );
   if (matches.length === 0) return false;
   return matches.every((obs) => personProfileNameTokensFromUrl(obs.sourceUrl) !== null);
-}
-
-/**
- * Whether the entity's stored `shortDescription` was itself synthesized from
- * its own `fullDescription` by a prior materialize pass, rather than coming
- * from an independent observation. The grounded-card-synthesis path below
- * copies `fieldProvenance.fullDescription` verbatim onto
- * `fieldProvenance.shortDescription` when it writes a derived short, so equal
- * `sourceName`/`sourceUrl` on both is a reliable marker for that derivation.
- *
- * This guards the fullDescription/shortDescription "restatement" checks
- * (#1721/#1773) against a materialize non-idempotence bug: a short that was
- * condensed from the full on pass 1 will almost always read as "restating"
- * that same full's content on pass 2, purely because of how it was derived -
- * not because of any new evidence - which blanked `fullDescription` on
- * re-materialize with zero new observations. Excluding a self-derived short
- * from the entityDoc fallback keeps the guard's original intent (catching a
- * genuinely independently-sourced short that a freshly scraped full merely
- * repeats) while making materializeEntity idempotent again.
- */
-function shortDescriptionIsSelfDerivedFromFullDescription(
-  entityDoc: Record<string, unknown> | null,
-): boolean {
-  const provenance = objectRecord(entityDoc?.fieldProvenance);
-  const shortProvenance = objectRecord(provenance.shortDescription);
-  const fullProvenance = objectRecord(provenance.fullDescription);
-  const shortSourceName = textValue(shortProvenance.sourceName);
-  const shortSourceUrl = textValue(shortProvenance.sourceUrl);
-  if (!shortSourceName && !shortSourceUrl) return false;
-  return (
-    shortSourceName === textValue(fullProvenance.sourceName) &&
-    shortSourceUrl === textValue(fullProvenance.sourceUrl)
-  );
-}
-
-function entityDocShortDescriptionForRestatementGuard(
-  entityDoc: Record<string, unknown> | null,
-): unknown {
-  if (!entityDoc || shortDescriptionIsSelfDerivedFromFullDescription(entityDoc)) return undefined;
-  return entityDoc.shortDescription;
 }
 
 export function buildInferredPiMemberUpsert(

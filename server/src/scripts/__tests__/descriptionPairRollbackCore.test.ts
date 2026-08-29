@@ -78,6 +78,30 @@ describe('planDescriptionPairRollback', () => {
     expect(plan.skipped).toBeUndefined();
   });
 
+  it('names the projected card as part of the same operation, since it is not clearable on empty', () => {
+    // Superseding the observations alone never converges: shortDescription is not
+    // in CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS, so the projected card outlives
+    // its evidence and the guard keeps refusing every replacement full.
+    const plan = planDescriptionPairRollback({
+      entity: ENTITY,
+      sourceName: SOURCE,
+      observations: [obs('fullDescription', SOURCE), obs('shortDescription', SOURCE)],
+    });
+    expect(plan.entityFieldsToUnset).toEqual([
+      'shortDescription',
+      'fieldProvenance.shortDescription',
+    ]);
+  });
+
+  it('asks for no entity-document write when there is nothing to supersede', () => {
+    const plan = planDescriptionPairRollback({
+      entity: ENTITY,
+      sourceName: SOURCE,
+      observations: [obs('fullDescription', SOURCE, { superseded: true })],
+    });
+    expect(plan.entityFieldsToUnset).toEqual([]);
+  });
+
   it('flags a short written by another source, because it may be derived from the full being removed', () => {
     // The incident shape: the synthesis lane wrote the full, the card line came
     // from elsewhere but was derived from that full text, and removing only the
@@ -216,19 +240,83 @@ describe('describeDescriptionPairRisk', () => {
       }),
     ).toBeNull();
   });
+
+  it('passes a card the materializer derived from the full, which the guard excludes', () => {
+    // The materializer condenses shorts out of fulls routinely and copies the
+    // full's provenance onto the derived short, and its guard then excludes such a
+    // short from the comparison. Reading the raw stored short instead reports a
+    // freshly repaired, stably serving record as a restatement and sends an
+    // operator back to re-repair it.
+    const full =
+      'The Hansen Laboratory studies how shelterin loss triggers replicative senescence and tests interventions that restore proliferative capacity.';
+    const derivedShort =
+      'Studies how shelterin loss triggers replicative senescence and tests interventions that restore proliferative capacity.';
+    const provenance = { sourceName: 'lab-microsite-undergrad-llm', sourceUrl: 'https://x.edu/h/' };
+    expect(
+      describeDescriptionPairRisk({
+        fullDescription: full,
+        shortDescription: derivedShort,
+        fieldProvenance: { fullDescription: provenance, shortDescription: provenance },
+      }),
+    ).toBeNull();
+  });
+
+  it('still reports the same pair when the short carries independent provenance', () => {
+    const full =
+      'The Hansen Laboratory studies how shelterin loss triggers replicative senescence and tests interventions that restore proliferative capacity.';
+    const short =
+      'Studies how shelterin loss triggers replicative senescence and tests interventions that restore proliferative capacity.';
+    expect(
+      describeDescriptionPairRisk({
+        fullDescription: full,
+        shortDescription: short,
+        fieldProvenance: {
+          fullDescription: { sourceName: 'lab-microsite-undergrad-llm', sourceUrl: 'https://x.edu/h/' },
+          shortDescription: {
+            sourceName: 'fra-profile-research-synthesis',
+            sourceUrl: 'https://x.edu/fra/card/h',
+          },
+        },
+      }),
+    ).toBe('full-restates-short');
+  });
 });
 
 describe('a manufactured-duplicate pair cannot be repaired by restoring it', () => {
   // The studentReadyDescription emit block in labMicrositeUndergradLLMExtractor.ts
   // pushes one string as fullDescription at 0.55 and, when card-length, the same
-  // string again as shortDescription at 0.55. Both are observation-backed, so
-  // "restore the prior pair" recreates exactly the state the materializer blanks.
+  // string again as shortDescription at 0.55. What makes such a pair unstable is
+  // how its two members end up attributed: restored under one source and URL the
+  // materializer reads the short as self-derived and keeps serving the prose, but
+  // attributed separately - which is what a hand repair produces - the short reads
+  // as independent evidence and the full is blanked.
   const identical =
     'The laboratory studies hand and wrist trauma, arthritis, nerve injury, and tendon pathology in adults.';
 
   it('is reported as unstable rather than serviceable', () => {
     expect(
       describeDescriptionPairRisk({ fullDescription: identical, shortDescription: identical }),
+    ).toBe('full-restates-short');
+  });
+
+  it('is reported serviceable only while both members stay on one source and URL', () => {
+    const provenance = { sourceName: 'lab-microsite-undergrad-llm', sourceUrl: 'https://x.edu/h/' };
+    expect(
+      describeDescriptionPairRisk({
+        fullDescription: identical,
+        shortDescription: identical,
+        fieldProvenance: { fullDescription: provenance, shortDescription: provenance },
+      }),
+    ).toBeNull();
+    expect(
+      describeDescriptionPairRisk({
+        fullDescription: identical,
+        shortDescription: identical,
+        fieldProvenance: {
+          fullDescription: provenance,
+          shortDescription: { ...provenance, sourceUrl: 'https://x.edu/h/undergrads' },
+        },
+      }),
     ).toBe('full-restates-short');
   });
 

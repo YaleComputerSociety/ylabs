@@ -22,28 +22,43 @@
  * (`faculty-research-area-james-e-hansen` had a 0.55 `lab-microsite-undergrad-llm`
  * row the whole time).
  *
- * So: revert the PAIR, never one field.
+ * So: revert the PAIR, never one field - and revert it in both stores. Marking the
+ * observations superseded is not sufficient on its own, because `shortDescription`
+ * is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`: the projected card
+ * outlives the observation that produced it, the guard keeps comparing every
+ * replacement full against evidence that is already gone, and the record never
+ * converges however many times it is re-materialized.
+ * `planDescriptionPairRollback` names those entity-document paths in
+ * `entityFieldsToUnset`.
  *
  * ## Reverting to the prior pair is NOT automatically safe
  *
  * The obvious remedy - restore both fields to their pre-rollback values, on the
  * reasoning that the prior pair was self-consistent - fails when the prior pair
- * was itself manufactured identical. The `studentReadyDescription` emit block in
+ * was manufactured as a duplicate. The `studentReadyDescription` emit block in
  * `server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts` pushes one
  * string as `fullDescription` at 0.55 and, when `isCardLengthDescription` holds,
- * pushes THE SAME STRING as `shortDescription` at 0.55. Both are
- * observation-backed, so restoring them recreates the exact condition the guard
- * blanks: 2,723 entities carry such a pair, and 216 have already been silently
- * emptied by this path.
+ * pushes THE SAME STRING as `shortDescription` at 0.55.
  *
- * Therefore no data repair on an affected row can hold until the emitting source
- * stops producing the duplicate. `describeDescriptionPairRisk` exists to detect
- * that state before a repair is attempted: a `full-restates-short` result means
- * the pair is unstable and the fix belongs upstream, not in a backfill.
+ * What makes such a pair unstable is not the duplication itself but how the two
+ * members are attributed. Both of those pushes share one `...base`, so they land
+ * with the same `sourceName` and `sourceUrl`, the materializer reads the projected
+ * short as self-derived from the full, and the guard is not applied at all: the
+ * row keeps serving its prose across passes. Re-attribute the same duplicate
+ * across two URLs or two sources - which is what a hand repair does, and what a
+ * second source writing the card produces - and the short now reads as
+ * independent evidence, so the guard fires and blanks the full. The incident pair
+ * was exactly that shape: one source's full from the profile URL, its card from a
+ * second URL.
+ *
+ * So a restored pair is only safe when the pair AS IT WILL BE ATTRIBUTED passes
+ * `describeDescriptionPairRisk`. A `full-restates-short` result means the pair is
+ * unstable and the fix belongs upstream in the emitting source, not in a backfill.
  */
 import type { ObservedEntityType } from '../models/observation';
 import { observationEntityIdentityFilter } from '../scrapers/observationStore';
 import {
+  entityDocShortDescriptionForRestatementGuard,
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
 } from '../utils/researchEntityDescriptionQuality';
@@ -64,8 +79,8 @@ export interface DescriptionPairEntityIdentity {
 }
 
 export interface DescriptionObservationLike {
-  entityKey?: string;
-  entityId?: string;
+  entityKey?: string | null;
+  entityId?: unknown;
   field?: string;
   sourceName?: string;
   value?: unknown;
@@ -117,9 +132,25 @@ export interface DescriptionPairRollbackPlan {
    * another source's short.
    */
   shortWrittenElsewhere: boolean;
+  /**
+   * Entity-document paths the same operation must `$unset` before re-materializing.
+   *
+   * Superseding the observations is only half the rollback. `shortDescription` is
+   * not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so the projected card
+   * outlives the observation that produced it: the guard keeps comparing every
+   * replacement full against a short whose evidence is already gone, and the
+   * record never converges. Clearing the projection lets the materializer
+   * re-derive it from whichever full survives.
+   */
+  entityFieldsToUnset: readonly string[];
   /** Set when nothing needs doing, with the reason. */
   skipped?: 'no-active-observations';
 }
+
+const PROJECTED_SHORT_DESCRIPTION_PATHS = [
+  'shortDescription',
+  'fieldProvenance.shortDescription',
+] as const;
 
 export function planDescriptionPairRollback(input: {
   entity: DescriptionPairEntityIdentity;
@@ -145,10 +176,16 @@ export function planDescriptionPairRollback(input: {
       entity: input.entity,
       fieldsToSupersede: [],
       shortWrittenElsewhere,
+      entityFieldsToUnset: [],
       skipped: 'no-active-observations',
     };
   }
-  return { entity: input.entity, fieldsToSupersede, shortWrittenElsewhere };
+  return {
+    entity: input.entity,
+    fieldsToSupersede,
+    shortWrittenElsewhere,
+    entityFieldsToUnset: [...PROJECTED_SHORT_DESCRIPTION_PATHS],
+  };
 }
 
 export type DescriptionPairRisk =
@@ -160,9 +197,13 @@ export type DescriptionPairRisk =
  * re-materializing rather than trusting the supersede count.
  *
  * The three states are exactly the negations of the materializer's
- * `winnerFullUseful` guard, evaluated with the same two predicates the guard uses.
- * Re-specifying either predicate here would let a repair pass a bar the live
- * materializer does not honour.
+ * `winnerFullUseful` guard, evaluated with the same two predicates the guard uses
+ * and against the same short the guard uses: pass the served entity document,
+ * including `fieldProvenance`, because a short the materializer itself derived
+ * from the full is excluded from the comparison and reading the raw stored short
+ * instead reports every self-derived card as a restatement. Re-specifying either
+ * predicate, or the short selection, would let a repair pass a bar the live
+ * materializer does not honour - or fail one it does not apply.
  *
  * Restatement is reported ahead of unusefulness because it is the one state the
  * materializer actively blanks, and because it is the state that says the fix
@@ -171,13 +212,14 @@ export type DescriptionPairRisk =
  * Returns the reason it is unsafe, or null when the pair is serviceable.
  */
 export function describeDescriptionPairRisk(input: {
-  fullDescription: unknown;
-  shortDescription: unknown;
+  fullDescription?: unknown;
+  shortDescription?: unknown;
+  fieldProvenance?: unknown;
   researchAreas?: unknown;
   entityType?: unknown;
 }): DescriptionPairRisk | null {
   const full = textValue(input.fullDescription);
-  const short = textValue(input.shortDescription);
+  const short = textValue(entityDocShortDescriptionForRestatementGuard(input));
   if (!full) return 'empty-full-description';
   if (isFullDescriptionRestatementOfShortDescription(full, short)) return 'full-restates-short';
   if (!fullDescriptionQuality(full, input.researchAreas, input.entityType).isUseful) {

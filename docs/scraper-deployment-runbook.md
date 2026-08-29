@@ -62,15 +62,21 @@ A perfectly good alternative was active and unused the entire time.
 
 Procedure:
 
-- Check first whether the prior pair is itself a manufactured duplicate.
+- Check first whether the prior pair is a manufactured duplicate.
 Restoring both fields to their pre-rollback values is **not** automatically safe: the `studentReadyDescription` emit block in `server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts` emits one string as `fullDescription` at 0.55 and, when it is card-length, the same string again as `shortDescription` at 0.55.
-Both are observation-backed, so restoring them recreates the condition the guard blanks.
-2,723 entities carry such a pair and 216 have already been silently emptied this way.
-- When the pair is a manufactured duplicate, no data repair holds until the emitting source stops producing it.
+What decides whether such a pair is stable is how its two members are attributed, not the duplication.
+Both of those pushes share one `...base`, so they carry the same `sourceName` and `sourceUrl`, the materializer treats the projected short as self-derived from the full, the guard is not applied, and the row keeps serving its prose.
+Re-attribute the same string across two URLs or two sources, which is what a hand repair does and what a second source writing the card produces, and the short reads as independent evidence, so the guard fires and blanks the full.
+- When the restored pair would be attributed that way, no data repair holds until the emitting source stops producing the duplicate.
 Fix the source, then repair the rows.
 - Use `server/src/scripts/descriptionPairRollbackCore.ts` to build the observation filter, so the query cannot be scoped to one field by accident, and so rows stored under `entityId` rather than `entityKey` are matched too.
+- Unset the projected `shortDescription` and `fieldProvenance.shortDescription` on the entity document in the same operation, before re-materializing.
+`shortDescription` is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so the projected card outlives the observation that produced it and the guard keeps refusing every replacement full: the record stays blank however many times it is re-materialized.
+`planDescriptionPairRollback` returns those paths in `entityFieldsToUnset`.
 - Verify afterwards on the served record, not on the supersede count.
 `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and will therefore blank on the next materialize, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
+Pass the whole served document, including `fieldProvenance`.
+It routes the short through the same self-derived exclusion the guard uses, so reading the raw stored short instead would report every re-derived card as a restatement and send an operator back to re-repair a healthy row.
 - Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.
 This failure cannot be caught by tier checks, by construction.
 
