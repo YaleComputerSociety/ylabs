@@ -4,6 +4,7 @@ import {
   sanitizeCatalogDescription,
   stripInterrogativeSentences,
 } from '../descriptionHygiene';
+import { toPublicResearchEntityDto } from '../../services/researchEntityDto';
 
 const HUMANITIES_PROSE_WITH_RESEARCH_QUESTIONS = [
   'The researcher specializes in the arts of a single nation and the history of photography.',
@@ -93,5 +94,47 @@ describe('stripInterrogativeSentences', () => {
 
   it('returns empty when every sentence is a question', () => {
     expect(stripInterrogativeSentences('What is this? Why does it matter?')).toBe('');
+  });
+});
+
+// `sanitizeResearchEntityDescription` is shared read-time hygiene, and the
+// browse and detail paths are known to diverge by construction (#2240, #2241),
+// so the recovered prose has to be asserted on the BROWSE path as well as the
+// detail DTO. A browse card must never come back empty or carrying chrome for a
+// row this change newly serves.
+describe('the browse card for newly served question-clustered prose', () => {
+  const browseCard = (fullDescription: string) =>
+    toPublicResearchEntityDto(
+      {
+        _id: '67d8928150621bcef434a1d9',
+        slug: 'synthetic-question-clustered-lab',
+        name: 'Synthetic Question Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        fullDescription,
+        shortDescription: '',
+        studentVisibilityTier: 'student_ready',
+      } as any,
+      { forList: true } as any,
+    )?.cardDescription;
+
+  it.each([
+    ['humanities prose', HUMANITIES_PROSE_WITH_RESEARCH_QUESTIONS],
+    ['science prose', NEUROSCIENCE_PROSE_WITH_RESEARCH_QUESTIONS],
+  ])('serves a non-empty, chrome-free browse card for %s', (_label, prose) => {
+    const card = browseCard(prose);
+    const text = String(card?.text || '');
+    expect(text).not.toBe('');
+    expect(text).not.toMatch(/copy link|information for|@|https?:\/\//i);
+    expect(text).not.toContain('?');
+  });
+
+  it('falls back to the review placeholder for a marked FAQ page, leaking no Q&A copy', () => {
+    const card = browseCard(MARKED_FAQ_PAGE);
+    expect(card?.state).not.toBe('complete');
+    const text = String(card?.text || '');
+    expect(text).not.toContain('?');
+    expect(text).not.toContain('stipend');
+    expect(text).not.toContain('faculty member');
   });
 });
