@@ -5,6 +5,7 @@ import {
   OBSERVATION_REFERENCE_SPECS,
   buildObservationReferencePipeline,
   buildSupersededObservationPruneFilter,
+  pruneDeadObservations,
   pruneSupersededObservations,
 } from '../observationRetention';
 
@@ -181,6 +182,46 @@ describe('observation retention', () => {
       protectedCandidates: 1,
       candidates: 4,
       deleted: 4,
+    });
+  });
+
+  describe('dead-observation prune (superseded and unreferenced, any age)', () => {
+    it('targets every superseded observation up to now while protecting referenced ids', async () => {
+      mockReferencedObservationRows([{ _id: 'referenced-observation' }]);
+      vi.spyOn(Observation, 'countDocuments')
+        .mockResolvedValueOnce(10 as any)
+        .mockResolvedValueOnce(9 as any);
+      const deleteMany = vi
+        .spyOn(Observation, 'deleteMany')
+        .mockResolvedValue({ deletedCount: 9 } as any);
+
+      const result = await pruneDeadObservations({ now: NOW, apply: true });
+
+      expect(deleteMany).toHaveBeenCalledWith({
+        superseded: true,
+        observedAt: { $lt: NOW },
+        _id: { $nin: ['referenced-observation'] },
+      });
+      expect(result).toEqual({
+        apply: true,
+        eligibleCandidates: 10,
+        protectedCandidates: 1,
+        candidates: 9,
+        deleted: 9,
+        cutoff: NOW.toISOString(),
+        sourceName: undefined,
+      });
+    });
+
+    it('never deletes in dry-run mode', async () => {
+      mockReferencedObservationRows();
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+      const deleteMany = vi.spyOn(Observation, 'deleteMany');
+
+      const result = await pruneDeadObservations({ now: NOW, apply: false });
+
+      expect(deleteMany).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ apply: false, candidates: 3, deleted: 0 });
     });
   });
 });
