@@ -9,8 +9,12 @@
  *   4. Apply an agreement bonus when more than one source contributes to a group.
  *   5. Return the highest-weighted group's value; flag conflict if runner-up is close.
  *
- * Deliberately pure — no DB calls — so it's testable in isolation.
+ * Deliberately makes no DB calls, so it's testable in isolation. The description
+ * quality helpers below are pure, but they transitively load Mongoose models at
+ * module scope, so importing this module still requires mongoose to resolve.
  */
+import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
 
 export interface ResolverObservation {
   field: string;
@@ -43,11 +47,7 @@ const DEFAULTS = {
   conflictThreshold: 0.3,
 };
 
-const PROSE_COMPLETENESS_FIELDS = new Set([
-  'bio',
-  'fullDescription',
-  'researchInterestSummary',
-]);
+const PROSE_COMPLETENESS_FIELDS = new Set(['bio', 'fullDescription', 'researchInterestSummary']);
 
 // Curated manual overrides are meant to be authoritative until a human records a
 // newer one, not to age out against scraper re-scrapes on a 90-day half-life like
@@ -68,6 +68,25 @@ const NON_DECAYING_SOURCE_HALF_LIFE_DAYS = 36500;
 const SYNTHESIZED_DESCRIPTION_SOURCES = new Set(['dept-faculty-roster']);
 const SYNTHESIZED_SOURCE_DEMOTION_FIELDS = new Set(['fullDescription']);
 const PROSE_EXTENSION_BONUS = 1.25;
+
+// A research entity is a lab, faculty research area, or program - never a
+// person - so a person biography is never a correct description for one, at any
+// confidence. Without this, weight alone decides: an official profile page emits
+// its bio-shaped prose at 0.55 while every synthesis lane that exists to replace
+// that bio deliberately ranks below official extraction, so the replacement can
+// never win and the bio is restored on the next weekly re-scrape (#2200).
+// Demotion is conditional on a genuinely useful non-bio alternative existing, so
+// a sole bio is still served rather than blanked in favour of a worse value.
+const PERSON_BIO_DEMOTION_FIELDS = new Set(['fullDescription']);
+
+// Scoped to the lanes written specifically to replace a served biography, rather
+// than to the field alone. `isHighConfidencePersonBio` also fires on genuine
+// organization prose ("Professor Jane Doe's laboratory investigates ...", or a
+// center description mentioning a director's doctorate), and several sources
+// emit fullDescription with no write-time bio guard, so a field-only rule
+// demoted an authoritative 0.9 official description in favour of a bare 0.3
+// grant abstract on labs and centers this lane never touches.
+const BIO_REPLACING_DESCRIPTION_SOURCES = new Set(['fra-profile-research-synthesis']);
 
 // Name selection favors a genuinely branded name (extracted from the lab's own
 // microsite or a curated directory) over a synthesized PI-derived label. These
@@ -179,6 +198,38 @@ function preferExtractedProseGroups<T extends { sources: Set<string> }>(
   return extracted.length > 0 ? extracted : groups;
 }
 
+function isPersonBioProseGroup(group: { value: unknown }): boolean {
+  return typeof group.value === 'string' && isHighConfidencePersonBio(group.value);
+}
+
+function hasBioReplacingSynthesisSource(group: { sources: Set<string> }): boolean {
+  for (const source of group.sources) {
+    if (BIO_REPLACING_DESCRIPTION_SOURCES.has(source)) return true;
+  }
+  return false;
+}
+
+/**
+ * Marks bio groups as demoted rather than dropping them, so they sort last but
+ * stay in the ranked list. `entityMaterializer` walks that list when the winner
+ * fails its own content gates, and a removed bio left the walk with nothing to
+ * fall back to, blanking a description that had been served.
+ */
+function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void {
+  if (!PERSON_BIO_DEMOTION_FIELDS.has(field)) return;
+  const bioGroups = groups.filter(isPersonBioProseGroup);
+  if (bioGroups.length === 0 || bioGroups.length === groups.length) return;
+  const replacementExists = groups.some(
+    (group) =>
+      !isPersonBioProseGroup(group) &&
+      hasBioReplacingSynthesisSource(group) &&
+      typeof group.value === 'string' &&
+      fullDescriptionQuality(group.value).isUseful,
+  );
+  if (!replacementExists) return;
+  for (const group of bioGroups) group.demoted = true;
+}
+
 function nameHasResearchHomeHeadNoun(value: unknown): boolean {
   return typeof value === 'string' && RESEARCH_HOME_HEAD_NOUN_RE.test(value);
 }
@@ -231,7 +282,10 @@ function preferGenuineEntityNameGroups<T extends { value: unknown; sources: Set<
       !isFacultyResearchName(group.value),
   );
   const isLowQualityNameGroup = (group: T): boolean => {
-    if (micrositeGenuineExists && (isSynthesizedNameGroup(group) || isFacultyResearchName(group.value))) {
+    if (
+      micrositeGenuineExists &&
+      (isSynthesizedNameGroup(group) || isFacultyResearchName(group.value))
+    ) {
       return true;
     }
     return someGroupHasHeadNoun && isBarePersonName(group.value);
@@ -244,6 +298,7 @@ interface RankedGroup {
   value: unknown;
   weight: number;
   sources: Set<string>;
+  demoted?: boolean;
 }
 
 function rankFieldGroups(
@@ -287,7 +342,21 @@ function rankFieldGroups(
     field,
     preferExtractedProseGroups(field, Array.from(groups.values())),
   );
-  return rankable.sort((a, b) => b.weight - a.weight);
+  demotePersonBioProseGroups(field, rankable);
+  return rankable.sort(
+    (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
+  );
+}
+
+/**
+ * The groups a field's winner, confidence, and conflict flag are decided from.
+ * Demoted groups are fallback-only: keeping them out of this pool stops a
+ * displaced person bio from diluting the winner's confidence or reporting a
+ * conflict against the value that is meant to replace it.
+ */
+function adjudicatedGroups(ranked: RankedGroup[]): RankedGroup[] {
+  const kept = ranked.filter((group) => !group.demoted);
+  return kept.length > 0 ? kept : ranked;
 }
 
 export function resolveField(
@@ -308,10 +377,11 @@ export function resolveField(
 
   const ranked = rankFieldGroups(field, observations, opts);
   if (ranked.length === 0) return null;
-  const winner = ranked[0];
-  const runnerUp = ranked[1];
+  const adjudicated = adjudicatedGroups(ranked);
+  const winner = adjudicated[0];
+  const runnerUp = adjudicated[1];
 
-  const totalWeight = ranked.reduce((acc, g) => acc + g.weight, 0);
+  const totalWeight = adjudicated.reduce((acc, g) => acc + g.weight, 0);
   const confidence = totalWeight > 0 ? Math.min(1, winner.weight / totalWeight) : 0;
 
   let hasConflict = false;
@@ -320,7 +390,7 @@ export function resolveField(
     const margin = (winner.weight - runnerUp.weight) / Math.max(winner.weight, 1e-9);
     if (margin < conflictThreshold) {
       hasConflict = true;
-      conflictingValues = ranked.slice(0, 3).map((g) => g.value);
+      conflictingValues = adjudicated.slice(0, 3).map((g) => g.value);
     }
   }
 
@@ -339,6 +409,8 @@ export function resolveField(
  * need to fall through past a top-ranked value rejected by a downstream content
  * gate (e.g. a fullDescription that sanitizes to empty) use this to pick the
  * next acceptable candidate rather than being stuck with the single winner.
+ * Demoted values (a person bio displaced by a research description) sort last but
+ * are still returned, so the walk always has a last resort.
  * A manually locked field returns only its locked value.
  */
 export function resolveFieldRanked(

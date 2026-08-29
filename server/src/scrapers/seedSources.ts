@@ -305,6 +305,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'fra-profile-research-synthesis',
+    displayName: 'Faculty research-area profile synthesis LLM',
+    description:
+      "Synthesizes what a faculty member studies from the research prose on their own official Yale profile page, for FACULTY_RESEARCH_AREA entities whose stored description is a biography. Those pages state the research but interleave it with credentials, so no contiguous verbatim span carries it and the extractor can only copy a bio. Career, credential, and navigation sentences are excluded from the input; the grounded coverage synthesizer then fails closed unless the output is grounded in the retained research prose and clears the description-quality bar. Weighted above the grant-corpus lane because a professor's own profile is the better authority on their research, and below official-profile extraction so a genuine verbatim research statement still wins.",
+    baseUrl: '',
+    defaultWeight: 0.48,
+    cadence: 'weekly',
+  },
+  {
     name: 'yale-college-fellowships-office',
     displayName: 'Yale College Fellowships Office',
     description: 'Authoritative listing of Yale-internal undergrad fellowships.',
@@ -316,7 +325,7 @@ const SOURCES: SourceSeed[] = [
     name: 'yale-reu-programs',
     displayName: 'Yale REU & Summer Research Programs',
     description:
-      'Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Cites each program\'s own official Yale page; the NSF REU Sites directory is a non-Yale crawl seed only and is never cited. Emits SUMMER_RESEARCH_PROGRAM records; fails closed on contact and on non-Yale source URLs.',
+      "Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Cites each program's own official Yale page; the NSF REU Sites directory is a non-Yale crawl seed only and is never cited. Emits SUMMER_RESEARCH_PROGRAM records; fails closed on contact and on non-Yale source URLs.",
     baseUrl: 'https://www.nsf.gov/crssprgm/reu/reu_search.jsp',
     defaultWeight: 0.9,
     cadence: 'daily-during-cycle',
@@ -325,7 +334,7 @@ const SOURCES: SourceSeed[] = [
     name: 'yale-health-sciences-summer-programs',
     displayName: 'Yale Health-Sciences Undergraduate Summer Research Programs',
     description:
-      'Yale health-sciences undergraduate summer research programs hosted across the School of Medicine, Public Health, Nursing, and their institutes/centers - the biomedical analogue of yale-reu-programs on distinct host domains. Cites each program\'s own official Yale page; Yale-owned health-sciences listing pages are crawl seeds only and are never cited. The two already-covered WHR/YCMD seed URLs owned by yale-college-fellowships-office are excluded so a program is never minted twice. Emits SUMMER_RESEARCH_PROGRAM records; fails closed on contact and on non-Yale source URLs.',
+      "Yale health-sciences undergraduate summer research programs hosted across the School of Medicine, Public Health, Nursing, and their institutes/centers - the biomedical analogue of yale-reu-programs on distinct host domains. Cites each program's own official Yale page; Yale-owned health-sciences listing pages are crawl seeds only and are never cited. The two already-covered WHR/YCMD seed URLs owned by yale-college-fellowships-office are excluded so a program is never minted twice. Emits SUMMER_RESEARCH_PROGRAM records; fails closed on contact and on non-Yale source URLs.",
     baseUrl: 'https://medicine.yale.edu',
     defaultWeight: 0.9,
     cadence: 'daily-during-cycle',

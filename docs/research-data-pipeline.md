@@ -187,6 +187,15 @@ It honors `manuallyLockedFields`, never overwrites an existing school or `school
 It fails closed on every other outcome (locked, an existing school facet, ambiguous or missing lead, no department, or a department that does not canonicalize to an `OrgUnit` with a parent school), so a wrong school is never guessed.
 This closes the "grant-derived shells have no school" gap on the same engine pass that closes the description gap, and stays correct on re-runs.
 
+### Faculty-research-area profile research synthesis
+
+A `FACULTY_RESEARCH_AREA` usually has no lab site, so its only source is the professor's official Yale profile page, which states the research but interleaves it with credentials, so no contiguous verbatim span carries it and extraction can only copy the biography.
+`research-entity:fra-profile-synthesis` (`server/src/scripts/fraProfileSynthesis.ts`, pure logic in `fraProfileSynthesisCore.ts`, per-entity DB step in `fraProfileSynthesisLane.ts`) serves that cohort: for unlocked, non-archived `FACULTY_RESEARCH_AREA` entities whose stored description is bio-shaped and which have a profile source URL, it harvests the page's research sentences, drops career, credential, and navigation sentences, and reuses the same grounded coverage synthesizer the grant-corpus lane uses.
+The output is written as an `fra-profile-research-synthesis` observation at `FRA_PROFILE_SYNTHESIS_CONFIDENCE` (0.48), above the grant-corpus lane because a professor's own profile is the better authority on their research and below official-profile extraction so a genuine verbatim research statement still wins, and the lane fails closed when the output is not grounded, still reads as a person biography, keeps a dangling pronoun subject, or no longer clears the description-quality bar.
+Confidence alone cannot displace the biography, since official-profile extraction re-emits it weekly at a higher weight, so `confidenceResolver` sorts bio-shaped `fullDescription` groups last once this lane has recorded a useful non-bio value for the entity; the bio is demoted rather than dropped, so an entity with only a bio still serves it.
+The lane is dry-run-first, bounded by `--limit`, needs `OPENAI_API_KEY`, and apply is Development-only and requires `--confirm-fra-profile-synthesis`; the source must be seeded first (`scrape:seed-sources`).
+The rest of the contract, including the measurement harness and the traps this lane already paid for, lives in [`skills/scrapers/SKILL.md`](../skills/scrapers/SKILL.md).
+
 ### One serve-time description sanitizer
 
 Every HTTP path that serves research-entity copy runs one canonical function, `sanitizeServedResearchEntityCopyFields` in `server/src/utils/researchEntityDescriptionText.ts`.
