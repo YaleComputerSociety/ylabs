@@ -1263,6 +1263,46 @@ export function isFullDescriptionRestatementOfShortDescription(
   return false;
 }
 
+/**
+ * `isFullDescriptionRestatementOfShortDescription` answers "was one of these
+ * derived from the other", because the short IS derived from the full via
+ * `resolveMaterializedShortDescription`, so heavy token overlap is evidence of
+ * correct derivation rather than redundancy. Its sub-260-char Jaccard branch
+ * therefore also fires when the full carries a whole extra proposition, and
+ * the caller that suppresses on a true verdict then deletes the source and
+ * keeps the lossy derivative.
+ *
+ * This distinguishes the two cases by proposition rather than by length: a
+ * sentence the short does not represent means the full genuinely adds
+ * something, whereas a reworded single sentence does not. Length alone cannot
+ * separate them - a +78 addition and a +21 paraphrase sit either side of a
+ * +29 case that does add content.
+ */
+const SUBSTANTIVE_SENTENCE_MIN_TOKENS = 4;
+const NOVEL_SENTENCE_TOKEN_RATIO = 0.5;
+
+export function fullDescriptionAddsPropositionBeyondShort(
+  fullValue: unknown,
+  shortValue: unknown,
+): boolean {
+  const full = textValue(fullValue);
+  const short = textValue(shortValue);
+  if (!full || !short) return false;
+
+  const shortTokens = restatementTokenSet(normalizeForRestatementComparison(short));
+  if (shortTokens.size === 0) return false;
+
+  return sentenceList(full).some((sentence) => {
+    const sentenceTokens = restatementTokenSet(normalizeForRestatementComparison(sentence));
+    if (sentenceTokens.size < SUBSTANTIVE_SENTENCE_MIN_TOKENS) return false;
+    let novel = 0;
+    for (const token of sentenceTokens) {
+      if (!shortTokens.has(token)) novel += 1;
+    }
+    return novel / sentenceTokens.size >= NOVEL_SENTENCE_TOKEN_RATIO;
+  });
+}
+
 export function shortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
