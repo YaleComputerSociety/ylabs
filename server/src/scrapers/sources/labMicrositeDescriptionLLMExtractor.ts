@@ -53,6 +53,16 @@ import {
 import { DESCRIPTION_EXTRACTION_PROMPT, DESCRIPTION_EXTRACTION_PROMPT_HASH } from '../prompts';
 import { groundMethods } from '../utils/methodGrounding';
 import {
+  isPersonCmsProfileUrl,
+  isPersonProfileOrDirectoryUrl,
+} from '../../utils/researchHomeWebsiteUrl';
+import {
+  claimsAnotherPersonsLab,
+  entityKeyPersonTokens,
+  isPersonScopedResearchEntity,
+  isUmbrellaOrganizationName,
+} from '../../utils/researchHomeNameIdentityAuthority';
+import {
   computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
@@ -637,7 +647,13 @@ export function groundDescriptionExtraction(
 
 export function descriptionExtractionToObservations(
   extraction: DescriptionExtraction,
-  context: { entityId?: string; entityKey?: string; sourceUrl: string },
+  context: {
+    entityId?: string;
+    entityKey?: string;
+    sourceUrl: string;
+    entityType?: string;
+    kind?: string;
+  },
 ): ObservationInput[] {
   if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
   const fullDescription = normalizeKnownDescriptionAcronyms(
@@ -658,7 +674,7 @@ export function descriptionExtractionToObservations(
     entityId: context.entityId,
     entityKey: context.entityKey,
     sourceUrl: context.sourceUrl,
-    confidenceOverride: /\/profile\//i.test(context.sourceUrl) ? 0.55 : 0.82,
+    confidenceOverride: isPersonProfileOrDirectoryUrl(context.sourceUrl) ? 0.55 : 0.82,
   };
   const observations: ObservationInput[] = [
     { ...base, field: 'fullDescription', value: fullDescription },
@@ -675,13 +691,34 @@ export function descriptionExtractionToObservations(
   if (methods.length) observations.push({ ...base, field: 'methods', value: methods });
 
   const labName = usefulLabName(extraction.name);
-  const isProfileSource = /\/profile\//i.test(context.sourceUrl);
-  if (labName && !isProfileSource) {
+  if (labName && nameCarriesIdentityAuthority(labName, context)) {
     const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
     observations.push({ ...nameBase, field: 'name', value: labName });
     observations.push({ ...nameBase, field: 'displayName', value: labName });
   }
   return observations;
+}
+
+/**
+ * Certainty that the extractor read a name off a page is not authority to make
+ * that name an entity's identity. A page belonging to an umbrella organization
+ * or to another person's lab names that other thing, so neither may become a
+ * person-scoped entity's identity no matter how cleanly it was extracted
+ * (issue #2234). Judging the name rather than only the URL is what makes this
+ * hold for a directory shape nobody has enumerated yet.
+ */
+function nameCarriesIdentityAuthority(
+  labName: string,
+  context: { sourceUrl: string; entityKey?: string; entityType?: string; kind?: string },
+): boolean {
+  if (isPersonCmsProfileUrl(context.sourceUrl)) return false;
+  if (!isPersonScopedResearchEntity(context)) return true;
+  if (isUmbrellaOrganizationName(labName)) return false;
+  return !claimsAnotherPersonsLab({
+    harvestedName: labName,
+    websiteUrl: context.sourceUrl,
+    identityTokens: entityKeyPersonTokens(context.entityKey),
+  });
 }
 
 async function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
@@ -1196,6 +1233,8 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
           sourceUrl: page.url,
+          entityType: lab.entityType,
+          kind: lab.kind,
         };
 
         let observations: ObservationInput[] = officialProse?.fullDescription
