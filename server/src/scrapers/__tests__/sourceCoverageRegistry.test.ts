@@ -118,9 +118,10 @@ describe('sourceCoverageRegistry', () => {
     expect(coverage?.tier).toBe('PRIMARY_OFFICIAL');
     expect(coverage?.defaultConfidence).toBe('HIGH');
     expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining(['ResearchEntity', 'EntryPathway', 'AccessSignal', 'ContactRoute']),
+      expect.arrayContaining(['Fellowship', 'EntryPathway', 'AccessSignal', 'ContactRoute']),
     );
     expect(coverage?.artifactTypes).not.toContain('PostedOpportunity');
+    expect(coverage?.artifactTypes).not.toContain('ResearchEntity');
     expect(coverage?.evidenceCategories).toEqual(
       expect.arrayContaining([
         'JOIN_INSTRUCTIONS',

@@ -4,6 +4,15 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-28: `department-undergrad-research` Is A `/programs` Evidence Source, And One Dead Page No Longer Aborts It
+
+The Physics undergraduate-research page (`physics.yale.edu/academics/undergraduate-studies/undergraduate-research`) now returns 404, so it was retired from `DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES` (#2171).
+It was the only configured page using the per-faculty `physics-project-list` parser, so every remaining configured page emits program records and this source no longer produces a `ResearchEntity`: its `sourceCoverageRegistry` declaration now reads `Fellowship` where it read `ResearchEntity`, which is what `seedSources` writes onto the `Source` row and what source health surfaces to admins as `expectedArtifactTypes`, so existing environments need a `scrape:seed-sources` apply to pick the change up.
+This amends the 2026-08-26 decision below, which recorded that parser as a live `LAB` producer; the parser itself is kept and tested, so pointing a future live department project-list page at it stays a config change.
+Already-materialized physics-derived `LAB` entities still cite the dead URL and are deliberately left alone here; retiring them is a separate guarded data operation.
+A page whose fetch or parse fails is now skipped instead of aborting the whole source run, so one dead department site cannot cost the other pages their evidence.
+To keep that resilience from being silent, every page attempt is recorded as a `fetchMetrics` attempt (failed attempts carry the HTTP status where the fetcher exposes one, and a parse failure is recorded as a selector breakage) and the run still throws when every attempted page fails, so a site-wide restructure keeps `status: 'failure'` and `risk: 'error'` instead of a green run with zero output.
+
 ## 2026-08-28: Archive Residual `PROGRAM` Research Entities And Guard The Materializer
 
 A first force-llm development run surfaced 12 `research_entities` carrying the retired `entityType='PROGRAM'` (all `center-macmillan-*`/Jackson center sub-programs), residue that re-entered through the materializer's no-validator `updateOne`/create path after the 2026-08-26 retirement below.
@@ -69,7 +78,7 @@ Two populations motivated the change: generic department "undergraduate research
 All of them move to `/programs` uniformly rather than being re-typed, so the corpus carries no `PROGRAM` entity and no cross-surface duplicate.
 
 Removed: the `PROGRAM` value from `researchEntityTypes` and the `researchGroupKinds.program` to entity-type mapping (the `program` group kind now derives to `INITIATIVE`).
-The `departmentUndergradResearchScraper` program parsers now emit `entityType: 'fellowship'` observations that materialize into `Fellowship` records; its per-faculty physics parser still emits `LAB` research entities.
+The `departmentUndergradResearchScraper` program parsers now emit `entityType: 'fellowship'` observations that materialize into `Fellowship` records; its per-faculty physics parser still emits `LAB` research entities (no longer true in production as of the 2026-08-28 decision above, which retired the only page configured for that parser).
 The name-keyword classifiers in `yaleResearchOfficialScraper` and `officialProfilePiBackfillScraper` no longer map a `"...Program"` name to `PROGRAM`; a genuine research structure named "Program" now classifies as `INITIATIVE` and stays in `/research`.
 Existing `PROGRAM` entities were migrated by the guarded `programs:migrate-program-entities-to-fellowships` data operation, which mints a deduped `Fellowship` per entity, runs the program visibility gate, and hard-deletes the `ResearchEntity` plus its Meilisearch document, `Signal` rows, and `RoleAssignment` edges.
 `researchPlanTargetKinds`'s `'PROGRAM'` is a research-plan target kind for saving a program and is unrelated to the removed entity type; it is unchanged.

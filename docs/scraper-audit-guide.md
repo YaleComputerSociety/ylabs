@@ -293,10 +293,10 @@ SCRAPER_ENV=development \
 
 Expected collections after an accepted materialized write:
 
-- `observations`: department-backed research entity, access evidence, contact, and application-route fields.
-- `research_entities`: per-faculty `LAB` research homes discovered from official department pages.
+- `observations`: department-backed program identity, access evidence, contact, and application-route fields.
 - `fellowships`: program records from these pages materialize onto `/programs` as `Fellowship` records, not `PROGRAM` research entities (that entity type no longer exists).
 - access `signals` through access materialization.
+- no `research_entities`: no configured page uses the per-faculty `physics-project-list` parser, so this source no longer mints `LAB` research homes.
 
 Audit focus:
 
@@ -304,11 +304,13 @@ Audit focus:
 - Treat department pages as evidence, not final claims that a lab is accepting students.
 - Generic department guidance should remain exploratory access evidence, not an overstated opening.
 - Direct contact details are never surfaced; contact is a derived official-profile link-out.
+- A single dead department page is skipped rather than aborting the run, and each skip is recorded as a failed attempt in the run's `fetchMetrics`, so check the report's fetch coverage for `failed` and `selectorBreakages` before accepting a run.
+- The run still fails outright when every attempted page fails, so a site-wide restructure stays loud in source health.
 
 Project impact:
 
 - Adds official, deterministic undergraduate research routes before any broad LLM or worker automation.
-- Current deterministic coverage includes Physics, Chemistry, MCDB, Economics, Psychology, Astronomy, Mathematics, Engineering, Cognitive Science, Ecology and Evolutionary Biology, Yale College Science and Quantitative Reasoning Education, Anthropology, Earth and Planetary Sciences, Political Science, and History.
+- The authoritative list of covered department pages is `DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES` in `server/src/scrapers/sources/departmentUndergradResearchScraper.ts`; audit by page key (`--only <key>`) rather than against a copied department list.
 
 ### `undergrad-fellowships-recipients`
 

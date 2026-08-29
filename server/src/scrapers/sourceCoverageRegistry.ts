@@ -152,13 +152,7 @@ export const sourceCoverageRegistry = {
   'department-undergrad-research': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: [
-      'ResearchEntity',
-      'EntryPathway',
-      'AccessSignal',
-      'ContactRoute',
-      'Observation',
-    ],
+    artifactTypes: ['Fellowship', 'EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'TOPICS',
@@ -172,7 +166,7 @@ export const sourceCoverageRegistry = {
     ],
     defaultConfidence: 'HIGH',
     notes:
-      'Official department undergraduate research pages; can support source-backed research homes and access/action evidence, but generic guidance must not create posted opportunities.',
+      'Official department undergraduate research pages; every configured page materializes program records onto /programs as Fellowship records plus access/action evidence, and generic guidance must not create posted opportunities.',
   },
   'course-based-research-pathways': {
     priority: 3,
