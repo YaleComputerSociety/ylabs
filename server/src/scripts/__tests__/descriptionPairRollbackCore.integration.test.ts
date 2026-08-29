@@ -16,6 +16,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
   return { ...actual, recomputeBrowseRankForEntities: vi.fn().mockResolvedValue(undefined) };
 });
 
+import { getResearchGroupBySlug } from '../../controllers/researchGroupController';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../../scrapers/entityMaterializer';
@@ -87,6 +88,40 @@ const activeDescriptionRows = async () =>
 const rematerializeUntilStable = async () => {
   await materializeEntity('researchEntity', { entityKey: SLUG });
   await materializeEntity('researchEntity', { entityKey: SLUG });
+};
+
+/**
+ * The student-facing detail endpoint, which is where an emptied `fullDescription`
+ * actually costs a reader the page: the live serve gate refuses a record with no
+ * useful full description and the route answers 404 while the stored tier still
+ * reads `student_ready`.
+ */
+const servedDetailPage = async (): Promise<{ status: number; description?: string }> => {
+  let status = 200;
+  let body: any = null;
+  const response: any = {
+    status(code: number) {
+      status = code;
+      return response;
+    },
+    json(payload: unknown) {
+      body = payload;
+      return response;
+    },
+    redirect(code: number) {
+      status = code;
+      return response;
+    },
+  };
+  await getResearchGroupBySlug(
+    { params: { slug: SLUG }, baseUrl: '/api/research' } as any,
+    response,
+  );
+  return {
+    status,
+    description:
+      body?.researchEntity?.fullDescription || body?.researchEntity?.shortDescription || undefined,
+  };
 };
 
 describe('description-pair rollback driven through the live materializer', () => {
@@ -168,6 +203,7 @@ describe('description-pair rollback driven through the live materializer', () =>
     expect(seeded.fullDescription).toBe(SYNTHESIZED_FULL);
     expect(seeded.shortDescription).toBe(SHORT_DERIVED_FROM_SYNTHESIZED_FULL);
     expect(describeDescriptionPairRisk(seeded)).toBeNull();
+    expect(await servedDetailPage()).toEqual({ status: 200, description: SYNTHESIZED_FULL });
     return seeded;
   };
 
@@ -204,6 +240,9 @@ describe('description-pair rollback driven through the live materializer', () =>
     expect(persisted.shortDescription).toBe(SHORT_DERIVED_FROM_SYNTHESIZED_FULL);
     expect(persisted.studentVisibilityTier).toBe('student_ready');
     expect(describeDescriptionPairRisk(persisted)).toBe('empty-full-description');
+    // The cost of the field-scoped rollback, at the surface a student touches: the
+    // detail page is gone, while the stored tier still says the record is ready.
+    expect(await servedDetailPage()).toEqual({ status: 404, description: undefined });
   });
 
   it('restores served prose when the coupled pair is rolled back together', async () => {
@@ -236,6 +275,7 @@ describe('description-pair rollback driven through the live materializer', () =>
     const afterSupersedeOnly = await loadPersisted();
     expect(afterSupersedeOnly.fullDescription).toBe('');
     expect(describeDescriptionPairRisk(afterSupersedeOnly)).toBe('empty-full-description');
+    expect((await servedDetailPage()).status).toBe(404);
 
     await ResearchEntity.updateOne(
       { slug: SLUG },
@@ -256,6 +296,10 @@ describe('description-pair rollback driven through the live materializer', () =>
     // serviceable. Comparing the raw stored short here reported `full-restates-short`
     // on a record the materializer serves stably across passes.
     expect(describeDescriptionPairRisk(stable)).toBeNull();
+    // The rollback is only finished when the page a student loads exists again.
+    const served = await servedDetailPage();
+    expect(served.status).toBe(200);
+    expect(served.description).toBeTruthy();
   });
 
   it('blanks the record again when the prior pair is restored, and reports it in advance', async () => {
@@ -300,6 +344,7 @@ describe('description-pair rollback driven through the live materializer', () =>
     expect(persisted.fullDescription).toBe('');
     expect(persisted.shortDescription).toBe(SHORT_DERIVED_FROM_SYNTHESIZED_FULL);
     expect(describeDescriptionPairRisk(persisted)).toBe('empty-full-description');
+    expect((await servedDetailPage()).status).toBe(404);
   });
 
   it('supersedes description rows filed under entityId as well as entityKey', async () => {
@@ -375,5 +420,6 @@ describe('description-pair rollback driven through the live materializer', () =>
     expect(second.shortDescription).toBe(first.shortDescription);
     expect(second.shortDescription).not.toBe('');
     expect(describeDescriptionPairRisk(second)).toBeNull();
+    expect((await servedDetailPage()).status).toBe(200);
   });
 });

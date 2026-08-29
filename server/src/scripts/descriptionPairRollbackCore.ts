@@ -189,7 +189,9 @@ export function planDescriptionPairRollback(input: {
 }
 
 export type DescriptionPairRisk =
-  'empty-full-description' | 'full-restates-short' | 'full-description-not-useful';
+  | 'empty-full-description'
+  | 'full-restates-short'
+  | 'full-description-not-useful';
 
 /**
  * The post-rollback assertion. A rollback is only complete when the entity serves

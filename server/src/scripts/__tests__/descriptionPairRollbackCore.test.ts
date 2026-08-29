@@ -271,7 +271,10 @@ describe('describeDescriptionPairRisk', () => {
         fullDescription: full,
         shortDescription: short,
         fieldProvenance: {
-          fullDescription: { sourceName: 'lab-microsite-undergrad-llm', sourceUrl: 'https://x.edu/h/' },
+          fullDescription: {
+            sourceName: 'lab-microsite-undergrad-llm',
+            sourceUrl: 'https://x.edu/h/',
+          },
           shortDescription: {
             sourceName: 'fra-profile-research-synthesis',
             sourceUrl: 'https://x.edu/fra/card/h',
