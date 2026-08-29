@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
+import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
 import {
   DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
@@ -11,9 +12,11 @@ import {
   RESEARCH_SWEEP_SOURCES,
   buildDevelopmentPostRunStages,
   buildFellowshipPostRunStages,
+  buildPruneDeadObservationsChildArgs,
   buildScraperSweepChildArgs,
   fellowshipCatalogRefreshBlocker,
   fellowshipPostRunArtifactError,
+  isDeadObservationPruneSweepMode,
   orderedScraperSweepPhases,
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
@@ -808,6 +811,7 @@ describe('runScraperSweep', () => {
       dedupeResearchers: true,
       autoMergeEponymousFra: true,
       mergeUrlIdentityDuplicates: true,
+      pruneDeadObservations: true,
       sinceIso: '2026-08-26T00:00:00.000Z',
     }).map((stage) => stage.name);
     expect(withOptional).toEqual(registryNames);
@@ -863,6 +867,118 @@ describe('runScraperSweep', () => {
       profileLinksAppended: 5,
     });
     expect(() => parseResearcherDedupeResult({})).toThrow(/missing byReason/);
+  });
+
+  it('parses the resume, force-llm, and between-phases prune flags off by default', () => {
+    const base = parseScraperSweepArgs([
+      '--mode=development-full',
+      '--confirm-development-full-sweep',
+    ]);
+    expect(base.restart).toBeUndefined();
+    expect(base.forceLlm).toBeUndefined();
+    expect(base.pruneBetweenPhases).toBeUndefined();
+    const withFlags = parseScraperSweepArgs([
+      '--mode=development-full',
+      '--confirm-development-full-sweep',
+      '--restart',
+      '--force-llm',
+      '--prune-between-phases',
+    ]);
+    expect(withFlags.restart).toBe(true);
+    expect(withFlags.forceLlm).toBe(true);
+    expect(withFlags.pruneBetweenPhases).toBe(true);
+  });
+
+  it('threads --force-llm into the per-source child args only when set', () => {
+    expect(
+      buildScraperSweepChildArgs('development-full', 'yale-directory', '/tmp/yale-directory.json'),
+    ).not.toContain('--force-llm');
+    const forced = buildScraperSweepChildArgs(
+      'development-full',
+      'yale-directory',
+      '/tmp/yale-directory.json',
+      { forceLlm: true },
+    );
+    expect(forced).toContain('--force-llm');
+    expect(forced.indexOf('--force-llm')).toBeLessThan(forced.indexOf('--output'));
+  });
+
+  it('hands the scraper CLI a child arg vector it accepts, with force-llm reaching its options', () => {
+    const scraperProcessArgv = (options: { forceLlm?: boolean }): string[] => {
+      const childArgs = buildScraperSweepChildArgs(
+        'development-full',
+        'yale-directory',
+        path.join(os.tmpdir(), 'yale-directory.json'),
+        options,
+      );
+      return ['node', 'cli.ts', ...childArgs.slice(childArgs.indexOf('scrape') + 1)];
+    };
+
+    const forced = parseArgs(scraperProcessArgv({ forceLlm: true }));
+    expect(forced.command).toBe('run');
+    expect(parseScraperOptions(forced.flags).forceLlm).toBe(true);
+
+    const plain = parseArgs(scraperProcessArgv({}));
+    expect(parseScraperOptions(plain.flags).forceLlm).toBe(false);
+    expect(parseScraperOptions(plain.flags).exhaustive).toBe(true);
+  });
+
+  it('builds the gated dead-observation prune child command', () => {
+    expect(buildPruneDeadObservationsChildArgs('/tmp/development-sweep/prune.json')).toEqual([
+      '--cwd',
+      'server',
+      'observations:prune-dead',
+      '--apply',
+      '--confirm-prune-dead-observations',
+      '--output',
+      '/tmp/development-sweep/prune.json',
+    ]);
+  });
+
+  it('omits the dead-data-prune post-run stage by default and appends it last when enabled', () => {
+    expect(
+      buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
+    ).not.toContain('dead-data-prune');
+    const enabled = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      pruneDeadObservations: true,
+    });
+    expect(enabled.map((stage) => stage.name).at(-1)).toBe('dead-data-prune');
+    expect(enabled.find((stage) => stage.name === 'dead-data-prune')?.args).toEqual(
+      expect.arrayContaining([
+        'observations:prune-dead',
+        '--apply',
+        '--confirm-prune-dead-observations',
+      ]),
+    );
+  });
+
+  it('only allows the dead-observation prune on Development-database sweep modes', () => {
+    expect(isDeadObservationPruneSweepMode('development-full')).toBe(true);
+    expect(isDeadObservationPruneSweepMode('development-incremental')).toBe(true);
+    expect(isDeadObservationPruneSweepMode('fellowship-development-full')).toBe(true);
+    expect(isDeadObservationPruneSweepMode('development-plan')).toBe(false);
+    expect(isDeadObservationPruneSweepMode('development-sample')).toBe(false);
+    expect(isDeadObservationPruneSweepMode('beta-plan')).toBe(false);
+    expect(isDeadObservationPruneSweepMode('beta-fetch')).toBe(false);
+  });
+
+  it('omits the fellowship dead-data-prune stage by default and appends it last when enabled', () => {
+    expect(
+      buildFellowshipPostRunStages('/tmp/fellowship-sweep').map((stage) => stage.name),
+    ).not.toContain('dead-data-prune');
+    const enabled = buildFellowshipPostRunStages('/tmp/fellowship-sweep', {
+      pruneDeadObservations: true,
+    });
+    expect(enabled.map((stage) => stage.name).at(-1)).toBe('dead-data-prune');
+    const prune = enabled.find((stage) => stage.name === 'dead-data-prune');
+    expect(prune?.args).toEqual(
+      expect.arrayContaining([
+        'observations:prune-dead',
+        '--apply',
+        '--confirm-prune-dead-observations',
+        '--output=/tmp/fellowship-sweep/fellowship-dead-data-prune.json',
+      ]),
+    );
   });
 
   it('reads a stage result artifact and fails loud on a missing or invalid file', () => {

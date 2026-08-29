@@ -63,6 +63,32 @@ The sweep modes fix the environment, database, write posture, and confirmation f
 Development modes require a local Meilisearch host and an empty `MEILISEARCH_INDEX_PREFIX`; the sweep refuses a non-local Development Meili target.
 Beta modes fetch observations into the `Beta` database and emit per-source `betaRenderCommands` (dry-run materialize plan plus apply) so the Beta Render service materializes the recorded run ID; local Beta runs never materialize.
 
+#### Checkpoint, resume, and structured logging
+
+The sweep is resumable and observable so a long run that dies mid-way does not restart from scratch (issue #2182).
+Every step - each source step and each post-run stage - is tracked in a durable checkpoint JSON at `<os.tmpdir>/ylabs-sweep-checkpoint-<mode>-<worktree-fingerprint>.json`, written atomically (temp file plus rename) after every `pending -> running -> done|failed` transition with the step's exit code and timestamps.
+The checkpoint key includes a fingerprint of the repository root, so two worktrees running the same mode at the same time never share or clobber one checkpoint.
+A normal invocation resumes automatically: if a checkpoint for the same mode exists it reuses that run's output directory, skips every step already marked `done`, and re-runs anything not `done` (failed, interrupted, or never started); resume granularity is per step, so an interrupted source re-runs whole.
+Three conditions deliberately refuse or narrow a resume, because a checkpoint alone is not enough evidence that a step's work is still valid:
+
+- The checkpoint records the invocation's behavior-changing flag set (`--force-llm`, `--prune-between-phases`). Only a checkpoint whose recorded flag set matches this invocation is a resume candidate; a re-invocation with a different flag set starts fresh instead of inheriting `done` steps that were produced under different semantics, and its fresh checkpoint replaces the old one at the same path.
+- The checkpoint records its owner pid. On a resume candidate, if a step is still `running` and that pid is alive, the sweep refuses to start rather than interleaving two writers against one checkpoint; use `--restart` to abandon a checkpoint whose owner is truly gone. The flag-set comparison happens first, so this guard does not cover a re-invocation that changes the flag set: never re-invoke a live sweep's mode with a different flag set, because that path replaces the running sweep's checkpoint instead of refusing.
+- Post-run stages are whole-database aggregate stages, not per-source work. If any source step is not `done` in the checkpoint, every `stage:` entry is cleared at plan time so the entire post-run chain (faculty projection, visibility gate, search rebuild, and the rest) re-runs over the newly written data, rather than a resumed sweep reporting green with a re-fetched source missing from the projections or the search index. The decision reads the checkpoint only: a source that is `done` but re-runs later because its artifact turned out to be missing or invalid does not itself invalidate the stages, so pass `--restart` when resuming a run whose output directory may have been partially cleaned up.
+
+A step marked `done` whose declared result or artifact is missing, unreadable, or invalid is treated as not done and re-run, so the resume path keeps the same fail-loud artifact contract as a fresh run (#2050) instead of reporting an empty delta as success.
+`--restart` wipes the checkpoint and starts a fresh run.
+A fully successful sweep (no failures, nothing not-run, post-run not failed) clears its checkpoint so the next plain invocation starts fresh rather than resuming a completed run.
+Alongside `summary.json` the sweep writes, into the same output directory, a `runner.log` (a timestamped step-start/done/fail timeline), an `errors.log` (each failure with its step id, exit code, and the tail of that step's captured output), and per-step `.log` files capturing each child's output.
+`errors.log` reads a bounded tail from the end of a step log (never the whole file, which can reach hundreds of megabytes on an exhaustive run) and passes every captured line through `sanitizeLogValue`, so scraped contact data and connection credentials never land in the file operators are told to read and share.
+Because every child's stdout and stderr now redirect into its own step log, child output no longer streams to the sweep's terminal: the parent prints one header line per step (per-source headers include the log path) and the rest lands in the log file, so `tail -f` that path to watch a step in flight.
+
+#### `--force-llm` and mid-run storage headroom
+
+`--force-llm` (off by default) threads `--force-llm` into every per-source `scrape run` child, re-running paid LLM extraction even when a page's content hash is unchanged; use it for a full re-derivation pass.
+`--prune-between-phases` (off by default) runs the gated dead-observation prune (`observations:prune-dead`) between phases and adds a final `dead-data-prune` post-run stage to both engines' chains, so a `--force-llm` run can hold storage headroom without a separate watchdog process.
+Both the between-phases hook and the final stage are restricted to the Development-database write modes (`development-full`, `development-incremental`, `fellowship-development-full`), matching the rest of the post-run chain: a Beta or Prod sweep never deletes mid-run, because in `beta-fetch` materialization is deferred to the Beta Render service and nothing has consumed the run yet.
+The between-phases prune is best-effort: a prune failure is logged to `errors.log` and does not stop the sweep.
+
 The two exhaustive Development modes (`development-full`, `development-incremental`) run a fixed chain of post-run stages after every source has fetched and materialized:
 
 1. `faculty-projection` (`research-entity:project-faculty`, `--concurrency 12`)
@@ -76,6 +102,7 @@ The two exhaustive Development modes (`development-full`, `development-increment
 9. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
 10. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
 11. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+12. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 The `researcher-dedupe`, `eponymous-fra-merge`, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. The `url-identity-dedupe` stage is opt-in and stays off unless `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set to a truthy value, so a routine sweep never silently merges by shared profile URL. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
 
@@ -93,6 +120,7 @@ The `fellowship-development-full` mode runs the fellowship engine's own post-run
 7. `catalog-refresh` (`fellowships:refresh`, opt-in and off by default)
 8. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
 9. `freshness-audit` (`programs:audit-freshness`, report-only)
+10. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Each backfill applies with the script's own confirm flag (production writes are blocked by each script's own apply guard, so the Development mode is safe), and the two audits run report-only.
 Every stage that takes an `--output` path is held to a report contract: a stage that exits successfully without a readable, valid JSON report at the path recorded in `summary.json` fails loud, and a stage that writes no report records no `artifactPath` at all.
@@ -382,3 +410,11 @@ Rollback drills are dry-run-only until an operator approves production action:
 
 Compact observation retention must preserve every source observation referenced by an undergraduate logistics claim.
 Follow the reviewed dry-run-first retention procedure in `docs/scraper-deployment-runbook.md`; the exact source observations remain the audit backbone for student-facing logistics claims and claim-local rollback.
+
+`observations:prune-dead` (`server/src/scripts/pruneDeadObservations.ts`) is the committed, gated dead-data prune used for mid-run and on-demand storage reclamation.
+It deletes observations that are both superseded and unreferenced regardless of age, reusing the same `observationRetention.ts` primitives (`buildSupersededObservationPruneFilter` with `cutoff = now`, plus `buildObservationReferencePipeline` over `OBSERVATION_REFERENCE_SPECS` to protect every referenced observation id), and can optionally drop the `scrape_snapshots` fetch cache with `--drop-snapshot-cache`.
+Dropping the age floor does not drop run retention: the dead prune keeps the last 3 runs per source (`keepRuns`, same default as the compact prune) so the immediately preceding run's superseded observations survive.
+Those predecessors are exactly what `undergraduate-logistics-rollback` restores, and `OBSERVATION_REFERENCE_SPECS` protects only the newer target of `supersededBy`, so without run retention a single prune would silently destroy claim-local rollback for the last run.
+`--keep-runs=<n>` overrides the default, and `--keep-runs=0` explicitly forfeits claim-local rollback for every source; only pass it when rollback for the retained window is no longer needed.
+It is dry-run first; `--apply` requires `--confirm-prune-dead-observations` and routes through the shared `applyObservationPruneEnvironmentGuards`, so it enforces `SCRAPER_ENV`/Mongo-target coherence, downgrades to dry-run outside production without `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and is unconditionally blocked when the resolved environment is production, independent of how the database happens to be named.
+The sweep runs it between phases and as the final `dead-data-prune` post-run stage of both engines, only when invoked with `--prune-between-phases` on a Development-database write mode.

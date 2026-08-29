@@ -132,7 +132,66 @@ export async function pruneSupersededObservations(
   };
 }
 
-async function findReferencedObservationIds(): Promise<unknown[]> {
+export const DEFAULT_DEAD_OBSERVATION_KEEP_RUNS = 3;
+
+export interface DeadObservationPruneOptions {
+  now?: Date;
+  keepRuns?: number;
+  sourceName?: string;
+  apply?: boolean;
+}
+
+export interface DeadObservationPruneResult {
+  apply: boolean;
+  eligibleCandidates: number;
+  protectedCandidates: number;
+  candidates: number;
+  deleted: number;
+  cutoff: string;
+  keepRuns: number;
+  retainedRuns: number;
+  sourceName?: string;
+}
+
+export async function pruneDeadObservations(
+  options: DeadObservationPruneOptions = {},
+): Promise<DeadObservationPruneResult> {
+  const now = options.now || new Date();
+  const keepRuns = nonNegativeInteger(
+    options.keepRuns ?? DEFAULT_DEAD_OBSERVATION_KEEP_RUNS,
+    'keepRuns',
+  );
+  const keptRunIds = await findKeptRunIds({ sourceName: options.sourceName, keepRuns });
+  const eligibleFilter = buildSupersededObservationPruneFilter({
+    cutoff: now,
+    sourceName: options.sourceName,
+    keepRunIds: keptRunIds,
+  });
+  const eligibleCandidates = await Observation.countDocuments(eligibleFilter);
+  const protectedObservationIds = await findReferencedObservationIds();
+  const filter = buildSupersededObservationPruneFilter({
+    cutoff: now,
+    sourceName: options.sourceName,
+    keepRunIds: keptRunIds,
+    protectedObservationIds,
+  });
+  const candidates = await Observation.countDocuments(filter);
+  const deleted = options.apply ? (await Observation.deleteMany(filter)).deletedCount || 0 : 0;
+
+  return {
+    apply: Boolean(options.apply),
+    eligibleCandidates,
+    protectedCandidates: Math.max(0, eligibleCandidates - candidates),
+    candidates,
+    deleted,
+    cutoff: now.toISOString(),
+    keepRuns,
+    retainedRuns: keptRunIds.length,
+    sourceName: options.sourceName,
+  };
+}
+
+export async function findReferencedObservationIds(): Promise<unknown[]> {
   const referencedIds = new Map<string, unknown>();
   for (const spec of OBSERVATION_REFERENCE_SPECS) {
     const rows = await Observation.db

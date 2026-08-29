@@ -5,6 +5,7 @@ import {
   OBSERVATION_REFERENCE_SPECS,
   buildObservationReferencePipeline,
   buildSupersededObservationPruneFilter,
+  pruneDeadObservations,
   pruneSupersededObservations,
 } from '../observationRetention';
 
@@ -181,6 +182,92 @@ describe('observation retention', () => {
       protectedCandidates: 1,
       candidates: 4,
       deleted: 4,
+    });
+  });
+
+  describe('dead-observation prune (superseded and unreferenced, any age)', () => {
+    it('targets every superseded observation up to now while protecting referenced ids and the last runs per source', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([
+        { _id: 'openalex', runIds: ['run-c', 'run-b', 'run-a'] },
+      ] as any);
+      mockReferencedObservationRows([{ _id: 'referenced-observation' }]);
+      vi.spyOn(Observation, 'countDocuments')
+        .mockResolvedValueOnce(10 as any)
+        .mockResolvedValueOnce(9 as any);
+      const deleteMany = vi
+        .spyOn(Observation, 'deleteMany')
+        .mockResolvedValue({ deletedCount: 9 } as any);
+
+      const result = await pruneDeadObservations({ now: NOW, apply: true });
+
+      expect(deleteMany).toHaveBeenCalledWith({
+        superseded: true,
+        observedAt: { $lt: NOW },
+        scrapeRunId: { $nin: ['run-c', 'run-b', 'run-a'] },
+        _id: { $nin: ['referenced-observation'] },
+      });
+      expect(result).toEqual({
+        apply: true,
+        eligibleCandidates: 10,
+        protectedCandidates: 1,
+        candidates: 9,
+        deleted: 9,
+        cutoff: NOW.toISOString(),
+        keepRuns: 3,
+        retainedRuns: 3,
+        sourceName: undefined,
+      });
+    });
+
+    it('keeps the rollback predecessor set by retaining the last runs per source by default', async () => {
+      const aggregate = vi
+        .spyOn(ScrapeRun, 'aggregate')
+        .mockResolvedValue([
+          { _id: 'openalex', runIds: ['newest-run', 'previous-run', 'older-run'] },
+        ] as any);
+      mockReferencedObservationRows();
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(4 as any);
+      const deleteMany = vi
+        .spyOn(Observation, 'deleteMany')
+        .mockResolvedValue({ deletedCount: 4 } as any);
+
+      await pruneDeadObservations({ now: NOW, apply: true });
+
+      expect(aggregate).toHaveBeenCalled();
+      const filter = deleteMany.mock.calls[0]?.[0] as Record<string, any>;
+      expect(filter.scrapeRunId).toEqual({
+        $nin: ['newest-run', 'previous-run', 'older-run'],
+      });
+    });
+
+    it('forfeits run retention only when the caller explicitly asks for keepRuns=0', async () => {
+      const aggregate = vi.spyOn(ScrapeRun, 'aggregate');
+      mockReferencedObservationRows();
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(4 as any);
+      const deleteMany = vi
+        .spyOn(Observation, 'deleteMany')
+        .mockResolvedValue({ deletedCount: 4 } as any);
+
+      const result = await pruneDeadObservations({ now: NOW, apply: true, keepRuns: 0 });
+
+      expect(aggregate).not.toHaveBeenCalled();
+      expect(deleteMany).toHaveBeenCalledWith({
+        superseded: true,
+        observedAt: { $lt: NOW },
+      });
+      expect(result).toMatchObject({ keepRuns: 0, retainedRuns: 0 });
+    });
+
+    it('never deletes in dry-run mode', async () => {
+      vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([] as any);
+      mockReferencedObservationRows();
+      vi.spyOn(Observation, 'countDocuments').mockResolvedValue(3 as any);
+      const deleteMany = vi.spyOn(Observation, 'deleteMany');
+
+      const result = await pruneDeadObservations({ now: NOW, apply: false });
+
+      expect(deleteMany).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ apply: false, candidates: 3, deleted: 0 });
     });
   });
 });
