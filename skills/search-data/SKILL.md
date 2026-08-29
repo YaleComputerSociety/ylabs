@@ -7,7 +7,7 @@ description: Use when working on MongoDB data behavior, Meilisearch indexing, Re
 
 MongoDB uses Mongoose 8.
 All environments use `MONGODBURL`; the connection string determines whether the app uses Development, Beta, or Production.
-`API_MODE=productionMigration` enables a secondary `MONGODBURL_MIGRATION` connection for dual-DB migrations.
+There is a single application connection: the `API_MODE=productionMigration` dual-DB path was removed with the Listing analytics lane, since the retired `listings` collection was its only reader.
 
 Search runs on Meilisearch.
 The old client-side `embeddingService.ts` path was removed.

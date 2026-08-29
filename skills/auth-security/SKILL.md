@@ -139,10 +139,8 @@ Never commit them.
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `MONGODBURL` | Yes | MongoDB connection string. |
-| `MONGODBURL_MIGRATION` | Migration mode | Secondary DB for dual-DB migrations. |
 | `SESSION_SECRET` | Yes | Cookie session signing key. |
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
-| `API_MODE` | No | `productionMigration` for dual-DB migration mode. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
 | `TRUSTED_PROXY_CIDRS` | Deployed | Non-empty comma-separated proxy CIDRs trusted for forwarded visitor IP resolution; empty is allowed only in local development and tests. |

@@ -23,7 +23,7 @@ yarn --cwd server model-refactor:inventory --environment beta --sample-limit 100
 ```
 
 The tool uses a dedicated native MongoDB client with the standard `MONGODBURL` from `server/.env`, so point it at the environment you want to measure.
-It does not load Mongoose models, create collections, build indexes, or open the migration database configured by `MONGODBURL_MIGRATION`.
+It does not load Mongoose models, create collections, or build indexes.
 The client is closed after success or failure.
 Collection scans are capped at four concurrent groups.
 Retirement-field probes reuse the collection census totals and count all tracked fields in one aggregation per collection.
