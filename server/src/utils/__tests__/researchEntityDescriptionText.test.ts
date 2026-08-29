@@ -13,6 +13,7 @@ import {
   publicResearchEntityDescriptionText,
   repairSubjectlessResearchLead,
   revoiceFirstPersonResearchLead,
+  sanitizeFacultyResearchEntityCopyFields,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
@@ -379,6 +380,95 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     );
 
     expect(sanitized.profileSynthesisDescription).toBe('');
+  });
+
+  it('keeps PI profile synthesis prose whose research verbs are present-tense or gerund (#1921)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        fullDescription:
+          'Roberts researches the histories of medicine, slavery, race, and science in the Atlantic world and Africa, investigating how these histories inform health equity, medical education, and public understanding.',
+        shortDescription:
+          'Ferrar researches modernist literature and its themes in Spanish American narrative.',
+      },
+      ['Cora Roberts'],
+    );
+
+    expect(sanitized.fullDescription).toContain('researches the histories of medicine');
+    expect(sanitized.shortDescription).toContain('researches modernist literature');
+  });
+
+  it('keeps PI profile synthesis prose whose only research verb is past-tense "studied" (#1921)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        profileSynthesisDescription:
+          'Nils Haldor is a scholar of modern international and global history. He studied history, philosophy, and modern languages before specializing in eastern Asia since the 18th century.',
+      },
+      ['Nils Haldor'],
+    );
+
+    expect(sanitized.profileSynthesisDescription).toContain('studied history, philosophy');
+  });
+
+  it('still blanks a PI profile synthesis award list, appointment line, or CV bio (#1921)', () => {
+    const awardList = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        fullDescription:
+          'Their special report in a national magazine won a 2014 National Magazine Award and inspired a 2015 bestseller about money, politics, and backroom deals.',
+      },
+      ['Ada Vance'],
+    );
+    expect(awardList.fullDescription).toBe('');
+
+    const appointmentLine = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'LAB',
+        kind: 'lab',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        shortDescription:
+          'Professor of Biomedical Engineering and Radiology Nils Haldor is faculty at the school of engineering.',
+      },
+      ['Nils Haldor'],
+    );
+    expect(appointmentLine.shortDescription).toBe('');
+  });
+
+  it('applies one shared profile-synthesis guard on the faculty copy pass too (#1921)', () => {
+    const facultyEntity = {
+      entityType: 'FACULTY_RESEARCH_AREA' as const,
+      kind: 'individual' as const,
+      descriptionSource: 'PI_PROFILE_SYNTHESIS',
+    };
+
+    expect(
+      sanitizeFacultyResearchEntityCopyFields(
+        {
+          ...facultyEntity,
+          fullDescription:
+            'Their five books were named notable books of the year and earned a national book club selection.',
+        },
+        ['Ada Vance'],
+      ).fullDescription,
+    ).toBe('');
+
+    expect(
+      sanitizeFacultyResearchEntityCopyFields(
+        {
+          ...facultyEntity,
+          fullDescription:
+            'Ferrar researches the histories of medicine and slavery in the Atlantic world.',
+        },
+        ['Ada Vance'],
+      ).fullDescription,
+    ).toContain('researches the histories of medicine');
   });
 
   it('keeps a research-verb-led card whose eponymous object mismatches the lead name', () => {
