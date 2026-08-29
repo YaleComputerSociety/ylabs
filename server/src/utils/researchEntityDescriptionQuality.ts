@@ -374,6 +374,43 @@ function parseLabelListFields(text: string): string[] | null {
   return fields.length >= 2 ? fields : null;
 }
 
+const LABEL_LIST_CLAUSE_STRUCTURE_PATTERN =
+  /;|\b(?:including|such as|which|that|with a focus on|combining|based on|in order to|work includes)\b/i;
+
+const MAX_TOPIC_LABEL_FIELD_WORDS = 5;
+
+/**
+ * The text IS a bare topic-label list start to finish, so there is no prose to
+ * compress in it: an interchangeable lead over two or more comma-joined items
+ * that each read as a short topic label, with no clause structure joining them.
+ *
+ * Tested directly rather than via `LABEL_LIST_SHORT_PATTERN`, which the "full is
+ * itself just the same bare label-list shape" branch below used to rely on. That
+ * pattern is only a lead plus `[^.]+\.$`, so it matches ANY single-sentence text
+ * opening with "Studies " - including several hundred characters of rich,
+ * semicolon-joined research prose that simply carries no internal period, and
+ * which `repairSubjectlessResearchLead` has just re-led with "Studies ".
+ * Treating that as a bare label list rejected 18 faithful, self-contained cards
+ * whose fulls had plenty to compress, holding those entities out of every public
+ * surface.
+ */
+function isBareTopicLabelListText(value: string): boolean {
+  if (!LABEL_LIST_SHORT_PATTERN.test(value)) return false;
+  const body = value
+    .replace(LABEL_LIST_LEAD_PATTERN, '')
+    .replace(/[.!?]+$/g, '')
+    .trim();
+  if (!body || LABEL_LIST_CLAUSE_STRUCTURE_PATTERN.test(body)) return false;
+  const fields = body
+    .split(/\s*[,;]\s*(?:and\s+)?/i)
+    .map((field) => field.trim())
+    .filter(Boolean);
+  if (fields.length < 2) return false;
+  return fields.every(
+    (field) => field.split(/\s+/).filter(Boolean).length <= MAX_TOPIC_LABEL_FIELD_WORDS,
+  );
+}
+
 /**
  * A `Studies <tags>.` / `<Name>'s research fields include <tags>.` short is
  * not a faithful compression of its own fullDescription (#1616) when there is
@@ -400,7 +437,7 @@ function parseLabelListFields(text: string): string[] | null {
  */
 function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
   if (!LABEL_LIST_SHORT_PATTERN.test(text)) return false;
-  if (!full || text.toLowerCase() === full.toLowerCase() || LABEL_LIST_SHORT_PATTERN.test(full)) {
+  if (!full || text.toLowerCase() === full.toLowerCase() || isBareTopicLabelListText(full)) {
     return true;
   }
   const fields = parseLabelListFields(text);

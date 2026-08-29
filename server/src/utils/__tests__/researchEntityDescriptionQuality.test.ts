@@ -1553,6 +1553,26 @@ describe('shortDescriptionQuality topic-label-list gate for LAB/FACULTY_RESEARCH
     expect(quality.flags).not.toContain('ungrounded-topic-short');
   });
 
+  it('keeps a faithful compressed card whose full is one long rich sentence that merely opens with "Studies"', () => {
+    const full =
+      'Studies clinical trials and novel radiotherapy technologies, including biology-guided and PET-guided radiotherapy, and real-world evidence related to thoracic malignancies such as non-small-cell lung cancer; work includes multi-institutional verification of delivery predictors and investigation of induction chemoimmunotherapy for unresectable disease.';
+    const short =
+      'Studies Radiation Oncology, Thoracic Radiotherapy, Clinical Trials, and Novel Radiotherapy Technology.';
+    const quality = shortDescriptionQuality(short, full, undefined, fraOptions);
+    expect(quality.flags).not.toContain('topic-label-list');
+    expect(quality.isUseful).toBe(true);
+  });
+
+  it('still rejects a short that restates its own full label list under a swapped lead', () => {
+    const full =
+      "Dr. Placeholder's research interests include sexually transmitted infections, medical education and training, faculty development, assessment, and humanism in medical practice.";
+    const short =
+      'Studies sexually transmitted infections, medical education and training, faculty development, assessment, and humanism in medical practice.';
+    const quality = shortDescriptionQuality(short, full, undefined, fraOptions);
+    expect(quality.flags).toContain('topic-label-list');
+    expect(quality.isUseful).toBe(false);
+  });
+
   it('does not apply the ungrounded single-clause guard without an eligible entityType', () => {
     const full =
       'The analysis in Making Morocco focuses on interactions between state and society during the Protectorate period.';

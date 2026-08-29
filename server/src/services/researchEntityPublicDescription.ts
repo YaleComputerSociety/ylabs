@@ -17,6 +17,47 @@ import {
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 
+// Every field `buildResearchEntityPublicDescriptionRepresentation` (and so
+// `researchEntityServesPublicDetail`) reads. A caller that loads entities with a
+// `.select()` projection MUST project all of these: the gate fails closed on a
+// field it cannot see, so an omitted field silently drops entities the detail
+// page serves perfectly well rather than raising an error. `researchAreas` was
+// the omission that mattered - it feeds both the chip-echo card replacement and
+// the `buildResearchAreasCardSummary` fallback, so leaving it out made 283
+// otherwise-servable student_ready entities vanish from the saved list and the
+// related-entities module while remaining visible on browse and detail (which
+// read whole documents). Any new gate input must be added here and to
+// `publicDescriptionGateProjection` consumers, or that surface will silently
+// under-serve again.
+export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] = Object.freeze([
+  'name',
+  'displayName',
+  'kind',
+  'entityType',
+  'shortDescription',
+  'fullDescription',
+  'profileSynthesisDescription',
+  'descriptionSource',
+  'researchAreas',
+  'sourceUrls',
+  'website',
+  'websiteUrl',
+]);
+
+export const withPublicDescriptionGateFields = (...projections: string[]): string =>
+  Array.from(
+    new Set(
+      [...projections, ...RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS]
+        .flatMap((projection) => projection.split(/\s+/))
+        .filter(Boolean),
+    ),
+  ).join(' ');
+
+export const missingPublicDescriptionGateFields = (projection: string): string[] => {
+  const projected = new Set(projection.split(/\s+/).filter(Boolean));
+  return RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS.filter((field) => !projected.has(field));
+};
+
 export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
   leadMemberNames: string[];

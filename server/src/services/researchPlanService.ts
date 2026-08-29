@@ -10,7 +10,10 @@ import {
   type ResearchPlanStage,
 } from '../models/researchPlan';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
-import { researchEntityServesPublicDetail } from './researchEntityPublicDescription';
+import {
+  researchEntityServesPublicDetail,
+  withPublicDescriptionGateFields,
+} from './researchEntityPublicDescription';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
@@ -103,8 +106,9 @@ export const boundSavedResearchEntitySummaryText = (
   return value.slice(0, maxLength);
 };
 
-const savedResearchEntityProjection =
-  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl undergraduateCurrentAvailability hasUndergradHostingEvidence';
+export const savedResearchEntityProjection = withPublicDescriptionGateFields(
+  '_id slug departments school undergraduateCurrentAvailability hasUndergradHostingEvidence',
+);
 
 const asBoolean = (value: unknown): boolean => value === true;
 
