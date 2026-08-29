@@ -22,6 +22,7 @@ import {
   MIN_SNIPPETS_TO_SYNTHESIZE,
   hasResidualPronounLead,
   isBioShapedFacultyDescription,
+  isCareerBiographyDescription,
   profileResearchSnippets,
   repairPronounLead,
 } from './fraProfileSynthesisCore';
@@ -116,7 +117,11 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
     (entity) =>
       isFraProfileSynthesisScopedEntity(entity) &&
       !isFullDescriptionLocked(entity) &&
-      isBioShapedFacultyDescription(entity.fullDescription) &&
+      // Selection keys on a career biography, never on isHighConfidencePersonBio:
+      // that detector flags name-framed research prose ("Dr. Sauler's research
+      // investigates mechanisms of lung injury") which must be left alone. Scoping
+      // selection to it rewrote 99 already-good descriptions on Development.
+      isCareerBiographyDescription(entity.fullDescription) &&
       profileUrlOf(entity.sourceUrls),
   );
 }
@@ -143,7 +148,7 @@ export async function entityHasNonBioSourcedDescription(
   return observations.some(
     (observation) =>
       observation.sourceName !== FRA_PROFILE_SYNTHESIS_SOURCE_NAME &&
-      !isBioShapedFacultyDescription(observation.value) &&
+      !isCareerBiographyDescription(observation.value) &&
       fullDescriptionQuality(observation.value, entity.researchAreas, entity.entityType).isUseful,
   );
 }

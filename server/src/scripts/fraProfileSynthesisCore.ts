@@ -150,6 +150,108 @@ export function profileResearchSnippets(
   return snippets;
 }
 
+/**
+ * `isHighConfidencePersonBio` is the right check on this lane's OUTPUT (we want no
+ * person-voiced prose at all in a synthesized description) but the wrong check for
+ * deciding which entities to REWRITE. It fires on name-framed research prose,
+ * which is perfectly good content: "Dr. Sauler's research investigates mechanisms
+ * of lung injury and cytoprotection in chronic lung disease" is exactly what a
+ * student needs and must never be replaced.
+ *
+ * Measured on the served corpus, that detector over-reports roughly four to one:
+ * of 155 org-type entities it flags, only 35 are genuine biographies. Scoping a
+ * rewrite lane to it caused a real regression on Development — alfred-lee's
+ * correct "research focuses on classical hematology, particularly thrombosis" was
+ * replaced by one paper's narrow topic ("hematology consultation patterns in
+ * intensive care units") — and 99 such rewrites had to be reverted.
+ *
+ * A career biography is identified by career facts, not by mentioning a person:
+ * where they trained, what they were appointed to, what they have been awarded.
+ */
+// Specialist role nouns are open-ended (immunologist, nephrologist, geneticist,
+// ...), so an explicit list always misses one: "Dr. Avery Lin is an immunologist
+// at Yale University" slipped through a hand-enumerated version. Matched by
+// morphology instead, plus the titles that carry no such suffix.
+const CAREER_ROLE_NOUN =
+  '\\w*(?:ologist|ologists|iatrist|iatrician|ician|icist|ist|ian)|professor|lecturer|instructor|surgeon|chair|chief|dean|director|attending|fellow';
+
+// Deliberately NOT a marker: teaching, mentoring, and advising verbs. They read
+// like career duties but fire on good organization prose that merely lists
+// activities after leading with research ("YCEC conducts research on the
+// psychological, cultural, and political factors ...; teaches students and trains
+// working professionals"). Every genuine bio opener they would have caught is
+// already caught by the role-noun marker ("Dr. Avery Lin is an immunologist ...
+// where she teaches").
+const CAREER_BIOGRAPHY_MARKERS: readonly RegExp[] = [
+  // Training and degrees: no research description says who granted a degree.
+  // Spelled-out degrees matter as much as abbreviations: "received his
+  // undergraduate degree at Fairfield University" carries no "B.A." token.
+  /\b(?:received|earned|obtained|completed|holds?)\s+(?:his|her|their|an?|the)\s+[^.]{0,40}\b(?:B\.?A\.?|B\.?S\.?|M\.?A\.?|M\.?S\.?|M\.?D\.?|Ph\.?D\.?|J\.?D\.?|M\.?P\.?H\.?|degrees?|doctorate|diploma|residency|fellowship|postdoc(?:toral)?|training)\b/i,
+  /\bsubspecialty\s+training\s+in\b/i,
+  // Appointment and tenure history.
+  /\bjoined\s+(?:the\s+)?(?:Yale|faculty|department|university)\b/i,
+  /\bbefore\s+(?:coming|joining|arriving)\b/i,
+  /\bwas\s+(?:appointed|named|promoted|recruited)\b/i,
+  // "holds a joint appointment", but also "with a secondary appointment as ...".
+  /\b(?:holds?|with|has)\s+(?:a\s+)?(?:joint|secondary|primary|additional|courtesy)\s+appointment\b/i,
+  new RegExp(
+    `\\bis\\s+(?:currently\\s+)?(?:an?|the)?\\s*[^.]{0,60}\\b(?:${CAREER_ROLE_NOUN})\\b`,
+    'i',
+  ),
+  // An endowed chair ("is William K. Townsend Professor of Law"). The initials
+  // carry periods, so the span above stops at "K." and never reaches the title;
+  // this matches the capitalized chair name directly instead.
+  /\bis\s+(?:the\s+)?[A-Z][\w'’-]*\.?(?:\s+[A-Z][\w'’-]*\.?){0,4}\s+(?:Professor|Chair|Fellow)\b/,
+  new RegExp(`\\bserved?\\s+as\\s+(?:an?|the)?\\s*[^.]{0,40}\\b(?:${CAREER_ROLE_NOUN})\\b`, 'i'),
+  // Honours and recognition.
+  /\bis\s+the\s+recipient\s+of\b/i,
+  /\bwas\s+awarded\s+the\b/i,
+  /\belected\s+to\s+the\b/i,
+  /\bis\s+(?:one\s+of\s+)?the\s+nation['’]s\s+(?:foremost|leading)\b/i,
+];
+
+/**
+ * Career markers are matched against the OPENING only, not the whole passage.
+ *
+ * The defect is a biography *displacing* the research, and a career bio always
+ * leads with career facts. Scanning the full text instead flags descriptions that
+ * merely mention an affiliation in passing: "PittLab studies the contributions of
+ * the basal ganglia to normal behavior and to neuropsychiatric disease" and "The
+ * Thinking Lab is directed by Woo-kyoung Ahn, Professor of Psychology" are both
+ * good copy that a whole-text scan rejected.
+ *
+ * Two sentences, because the common shape is a one-line credential followed by a
+ * second career sentence before any research ("Dr Mirza is a physician-scientist.
+ * He is a practicing pathologist with subspecialty training in GI & Liver
+ * Pathology. In his laboratory he studies ...").
+ */
+const CAREER_MARKER_SENTENCE_WINDOW = 2;
+
+/**
+ * The role-noun and endowed-chair markers key on "is ... Professor", but that
+ * clause belongs to an organization rather than a person in "The Thinking Lab is
+ * directed by Woo-kyoung Ahn, Professor of Psychology". A description whose
+ * subject is the research home is describing the home, so naming its director's
+ * title does not make it a biography.
+ */
+const ORG_SUBJECT_LEAD =
+  /^(?:welcome\s+to\s+)?(?:the\s+)?[^.]{0,80}\b(?:lab|laborator(?:y|ies)|cent(?:er|re)|institute|program(?:me)?|initiative|group|project|clinic|core|facility|consortium|network)\b[^.]{0,20}\b(?:is|are|was|were)\b/i;
+
+const LED_BY_CONSTRUCTION = /\bis\s+(?:directed|led|headed|chaired|co-directed)\s+by\b/i;
+
+export function isCareerBiographyDescription(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const opening = splitSentences(text).slice(0, CAREER_MARKER_SENTENCE_WINDOW).join(' ');
+  if (!opening) return false;
+  if (LED_BY_CONSTRUCTION.test(opening) || ORG_SUBJECT_LEAD.test(opening)) return false;
+  return CAREER_BIOGRAPHY_MARKERS.some((marker) => marker.test(opening));
+}
+
+/**
+ * Retained for the OUTPUT check only: a synthesized description must not read as
+ * person prose at all. Do not use this to select entities to rewrite.
+ */
 export function isBioShapedFacultyDescription(value: unknown): boolean {
   const text = textValue(value);
   return text ? isHighConfidencePersonBio(text) : false;
