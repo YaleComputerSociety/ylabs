@@ -1247,6 +1247,18 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
 export const MAX_SHORT_DESCRIPTION_LENGTH = 200;
 
 /**
+ * A truncation artifact a producer already baked into a stored short (a source
+ * blurb cut with an ellipsis, or a row written by the pre-#2184 clamp): the card
+ * gate rejects a trailing ellipsis as a fragment, so serving one gates the
+ * entity on the very copy it is being shown. Failing it closed at this single
+ * sanitize boundary keeps the gate and every served surface on the same value -
+ * the DTO card field reads this sanitizer directly and never the resolver - and
+ * both recover a quality-checked derived line from the entity's own full
+ * description instead.
+ */
+const truncationEllipsisTailPattern = /(?:\.{3}|…)\s*$/;
+
+/**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
  * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
@@ -1306,7 +1318,44 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (containsHtmlTagMarkup(cleaned)) return '';
   if (isCitationAuthorListDumpText(cleaned)) return '';
   if (isContentlessResearchProjectsBoilerplateText(cleaned)) return '';
-  return clampDescriptionLength(cleaned, MAX_SHORT_DESCRIPTION_LENGTH);
+  if (truncationEllipsisTailPattern.test(cleaned)) return '';
+  return clampShortDescriptionToWholeSentences(cleaned);
+}
+
+const MIN_CLAMPED_SHORT_DESCRIPTION_WORDS = 8;
+
+/**
+ * A card line has to load whole. `clampDescriptionLength` appends an ellipsis
+ * when no sentence boundary lands late enough in its window, and
+ * `shortDescriptionQuality` rejects any value ending in one as a fragment - so
+ * clamping a long short description manufactured exactly the string the card
+ * gate forbids, gating the entity on its own truncation (#2184). Keep whole
+ * sentences only, and fail closed to an empty string rather than inventing a
+ * fragment: callers fall back to a quality-checked derived card line.
+ *
+ * Sentences are taken from the abbreviation-aware tiling rather than from a
+ * bare terminal-punctuation scan, because that scan treats the period of a
+ * leading "Dr."/"J."/"etc." as a sentence end and would emit that abbreviation
+ * as the entire card line. The kept text must also carry at least as many words
+ * as `shortDescriptionQuality` demands of a card, so this clamp can never emit a
+ * line the card gate would turn around and reject as too short.
+ */
+export function clampShortDescriptionToWholeSentences(
+  text: string,
+  maxLength = MAX_SHORT_DESCRIPTION_LENGTH,
+): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (value.length <= maxLength) return value;
+  let kept = '';
+  for (const sentence of partitionSentencesForFiltering(value)) {
+    const candidate = kept + sentence;
+    if (normalizeHygieneWhitespace(candidate).length > maxLength) break;
+    kept = candidate;
+  }
+  const clamped = normalizeHygieneWhitespace(kept);
+  const words = clamped.split(/\s+/).filter(Boolean);
+  if (words.length < MIN_CLAMPED_SHORT_DESCRIPTION_WORDS) return '';
+  return clamped;
 }
 
 function countMatches(text: string, pattern: RegExp): number {

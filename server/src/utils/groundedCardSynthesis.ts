@@ -214,7 +214,15 @@ export function resolveServedShortDescription(input: ResolveServedShortDescripti
         return derivedFromChipEcho;
       }
     }
-    return cleaned;
+    // A truncation artifact must never be served: the card gate rejects a
+    // trailing ellipsis as a fragment, so serving one blocks the entity on copy
+    // it is simultaneously being shown. Fall through to the quality-checked
+    // derivations instead. Scoped to this artifact deliberately - a broad
+    // quality check here would also drop fluent stored card lines the card bar
+    // intentionally keeps (#1680/#2184).
+    if (!/(?:\.{3}|…)\s*$/.test(cleaned)) {
+      return cleaned;
+    }
   }
 
   const derived = sanitizeResearchEntityShortDescription(deriveShortDescriptionFromFullDescription(full));

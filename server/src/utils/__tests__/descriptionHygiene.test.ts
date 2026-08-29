@@ -40,6 +40,7 @@ import {
   sanitizeCatalogDescription,
   sanitizeEvidenceExcerpt,
   sanitizeResearchEntityDescription,
+  clampShortDescriptionToWholeSentences,
   sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
   stripBibliographicReferenceArtifacts,
@@ -3040,5 +3041,70 @@ describe('isAdministrativeTitleEnumerationText (#1745 round 4)', () => {
 
   it('fails the shortDescription closed on the admin-title-enumeration opener', () => {
     expect(sanitizeResearchEntityShortDescription(ADMIN_TITLE_SHORT)).toBe('');
+  });
+});
+
+describe('short description whole-sentence cap (#2184)', () => {
+  it('never serves an ellipsis-truncated card line (#2184)', () => {
+    const TWO_SENTENCES =
+      'We study how coastal wetlands store carbon across tidal cycles. We combine field sampling, stable-isotope analysis, and numerical models to understand how these ecosystems respond to rising seas over decades.';
+    expect(TWO_SENTENCES.length).toBeGreaterThan(200);
+    const clamped = clampShortDescriptionToWholeSentences(TWO_SENTENCES);
+    expect(clamped).toBe('We study how coastal wetlands store carbon across tidal cycles.');
+    expect(clamped).not.toMatch(/…$/);
+  });
+
+  it('fails closed instead of fabricating a fragment when no sentence fits the cap (#2184)', () => {
+    const ONE_LONG_SENTENCE =
+      'Using multi pronged approaches including mouse genetics, cell culture models, genomics and microscopy, we tackle complex biological processes focusing on the contribution of cell-intrinsic and cell-extrinsic factors that drive regeneration.';
+    expect(ONE_LONG_SENTENCE.length).toBeGreaterThan(200);
+    expect(clampShortDescriptionToWholeSentences(ONE_LONG_SENTENCE)).toBe('');
+    expect(sanitizeResearchEntityShortDescription(ONE_LONG_SENTENCE)).toBe('');
+  });
+
+  it('leaves a short description within the cap untouched (#2184)', () => {
+    const FITS = 'We study how coastal wetlands store carbon across tidal cycles.';
+    expect(clampShortDescriptionToWholeSentences(FITS)).toBe(FITS);
+  });
+
+  it('never cuts an over-long short at an abbreviation period (#2184)', () => {
+    const TITLE_LEAD =
+      'Dr. Kwan integrates population genomics and field ecology to understand how marine invertebrate populations adapt to warming coastal waters, combining monitoring transects with laboratory thermal-tolerance assays.';
+    const INITIAL_LEAD =
+      'J. Rivera maps the molecular circuitry that lets pancreatic beta cells sense glucose, pairing single-cell imaging with mouse genetics to trace how the secretory machinery fails early in type 2 diabetes.';
+    const MID_SENTENCE_ABBREVIATION =
+      'The laboratory measures carbon burial in salt marshes using sediment cores, stable isotopes, remote sensing, etc. to quantify how much atmospheric carbon these systems sequester under changing tidal regimes.';
+
+    for (const oneLongSentence of [TITLE_LEAD, INITIAL_LEAD, MID_SENTENCE_ABBREVIATION]) {
+      expect(oneLongSentence.length).toBeGreaterThan(200);
+      expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe('');
+      expect(sanitizeResearchEntityShortDescription(oneLongSentence)).toBe('');
+    }
+  });
+
+  it('keeps an abbreviation inside the sentence it clamps to (#2184)', () => {
+    const source =
+      'Work with Prof. Ferreira anchors the group study of how tidal creeks move nitrogen. Later projects extend that survey to the whole Atlantic seaboard using long-term monitoring transects and repeated summer sediment cores.';
+    expect(source.length).toBeGreaterThan(200);
+    expect(clampShortDescriptionToWholeSentences(source)).toBe(
+      'Work with Prof. Ferreira anchors the group study of how tidal creeks move nitrogen.',
+    );
+  });
+
+  it('fails a stored card line that already ends in a truncation ellipsis closed (#2184)', () => {
+    const UNICODE_ELLIPSIS =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast and how those…';
+    const DOTTED_ELLIPSIS =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast and how those...';
+    expect(UNICODE_ELLIPSIS.length).toBeLessThanOrEqual(200);
+    expect(DOTTED_ELLIPSIS.length).toBeLessThanOrEqual(200);
+    expect(sanitizeResearchEntityShortDescription(UNICODE_ELLIPSIS)).toBe('');
+    expect(sanitizeResearchEntityShortDescription(DOTTED_ELLIPSIS)).toBe('');
+  });
+
+  it('leaves a complete sentence that merely fits the cap alone (#2184)', () => {
+    const CLEAN =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast.';
+    expect(sanitizeResearchEntityShortDescription(CLEAN)).toBe(CLEAN);
   });
 });

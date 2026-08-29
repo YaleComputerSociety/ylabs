@@ -361,6 +361,25 @@ describe('resolveServedShortDescription personal-title/name opener (#1886)', () 
   });
 });
 
+describe('resolveServedShortDescription stored truncation fragment (#2184)', () => {
+  const full =
+    'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast. Field campaigns each summer pair monitoring transects with laboratory incubations that measure decomposition under warmer, saltier conditions.';
+
+  it.each([
+    ['unicode ellipsis', '…'],
+    ['dotted ellipsis', '...'],
+  ])('re-derives from the grounded full when the stored short ends in an %s', (_label, tail) => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: `The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast and how those${tail}`,
+      fullDescription: full,
+      researchAreas: ['Coastal ecology'],
+      entityType: 'LAB',
+    });
+    expect(resolved).toBe(deriveShortDescriptionFromFullDescription(full));
+    expect(resolved).not.toMatch(/(?:\.{3}|…)$/);
+  });
+});
+
 describe('resolveGroundedCardDescription program path (#1425)', () => {
   const PROGRAM_FULL =
     'Yale Economics summer research opportunities that match undergraduate students with faculty research projects.';

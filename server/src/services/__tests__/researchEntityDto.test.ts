@@ -6,6 +6,7 @@ import {
   toPublicResearchEntitySummaryDto,
 } from '../researchEntityDto';
 import { MAX_SHORT_DESCRIPTION_LENGTH } from '../../utils/descriptionHygiene';
+import { buildResearchEntityPublicDescriptionRepresentation } from '../researchEntityPublicDescription';
 
 describe('researchEntityDto', () => {
   it('strips YSM profile chrome from the served shortDescription without dropping the prose', () => {
@@ -525,11 +526,38 @@ describe('researchEntityDto', () => {
       { includeOperatorFields: true },
     );
 
-    expect(dto.shortDescription).toBe(`${'X'.repeat(MAX_SHORT_DESCRIPTION_LENGTH)}…`);
+    // Bounded, and never a fabricated ellipsis fragment: a 6000-char blob with
+    // no sentence boundary yields no card line of its own, so the served card
+    // falls back to the research-areas summary (#2184).
+    expect(dto.shortDescription).toBe('Studies Area 0, Area 1, Area 2, and Area 3.');
+    expect(String(dto.shortDescription).length).toBeLessThanOrEqual(MAX_SHORT_DESCRIPTION_LENGTH);
     expect(dto.researchAreas).toHaveLength(100);
     expect(dto.sourceUrls).toHaveLength(50);
     expect((dto.planningContext as any).reasons).toHaveLength(100);
     expect(Object.keys(dto.qualitySummary as Record<string, unknown>)).toHaveLength(100);
+  });
+
+  it('serves the same card line the visibility gate judges when a stored short is a truncation fragment (#2184)', () => {
+    const entity = {
+      id: 'entity-stored-ellipsis-short',
+      slug: 'stored-ellipsis-lab',
+      name: 'Stored Ellipsis Lab',
+      kind: 'lab',
+      shortDescription:
+        'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast and how those…',
+      fullDescription:
+        'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast. Field campaigns each summer pair monitoring transects with laboratory incubations that measure decomposition under warmer, saltier conditions.',
+      researchAreas: ['Coastal ecology'],
+    };
+    const derivedCardLine =
+      'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast.';
+
+    const dto = toPublicResearchEntityDto(entity);
+    const gate = buildResearchEntityPublicDescriptionRepresentation({ entity });
+
+    expect(dto.shortDescription).toBe(derivedCardLine);
+    expect(gate.cardDescription).toBe(derivedCardLine);
+    expect(gate.invariant.reasons).toEqual([]);
   });
 
   it('serves the grant funding recency cache the v4 grant backfill maintains', () => {
