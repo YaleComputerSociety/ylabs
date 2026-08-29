@@ -33,10 +33,11 @@ export const FRA_PROFILE_SYNTHESIS_SOURCE_NAME = 'fra-profile-research-synthesis
  * below official-profile extraction (0.55) so a genuine verbatim research
  * statement still wins when one exists.
  *
- * Ranking below 0.55 is only survivable because `confidenceResolver` demotes
- * bio-shaped `fullDescription` values whenever a useful non-bio alternative
- * exists. Weight alone would leave this lane unable to displace the very
- * biography it exists to replace, since that bio is re-emitted weekly at 0.55.
+ * Ranking below 0.55 is only survivable because `confidenceResolver` sorts
+ * bio-shaped `fullDescription` values last once this lane has recorded a useful
+ * research description (`BIO_REPLACING_DESCRIPTION_SOURCES` names it there).
+ * Weight alone would leave this lane unable to displace the very biography it
+ * exists to replace, since that bio is re-emitted weekly at 0.55.
  */
 export const FRA_PROFILE_SYNTHESIS_CONFIDENCE = 0.48;
 
@@ -78,15 +79,28 @@ export const MIN_SNIPPETS_TO_SYNTHESIZE = 1;
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+const PRONOUN_SUBJECT = 'he|she|they|his|her|their|him|hers|theirs';
+const CAPITALIZED_PRONOUN_SUBJECT = 'He|She|They|His|Her|Their|Him|Hers|Theirs';
+
 /**
  * A bare `/(?<=[.!?])\s+/` split cuts "the epidemiology of HIV in the U.S. and
  * develop statistical methods" into two sub-floor fragments and drops both, so a
  * page whose only research sentence contains an abbreviation ("U.S.",
  * "M. tuberculosis", "Dr. Smith") reports zero snippets. A boundary therefore
  * needs both a non-abbreviation left side and a sentence-opening right side.
+ *
+ * The second alternative exists because the single-capital abbreviation guard
+ * also suppresses the boundary after ordinary biomedical prose ending in a
+ * letter-suffixed term: "the immunology of hepatitis C. She directs ..." stayed
+ * one sentence, which hid the orphan pronoun from both the repair pass and the
+ * residual check. No abbreviation is ever followed by a capitalised pronoun, so
+ * that right-hand side is always a real sentence start.
  */
-const SENTENCE_BOUNDARY =
-  /(?<!\b(?:[A-Z]|Dr|Mr|Ms|Mrs|Prof|St|Jr|Sr|vs|no|al|e\.g|i\.e|approx|Fig|eds?)\.)(?<=[.!?])\s+(?=["'“‘(]?[A-Z])/;
+const SENTENCE_BOUNDARY = new RegExp(
+  '(?<!\\b(?:[A-Z]|Dr|Mr|Ms|Mrs|Prof|St|Jr|Sr|vs|no|al|e\\.g|i\\.e|approx|Fig|eds?)\\.)' +
+    '(?<=[.!?])\\s+(?=["\'“‘(]?[A-Z])' +
+    `|(?<=[.!?])\\s+(?=(?:${CAPITALIZED_PRONOUN_SUBJECT})\\b)`,
+);
 
 export function splitSentences(value: string): string[] {
   return value
@@ -165,7 +179,8 @@ const PRONOUN_POSSESSIVE_LEAD = new RegExp(
   'i',
 );
 
-const RESIDUAL_PRONOUN_LEAD = /^(?:he|she|they|his|her|their|him|hers|theirs)\b/i;
+const RESIDUAL_PRONOUN_LEAD = new RegExp(`^(?:${PRONOUN_SUBJECT})\\b`, 'i');
+const RESIDUAL_PRONOUN_AFTER_STOP = new RegExp(`(?<=[.!?])\\s+(?:${PRONOUN_SUBJECT})\\b`, 'i');
 
 function repairSentencePronounLead(sentence: string): string {
   const possessive = sentence.match(PRONOUN_POSSESSIVE_LEAD);
@@ -204,10 +219,16 @@ export function repairPronounLead(value: unknown): string {
  * reference on a research card, and `isHighConfidencePersonBio` only anchors that
  * check at the start of the whole description. The lane fails closed on this
  * rather than widening the allowlist into laundering a biography as research.
+ *
+ * Scanned over the raw text as well as the split sentences so this defence does
+ * not silently depend on the splitter being perfect: a sentence boundary the
+ * splitter misses must still fail closed rather than pass the dangling pronoun
+ * through.
  */
 export function hasResidualPronounLead(value: unknown): boolean {
   const text = textValue(value);
   if (!text) return false;
+  if (RESIDUAL_PRONOUN_AFTER_STOP.test(text)) return true;
   return splitSentences(text).some((sentence) => RESIDUAL_PRONOUN_LEAD.test(sentence));
 }
 

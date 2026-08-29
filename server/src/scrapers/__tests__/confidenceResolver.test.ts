@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveField, resolveAllFields, resolveFieldRanked } from '../confidenceResolver';
+import { isHighConfidencePersonBio } from '../../utils/researchHomeDescriptionSelection';
 
 const D = (s: string) => new Date(s);
 
@@ -688,26 +689,28 @@ describe('resolveFieldRanked', () => {
       { now: D('2026-02-10') },
     );
     expect(ranked.map((r) => r.value)).toEqual(['winner', 'lower']);
-    expect(ranked[0].value).toBe(resolveField(
-      'fullDescription',
-      [
-        {
-          field: 'fullDescription',
-          value: 'lower',
-          sourceName: 'lab-microsite-description-llm',
-          confidence: 0.7,
-          observedAt: D('2026-01-01'),
-        },
-        {
-          field: 'fullDescription',
-          value: 'winner',
-          sourceName: 'ysm-atoz-index',
-          confidence: 0.95,
-          observedAt: D('2026-02-01'),
-        },
-      ],
-      { now: D('2026-02-10') },
-    )?.value);
+    expect(ranked[0].value).toBe(
+      resolveField(
+        'fullDescription',
+        [
+          {
+            field: 'fullDescription',
+            value: 'lower',
+            sourceName: 'lab-microsite-description-llm',
+            confidence: 0.7,
+            observedAt: D('2026-01-01'),
+          },
+          {
+            field: 'fullDescription',
+            value: 'winner',
+            sourceName: 'ysm-atoz-index',
+            confidence: 0.95,
+            observedAt: D('2026-02-01'),
+          },
+        ],
+        { now: D('2026-02-10') },
+      )?.value,
+    );
   });
 
   it('collapses duplicate values across sources into a single ranked entry', () => {
@@ -747,7 +750,10 @@ describe('resolveFieldRanked', () => {
           observedAt: D('2026-02-01'),
         },
       ],
-      { manuallyLockedFields: ['fullDescription'], manualValues: { fullDescription: 'locked value' } },
+      {
+        manuallyLockedFields: ['fullDescription'],
+        manualValues: { fullDescription: 'locked value' },
+      },
     );
     expect(ranked).toHaveLength(1);
     expect(ranked[0].value).toBe('locked value');
@@ -785,7 +791,10 @@ describe('person-bio demotion for fullDescription', () => {
     expect(resolved?.contributingSources).toEqual(['fra-profile-research-synthesis']);
   });
 
-  it('drops the bio from the ranked fallback list too, so materialization cannot walk back to it', () => {
+  it('ranks the bio last but keeps it reachable as the materializer fallback', () => {
+    // Dropping it instead left the materializer's fallback walk with nothing to
+    // fall back to when its own content gates reject the winner, which blanked
+    // descriptions that had previously been served.
     const ranked = resolveFieldRanked(
       'fullDescription',
       [
@@ -794,7 +803,38 @@ describe('person-bio demotion for fullDescription', () => {
       ],
       { now: D('2026-02-08') },
     );
-    expect(ranked.map((entry) => entry.value)).toEqual([RESEARCH]);
+    expect(ranked.map((entry) => entry.value)).toEqual([RESEARCH, BIO]);
+  });
+
+  it('does not report a conflict against the bio it displaced', () => {
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(BIO, 'ysm-faculty-directory', 0.55),
+        obs(RESEARCH, 'fra-profile-research-synthesis', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.hasConflict).toBe(false);
+    expect(resolved?.confidence).toBe(1);
+  });
+
+  it('leaves a bio-shaped description alone when no bio-replacing lane competes', () => {
+    // `isHighConfidencePersonBio` also fires on genuine organization prose, and
+    // most fullDescription emitters carry no write-time bio guard, so a
+    // field-wide demotion promoted a bare grant abstract over a lab's own
+    // official description.
+    const ORG_PROSE =
+      "Professor Jane Doe's laboratory investigates the molecular basis of neurodegeneration, combining human genetics with mouse models of tau propagation to identify tractable therapeutic targets.";
+    const GRANT_ABSTRACT =
+      'This project will develop and validate a scalable assay for measuring protein aggregation kinetics in patient-derived neurons across a panel of candidate small molecules.';
+    expect(isHighConfidencePersonBio(ORG_PROSE)).toBe(true);
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [obs(ORG_PROSE, 'yale-research-official', 0.9), obs(GRANT_ABSTRACT, 'nih-reporter', 0.3)],
+      { now: D('2026-02-08') },
+    );
+    expect(ranked.map((entry) => entry.value)).toEqual([ORG_PROSE, GRANT_ABSTRACT]);
   });
 
   it('still serves a sole bio rather than blanking the description', () => {

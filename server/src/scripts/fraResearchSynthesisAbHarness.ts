@@ -20,8 +20,9 @@
  *
  * A: the description we serve today.
  * B: `synthesizeCoverageDescription` over research sentences harvested from the
- *    same profile page. Reuses the existing synthesizer so its overlap and
- *    quality gates apply unchanged rather than being reinvented here.
+ *    same profile page, then the lane's own pronoun repair and its
+ *    dangling-subject rejection. Reuses the production pieces so the arm measures
+ *    what an apply run would write, gates included.
  *
  * ## Metrics
  *
@@ -45,7 +46,12 @@ import {
 import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
 import { researchSubjectSpecificityScore } from '../utils/researchSubjectSpecificity';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { profileResearchSnippets } from './fraProfileSynthesisCore';
+import {
+  hasResidualPronounLead,
+  profileResearchSnippets,
+  repairPronounLead,
+} from './fraProfileSynthesisCore';
+import { FRA_PROFILE_SYNTHESIS_ENTITY_TYPE } from './fraProfileSynthesisLane';
 
 dotenv.config();
 
@@ -99,9 +105,9 @@ async function main(): Promise<void> {
   const candidates = await ResearchEntity.find({
     studentVisibilityTier: 'student_ready',
     archived: { $ne: true },
-    entityType: 'FACULTY_RESEARCH_AREA',
+    entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
   })
-    .select({ slug: 1, name: 1, fullDescription: 1, sourceUrls: 1 })
+    .select({ slug: 1, name: 1, fullDescription: 1, sourceUrls: 1, researchAreas: 1 })
     .lean();
 
   const bioShaped = candidates.filter((entity) =>
@@ -148,10 +154,22 @@ async function main(): Promise<void> {
       const result = await synthesizeCoverageDescription({
         snippets,
         entityName: String(entity.name ?? 'Research'),
+        entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
+        researchAreas: entity.researchAreas,
         callLLM: defaultCoverageSynthesisLLM(process.env.OPENAI_API_KEY as string),
       });
       if (!result) note = 'synthesizer failed closed (grounding or quality gate)';
-      else synthesized = textValue(result.description);
+      else {
+        // Arm B must be exactly what an apply run would write, or the guardrail
+        // rate overstates coverage and the bio signal is read off text the lane
+        // never serves.
+        const repaired = repairPronounLead(result.description);
+        if (!repaired || hasResidualPronounLead(repaired)) {
+          note = 'synthesis rejected by the lane (dangling pronoun subject)';
+        } else {
+          synthesized = textValue(repaired);
+        }
+      }
     }
     outcomes.push({
       slug,
@@ -196,7 +214,7 @@ async function main(): Promise<void> {
     `\nappointment label recoverable from the same page: ${outcomes.filter((o) => o.appointmentLabel).length}/${outcomes.length}`,
   );
   console.log(
-    `synthesizer failed closed: ${outcomes.filter((o) => o.note?.startsWith('synth')).length}`,
+    `arm B failed closed (synthesizer or lane gate): ${outcomes.filter((o) => o.note?.startsWith('synth')).length}`,
   );
 
   if (reportPath) {

@@ -200,13 +200,16 @@ That is why 464 served FRA descriptions read as person bios: a structural limit 
 A probe of 27 such profile pages found research prose on 27 of 27 and an appointment line on 27 of 27, while the deterministic extractor produced prose on 0 of 27.
 
 `research-entity:fra-profile-synthesis` (`fraProfileSynthesis.ts`, the pure `fraProfileSynthesisCore.ts`, and the DB-facing per-entity step in `fraProfileSynthesisLane.ts`) handles this cohort.
-It scopes to unlocked FRA entities whose stored description is bio-shaped and which have a `/profile/` source URL, skips any entity that already has a recorded non-bio research description, harvests research sentences from that page, strips career, credential, and navigation sentences before synthesis, reuses `synthesizeCoverageDescription` (passing `entityType` and `researchAreas` so the topic-label and area-echo quality flags actually fire), repairs orphan pronoun subjects, and fails closed when the output still reads as a biography or keeps a dangling pronoun.
+It scopes to unlocked, non-archived `FACULTY_RESEARCH_AREA` entities whose stored description is bio-shaped and which have a `/profile/` source URL (checked per entity, so a `--slug` pointing at the LAB the same profile page also mints is skipped rather than written to), skips any entity that already has a recorded non-bio research description, harvests research sentences from that page, strips career, credential, and navigation sentences before synthesis, reuses `synthesizeCoverageDescription` (passing `entityType` and `researchAreas` so the topic-label and area-echo quality flags actually fire), repairs orphan pronoun subjects, and fails closed when the output still reads as a biography or keeps a dangling pronoun.
 Dry-run by default; apply requires `--confirm-fra-profile-synthesis`, `SCRAPER_ENV=development`, and a Mongo URL whose database matches the configured development database name.
 Measured against the stored extract on 25 entities, bio signal fell from 100% to 10% with names-a-research-subject holding at 100% (#2200).
 
 A synthesis lane cannot outrank a biography on confidence alone.
 Every such lane deliberately ranks below official-profile extraction (0.55) so a genuine verbatim research statement still wins, but the bio it exists to replace is emitted by that same official extraction at 0.55 and re-emitted weekly, so weight alone leaves the replacement permanently losing.
-`confidenceResolver` therefore demotes bio-shaped `fullDescription` value groups whenever a useful non-bio alternative exists (`preferNonPersonBioProseGroups`), mirroring how it demotes synthesized-source prose and bare person names.
+`confidenceResolver` therefore sorts bio-shaped `fullDescription` value groups last (`demotePersonBioProseGroups`), mirroring how it demotes synthesized-source prose and bare person names.
+Two scoping rules keep that from re-ranking the whole corpus.
+The demotion only fires when the useful non-bio alternative comes from a source in `BIO_REPLACING_DESCRIPTION_SOURCES`, because `isHighConfidencePersonBio` also flags genuine organization prose ("Professor Jane Doe's laboratory investigates ...") that several scrapers emit with no write-time bio guard, and a field-wide rule promoted a bare grant abstract over an authoritative official description on labs and centers this lane never touches.
+The bio is demoted, never dropped: `entityMaterializer` walks the ranked list when its own content gates reject the winner, and removing the bio left that walk with no last resort and blanked descriptions that had been served.
 A sole bio is still served rather than blanked, and a non-bio alternative that fails the quality bar never displaces one.
 Do not "fix" a lane that cannot displace a bio by raising its confidence above official extraction; that trades a real verbatim research statement away.
 
@@ -220,10 +223,13 @@ The precise control is the post-synthesis bio check.
 - Repair orphan pronouns in **every** sentence, not just the lead.
 Repairing only the first sentence left "Investigates histories of slavery and medicine. She directs a community partnership ..." on a real entity, moving the dangling pronoun out of view of the check rather than fixing it.
 The pronoun-verb list is deliberately an allowlist of research-activity verbs: a general pattern would rewrite "She is a professor of history" into "Is a professor of history", laundering a biography past the bio check.
-Because the allowlist is intentionally incomplete, repair cannot be the only defence: `hasResidualPronounLead` rejects any description that still opens a sentence with a pronoun.
+Because the allowlist is intentionally incomplete, repair cannot be the only defence: `hasResidualPronounLead` rejects any description that still opens a sentence with a pronoun, scanning the raw text as well as the split sentences so the defence does not depend on the splitter being perfect.
 Keep the possessive and non-possessive patterns on one shared verb list; a verb present in only one of them is how "Her group leads ..." shipped intact.
 - Split sentences with the abbreviation-aware `splitSentences`, never a bare `/(?<=[.!?])\s+/`.
 A bare split cut "the epidemiology of HIV in the U.S. and develop statistical methods" into two sub-floor fragments and dropped both, reporting zero snippets for a page that plainly stated the research.
+The abbreviation guard needs its own escape hatch for a capitalised pronoun on the right-hand side: the single-capital rule also suppressed the boundary in "the immunology of hepatitis C. She directs ...", hiding an orphan pronoun from both the repair pass and the residual check.
+- Keep `fraResearchSynthesisAbHarness.ts` on the production pieces (`profileResearchSnippets`, `repairPronounLead`, `hasResidualPronounLead`, and the same `entityType`/`researchAreas` passed to the synthesizer).
+When the arm is looser than the lane, its guardrail rate overstates coverage and its bio signal is measured on text the lane would never write.
 
 The professor's appointment title is **not** stored structurally anywhere (`contactRole` and `contactName` are empty across the whole cohort), and extracting it by regex over flattened page text matches site navigation instead.
 It survives only inside the profile-bio observation, which append-only storage retains after synthesis outranks it.

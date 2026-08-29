@@ -65,6 +65,15 @@ const SYNTHESIZED_RESEARCH =
 
 const PRONOUN_LED_SYNTHESIS = `Her laboratory investigates how mucosal immune cells restrain inflammation in the human intestine, using organoid co-culture and single-cell sequencing to map the epithelial barrier signals. Her group has published widely on inflammatory bowel disease relapse in the intestine.`;
 
+/**
+ * Thirteen words, so it clears the synthesizer's 12-word floor, and repairing the
+ * possessive lead removes two of them. The synthesizer's quality gate only ever
+ * sees the pre-repair text, so without a re-check the lane wrote an 11-word
+ * description that the materializer then rejects.
+ */
+const REPAIR_SHORTENED_SYNTHESIS =
+  'Her research investigates how mucosal immune cells restrain inflammation in the human intestine.';
+
 const OFFICIAL_RESEARCH_STATEMENT =
   'The Lin Laboratory studies how mucosal immune cells restrain intestinal inflammation, combining organoid co-culture, single-cell sequencing, and computational modeling to predict relapse in inflammatory bowel disease.';
 
@@ -294,6 +303,59 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
       written: false,
       skipped: 'synthesized text keeps a dangling pronoun subject',
     });
+    expect(
+      await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
+    ).toBe(0);
+  });
+
+  it('refuses to write to a LAB minted from the same profile page', async () => {
+    // The faculty-directory scrapers mint a LAB whenever the faculty member has a
+    // lab site and stamp the same biography on it, so `--slug <that-lab>` reached
+    // a cohort the seed source and coverage registry both declare out of scope.
+    await seedFra({ entityType: 'LAB', fullDescription: PROFILE_BIO });
+    const callLLM = vi.fn(stubLLM(SYNTHESIZED_RESEARCH));
+    const fetchProfileText = vi.fn(async () => PROFILE_PAGE_TEXT);
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+
+    const report = await runFraProfileSynthesisEntity({
+      entity,
+      profileUrl: PROFILE_URL,
+      callLLM,
+      fetchProfileText,
+      apply: true,
+      runId: 'out-of-scope',
+      sourceId: 'out-of-scope',
+    });
+
+    expect(report).toMatchObject({ written: false });
+    expect(report.skipped).toMatch(/out-of-scope/);
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(fetchProfileText).not.toHaveBeenCalled();
+    expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
+  });
+
+  it('leaves an archived entity out of scope', async () => {
+    await seedFra({ archived: true, fullDescription: PROFILE_BIO });
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+    expect(selectFraProfileSynthesisTargets([entity])).toEqual([]);
+  });
+
+  it('fails closed when pronoun repair drops the text back below the quality bar', async () => {
+    await seedFra();
+    await seedFullDescriptionObservation(
+      PROFILE_BIO,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+
+    const report = await runLane(stubLLM(REPAIR_SHORTENED_SYNTHESIS));
+
+    expect(report).toMatchObject({ synthesized: false, written: false });
+    expect(report.skipped).toMatch(/quality bar/);
     expect(
       await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
     ).toBe(0);

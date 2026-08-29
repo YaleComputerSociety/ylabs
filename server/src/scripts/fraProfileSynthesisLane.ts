@@ -5,7 +5,10 @@
  */
 import { Observation } from '../models/observation';
 import { appendObservations } from '../scrapers/observationStore';
-import { synthesizeCoverageDescription, type CoverageSynthesisLLMFn } from '../scrapers/coverageSynthesis';
+import {
+  synthesizeCoverageDescription,
+  type CoverageSynthesisLLMFn,
+} from '../scrapers/coverageSynthesis';
 import { materializeEntity, materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import {
   fullDescriptionObservationFilter,
@@ -23,13 +26,16 @@ import {
 } from './fraProfileSynthesisCore';
 
 export const FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS =
-  'slug name entityType researchAreas fullDescription sourceUrls manuallyLockedFields';
+  'slug name entityType archived researchAreas fullDescription sourceUrls manuallyLockedFields';
+
+export const FRA_PROFILE_SYNTHESIS_ENTITY_TYPE = 'FACULTY_RESEARCH_AREA';
 
 export interface FraProfileSynthesisEntity {
   _id?: unknown;
   slug?: unknown;
   name?: unknown;
   entityType?: unknown;
+  archived?: unknown;
   researchAreas?: unknown;
   fullDescription?: unknown;
   sourceUrls?: unknown;
@@ -75,6 +81,17 @@ function isFullDescriptionLocked(entity: FraProfileSynthesisEntity): boolean {
 }
 
 /**
+ * The cohort declared by the seed source and the coverage registry: live
+ * FACULTY_RESEARCH_AREA entities only. Checked here rather than only in the CLI's
+ * default query because the faculty-directory scrapers mint a LAB from the same
+ * profile page and stamp the same biography on it, so a `--slug` pointing at one
+ * of those (or at an archived entity) would otherwise be written to.
+ */
+export function isFraProfileSynthesisScopedEntity(entity: FraProfileSynthesisEntity): boolean {
+  return entity.entityType === FRA_PROFILE_SYNTHESIS_ENTITY_TYPE && entity.archived !== true;
+}
+
+/**
  * Only entities currently serving a biography are in scope. A FRA whose
  * description already reads as research is left alone: the A/B that justified
  * this lane measured the bio-shaped cohort only, and rewriting good descriptions
@@ -85,6 +102,7 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
 ): T[] {
   return entities.filter(
     (entity) =>
+      isFraProfileSynthesisScopedEntity(entity) &&
       !isFullDescriptionLocked(entity) &&
       isBioShapedFacultyDescription(entity.fullDescription) &&
       profileUrlOf(entity.sourceUrls),
@@ -130,6 +148,10 @@ export async function runFraProfileSynthesisEntity(
     written: false,
   };
 
+  if (!isFraProfileSynthesisScopedEntity(entity)) {
+    report.skipped = 'out-of-scope entity (not a live FACULTY_RESEARCH_AREA)';
+    return report;
+  }
   if (isFullDescriptionLocked(entity)) {
     report.skipped = 'fullDescription-locked';
     return report;
@@ -175,6 +197,13 @@ export async function runFraProfileSynthesisEntity(
   }
   if (hasResidualPronounLead(description)) {
     report.skipped = 'synthesized text keeps a dangling pronoun subject';
+    return report;
+  }
+  // The synthesizer's quality gate ran on the pre-repair text, and repair drops
+  // words ("Her research focuses on X" -> "Focuses on X"), so a value that just
+  // cleared the length floor can fall back under it here.
+  if (!fullDescriptionQuality(description, entity.researchAreas, entity.entityType).isUseful) {
+    report.skipped = 'repaired text no longer clears the description-quality bar';
     return report;
   }
   report.synthesized = true;

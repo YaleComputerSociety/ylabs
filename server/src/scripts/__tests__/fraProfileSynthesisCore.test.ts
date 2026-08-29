@@ -112,6 +112,24 @@ describe('repairPronounLead', () => {
     );
   });
 
+  it('repairs a dangling pronoun after a sentence ending in a single capital letter', () => {
+    // The abbreviation guard's single-capital rule suppressed the boundary after
+    // "hepatitis C.", so the pronoun sentence was never seen as a sentence.
+    expect(
+      repairPronounLead(
+        'Investigates the immunology of hepatitis C. She directs the Yale Liver Center.',
+      ),
+    ).toBe('Investigates the immunology of hepatitis C. Directs the Yale Liver Center.');
+  });
+
+  it('repairs a possessive lead after a sentence ending in a single capital letter', () => {
+    expect(
+      repairPronounLead(
+        'Studies the role of vitamin D. Her group leads a national consortium on bone health.',
+      ),
+    ).toBe('Studies the role of vitamin D. Leads a national consortium on bone health.');
+  });
+
   it('repairs a dangling pronoun in a later sentence, not only the lead', () => {
     // Observed on roberts-cer63: repairing only the first sentence left
     // "... public understanding. She directs a community-academic partnership."
@@ -177,6 +195,16 @@ describe('hasResidualPronounLead', () => {
     ).toBe(true);
   });
 
+  it('flags a dangling pronoun after a sentence ending in a single capital letter', () => {
+    // Both defences read the same split, so a boundary the splitter missed used
+    // to pass an unrepaired "She directs ..." straight through.
+    expect(
+      hasResidualPronounLead(
+        'Studies the role of vitamin D. Her group has published widely on bone health.',
+      ),
+    ).toBe(true);
+  });
+
   it('passes a description with no pronoun subjects left', () => {
     expect(
       hasResidualPronounLead(
@@ -186,9 +214,9 @@ describe('hasResidualPronounLead', () => {
   });
 
   it('does not flag a pronoun that is not the sentence subject', () => {
-    expect(
-      hasResidualPronounLead('Research on how her collaborators model protein folding.'),
-    ).toBe(false);
+    expect(hasResidualPronounLead('Research on how her collaborators model protein folding.')).toBe(
+      false,
+    );
   });
 });
 
