@@ -7,6 +7,7 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isLikelyPublicProfileImageUrl,
+  isSharedProfileImageAcrossDifferentNames,
 } from '../scripts/profileImageQualityAuditCore';
 
 const normalizeNameToken = (value: unknown): string =>
@@ -1759,97 +1760,3 @@ export const normalizePublicProfile = (
     researchEntities: publicResearchEntities,
   };
 };
-
-/**
- * Fields an account was allowed to self-edit. Retained as the base allowlist
- * that the admin profile update path extends.
- */
-const ALLOWED_SELF_UPDATE_FIELDS = [
-  'bio',
-  'primaryDepartment',
-  'secondaryDepartments',
-  'researchInterests',
-  'topics',
-  'imageUrl',
-  'profileUrls',
-  'website',
-];
-
-const MAX_SELF_PROFILE_TEXT_LENGTH = 2000;
-const MAX_SELF_PROFILE_ARRAY_ITEMS = 50;
-const MAX_SELF_PROFILE_ARRAY_VALUE_LENGTH = 120;
-const MAX_SELF_PROFILE_URLS = 20;
-const MAX_SELF_PROFILE_URL_KEY_LENGTH = 80;
-const MAX_SELF_PROFILE_URL_LENGTH = 2048;
-const SAFE_PROFILE_URL_KEY_RE = /^[A-Za-z0-9 _-]{1,80}$/;
-
-const boundedProfileString = (value: unknown, maxLength: number): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  return value.trim().slice(0, maxLength);
-};
-
-const boundedProfileStringArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, MAX_SELF_PROFILE_ARRAY_ITEMS).flatMap((item) => {
-    const normalized = boundedProfileString(item, MAX_SELF_PROFILE_ARRAY_VALUE_LENGTH);
-    return normalized ? [normalized] : [];
-  });
-};
-
-const boundedProfileUrlKey = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const normalized = value.trim();
-  if (!normalized || normalized.length > MAX_SELF_PROFILE_URL_KEY_LENGTH) return undefined;
-  if (!SAFE_PROFILE_URL_KEY_RE.test(normalized)) return undefined;
-  return normalized;
-};
-
-const boundedPublicProfileUrl = (value: unknown): string | undefined => {
-  const url = cleanPublicHttpUrl(value);
-  return url && url.length <= MAX_SELF_PROFILE_URL_LENGTH ? url : undefined;
-};
-
-/**
- * Admin: update any profile field.
- */
-const MAX_ADMIN_PROFILE_NAME_LENGTH = 120;
-const MAX_ADMIN_PROFILE_EMAIL_LENGTH = 254;
-const MAX_ADMIN_PROFILE_TITLE_LENGTH = 300;
-const MAX_ADMIN_PROFILE_IDENTIFIER_LENGTH = 300;
-const MAX_ADMIN_PROFILE_H_INDEX = 1_000_000;
-// Must match the AdminProfileEditModal <select> options exactly (admin/
-// professor/faculty/graduate/undergraduate/unknown) — 'student' was never
-// actually offered by that UI and is never assigned to a real account
-// (every real student is 'undergraduate' or 'graduate'), so keeping it here
-// instead of the real values silently dropped every admin edit that picked
-// faculty/graduate/undergraduate/unknown from the dropdown.
-const ADMIN_PROFILE_USER_TYPES = new Set([
-  'admin',
-  'professor',
-  'faculty',
-  'undergraduate',
-  'graduate',
-  'unknown',
-]);
-
-const boundedAdminProfileText = (value: unknown, maxLength: number): string | undefined => {
-  const text = boundedProfileString(value, maxLength);
-  return text === undefined ? undefined : redactDirectContactInfo(text);
-};
-
-const boundedAdminProfileNumber = (
-  value: unknown,
-  { min = 0, max = MAX_ADMIN_PROFILE_H_INDEX }: { min?: number; max?: number } = {},
-): number | undefined => {
-  const number =
-    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-  if (!Number.isFinite(number) || number < min || number > max) return undefined;
-  return Math.trunc(number);
-};
-
-const boundedAdminProfileEmail = (value: unknown): string | undefined => {
-  const email = boundedProfileString(value, MAX_ADMIN_PROFILE_EMAIL_LENGTH);
-  if (!email || /[\r\n]/.test(email)) return undefined;
-  return email.toLowerCase();
-};
-

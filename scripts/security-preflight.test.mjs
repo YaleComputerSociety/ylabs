@@ -2641,23 +2641,6 @@ test('client logout navigation uses the safe API URL builder', () => {
   assert.match(signInButton, /buildApiUrl\(`\/cas\$\{redirectParam\}`\)/);
 });
 
-test('self-editable profile writes cap arrays and URL maps before per-item normalization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/profileService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_SELF_PROFILE_ARRAY_ITEMS/);
-  assert.match(source, /MAX_SELF_PROFILE_URLS/);
-  assert.match(source, /const SAFE_PROFILE_URL_KEY_RE = \/\^\[A-Za-z0-9 _-\]\{1,80\}\$\//);
-  assert.match(source, /SAFE_PROFILE_URL_KEY_RE\.test\(normalized\)/);
-  assert.match(source, /value\s*\.slice\(0, MAX_SELF_PROFILE_ARRAY_ITEMS\)\s*\.flatMap/);
-  assert.match(
-    source,
-    /Object\.keys\(profileUrlsSource\)\s*\.slice\(0, MAX_SELF_PROFILE_URLS\)\s*\.flatMap/,
-  );
-});
-
 test('program and fellowship search bound query and filter inputs before search work', () => {
   const programController = fs.readFileSync(
     new URL('../server/src/controllers/programController.ts', import.meta.url),
