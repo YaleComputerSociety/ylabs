@@ -143,7 +143,9 @@
     "fuzzy:residual-report": "tsx src/scripts/pipelineEval/fuzzyResidualReport.ts",
     "research-entity:coverage-synthesis": "tsx src/scripts/coverageSynthesis.ts",
     "research-entity:grant-corpus-synthesis": "tsx src/scripts/grantCorpusSynthesis.ts",
-    "scraper-llm:description-ab": "tsx src/scripts/descriptionPromptAbHarness.ts"
+    "scraper-llm:description-ab": "tsx src/scripts/descriptionPromptAbHarness.ts",
+    "research-entity:fra-profile-synthesis": "tsx src/scripts/fraProfileSynthesis.ts",
+    "scraper-llm:fra-synthesis-ab": "tsx src/scripts/fraResearchSynthesisAbHarness.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",

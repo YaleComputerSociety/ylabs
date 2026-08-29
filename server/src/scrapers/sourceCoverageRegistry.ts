@@ -333,7 +333,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
-      'Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Each program\'s own official Yale page is the cited source; the NSF REU Sites directory is a non-Yale crawl seed used only to discover Yale-hosted site URLs and is never recorded as a source. Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that surface on the /programs catalog. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.',
+      "Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Each program's own official Yale page is the cited source; the NSF REU Sites directory is a non-Yale crawl seed used only to discover Yale-hosted site URLs and is never recorded as a source. Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that surface on the /programs catalog. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.",
   },
   'yale-health-sciences-summer-programs': {
     priority: 4,
@@ -342,7 +342,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
-      'Yale health-sciences undergraduate summer research programs hosted across Yale School of Medicine (medicine.yale.edu), Public Health (ysph.yale.edu), Nursing (nursing.yale.edu), and their institutes/centers - the biomedical analogue of the NSF-REU lane (yale-reu-programs), on distinct non-overlapping host domains. Each program\'s own official Yale page is the cited source; Yale-owned health-sciences listing pages are crawl seeds only, used to discover individual program pages and never recorded as a source (#516/#549). The two already-covered health-sciences seed URLs owned by yale-college-fellowships-office (medicine.yale.edu/whr/training, ycmd.yale.edu summer undergraduate internships) are explicitly excluded so a program is never minted twice (#1712). Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that project to research entities. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.',
+      "Yale health-sciences undergraduate summer research programs hosted across Yale School of Medicine (medicine.yale.edu), Public Health (ysph.yale.edu), Nursing (nursing.yale.edu), and their institutes/centers - the biomedical analogue of the NSF-REU lane (yale-reu-programs), on distinct non-overlapping host domains. Each program's own official Yale page is the cited source; Yale-owned health-sciences listing pages are crawl seeds only, used to discover individual program pages and never recorded as a source (#516/#549). The two already-covered health-sciences seed URLs owned by yale-college-fellowships-office (medicine.yale.edu/whr/training, ycmd.yale.edu summer undergraduate internships) are explicitly excluded so a program is never minted twice (#1712). Emits SUMMER_RESEARCH_PROGRAM fellowship observations (source-backed offer/eligibility/deadline and application link) that project to research entities. Fails closed on contact data (no scraped emails; contact derived at read time) and on any non-Yale source URL.",
   },
   'student-grants-database': {
     priority: 4,
@@ -415,6 +415,15 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'LOW',
     notes:
       'Grounded PI-level research description synthesized from the aggregated grant corpus already recorded on the entity (NIH/NSF/NEH/USASpending/DOE titles and abstracts). Derived from the funding lanes rather than an official page, so it ranks above the single-abstract grant fallback and below every official-profile source; fails closed when the output is not grounded in the grant text. Never creates access, route, opportunity, or contact evidence.',
+  },
+  'fra-profile-research-synthesis': {
+    priority: 7,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['TOPICS', 'METHODS'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Research description synthesized from the faculty member's own official Yale profile page, for FACULTY_RESEARCH_AREA entities currently serving a biography. Ranks above the grant-corpus synthesis lane and below every official-profile extraction source. Career, credential, and navigation text is stripped before synthesis, and the lane fails closed when the output is not grounded in the retained research prose or still reads as a person biography. Never creates access, route, opportunity, or contact evidence.",
   },
 } satisfies Record<string, SourceCoverageMetadata>;
 

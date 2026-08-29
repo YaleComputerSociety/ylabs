@@ -192,6 +192,33 @@ Do not add an eleventh source-type predicate to `researchEntityDescriptionText.t
 Across the served corpus the existing ten fire once in total, while fluent, well-formed, research-adjacent prose that names no subject passes all of them.
 Source type is also the wrong axis: most served descriptions containing "Our Mission" name a real subject and are good, so demoting the category discards more good prose than bad.
 
+#### FACULTY_RESEARCH_AREA descriptions are a synthesis problem, not an extraction problem
+
+An FRA usually has no lab site, so its only source is the professor's official Yale profile page, and the main prose block there is a biography.
+The description prompt requires an exact contiguous substring, so on a page where research is interleaved with credentials the only copyable span is bio-shaped.
+That is why 464 served FRA descriptions read as person bios: a structural limit of copying, not a ranking bug.
+A probe of 27 such profile pages found research prose on 27 of 27 and an appointment line on 27 of 27, while the deterministic extractor produced prose on 0 of 27.
+
+`research-entity:fra-profile-synthesis` (`fraProfileSynthesis.ts` plus the pure `fraProfileSynthesisCore.ts`) handles this cohort.
+It scopes to FRA entities whose stored description is bio-shaped and which have a `/profile/` source URL, harvests research sentences from that page, strips career, credential, and navigation sentences before synthesis, reuses `synthesizeCoverageDescription` so the existing grounding and quality gates apply unchanged, repairs orphan pronoun subjects, and fails closed when the output still reads as a biography.
+Dry-run by default; apply requires `--confirm-fra-profile-synthesis` and the Development database.
+Measured against the stored extract on 25 entities, bio signal fell from 100% to 10% with names-a-research-subject holding at 100% (#2200).
+
+Do not reach for the grant-corpus lane here: only 12 of the 464 bio-shaped FRAs have any grant at all, so #2191 reaches 3% of the cohort.
+
+Two traps this lane already paid for:
+
+- Do not gate on snippet count as a proxy for output quality.
+A two-snippet floor skipped 6 of 12 entities in a dry run, most of which synthesized cleanly.
+The precise control is the post-synthesis bio check.
+- Repair orphan pronouns in **every** sentence, not just the lead.
+Repairing only the first sentence left "Investigates histories of slavery and medicine. She directs a community partnership ..." on a real entity, moving the dangling pronoun out of view of the check rather than fixing it.
+The pronoun-verb list is deliberately an allowlist of research-activity verbs: a general pattern would rewrite "She is a professor of history" into "Is a professor of history", laundering a biography past the bio check.
+
+The professor's appointment title is **not** stored structurally anywhere (`contactRole` and `contactName` are empty across the whole cohort), and extracting it by regex over flattened page text matches site navigation instead.
+It survives only inside the profile-bio observation, which append-only storage retains after synthesis outranks it.
+Capture it from a structured region before anything starts deleting bio observations.
+
 ### Official directories
 
 | Scraper | Data |
