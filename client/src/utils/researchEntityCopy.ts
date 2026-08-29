@@ -7,6 +7,7 @@ const KIND_LABELS: Record<string, string> = {
   group: 'Group',
   individual: 'Faculty Research',
   solo: 'Faculty Research',
+  core_facility: 'Core Facility',
 };
 
 const ENTITY_TYPE_TO_KIND: Record<string, string> = {
@@ -23,6 +24,7 @@ const ENTITY_TYPE_TO_KIND: Record<string, string> = {
   FACULTY_PROJECT: 'group',
   DIGITAL_HUMANITIES_PROJECT: 'group',
   ARCHIVE_OR_MUSEUM_PROJECT: 'group',
+  CORE_FACILITY: 'core_facility',
 };
 
 export type ResearchEntityCopyInput = {

@@ -292,7 +292,7 @@ describe('LabDetail page', () => {
     expect(within(healthyArticle as HTMLElement).queryByText('may be unavailable')).toBeNull();
   });
 
-  it('gates the primary Visit official website CTA on a dead source link and falls back to the Yale Directory (#934)', async () => {
+  it('gates the primary Visit research website CTA on a dead source link and falls back to the Yale Directory (#934)', async () => {
     const DEAD_PRIMARY_SITE = 'https://deadlab.example.test/lab';
     renderLabDetail({
       ...basePayload,
@@ -309,7 +309,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.queryByRole('link', { name: 'Visit official website' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
     expect(screen.getByText(/does not have a direct link for this research home/)).toBeTruthy();
     const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
     expect(directoryLink.getAttribute('href')).toBe(
@@ -412,7 +412,7 @@ describe('LabDetail page', () => {
         .getAttribute('href'),
     ).toBe(LEAD_OFFICIAL_PROFILE_URL);
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Visit research website' }).getAttribute('href')).toBe(
       LAB_WEBSITE_URL,
     );
   });
@@ -450,7 +450,7 @@ describe('LabDetail page', () => {
     );
 
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Visit official website' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
     expect(screen.queryByText('Reach-out plausible')).toBeNull();
   });
@@ -648,7 +648,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
 
-  it('points to the official website instead of a dead end when there is no profile or email', async () => {
+  it('points to the lab website instead of a dead end when there is no profile or email', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -662,16 +662,15 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
-      RESEARCH_WEBSITE_URL,
-    );
-    expect(screen.queryByRole('link', { name: 'Visit lab website' })).toBeNull();
+    const websiteLinks = screen.getAllByRole('link', { name: 'Visit lab website' });
+    expect(websiteLinks).toHaveLength(1);
+    expect(websiteLinks[0].getAttribute('href')).toBe(RESEARCH_WEBSITE_URL);
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
   });
 
-  it('points an under-review entity to its official website instead of a Yale Directory dead end', async () => {
+  it('points an under-review entity to its lab website instead of a Yale Directory dead end', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -686,10 +685,9 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
-      RESEARCH_WEBSITE_URL,
-    );
-    expect(screen.queryByRole('link', { name: 'Visit lab website' })).toBeNull();
+    const websiteLinks = screen.getAllByRole('link', { name: 'Visit lab website' });
+    expect(websiteLinks).toHaveLength(1);
+    expect(websiteLinks[0].getAttribute('href')).toBe(RESEARCH_WEBSITE_URL);
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(screen.queryByText(/does not have a direct link/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
@@ -801,7 +799,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText('Molecular Biophysics and Biochemistry Undergraduate Research');
 
-    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Visit program website' }).getAttribute('href')).toBe(
       'https://mbb.yale.edu/introduction-undergraduate-program',
     );
     expect(screen.getByText('What this program focuses on')).toBeTruthy();
@@ -1526,10 +1524,9 @@ describe('LabDetail page', () => {
     await screen.findByText('Example Lab Homepage PI Route');
 
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
-      RESEARCH_WEBSITE_URL,
-    );
-    expect(screen.queryByRole('link', { name: 'Visit lab website' })).toBeNull();
+    const websiteLinks = screen.getAllByRole('link', { name: 'Visit lab website' });
+    expect(websiteLinks).toHaveLength(1);
+    expect(websiteLinks[0].getAttribute('href')).toBe(RESEARCH_WEBSITE_URL);
     expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
     expect(screen.getByText('Research website')).toBeTruthy();
   });
@@ -2289,7 +2286,7 @@ describe('LabDetail display name unification', () => {
     await waitFor(() => expect(document.title).toContain('Fallback Research Home'));
   });
 
-  it('offers a Visit official website action for a website-only research home', async () => {
+  it('offers a Visit research website action for a website-only research home', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -2313,7 +2310,7 @@ describe('LabDetail display name unification', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    const websiteLink = screen.getByRole('link', { name: 'Visit official website' });
+    const websiteLink = screen.getByRole('link', { name: 'Visit research website' });
     expect(websiteLink.getAttribute('href')).toBe(MATERIALS_LAB_WEBSITE_URL);
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
@@ -2342,7 +2339,7 @@ describe('LabDetail display name unification', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    const websiteLink = screen.getByRole('link', { name: 'Visit official website' });
+    const websiteLink = screen.getByRole('link', { name: 'Visit research website' });
     expect(websiteLink.getAttribute('href')).toBe('https://lab-home.example.test/materials');
   });
 

@@ -139,6 +139,18 @@ describe('researchEntityCopy', () => {
     }
   });
 
+  it('labels a core facility as a core facility rather than a generic research home', () => {
+    const coreFacility = {
+      name: 'Example Imaging Core',
+      kind: 'core_facility',
+      entityType: 'CORE_FACILITY',
+    };
+
+    expect(entityKindLabel(coreFacility)).toBe('Core Facility');
+    expect(researchWebsiteLabel(coreFacility)).toBe('core facility website');
+    expect(researchWebsiteCtaLabel(coreFacility)).toBe('Visit core facility website');
+  });
+
   it('falls back to kind when entityType is absent', () => {
     const legacy = { name: 'Example Institute', kind: 'institute' };
 
