@@ -305,6 +305,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'grant-corpus-synthesis-llm',
+    displayName: 'Grant-corpus research synthesis LLM',
+    description:
+      "Synthesizes a grounded, PI-level research description for a grant-backed entity from its whole recentGrants corpus (aggregated NIH/NSF/NEH/USASpending/DOE titles and abstracts) via the grounded coverage synthesizer. Fails closed unless the output is grounded in the grant text and clears the description-quality bar. Weighted above the single-abstract grant fallback but below official-profile sources so a real profile still wins.",
+    baseUrl: '',
+    defaultWeight: 0.45,
+    cadence: 'weekly',
+  },
+  {
     name: 'yale-college-fellowships-office',
     displayName: 'Yale College Fellowships Office',
     description: 'Authoritative listing of Yale-internal undergrad fellowships.',

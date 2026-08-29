@@ -140,6 +140,21 @@ Scrapers collect evidence. They should not create unsupported student-facing con
 Research description visibility is assessed after the same lead-aware sanitization used by the public detail response.
 A `student_ready` entity must have useful public full and card descriptions after sanitization, and an operator override cannot bypass that invariant.
 
+### Grant-corpus research synthesis and PI-to-school inheritance
+
+Grant-backed PIs (especially YSM/YSPH faculty whose `medicine.yale.edu/profile/*` pages are WAF-403-blocked) can be given real research coverage from the sanctioned government grant data we already ingest.
+`research-entity:grant-corpus-synthesis` (`server/src/scripts/grantCorpusSynthesis.ts`, core in `grantCorpusSynthesisCore.ts`) selects non-archived entities that have `recentGrants` but no better-sourced description, aggregates the PI's whole grant corpus (each grant's title plus abstract across NIH RePORTER, NSF, NEH, USASpending, and DOE), and reuses the grounded coverage synthesizer (`synthesizeCoverageDescription`, gpt-5-mini) to produce one clean, PI-level `fullDescription`.
+An entity is skipped when an official non-grant source already carries a useful description, so a real profile always wins; the single-abstract grant fallback (`GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE`, 0.35) does not.
+The synthesized description is written as a `grant-corpus-synthesis-llm` observation at `GRANT_CORPUS_DESCRIPTION_CONFIDENCE` (0.45), above the single-abstract fallback and below the weakest official-profile source, and it fails closed (no observation) when the output is not grounded in the grant text or does not clear the description-quality bar.
+The materializer then derives the grounded `shortDescription` (`resolveMaterializedShortDescription`) and canonical `researchAreas` (`applyDescriptionResearchAreaDerivation`) from that description on the same pass, so no separate research-area LLM call is needed.
+The lane is dry-run-first, bounded by `--limit`, and apply is Development-only and requires `--confirm-grant-corpus-synthesis`; the source must be seeded first (`scrape:seed-sources`).
+
+PI-to-school inheritance runs as a materialize-time step in `entityMaterializer.inheritSchoolFromLeadPi`, right after the inferred PI/director membership is resolved.
+When a grant-derived shell has no school of its own, exactly one current lead (PI or director) resolves to a single `Researcher`, and that researcher's department (from `Researcher.primaryDepartment`/`profile.primaryDepartment` or the linked `Account.department`) canonicalizes to an `OrgUnit` with a parent school, the entity inherits that department and its parent school through `applyResearchEntityOrgUnitCanonicalization`.
+It honors `manuallyLockedFields`, never overwrites an existing school, and skips the multi-PI org kinds (`center`/`institute`/`program`) so one director can never guess a whole cross-school center's school.
+It fails closed on every other outcome (locked, ambiguous or missing lead, no department, or a department with no derivable school), so a wrong school is never guessed.
+This closes the "grant-derived shells have no school" gap on the same engine pass that closes the description gap, and stays correct on re-runs.
+
 ### One serve-time description sanitizer
 
 Every HTTP path that serves research-entity copy runs one canonical function, `sanitizeServedResearchEntityCopyFields` in `server/src/utils/researchEntityDescriptionText.ts`.

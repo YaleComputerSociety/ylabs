@@ -1496,6 +1496,123 @@ async function materializeCanonicalPiMembership(
   );
 }
 
+const SCHOOL_INHERITANCE_LEAD_ROLES = ['PI', 'DIRECTOR'];
+
+async function resolveSingleLeadResearcherId(
+  researchEntityId: string,
+): Promise<string | undefined> {
+  const objectId = toMaterializerObjectId(researchEntityId);
+  if (!objectId) return undefined;
+  const leads = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': objectId,
+    role: { $in: SCHOOL_INHERITANCE_LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('personId')
+    .lean()) as Array<{ personId?: unknown }>;
+  const distinctPersonIds = new Set(
+    leads.map((assignment) => materializerDocumentId(assignment.personId)).filter((id) => id.length > 0),
+  );
+  return distinctPersonIds.size === 1 ? distinctPersonIds.values().next().value : undefined;
+}
+
+async function leadResearcherDepartment(researcherId: string): Promise<string | undefined> {
+  const researcher = (await Researcher.findById(researcherId)
+    .select('primaryDepartment profile accountId')
+    .lean()) as {
+    primaryDepartment?: unknown;
+    profile?: { primaryDepartment?: unknown };
+    accountId?: unknown;
+  } | null;
+  if (!researcher) return undefined;
+  const direct =
+    textValue(researcher.primaryDepartment) || textValue(researcher.profile?.primaryDepartment);
+  if (direct) return direct;
+  if (researcher.accountId) {
+    const account = (await Account.findById(materializerDocumentId(researcher.accountId))
+      .select('department')
+      .lean()) as { department?: unknown } | null;
+    const accountDepartment = textValue(account?.department);
+    if (accountDepartment) return accountDepartment;
+  }
+  return undefined;
+}
+
+export type LeadPiSchoolInheritanceSkip =
+  | 'locked'
+  | 'has-school'
+  | 'multi-pi-kind'
+  | 'no-single-lead'
+  | 'no-department'
+  | 'no-school-derivable';
+
+export interface LeadPiSchoolInheritanceResult {
+  inherited: boolean;
+  school?: string;
+  departments?: string[];
+  skipped?: LeadPiSchoolInheritanceSkip;
+}
+
+export function leadPiSchoolInheritanceGate(input: {
+  manuallyLockedFields?: string[];
+  school?: unknown;
+  kind?: unknown;
+}): Extract<LeadPiSchoolInheritanceSkip, 'locked' | 'has-school' | 'multi-pi-kind'> | 'eligible' {
+  const locked = input.manuallyLockedFields ?? [];
+  if (locked.includes('school') || locked.includes('departments')) return 'locked';
+  if (textValue(input.school)) return 'has-school';
+  if (MULTI_PI_ORG_KINDS.has(textValue(input.kind).toLowerCase())) return 'multi-pi-kind';
+  return 'eligible';
+}
+
+export async function inheritSchoolFromLeadPi(
+  researchEntityId: string,
+  options: { manuallyLockedFields?: string[]; dryRun?: boolean } = {},
+): Promise<LeadPiSchoolInheritanceResult> {
+  const entity = (await ResearchEntity.findById(researchEntityId)
+    .select('school departments schools kind entityType')
+    .lean()) as {
+    school?: unknown;
+    departments?: unknown;
+    schools?: unknown;
+    kind?: unknown;
+  } | null;
+  if (!entity) return { inherited: false };
+  const gate = leadPiSchoolInheritanceGate({
+    manuallyLockedFields: options.manuallyLockedFields,
+    school: entity.school,
+    kind: entity.kind,
+  });
+  if (gate !== 'eligible') return { inherited: false, skipped: gate };
+
+  const leadResearcherId = await resolveSingleLeadResearcherId(researchEntityId);
+  if (!leadResearcherId) return { inherited: false, skipped: 'no-single-lead' };
+  const department = await leadResearcherDepartment(leadResearcherId);
+  if (!department) return { inherited: false, skipped: 'no-department' };
+
+  const existingDepartments = Array.isArray(entity.departments)
+    ? (entity.departments as unknown[]).map((value) => textValue(value)).filter(Boolean)
+    : [];
+  const set: Record<string, unknown> = {
+    departments: Array.from(new Set([...existingDepartments, department])),
+  };
+  await applyResearchEntityOrgUnitCanonicalization(set, entity);
+  const derivedSchool = textValue(set.school);
+  if (!derivedSchool) return { inherited: false, skipped: 'no-school-derivable' };
+  const departments = Array.isArray(set.departments) ? (set.departments as string[]) : [];
+
+  if (options.dryRun) return { inherited: true, school: derivedSchool, departments };
+
+  await mutateAndRefreshAdminAccessReviewProjection(toMaterializerObjectId(researchEntityId), (session) =>
+    ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
+  );
+  const fresh = await ResearchEntity.findById(researchEntityId).lean();
+  if (fresh) await syncEntity('researchEntity', fresh);
+  return { inherited: true, school: derivedSchool, departments };
+}
+
 export interface InferredDirectorMaterializationResult {
   written: boolean;
   promoted: boolean;
@@ -3728,6 +3845,7 @@ export async function materializeEntity(
     if (!options.dryRun) {
       await materializeInferredPiMembership(entityIdString, materializationObs);
       await materializeInferredDirectorMembership(entityIdString, materializationObs);
+      await inheritSchoolFromLeadPi(entityIdString, { manuallyLockedFields });
     }
     const accessResult = await materializeAccessForResearchGroup({
       researchEntityId: entityIdString,

@@ -11,6 +11,7 @@ import {
   deriveResearchEntityWebsiteUrl,
   buildOfficialRosterArchiveFilter,
   emptyPostMaterializationMetrics,
+  leadPiSchoolInheritanceGate,
   materializedFieldValue,
   normalizeMaterializerObjectId,
   bestMaterializationProvenanceSourceUrl,
@@ -1096,5 +1097,37 @@ describe('center relationship type + label resolution', () => {
     expect(relationshipLabelForType('MEMBER_RESEARCH_AREA')).toBe('Member');
     expect(relationshipLabelForType('HOSTED_PROGRAM')).toBe('Hosted program');
     expect(relationshipLabelForType('SOMETHING_ELSE')).toBe('Related research home');
+  });
+});
+
+describe('leadPiSchoolInheritanceGate (#2158 PI->school inheritance)', () => {
+  it('is eligible for a grant-derived lab shell with no school', () => {
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'lab' })).toBe('eligible');
+    expect(leadPiSchoolInheritanceGate({ school: undefined, kind: 'lab' })).toBe('eligible');
+  });
+
+  it('never overwrites a better-sourced existing school', () => {
+    expect(leadPiSchoolInheritanceGate({ school: 'School of Medicine', kind: 'lab' })).toBe(
+      'has-school',
+    );
+  });
+
+  it('respects manually locked school or departments', () => {
+    expect(
+      leadPiSchoolInheritanceGate({ manuallyLockedFields: ['school'], school: '', kind: 'lab' }),
+    ).toBe('locked');
+    expect(
+      leadPiSchoolInheritanceGate({
+        manuallyLockedFields: ['departments'],
+        school: '',
+        kind: 'lab',
+      }),
+    ).toBe('locked');
+  });
+
+  it('fails closed for multi-PI org kinds so one director never guesses a whole center school', () => {
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'center' })).toBe('multi-pi-kind');
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'institute' })).toBe('multi-pi-kind');
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'program' })).toBe('multi-pi-kind');
   });
 });
