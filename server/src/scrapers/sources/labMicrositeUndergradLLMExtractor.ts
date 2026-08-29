@@ -36,7 +36,12 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { quoteExplicitlyDeclinesUndergraduates } from '../undergraduateLogisticsMaterializer';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
-import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
+import {
+  deriveShortDescriptionFromFullDescription,
+  fullDescriptionQuality,
+  isFullDescriptionRestatementOfShortDescription,
+  shortDescriptionQuality,
+} from '../../utils/researchEntityDescriptionQuality';
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
 import { isRejectedDescriptionSourceUrl } from './labMicrositeDescriptionLLMExtractor';
 import {
@@ -825,11 +830,12 @@ export function extractionToObservations(
       value: studentReadyDescription,
       confidenceOverride: 0.55,
     });
-    if (isCardLengthDescription(studentReadyDescription)) {
+    const cardDescription = distinctCardDescription(studentReadyDescription);
+    if (cardDescription) {
       out.push({
         ...base,
         field: 'shortDescription',
-        value: studentReadyDescription,
+        value: cardDescription,
         confidenceOverride: 0.55,
       });
     }
@@ -960,12 +966,17 @@ function cleanStudentFacingDescription(researchSummary: string): string {
   return cleaned;
 }
 
-// This source stores the same one-sentence summary as both descriptions, so
-// shortDescriptionQuality would always fire its `same-as-full` flag; the only
-// short-specific defect that still matters here is an over-long card, matching
-// shortDescriptionQuality's `too-long` thresholds (>280 chars or >44 words).
-function isCardLengthDescription(text: string): boolean {
-  return text.length <= 280 && text.trim().split(/\s+/).filter(Boolean).length <= 44;
+// Emitting one value to both description fields is self-defeating: the
+// materializer's restatement guard reacts by clearing fullDescription, so the
+// detail page loses its prose while the surviving card keeps the record looking
+// healthy to the visibility gate. A card line is therefore only emitted when it
+// compresses the full into something genuinely distinct; otherwise no
+// shortDescription observation is written and the card-derivation path owns it.
+function distinctCardDescription(fullDescription: string): string {
+  const derived = deriveShortDescriptionFromFullDescription(fullDescription);
+  if (!derived) return '';
+  if (isFullDescriptionRestatementOfShortDescription(fullDescription, derived)) return '';
+  return shortDescriptionQuality(derived, fullDescription).isUseful ? derived : '';
 }
 
 function sourceSupportsResearchSummary(

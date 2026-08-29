@@ -15,6 +15,7 @@ import { isSelfReferentialUrl } from '../utils/urlSafety';
 import { sanitizeObservationField } from './observationFieldSanitizer';
 import {
   fullDescriptionQuality,
+  isFullDescriptionRestatementOfShortDescription,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import type { ObservationInput } from './types';
@@ -50,6 +51,28 @@ export function proseValueIsUseful(
         entityType: context.entityType,
       }).isUseful
     : fullDescriptionQuality(value, context.researchAreas, context.entityType).isUseful;
+}
+
+/**
+ * A shortDescription that restates the fullDescription it arrives with is
+ * self-defeating rather than merely low quality: the materializer answers the
+ * pair by clearing the fullDescription, so persisting the card destroys the
+ * richer field and leaves a detail page with no prose behind a card that still
+ * looks healthy to the visibility gate. `isRegressiveProseRefresh` cannot catch
+ * this because it only fires when there is an existing useful value to protect,
+ * and the first write of a pair has none. Dropping the card is the safe half to
+ * lose: it is derivable from the full, and the full is not derivable from it.
+ */
+export function selfDefeatingCardRestatesFullDescription(
+  field: string,
+  value: unknown,
+  context: ProseQualityContext = {},
+): boolean {
+  if (field !== 'shortDescription') return false;
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const full = typeof context.fullContext === 'string' ? context.fullContext : '';
+  if (!full.trim()) return false;
+  return isFullDescriptionRestatementOfShortDescription(full, value);
 }
 
 export function isRegressiveProseRefresh(input: {
@@ -175,6 +198,7 @@ export async function appendObservations(
   const losslessIngest = c4LosslessIngestEnabled();
   const keptInputs: ObservationInput[] = [];
   let regressiveProseGuarded = 0;
+  let selfDefeatingCardGuarded = 0;
   for (const obs of acceptedInputs) {
     if (!losslessIngest && QUALITY_GUARDED_PROSE_FIELDS.has(obs.field)) {
       const entityKey = entityKeyForProse(obs);
@@ -208,6 +232,10 @@ export async function appendObservations(
             incomingContext.fullContext = existingFullContext;
           }
         }
+        if (selfDefeatingCardRestatesFullDescription(obs.field, obs.value, incomingContext)) {
+          selfDefeatingCardGuarded += 1;
+          continue;
+        }
         if (
           isRegressiveProseRefresh({
             field: obs.field,
@@ -229,7 +257,8 @@ export async function appendObservations(
     rejectedSelfReferential.length +
     rejectedFurniture +
     rejectedInvalidEnum.length +
-    regressiveProseGuarded;
+    regressiveProseGuarded +
+    selfDefeatingCardGuarded;
   if (keptInputs.length === 0) {
     return { inserted: 0, skipped: skippedCount, superseded: 0 };
   }

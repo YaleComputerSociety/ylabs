@@ -6,6 +6,7 @@ import {
   isRegressiveProseRefresh,
   observationEntityIdentityFilter,
   retireObservations,
+  selfDefeatingCardRestatesFullDescription,
 } from '../observationStore';
 import {
   fullDescriptionQuality,
@@ -336,9 +337,145 @@ describe('isRegressiveProseRefresh', () => {
   });
 });
 
+describe('selfDefeatingCardRestatesFullDescription', () => {
+  it('flags a card that byte-matches the full it arrives with', () => {
+    expect(
+      selfDefeatingCardRestatesFullDescription('shortDescription', USEFUL_DESCRIPTION, {
+        fullContext: USEFUL_DESCRIPTION,
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves a genuinely distinct card alone', () => {
+    expect(
+      selfDefeatingCardRestatesFullDescription('shortDescription', USEFUL_SHORT_DESCRIPTION, {
+        fullContext: USEFUL_DESCRIPTION,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not fire without a full to compare against, or on the full field itself', () => {
+    expect(
+      selfDefeatingCardRestatesFullDescription('shortDescription', USEFUL_DESCRIPTION, {}),
+    ).toBe(false);
+    expect(
+      selfDefeatingCardRestatesFullDescription('fullDescription', USEFUL_DESCRIPTION, {
+        fullContext: USEFUL_DESCRIPTION,
+      }),
+    ).toBe(false);
+  });
+});
+
 describe('appendObservations', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('keeps only the full when a batch emits one value as both description fields', async () => {
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:full' }] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'fullDescription',
+          value: USEFUL_DESCRIPTION,
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'shortDescription',
+          value: USEFUL_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-undergrad-llm',
+        sourceWeight: 0.55,
+        dryRun: false,
+      },
+      { loadActiveProse: async () => undefined },
+    );
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    const inserted = insertMany.mock.calls[0][0] as Array<{ field: string }>;
+    expect(inserted.map((doc) => doc.field)).toEqual(['fullDescription']);
+    expect(result).toEqual({ inserted: 1, skipped: 1, superseded: 0 });
+  });
+
+  it('drops a card that restates a full already active for the same source', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'shortDescription',
+          value: USEFUL_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'ysm-atoz-index',
+        sourceWeight: 0.92,
+        dryRun: false,
+      },
+      {
+        loadActiveProse: async (query) =>
+          query.field === 'fullDescription' ? USEFUL_DESCRIPTION : undefined,
+      },
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
+  it('still persists a distinct card emitted alongside its full', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-1', observationFingerprint: 'fp:full' },
+      { _id: 'new-2', observationFingerprint: 'fp:short' },
+    ] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'fullDescription',
+          value: USEFUL_DESCRIPTION,
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'shortDescription',
+          value: USEFUL_SHORT_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      { loadActiveProse: async () => undefined },
+    );
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    const inserted = insertMany.mock.calls[0][0] as Array<{ field: string }>;
+    expect(inserted.map((doc) => doc.field).sort()).toEqual([
+      'fullDescription',
+      'shortDescription',
+    ]);
+    expect(result.inserted).toBe(2);
   });
 
   it('does not persist a degraded description that would supersede a clean same-source one', async () => {
