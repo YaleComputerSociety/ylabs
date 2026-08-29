@@ -39,16 +39,8 @@ const analyticsData: AnalyticsData = {
   engagement: {
     search: { totalSearches: 0, searchesLast7Days: 0, searchesToday: 0 },
     topSearchQueries: [],
-    views: { totalViews: 0, viewsLast7Days: 0, viewsToday: 0 },
-    favorites: [],
-    trendingListings: [],
     userActivity: { activeUsers: 0, avgEventsPerUser: 0 },
     mostActiveUsers: [],
-    totalViewsFromCounters: 0,
-    totalFavoritesFromCounters: 0,
-    avgViews: 0,
-    avgFavorites: 0,
-    viewsByDepartment: [],
   },
   research: {
     byEventType: [
@@ -58,7 +50,7 @@ const analyticsData: AnalyticsData = {
     ],
     byEntityType: [
       { entityType: 'profile', eventType: 'research_view', count: 7 },
-      { entityType: 'listing', eventType: 'pathway_save', count: 4 },
+      { entityType: 'fellowship', eventType: 'pathway_save', count: 4 },
     ],
     byUserType: [{ userType: 'undergraduate', count: 6 }],
     topEntities: [
@@ -69,16 +61,6 @@ const analyticsData: AnalyticsData = {
         uniqueViewers: 3,
       },
     ],
-  },
-  listings: {
-    overview: { total: 0, active: 0, archived: 0, unconfirmed: 0 },
-    newListingsLast7Days: 0,
-    newListingsToday: 0,
-    byDepartment: [],
-    byProfessor: [],
-    listingsWithZeroViews: 0,
-    topViewedListings: [],
-    topFavoritedListings: [],
   },
   users: {
     overview: { total: 1, confirmed: 1 },
@@ -747,19 +729,8 @@ describe('Analytics page', () => {
       totalEvents: 9,
       logins: 2,
       searches: 4,
-      views: 3,
       researchViews: 2,
       fellowshipViews: 0,
-      listingFavorites: 0,
-      listingUnfavorites: 0,
-      fellowshipFavorites: 0,
-      fellowshipUnfavorites: 0,
-      outreachClicks: 0,
-      outreachOutcomes: 0,
-      listingCreates: 0,
-      listingUpdates: 0,
-      listingArchives: 0,
-      listingUnarchives: 0,
       profileUpdates: 0,
       loginCount: 2,
       lastActive: '2026-05-17T00:00:00.000Z',
@@ -814,7 +785,7 @@ describe('Analytics page', () => {
     expect(screen.getAllByText('nameless02').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('undefined')).toBeNull();
 
-    expect(screen.getAllByText(/Listing Views/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/Listing Views/)).toBeNull();
     expect(screen.getAllByText(/Research Views/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: /Research Views/ })).toBeTruthy();
   });

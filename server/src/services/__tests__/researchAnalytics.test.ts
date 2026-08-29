@@ -12,7 +12,7 @@ describe('research analytics event emission', () => {
     const emitted = await emitResearchEvent(
       {
         eventType: AnalyticsEventType.RESEARCH_VIEW,
-        entityType: 'listing',
+        entityType: 'fellowship',
         entityId: '507f1f77bcf86cd799439010',
         user,
         payload: { surface: 'detail' },
@@ -27,7 +27,7 @@ describe('research analytics event emission', () => {
       eventType: AnalyticsEventType.RESEARCH_VIEW,
       netid: 'abc123',
       userType: 'undergraduate',
-      entityType: 'listing',
+      entityType: 'fellowship',
       entityId: '507f1f77bcf86cd799439010',
       metadata: {
         surface: 'detail',
@@ -76,7 +76,7 @@ describe('research analytics event emission', () => {
     await emitResearchEvent(
       {
         eventType: AnalyticsEventType.CONTACT_ROUTE_CLICK,
-        entityType: 'listing',
+        entityType: 'fellowship',
         entityId: '507f1f77bcf86cd799439011',
         user,
         payload: {
@@ -127,7 +127,7 @@ describe('research analytics event emission', () => {
     const emitted = await emitResearchEvent(
       {
         eventType: AnalyticsEventType.PATHWAY_SAVE,
-        entityType: 'listing',
+        entityType: 'fellowship',
         entityId: '507f1f77bcf86cd799439013',
         user,
         payload: {
@@ -143,7 +143,7 @@ describe('research analytics event emission', () => {
     const invalidEmitted = await emitResearchEvent(
       {
         eventType: 'listing_view',
-        entityType: 'listing',
+        entityType: 'fellowship',
         entityId: '507f1f77bcf86cd799439013',
         user,
       },

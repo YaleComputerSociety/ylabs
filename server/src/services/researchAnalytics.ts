@@ -2,7 +2,7 @@
  * Pure helpers for the research-surface analytics events.
  *
  * These functions build and sanitize the analytics payloads for the canonical
- * research product surfaces (profile / listing / fellowship views and their
+ * research product surfaces (profile / fellowship / research-entity views and their
  * interaction affordances). They are deliberately side-effect free so the event
  * shape and, critically, the privacy guarantees can be unit tested without a
  * database or an Express request. The route/controller layer calls

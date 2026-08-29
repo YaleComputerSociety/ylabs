@@ -15,7 +15,7 @@ const legacySelfJoinPipeline = (): mongoose.PipelineStage[] => [
   {
     $addFields: {
       normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
-      searchEntityType: { $ifNull: ['$metadata.entityType', 'listing'] },
+      searchEntityType: { $ifNull: ['$metadata.entityType', 'unknown'] },
       resultCount: {
         $convert: {
           input: '$metadata.resultCount',
@@ -50,10 +50,7 @@ const legacySelfJoinPipeline = (): mongoose.PipelineStage[] => [
                     '$eventType',
                     [
                       AnalyticsEventType.SEARCH,
-                      AnalyticsEventType.LISTING_VIEW,
-                      AnalyticsEventType.LISTING_FAVORITE,
                       AnalyticsEventType.FELLOWSHIP_VIEW,
-                      AnalyticsEventType.FELLOWSHIP_FAVORITE,
                       AnalyticsEventType.RESEARCH_VIEW,
                       AnalyticsEventType.PATHWAY_SAVE,
                     ],
@@ -224,15 +221,15 @@ describe('search-quality attribution single-pass equivalence', () => {
         searchQuery: 'neuroscience',
         metadata: { entityType: 'research_entity', resultCount: 5 },
       }),
-      event('stud01', AnalyticsEventType.LISTING_VIEW, 2),
+      event('stud01', AnalyticsEventType.FELLOWSHIP_VIEW, 2),
       event('stud01', AnalyticsEventType.SEARCH, 40, {
         searchQuery: 'genomics',
         metadata: { entityType: 'research_entity', resultCount: 0 },
       }),
-      event('stud01', AnalyticsEventType.LISTING_VIEW, 41),
+      event('stud01', AnalyticsEventType.FELLOWSHIP_VIEW, 41),
       event('stud01', AnalyticsEventType.SEARCH, 120, {
         searchQuery: 'robotics',
-        metadata: { entityType: 'listing', resultCount: 3 },
+        metadata: { entityType: 'fellowship', resultCount: 3 },
       }),
 
       event('stud02', AnalyticsEventType.SEARCH, 0, {
@@ -243,11 +240,11 @@ describe('search-quality attribution single-pass equivalence', () => {
         searchQuery: 'immunology',
         metadata: { entityType: 'research_entity', resultCount: 2 },
       }),
-      event('stud02', AnalyticsEventType.LISTING_FAVORITE, 50),
+      event('stud02', AnalyticsEventType.PATHWAY_SAVE, 50),
 
       event('stud03', AnalyticsEventType.SEARCH, 0, {
         searchQuery: 'robotics',
-        metadata: { entityType: 'listing', resultCount: 4 },
+        metadata: { entityType: 'fellowship', resultCount: 4 },
       }),
       event('stud03', AnalyticsEventType.RESEARCH_VIEW, 5),
       event('stud03', AnalyticsEventType.SEARCH, 10, {
@@ -263,7 +260,7 @@ describe('search-quality attribution single-pass equivalence', () => {
         searchQuery: 'chemistry',
         metadata: { entityType: 'research_entity', resultCount: 6 },
       }),
-      event('stud04', AnalyticsEventType.LISTING_VIEW, 5),
+      event('stud04', AnalyticsEventType.FELLOWSHIP_VIEW, 5),
     ]);
   };
 

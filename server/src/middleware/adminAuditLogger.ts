@@ -96,11 +96,6 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
     targetType: 'accessReviewRecord',
     targetId: paramId('recordId'),
   },
-  'PUT /listing-claims/:id': {
-    action: 'listing_claim.review',
-    targetType: 'listingClaim',
-    targetId: paramId('id'),
-  },
 };
 
 const AUDIT_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

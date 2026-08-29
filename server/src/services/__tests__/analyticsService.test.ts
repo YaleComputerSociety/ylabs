@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
   researchEntityAggregate: vi.fn(),
   researchEntityFind: vi.fn(),
   fellowshipFind: vi.fn(),
-  getListingModel: vi.fn(),
 }));
 
 vi.mock('../../models/analytics', () => ({
@@ -24,19 +23,8 @@ vi.mock('../../models/analytics', () => ({
     LOGIN: 'login',
     LOGOUT: 'logout',
     VISITOR: 'visitor',
-    LISTING_VIEW: 'listing_view',
-    LISTING_FAVORITE: 'listing_favorite',
-    LISTING_UNFAVORITE: 'listing_unfavorite',
     FELLOWSHIP_VIEW: 'fellowship_view',
-    FELLOWSHIP_FAVORITE: 'fellowship_favorite',
-    FELLOWSHIP_UNFAVORITE: 'fellowship_unfavorite',
     SEARCH: 'search',
-    OUTREACH_CLICK: 'outreach_click',
-    OUTREACH_OUTCOME: 'outreach_outcome',
-    LISTING_CREATE: 'listing_create',
-    LISTING_UPDATE: 'listing_update',
-    LISTING_ARCHIVE: 'listing_archive',
-    LISTING_UNARCHIVE: 'listing_unarchive',
     PROFILE_UPDATE: 'profile_update',
     RESEARCH_VIEW: 'research_view',
     PATHWAY_SAVE: 'pathway_save',
@@ -53,7 +41,7 @@ vi.mock('../../models/analytics', () => ({
     RESEARCH_PLAN_UPDATE: 'research_plan_update',
     RESEARCH_QUALIFIED_ACTION: 'research_qualified_action',
   },
-  RESEARCH_ENTITY_TYPES: ['profile', 'listing', 'fellowship', 'research_entity'],
+  RESEARCH_ENTITY_TYPES: ['profile', 'fellowship', 'research_entity'],
   AnalyticsEvent: {
     aggregate: mocks.analyticsAggregate,
     create: mocks.analyticsCreate,
@@ -92,7 +80,6 @@ vi.mock('../../models/researcher', () => ({
 }));
 
 vi.mock('../../db/connections', () => ({
-  getListingModel: mocks.getListingModel,
 }));
 
 import {
@@ -201,18 +188,19 @@ describe('per-user activity view aggregation', () => {
     vi.clearAllMocks();
   });
 
-  it('counts listing views and research views as separate per-user metrics', async () => {
+  it('counts research views and fellowship views as separate per-user metrics', async () => {
     mocks.analyticsAggregate.mockResolvedValueOnce([{ users: [], total: 0 }]);
 
     await getUserAnalytics({});
 
     const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
     const groupStage = pipeline.find((stage: any) => stage.$group)?.$group;
-    const viewsAccumulator = groupStage.views?.$sum?.$cond?.[0]?.$eq;
     const researchViewsAccumulator = groupStage.researchViews?.$sum?.$cond?.[0]?.$eq;
+    const fellowshipViewsAccumulator = groupStage.fellowshipViews?.$sum?.$cond?.[0]?.$eq;
 
-    expect(viewsAccumulator).toEqual(['$eventType', AnalyticsEventType.LISTING_VIEW]);
+    expect(groupStage).not.toHaveProperty('views');
     expect(researchViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.RESEARCH_VIEW]);
+    expect(fellowshipViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.FELLOWSHIP_VIEW]);
   });
 });
 
@@ -227,7 +215,6 @@ describe('claim-specific research funnel', () => {
         uniqueActorsByEventType: [
           { eventType: 'research_source_review', count: 7 },
           { eventType: 'research_qualified_action', count: 6 },
-          { eventType: 'outreach_outcome', count: 1 },
         ],
         qualifiedActorsByCategory: [
           {
@@ -247,7 +234,6 @@ describe('claim-specific research funnel', () => {
       qualifiedActions: 6,
       officialRouteAttempts: 4,
       applicationOpens: 3,
-      confirmedOutcomes: 1,
     });
     expect(funnel.officialRouteAttempts).not.toBe(funnel.qualifiedActions);
     expect(funnel.applicationOpens).toBeLessThan(funnel.officialRouteAttempts);
@@ -268,32 +254,12 @@ describe('getAnalytics research coverage and range scoping', () => {
     loginsToday: [],
     searchStats: [],
     topSearchQueries: [],
-    viewStats: [],
-    favoriteStats: [],
-    trendingListings: [],
     userActivityStats: [],
     mostActiveUsers: [],
     byEventType: [],
     byEntityType: [],
     byUserType: [],
     topEntities: [],
-    summary: [],
-    byOutcome: [],
-    topListings: [],
-    recentEvents: [],
-  };
-
-  const listingFacetStub = {
-    overview: [],
-    newListingsLast7Days: [],
-    newListingsToday: [],
-    listingsByDepartment: [],
-    listingsPerProfessor: [],
-    listingsWithZeroViews: [],
-    topViewedListings: [],
-    topFavoritedListings: [],
-    viewsAndFavorites: [],
-    viewsByDepartment: [],
   };
 
   const chainableFind = () => ({
@@ -314,11 +280,6 @@ describe('getAnalytics research coverage and range scoping', () => {
     ]);
     mocks.accountFind.mockImplementation(chainableFind);
     mocks.researcherFind.mockImplementation(chainableFind);
-    mocks.getListingModel.mockReturnValue({
-      aggregate: vi.fn().mockResolvedValue([listingFacetStub]),
-      find: chainableFind,
-      collection: { name: 'listings' },
-    });
   };
 
   afterEach(() => {
@@ -630,8 +591,6 @@ describe('getAnalytics research coverage and range scoping', () => {
   it('resolves top research entity ids to human-readable names and hrefs', async () => {
     const researchEntityId = '507f1f77bcf86cd799439011';
     const fellowshipId = '507f1f77bcf86cd799439012';
-    const listingId = '507f1f77bcf86cd799439013';
-
     mocks.analyticsAggregate.mockResolvedValue([
       {
         ...eventFacetStub,
@@ -643,7 +602,6 @@ describe('getAnalytics research coverage and range scoping', () => {
             uniqueViewers: 4,
           },
           { entityType: 'fellowship', entityId: fellowshipId, views: 8, uniqueViewers: 2 },
-          { entityType: 'listing', entityId: listingId, views: 5, uniqueViewers: 1 },
           { entityType: 'profile', entityId: 'prof-netid', views: 3, uniqueViewers: 1 },
         ],
       },
@@ -673,11 +631,6 @@ describe('getAnalytics research coverage and range scoping', () => {
         select: () => ({ lean: async () => docs }),
         lean: async () => docs,
       });
-    mocks.getListingModel.mockReturnValue({
-      aggregate: vi.fn().mockResolvedValue([listingFacetStub]),
-      find: chainableFindReturning([{ _id: listingId, title: 'Legacy Listing Title' }]),
-      collection: { name: 'listings' },
-    });
     mocks.researchEntityFind.mockImplementation(
       chainableFindReturning([
         {
@@ -718,13 +671,6 @@ describe('getAnalytics research coverage and range scoping', () => {
         views: 8,
         uniqueViewers: 2,
         name: 'Summer Research Fellowship',
-      },
-      {
-        entityType: 'listing',
-        entityId: listingId,
-        views: 5,
-        uniqueViewers: 1,
-        name: 'Legacy Listing Title',
       },
       {
         entityType: 'profile',
@@ -826,8 +772,7 @@ describe('getUserAnalyticsDrilldown', () => {
     expect(mocks.analyticsFind).not.toHaveBeenCalled();
   });
 
-  it('resolves listing and fellowship ids to titles for drilldown events', async () => {
-    const listingId = '507f1f77bcf86cd799439021';
+  it('resolves fellowship ids to titles for drilldown events', async () => {
     const fellowshipId = '507f1f77bcf86cd799439022';
     mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
     mocks.analyticsAggregate.mockResolvedValue([
@@ -841,7 +786,6 @@ describe('getUserAnalyticsDrilldown', () => {
               _id: 'evt1',
               eventType: 'research_view',
               userType: 'undergraduate',
-              listingId,
               timestamp: new Date('2026-08-01T00:00:00.000Z'),
             },
             {
@@ -861,9 +805,6 @@ describe('getUserAnalyticsDrilldown', () => {
         select: () => ({ lean: async () => docs }),
         lean: async () => docs,
       });
-    mocks.getListingModel.mockReturnValue({
-      find: chainableFindReturning([{ _id: listingId, title: 'Genomics Lab Position' }]),
-    });
     mocks.fellowshipFind.mockImplementation(
       chainableFindReturning([{ _id: fellowshipId, title: 'Summer Fellowship' }]),
     );
@@ -871,7 +812,7 @@ describe('getUserAnalyticsDrilldown', () => {
     const result = await getUserAnalyticsDrilldown('student1');
 
     expect(result?.events).toEqual([
-      expect.objectContaining({ listingId, listingTitle: 'Genomics Lab Position' }),
+      expect.objectContaining({ eventType: 'research_view' }),
       expect.objectContaining({ fellowshipId, fellowshipTitle: 'Summer Fellowship' }),
     ]);
   });
@@ -892,7 +833,7 @@ describe('logEvent', () => {
       searchQuery: 'email ada@example.edu or call 203-555-1212',
       searchDepartments: ['Computer Science', 'hidden@example.edu'],
       metadata: {
-        entityType: 'listing',
+        entityType: 'fellowship',
         note: 'Reach ada@example.edu at 203-555-3434',
         nested: {
           values: ['visible', 'contact hidden@example.edu'],
@@ -905,7 +846,7 @@ describe('logEvent', () => {
         searchQuery: 'email [email redacted] or call [phone redacted]',
         searchDepartments: ['Computer Science', '[email redacted]'],
         metadata: {
-          entityType: 'listing',
+          entityType: 'fellowship',
           note: 'Reach [email redacted] at [phone redacted]',
           nested: {
             values: ['visible', 'contact [email redacted]'],
@@ -1008,15 +949,13 @@ describe('logEvent', () => {
     mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
 
     await logEvent({
-      eventType: AnalyticsEventType.LISTING_VIEW,
+      eventType: AnalyticsEventType.FELLOWSHIP_VIEW,
       netid: 'student123',
       userType: 'undergraduate',
-      listingId: '../not-an-object-id',
       fellowshipId: '123',
     });
 
     const created = mocks.analyticsCreate.mock.calls[0][0];
-    expect(created).not.toHaveProperty('listingId');
     expect(created).not.toHaveProperty('fellowshipId');
   });
 
@@ -1024,16 +963,14 @@ describe('logEvent', () => {
     mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
 
     await logEvent({
-      eventType: AnalyticsEventType.LISTING_VIEW,
+      eventType: AnalyticsEventType.FELLOWSHIP_VIEW,
       netid: 'student123',
       userType: 'undergraduate',
-      listingId: '507f1f77bcf86cd799439011',
       fellowshipId: '507f1f77bcf86cd799439012',
     });
 
     expect(mocks.analyticsCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        listingId: '507f1f77bcf86cd799439011',
         fellowshipId: '507f1f77bcf86cd799439012',
       }),
     );

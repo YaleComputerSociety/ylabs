@@ -1,53 +1,6 @@
 /**
- * Core TypeScript interfaces for listings, fellowships, and user profiles.
+ * Core TypeScript interfaces for fellowships and user profiles.
  */
-
-export type Listing = {
-  id: string;
-  ownerId: string;
-  ownerFirstName: string;
-  ownerLastName: string;
-  ownerEmail: string;
-  ownerTitle?: string;
-  ownerPrimaryDepartment?: string;
-  professorIds: string[];
-  professorNames: string[];
-  title: string;
-  departments: string[];
-  emails: string[];
-  websites: string[];
-  description: string;
-  applicantDescription: string;
-  keywords: string[];
-  researchAreas: string[];
-  established: string;
-  views: number;
-  favorites: number;
-  hiringStatus: number;
-  archived: boolean;
-  updatedAt: string;
-  createdAt: string;
-  confirmed: boolean;
-  audited: boolean;
-  evidence?: ListingEvidence;
-};
-
-export type ListingEvidenceSource = {
-  label?: string;
-  url?: string;
-  sourceType?: string;
-  description?: string;
-  lastCheckedAt?: string;
-};
-
-export type ListingEvidence = {
-  status?: 'available' | 'unavailable' | 'loading' | 'error' | string;
-  summary?: string;
-  confidence?: number;
-  generatedAt?: string;
-  lastVerifiedAt?: string;
-  sources?: ListingEvidenceSource[];
-};
 
 export type FellowshipLink = {
   label: string;

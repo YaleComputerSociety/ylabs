@@ -12,11 +12,6 @@ vi.mock('mongoose', () => ({
   Connection: class {},
 }));
 
-vi.mock('../../models/listing', () => ({
-  listingSchema: {},
-  Listing: {},
-}));
-
 import { isTopologyLostError, withMongoReconnect } from '../connections';
 
 const topologyError = () => Object.assign(new Error('boom'), { name: 'MongoNotConnectedError' });

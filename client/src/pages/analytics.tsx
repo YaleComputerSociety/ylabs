@@ -489,7 +489,6 @@ const Analytics = () => {
     sourceInspections: 0,
     officialRouteAttempts: 0,
     applicationOpens: 0,
-    confirmedOutcomes: 0,
   };
   const selectedRangeLabel =
     analyticsRanges.find((range) => range.value === analyticsRange)?.label || 'Selected range';
@@ -625,13 +624,6 @@ const Analytics = () => {
               value={formatNumber(journeyMetrics.applicationOpens)}
               context={`Students who opened an application or open-position link in ${selectedRangeLabel}.`}
               tooltip="Distinct students who opened an application or open-position link. A subset of official-route reach."
-              tone="green"
-            />
-            <DashboardMetric
-              title="Confirmed outcomes"
-              value={formatNumber(journeyMetrics.confirmedOutcomes)}
-              context={`Students who self-reported an outcome (such as contacted or accepted) in ${selectedRangeLabel}.`}
-              tooltip="Distinct students who reported an outcome themselves. Tracked separately from link clicks, so not a subset of the counts above."
               tone="green"
             />
           </div>
@@ -1002,14 +994,12 @@ const Analytics = () => {
               >
                 <option value="all">All targets</option>
                 <option value="adminGrant">Admin grant</option>
-                <option value="listing">Listing</option>
                 <option value="profile">Profile</option>
                 <option value="department">Department</option>
                 <option value="researchArea">Research area</option>
                 <option value="fellowship">Fellowship</option>
                 <option value="researchEntity">Research entity</option>
                 <option value="accessReviewRecord">Access review record</option>
-                <option value="listingClaim">Listing claim</option>
               </select>
             </label>
           </div>

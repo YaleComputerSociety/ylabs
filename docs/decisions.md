@@ -4,6 +4,18 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-29: Retire The Listing And Outreach Analytics Lane
+
+A data-model audit of the live databases established that the Listing product surface and the outreach-recording analytics built on top of it have no data and no writers anywhere, so they were removed rather than carried further.
+`listings` holds zero documents on Development and on Production, `listingclaimrequests` is absent from both, and `analytics_events` contains zero `listing_*` and zero `outreach_*` documents in either database; Development's events resolve entirely to the twelve event types that still have emitters.
+The only reader of the `Listing` model was `analyticsService`, which aggregated over the empty collection at six sites and looked up into it once, so its output was structurally zero rather than merely small.
+Decision: delete `server/src/models/listing.ts`, the eight `LISTING_*` and four `OUTREACH_*` members of `AnalyticsEventType`, the `analytics_events.listingId` field, the `'listing'` member of `RESEARCH_ENTITY_TYPES`, and every aggregation, funnel stage, action card, user-summary column, and admin panel that existed only to report them.
+An enum member is removed only when it has no emitter **and** zero rows in every database, which is why `profile_update` and `logout` stay: they have no emitter left but do carry historical rows, and dropping them would hide real data from the admin dashboard rather than remove dead code.
+The `API_MODE=productionMigration` dual-connection path goes with it, because `MigrationListing` was the only model it ever bound - a second connection that binds nothing is dead by construction, and the startup banner said as much ("Listings from migration DB, everything else from primary").
+Two smaller pieces of the same lane fell out: the `PUT /listing-claims/:id` admin-audit descriptor named a route that does not exist, and the `{ type: 'listing' }` variant of the client `BrowsableItem` union was never constructed, so its `BrowseCard` and `BrowseListItem` branches were unreachable UI.
+Deliberately out of scope: the physical collection drop, which `legacy:cleanup` already owns and lists; and the audit and migration tooling (`researchModelInventoryCore`, `migrateResearchEntities`, `syncBetaToDevelopment`, the phase-0 hot-path shapes) that still names `listings` on purpose, since removing those specs would blind the residue reporting that found this in the first place.
+Note for future audits: Production is a pre-refactor 2026-06-11 snapshot that still carries `users`, `research_entity_members`, `entry_pathways`, `access_signals`, and `contact_routes` and has no `accounts`/`researchers`/`role_assignments`/`signals`, so Development is the only database the current model runs against and the only one whose row counts describe live behavior.
+
 ## 2026-08-28: `department-undergrad-research` Is A `/programs` Evidence Source, And One Dead Page No Longer Aborts It
 
 The Physics undergraduate-research page (`physics.yale.edu/academics/undergraduate-studies/undergraduate-research`) now returns 404, so it was retired from `DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES` (#2171).
@@ -317,4 +329,4 @@ Prefer adapters and compatibility layers over broad renames unless the rename re
 ## 2026-05-07: Use Two Main Product Surfaces
 
 The primary student surfaces are research discovery/detail and saved/account planning.
-Listings remain a compatibility path for older posted-role workflows until they are fully replaced or removed.
+Listings were the compatibility path for older posted-role workflows; they were removed on 2026-08-29 (see above).

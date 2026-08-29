@@ -1,20 +1,7 @@
 /**
  * MongoDB connection management and model initialization.
  */
-import mongoose, { Connection } from 'mongoose';
-import { listingSchema, Listing } from '../models/listing';
-
-let migrationConnection: Connection | null = null;
-
-let MigrationListing: mongoose.Model<any> | null = null;
-
-export type ApiMode = 'default' | 'productionMigration';
-
-export function getApiMode(): ApiMode {
-  const mode = process.env.API_MODE?.toLowerCase();
-  if (mode === 'productionmigration') return 'productionMigration';
-  return 'default';
-}
+import mongoose from 'mongoose';
 
 // Shared across initializeConnections and triggerReconnect so both use identical options.
 const mongoOptions = {
@@ -64,27 +51,14 @@ export function triggerReconnect(): Promise<void> {
   if (reconnectInFlight) return reconnectInFlight;
   reconnectInFlight = (async () => {
     try {
-      const mode = getApiMode();
       const primaryUrl = process.env.MONGODBURL;
       if (!primaryUrl) return;
 
       console.error('MongoDB: topology lost — forcing reconnect');
 
-      if (mode === 'productionMigration') {
-        const migrationUrl = process.env.MONGODBURL_MIGRATION;
-        if (!migrationUrl) return;
-        await Promise.allSettled([mongoose.disconnect(), migrationConnection?.close()]);
-        await mongoose.connect(primaryUrl, mongoOptions);
-        migrationConnection = await mongoose
-          .createConnection(migrationUrl, mongoOptions)
-          .asPromise();
-        MigrationListing = migrationConnection.model('Listing', listingSchema, 'listings');
-        console.log('MongoDB: productionMigration reconnected');
-      } else {
-        await mongoose.disconnect();
-        await mongoose.connect(primaryUrl, mongoOptions);
-        console.log('MongoDB: reconnected');
-      }
+      await mongoose.disconnect();
+      await mongoose.connect(primaryUrl, mongoOptions);
+      console.log('MongoDB: reconnected');
     } catch (err) {
       console.error('MongoDB: reconnect failed:', (err as Error)?.message ?? err);
     } finally {
@@ -135,8 +109,6 @@ export function startMongoKeepAlive(intervalMs = 120000): void {
 }
 
 export async function initializeConnections(): Promise<void> {
-  const mode = getApiMode();
-
   // Surface connection lifecycle so Render logs show exactly when the driver
   // loses or regains the server — makes the next incident much easier to trace.
   mongoose.connection.on('disconnected', () => console.error('MongoDB: disconnected'));
@@ -145,45 +117,10 @@ export async function initializeConnections(): Promise<void> {
     console.error('MongoDB: error', err?.message ?? err),
   );
 
-  if (mode === 'productionMigration') {
-    const primaryUrl = process.env.MONGODBURL;
-    const migrationUrl = process.env.MONGODBURL_MIGRATION;
-
-    if (!primaryUrl) {
-      throw new Error('MONGODBURL is required for ProductionMigration mode');
-    }
-    if (!migrationUrl) {
-      throw new Error('MONGODBURL_MIGRATION is required for ProductionMigration mode');
-    }
-
-    await mongoose.connect(primaryUrl, mongoOptions);
-    console.log('Connected to primary database (default) 🚀');
-
-    migrationConnection = await mongoose.createConnection(migrationUrl, mongoOptions).asPromise();
-    console.log('Connected to migration database 🔄');
-
-    MigrationListing = migrationConnection.model('Listing', listingSchema, 'listings');
-  } else {
-    const url = process.env.MONGODBURL;
-    if (!url) {
-      throw new Error('MONGODBURL is required');
-    }
-    await mongoose.connect(url, mongoOptions);
-    console.log(`Connected to database 🚀`);
+  const url = process.env.MONGODBURL;
+  if (!url) {
+    throw new Error('MONGODBURL is required');
   }
-}
-
-/**
- * Internal analytics read model for the retired `listings` collection. The
- * Listing product surface is retired; only the admin analytics aggregations
- * still read it, and they are tracked for removal separately.
- */
-export function getListingModel(): mongoose.Model<any> {
-  const mode = getApiMode();
-
-  if (mode === 'productionMigration' && MigrationListing) {
-    return MigrationListing;
-  }
-
-  return Listing;
+  await mongoose.connect(url, mongoOptions);
+  console.log(`Connected to database 🚀`);
 }

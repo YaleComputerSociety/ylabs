@@ -36,13 +36,6 @@ export interface AnalyticsData {
       searchesToday: number;
     };
     topSearchQueries: Array<{ query: string; count: number }>;
-    views: {
-      totalViews: number;
-      viewsLast7Days: number;
-      viewsToday: number;
-    };
-    favorites: Array<{ eventType: string; total: number; last7Days: number }>;
-    trendingListings: Array<any>;
     userActivity: {
       activeUsers: number;
       avgEventsPerUser: number;
@@ -54,57 +47,6 @@ export interface AnalyticsData {
       fname?: string;
       lname?: string;
     }>;
-    outreach?: {
-      summary: {
-        totalReveals: number;
-        totalAttempts: number;
-        totalOutcomes: number;
-        revealsLast7Days: number;
-        attemptsLast7Days: number;
-        outcomesLast7Days: number;
-      };
-      byOutcome: Array<{ outcome: string; count: number; last7Days: number }>;
-      topListings: Array<{
-        listingId: string;
-        title?: string;
-        ownerFirstName?: string;
-        ownerLastName?: string;
-        departments: string[];
-        reveals: number;
-        attempts: number;
-        outcomes: number;
-        uniqueUsers: number;
-        lastEventAt: string;
-      }>;
-      recentEvents: Array<{
-        eventType: string;
-        netid: string;
-        userType: string;
-        listingId: string;
-        title?: string;
-        ownerFirstName?: string;
-        ownerLastName?: string;
-        outcome?: string;
-        channel?: string;
-        timestamp: string;
-      }>;
-    };
-    totalViewsFromCounters: number;
-    totalFavoritesFromCounters: number;
-    avgViews: number;
-    avgFavorites: number;
-    viewsByDepartment: Array<{
-      department: string;
-      totalViews: number;
-      listingCount: number;
-      avgViews: number;
-    }>;
-    opportunityViewDataHealth?: {
-      opportunityViewEventsLast30Days: number;
-      resolvedOpportunityViewEventsLast30Days: number;
-      orphanedOpportunityViewEventsLast30Days: number;
-      orphanedOpportunityIds: string[];
-    };
   };
   research: {
     byEventType: Array<{ eventType: string; total: number; last7Days: number; today: number }>;
@@ -118,21 +60,6 @@ export interface AnalyticsData {
       name?: string;
       href?: string;
     }>;
-  };
-  listings: {
-    overview: {
-      total: number;
-      active: number;
-      archived: number;
-      unconfirmed: number;
-    };
-    newListingsLast7Days: number;
-    newListingsToday: number;
-    byDepartment: Array<{ department: string; count: number }>;
-    byProfessor: Array<{ professorName: string; netId: string; count: number }>;
-    listingsWithZeroViews: number;
-    topViewedListings: Array<any>;
-    topFavoritedListings: Array<any>;
   };
   users: {
     overview: { total: number; confirmed: number };
@@ -167,19 +94,8 @@ export interface AnalyticsUserActivityRow {
   totalEvents: number;
   logins: number;
   searches: number;
-  views: number;
   researchViews: number;
   fellowshipViews: number;
-  listingFavorites: number;
-  listingUnfavorites: number;
-  fellowshipFavorites: number;
-  fellowshipUnfavorites: number;
-  outreachClicks: number;
-  outreachOutcomes: number;
-  listingCreates: number;
-  listingUpdates: number;
-  listingArchives: number;
-  listingUnarchives: number;
   profileUpdates: number;
   loginCount: number;
   lastEventAt?: string | null;
@@ -193,8 +109,6 @@ export interface AnalyticsUserEvent {
   _id?: string;
   eventType: string;
   timestamp: string;
-  listingId?: string;
-  listingTitle?: string;
   fellowshipId?: string;
   fellowshipTitle?: string;
   searchQuery?: string;
@@ -356,16 +270,13 @@ export interface AnalyticsFunnelResponse {
   visitorCount?: number;
   searcherCount?: number;
   viewerCount?: number;
-  favoriteCount?: number;
   applicantCount?: number;
   profileUpdateCount?: number;
-  listingCreateCount?: number;
   overallConversionRate?: number;
   journeyMetrics?: {
     sourceInspections: number;
     officialRouteAttempts: number;
     applicationOpens: number;
-    confirmedOutcomes: number;
   };
 }
 
@@ -386,7 +297,6 @@ export interface AnalyticsActionNeededItem {
 export interface AnalyticsActionNeededResponse {
   range?: AnalyticsRange;
   cards?: AnalyticsActionNeededItem[];
-  items?: AnalyticsActionNeededItem[];
 }
 
 export interface AnalyticsState {

@@ -1,5 +1,5 @@
 /**
- * Card view component for browsable listings and fellowships.
+ * Card view component for browsable research homes and fellowships.
  */
 import React, { useContext, useMemo } from 'react';
 import {
@@ -11,16 +11,12 @@ import {
   getResearchGroupDisplayName,
   getResearchGroupKindLabel,
   getDaysUntilDeadline,
-  getOrderedDeptAbbrs,
-  DEPT_CAP,
   TAG_CAP,
   FELLOWSHIP_TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
 import FavoriteButton from './FavoriteButton';
-import HasPrerequisitesIcon from './HasPrerequisitesIcon';
 import UrgentBadge from './UrgentBadge';
-import ArchivedBadge from './ArchivedBadge';
 import ConfigContext from '../../contexts/ConfigContext';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
@@ -49,7 +45,7 @@ const BrowseCard = React.memo(
     onAdminEdit,
     isCompact,
   }: BrowseCardProps) => {
-    const { departments, getColorForResearchArea } = useContext(ConfigContext);
+    const { getColorForResearchArea } = useContext(ConfigContext);
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
     const tags = useMemo(
@@ -62,32 +58,7 @@ const BrowseCard = React.memo(
     const showUrgentBanner =
       item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
 
-    const hasPrerequisites =
-      item.type === 'listing' &&
-      !!item.data.applicantDescription &&
-      item.data.applicantDescription.trim() !== '';
-
-    const isListing = item.type === 'listing';
     const isResearchGroup = item.type === 'researchGroup';
-    const professorName = isListing
-      ? `${item.data.ownerFirstName} ${item.data.ownerLastName}`
-      : null;
-    const isArchived = isListing && item.data.archived;
-
-    const deptInfo = useMemo(() => {
-      if (!isListing) return null;
-      return getOrderedDeptAbbrs(
-        item.data.departments,
-        item.data.ownerPrimaryDepartment,
-        DEPT_CAP,
-        departments,
-      );
-    }, [item, isListing, departments]);
-
-    const deptLabel =
-      deptInfo && deptInfo.abbrs.length > 0
-        ? deptInfo.abbrs.join(' | ') + (deptInfo.truncated > 0 ? ` +${deptInfo.truncated}` : '')
-        : null;
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
@@ -99,7 +70,6 @@ const BrowseCard = React.memo(
     const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
     const iconClusterCount =
-      (hasPrerequisites ? 1 : 0) +
       (isAdmin && onAdminEdit ? 1 : 0) +
       (onToggleFavorite && item.type !== 'researchGroup' ? 1 : 0);
     const iconClusterClearance =
@@ -120,7 +90,7 @@ const BrowseCard = React.memo(
 
     return (
       <div
-        className={`yr-card-interactive group relative rounded-md ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col ${isArchived ? 'opacity-75' : ''}`}
+        className={`yr-card-interactive group relative rounded-md ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col`}
         onClick={item.type === 'fellowship' ? undefined : handleClick}
       >
         {showUrgentBanner && daysUntil !== null && (
@@ -129,7 +99,6 @@ const BrowseCard = React.memo(
 
         <div className="p-5 flex-1 flex flex-col">
           <div className="absolute top-2 right-2 flex items-center gap-1 z-10 flex-shrink-0">
-            {hasPrerequisites && <HasPrerequisitesIcon />}
             {isAdmin && onAdminEdit && (
               <button
                 onClick={(e) => {
@@ -182,49 +151,6 @@ const BrowseCard = React.memo(
               {item.data.shortDescription && !isCompact && (
                 <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
                   {item.data.shortDescription}
-                </p>
-              )}
-
-              {tags.length > 0 && !isCompact && (
-                <div className="border-t border-[var(--yr-line)] my-2" />
-              )}
-
-              <div className="flex-1" />
-
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
-                    <span
-                      key={tag.label}
-                      className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
-                    >
-                      {tag.label}
-                    </span>
-                  ))}
-                  {!isCompact && tags.length > TAG_CAP && (
-                    <span className="text-xs text-gray-600">+{tags.length - TAG_CAP}</span>
-                  )}
-                </div>
-              )}
-            </>
-          ) : isListing ? (
-            <>
-              <div className="flex items-center gap-2 mb-1">
-                {deptLabel && (
-                  <p className="text-sm font-semibold text-blue-700 truncate">{deptLabel}</p>
-                )}
-                {isArchived && <ArchivedBadge />}
-              </div>
-
-              <h3 className="text-base font-bold text-gray-900 leading-tight">{professorName}</h3>
-
-              <p className="text-sm text-gray-600 mb-1 line-clamp-2 leading-snug">
-                {item.data.title}
-              </p>
-
-              {item.data.description && !isCompact && (
-                <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
-                  {item.data.description}
                 </p>
               )}
 
