@@ -1652,7 +1652,8 @@ export async function inheritSchoolFromLeadPi(
     observedAt: new Date(),
     confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
   };
-  await withResearchEntityWriteTransaction((session) => ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
+  await withResearchEntityWriteTransaction((session) =>
+    ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
   );
   const fresh = await ResearchEntity.findById(researchEntityId).lean();
   if (fresh) await syncEntity('researchEntity', fresh);
@@ -3611,7 +3612,10 @@ export async function materializeEntity(
 
   // An existing row stored as the retired PROGRAM type stays frozen: it is legacy
   // data awaiting its own archive lane, not something to re-type in place.
-  if (isResearchEntityObservationType(entityType) && isRetiredProgramResearchEntityType(entityDoc?.entityType)) {
+  if (
+    isResearchEntityObservationType(entityType) &&
+    isRetiredProgramResearchEntityType(entityDoc?.entityType)
+  ) {
     return {
       entityType,
       entityId: entityDoc ? materializerDocumentId(entityDoc._id) : undefined,
@@ -3632,7 +3636,11 @@ export async function materializeEntity(
   // same source's co-observed `kind` and mint, and only skip when no usable kind
   // resolves, so an unclassifiable row still fails closed instead of defaulting to
   // LAB.
-  if (isResearchEntityObservationType(entityType) && !entityDoc && winningObservedEntityTypeIsRetiredProgram(obs)) {
+  if (
+    isResearchEntityObservationType(entityType) &&
+    !entityDoc &&
+    winningObservedEntityTypeIsRetiredProgram(obs)
+  ) {
     const healedEntityType = healedEntityTypeForRetiredProgramObservations(obs);
     if (!healedEntityType) {
       return {
@@ -3849,12 +3857,11 @@ export async function materializeEntity(
       const researchEntityId = new mongoose.Types.ObjectId();
       try {
         created_ = await withResearchEntityWriteTransaction(async (session) => {
-            const createdDocuments = await Model.create([{ _id: researchEntityId, ...insert }], {
-              session,
-            });
-            return createdDocuments[0];
-          },
-        );
+          const createdDocuments = await Model.create([{ _id: researchEntityId, ...insert }], {
+            session,
+          });
+          return createdDocuments[0];
+        });
       } catch (error) {
         // A concurrent writer may have minted the same unique slug between our
         // resolve/lookup and this create; adopt the winning row instead of
