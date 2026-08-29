@@ -1,7 +1,7 @@
 /**
- * Shared types and helpers for browsable research homes, listings, and fellowships.
+ * Shared types and helpers for browsable research homes and fellowships.
  */
-import { Listing, Fellowship } from './types';
+import { Fellowship } from './types';
 import { ResearchGroup, ResearchGroupKind } from './researchGroup';
 import {
   DepartmentNameRecord,
@@ -55,7 +55,6 @@ export function getOrderedDeptAbbrs(
 }
 
 export type BrowsableItem =
-  | { type: 'listing'; data: Listing }
   | { type: 'fellowship'; data: Fellowship }
   | { type: 'researchGroup'; data: ResearchGroup };
 
@@ -90,9 +89,6 @@ export function getResearchGroupDisplayName(group: ResearchGroup): string {
 }
 
 export function isItemOpen(item: BrowsableItem): boolean {
-  if (item.type === 'listing') {
-    return item.data.hiringStatus >= 0;
-  }
   if (item.type === 'researchGroup') {
     return false;
   }
@@ -122,11 +118,6 @@ export function getItemTags(
   item: BrowsableItem,
   getColor: (area: string) => { bg: string; text: string },
 ): TagInfo[] {
-  if (item.type === 'listing') {
-    const areas =
-      item.data.researchAreas?.length > 0 ? item.data.researchAreas : item.data.keywords || [];
-    return areas.map((a) => ({ label: a, ...getColor(a) }));
-  }
   if (item.type === 'researchGroup') {
     const areas = item.data.researchAreas || [];
     return areas.map((a) => ({ label: a, ...getColor(a) }));
@@ -179,13 +170,6 @@ export function getItemTags(
 }
 
 export function getItemSubtitle(item: BrowsableItem): string {
-  if (item.type === 'listing') {
-    const { ownerFirstName, ownerLastName, departments } = item.data;
-    const name = `${ownerFirstName} ${ownerLastName}`;
-    const dept =
-      departments && departments.length > 0 ? getDepartmentAbbreviation(departments[0]) : null;
-    return dept ? `${name} · ${dept}` : name;
-  }
   if (item.type === 'researchGroup') {
     const kind = getResearchGroupKindLabel(item.data.kind);
     const dept =
@@ -198,7 +182,6 @@ export function getItemSubtitle(item: BrowsableItem): string {
 }
 
 export function getItemSubtitleColor(item: BrowsableItem): string {
-  if (item.type === 'listing') return 'text-gray-500';
   if (item.type === 'researchGroup') return 'text-gray-500';
   const status = getFellowshipCycleStatus(item.data);
   if (status.category === 'nextCycle') return 'text-sky-700 font-medium';
