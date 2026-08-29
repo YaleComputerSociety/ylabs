@@ -1,5 +1,5 @@
 /**
- * Card view component for browsable listings and fellowships.
+ * Card view component for browsable research homes and fellowships.
  */
 import React, { useContext, useMemo } from 'react';
 import {
@@ -11,16 +11,12 @@ import {
   getResearchGroupDisplayName,
   getResearchGroupKindLabel,
   getDaysUntilDeadline,
-  getOrderedDeptAbbrs,
-  DEPT_CAP,
   TAG_CAP,
   FELLOWSHIP_TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
 import FavoriteButton from './FavoriteButton';
-import HasPrerequisitesIcon from './HasPrerequisitesIcon';
 import UrgentBadge from './UrgentBadge';
-import ArchivedBadge from './ArchivedBadge';
 import ConfigContext from '../../contexts/ConfigContext';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
@@ -49,7 +45,7 @@ const BrowseCard = React.memo(
     onAdminEdit,
     isCompact,
   }: BrowseCardProps) => {
-    const { departments, getColorForResearchArea } = useContext(ConfigContext);
+    const { getColorForResearchArea } = useContext(ConfigContext);
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
     const tags = useMemo(

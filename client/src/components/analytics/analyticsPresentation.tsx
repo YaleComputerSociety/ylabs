@@ -31,15 +31,6 @@ export const formatUserType = (type: string): string => {
   return typeMap[type] || type;
 };
 
-export const formatOutcome = (outcome?: string): string => {
-  const outcomeMap: { [key: string]: string } = {
-    emailed: 'Emailed',
-    will_contact_later: 'Will contact later',
-    not_a_fit: 'Not a fit',
-  };
-  return outcome ? outcomeMap[outcome] || outcome : 'Contact clicked';
-};
-
 export const formatDateTime = (value?: string | null): string => {
   if (!value) {
     return 'Never';

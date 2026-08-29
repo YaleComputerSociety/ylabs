@@ -25,7 +25,6 @@ import {
   formatEventType,
   formatFullName,
   formatNumber,
-  formatOutcome,
   formatPercent,
   formatSearcherName,
   formatUserType,
