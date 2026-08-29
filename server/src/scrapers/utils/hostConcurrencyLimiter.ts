@@ -21,7 +21,9 @@ export function resolveHostThrottle(
   host: string | undefined,
   defaults: HostThrottle,
 ): HostThrottle {
-  const override = host ? HOST_THROTTLE_OVERRIDES[host.toLowerCase()] : undefined;
+  const key = host?.toLowerCase();
+  const override =
+    key && Object.hasOwn(HOST_THROTTLE_OVERRIDES, key) ? HOST_THROTTLE_OVERRIDES[key] : undefined;
   if (!override) return defaults;
   return {
     concurrency: Math.min(defaults.concurrency, override.concurrency),
@@ -41,12 +43,13 @@ interface HostSlotState {
 }
 
 export interface HostConcurrencyLimiterOptions {
+  minIntervalMs?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
 
 export class HostConcurrencyLimiter {
-  private readonly baseCap: number;
+  private readonly baseThrottle: HostThrottle;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly states = new Map<string, HostSlotState>();
@@ -55,7 +58,10 @@ export class HostConcurrencyLimiter {
     cap: number = DEFAULT_PER_HOST_CONCURRENCY,
     options: HostConcurrencyLimiterOptions = {},
   ) {
-    this.baseCap = Math.max(1, Math.floor(cap) || 1);
+    this.baseThrottle = {
+      concurrency: Math.max(1, Math.floor(cap) || 1),
+      minIntervalMs: Math.max(0, options.minIntervalMs ?? 0),
+    };
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? realSleep;
   }
@@ -68,9 +74,10 @@ export class HostConcurrencyLimiter {
       await new Promise<void>((resolve) => state.waiters.push(resolve));
     }
     state.active += 1;
-    const waitMs = state.lastGrantAt + throttle.minIntervalMs - this.now();
+    const grantAt = Math.max(this.now(), state.lastGrantAt + throttle.minIntervalMs);
+    state.lastGrantAt = grantAt;
+    const waitMs = grantAt - this.now();
     if (waitMs > 0) await this.sleep(waitMs);
-    state.lastGrantAt = this.now();
     return this.makeRelease(key);
   }
 
@@ -79,7 +86,7 @@ export class HostConcurrencyLimiter {
   }
 
   private throttleFor(host: string): HostThrottle {
-    return resolveHostThrottle(host, { concurrency: this.baseCap, minIntervalMs: 0 });
+    return resolveHostThrottle(host, this.baseThrottle);
   }
 
   private stateFor(key: string): HostSlotState {

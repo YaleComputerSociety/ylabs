@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   HostConcurrencyLimiter,
   hostnameForLimiter,
@@ -33,6 +33,12 @@ describe('resolveHostThrottle', () => {
   it('returns the caller defaults for hosts without an override', () => {
     expect(resolveHostThrottle('lab.example.edu', defaults)).toEqual(defaults);
     expect(resolveHostThrottle(undefined, defaults)).toEqual(defaults);
+  });
+
+  it('ignores inherited object keys that are not real overrides', () => {
+    expect(resolveHostThrottle('__proto__', defaults)).toEqual(defaults);
+    expect(resolveHostThrottle('constructor', defaults)).toEqual(defaults);
+    expect(resolveHostThrottle('toString', defaults)).toEqual(defaults);
   });
 
   it('never loosens a default that is already tighter than the override', () => {
@@ -93,7 +99,7 @@ describe('HostConcurrencyLimiter', () => {
   });
 
   it('caps a rate-limited host below the base concurrency', async () => {
-    const limiter = new HostConcurrencyLimiter(8);
+    const limiter = new HostConcurrencyLimiter(8, { sleep: async () => {} });
     let active = 0;
     let peak = 0;
     const jobs = Array.from({ length: 6 }, () =>
@@ -126,6 +132,26 @@ describe('HostConcurrencyLimiter', () => {
     (await limiter.acquire('medicine.yale.edu'))();
     (await limiter.acquire('medicine.yale.edu'))();
     expect(sleeps).toEqual([400]);
+  });
+
+  it('spaces every same-host grant when acquirers overlap in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      const limiter = new HostConcurrencyLimiter(8);
+      const startedAt = Date.now();
+      const grants: number[] = [];
+      const jobs = Array.from({ length: 6 }, () =>
+        limiter.acquire('medicine.yale.edu').then((release) => {
+          grants.push(Date.now() - startedAt);
+          release();
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await Promise.all(jobs);
+      expect(grants).toEqual([0, 400, 800, 1200, 1600, 2000]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not space out hosts without an override', async () => {
