@@ -77,6 +77,6 @@ Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate M
 
 - Prefer first-class collections for access signals and other product-model records.
 - If a schema change affects Research search, update the relevant index config and rebuild path.
-- Add a migration script in `data-migration/` when existing data needs transformation.
+- Add a backfill script in `server/src/scripts/` when existing data needs transformation.
 - Migration scripts run with `npx tsx --transpile-only <script>.ts`.
 - Verify index settings and sortable/filterable attributes when adding fields used for search, filtering, or ordering.

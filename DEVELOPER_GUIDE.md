@@ -286,20 +286,10 @@ yarn meili:seed
 The research-model refactor inventory, search-baseline, and query-cost tools are read-only.
 Follow [`docs/research-model-refactor-phase0.md`](docs/research-model-refactor-phase0.md) for protected Beta and ProductionCopy profiles, required environment labels, guarded JSON output, report interpretation, and rollback prerequisites.
 
-Historical `data-migration/` scripts remain for one-off migrations only.
-Run them through the `data-migration` package scripts when available, so dry-run defaults, target validation, and JSON summaries stay in place:
-
-```bash
-npm --prefix data-migration run import:fellowships -- --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-summary.json
-npm --prefix data-migration run import:fellowships:execute -- --target dev --csv ../web-scraper/fellowships/yale_fellowships.csv --summary ./tmp/fellowships-import.json
-npm --prefix data-migration run migrate:meilisearch -- --summary ./tmp/meili-listings-summary.json
-MEILISEARCH_INDEX_PREFIX=dev npm --prefix data-migration run migrate:meilisearch:execute -- --target dev --summary ./tmp/meili-listings-execute.json
-```
-
-`import:fellowships` validates the CSV transform before MongoDB writes and refuses replacement unless execute mode also supplies `--replace-existing`.
-`migrate:meilisearch` refreshes only the legacy `listings` Meilisearch index; do not use it for the current Research index.
-Any write must use `--execute --target local|test|dev|beta|prod`, and production writes additionally require `--allow-production --confirm-production`.
-Summary paths must be `.json` files under `data-migration/tmp` or the system temp directory.
+One-off data work belongs in `server/src/scripts/`, wired as a `package.json`
+command, dry-run by default, with apply gated behind an explicit confirm flag.
+Write JSON reports through `resolveSafeJsonReportOutputPath` so artifacts stay
+under a safe root. The standalone `data-migration/` package was retired.
 
 ---
 
@@ -332,7 +322,6 @@ yale-research/
 │       ├── middleware/        # Auth guards, validation, error handling
 │       ├── db/               # Database connections
 │       └── utils/            # smartTitle, errors, environment, meiliClient
-└── data-migration/           # Standalone migration scripts
 ```
 
 ---
@@ -487,7 +476,7 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 
 1. Mongoose schema in `server/src/models/<model>.ts`
 2. TypeScript interfaces in `client/src/types/`
-3. Migration script in `data-migration/` if existing data needs transformation.
+3. Backfill script in `server/src/scripts/` if existing data needs transformation.
    Prefer an existing package script with dry-run defaults, target validation, and a `--summary ./tmp/<name>.json` artifact for operator review.
 4. If the model affects Research search, update the relevant Meilisearch rebuild/index config and release gate.
 
