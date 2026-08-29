@@ -37,6 +37,10 @@ import { isSweepStageOptedIn } from './sweepStageFlags';
 import { deleteFromIndex } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
+import {
+  repairMergeSurvivorVisibility,
+  type MergeSurvivorVisibilityRepair,
+} from '../services/researchEntityMergeSurvivorVisibilityService';
 import { computeResearchEntityStudentVisibility } from '../services/studentVisibilityTier';
 import {
   getResearchEntityRosterByEntityId,
@@ -1944,6 +1948,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     arrayRelink: {},
     remainingReferencesBeforeDelete: {},
     removedFromSearchIndex: 0,
+    survivorVisibility: { regated: false } as MergeSurvivorVisibilityRepair,
   });
   if (
     !requestedCanonicalId ||
@@ -2120,6 +2125,8 @@ export async function applyResearchEntityDedupeMergeGroup(
     options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : duplicateIds.map(String);
   await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
 
+  const survivorVisibility = await repairMergeSurvivorVisibility(canonicalId);
+
   return {
     canonicalEntityId: String(canonicalId),
     duplicateEntityIds: duplicateIds.map(String),
@@ -2133,6 +2140,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     arrayRelink,
     remainingReferencesBeforeDelete,
     removedFromSearchIndex: idsToRemoveFromIndex.length,
+    survivorVisibility,
   };
 }
 
