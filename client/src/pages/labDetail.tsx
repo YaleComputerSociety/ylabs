@@ -52,6 +52,7 @@ import {
   isFacultyResearchEntity,
   relationshipTypeLabel,
   researchEntityTitle,
+  researchWebsiteCtaLabel,
   sanitizeResearchEntityCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
@@ -709,7 +710,7 @@ const DecisionSummary = ({
                     rel={EXTERNAL_LINK_REL}
                     className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
                   >
-                    Visit official website
+                    {researchWebsiteCtaLabel(group)}
                   </a>
                 </div>
               ) : officialSource ? (
