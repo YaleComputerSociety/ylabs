@@ -34,7 +34,6 @@ const ANALYTICS_USER_SORTS: readonly AnalyticsUserSort[] = [
   'totalEvents',
   'logins',
   'searches',
-  'views',
   'researchViews',
 ];
 const ANALYTICS_SORT_DIRECTIONS: readonly AnalyticsSortDirection[] = ['asc', 'desc'];
@@ -346,16 +345,7 @@ router.get(
 router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
   try {
     const analytics = await getFunnelAnalytics(parseAnalyticsRange(request.query.range));
-    const viewerCount = analytics.listingViews + analytics.fellowshipViews;
-    const legacyStages = [
-      { key: 'logins', label: 'Logged In', count: analytics.logins },
-      { key: 'searches', label: 'Searched', count: analytics.searches },
-      { key: 'views', label: 'Viewed', count: viewerCount },
-      { key: 'favorites', label: 'Favorited', count: analytics.favoritesOrSaves },
-      { key: 'outreach', label: 'Outreach Clicked', count: analytics.outreachClicks },
-      { key: 'outcomes', label: 'Outcome Reported', count: analytics.outreachOutcomes },
-    ];
-    const journeyStages = [
+    const stages = [
       { key: 'research_searches', label: 'Searched research', count: analytics.researchSearches },
       { key: 'profile_opens', label: 'Opened a profile', count: analytics.researchProfileOpens },
       { key: 'research_saves', label: 'Saved a research home', count: analytics.researchSaves },
@@ -367,7 +357,6 @@ router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, respons
         count: analytics.qualifiedActions,
       },
     ];
-    const stages = journeyStages.some((stage) => stage.count > 0) ? journeyStages : legacyStages;
 
     response.status(200).json({
       ...analytics,
@@ -380,14 +369,12 @@ router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, respons
       }),
       visitorCount: analytics.logins,
       searcherCount: analytics.searches,
-      viewerCount,
-      favoriteCount: analytics.favoritesOrSaves,
+      viewerCount: analytics.fellowshipViews,
       applicantCount: analytics.qualifiedActions,
       journeyMetrics: {
         sourceInspections: analytics.sourceInspections,
         officialRouteAttempts: analytics.officialRouteAttempts,
         applicationOpens: analytics.applicationOpens,
-        confirmedOutcomes: analytics.confirmedOutcomes,
       },
       overallConversionRate:
         analytics.logins > 0 ? analytics.qualifiedActions / analytics.logins : 0,
@@ -410,21 +397,10 @@ router.get('/actions', isAuthenticated, isAdmin, async (request: Request, respon
       count: query.totalSearches,
       department: query.entityType,
     }));
-    const listingItems = analytics.listingsHighViewsLowFavorites.map((listing) => ({
-      id: listing.listingId,
-      type: 'Listing conversion',
-      priority: listing.favoriteRate <= 0.05 ? 'high' : 'medium',
-      title: listing.title || listing.listingId,
-      owner: [listing.ownerFirstName, listing.ownerLastName].filter(Boolean).join(' '),
-      department: listing.departments?.slice(0, 2).join(', '),
-      metric: `${listing.rangeViews} views / ${listing.rangeFavorites} favorites`,
-      count: listing.rangeViews,
-    }));
 
     response.status(200).json({
       ...analytics,
-      cards: [...searchCards, ...listingItems.slice(0, 4)].slice(0, 6),
-      items: listingItems,
+      cards: searchCards.slice(0, 6),
     });
   } catch (error) {
     console.error('Error fetching action-needed analytics:', sanitizeLogValue(error));
