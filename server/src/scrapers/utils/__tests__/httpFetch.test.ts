@@ -63,6 +63,44 @@ describe('HostRateLimiter', () => {
     await limiter.run('b', async () => true);
     expect(sleeps).toEqual([]);
   });
+
+  it('applies the per-host override interval to rate-limited Yale medical hosts', async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const limiter = new HostRateLimiter({
+      maxConcurrency: 8,
+      minIntervalMs: 0,
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+    await limiter.run('medicine.yale.edu', async () => true);
+    await limiter.run('medicine.yale.edu', async () => true);
+    expect(sleeps).toEqual([400]);
+  });
+
+  it('caps a rate-limited host below a looser configured concurrency', async () => {
+    const limiter = new HostRateLimiter({
+      maxConcurrency: 8,
+      minIntervalMs: 0,
+      sleep: async () => {},
+    });
+    let active = 0;
+    let peak = 0;
+    const task = async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      active -= 1;
+      return true;
+    };
+    await Promise.all(
+      Array.from({ length: 6 }, () => limiter.run('ysph.yale.edu', task)),
+    );
+    expect(peak).toBe(2);
+  });
 });
 
 describe('fetchPageWithPolicy', () => {

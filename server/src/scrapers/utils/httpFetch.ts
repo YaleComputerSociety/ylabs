@@ -10,6 +10,7 @@
  */
 import axios from 'axios';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { resolveHostThrottle } from './hostConcurrencyLimiter';
 
 export interface FetchedHttpPage {
   url: string;
@@ -78,12 +79,16 @@ export class HostRateLimiter {
   }
 
   private async acquire(host: string): Promise<void> {
+    const throttle = resolveHostThrottle(host, {
+      concurrency: this.maxConcurrency,
+      minIntervalMs: this.minIntervalMs,
+    });
     const state = this.stateFor(host);
-    while (state.active >= this.maxConcurrency) {
+    while (state.active >= throttle.concurrency) {
       await new Promise<void>((resolve) => state.waiters.push(resolve));
     }
     state.active += 1;
-    const waitMs = state.lastStartAt + this.minIntervalMs - this.now();
+    const waitMs = state.lastStartAt + throttle.minIntervalMs - this.now();
     if (waitMs > 0) await this.sleep(waitMs);
     state.lastStartAt = this.now();
   }
