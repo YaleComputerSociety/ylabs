@@ -525,7 +525,12 @@ describe('researchEntityDto', () => {
       { includeOperatorFields: true },
     );
 
-    expect(dto.shortDescription).toBe(`${'X'.repeat(MAX_SHORT_DESCRIPTION_LENGTH)}…`);
+    // Bounded, and never a fabricated ellipsis fragment: a 6000-char blob with
+    // no sentence boundary yields no card line of its own, so the served card
+    // falls back to the research-areas summary (#2184).
+    expect(dto.shortDescription.length).toBeLessThanOrEqual(MAX_SHORT_DESCRIPTION_LENGTH);
+    expect(dto.shortDescription).not.toMatch(/…$/);
+    expect(dto.shortDescription).not.toMatch(/X{50}/);
     expect(dto.researchAreas).toHaveLength(100);
     expect(dto.sourceUrls).toHaveLength(50);
     expect((dto.planningContext as any).reasons).toHaveLength(100);

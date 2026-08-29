@@ -1306,7 +1306,27 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (containsHtmlTagMarkup(cleaned)) return '';
   if (isCitationAuthorListDumpText(cleaned)) return '';
   if (isContentlessResearchProjectsBoilerplateText(cleaned)) return '';
-  return clampDescriptionLength(cleaned, MAX_SHORT_DESCRIPTION_LENGTH);
+  return clampShortDescriptionToWholeSentences(cleaned);
+}
+
+/**
+ * A card line has to load whole. `clampDescriptionLength` appends an ellipsis
+ * when no sentence boundary lands late enough in its window, and
+ * `shortDescriptionQuality` rejects any value ending in one as a fragment - so
+ * clamping a long short description manufactured exactly the string the card
+ * gate forbids, gating the entity on its own truncation (#2184). Keep whole
+ * sentences only, and fail closed to an empty string rather than inventing a
+ * fragment: callers fall back to a quality-checked derived card line.
+ */
+export function clampShortDescriptionToWholeSentences(
+  text: string,
+  maxLength = MAX_SHORT_DESCRIPTION_LENGTH,
+): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (value.length <= maxLength) return value;
+  const sentenceEnd = lastSentenceBoundary(value.slice(0, maxLength));
+  if (sentenceEnd <= 0) return '';
+  return value.slice(0, sentenceEnd).trim();
 }
 
 function countMatches(text: string, pattern: RegExp): number {

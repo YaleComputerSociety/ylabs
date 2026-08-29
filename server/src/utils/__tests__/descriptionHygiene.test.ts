@@ -40,6 +40,7 @@ import {
   sanitizeCatalogDescription,
   sanitizeEvidenceExcerpt,
   sanitizeResearchEntityDescription,
+  clampShortDescriptionToWholeSentences,
   sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
   stripBibliographicReferenceArtifacts,
@@ -3040,5 +3041,26 @@ describe('isAdministrativeTitleEnumerationText (#1745 round 4)', () => {
 
   it('fails the shortDescription closed on the admin-title-enumeration opener', () => {
     expect(sanitizeResearchEntityShortDescription(ADMIN_TITLE_SHORT)).toBe('');
+  });
+  it('never serves an ellipsis-truncated card line (#2184)', () => {
+    const TWO_SENTENCES =
+      'We study how coastal wetlands store carbon across tidal cycles. We combine field sampling, stable-isotope analysis, and numerical models to understand how these ecosystems respond to rising seas over decades.';
+    expect(TWO_SENTENCES.length).toBeGreaterThan(200);
+    const clamped = clampShortDescriptionToWholeSentences(TWO_SENTENCES);
+    expect(clamped).toBe('We study how coastal wetlands store carbon across tidal cycles.');
+    expect(clamped).not.toMatch(/…$/);
+  });
+
+  it('fails closed instead of fabricating a fragment when no sentence fits the cap (#2184)', () => {
+    const ONE_LONG_SENTENCE =
+      'Using multi pronged approaches including mouse genetics, cell culture models, genomics and microscopy, we tackle complex biological processes focusing on the contribution of cell-intrinsic and cell-extrinsic factors that drive regeneration.';
+    expect(ONE_LONG_SENTENCE.length).toBeGreaterThan(200);
+    expect(clampShortDescriptionToWholeSentences(ONE_LONG_SENTENCE)).toBe('');
+    expect(sanitizeResearchEntityShortDescription(ONE_LONG_SENTENCE)).toBe('');
+  });
+
+  it('leaves a short description within the cap untouched (#2184)', () => {
+    const FITS = 'We study how coastal wetlands store carbon across tidal cycles.';
+    expect(clampShortDescriptionToWholeSentences(FITS)).toBe(FITS);
   });
 });
