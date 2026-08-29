@@ -111,20 +111,6 @@ const AnalyticsSupportingDetail = ({
   const staleEntities =
     researchCoverage.freshness.staleOver90Days + researchCoverage.freshness.neverObserved;
 
-  const outreach = data.engagement.outreach || {
-    summary: {
-      totalReveals: 0,
-      totalAttempts: 0,
-      totalOutcomes: 0,
-      revealsLast7Days: 0,
-      attemptsLast7Days: 0,
-      outcomesLast7Days: 0,
-    },
-    byOutcome: [],
-    topListings: [],
-    recentEvents: [],
-  };
-
   const searchTotal = searchQuality?.totalSearches || 0;
   const engagedSearches = searchQuality?.engagedSearches || 0;
   const returnedButIgnoredSearches = searchQuality?.returnedButIgnoredSearches || 0;
@@ -137,13 +123,11 @@ const AnalyticsSupportingDetail = ({
   ].slice(0, 5);
   const searchQueryRows = searchQueries?.queries || [];
   const actionCards = actions?.cards || [];
-  const actionItems = actions?.items || [];
   const fallbackFunnelStages: AnalyticsFunnelStage[] = [
     { key: 'visitors', label: 'Visitors', count: funnel?.visitorCount || 0 },
     { key: 'searchers', label: 'Searched', count: funnel?.searcherCount || 0 },
     { key: 'viewers', label: 'Viewed Opportunities', count: funnel?.viewerCount || 0 },
-    { key: 'favorites', label: 'Saved', count: funnel?.favoriteCount || 0 },
-    { key: 'applications', label: 'Outreach Clicked', count: funnel?.applicantCount || 0 },
+    { key: 'applications', label: 'Used a qualified route', count: funnel?.applicantCount || 0 },
   ].filter((stage) => stage.count > 0);
   const funnelStages: AnalyticsFunnelStage[] = funnel?.stages || fallbackFunnelStages;
 
@@ -163,9 +147,7 @@ const AnalyticsSupportingDetail = ({
       { header: 'Total Events', value: (row) => row.totalEvents },
       { header: 'Logins', value: (row) => row.logins },
       { header: 'Site Searches', value: (row) => row.searches },
-      { header: 'Listing Views', value: (row) => row.views },
       { header: 'Research Views', value: (row) => row.researchViews },
-      { header: 'Outreach Clicks', value: (row) => row.outreachClicks },
       {
         header: 'Last Active',
         value: (row) => (row.lastActive ? formatDateTime(row.lastActive) : ''),
@@ -441,136 +423,11 @@ const AnalyticsSupportingDetail = ({
           <StatCard
             title="Avg Events Per User"
             value={data.engagement.userActivity.avgEventsPerUser.toFixed(1)}
-            subtitle={`Events (logins, searches, views, outreach clicks) per active user in ${selectedRangeLabel}`}
+            subtitle={`Events (logins, searches, research views) per active user in ${selectedRangeLabel}`}
           />
         </div>
       </section>
 
-      <section className="mb-10">
-        <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-          Outreach Loop
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <StatCard
-            title="Email Contact Clicks"
-            value={outreach.summary.totalAttempts}
-            subtitle={
-              showSevenDayBreakdown
-                ? `${selectedRangeLabel} · ${outreach.summary.attemptsLast7Days} last 7 days`
-                : selectedRangeLabel
-            }
-          />
-          <StatCard
-            title="Reported Outcomes"
-            value={outreach.summary.totalOutcomes}
-            subtitle={
-              showSevenDayBreakdown
-                ? `${selectedRangeLabel} · ${outreach.summary.outcomesLast7Days} last 7 days`
-                : selectedRangeLabel
-            }
-          />
-          <StatCard
-            title="Contact Details Revealed"
-            value={outreach.summary.totalReveals}
-            subtitle={
-              showSevenDayBreakdown
-                ? `${selectedRangeLabel} · ${outreach.summary.revealsLast7Days} last 7 days`
-                : selectedRangeLabel
-            }
-          />
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Outcomes</h3>
-            <BarChart
-              ariaLabel="Outreach outcomes"
-              emptyMessage="No reported outcomes yet."
-              showShareOfTotal
-              data={outreach.byOutcome.map((item) => ({
-                label: formatOutcome(item.outcome),
-                value: item.count,
-              }))}
-            />
-          </div>
-
-          <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)] lg:col-span-2">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Top Outreach Contacts</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead>
-                  <tr className="border-b bg-[var(--yr-panel-muted)]">
-                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Contact</th>
-                    <th className="px-4 py-2 text-right font-semibold text-gray-700">Attempts</th>
-                    <th className="px-4 py-2 text-right font-semibold text-gray-700">Outcomes</th>
-                    <th className="px-4 py-2 text-right font-semibold text-gray-700">Users</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {outreach.topListings.length > 0 ? (
-                    outreach.topListings.map((listing) => (
-                      <tr
-                        key={listing.listingId}
-                        className="border-b hover:bg-[var(--yr-panel-muted)]"
-                      >
-                        <td className="py-3 px-4 text-gray-800">
-                          <div className="font-medium">{listing.title || 'Unknown listing'}</div>
-                          <div className="text-xs text-gray-500">
-                            {[listing.ownerFirstName, listing.ownerLastName]
-                              .filter(Boolean)
-                              .join(' ') || listing.listingId}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium">{listing.attempts}</td>
-                        <td className="py-3 px-4 text-right font-medium">{listing.outcomes}</td>
-                        <td className="py-3 px-4 text-right font-medium">{listing.uniqueUsers}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td className="py-4 px-4 text-sm text-gray-500" colSpan={4}>
-                        No outreach activity yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {outreach.recentEvents.length > 0 && (
-          <div className="mt-6 bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Recent Outreach Events</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead>
-                  <tr className="border-b bg-[var(--yr-panel-muted)]">
-                    <th className="px-4 py-2 text-left font-semibold text-gray-700">When</th>
-                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Listing</th>
-                    <th className="px-4 py-2 text-left font-semibold text-gray-700">Action</th>
-                    <th className="px-4 py-2 text-left font-semibold text-gray-700">User Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {outreach.recentEvents.map((event, index) => (
-                    <tr
-                      key={`${event.listingId}-${event.timestamp}-${index}`}
-                      className="border-b hover:bg-[var(--yr-panel-muted)]"
-                    >
-                      <td className="py-3 px-4 text-gray-600">{formatDateTime(event.timestamp)}</td>
-                      <td className="py-3 px-4 text-gray-800">{event.title || event.listingId}</td>
-                      <td className="py-3 px-4 text-gray-600">{formatOutcome(event.outcome)}</td>
-                      <td className="py-3 px-4 text-gray-600">{formatUserType(event.userType)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </section>
 
       <section id="high-impact-diagnostics" className="mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
@@ -731,35 +588,6 @@ const AnalyticsSupportingDetail = ({
                 <p className="text-sm text-gray-500">No action cards returned.</p>
               )}
             </div>
-            {actionItems.length > 0 && (
-              <div className="border-t border-[var(--yr-line)] p-4">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-gray-600">
-                        <th className="py-2 pr-3 text-left font-semibold">Item</th>
-                        <th className="py-2 px-3 text-left font-semibold">Owner</th>
-                        <th className="py-2 pl-3 text-right font-semibold">Metric</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {actionItems.slice(0, 5).map((item, index) => (
-                        <tr
-                          key={item.id || item._id || `${item.title}-${index}`}
-                          className="border-b last:border-0"
-                        >
-                          <td className="py-2 pr-3 text-gray-800">{item.title}</td>
-                          <td className="py-2 px-3 text-gray-600">{item.owner || '-'}</td>
-                          <td className="py-2 pl-3 text-right font-medium text-gray-900">
-                            {formatCompactMetric(item.metric ?? item.count)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </section>
@@ -973,7 +801,6 @@ const AnalyticsSupportingDetail = ({
                 <option value="totalEvents">Total Events</option>
                 <option value="logins">Logins</option>
                 <option value="searches">Site searches</option>
-                <option value="views">Listing Views</option>
                 <option value="researchViews">Research Views</option>
               </select>
             </label>
@@ -1079,15 +906,6 @@ const AnalyticsSupportingDetail = ({
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
                         <button
                           type="button"
-                          onClick={() => updateUserActivitySort('views')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                        >
-                          Listing Views{sortLabel('views')}
-                        </button>
-                      </th>
-                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-                        <button
-                          type="button"
                           onClick={() => updateUserActivitySort('researchViews')}
                           className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
@@ -1135,7 +953,6 @@ const AnalyticsSupportingDetail = ({
                           <td className="px-4 py-3 text-right font-medium">{user.totalEvents}</td>
                           <td className="px-4 py-3 text-right">{user.logins}</td>
                           <td className="px-4 py-3 text-right">{user.searches}</td>
-                          <td className="px-4 py-3 text-right">{user.views}</td>
                           <td className="px-4 py-3 text-right">{user.researchViews}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">
                             {formatDateTime(user.lastActive)}
@@ -1217,21 +1034,9 @@ const AnalyticsSupportingDetail = ({
                       </p>
                     </div>
                     <div className="rounded-md bg-[var(--yr-panel)] p-3">
-                      <p className="text-gray-500">Listing Views</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {selectedUser.user.views}
-                      </p>
-                    </div>
-                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
                       <p className="text-gray-500">Research Views</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.researchViews}
-                      </p>
-                    </div>
-                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
-                      <p className="text-gray-500">Saves</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {selectedUser.user.listingFavorites}
                       </p>
                     </div>
                   </div>
@@ -1260,11 +1065,6 @@ const AnalyticsSupportingDetail = ({
                           </div>
                           {event.searchQuery && (
                             <p className="mt-1 text-sm text-gray-600">Query: {event.searchQuery}</p>
-                          )}
-                          {event.listingId && (
-                            <p className="mt-1 text-sm text-gray-600">
-                              Opportunity: {event.listingTitle || event.listingId}
-                            </p>
                           )}
                           {event.fellowshipId && (
                             <p className="mt-1 text-sm text-gray-600">
