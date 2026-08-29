@@ -17,6 +17,7 @@ import {
 } from './fraProfileSynthesisCore';
 import {
   FRA_PROFILE_SYNTHESIS_ENTITY_FIELDS,
+  newFraProfileSynthesisRunId,
   profileUrlOf,
   runFraProfileSynthesisEntity,
   selectFraProfileSynthesisTargets,
@@ -67,7 +68,7 @@ async function main(): Promise<void> {
   const reports: FraProfileSynthesisEntityReport[] = [];
   let written = 0;
   let synthesized = 0;
-  const runId = `fra-profile-synthesis-${Date.now()}`;
+  const runId = newFraProfileSynthesisRunId();
 
   for (const entity of targets) {
     const report = await runFraProfileSynthesisEntity({

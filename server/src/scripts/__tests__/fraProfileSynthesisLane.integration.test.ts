@@ -28,6 +28,7 @@ import {
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
 } from '../fraProfileSynthesisCore';
 import {
+  newFraProfileSynthesisRunId,
   profileUrlOf,
   runFraProfileSynthesisEntity,
   selectFraProfileSynthesisTargets,
@@ -86,7 +87,7 @@ const stubLLM =
 
 async function runLane(
   callLLM: CoverageSynthesisLLMFn,
-  options: { apply?: boolean; pageText?: string } = {},
+  options: { apply?: boolean; pageText?: string; runId?: string } = {},
 ) {
   const entity = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as FraProfileSynthesisEntity;
   const source = await Source.findOne({ name: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }).lean();
@@ -96,7 +97,7 @@ async function runLane(
     callLLM,
     fetchProfileText: async () => options.pageText ?? PROFILE_PAGE_TEXT,
     apply: options.apply ?? true,
-    runId: new mongoose.Types.ObjectId().toString(),
+    runId: options.runId ?? newFraProfileSynthesisRunId(),
     sourceId: String(source?._id ?? ''),
   });
 }
@@ -241,6 +242,31 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     }).lean();
     expect(written?.confidence).toBe(FRA_PROFILE_SYNTHESIS_CONFIDENCE);
     expect(written?.sourceUrl).toBe(PROFILE_URL);
+  });
+
+  it('persists the observation under the run id an --apply run constructs', async () => {
+    // `scrapeRunId` is an ObjectId and observations insert unordered, so a run id
+    // the CLI builds from a timestamp was dropped without throwing: the lane
+    // reported written and the biography kept serving.
+    await seedFra();
+    await seedFullDescriptionObservation(
+      PROFILE_BIO,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const runId = newFraProfileSynthesisRunId();
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH), { runId });
+
+    expect(report).toMatchObject({ synthesized: true, written: true });
+    const written = await Observation.findOne({
+      entityKey: SLUG,
+      field: 'fullDescription',
+      sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+    }).lean();
+    expect(String(written?.scrapeRunId)).toBe(runId);
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(SYNTHESIZED_RESEARCH);
   });
 
   it('honors a manual lock on fullDescription before spending a fetch or an LLM call', async () => {

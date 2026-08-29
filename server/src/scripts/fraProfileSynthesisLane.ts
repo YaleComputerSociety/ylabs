@@ -3,6 +3,7 @@
  * so the integration test drives the same skip order, write path, and
  * materialize pass the CLI does instead of a hand-copied transcription of them.
  */
+import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { appendObservations } from '../scrapers/observationStore';
 import {
@@ -64,6 +65,17 @@ export interface FraProfileSynthesisStep {
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+/**
+ * `Observation.scrapeRunId` is an ObjectId and `appendObservations` inserts with
+ * `{ ordered: false }`, so a run id that cannot be cast is dropped without
+ * throwing: the lane reported `written` and printed OK while persisting nothing
+ * and leaving the biography served (#2200). Owned here rather than composed in
+ * the CLI so the integration test drives the same run id an `--apply` run does.
+ */
+export function newFraProfileSynthesisRunId(): string {
+  return new mongoose.Types.ObjectId().toString();
+}
 
 export function profileUrlOf(sourceUrls: unknown): string {
   return (
