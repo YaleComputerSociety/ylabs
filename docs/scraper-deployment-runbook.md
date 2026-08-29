@@ -52,7 +52,7 @@ The web app can stay on Render while scraper execution remains separate:
 `fullDescription` and `shortDescription` are coupled, and treating either in isolation blanks the other.
 Never roll back or replace one without reverting or re-deriving the other in the same operation, then re-materializing.
 
-The coupling is a guard in the materializer (`entityMaterializer.ts:3182`): a resolved winner is accepted only when it is useful **and** is not a restatement of the stored short description.
+The coupling is the `winnerFullUseful` guard in `server/src/scrapers/entityMaterializer.ts`: a resolved winner is accepted only when `fullDescriptionQuality(...).isUseful` holds **and** `isFullDescriptionRestatementOfShortDescription(...)` does not.
 A winner that restates the stored short is rejected, and the ranked walk can terminate having written nothing.
 The guard only ever clears `fullDescription`, so the failure is invisible to the visibility gate: the short description survives, the record still looks complete, and the tier stays `student_ready` while the detail page has no prose to serve.
 
@@ -63,14 +63,14 @@ A perfectly good alternative was active and unused the entire time.
 Procedure:
 
 - Check first whether the prior pair is itself a manufactured duplicate.
-Restoring both fields to their pre-rollback values is **not** automatically safe: `labMicrositeUndergradLLMExtractor.ts:822` emits one string as `fullDescription` at 0.55 and, when it is card-length, the same string again as `shortDescription` at 0.55.
+Restoring both fields to their pre-rollback values is **not** automatically safe: the `studentReadyDescription` emit block in `server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts` emits one string as `fullDescription` at 0.55 and, when it is card-length, the same string again as `shortDescription` at 0.55.
 Both are observation-backed, so restoring them recreates the condition the guard blanks.
 2,723 entities carry such a pair and 216 have already been silently emptied this way.
 - When the pair is a manufactured duplicate, no data repair holds until the emitting source stops producing it.
 Fix the source, then repair the rows.
-- Use `descriptionPairRollbackCore.ts` to build the observation filter, so the query cannot be scoped to one field by accident.
+- Use `server/src/scripts/descriptionPairRollbackCore.ts` to build the observation filter, so the query cannot be scoped to one field by accident, and so rows stored under `entityId` rather than `entityKey` are matched too.
 - Verify afterwards on the served record, not on the supersede count.
-`describeDescriptionPairRisk` reports the two failure states: an empty full description, and a full that restates the short and will therefore blank on the next materialize.
+`describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and will therefore blank on the next materialize, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
 - Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.
 This failure cannot be caught by tier checks, by construction.
 
