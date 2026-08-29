@@ -373,30 +373,6 @@ function parseLabelListFields(text: string): string[] | null {
   return fields.length >= 2 ? fields : null;
 }
 
-/**
- * A `Studies <tags>.` / `<Name>'s research fields include <tags>.` short is
- * not a faithful compression of its own fullDescription (#1616) when there is
- * no real fullDescription prose to compress in the first place - full is
- * blank, full is itself just the same bare label-list shape, or short and
- * full are the literal same text (a short is supposed to be a distinct
- * summary, so contributing zero delta over the full is substantively empty) -
- * or when a listed item names an affiliation rather than a topic (Schmidt
- * Camacho's short serves her Council/Program affiliations as things she
- * "studies", which is incoherent - you can be affiliated with a Council, but
- * you cannot study one).
- *
- * Does NOT attempt a general topic-grounding check against the full
- * description: an approximate word-overlap comparison was tried and produces
- * real false positives on genuinely good, topically-faithful lists whose
- * wording simply does not repeat the full's exact phrasing (e.g. "Studies
- * econometrics, financial economics, ..." over a full that only says
- * "macroeconometrics" and "finance") - the same false-positive class already
- * documented against `resolveServedShortDescription`'s grounding check. A
- * short list that is topically wrong rather than structurally empty (e.g. a
- * "rock art" short over a human-evolution full) needs either a semantic check
- * or a much larger tuning corpus than this issue affords, so those are left
- * for one-off data correction rather than a general rule.
- */
 const LABEL_LIST_CLAUSE_STRUCTURE_PATTERN =
   /;|\b(?:including|such as|which|that|with a focus on|combining|based on|in order to|work includes)\b/i;
 
@@ -434,6 +410,30 @@ function isBareTopicLabelListText(value: string): boolean {
   );
 }
 
+/**
+ * A `Studies <tags>.` / `<Name>'s research fields include <tags>.` short is
+ * not a faithful compression of its own fullDescription (#1616) when there is
+ * no real fullDescription prose to compress in the first place - full is
+ * blank, full is itself just the same bare label-list shape, or short and
+ * full are the literal same text (a short is supposed to be a distinct
+ * summary, so contributing zero delta over the full is substantively empty) -
+ * or when a listed item names an affiliation rather than a topic (Schmidt
+ * Camacho's short serves her Council/Program affiliations as things she
+ * "studies", which is incoherent - you can be affiliated with a Council, but
+ * you cannot study one).
+ *
+ * Does NOT attempt a general topic-grounding check against the full
+ * description: an approximate word-overlap comparison was tried and produces
+ * real false positives on genuinely good, topically-faithful lists whose
+ * wording simply does not repeat the full's exact phrasing (e.g. "Studies
+ * econometrics, financial economics, ..." over a full that only says
+ * "macroeconometrics" and "finance") - the same false-positive class already
+ * documented against `resolveServedShortDescription`'s grounding check. A
+ * short list that is topically wrong rather than structurally empty (e.g. a
+ * "rock art" short over a human-evolution full) needs either a semantic check
+ * or a much larger tuning corpus than this issue affords, so those are left
+ * for one-off data correction rather than a general rule.
+ */
 function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
   if (!LABEL_LIST_SHORT_PATTERN.test(text)) return false;
   if (!full || text.toLowerCase() === full.toLowerCase() || isBareTopicLabelListText(full)) {
