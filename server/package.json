@@ -141,7 +141,8 @@
     "data:backfill-canonical-aliases": "tsx src/scripts/backfillCanonicalAliases.ts",
     "fuzzy:labeled-set": "tsx src/scripts/pipelineEval/fuzzyMatchLabeledSet.ts",
     "fuzzy:residual-report": "tsx src/scripts/pipelineEval/fuzzyResidualReport.ts",
-    "research-entity:coverage-synthesis": "tsx src/scripts/coverageSynthesis.ts"
+    "research-entity:coverage-synthesis": "tsx src/scripts/coverageSynthesis.ts",
+    "research-entity:grant-corpus-synthesis": "tsx src/scripts/grantCorpusSynthesis.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.63.0",

@@ -48,18 +48,19 @@ describe('seedSources CLI helpers', () => {
       confirmSeedApply: false,
       reset: false,
     });
-    expect(parseSeedSourcesArgs(['--reset', '--dry-run', '--output=/tmp/sources.json'])).toEqual({
+    const tmpJsonReport = path.join(os.tmpdir(), 'sources.json');
+    expect(parseSeedSourcesArgs(['--reset', '--dry-run', `--output=${tmpJsonReport}`])).toEqual({
       apply: false,
       confirmSeedApply: false,
       reset: true,
-      output: '/tmp/sources.json',
+      output: tmpJsonReport,
     });
     expect(() => parseSeedSourcesArgs(['--output=/etc/sources.json'])).toThrow(
       /--output must write under/,
     );
-    expect(() => parseSeedSourcesArgs(['--output=/tmp/sources.txt'])).toThrow(
-      /--output must point to a \.json report file/,
-    );
+    expect(() =>
+      parseSeedSourcesArgs([`--output=${path.join(os.tmpdir(), 'sources.txt')}`]),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('blocks apply source seeding without explicit confirmation', () => {
