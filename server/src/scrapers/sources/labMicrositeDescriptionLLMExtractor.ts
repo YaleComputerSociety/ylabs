@@ -279,6 +279,10 @@ function descriptionUrlPriority(value: string): number {
 const RESEARCH_SUBPAGE_ANCHOR_RE =
   /^(?:our\s+|the\s+|current\s+)?(?:research(?:\s+(?:areas?|interests?|overview|projects?|topics?|themes?))?|projects?|research\s+&\s+publications|science|what\s+we\s+(?:do|study)|areas\s+of\s+research)$/i;
 
+// Mirrors the selection floor in researchHomeDescriptionSelection so "already has
+// something worth keeping" means the same thing on both sides (#2180).
+const USABLE_STORED_DESCRIPTION_MIN_LENGTH = 120;
+
 const MAX_RESEARCH_SUBPAGE_CANDIDATES = 2;
 
 function sameRegistrableHost(a: string, b: string): boolean {
@@ -1104,10 +1108,18 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
                 shortDescription: groundedLlmExtraction.shortDescription || '',
               }
             : null);
+        // When the primary page is a JS shell it yields no candidate at all, and
+        // then a crawled candidate would win unopposed - which is how a figure
+        // caption on hatlab.yale.edu/research replaced a good stored description
+        // (#2180). A crawled page the primary page cannot vouch for may only FILL
+        // a description, never replace a usable one.
+        const storedDescriptionIsUsable =
+          textValue(lab.fullDescription).length >= USABLE_STORED_DESCRIPTION_MIN_LENGTH;
         const crawledProseWins =
           bestCrawledProse !== null &&
-          (primaryCandidate === null ||
-            scoreResearchHomeDescriptionCandidate(bestCrawledProse.fullDescription, kind) >
+          (primaryCandidate === null
+            ? !storedDescriptionIsUsable
+            : scoreResearchHomeDescriptionCandidate(bestCrawledProse.fullDescription, kind) >
               scoreResearchHomeDescriptionCandidate(primaryCandidate.fullDescription, kind));
 
         if (crawledProseWins && bestCrawledProse) {

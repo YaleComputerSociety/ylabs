@@ -1282,4 +1282,77 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(callLLM).not.toHaveBeenCalled();
     expect(logs.some((line) => /linked research page could not be read/.test(line))).toBe(true);
   });
+  it('leaves a usable stored description alone when the primary page yields nothing (#2180)', async () => {
+    const { ctx, emitted } = makeContext();
+    const STORED =
+      'The Michael Hatridge Lab focuses on quantum information research, particularly using superconducting microwave circuits as a platform to entangle larger quantum systems.';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        // A JS shell: no prose for either the deterministic or the LLM path.
+        return { url: 'https://examplelab.org/', html: '<main><a href="/research">Research</a></main>' };
+      }
+      return {
+        url: 'https://examplelab.org/research',
+        html:
+          '<main><p>The aluminum housing for a 6-qubit, 2 module processor design set on the still stage of one of our new dilution refrigerators for ambience. From top left, the input lines run to the mixing chamber plate.</p></main>',
+      };
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'hat-lab',
+          name: 'Hat Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: STORED,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi
+        .fn()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full).toBeUndefined();
+  });
+
+  it('still fills an empty description from a crawled page when the primary page yields nothing (#2180)', async () => {
+    const { ctx, emitted } = makeContext();
+    const CRAWLED =
+      'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return { url: 'https://examplelab.org/', html: '<main><a href="/research">Research</a></main>' };
+      }
+      return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'hat-lab',
+          name: 'Hat Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: '',
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi
+        .fn()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full?.value).toBe(CRAWLED);
+    expect(full?.sourceUrl).toBe('https://examplelab.org/research');
+  });
 });
