@@ -15,7 +15,10 @@ import {
   fullDescriptionObservationFilter,
   type FullDescriptionObservationLike,
 } from './grantCorpusSynthesisCore';
-import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import {
+  describesResearchFocus,
+  fullDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
@@ -132,6 +135,12 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
  * observation that must lose is waste. Mirrors the grant-corpus lane's
  * better-sourced skip, restricted to non-bio values because the bio-shaped
  * cohort is exactly what this lane targets.
+ *
+ * The alternative has to actually describe research, not merely lack career
+ * markers: `fullDescriptionQuality` is flag-based, so clinical-service prose
+ * ("sees patients at Smilow Cancer Hospital and serves on the ethics committee")
+ * clears it while saying nothing about the research, and skipping on it leaves
+ * the entity with no research description at all.
  */
 export async function entityHasNonBioSourcedDescription(
   entity: FraProfileSynthesisEntity,
@@ -149,6 +158,7 @@ export async function entityHasNonBioSourcedDescription(
     (observation) =>
       observation.sourceName !== FRA_PROFILE_SYNTHESIS_SOURCE_NAME &&
       !isCareerBiographyDescription(observation.value) &&
+      describesResearchFocus(observation.value) &&
       fullDescriptionQuality(observation.value, entity.researchAreas, entity.entityType).isUseful,
   );
 }

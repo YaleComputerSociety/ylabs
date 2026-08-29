@@ -19,6 +19,7 @@ import {
   isHighConfidencePersonBio,
   scoreResearchHomeDescriptionCandidate,
 } from '../utils/researchHomeDescriptionSelection';
+import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 
 export interface ResolverObservation {
   field: string;
@@ -202,8 +203,15 @@ function preferExtractedProseGroups<T extends { sources: Set<string> }>(
   return extracted.length > 0 ? extracted : groups;
 }
 
+// Both predicates, because a bio-replacing lane selects its cohort on career
+// facts (`isCareerBiographyDescription`) while this demotion originally keyed on
+// person-voice shape. The narrower rule left the selected cohort undemotable: an
+// endowed-chair or joined-the-faculty bio re-emitted weekly at 0.55 outranks the
+// 0.48 replacement forever, so the lane reported success while the biography
+// stayed served (#2200).
 function isPersonBioProseGroup(group: { value: unknown }): boolean {
-  return typeof group.value === 'string' && isHighConfidencePersonBio(group.value);
+  if (typeof group.value !== 'string') return false;
+  return isHighConfidencePersonBio(group.value) || isCareerBiographyDescription(group.value);
 }
 
 function hasBioReplacingSynthesisSource(group: { sources: Set<string> }): boolean {

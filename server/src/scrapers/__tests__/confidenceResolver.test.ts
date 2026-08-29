@@ -791,6 +791,25 @@ describe('person-bio demotion for fullDescription', () => {
     expect(resolved?.contributingSources).toEqual(['fra-profile-research-synthesis']);
   });
 
+  it('demotes a career biography that is not person-voiced enough for the bio check', () => {
+    // The bio-replacing lane selects its cohort on career facts, so a demotion
+    // keyed only on person-voice shape left that cohort undemotable: the endowed
+    // chair bio is re-emitted weekly at 0.55, outranks the 0.48 replacement
+    // forever, and the lane reported success while the biography stayed served.
+    const CAREER_BIO =
+      'Nicholas R. Parrillo is William K. Townsend Professor of Law at Yale. His scholarship examines administrative law and the history of federal regulation.';
+    expect(isHighConfidencePersonBio(CAREER_BIO)).toBe(false);
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        obs(CAREER_BIO, 'ysm-faculty-directory', 0.55),
+        obs(RESEARCH, 'fra-profile-research-synthesis', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(ranked.map((entry) => entry.value)).toEqual([RESEARCH, CAREER_BIO]);
+  });
+
   it('ranks the bio last but keeps it reachable as the materializer fallback', () => {
     // Dropping it instead left the materializer's fallback walk with nothing to
     // fall back to when its own content gates reject the winner, which blanked
