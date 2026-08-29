@@ -52,7 +52,10 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
-import { isPersonProfileOrDirectoryUrl } from '../../utils/researchHomeWebsiteUrl';
+import {
+  isListingOrIndexUrl,
+  isPersonProfileOrDirectoryUrl,
+} from '../../utils/researchHomeWebsiteUrl';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
 import {
   clampDescriptionLength,
@@ -2873,24 +2876,86 @@ function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
   );
 }
 
-function entryToResearchEntityObservations(
+/**
+ * Official-profile page that a lab-less research home may cite as its own
+ * source. A roster listing root is never citable: it is shared by the whole
+ * department, `isListingOrIndexUrl` rejects it downstream, and an entity whose
+ * only URL is a generic directory root is suppressed as a directory shell.
+ */
+function labLessResearchHomeCitationUrl(entry: FacultyEntry): string {
+  if (entry.namePlaceholder) return '';
+  const profileUrl = entry.profileSourceUrl || entry.profileUrl || '';
+  if (!profileUrl || !isOfficialYaleUrl(profileUrl)) return '';
+  if (isListingOrIndexUrl(profileUrl)) return '';
+  return profileUrl;
+}
+
+export interface RosterResearchHomeEvidence {
+  groundedDescription: string;
+  groundedShortDescription: string;
+  topics: string[];
+}
+
+export function rosterResearchHomeEvidence(entry: FacultyEntry): RosterResearchHomeEvidence {
+  const groundedDescriptionCandidate = cleanText(entry.researchHomeDescription);
+  const groundedDescription =
+    groundedDescriptionCandidate && fullDescriptionQuality(groundedDescriptionCandidate).isUseful
+      ? groundedDescriptionCandidate
+      : '';
+  const groundedShortCandidate = cleanText(entry.researchHomeShortDescription);
+  const groundedShortDescription =
+    groundedDescription &&
+    groundedShortCandidate &&
+    shortDescriptionQuality(groundedShortCandidate, groundedDescription).isUseful
+      ? groundedShortCandidate
+      : '';
+  return {
+    groundedDescription,
+    groundedShortDescription,
+    topics: uniqueStrings([...(entry.researchInterests || []), ...(entry.topics || [])]).filter(
+      (topic) => !isTopicLabelChrome(topic),
+    ),
+  };
+}
+
+/**
+ * A faculty member with no off-directory lab website is still a research home:
+ * a school whose faculty publish research on their own official profile and
+ * never run a separate lab site (Art, Architecture) otherwise materializes
+ * nothing at all. Mirrors the `ysm-faculty-directory` condition (#1933): a
+ * lab-less FACULTY_RESEARCH_AREA needs positive research evidence on the
+ * person's own official profile, never a bare roster row.
+ */
+export function entryToResearchEntityObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
   ownerEntityKey: string,
 ): ObservationInput[] {
-  if (!entry.labUrl) return [];
-  const cleanedName = normalizeName(entry.name);
-  const nameSlug = slugify(cleanedName) || slugify(entry.labUrl);
-  const slug = `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
-  const isExplicitLab = isLikelyExplicitLabWebsite(entry);
+  const isExplicitLab = Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry);
   if (!isExplicitLab && dept.emitPersonalResearchEntities === false) return [];
+
+  const evidence = rosterResearchHomeEvidence(entry);
+  const { groundedDescription, topics } = evidence;
+  const labLessCitationUrl = entry.labUrl ? '' : labLessResearchHomeCitationUrl(entry);
+  const hasLabLessResearchEvidence =
+    Boolean(labLessCitationUrl) && (Boolean(groundedDescription) || topics.length > 0);
+  if (!entry.labUrl && !hasLabLessResearchEvidence) return [];
+
+  const cleanedName = normalizeName(entry.name);
+  const nameSlug = slugify(cleanedName) || (entry.labUrl ? slugify(entry.labUrl) : '');
+  if (!nameSlug) return [];
+  const slug = `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
   const entityName = cleanedName
     ? isExplicitLab
       ? `${cleanedName} Lab`
       : `${cleanedName} Faculty Research`
-    : entry.labUrl;
-  const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
+    : entry.labUrl!;
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: slug,
+    sourceUrl: labLessCitationUrl || sourceUrl,
+  };
   const observations: ObservationInput[] = [
     { ...base, field: 'slug', value: slug },
     { ...base, field: 'name', value: entityName },
@@ -2900,8 +2965,12 @@ function entryToResearchEntityObservations(
     ...(dept.affiliatesOnly
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
-    { ...base, field: 'websiteUrl', value: entry.labUrl },
-    { ...base, field: 'sourceUrls', value: [sourceUrl, entry.labUrl] },
+    ...(entry.labUrl ? [{ ...base, field: 'websiteUrl' as const, value: entry.labUrl }] : []),
+    {
+      ...base,
+      field: 'sourceUrls',
+      value: entry.labUrl ? [sourceUrl, entry.labUrl] : [labLessCitationUrl],
+    },
     {
       ...base,
       field: 'inferredPiUserKey',
@@ -2910,19 +2979,10 @@ function entryToResearchEntityObservations(
     },
   ];
 
-  const topics = uniqueStrings([
-    ...(entry.researchInterests || []),
-    ...(entry.topics || []),
-  ]).filter((topic) => !isTopicLabelChrome(topic));
   if (topics.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: topics });
   }
 
-  const groundedDescriptionCandidate = cleanText(entry.researchHomeDescription);
-  const groundedDescription =
-    groundedDescriptionCandidate && fullDescriptionQuality(groundedDescriptionCandidate).isUseful
-      ? groundedDescriptionCandidate
-      : '';
   if (groundedDescription) {
     observations.push({
       ...base,
@@ -2930,17 +2990,11 @@ function entryToResearchEntityObservations(
       value: groundedDescription,
       confidenceOverride: ROSTER_PROFILE_DESCRIPTION_CONFIDENCE,
     });
-    const groundedShortCandidate = cleanText(entry.researchHomeShortDescription);
-    const groundedShort =
-      groundedShortCandidate &&
-      shortDescriptionQuality(groundedShortCandidate, groundedDescription).isUseful
-        ? groundedShortCandidate
-        : '';
-    if (groundedShort) {
+    if (evidence.groundedShortDescription) {
       observations.push({
         ...base,
         field: 'shortDescription',
-        value: groundedShort,
+        value: evidence.groundedShortDescription,
         confidenceOverride: ROSTER_PROFILE_DESCRIPTION_CONFIDENCE,
       });
     }

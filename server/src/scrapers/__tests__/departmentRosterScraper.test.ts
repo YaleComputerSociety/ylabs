@@ -2089,6 +2089,175 @@ describe('DepartmentRosterScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  describe('lab-less research homes (School of Art / School of Architecture coverage)', () => {
+    const ART_PROSE =
+      'Draws on archival photography and installation to study how public monuments encode civic memory, ' +
+      'combining fieldwork in New Haven with archival research on nineteenth-century commemorative practice.';
+
+    const runWithEntries = async (
+      entries: FacultyEntry[],
+      dept: Partial<DeptConfig> = {},
+    ): Promise<ObservationInput[]> => {
+      const configs: DeptConfig[] = [
+        {
+          deptKey: 'art',
+          deptName: 'Art',
+          schoolName: 'Yale School of Art',
+          url: 'https://www.art.yale.edu/about/people/faculty-and-staff',
+          paginated: false,
+          extractor: vi.fn((): FacultyEntry[] => entries),
+          ...dept,
+        },
+      ];
+      const axios = (await import('axios')).default;
+      const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+      const scraper = new DepartmentRosterScraper(configs);
+      const { ctx, emitted } = makeContext();
+      await scraper.run(ctx);
+      getSpy.mockRestore();
+      return emitted;
+    };
+
+    it('mints a faculty research area from official profile prose when no lab website exists', async () => {
+      const emitted = await runWithEntries([
+        {
+          name: 'Alexandra Example',
+          profileUrl: 'https://www.art.yale.edu/AlexandraExample',
+          title: 'Assistant Professor',
+          researchHomeDescription: ART_PROSE,
+        },
+      ]);
+
+      const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+      expect(entityObs.length).toBeGreaterThan(0);
+      expect(entityObs.find((o) => o.field === 'entityType')?.value).toBe('FACULTY_RESEARCH_AREA');
+      expect(entityObs.find((o) => o.field === 'kind')?.value).toBe('individual');
+      expect(entityObs.find((o) => o.field === 'name')?.value).toBe(
+        'Alexandra Example Faculty Research',
+      );
+      expect(entityObs.find((o) => o.field === 'school')?.value).toBe('Yale School of Art');
+      expect(entityObs.some((o) => o.field === 'websiteUrl')).toBe(false);
+      expect(entityObs.find((o) => o.field === 'fullDescription')?.value).toBe(ART_PROSE);
+      expect(entityObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
+        'dept:art:alexandra-example',
+      );
+    });
+
+    it('cites the person own official profile rather than the shared roster listing', async () => {
+      const emitted = await runWithEntries([
+        {
+          name: 'Alexandra Example',
+          profileUrl: 'https://www.art.yale.edu/AlexandraExample',
+          researchHomeDescription: ART_PROSE,
+        },
+      ]);
+
+      const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+      expect(entityObs.find((o) => o.field === 'sourceUrls')?.value).toEqual([
+        'https://www.art.yale.edu/AlexandraExample',
+      ]);
+      for (const observation of entityObs) {
+        expect(observation.sourceUrl).toBe('https://www.art.yale.edu/AlexandraExample');
+      }
+    });
+
+    it('mints a faculty research area from roster research interests alone', async () => {
+      const emitted = await runWithEntries([
+        {
+          name: 'Bruno Interests',
+          profileUrl: 'https://www.architecture.yale.edu/faculty/bruno-interests',
+          researchInterests: ['Urban History', 'Building Technology'],
+        },
+      ]);
+
+      const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+      expect(entityObs.find((o) => o.field === 'entityType')?.value).toBe('FACULTY_RESEARCH_AREA');
+      expect(entityObs.find((o) => o.field === 'researchAreas')?.value).toEqual([
+        'Urban History',
+        'Building Technology',
+      ]);
+    });
+
+    it('mints nothing for a bare roster row with no research evidence', async () => {
+      const emitted = await runWithEntries([
+        {
+          name: 'Casey Bare',
+          profileUrl: 'https://www.art.yale.edu/CaseyBare',
+          title: 'Critic',
+        },
+      ]);
+
+      expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+      expect(emitted.some((o) => o.entityType === 'user')).toBe(true);
+    });
+
+    it('refuses to mint when the only citable page is a shared roster listing root', async () => {
+      const emitted = await runWithEntries([
+        {
+          name: 'Dana Listing',
+          profileUrl: 'https://www.architecture.yale.edu/faculty',
+          researchHomeDescription: ART_PROSE,
+        },
+      ]);
+
+      expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+    });
+
+    it('refuses to mint when the roster only exposed a slug placeholder for the name', async () => {
+      const emitted = await runWithEntries([
+        {
+          name: 'dana-placeholder',
+          namePlaceholder: true,
+          profileUrl: 'https://www.architecture.yale.edu/faculty/dana-placeholder',
+          researchHomeDescription: ART_PROSE,
+        },
+      ]);
+
+      expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+    });
+
+    it('keeps suppressing lab-less research homes on broad people rosters', async () => {
+      const emitted = await runWithEntries(
+        [
+          {
+            name: 'Erin Broad',
+            profileUrl: 'https://tdps.yale.edu/profile/erin-broad',
+            researchHomeDescription: ART_PROSE,
+          },
+        ],
+        {
+          deptKey: 'tdps',
+          deptName: 'Theater, Dance, and Performance Studies',
+          schoolName: 'FAS',
+          emitPersonalResearchEntities: false,
+        },
+      );
+
+      expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+    });
+
+    it('still prefers an explicit lab website over the lab-less path', async () => {
+      const emitted = await runWithEntries([
+        {
+          name: 'Fern Labowner',
+          profileUrl: 'https://www.art.yale.edu/FernLabowner',
+          labUrl: 'https://fernlab.example.org/',
+          researchHomeDescription: ART_PROSE,
+        },
+      ]);
+
+      const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+      expect(entityObs.find((o) => o.field === 'entityType')?.value).toBe('LAB');
+      expect(entityObs.find((o) => o.field === 'websiteUrl')?.value).toBe(
+        'https://fernlab.example.org/',
+      );
+      expect(entityObs.find((o) => o.field === 'sourceUrls')?.value).toEqual([
+        'https://www.art.yale.edu/about/people/faculty-and-staff',
+        'https://fernlab.example.org/',
+      ]);
+    });
+  });
+
   it('models personal research websites as faculty research areas rather than labs', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
