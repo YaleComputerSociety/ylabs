@@ -404,11 +404,7 @@ export function reachOutPlausibleSignalCreditsActionEvidence(input: {
 
 const profileAreaDuplicateCounterpartEntityTypes = new Set([
   'LAB',
-  'GROUP',
   'FACULTY_PROJECT',
-  'DIGITAL_HUMANITIES_PROJECT',
-  'COLLECTIONS_INITIATIVE',
-  'ARCHIVE_OR_MUSEUM_PROJECT',
 ]);
 
 const profileAreaDuplicateCounterpartKinds = new Set(['lab', 'group', 'project']);

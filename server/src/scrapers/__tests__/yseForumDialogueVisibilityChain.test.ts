@@ -46,7 +46,7 @@ describe('YSE forum/dialogue organizational homes reach students end-to-end', ()
       ...scraped,
       entity: { ...scraped.entity, entityType: mapResearchGroupKindToEntityType('group') },
     };
-    expect(strandedAsGroup.entity.entityType).toBe('GROUP');
+    expect(strandedAsGroup.entity.entityType).toBe('INITIATIVE');
 
     const result = computeResearchEntityStudentVisibility(strandedAsGroup);
 

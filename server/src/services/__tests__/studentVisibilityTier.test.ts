@@ -286,7 +286,6 @@ describe('computeResearchEntityStudentVisibility', () => {
           name: 'Example Senior Essay',
           slug: 'course-based-research-example',
           kind: 'program',
-          entityType: 'COURSE_SEQUENCE',
           shortDescription:
             'A for-credit research pathway through directed research, independent study, and senior-essay courses.',
           fullDescription:
@@ -405,7 +404,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         _id: 'yul-exhibit-prospectsofempire',
         name: 'Prospects of Empire: Slavery and Ecology in Eighteenth-Century Atlantic Britain',
         slug: 'yul-exhibit-prospectsofempire',
-        entityType: 'COLLECTIONS_INITIATIVE',
+        entityType: 'INITIATIVE',
         shortDescription:
           'A Yale University Library exhibition on the ecologies and economies of eighteenth-century Atlantic empire.',
         fullDescription:
@@ -426,7 +425,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         _id: 'yul-exhibit-with-path',
         name: 'Prospects of Empire: Slavery and Ecology in Eighteenth-Century Atlantic Britain',
         slug: 'yul-exhibit-with-path',
-        entityType: 'COLLECTIONS_INITIATIVE',
+        entityType: 'INITIATIVE',
         shortDescription:
           'A Yale University Library exhibition on the ecologies and economies of eighteenth-century Atlantic empire.',
         fullDescription:
@@ -447,13 +446,13 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('missing_alternate_access_path');
   });
 
-  it('treats a lead-less ARCHIVE_OR_MUSEUM_PROJECT as lead-exempt: held on the org-access lane, never missing_lead (#1367)', () => {
+  it('treats a lead-less CORE_FACILITY as lead-exempt: held on the org-access lane, never missing_lead (#1367)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'beinecke-americana',
         name: 'Americana',
         slug: 'beinecke-americana',
-        entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+        entityType: 'CORE_FACILITY',
         shortDescription:
           'Examines the Beinecke Library collection of Americana across the histories, languages, and materials of the Western Hemisphere.',
         fullDescription:
@@ -475,7 +474,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         _id: 'beinecke-americana-ready',
         name: 'Americana',
         slug: 'beinecke-americana-ready',
-        entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+        entityType: 'CORE_FACILITY',
         shortDescription:
           'Examines the Beinecke Library collection of Americana across the histories, languages, and materials of the Western Hemisphere.',
         fullDescription:
@@ -598,14 +597,13 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('operator_override');
   });
 
-  it('treats a lead-less COURSE_SEQUENCE as lead-exempt and promotes it via its directed-research course-credit ways-in, never flooring on missing_lead', () => {
+  it('treats a lead-less program-like pathway as lead-exempt and promotes it via its directed-research course-credit ways-in, never flooring on missing_lead', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'course-based-research-psychology-directed-research',
         name: 'Psychology Directed Research Courses',
         slug: 'course-based-research-psychology-directed-research',
-        kind: 'group',
-        entityType: 'COURSE_SEQUENCE',
+        kind: 'program',
         shortDescription:
           'A for-credit Psychology research pathway through directed research, independent study, and senior-essay or senior-thesis courses.',
         fullDescription:
@@ -624,14 +622,13 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('student_ready');
   });
 
-  it('publishes a lead-less COURSE_SEQUENCE whose only page is an unrecognized landing page as student_ready, recording the soft access-path signal (issue #1802)', () => {
+  it('publishes a lead-less program-like pathway whose only page is an unrecognized landing page as student_ready, recording the soft access-path signal (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'course-based-research-example-landing',
         name: 'Example Senior Essay',
         slug: 'course-based-research-example-landing',
-        kind: 'group',
-        entityType: 'COURSE_SEQUENCE',
+        kind: 'program',
         shortDescription:
           'A for-credit research pathway through directed research, independent study, and senior-essay courses.',
         fullDescription:
@@ -650,14 +647,13 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('student_ready');
   });
 
-  it('publishes a lead-less COURSE_SEQUENCE as student_ready once it has a reachable access path, even with no action evidence yet (issue #1802)', () => {
+  it('publishes a lead-less program-like pathway as student_ready once it has a reachable access path, even with no action evidence yet (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'course-based-research-psychology-directed-research-path',
         name: 'Psychology Directed Research Courses',
         slug: 'course-based-research-psychology-directed-research-path',
-        kind: 'group',
-        entityType: 'COURSE_SEQUENCE',
+        kind: 'program',
         shortDescription:
           'A for-credit Psychology research pathway through directed research, independent study, and senior-essay or senior-thesis courses.',
         fullDescription:

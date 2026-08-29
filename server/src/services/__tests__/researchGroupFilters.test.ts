@@ -78,17 +78,17 @@ describe('buildResearchGroupFilterString', () => {
   describe('entityType filter', () => {
     it('ORs multiple entityType enum values within the field', () => {
       const filter = buildResearchGroupFilterString({
-        entityType: ['PROGRAM', 'COURSE_SEQUENCE', 'CENTER'],
+        entityType: ['INITIATIVE', 'CORE_FACILITY', 'CENTER'],
       });
       expect(filter).toBe(
-        'archived = false AND (entityType = "PROGRAM" OR entityType = "COURSE_SEQUENCE" OR entityType = "CENTER")',
+        'archived = false AND (entityType = "INITIATIVE" OR entityType = "CORE_FACILITY" OR entityType = "CENTER")',
       );
     });
 
     it('places the entityType clause right after kind and ANDs with other fields', () => {
       const filter = buildResearchGroupFilterString({
         kind: ['lab'],
-        entityType: ['LAB', 'GROUP'],
+        entityType: ['LAB', 'INITIATIVE'],
         departments: ['Genetics'],
       });
       expect(filter).toBe(

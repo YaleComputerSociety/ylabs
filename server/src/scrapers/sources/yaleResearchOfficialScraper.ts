@@ -104,7 +104,7 @@ export function inferResearchYaleKind(name: string): {
   if (/\b(?:program|project|initiative)\b/i.test(name)) {
     return { kind: 'initiative', entityType: 'INITIATIVE' };
   }
-  return { kind: 'group', entityType: 'GROUP' };
+  return { kind: 'initiative', entityType: 'INITIATIVE' };
 }
 
 export function classifyResearchYaleEntity(

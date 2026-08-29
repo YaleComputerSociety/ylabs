@@ -12,7 +12,7 @@ import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  RETIRED_PROGRAM_ENTITY_TYPE,
+  RETIRED_RESEARCH_ENTITY_TYPES,
   buildRetireProgramResearchEntitiesPlan,
   normalizeFellowshipTitle,
   type ProgramFellowshipMatchKey,
@@ -122,10 +122,16 @@ export function assertRetireProgramResearchEntitiesApplyAllowed({
 
 async function loadProgramResearchEntityCandidates(): Promise<ProgramResearchEntityCandidate[]> {
   const programEntities = (await ResearchEntity.find({
-    entityType: RETIRED_PROGRAM_ENTITY_TYPE as never,
+    entityType: { $in: RETIRED_RESEARCH_ENTITY_TYPES as unknown as string[] },
   })
-    .select('_id slug name archived')
-    .lean()) as Array<{ _id: unknown; slug?: string; name?: string; archived?: boolean }>;
+    .select('_id slug name entityType archived')
+    .lean()) as Array<{
+    _id: unknown;
+    slug?: string;
+    name?: string;
+    entityType?: string;
+    archived?: boolean;
+  }>;
 
   const fellowships = (await Fellowship.find({}).select('_id title sourceKey').lean()) as Array<{
     _id: unknown;
@@ -157,6 +163,7 @@ async function loadProgramResearchEntityCandidates(): Promise<ProgramResearchEnt
       id,
       ...(slug ? { slug } : {}),
       ...(name ? { name } : {}),
+      ...(entity.entityType ? { entityType: entity.entityType } : {}),
       archived: entity.archived === true,
       ...(fellowshipMatchKey ? { fellowshipMatchKey } : {}),
       signalCount,
@@ -277,6 +284,7 @@ async function main(): Promise<void> {
       toArchiveCount: result.plan.toArchiveCount,
       withFellowship: result.plan.withFellowship,
       withoutFellowship: result.plan.withoutFellowship,
+      byEntityType: result.plan.byEntityType,
       archivedResearchEntities: result.archivedResearchEntities,
       search: result.search,
       rows: result.plan.rows,
@@ -291,7 +299,7 @@ async function main(): Promise<void> {
     }
     if (result.search.requested > 0 && !result.search.deleted) {
       console.error(
-        `Archived ${result.archivedResearchEntities} PROGRAM research entities but failed to remove ${result.search.requested} Meilisearch documents; they are still live search hits.`,
+        `Archived ${result.archivedResearchEntities} retired-type research entities but failed to remove ${result.search.requested} Meilisearch documents; they are still live search hits.`,
       );
       process.exitCode = 1;
     }

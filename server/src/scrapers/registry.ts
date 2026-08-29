@@ -14,7 +14,6 @@ import { DepartmentRosterScraper } from './sources/departmentRosterScraper';
 import { BbsResearchTrackScraper } from './sources/bbsResearchTrackScraper';
 import { DepartmentResearchAreasScraper } from './sources/departmentResearchAreasScraper';
 import { DepartmentUndergradResearchScraper } from './sources/departmentUndergradResearchScraper';
-import { CourseBasedResearchPathwayScraper } from './sources/courseBasedResearchPathwayScraper';
 import { UndergradResearchPostingScraper } from './sources/undergradResearchPostingScraper';
 import { NihReporterScraper } from './sources/nihReporterScraper';
 import { NsfAwardScraper } from './sources/nsfAwardScraper';
@@ -34,13 +33,6 @@ import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
 import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtractor';
-import { DhLabProjectsScraper } from './sources/dhLabProjectsScraper';
-import { PeabodyCollectionsResearchScraper } from './sources/peabodyCollectionsResearchScraper';
-import { LibraryCollectionsAsDataScraper } from './sources/libraryCollectionsAsDataScraper';
-import { BeineckeCollectionsResearchScraper } from './sources/beineckeCollectionsResearchScraper';
-import { BeineckeCuratorialUnitsScraper } from './sources/beineckeCuratorialUnitsScraper';
-import { YaleUniversityArtGalleryScraper } from './sources/yaleUniversityArtGalleryScraper';
-import { YaleCenterBritishArtScraper } from './sources/yaleCenterBritishArtScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -60,7 +52,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new BbsResearchTrackScraper());
   o.register(new DepartmentResearchAreasScraper());
   o.register(new DepartmentUndergradResearchScraper());
-  o.register(new CourseBasedResearchPathwayScraper());
   o.register(new UndergradResearchPostingScraper());
   o.register(new NihReporterScraper());
   o.register(new NsfAwardScraper());
@@ -80,12 +71,5 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new OfficialProfilePiBackfillScraper());
   o.register(new OfficialResearchHomeRosterScraper());
   o.register(new ResearchAreaSourceExtractor());
-  o.register(new DhLabProjectsScraper());
-  o.register(new PeabodyCollectionsResearchScraper());
-  o.register(new LibraryCollectionsAsDataScraper());
-  o.register(new BeineckeCollectionsResearchScraper());
-  o.register(new BeineckeCuratorialUnitsScraper());
-  o.register(new YaleUniversityArtGalleryScraper());
-  o.register(new YaleCenterBritishArtScraper());
   return o;
 }
