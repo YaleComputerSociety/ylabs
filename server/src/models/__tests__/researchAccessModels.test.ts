@@ -25,6 +25,7 @@ describe('research access models', () => {
   it('does not expose PROGRAM as a research entity type; programs live only on /programs', () => {
     expect(researchEntityTypes).not.toContain('PROGRAM');
     expect(mapResearchGroupKindToEntityType('program')).not.toBe('PROGRAM');
+    expect(mapResearchGroupKindToEntityType('group')).toBe('INITIATIVE');
     expect(mapResearchGroupKindToEntityType('program')).toBe('INITIATIVE');
   });
 
@@ -61,12 +62,15 @@ describe('research access models', () => {
       institute: 'institute',
       program: 'initiative',
       initiative: 'initiative',
-      group: 'group',
+      group: 'initiative',
       individual: 'individual',
       solo: 'individual',
       core_facility: 'core_facility',
     });
-    expect(mapEntityTypeToResearchGroupKind('COURSE_SEQUENCE')).toBe('program');
+    // COURSE_SEQUENCE and GROUP were retired (#2202), so no surviving entity type
+    // derives the `program` or `group` kinds: both are stored legacy values only.
+    expect(Object.values(EntityTypeToResearchGroupKind)).not.toContain('program');
+    expect(Object.values(EntityTypeToResearchGroupKind)).not.toContain('group');
   });
 
   it('validates access signals with source-backed confidence fields', () => {

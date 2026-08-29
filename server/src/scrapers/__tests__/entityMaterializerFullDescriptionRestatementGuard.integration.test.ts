@@ -160,7 +160,11 @@ describe('materializeEntity blanks a program fullDescription that is byte-identi
       slug: 'program-restatement-fixture',
       name: 'Schmidt Program on AI',
       kind: 'program',
-      entityType: 'COURSE_SEQUENCE',
+      entityType: 'INITIATIVE',
+      // COURSE_SEQUENCE was retired (#2202), so a derived kind can no longer be
+      // 'program'. An operator lock on `kind` is the one remaining way a
+      // program-like research entity persists past the #2144 derivation.
+      manuallyLockedFields: ['kind'],
       studentVisibilityTier: 'operator_review',
       archived: false,
       shortDescription: PROGRAM_SINGLE_SENTENCE_TEXT,

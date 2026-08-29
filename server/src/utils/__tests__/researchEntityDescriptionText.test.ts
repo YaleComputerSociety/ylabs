@@ -450,7 +450,7 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
 
   it('blanks a researcher-voice "Studies <topic>" shortDescription on a funding-program entity (#1555)', () => {
     const raProgram = {
-      entityType: 'COURSE_SEQUENCE',
+      kind: 'program',
       fullDescription:
         'The Impulsivity and Impulse Control Disorder Research Program funds undergraduate research assistantships in psychiatry, neuroscience, psychology, and developmental biology.',
       shortDescription: 'Studies Psychiatry, Neuroscience, Psychology, and Developmental Biology.',
@@ -1343,18 +1343,6 @@ describe('sanitizeResearchHomeSelfReferenceText', () => {
         entityType: 'CORE_FACILITY',
       }),
     ).toBe('The core facility runs shared instruments.');
-    expect(
-      sanitizeResearchHomeSelfReferenceText('The lab digitizes manuscripts.', {
-        name: 'A DH Project',
-        entityType: 'DIGITAL_HUMANITIES_PROJECT',
-      }),
-    ).toBe('The project digitizes manuscripts.');
-    expect(
-      sanitizeResearchHomeSelfReferenceText('The lab catalogs the archive.', {
-        name: 'A Museum Project',
-        entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
-      }),
-    ).toBe('The project catalogs the archive.');
   });
 
   it('leaves LAB and faculty-research entities untouched', () => {

@@ -43,12 +43,7 @@ const concreteEntityTypes = new Set([
   'CENTER',
   'INSTITUTE',
   'FACULTY_PROJECT',
-  'DIGITAL_HUMANITIES_PROJECT',
-  'COLLECTIONS_INITIATIVE',
-  'COURSE_SEQUENCE',
-  'ARCHIVE_OR_MUSEUM_PROJECT',
   'INITIATIVE',
-  'GROUP',
 ]);
 
 export function normalizedProfileAreaWords(value: string | undefined): string[] {

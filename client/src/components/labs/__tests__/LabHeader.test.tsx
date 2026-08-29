@@ -169,7 +169,7 @@ describe('LabHeader', () => {
           ...baseGroup,
           name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
           kind: 'program',
-          entityType: 'COURSE_SEQUENCE',
+          entityType: undefined,
           websiteUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
         }}
       />,

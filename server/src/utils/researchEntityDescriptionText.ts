@@ -287,14 +287,9 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
 }
 
 const NON_PERSON_ORG_ENTITY_TYPES = new Set([
-  'COURSE_SEQUENCE',
   'CENTER',
   'INSTITUTE',
   'INITIATIVE',
-  'COLLECTIONS_INITIATIVE',
-  'DIGITAL_HUMANITIES_PROJECT',
-  'ARCHIVE_OR_MUSEUM_PROJECT',
-  'GROUP',
   'CORE_FACILITY',
 ]);
 
@@ -1137,12 +1132,7 @@ const RESEARCH_HOME_SELF_NOUNS_BY_TYPE: Record<string, string> = {
   CENTER: 'center',
   INSTITUTE: 'institute',
   INITIATIVE: 'initiative',
-  COLLECTIONS_INITIATIVE: 'initiative',
-  DIGITAL_HUMANITIES_PROJECT: 'project',
-  ARCHIVE_OR_MUSEUM_PROJECT: 'project',
-  GROUP: 'group',
   CORE_FACILITY: 'core facility',
-  COURSE_SEQUENCE: 'program',
 };
 
 const RESEARCH_HOME_SELF_NOUNS_BY_KIND: Record<string, string> = {

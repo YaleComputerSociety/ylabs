@@ -7,7 +7,11 @@ import {
   assertRetireProgramResearchEntitiesApplyAllowed,
   retireProgramResearchEntities,
 } from '../retireProgramResearchEntities';
-import { buildRetireProgramResearchEntitiesPlan } from '../retireProgramResearchEntitiesCore';
+import {
+  buildRetireProgramResearchEntitiesPlan,
+  RETIRED_RESEARCH_ENTITY_TYPES,
+} from '../retireProgramResearchEntitiesCore';
+import { researchEntityTypes } from '../../models/researchAccessTypes';
 
 describe('retireProgramResearchEntities CLI parsing and guards', () => {
   it('defaults to a dry-run', () => {
@@ -62,6 +66,41 @@ describe('buildRetireProgramResearchEntitiesPlan', () => {
     expect(plan.alreadyArchived).toBe(1);
     expect(plan.withFellowship).toBe(2);
     expect(plan.withoutFellowship).toBe(1);
+  });
+
+  it('counts every retired entity type it scans, not just PROGRAM (#2202)', () => {
+    const plan = buildRetireProgramResearchEntitiesPlan({
+      candidates: [
+        { id: 'a', slug: 'p-a', entityType: 'PROGRAM' },
+        { id: 'b', slug: 'c-b', entityType: 'COLLECTIONS_INITIATIVE' },
+        { id: 'c', slug: 'c-c', entityType: 'COLLECTIONS_INITIATIVE' },
+        { id: 'd', slug: 'a-d', entityType: 'ARCHIVE_OR_MUSEUM_PROJECT', archived: true },
+        { id: 'e', slug: 's-e', entityType: 'COURSE_SEQUENCE' },
+      ],
+    });
+
+    expect(plan.byEntityType).toEqual({
+      PROGRAM: 1,
+      COLLECTIONS_INITIATIVE: 2,
+      ARCHIVE_OR_MUSEUM_PROJECT: 1,
+      COURSE_SEQUENCE: 1,
+    });
+    expect(plan.toArchive).toEqual(['a', 'b', 'c', 'e']);
+    expect(plan.alreadyArchived).toBe(1);
+  });
+
+  it('covers every value retired from the researchEntityTypes enum', () => {
+    expect([...RETIRED_RESEARCH_ENTITY_TYPES]).toEqual([
+      'PROGRAM',
+      'COLLECTIONS_INITIATIVE',
+      'ARCHIVE_OR_MUSEUM_PROJECT',
+      'DIGITAL_HUMANITIES_PROJECT',
+      'COURSE_SEQUENCE',
+      'GROUP',
+    ]);
+    for (const retired of RETIRED_RESEARCH_ENTITY_TYPES) {
+      expect(researchEntityTypes as readonly string[]).not.toContain(retired);
+    }
   });
 });
 

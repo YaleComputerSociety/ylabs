@@ -144,26 +144,18 @@ All 38 sources below are registered in `registry.ts`. Descriptions are grouped b
 | `ysmMeshKeywordScraper.ts` | YSM research-by-keyword (MeSH) directory as a crawl seed; reads governed MeSH areas from each faculty's cited individual profile and attaches them to existing YSM entities. Fail-closed on contact; listing/facet pages never cited. |
 | `researchAreaSourceExtractor.ts` | Deterministic recovery of approved research areas for empty-area entities from their official page (labeled Research Interests/Areas sections plus an approved-registry prose scan); emits approved `TaxonomyTerm` areas only, fail-closed. |
 
-### Museums, collections, and archives
+### Museums, collections, and archives (retired, #2202)
 
-Discovery-only producers, mostly for the `ARCHIVE_OR_MUSEUM_PROJECT` entity type (`libraryCollectionsAsDataScraper.ts` mints `COLLECTIONS_INITIATIVE` and `dhLabProjectsScraper.ts` mints `DIGITAL_HUMANITIES_PROJECT`). Each walks an index only to enumerate homes, then cites each home's own page (never the index root) per the self-referential / index-page source guards (#516/#549), and fails closed on contact.
+This whole family was retired: `peabodyCollectionsResearchScraper`, `beineckeCuratorialUnitsScraper`, `beineckeCollectionsResearchScraper`, `yaleCenterBritishArtScraper`, `yaleUniversityArtGalleryScraper`, `libraryCollectionsAsDataScraper`, and `dhLabProjectsScraper`, together with the `ARCHIVE_OR_MUSEUM_PROJECT`, `COLLECTIONS_INITIATIVE`, and `DIGITAL_HUMANITIES_PROJECT` entity types.
 
-| Scraper | Data |
-|---------|------|
-| `peabodyCollectionsResearchScraper.ts` | Yale Peabody Museum "Collections & Research" divisions (Anthropology, Botany, Vertebrate Paleontology, ...), each led by the named "Curator-in-charge" resolved to a unique canonical `Researcher` before promoting a lead. Pilot producer for the museum/archive type (#1349/#1367). |
-| `beineckeCuratorialUnitsScraper.ts` | Beinecke Rare Book & Manuscript Library curatorial units (Americana, the Osborn Collection, ...). Reads only a structured staff/contact curator credit, never body prose, so it fails closed on units with no structured lead. |
-| `beineckeCollectionsResearchScraper.ts` | Yale Beinecke Library research fellowship programs; emits identity and official-page description only, fail-closed on contact, access claims, openings, and the awarded-fellow roster (#2040). |
-| `yaleCenterBritishArtScraper.ts` | Yale Center for British Art curatorial departments and museum-run research programs; carries a curated seed of each department's own page because YCBA publishes no enumerable index. |
-| `yaleUniversityArtGalleryScraper.ts` | Yale University Art Gallery curatorial areas (African Art, Ancient Art, ...); fetches through the shared rendered (headless) path to clear the Cloudflare interstitial, and fails closed when no rendered fetcher is configured. |
-| `libraryCollectionsAsDataScraper.ts` | Yale University Library online exhibitions; reads the exhibits site API and extracts a structured "curated/organized by" credit as the lead. |
-| `dhLabProjectsScraper.ts` | Yale Digital Humanities Lab projects catalog: mints `DIGITAL_HUMANITIES_PROJECT` homes from the curated `YaleDHLab/dhlab-site` `_projects` catalog (crawl seed), citing each project's own official URL; fails closed when a project has no citable own-page URL. The rendered dhlab.yale.edu catalog was retired in the library migration (#1345). |
+They were discovery-only by design (identity plus an official-page description, fail-closed on contact), and that is exactly why they failed the student: an unled unit still reached `student_ready` on an organizational ways-in with no lead, no roster, no affiliated-lab edge, and no contact email.
+Do not reintroduce a discovery-only lane whose output cannot route a student to a person or to a lab.
 
 ### Undergraduate programs, courses, fellowships, and postings
 
 | Scraper | Data |
 |---------|------|
 | `departmentUndergradResearchScraper.ts` | Department-level undergrad research opportunity/program pages. |
-| `courseBasedResearchPathwayScraper.ts` | Per-department directed-research / independent-study / senior-essay / senior-thesis course pages, minted as discovery-only `COURSE_SEQUENCE` homes (identity + official URL + description only; fail-closed on contact; catalog/course-search index roots never cited). |
 | `undergradResearchPostingScraper.ts` | Real apply-now undergraduate research postings from curated public Yale index pages, emitting `POSTED_OPENING` access evidence. Fail-closed: a posting is emitted only with a title, a resolvable hiring entity, an http(s) apply route, and an unexpired deadline; auth-gated aggregators (Handshake, Workday) are never configured (#1568/#1303/#1332). |
 | `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists. |
 | `yaleReuProgramsScraper.ts` | Yale-hosted NSF-REU and summer research programs (Dorrit Hoffleit Astronomy, SUMRY, ...) as `SUMMER_RESEARCH_PROGRAM` fellowships; cites each program's own official page, cross-checks discovery against the NSF REU Sites directory (crawl-seed-only, never cited), records the apply portal as a link, fail-closed on contact. |

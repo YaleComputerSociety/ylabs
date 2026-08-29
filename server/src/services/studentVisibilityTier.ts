@@ -153,30 +153,28 @@ function missingFacultyResearchAreaFacetSignal(entity: Record<string, any>): boo
 // the materializer emits a lead-optional organizational REACH_OUT_PLAUSIBLE
 // ways-in for exactly these types, so any type it treats as organizational must
 // also be lead-exempt here or the class is stranded on missing_lead forever
-// despite carrying that signal (the ARCHIVE_OR_MUSEUM_PROJECT Beinecke/Peabody
-// curatorial units were minted lead-optional by design yet held on missing_lead
-// because this set omitted the type, issue #1367).
+// despite carrying that signal (issue #1367).
+//
+// A type only belongs here if the entity itself is a usable way in. The
+// collections, archive/museum, and digital-humanities types were lead-exempt on
+// that theory and turned out to publish 144 student-ready pages with no lead, no
+// roster, no affiliated labs, and no contact email, so they were retired (#2202).
+// CORE_FACILITY stays because it routes to labs on 38 of 57 rows.
 const ORGANIZATIONAL_ENTITY_TYPES = new Set([
   'CENTER',
   'INSTITUTE',
   'INITIATIVE',
   'CORE_FACILITY',
-  'COLLECTIONS_INITIATIVE',
-  'ARCHIVE_OR_MUSEUM_PROJECT',
-  'DIGITAL_HUMANITIES_PROJECT',
 ]);
 
 /**
- * Organizational research homes (centers, institutes, initiatives, core
- * facilities, library collections initiatives, archive/museum projects, and
- * digital-humanities projects) are institutionally contactable: the entity
- * itself, via its official page and programs, is the way in, so a single
- * named individual lead is NOT required for student visibility. (Many real Yale
- * centers are dean- or committee-led and never publish a single "director";
- * library collections and archive/museum homes are curated by the library or
- * museum and contactable via their official page.) A named director is still
- * surfaced when known, but its absence should not hide a well-described,
- * source-backed organizational home from students.
+ * Organizational research homes (centers, institutes, initiatives, and core
+ * facilities) are institutionally contactable: the entity itself, via its
+ * official page and its affiliated labs, is the way in, so a single named
+ * individual lead is NOT required for student visibility. (Many real Yale
+ * centers are dean- or committee-led and never publish a single "director".) A
+ * named director is still surfaced when known, but its absence should not hide a
+ * well-described, source-backed organizational home from students.
  */
 function isOrganizationalResearchEntity(entity: Record<string, any>): boolean {
   return ORGANIZATIONAL_ENTITY_TYPES.has(textValue(entity.entityType).toUpperCase());

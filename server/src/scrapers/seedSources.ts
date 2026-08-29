@@ -182,15 +182,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'course-based-research-pathways',
-    displayName: 'Course-based research pathways',
-    description:
-      "Official per-department directed-research, independent-study, and senior-essay/senior-thesis course pages, minted as discovery-only COURSE_SEQUENCE research homes. Each department's own course page is the cited source; catalog and course-search index roots are never cited.",
-    baseUrl: '',
-    defaultWeight: 0.75,
-    cadence: 'monthly',
-  },
-  {
     name: 'undergrad-research-posting',
     displayName: 'Undergraduate research postings',
     description:
@@ -412,15 +403,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'library-collections-as-data',
-    displayName: 'Yale University Library online exhibitions',
-    description:
-      'Yale University Library online exhibitions catalog (Omeka); pilot producer for COLLECTIONS_INITIATIVE collections-as-data / digital-scholarship research homes. Cites each individual exhibition page (never the sites index) and emits discovery-only identity, an official-page summary description, and any published "curated by" curator as an inferred-director lead. Fails closed on contact data.',
-    baseUrl: 'https://onlineexhibits.library.yale.edu',
-    defaultWeight: 0.85,
-    cadence: 'monthly',
-  },
-  {
     name: 'undergrad-fellowships-recipients',
     displayName: 'Yale undergrad fellowship recipient lists',
     description:
@@ -437,51 +419,6 @@ const SOURCES: SourceSeed[] = [
     baseUrl: '',
     defaultWeight: 0.5,
     cadence: 'weekly',
-  },
-  {
-    name: 'peabody-collections-research',
-    displayName: 'Yale Peabody Museum collections & research divisions',
-    description:
-      'Yale Peabody Museum Collections & Research divisions catalog; pilot producer for ARCHIVE_OR_MUSEUM_PROJECT museum/collections research homes. Cites each individual division page (never the index) and emits discovery-only identity, an official-page description, and the single Curator-in-charge as an inferred-director lead. Fails closed on contact data.',
-    baseUrl: 'https://peabody.yale.edu/explore/collections',
-    defaultWeight: 0.85,
-    cadence: 'monthly',
-  },
-  {
-    name: 'beinecke-collections-research',
-    displayName: 'Yale Beinecke Library research fellowship programs',
-    description:
-      'Yale Beinecke Rare Book & Manuscript Library research fellowship programs; mints ARCHIVE_OR_MUSEUM_PROJECT museum/collections research homes, completing the humanities-collections coverage backlog. Cites each individual program page (never the fellowships index) and emits discovery-only identity and an official-page description. Fails closed on contact and access data and never captures the awarded-fellow roster.',
-    baseUrl: 'https://beinecke.library.yale.edu/beinecke/researchers/fellowships',
-    defaultWeight: 0.85,
-    cadence: 'monthly',
-  },
-  {
-    name: 'beinecke-curatorial-units',
-    displayName: 'Beinecke Rare Book & Manuscript Library curatorial units',
-    description:
-      'Beinecke Rare Book & Manuscript Library curatorial-units catalog; producer for ARCHIVE_OR_MUSEUM_PROJECT rare-book/manuscript/archive research homes, reusing the Peabody path and complementing the Beinecke research-fellowships producer (#1455). Cites each individual unit page (never the index) and emits discovery-only identity and an official-page description. The migrated site publishes no structured named curator on unit pages, so the curatorial-lead extractor fails closed; an unled unit still earns the organizational reach-out ways-in from its official page. Fails closed on contact data.',
-    baseUrl: 'https://beinecke.library.yale.edu/beinecke/collections',
-    defaultWeight: 0.85,
-    cadence: 'monthly',
-  },
-  {
-    name: 'yuag-curatorial-areas',
-    displayName: 'Yale University Art Gallery curatorial areas',
-    description:
-      'Yale University Art Gallery curatorial-areas catalog; producer for ARCHIVE_OR_MUSEUM_PROJECT art-museum research homes, reusing the Peabody path. Fetches through the shared rendered (headless) path because YUAG fronts pages with a Cloudflare interstitial, and fails closed when no rendered fetcher is configured. Cites each individual curatorial-area page (never the index) and emits discovery-only identity and an official-page description. Area pages publish no structured named curator, so the lead extractor fails closed. Fails closed on contact data.',
-    baseUrl: 'https://artgallery.yale.edu/research-and-learning/curatorial-areas',
-    defaultWeight: 0.85,
-    cadence: 'monthly',
-  },
-  {
-    name: 'ycba-collections-research',
-    displayName: 'Yale Center for British Art curatorial departments & research programs',
-    description:
-      'Yale Center for British Art curatorial departments and museum-run research programs; producer for ARCHIVE_OR_MUSEUM_PROJECT art-museum research homes, reusing the Peabody path. YCBA publishes no enumerable department index, so a curated seed of each department own official page is fetched and cited directly (never a museum landing/index root). Emits discovery-only identity and an official-page description. Department pages publish no structured named curator (staff live on the unused departments-and-staff roster), so the lead extractor fails closed. Fails closed on contact data.',
-    baseUrl: 'https://britishart.yale.edu/collections-departments',
-    defaultWeight: 0.85,
-    cadence: 'monthly',
   },
   {
     name: 'research-area-source-extractor',

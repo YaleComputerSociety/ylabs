@@ -9,10 +9,10 @@ import {
 const entity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
   _id: 'entity-1',
   id: 'entity-1',
-  slug: 'digital-humanities-project',
-  name: 'Digital Humanities Project',
+  slug: 'example-research-initiative',
+  name: 'Example Research Initiative',
   kind: 'initiative',
-  entityType: 'DIGITAL_HUMANITIES_PROJECT',
+  entityType: 'INITIATIVE',
   description: 'Archives and computational methods.',
   websiteUrl: 'https://example.edu/project',
   location: '',

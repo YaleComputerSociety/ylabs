@@ -40,17 +40,21 @@ describe('YSE forum/dialogue organizational homes reach students end-to-end', ()
     expect(result.tier).toBe('student_ready');
   });
 
-  it('reproduces the pre-fix strand: the same leadless forum typed as GROUP is held on missing_lead and never student_ready', () => {
+  // The original strand was a leadless forum typed GROUP, which was not
+  // lead-exempt and so was floored on missing_lead. GROUP was retired (#2202)
+  // and the legacy `group` kind now maps to the organizational INITIATIVE, so
+  // the strand is unreachable by construction rather than merely fixed.
+  it('leaves the legacy group kind no way back to a lead-stranded entity type', () => {
     const scraped = forumEntityFromScrapedKind(name, url);
-    const strandedAsGroup = {
+    const remappedFromGroupKind = {
       ...scraped,
       entity: { ...scraped.entity, entityType: mapResearchGroupKindToEntityType('group') },
     };
-    expect(strandedAsGroup.entity.entityType).toBe('GROUP');
+    expect(remappedFromGroupKind.entity.entityType).toBe('INITIATIVE');
 
-    const result = computeResearchEntityStudentVisibility(strandedAsGroup);
+    const result = computeResearchEntityStudentVisibility(remappedFromGroupKind);
 
-    expect(result.reasons).toContain('missing_lead');
-    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.tier).toBe('student_ready');
   });
 });

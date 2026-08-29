@@ -129,14 +129,19 @@ describe('researchEntityCopy', () => {
     expect(researchWebsiteCtaLabel(staleFacultyResearch)).toBe('Visit research website');
   });
 
-  it('derives group labels from entityType for the project entityTypes when kind is stale', () => {
-    for (const entityType of ['FACULTY_PROJECT', 'DIGITAL_HUMANITIES_PROJECT', 'ARCHIVE_OR_MUSEUM_PROJECT']) {
-      const staleProject = { name: 'Example Project', kind: 'lab', entityType };
+  it('derives group labels from entityType for the project entityType when kind is stale', () => {
+    const staleProject = { name: 'Example Project', kind: 'lab', entityType: 'FACULTY_PROJECT' };
 
-      expect(isFacultyResearchEntity(staleProject)).toBe(false);
-      expect(entityKindLabel(staleProject)).toBe('Group');
-      expect(researchWebsiteLabel(staleProject)).toBe('group website');
-    }
+    expect(isFacultyResearchEntity(staleProject)).toBe(false);
+    expect(entityKindLabel(staleProject)).toBe('Group');
+    expect(researchWebsiteLabel(staleProject)).toBe('group website');
+  });
+
+  it('falls back to the stored kind for a retired entityType', () => {
+    const retired = { name: 'Example Collections Program', kind: 'initiative', entityType: 'COLLECTIONS_INITIATIVE' };
+
+    expect(entityKindLabel(retired)).toBe('Initiative');
+    expect(researchWebsiteLabel(retired)).toBe('initiative website');
   });
 
   it('labels a core facility as a core facility rather than a generic research home', () => {

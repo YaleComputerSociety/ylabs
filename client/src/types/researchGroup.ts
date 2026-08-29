@@ -22,13 +22,9 @@ export type ResearchEntityType =
   | 'INSTITUTE'
   | 'FACULTY_RESEARCH_AREA'
   | 'FACULTY_PROJECT'
-  | 'DIGITAL_HUMANITIES_PROJECT'
-  | 'COLLECTIONS_INITIATIVE'
-  | 'COURSE_SEQUENCE'
-  | 'ARCHIVE_OR_MUSEUM_PROJECT'
   | 'INITIATIVE'
-  | 'GROUP'
-  | 'INDIVIDUAL_RESEARCH';
+  | 'INDIVIDUAL_RESEARCH'
+  | 'CORE_FACILITY';
 
 export interface ResearchPlanningContext {
   category: 'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';

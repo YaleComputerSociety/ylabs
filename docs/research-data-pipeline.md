@@ -318,37 +318,18 @@ Ambiguous Yale user matches and archived or non-current lead memberships are ine
 At materialization, only each source's latest grant snapshot participates.
 The public grant display is a recency-sorted, deduplicated union capped at ten records, while `recentGrantCount` sums the independent latest source totals without applying that display cap and funding agencies are unioned across sources.
 
-### Museum and collections research homes
+### Retired museum, collections, and digital-humanities research homes (#2202)
 
-The `peabody-collections-research` source is the pilot producer for the museum/collections research-home type `ARCHIVE_OR_MUSEUM_PROJECT` (issue #1349).
-It walks the Yale Peabody Museum "Collections & Research" divisions index only to enumerate divisions, then fetches and cites each individual division page (for example `https://peabody.yale.edu/explore/collections/vertebrate-paleontology`), never the index root, per the self-referential and index-page source guards (#516/#549).
-It is discovery-only: it emits division identity, an official-page description, and the single named Curator-in-charge as an entity-level `inferredDirector*` observation, reusing the existing `materializeInferredDirectorMembership` path so the curator is resolved to a unique canonical `Researcher` before any lead is written and no new access logic is introduced.
-It fails closed on contact data and never emits contact routes, undergraduate-access claims, or posted openings; a division that names no Curator-in-charge yields no lead rather than a fabricated one.
-A division with a resolved curatorial lead plus its official page lands on the `IDENTIFIED_LEAD_WAYS_IN` path in the access materializer with no new derivation.
+The museum/collections/digital-scholarship acquisition lanes were retired along with the entity types they produced.
+`peabody-collections-research`, `beinecke-collections-research`, `beinecke-curatorial-units`, `yuag-curatorial-areas`, `ycba-collections-research`, `library-collections-as-data`, `dh-lab-projects`, and `course-based-research-pathways` are no longer registered scrapers or sweep sources.
 
-The `beinecke-curatorial-units` source extends the same `ARCHIVE_OR_MUSEUM_PROJECT` path to the Beinecke Rare Book & Manuscript Library curatorial units (issue #1457), reusing the Peabody producer's shape and complementing the separate Beinecke research-fellowships producer (#1455).
-It walks the Beinecke curatorial-units index (`https://beinecke.library.yale.edu/beinecke/collections`) only to enumerate units, then fetches and cites each individual unit page (for example `https://beinecke.library.yale.edu/beinecke/collections/osborn-collection`), never the index root.
-It is discovery-only: it emits unit identity and the unit's own official-page summary description.
-Verified live during #1457, the migrated Beinecke site (now under `library.yale.edu/beinecke`) publishes no structured named-curator credit on its unit pages; every "curator" mention is historical body prose ("former curator ...", "served as curator ...").
-The curatorial-lead extractor therefore reads only a structured staff/contact credit block and never body prose, so it fails closed on the current unit pages rather than promoting a prose name.
-Because `ARCHIVE_OR_MUSEUM_PROJECT` is an organizational research home (`ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES`), an unled Beinecke unit still earns the organizational `REACH_OUT_PLAUSIBLE` ways-in from its official page rather than an identified named lead - contrary to the issue's initial hypothesis that Beinecke units would clear the identified-lead gate like Peabody's curators-in-charge.
+Each was discovery-only by design: it emitted identity, an official-page description, and at most an `inferredDirector*` observation, and failed closed on contact data.
+That design was the problem rather than a safeguard.
+Because these types sat in `ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES`, an unled unit still earned an organizational `REACH_OUT_PLAUSIBLE` ways-in from its official page and reached `student_ready` carrying no lead, no roster, no affiliated-lab edge, and no contact email.
+Measured on Dev, that produced 157 student-ready pages whose only student-visible action was one outbound link.
 
-Sibling museum/collections acquisition gaps remain open follow-ups once these pilots prove the path, each its own issue:
-Yale University Art Gallery and Yale Center for British Art curatorial departments.
-The reserved `COLLECTIONS_INITIATIVE` sibling now has a producer via the `library-collections-as-data` source below (#1360).
-This note sits alongside the digital-humanities `DIGITAL_HUMANITIES_PROJECT` pilot follow-up tracked in issue #1345.
-
-### Collections-as-data research homes
-
-The `library-collections-as-data` source is the pilot producer for the collections-as-data / digital-scholarship research-home type `COLLECTIONS_INITIATIVE` (issue #1360).
-It enumerates Yale University Library online exhibitions through the Omeka sites API (`onlineexhibits.library.yale.edu/api/sites`) only to discover exhibitions, then cites each individual exhibition page (for example `https://onlineexhibits.library.yale.edu/s/prospectsofempire`), never the sites index or the browse landing site, per the self-referential and index-page source guards (#516/#549).
-It is discovery-only: it emits exhibition identity, the official-page summary as a description, and, where an exhibition publishes a "curated by" credit, the named curator as an entity-level `inferredDirector*` observation, reusing the existing `materializeInferredDirectorMembership` path so the curator is resolved to a unique canonical `Researcher` before any lead is written and no new access logic is introduced.
-It fails closed on contact data and never emits contact routes, undergraduate-access claims, or posted openings; an exhibition with no unambiguous curator credit yields no lead rather than a fabricated one.
-A faculty-curated exhibition whose lead resolves lands on the identified-faculty-lead ways-in; a librarian- or externally-curated exhibition whose lead does not resolve still earns an organizational ways-in from its official page, because `COLLECTIONS_INITIATIVE` is an organizational research home (`ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES`).
-
-Sibling collections/archive acquisition gaps remain open follow-ups once these pilots prove the path, each its own issue:
-Yale University Art Gallery and Yale Center for British Art collections.
-This note sits alongside the DHLab `DIGITAL_HUMANITIES_PROJECT` pilot (#1345), the Peabody `ARCHIVE_OR_MUSEUM_PROJECT` pilot (#1349), and the Beinecke `ARCHIVE_OR_MUSEUM_PROJECT` pilot (#1457).
+The surviving organizational types (`CENTER`, `INSTITUTE`, `INITIATIVE`, `CORE_FACILITY`) earn their place by routing to labs through `AFFILIATED_LAB` edges, which these lanes never produced.
+See [research-model.md](research-model.md) for the retirement rationale and the course-credit signal direction that replaces `COURSE_SEQUENCE`.
 
 ## Canonical Collections
 

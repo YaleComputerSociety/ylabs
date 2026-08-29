@@ -835,7 +835,7 @@ describe('deriveIdentifiedLeadWaysIn', () => {
   it('gives a lead-less digital-humanities project an organizational ways-in from its official page', () => {
     const result = deriveIdentifiedLeadWaysIn({
       researchEntityId: '64f000000000000000000011',
-      entity: { entityType: 'DIGITAL_HUMANITIES_PROJECT', name: 'Mapping Manuscript Migrations' },
+      entity: { entityType: 'INITIATIVE', name: 'Mapping Manuscript Migrations' },
       officialUrl: 'https://library.yale.edu/dhlab/projects/mapping-manuscript-migrations',
       supportingObservations: [supporting],
     });
@@ -864,7 +864,7 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     const result = deriveIdentifiedLeadWaysIn({
       researchEntityId: '64f000000000000000000012',
       entity: {
-        entityType: 'COLLECTIONS_INITIATIVE',
+        entityType: 'INITIATIVE',
         name: 'Prospects of Empire',
       },
       officialUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',

@@ -168,15 +168,6 @@ export const sourceCoverageRegistry = {
     notes:
       'Official department undergraduate research pages; every configured page materializes program records onto /programs as Fellowship records plus access/action evidence, and generic guidance must not create posted opportunities.',
   },
-  'course-based-research-pathways': {
-    priority: 3,
-    tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY', 'TOPICS', 'COURSE_CREDIT', 'SENIOR_THESIS'],
-    defaultConfidence: 'HIGH',
-    notes:
-      "Official per-department directed-research / independent-study / senior-essay / senior-thesis course pages, minted as discovery-only COURSE_SEQUENCE research homes. Each department's own course page is the cited source; catalog and course-search index roots are never cited. Discovery-only: emits identity, official URL, and description; must not create undergraduate-access claims, posted openings, application links, or contact routes.",
-  },
   'undergrad-research-posting': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
@@ -282,15 +273,6 @@ export const sourceCoverageRegistry = {
     notes:
       'Yale School of the Environment faculty directory and individual profile pages for faculty identity, research homes, research areas, and official profile prose. Each faculty individual profile is the cited source; the directory root is a crawl seed only and is never recorded as a source. Discovery-only; must not imply undergraduate access without a more explicit source.',
   },
-  'dh-lab-projects': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE', 'TOPICS'],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Yale Digital Humanities Lab projects catalog; mints DIGITAL_HUMANITIES_PROJECT research homes for discovery. Each individual project page is the cited source; the projects-index root is a crawl seed only and is never recorded as a source. Discovery-only (identity, topics, official project URL); must not manufacture undergraduate access, posted openings, or contact routes.',
-  },
   'centers-institutes-index': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
@@ -314,89 +296,6 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes:
       'Official research.yale.edu directories for centers, institutes, cores, and infrastructure resources. Discovery-only; must not imply undergraduate access, contact routes, or posted openings without a more explicit source.',
-  },
-  'peabody-collections-research': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: [
-      'ENTITY_IDENTITY',
-      'ENTITY_MEMBERSHIP',
-      'OFFICIAL_PROFILE',
-      'TOPICS',
-      'LAB_WEBSITE',
-    ],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Yale Peabody Museum Collections & Research divisions catalog; pilot producer for the ARCHIVE_OR_MUSEUM_PROJECT museum/collections research home. Each individual division page is the cited source; the divisions index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity, an official-page description, and the single named Curator-in-charge as an inferred-director lead (resolved to a Yale User before promotion). Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
-  },
-  'beinecke-curatorial-units': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: [
-      'ENTITY_IDENTITY',
-      'ENTITY_MEMBERSHIP',
-      'OFFICIAL_PROFILE',
-      'TOPICS',
-      'LAB_WEBSITE',
-    ],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Beinecke Rare Book & Manuscript Library curatorial-units catalog (library.yale.edu/beinecke/collections); producer for the ARCHIVE_OR_MUSEUM_PROJECT rare-book/manuscript/archive research home, reusing the Peabody path (#1349/#1367) and complementing the Beinecke research-fellowships producer (#1455). Each individual unit page is the cited source; the units index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity and the official-page summary description. Verified live, the migrated site publishes no structured named-curator credit on unit pages (curator mentions are historical body prose), so the curatorial-lead extractor reads only a structured staff/contact block and fails closed; a unit without a named director still earns the organizational REACH_OUT_PLAUSIBLE ways-in from its official page. Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
-  },
-  'yuag-curatorial-areas': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: [
-      'ENTITY_IDENTITY',
-      'ENTITY_MEMBERSHIP',
-      'OFFICIAL_PROFILE',
-      'TOPICS',
-      'LAB_WEBSITE',
-    ],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Yale University Art Gallery curatorial-areas catalog (artgallery.yale.edu/research-and-learning/curatorial-areas); producer for the ARCHIVE_OR_MUSEUM_PROJECT art-museum research home, reusing the Peabody path (#1349/#1367). YUAG fronts every page with a Cloudflare bot interstitial, so pages are fetched through the shared rendered (headless) path (#1453) and the producer fails closed when no rendered fetcher is configured rather than parsing the challenge shell. Each individual curatorial-area page is the cited source; the curatorial-areas index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity and the official-page summary description. Verified live, area pages publish no structured named-curator credit, so the curatorial-lead extractor reads only a structured staff/credit block and fails closed; an area without a named director still earns the organizational REACH_OUT_PLAUSIBLE ways-in from its official page. Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
-  },
-  'ycba-collections-research': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: [
-      'ENTITY_IDENTITY',
-      'ENTITY_MEMBERSHIP',
-      'OFFICIAL_PROFILE',
-      'TOPICS',
-      'LAB_WEBSITE',
-    ],
-    defaultConfidence: 'HIGH',
-    notes:
-      "Yale Center for British Art curatorial departments and museum-run research programs (britishart.yale.edu); producer for the ARCHIVE_OR_MUSEUM_PROJECT art-museum research home, reusing the Peabody path (#1349/#1367). YCBA publishes no enumerable department index (the Collecting Areas landing and departments-and-staff roster are contact-laden, non-card pages), so the producer carries a curated seed of each department's own official page and cites that page directly; no museum landing/index root is ever recorded as a source. Discovery-only: emits identity and the official-page summary description. Verified live, department pages publish no structured named-curator credit (staff and their contact details live only on the deliberately-unused departments-and-staff roster), so the curatorial-lead extractor reads only a structured staff/credit block and fails closed; a department without a named director still earns the organizational REACH_OUT_PLAUSIBLE ways-in from its official page. Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.",
-  },
-  'library-collections-as-data': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: [
-      'ENTITY_IDENTITY',
-      'ENTITY_MEMBERSHIP',
-      'OFFICIAL_PROFILE',
-      'LAB_WEBSITE',
-    ],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Yale University Library online exhibitions catalog (onlineexhibits.library.yale.edu); pilot producer for the COLLECTIONS_INITIATIVE collections-as-data / digital-scholarship research home. The Omeka sites API is a crawl seed only and is never recorded as a source; each individual exhibition page is the cited source. Discovery-only: emits identity, the official-page summary description, and, where an exhibition publishes a "curated by" credit, the named curator as an inferred-director lead (resolved to a Yale User before promotion, fails closed otherwise). Fails closed on contact data; must not imply undergraduate access, contact routes, or posted openings.',
-  },
-  'beinecke-collections-research': {
-    priority: 2,
-    tier: 'OFFICIAL_INDEX',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Yale Beinecke Rare Book & Manuscript Library research fellowship programs; mints ARCHIVE_OR_MUSEUM_PROJECT museum/collections research homes, completing the humanities-collections coverage backlog alongside the Peabody (ARCHIVE_OR_MUSEUM_PROJECT) and Library (COLLECTIONS_INITIATIVE) producers. Each individual program page is the cited source; the fellowships index is a crawl seed only and is never recorded as a source. Discovery-only: emits identity and an official-page description; fails closed on contact and access data and never captures the awarded-fellow roster. Must not imply undergraduate access, contact routes, or posted openings.',
   },
   'undergrad-fellowships-recipients': {
     priority: 4,
