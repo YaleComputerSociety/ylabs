@@ -9,7 +9,10 @@ import {
   isUngroundedSynthesizedCard,
   resolveServedShortDescription,
 } from '../utils/groundedCardSynthesis';
-import { isFullDescriptionRestatementOfShortDescription } from '../utils/researchEntityDescriptionQuality';
+import {
+  fullDescriptionAddsPropositionBeyondShort,
+  isFullDescriptionRestatementOfShortDescription,
+} from '../utils/researchEntityDescriptionQuality';
 import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
@@ -405,11 +408,15 @@ export function toPublicResearchEntityDto(
         // grounded short adds nothing on the detail page beyond the card, so
         // it is suppressed here to protect already-materialized rows without
         // a re-materialize (#1721); the write-time resolver guard covers new
-        // and re-materialized ones.
+        // and re-materialized ones. The restatement predicate detects that one
+        // field was derived from the other, which is also true when the full
+        // carries an extra proposition, so suppressing on it alone deletes the
+        // source and keeps the lossy derivative - hence the second condition.
         if (
           field === 'fullDescription' &&
           groundedShort &&
-          isFullDescriptionRestatementOfShortDescription(served[field], groundedShort)
+          isFullDescriptionRestatementOfShortDescription(served[field], groundedShort) &&
+          !fullDescriptionAddsPropositionBeyondShort(served[field], groundedShort)
         ) {
           dto[field] = '';
           continue;
