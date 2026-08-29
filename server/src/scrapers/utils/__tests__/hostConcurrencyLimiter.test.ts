@@ -42,9 +42,9 @@ describe('resolveHostThrottle', () => {
   });
 
   it('never loosens a default that is already tighter than the override', () => {
-    expect(resolveHostThrottle('medicine.yale.edu', { concurrency: 1, minIntervalMs: 1000 })).toEqual(
-      { concurrency: 1, minIntervalMs: 1000 },
-    );
+    expect(
+      resolveHostThrottle('medicine.yale.edu', { concurrency: 1, minIntervalMs: 1000 }),
+    ).toEqual({ concurrency: 1, minIntervalMs: 1000 });
   });
 });
 

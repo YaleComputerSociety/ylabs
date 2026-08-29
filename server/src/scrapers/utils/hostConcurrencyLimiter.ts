@@ -74,6 +74,8 @@ export class HostConcurrencyLimiter {
       await new Promise<void>((resolve) => state.waiters.push(resolve));
     }
     state.active += 1;
+    // Reserve the grant instant before awaiting: overlapping acquirers that read
+    // lastGrantAt only after sleeping would all compute the same wait and fire together.
     const grantAt = Math.max(this.now(), state.lastGrantAt + throttle.minIntervalMs);
     state.lastGrantAt = grantAt;
     const waitMs = grantAt - this.now();

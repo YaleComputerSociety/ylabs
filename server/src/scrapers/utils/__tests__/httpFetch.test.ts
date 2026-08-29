@@ -96,9 +96,7 @@ describe('HostRateLimiter', () => {
       active -= 1;
       return true;
     };
-    await Promise.all(
-      Array.from({ length: 6 }, () => limiter.run('ysph.yale.edu', task)),
-    );
+    await Promise.all(Array.from({ length: 6 }, () => limiter.run('ysph.yale.edu', task)));
     expect(peak).toBe(2);
   });
 
