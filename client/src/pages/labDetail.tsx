@@ -820,7 +820,7 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 const LabDetail = () => {
-  const { isAuthenticated, user } = useContext(UserContext);
+  const { isAuthenticated } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const location = useLocation();

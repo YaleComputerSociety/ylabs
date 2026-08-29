@@ -52,7 +52,6 @@ router.use(adminAuditMutationLogger);
 const MAX_ADMIN_LIST_PAGE = 1000;
 const MAX_ADMIN_LIST_PAGE_SIZE = 100;
 const ADMIN_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-const ADMIN_PROFILE_SORT_FIELDS = new Set(['lname', 'primary_department', 'h_index', 'createdAt']);
 const ADMIN_FELLOWSHIP_SORT_FIELDS = new Set([
   'title',
   'deadline',
