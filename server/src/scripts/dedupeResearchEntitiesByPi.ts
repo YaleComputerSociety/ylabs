@@ -34,7 +34,7 @@ import {
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { isSweepStageOptedIn } from './sweepStageFlags';
-import { deleteFromIndex } from '../services/meiliSyncService';
+import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
 import {
@@ -1949,6 +1949,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     remainingReferencesBeforeDelete: {},
     removedFromSearchIndex: 0,
     survivorVisibility: { regated: false } as MergeSurvivorVisibilityRepair,
+    survivorIndexResynced: false,
   });
   if (
     !requestedCanonicalId ||
@@ -2127,6 +2128,17 @@ export async function applyResearchEntityDedupeMergeGroup(
 
   const survivorVisibility = await repairMergeSurvivorVisibility(canonicalId);
 
+  // A merge relinks roster members and lead assignments onto the survivor, so its
+  // Meilisearch document is stale even when its tier does not move. The visibility
+  // repair syncs the index only when it actually re-gates, and it deliberately
+  // short-circuits for an already-servable survivor - which is the common case
+  // when a duplicate is folded into a healthy canonical entity. Browse reads the
+  // index, so without this the most visible survivors keep pre-merge lead names
+  // (issue #2239).
+  const survivorIndexResynced = survivorVisibility.regated
+    ? false
+    : await resyncMergeSurvivorSearchDocument(canonicalId);
+
   return {
     canonicalEntityId: String(canonicalId),
     duplicateEntityIds: duplicateIds.map(String),
@@ -2141,7 +2153,17 @@ export async function applyResearchEntityDedupeMergeGroup(
     remainingReferencesBeforeDelete,
     removedFromSearchIndex: idsToRemoveFromIndex.length,
     survivorVisibility,
+    survivorIndexResynced,
   };
+}
+
+async function resyncMergeSurvivorSearchDocument(
+  survivorId: mongoose.Types.ObjectId | string,
+): Promise<boolean> {
+  const survivor = await ResearchEntity.findById(survivorId).lean();
+  if (!survivor || (survivor as { archived?: boolean }).archived === true) return false;
+  await syncEntities('researchEntity', [survivor]);
+  return true;
 }
 
 async function retireDuplicateCurrentMembers(

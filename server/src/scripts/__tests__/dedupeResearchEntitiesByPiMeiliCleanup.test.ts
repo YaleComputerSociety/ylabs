@@ -32,6 +32,7 @@ describe('applyResearchEntityDedupeMergeGroup Meili ghost-doc cleanup', () => {
 
   afterEach(() => {
     deleteFromIndexMock.mockClear();
+    syncEntitiesMock.mockClear();
   });
 
   it('deletes the archived duplicate from the Meili index', async () => {
@@ -84,5 +85,64 @@ describe('applyResearchEntityDedupeMergeGroup Meili ghost-doc cleanup', () => {
     expect(duplicate).toBeNull();
     expect(deleteFromIndexMock).toHaveBeenCalledWith('researchEntity', duplicateId.toHexString());
     expect(result.removedFromSearchIndex).toBe(1);
+  });
+
+  it('re-syncs an already-servable survivor whose tier never moves (#2239)', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      {
+        _id: canonicalId,
+        slug: 'named-lab',
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+      },
+      { _id: duplicateId, slug: 'nsf-pi-shell', archived: false },
+    ]);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+      } as any,
+      { deleteDuplicates: false, relinkReferences: false },
+    );
+
+    expect(result.survivorVisibility.regated).toBe(false);
+    expect(result.survivorIndexResynced).toBe(true);
+    expect(syncEntitiesMock).toHaveBeenCalledTimes(1);
+    const [entityType, docs] = syncEntitiesMock.mock.calls[0];
+    expect(entityType).toBe('researchEntity');
+    expect((docs as Array<{ _id: mongoose.Types.ObjectId }>)[0]._id.toHexString()).toBe(
+      canonicalId.toHexString(),
+    );
+  });
+
+  it('does not re-sync an archived survivor', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      { _id: canonicalId, slug: 'named-lab', archived: true },
+      { _id: duplicateId, slug: 'nsf-pi-shell', archived: false },
+    ]);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+      } as any,
+      { deleteDuplicates: false, relinkReferences: false },
+    );
+
+    expect(result.survivorIndexResynced).toBe(false);
+    expect(syncEntitiesMock).not.toHaveBeenCalled();
   });
 });
