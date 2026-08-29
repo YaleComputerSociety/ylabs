@@ -297,7 +297,6 @@ export interface AnalyticsActionNeededItem {
 export interface AnalyticsActionNeededResponse {
   range?: AnalyticsRange;
   cards?: AnalyticsActionNeededItem[];
-  items?: AnalyticsActionNeededItem[];
 }
 
 export interface AnalyticsState {

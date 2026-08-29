@@ -208,11 +208,12 @@ describe('per-user activity view aggregation', () => {
 
     const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
     const groupStage = pipeline.find((stage: any) => stage.$group)?.$group;
-    const viewsAccumulator = groupStage.views?.$sum?.$cond?.[0]?.$eq;
     const researchViewsAccumulator = groupStage.researchViews?.$sum?.$cond?.[0]?.$eq;
+    const fellowshipViewsAccumulator = groupStage.fellowshipViews?.$sum?.$cond?.[0]?.$eq;
 
-    expect(viewsAccumulator).toEqual(['$eventType', AnalyticsEventType.LISTING_VIEW]);
+    expect(groupStage).not.toHaveProperty('views');
     expect(researchViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.RESEARCH_VIEW]);
+    expect(fellowshipViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.FELLOWSHIP_VIEW]);
   });
 });
 
@@ -1008,15 +1009,13 @@ describe('logEvent', () => {
     mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
 
     await logEvent({
-      eventType: AnalyticsEventType.LISTING_VIEW,
+      eventType: AnalyticsEventType.FELLOWSHIP_VIEW,
       netid: 'student123',
       userType: 'undergraduate',
-      listingId: '../not-an-object-id',
       fellowshipId: '123',
     });
 
     const created = mocks.analyticsCreate.mock.calls[0][0];
-    expect(created).not.toHaveProperty('listingId');
     expect(created).not.toHaveProperty('fellowshipId');
   });
 
@@ -1024,16 +1023,14 @@ describe('logEvent', () => {
     mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
 
     await logEvent({
-      eventType: AnalyticsEventType.LISTING_VIEW,
+      eventType: AnalyticsEventType.FELLOWSHIP_VIEW,
       netid: 'student123',
       userType: 'undergraduate',
-      listingId: '507f1f77bcf86cd799439011',
       fellowshipId: '507f1f77bcf86cd799439012',
     });
 
     expect(mocks.analyticsCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        listingId: '507f1f77bcf86cd799439011',
         fellowshipId: '507f1f77bcf86cd799439012',
       }),
     );
