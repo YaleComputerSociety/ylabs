@@ -21,8 +21,15 @@ const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
 ] as const;
 
 const HYGIENE_FULL_DESCRIPTION_FIELDS = ['fullDescription', 'profileSynthesisDescription'] as const;
+// This is a curated allowlist, not a mechanical inflection table: some
+// inflections of a listed verb carry no research signal in bio prose
+// ("currently developing a new feature" in a filmmaker CV), so a missing
+// inflection may be deliberate. Only add one whose every reading is a research
+// signal, as `researches`/`researching`/`studied`/`investigating` are (#1921:
+// their absence blanked "Roberts researches the histories of medicine ...,
+// investigating how ..." purely on verb tense).
 const NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT =
-  /\b(?:research|lab|laboratory|study|studies|studying|investigate|investigates|investigated|explore|explores|explored|exploring|focus|focuses|focusing|focused|works?\s+on|conducts|uses|using|develops|examine|examines|examined|examining|observe|observes|observed|observing|analysis|method|methods|model|models|modeled|modeling|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
+  /\b(?:research|researches|researching|lab|laboratory|study|studies|studying|studied|investigate|investigates|investigated|investigating|explore|explores|explored|exploring|focus|focuses|focusing|focused|works?\s+on|conducts|uses|using|develops|examine|examines|examined|examining|observe|observes|observed|observing|analysis|method|methods|model|models|modeled|modeling|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
 
 type FacultyResearchTextEntity = {
   displayName?: string | null;
@@ -100,6 +107,21 @@ function sanitizeLeadingMismatchedPersonNamePrefix(
 
 function isLikelyResearchFocusedText(value: string): boolean {
   return NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(textValue(value));
+}
+
+// The guard fires only when the WHOLE field carries no research signal, so
+// there is never a research-bearing remainder to keep: sentence-granular repair
+// (the #1586 shape used by `repairFacultyBiographyOpener`) cannot apply here.
+// Both `sanitizeResearchEntityPublicDescriptionFields` and
+// `sanitizeFacultyResearchEntityCopyFields` must call this one definition; the
+// second was a copy that drifted out of sight and made the first invisible
+// during triage (#1921).
+function guardNonResearchProfileSynthesisText(
+  value: string,
+  entity: { descriptionSource?: unknown },
+): string {
+  if (String(entity.descriptionSource) !== 'PI_PROFILE_SYNTHESIS') return value;
+  return isLikelyResearchFocusedText(value) ? value : '';
 }
 
 function compactText(value: string): string {
@@ -991,11 +1013,10 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         withFirstPersonReVoice,
         leadMemberNames,
       );
-      const withLeadNameCorrectionIfResearch =
-        String(next.descriptionSource) === 'PI_PROFILE_SYNTHESIS' &&
-        !isLikelyResearchFocusedText(withLeadNameCorrection)
-          ? ''
-          : withLeadNameCorrection;
+      const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
+        withLeadNameCorrection,
+        next,
+      );
       const withFundingProgramStudiesGuard =
         field === 'shortDescription' &&
         isResearcherVoiceStudiesLeadOnFundingProgram(withLeadNameCorrectionIfResearch, next)
@@ -1204,11 +1225,10 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
       next[field],
       leadMemberNames,
     );
-    const withLeadNameCorrectionIfResearch =
-      String(next.descriptionSource) === 'PI_PROFILE_SYNTHESIS' &&
-      !isLikelyResearchFocusedText(withLeadNameCorrection)
-        ? ''
-        : withLeadNameCorrection;
+    const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
+      withLeadNameCorrection,
+      next,
+    );
     const cleaned = sanitizeFacultyResearchEntityText(withLeadNameCorrectionIfResearch, next);
     if (cleaned !== next[field]) {
       next[field] = cleaned;
