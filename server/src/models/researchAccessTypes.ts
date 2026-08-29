@@ -5,6 +5,15 @@
  * become search/filter facets.
  */
 
+/**
+ * `INDIVIDUAL_RESEARCH` and `FACULTY_RESEARCH` were retired (#2219): they are
+ * duplicates of `FACULTY_RESEARCH_AREA`, nothing mints them, and every consumer
+ * already treats the set as one thing. Read paths stay tolerant of the stored
+ * values because environments not yet migrated by
+ * `research-entity:consolidate-faculty-type` still hold rows, and
+ * `derivedResearchGroupKind` returns undefined for an unrecognized type, so such
+ * a row keeps its stored `kind: 'individual'` rather than being reclassified.
+ */
 export const researchEntityTypes = [
   'LAB',
   'CENTER',
@@ -12,7 +21,6 @@ export const researchEntityTypes = [
   'FACULTY_RESEARCH_AREA',
   'FACULTY_PROJECT',
   'INITIATIVE',
-  'INDIVIDUAL_RESEARCH',
   'CORE_FACILITY',
 ] as const;
 
@@ -112,7 +120,6 @@ export const EntityTypeToResearchGroupKind: Record<ResearchEntityType, ResearchG
   FACULTY_RESEARCH_AREA: 'individual',
   FACULTY_PROJECT: 'individual',
   INITIATIVE: 'initiative',
-  INDIVIDUAL_RESEARCH: 'individual',
   CORE_FACILITY: 'core_facility',
 };
 

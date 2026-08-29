@@ -23,7 +23,6 @@ export type ResearchEntityType =
   | 'FACULTY_RESEARCH_AREA'
   | 'FACULTY_PROJECT'
   | 'INITIATIVE'
-  | 'INDIVIDUAL_RESEARCH'
   | 'CORE_FACILITY';
 
 export interface ResearchPlanningContext {

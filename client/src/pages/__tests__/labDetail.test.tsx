@@ -2151,7 +2151,10 @@ describe('LabDetail page', () => {
     expect(text).not.toContain('What this faculty research area covers');
   });
 
-  it('uses faculty research wording for individual research entities with source descriptions', async () => {
+  // INDIVIDUAL_RESEARCH was retired from ResearchEntityType (#2219), but
+  // unmigrated environments still store it, so the serve path must stay tolerant
+  // of the value. Cast through `unknown` because it is deliberately off-union.
+  it('uses faculty research wording for a stored, retired individual-research entityType', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -2164,7 +2167,7 @@ describe('LabDetail page', () => {
           'Example Faculty studies distributed algorithms, population protocols, and consensus mechanisms.',
         descriptionSource: 'ENTITY_SOURCE',
       },
-    } as LabDetailPayload);
+    } as unknown as LabDetailPayload);
 
     const { container } = await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Example' })).toBeTruthy();
