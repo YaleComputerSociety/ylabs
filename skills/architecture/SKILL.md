@@ -47,7 +47,6 @@ Models are Mongoose schemas with indexes.
 | `server/src/middleware/`  | Auth, validation, security, and error handling middleware.               |
 | `server/src/db/`          | Multi-mode database connections.                                         |
 | `server/src/utils/`       | Shared utilities, errors, environment helpers, Meili client, SSRF guard. |
-| `data-migration/`         | Standalone migration scripts.                                            |
 | `docs/`                   | Durable product, architecture, and workflow documentation.               |
 | `skills/`                 | On-demand agent skills.                                                  |
 
@@ -74,7 +73,6 @@ Models are Mongoose schemas with indexes.
 | `yarn --cwd server model-refactor:access-review-projection`      | Dry-run or apply the environment-local admin access-review projection reconciliation.        |
 | `yarn --cwd server model-refactor:identity-plan`                 | Produce the bounded read-only Phase 2 account, person, role, and quarantine plan.            |
 
-Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.

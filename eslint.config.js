@@ -15,7 +15,6 @@ export default [
       '**/*.config.cjs',
       '**/*.config.mjs',
       '**/*.config.ts',
-      'data-migration/**',
       'client/src/utils/researchAreas.ts',
     ],
   },
