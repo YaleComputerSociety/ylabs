@@ -3,7 +3,7 @@
  */
 import app from './app';
 import dotenv from 'dotenv';
-import { initializeConnections, getApiMode, startMongoKeepAlive } from './db/connections';
+import { initializeConnections, startMongoKeepAlive } from './db/connections';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
@@ -17,8 +17,6 @@ const startApp = async () => {
   try {
     await initializeConnections();
 
-    const mode = getApiMode();
-
     app.listen(port, () => {
       console.log(`Server is ready at: ${port} 🐶`);
 
@@ -27,12 +25,6 @@ const startApp = async () => {
       // Optional: keep the operator-board gate scorecards fresh in-process (off unless
       // GATE_REFRESH_INTERVAL_MINUTES is set). See gateRefreshScheduler.ts.
       startGateRefreshScheduler();
-
-      if (mode === 'productionMigration') {
-        console.log(
-          'Mode: ProductionMigration - Listings from migration DB, everything else from primary',
-        );
-      }
     });
   } catch (error) {
     await captureStartupError(error);

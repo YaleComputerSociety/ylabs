@@ -7,19 +7,8 @@ export enum AnalyticsEventType {
   LOGIN = 'login',
   LOGOUT = 'logout',
   VISITOR = 'visitor',
-  LISTING_VIEW = 'listing_view',
-  LISTING_FAVORITE = 'listing_favorite',
-  LISTING_UNFAVORITE = 'listing_unfavorite',
   FELLOWSHIP_VIEW = 'fellowship_view',
-  FELLOWSHIP_FAVORITE = 'fellowship_favorite',
-  FELLOWSHIP_UNFAVORITE = 'fellowship_unfavorite',
   SEARCH = 'search',
-  OUTREACH_CLICK = 'outreach_click',
-  OUTREACH_OUTCOME = 'outreach_outcome',
-  LISTING_CREATE = 'listing_create',
-  LISTING_UPDATE = 'listing_update',
-  LISTING_ARCHIVE = 'listing_archive',
-  LISTING_UNARCHIVE = 'listing_unarchive',
   PROFILE_UPDATE = 'profile_update',
   // Research product surface events. These track engagement with canonical
   // research entities and privacy-safe interaction affordances.
@@ -28,8 +17,6 @@ export enum AnalyticsEventType {
   WAYS_IN_CLICK = 'ways_in_click',
   CONTACT_ROUTE_CLICK = 'contact_route_click',
   SOURCE_LINK_CLICK = 'source_link_click',
-  OUTREACH_CONTACT_REVEAL = 'outreach_contact_reveal',
-  OUTREACH_CONTACT_ATTEMPT = 'outreach_contact_attempt',
   // Canonical research-student journey events. Keep these claim-specific so
   // source inspection and planning activity can never be mistaken for access
   // conversion.
@@ -44,12 +31,7 @@ export enum AnalyticsEventType {
   RESEARCH_QUALIFIED_ACTION = 'research_qualified_action',
 }
 
-export const RESEARCH_ENTITY_TYPES = [
-  'profile',
-  'listing',
-  'fellowship',
-  'research_entity',
-] as const;
+export const RESEARCH_ENTITY_TYPES = ['profile', 'fellowship', 'research_entity'] as const;
 export type ResearchEntityType = (typeof RESEARCH_ENTITY_TYPES)[number];
 
 const analyticsEventSchema = new mongoose.Schema(
@@ -69,10 +51,6 @@ const analyticsEventSchema = new mongoose.Schema(
       type: String,
       enum: ['student', 'undergraduate', 'graduate', 'professor', 'admin', 'unknown'],
       required: true,
-      index: true,
-    },
-    listingId: {
-      type: mongoose.Schema.Types.ObjectId,
       index: true,
     },
     fellowshipId: {
