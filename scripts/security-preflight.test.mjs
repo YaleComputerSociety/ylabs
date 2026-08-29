@@ -3501,12 +3501,9 @@ test('analytics user drilldown sanitizes legacy event fields before response', (
   );
   assert.match(
     source,
-    /const listingId = normalizeAnalyticsStoredObjectIdString\(event\?\.listingId\)/,
-  );
-  assert.match(
-    source,
     /const fellowshipId = normalizeAnalyticsStoredObjectIdString\(event\?\.fellowshipId\)/,
   );
+  assert.doesNotMatch(source, /event\?\.listingId/);
   assert.match(source, /const searchQuery = sanitizeAnalyticsText\(event\?\.searchQuery\)/);
   assert.match(
     source,
@@ -3538,7 +3535,7 @@ test('analytics search-query report uses the validated date-range helper', () =>
   );
 });
 
-test('analytics listing enrichment normalizes ObjectIds before lookup comparison', () => {
+test('analytics entity enrichment normalizes ObjectIds before lookup comparison', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/analyticsService.ts', import.meta.url),
     'utf8',
@@ -3554,11 +3551,8 @@ test('analytics listing enrichment normalizes ObjectIds before lookup comparison
     /const normalizeAnalyticsStoredObjectIdString = \(value: unknown\): string \| undefined =>/,
   );
   assert.match(source, /value instanceof Types\.ObjectId/);
-  assert.match(
-    source,
-    /const trendingListingIds = engagement\.trendingListings[\s\S]*normalizeAnalyticsStoredObjectIdString\(t\.listingId\)[\s\S]*new Types\.ObjectId\(id\)/,
-  );
-  assert.match(source, /const trendingListingsById = new Map/);
+  assert.match(source, /const toAnalyticsObjectIds = /);
+  assert.doesNotMatch(source, /engagement\.trendingListings/);
   assert.doesNotMatch(source, /l\._id\.toString\(\) === t\.listingId\.toString\(\)/);
 });
 
@@ -3608,11 +3602,11 @@ test('analytics event storage redacts user-entered contact details', () => {
     /searchDepartments:\s*sanitizeAnalyticsStringArray\(params\.searchDepartments\)/,
   );
   assert.match(source, /metadata:\s*sanitizeAnalyticsMetadata\(params\.metadata\)/);
-  assert.match(source, /const listingId = sanitizeAnalyticsObjectId\(params\.listingId\)/);
   assert.match(source, /const fellowshipId = sanitizeAnalyticsObjectId\(params\.fellowshipId\)/);
   assert.doesNotMatch(source, /eventType:\s*normalizedParams\.eventType/);
-  assert.match(source, /if \(listingId\) eventPayload\.listingId = listingId/);
   assert.match(source, /if \(fellowshipId\) eventPayload\.fellowshipId = fellowshipId/);
+  assert.doesNotMatch(source, /params\.listingId/);
+  assert.doesNotMatch(source, /eventPayload\.listingId/);
 });
 
 test('public ResearchEntity DTO recursively redacts direct-contact text', () => {
