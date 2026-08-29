@@ -35,6 +35,18 @@ export function isPersonProfileOrDirectoryUrl(value: unknown): boolean {
   return isProfileOrPeopleDirectoryPath(pathname);
 }
 
+/**
+ * The narrow CMS-profile shape (`.../profile/<person>/`), as distinct from the
+ * wider family of faculty-directory shapes. Kept separate because a page under
+ * `/profile/` renders one person's record and nothing else, while a school's
+ * faculty-directory page routinely also states that person's own lab name.
+ */
+export function isPersonCmsProfileUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return /\/profile\//i.test(url.pathname);
+}
+
 const PAGINATED_LISTING_QUERY = /(?:^|[?&])page=\d/i;
 
 const INDEX_LISTING_PATH = /\/(?:a-to-z-index|a-z-index|az-index|lab-websites)\//i;

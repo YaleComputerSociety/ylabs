@@ -364,3 +364,81 @@ describe('YsmFacultyDirectoryScraper.run', () => {
     expect(everySource).not.toContain('https://medicine.yale.edu/profile/cole-nobody/');
   });
 });
+
+describe('facultyToResearchEntityObservations affiliated-organization guard (#2234)', () => {
+  const SHARMA: RawYsmFaculty = {
+    name: 'Sharma, Priya',
+    profileUrl: 'https://medicine.yale.edu/profile/priya-sharma/',
+    slug: 'priya-sharma',
+  };
+
+  function entityFields(faculty: RawYsmFaculty, labWebsite: { name: string; url: string }) {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: faculty.name.split(', ').reverse().join(' '),
+        meshKeywords: ['Heart Failure'],
+        labWebsite,
+      }),
+      faculty,
+    )!;
+    const obs = facultyToResearchEntityObservations(profile, `ysm:${faculty.slug}`);
+    return Object.fromEntries(obs.map((o) => [o.field, o.value]));
+  }
+
+  it.each([
+    ['Equity Research and Innovation Center', 'https://medicine.yale.edu/eric/'],
+    ['Center for Outcomes Research and Evaluation (CORE)', 'https://medicine.yale.edu/core/'],
+    [
+      'Yale Measurement Based Care Collaborative',
+      'https://medicine.yale.edu/psychiatry/mbccollab/',
+    ],
+  ])(
+    'refuses %s as the person’s own identity and does not type the row as a LAB',
+    (labName, labUrl) => {
+      const byField = entityFields(RIVERS, { name: labName, url: labUrl });
+      expect(byField.name).toBe('Jordan Rivers Faculty Research');
+      expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+      expect(byField.kind).toBe('individual');
+      expect(byField.websiteUrl).toBeUndefined();
+      expect(byField.sourceUrls).toEqual([RIVERS.profileUrl]);
+    },
+  );
+
+  it('refuses another person’s lab when the URL path names whose lab it is', () => {
+    const byField = entityFields(SHARMA, {
+      name: 'The Liu Lab',
+      url: 'https://medicine.yale.edu/lab/jun-liu/',
+    });
+    expect(byField.name).toBe('Priya Sharma Faculty Research');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.websiteUrl).toBeUndefined();
+  });
+
+  it('keeps a genuine lab link but replaces a bare CMS link label with a person-derived name', () => {
+    const byField = entityFields(RIVERS, {
+      name: 'Lab Website',
+      url: 'https://medicine.yale.edu/lab/rivers/',
+    });
+    expect(byField.name).toBe('Jordan Rivers Lab');
+    expect(byField.entityType).toBe('LAB');
+    expect(byField.websiteUrl).toBe('https://medicine.yale.edu/lab/rivers/');
+  });
+
+  it('still adopts a topical research-home name that is not an umbrella organization', () => {
+    const byField = entityFields(RIVERS, {
+      name: 'The Cardiac Remodeling Lab',
+      url: 'https://cardiacremodeling.example.org/',
+    });
+    expect(byField.name).toBe('The Cardiac Remodeling Lab');
+    expect(byField.entityType).toBe('LAB');
+  });
+
+  it('still adopts an organization name that carries the person’s own name', () => {
+    const byField = entityFields(RIVERS, {
+      name: 'Rivers Center for Cardiac Outcomes',
+      url: 'https://medicine.yale.edu/rivers-center/',
+    });
+    expect(byField.name).toBe('Rivers Center for Cardiac Outcomes');
+    expect(byField.entityType).toBe('LAB');
+  });
+});

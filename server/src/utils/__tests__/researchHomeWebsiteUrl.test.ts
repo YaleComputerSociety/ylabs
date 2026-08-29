@@ -7,6 +7,7 @@ import {
   isFacetedOrSectionIndexUrl,
   isFileShareOrDocumentUrl,
   isListingOrIndexUrl,
+  isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
   isRecordSpecificApplicationPortalUrl,
@@ -613,5 +614,32 @@ describe('isSiteNavigationOrFooterChromeUrl (#633)', () => {
       isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/undergraduate-study'),
     ).toBe(false);
     expect(isSiteNavigationOrFooterChromeUrl('not a url')).toBe(false);
+  });
+});
+
+describe('isPersonCmsProfileUrl', () => {
+  it('flags only the narrow CMS profile shape, not the wider faculty-directory family', () => {
+    expect(isPersonCmsProfileUrl('https://medicine.example.edu/profile/jordan-example/')).toBe(
+      true,
+    );
+    expect(isPersonCmsProfileUrl('https://ysph.example.edu/profile/jordan-example')).toBe(true);
+    expect(
+      isPersonCmsProfileUrl(
+        'https://som.example.edu/faculty-research/faculty-directory/jordan-example',
+      ),
+    ).toBe(false);
+    expect(
+      isPersonCmsProfileUrl('https://environment.example.edu/directory/faculty/jordan-example'),
+    ).toBe(false);
+    expect(
+      isPersonCmsProfileUrl(
+        'https://engineering.example.edu/research-and-faculty/faculty-directory/jordan-example/',
+      ),
+    ).toBe(false);
+  });
+
+  it('ignores malformed values', () => {
+    expect(isPersonCmsProfileUrl('not-a-url')).toBe(false);
+    expect(isPersonCmsProfileUrl(undefined)).toBe(false);
   });
 });

@@ -39,6 +39,7 @@ import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
 import { flattenHtmlToText } from '../utils/htmlText';
 import { normalizeOrcid } from '../../utils/orcid';
+import { classifyHarvestedResearchHomeName } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
@@ -333,9 +334,43 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
   return { observations: obs, entityKey };
 }
 
+export interface ProfileLabWebsiteClassification {
+  isOwnResearchHome: boolean;
+  adoptableName?: string;
+  verdict: ReturnType<typeof classifyHarvestedResearchHomeName> | 'NO_LINK';
+}
+
+/**
+ * Decides whether the profile's linked "lab website" may be this person's
+ * research-home identity. The YSM profile content model offers one such slot for
+ * both "my lab" and "a center I am affiliated with", so an affiliation link must
+ * not become the entity's name, type, or website (issue #2234).
+ */
+export function classifyProfileLabWebsite(
+  profile: Pick<YsmFacultyProfile, 'name' | 'labUrl' | 'labName'>,
+): ProfileLabWebsiteClassification {
+  if (!profile.labUrl) return { isOwnResearchHome: false, verdict: 'NO_LINK' };
+  const verdict = classifyHarvestedResearchHomeName({
+    harvestedName: profile.labName,
+    personName: profile.name,
+    websiteUrl: profile.labUrl,
+  });
+  if (verdict === 'AFFILIATED_ORGANIZATION' || verdict === 'ANOTHER_PERSONS_LAB') {
+    return { isOwnResearchHome: false, verdict };
+  }
+  return {
+    isOwnResearchHome: true,
+    adoptableName: verdict === 'OWN_IDENTITY' ? profile.labName : undefined,
+    verdict,
+  };
+}
+
 /**
  * ResearchEntity observations. A profile whose own research section links a
- * lab website seeds a LAB home with that site as the websiteUrl; otherwise a
+ * lab website that is plausibly that person's own research home seeds a LAB home
+ * with that site as the websiteUrl; a link to an organization the person is
+ * merely affiliated with is not an identity, so it seeds neither the name nor
+ * the LAB type nor the websiteUrl (issue #2234). Otherwise a
  * profile with governed research areas or a research description seeds a
  * FACULTY_RESEARCH_AREA home
  * whose only cited source is the profile page. Returns [] for a profile with
@@ -350,12 +385,13 @@ export function facultyToResearchEntityObservations(
   profile: YsmFacultyProfile,
   fallbackUserKey: string,
 ): ObservationInput[] {
-  const hasLab = Boolean(profile.labUrl);
-  if (!hasLab && profile.researchAreas.length === 0 && !profile.description) return [];
+  const linkedSite = classifyProfileLabWebsite(profile);
+  if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return [];
+  const hasLab = linkedSite.isOwnResearchHome;
 
   const slug = `ysm-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab
-    ? profile.labName || `${profile.name} Lab`
+    ? linkedSite.adoptableName || `${profile.name} Lab`
     : `${profile.name} Faculty Research`;
   const sourceUrls = hasLab ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
   const piUserKey = profile.email || fallbackUserKey;
