@@ -616,6 +616,8 @@ Use these controls before spending cloud or API money:
 - `lab-microsite-description-llm` and `lab-microsite-undergrad-llm` skip the paid LLM call when a per-entity `sourceContentHash` observation matches the fresh page bytes, so repeat runs (including `--exhaustive` sweeps that bypass WorkPlanner freshness) do not re-pay for unchanged pages.
   Pass `--force-llm` only when intentionally re-extracting a source whose hash is up to date.
   `lab-microsite-description-llm` also budgets for its research-page crawl: an entity whose page publishes a research anchor costs up to two extra HTTP fetches per run because the crawl feeds the hash input and therefore runs before that gate, and a crawled page that wins the description can add one LLM call for its own methods (#2176).
+  One entity class never benefits from that gate: an entity where the extractor kept its stored description instead of an unopposed crawled one records no hash by design, so it re-fetches and re-extracts on every run until its pages or its stored description change ([`research-data-pipeline.md`](./research-data-pipeline.md) owns why).
+  Treat that recurring per-entity cost as expected rather than a broken hash gate (#2180).
 
 ## Report Checklist
 

@@ -172,6 +172,20 @@ describe('an unopposed crawled research page may fill but never replace a descri
     expect(captionObservation).toBeNull();
   });
 
+  it('leaves an entity with no description rather than filling it from a figure caption', async () => {
+    await seedEntityWithStoredDescription('');
+
+    const persisted = await runSweepAndMaterialize();
+
+    expect(requestedPaths).toContain('/research');
+    expect(persisted?.fullDescription ?? '').toBe('');
+    const captionObservation = await Observation.findOne({
+      entityKey: SLUG,
+      field: 'fullDescription',
+    }).lean();
+    expect(captionObservation).toBeNull();
+  });
+
   it('fills an empty description from the crawled research page', async () => {
     researchPageProse = RESEARCH_PAGE_PROSE;
     await seedEntityWithStoredDescription('');

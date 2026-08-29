@@ -1292,7 +1292,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     const fetchPage = vi.fn(async (url: string) => {
       if (url === 'https://examplelab.org/') {
         // A JS shell: no prose for either the deterministic or the LLM path.
-        return { url: 'https://examplelab.org/', html: '<main><a href="/research">Research</a></main>' };
+        return {
+          url: 'https://examplelab.org/',
+          html: '<main><a href="/research">Research</a></main>',
+        };
       }
       return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
     });
@@ -1332,7 +1335,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
     const fetchPage = vi.fn(async (url: string) => {
       if (url === 'https://examplelab.org/') {
-        return { url: 'https://examplelab.org/', html: '<main><a href="/research">Research</a></main>' };
+        return {
+          url: 'https://examplelab.org/',
+          html: '<main><a href="/research">Research</a></main>',
+        };
       }
       return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
     });
@@ -1367,7 +1373,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
     const fetchPage = vi.fn(async (url: string) => {
       if (url === 'https://examplelab.org/') {
-        return { url: 'https://examplelab.org/', html: '<main><a href="/research">Research</a></main>' };
+        return {
+          url: 'https://examplelab.org/',
+          html: '<main><a href="/research">Research</a></main>',
+        };
       }
       return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
     });
