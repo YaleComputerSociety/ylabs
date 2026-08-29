@@ -15,13 +15,6 @@
  * survives, the entity still looks complete, and the tier stays `student_ready`
  * while the detail page has no prose to serve.
  *
- * This is not hypothetical. Superseding 99 synthesized `fullDescription`
- * observations without touching the `shortDescription` values that had been
- * DERIVED from them left 19 entities with an empty description, 14 of them served
- * and 404ing to students, while a perfectly good alternative sat active and unused
- * (`faculty-research-area-james-e-hansen` had a 0.55 `lab-microsite-undergrad-llm`
- * row the whole time).
- *
  * So: revert the PAIR, never one field - and revert it in both stores. Marking the
  * observations superseded is not sufficient on its own, because `shortDescription`
  * is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`: the projected card
@@ -33,27 +26,16 @@
  *
  * ## Reverting to the prior pair is NOT automatically safe
  *
- * The obvious remedy - restore both fields to their pre-rollback values, on the
- * reasoning that the prior pair was self-consistent - fails when the prior pair
- * was manufactured as a duplicate. The `studentReadyDescription` emit block in
- * `server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts` pushes one
- * string as `fullDescription` at 0.55 and, when `isCardLengthDescription` holds,
- * pushes THE SAME STRING as `shortDescription` at 0.55.
- *
- * What makes such a pair unstable is not the duplication itself but how the two
- * members are attributed. Both of those pushes share one `...base`, so they land
- * with the same `sourceName` and `sourceUrl`, the materializer reads the projected
- * short as self-derived from the full, and the guard is not applied at all: the
- * row keeps serving its prose across passes. Re-attribute the same duplicate
- * across two URLs or two sources - which is what a hand repair does, and what a
- * second source writing the card produces - and the short now reads as
- * independent evidence, so the guard fires and blanks the full. The incident pair
- * was exactly that shape: one source's full from the profile URL, its card from a
- * second URL.
- *
- * So a restored pair is only safe when the pair AS IT WILL BE ATTRIBUTED passes
+ * Restoring both fields to their pre-rollback values fails when the prior pair was
+ * manufactured as a duplicate: what makes such a pair unstable is not the
+ * duplication itself but how its two members are attributed. So a restored pair is
+ * only safe when the pair AS IT WILL BE ATTRIBUTED passes
  * `describeDescriptionPairRisk`. A `full-restates-short` result means the pair is
  * unstable and the fix belongs upstream in the emitting source, not in a backfill.
+ *
+ * `docs/scraper-deployment-runbook.md` (`Rollback` -> `Rolling back a written
+ * description`) owns the operator procedure, the incident this contract came from,
+ * and the emitter shape that manufactures an unsafe pair.
  */
 import type { ObservedEntityType } from '../models/observation';
 import { observationEntityIdentityFilter } from '../scrapers/observationStore';

@@ -683,6 +683,10 @@ This is how 19 entities lost their description, 14 of them served, after 99 synt
 Marking the observations superseded and re-materializing was not enough, because the stale short was the thing causing the blank.
 A perfectly good alternative was active and unused the entire time.
 
+There is no standing command for this rollback.
+`server/src/scripts/descriptionPairRollbackCore.ts` exports pure helpers (`descriptionPairObservationFilter`, `planDescriptionPairRollback`, `describeDescriptionPairRisk`) that encode the contract, and the operator still authors the one-off repair script that runs them.
+Author it under the same guards as the sibling description repairs (`server/src/scripts/purgeMiskeyedProfileDescriptions.ts`): dry-run by default, writes only under `--apply` plus a named `--confirm-...` flag, with a `--max-apply` ceiling and a JSON `--output` plan.
+
 Procedure:
 
 - Check first whether the prior pair is a manufactured duplicate.
