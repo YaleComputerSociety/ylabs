@@ -185,6 +185,7 @@ The claim gate is read-only. It validates existing access-signal artifacts again
 Directory, grant, and dataset sources are not research-description sources.
 Cancer, WTI, Economics, English, department, and center listing pages can support source or membership provenance but must be followed to individual official profile or lab pages for public description copy.
 NIH and NSF records can support funding and research-context evidence, but must not repair `fullDescription` or `shortDescription` by copying award summaries, raw data titles, or source chrome.
+The one sanctioned exception is the guarded `grant-corpus-synthesis-llm` lane, which synthesizes a grounded PI-level description from the aggregated grant corpus instead of copying any award text; its contract lives in [`docs/research-data-pipeline.md`](./research-data-pipeline.md).
 OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, Crossref, and official-profile publication ingestion are retired and must not appear in audit rollout plans; see the authoritative retirement contract in [`docs/research-data-pipeline.md`](./research-data-pipeline.md).
 Keep reviewed Google Scholar and ORCID profile links as outbound researcher navigation only.
 Paper materialization and the `Paper`/`PaperAuthor` models and their readers are fully retired with no rollback opt-in; historical `paper` source rows and observations are retained as read-only archived evidence, and stored `papers`/`paper_authors` collections remain only until the human-gated collection drop under issue #207.
