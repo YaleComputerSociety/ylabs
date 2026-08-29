@@ -1949,6 +1949,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     remainingReferencesBeforeDelete: {},
     removedFromSearchIndex: 0,
     survivorVisibility: { regated: false } as MergeSurvivorVisibilityRepair,
+    survivorIndexResynced: false,
   });
   if (
     !requestedCanonicalId ||
