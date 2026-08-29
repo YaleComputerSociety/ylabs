@@ -9,6 +9,11 @@ import {
   researchEntityTypes,
   researchGroupKinds,
 } from '../researchAccessTypes';
+import {
+  CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE,
+  isLegacyFacultyResearchEntityType,
+  LEGACY_FACULTY_RESEARCH_ENTITY_TYPES,
+} from '../../scripts/consolidateFacultyResearchEntityTypeCore';
 import { Source } from '../source';
 
 const oid = () => new mongoose.Types.ObjectId();
@@ -27,6 +32,17 @@ describe('research access models', () => {
     expect(mapResearchGroupKindToEntityType('program')).not.toBe('PROGRAM');
     expect(mapResearchGroupKindToEntityType('group')).toBe('INITIATIVE');
     expect(mapResearchGroupKindToEntityType('program')).toBe('INITIATIVE');
+  });
+
+  it('does not expose the legacy faculty-research duplicates, and leaves stored rows unreclassified (#2219)', () => {
+    for (const legacy of LEGACY_FACULTY_RESEARCH_ENTITY_TYPES) {
+      expect(researchEntityTypes as readonly string[]).not.toContain(legacy);
+      // The consolidation lane must still recognize them so unmigrated
+      // environments can be fixed.
+      expect(isLegacyFacultyResearchEntityType(legacy)).toBe(true);
+    }
+    expect(CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE).toBe('FACULTY_RESEARCH_AREA');
+    expect(researchEntityTypes).toContain('FACULTY_RESEARCH_AREA');
   });
 
   it('derives a valid research group kind for every entity type', () => {

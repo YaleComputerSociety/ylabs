@@ -41,7 +41,7 @@ See [Legacy `User` Retirement](#legacy-user-retirement).
 The lab, center, institute, or faculty project: the discovery center.
 [`server/src/models/researchEntity.ts`](../server/src/models/researchEntity.ts) is a clean schema (not the retired `researchGroupSchema`).
 Its roster is **not** embedded: membership lives in canonical `RoleAssignment` rows joined to `Researcher` (see below).
-Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `INITIATIVE`, `INDIVIDUAL_RESEARCH`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
+Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `INITIATIVE`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
 It does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact fields, or a paper cache.
 Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are the sole canonical prose pair.
 The legacy `kind` field (migration residue from the retired `ResearchGroup` model) is no longer an independent taxonomy: the materializer deterministically derives it from the canonical `entityType` via `mapEntityTypeToResearchGroupKind` (#2144), and `research-entity:resync-kind` backfills historically drifted rows.
@@ -179,6 +179,15 @@ Official Yale pages support the broader Yale Research model rather than a lab-op
 
 Product implication: a single Yale page may describe a durable research entity, source-backed access evidence, a safe official-application or contact route, and a later formalization option all at once.
 The current model expresses the entity as `ResearchEntity`, the access and logistics evidence as typed `Signal` rows, and the contact action as a derived official-profile link-out, so students can discover plausible homes without losing exploratory, thesis, fellowship-funded, structured-fellowship, course-credit, library, museum, and center-based research.
+
+### Retired Legacy Faculty-Research Duplicates (#2219)
+
+`INDIVIDUAL_RESEARCH` and `FACULTY_RESEARCH` were duplicates of `FACULTY_RESEARCH_AREA`: nothing minted them, and every consumer already treated the set as one thing.
+They are gone from `researchEntityTypes` and from `EntityTypeToResearchGroupKind`, and `research-entity:consolidate-faculty-type` converts stored rows to the canonical type.
+
+Read paths stay deliberately tolerant of the stored values, because an environment that has not run the consolidation still holds rows.
+This is safe rather than merely lenient: `derivedResearchGroupKind` returns `undefined` for an entity type it does not recognize, so such a row keeps its stored `kind: 'individual'` instead of being reclassified as a lab, and `isFacultyResearchEntity` matches on that kind.
+Retiring the type therefore stops new writes without changing how an unmigrated row renders.
 
 ### Retired Dead-End Entity Types (#2202)
 
