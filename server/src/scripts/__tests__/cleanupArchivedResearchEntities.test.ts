@@ -300,6 +300,37 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     ).resolves.toBe(1);
   });
 
+  it('refuses to delete an unrecorded merge shell during a full archived sweep', async () => {
+    const canonicalId = await insertCanonicalEntity('Canonical Lab');
+    const residue = await insertMergeResidue('Unrecorded Residue', canonicalId);
+
+    const applied = await cleanupArchivedResearchEntities({
+      apply: true,
+      limit: 100,
+      getIndex: fakeSearchIndex([]),
+    });
+
+    expect(applied.plan.eligible).toEqual([]);
+    expect(applied.plan.deferredByReason.missing_redirect).toBe(1);
+    expect(applied.deletedResearchEntities).toBe(0);
+    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(1);
+  });
+
+  it('deletes a recorded merge shell during a full archived sweep', async () => {
+    const canonicalId = await insertCanonicalEntity('Canonical Lab');
+    const residue = await insertMergeResidue('Recorded Residue', canonicalId);
+    await insertRedirect(residue, canonicalId);
+
+    const applied = await cleanupArchivedResearchEntities({
+      apply: true,
+      limit: 100,
+      getIndex: fakeSearchIndex([]),
+    });
+
+    expect(applied.plan.eligible).toEqual([String(residue.id)]);
+    await expect(ResearchEntity.countDocuments({ _id: residue.id })).resolves.toBe(0);
+  });
+
   it('keeps resolving the shell slug to the canonical after the shell is deleted', async () => {
     const canonicalId = await insertCanonicalEntity('Canonical Lab');
     const residue = await insertMergeResidue('Resolvable Residue', canonicalId);

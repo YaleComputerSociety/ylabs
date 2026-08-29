@@ -62,6 +62,7 @@ import {
   buildResearchEntityPublicDescriptionRepresentation,
   researchEntityServesPublicDetail,
 } from './researchEntityPublicDescription';
+import { resolveResearchEntityCanonical } from './researchEntityMergeRedirectService';
 import {
   researchEntityHasDeceasedLead,
   stripTrailingPersonNameLifespan,
@@ -2606,7 +2607,13 @@ export const normalizeResearchDetailSlug = (value: unknown): string | undefined 
   return RESEARCH_DETAIL_SLUG_PATTERN.test(trimmed) ? trimmed : undefined;
 };
 
-const MAX_CANONICAL_REDIRECT_HOPS = 10;
+const isPubliclyServableCanonicalTarget = (candidate: Record<string, any>): boolean =>
+  candidate.archived !== true &&
+  !!candidate.studentVisibilityTier &&
+  publicStudentVisibilityTiers.includes(candidate.studentVisibilityTier as StudentVisibilityTier) &&
+  !researchEntityHasDeceasedLead(candidate) &&
+  typeof candidate.slug === 'string' &&
+  candidate.slug.trim().length > 0;
 
 export async function resolveArchivedResearchEntityCanonicalSlug(
   slug: string,
@@ -2614,7 +2621,7 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
   const normalizedSlug = normalizeResearchDetailSlug(slug);
   if (!normalizedSlug) return null;
 
-  const archivedEntity = (await ResearchEntity.findOne({
+  const mergedShell = (await ResearchEntity.findOne({
     slug: normalizedSlug,
     archived: true,
     canonicalGroupId: { $ne: null },
@@ -2624,41 +2631,17 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
     _id?: mongoose.Types.ObjectId;
     canonicalGroupId?: mongoose.Types.ObjectId;
   } | null;
-  if (!archivedEntity?.canonicalGroupId) return null;
 
-  const visited = new Set<string>();
-  if (archivedEntity._id) visited.add(String(archivedEntity._id));
+  const canonical = await resolveResearchEntityCanonical({
+    slug: normalizedSlug,
+    entityId: mergedShell?._id,
+    seedCanonicalIds: [mergedShell?.canonicalGroupId],
+    isAcceptableCanonical: isPubliclyServableCanonicalTarget,
+  });
 
-  let nextId: mongoose.Types.ObjectId | null | undefined = archivedEntity.canonicalGroupId;
-  for (let hop = 0; hop < MAX_CANONICAL_REDIRECT_HOPS && nextId; hop += 1) {
-    const nextKey = String(nextId);
-    if (visited.has(nextKey)) return null;
-    visited.add(nextKey);
-
-    const candidate = (await ResearchEntity.findOne({ _id: nextId })
-      .select('slug archived studentVisibilityTier canonicalGroupId')
-      .lean()) as {
-      slug?: string;
-      archived?: boolean;
-      studentVisibilityTier?: StudentVisibilityTier;
-      canonicalGroupId?: mongoose.Types.ObjectId | null;
-    } | null;
-    if (!candidate) return null;
-
-    const isLivePublic =
-      candidate.archived !== true &&
-      !!candidate.studentVisibilityTier &&
-      publicStudentVisibilityTiers.includes(candidate.studentVisibilityTier);
-    if (isLivePublic) {
-      const canonicalSlug = candidate.slug ? String(candidate.slug) : '';
-      if (!canonicalSlug || canonicalSlug === normalizedSlug) return null;
-      return canonicalSlug;
-    }
-
-    nextId = candidate.canonicalGroupId ?? null;
-  }
-
-  return null;
+  const canonicalSlug = typeof canonical?.slug === 'string' ? canonical.slug.trim() : '';
+  if (!canonicalSlug || canonicalSlug === normalizedSlug) return null;
+  return canonicalSlug;
 }
 
 export async function getResearchGroupDetail(slug: string): Promise<{

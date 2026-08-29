@@ -41,7 +41,7 @@ describe('resolveArchivedResearchEntityCanonicalSlug canonical chain (integratio
   afterEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    await db.collection('researchentities').deleteMany({});
+    await db.collection('research_entities').deleteMany({});
   });
 
   it('chains an archived shell through a dead intermediate to a live public canonical', async () => {
