@@ -97,6 +97,13 @@ Rules:
 
 Purpose: seed a realistic staging dataset and validate UI/search behavior before touching production.
 
+Precondition: confirm `taxonomy_terms` is seeded in the target database before running any scraper against Beta or a fresh environment.
+The only writer for that collection (`data-migration/seedTaxonomyTerms.ts`) was deleted in #2186, so an empty environment stays empty and nothing in the repository will fill it.
+`research-area-source-extractor` is fail-closed against the approved registry and emits nothing when it is empty, and every other source's `researchAreas[]` then passes through raw and un-canonicalized.
+Both failures are silent: the run reports success with degraded research-area data.
+Check with `db.taxonomy_terms.countDocuments({ reviewStatus: 'APPROVED', status: 'ACTIVE', archived: false })` and treat zero as a stop.
+Development held 5,291 terms with 638 approved as of 2026-08-29; Beta held none.
+
 Preparation:
 
 ```bash

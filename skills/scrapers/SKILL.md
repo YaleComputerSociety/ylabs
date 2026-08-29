@@ -70,7 +70,14 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
   - A scraper-label stop-list (`isResearchAreaLabelLeakage`) drops non-topic extraction artifacts (section headers, role/status labels, publication chrome) so they never become an area or pollute the review queue.
   Its `isNonTopicResearchAreaChip` arm additionally rejects only unambiguous non-topics that can leak public PII or prose (protocol/HIC/IRB ids, publication URLs, list markers, person-award lines, leading-lowercase prose, sentence fragments, first-person bio prose, lab-blurb sentences, and run-on multi-topic concatenations >= 15 words) while preserving legitimate multi-word topics below that ceiling so no real area is dropped (#624/#948).
   A companion repair in `stripResearchAreaSourceChrome` strips a stray leading coordinating conjunction (`and Optical Physics` -> `Optical Physics`) so a split fragment is fixed rather than dropped (#948).
-  - The registry was seeded from the research-area ground truth; approved rows canonicalize immediately and candidate rows land `UNREVIEWED`.
+  - The registry was originally seeded from the research-area ground truth; approved rows canonicalize immediately and candidate rows land `UNREVIEWED`.
+  - **`taxonomy_terms` now has a reader but no writer.** `data-migration/seedTaxonomyTerms.ts` was the only writer and was deleted with the whole `data-migration/` package in #2186, so nothing in the repository can seed the registry or promote a term's `reviewStatus`.
+  Two consequences follow.
+  First, the approved vocabulary is frozen at whatever an environment already holds (Development: 5,291 terms, 638 `APPROVED`, verified 2026-08-29), so `research-area-source-extractor` can never widen beyond those 638 terms and the 4,653 `UNREVIEWED` rows are unreachable.
+  This is a known, accepted limitation rather than a defect.
+  Second, and this is a hard precondition: **seed `taxonomy_terms` before any sweep against Beta or a fresh environment.** Beta was empty (0 collections) as of 2026-08-29.
+  On an unseeded registry `research-area-source-extractor` is fail-closed and emits nothing at all, and every other source's `researchAreas[]` passes through raw and un-canonicalized, which degrades silently rather than failing the run.
+  Re-seeding needs a new wired command under `server/src/scripts/`; #2186 recorded that gap without filing it.
   - `research-homes:backfill-research-areas` (dry-run-first, `--confirm-research-areas`) applies it to the corpus and, for entities with no areas, derives new ones deterministically from canonical department names, department-text phrase scans, and description phrases.
   Specific single-word technical terms (`Immunology`, `Genomics`) are recoverable from prose, but generic single-word names listed in `AMBIGUOUS_SINGLE_WORD_AREAS` (`art`, `law`, `history`, finance idioms) are only recovered from existing-area or department strings via the exact index.
   - Each applied backfill batch re-syncs its changed entities to Meilisearch via `syncEntities` (write-then-sync), so the area facet never drifts from Mongo and no separate reindex is needed (#1002).
