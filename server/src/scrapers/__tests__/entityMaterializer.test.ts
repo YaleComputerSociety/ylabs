@@ -67,9 +67,7 @@ describe('materializedFieldValue research-entity name hygiene', () => {
   });
 
   it('rejects a kind observation value outside the researchGroupKinds enum, keeping the existing value (#observation-array-integrity)', () => {
-    expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', 'lab')).toBe(
-      'lab',
-    );
+    expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', 'lab')).toBe('lab');
     expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', undefined)).toBe(
       undefined,
     );
@@ -79,9 +77,9 @@ describe('materializedFieldValue research-entity name hygiene', () => {
   });
 
   it('rejects an entityType observation value outside the researchEntityTypes enum, keeping the existing value (#observation-array-integrity)', () => {
-    expect(
-      materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH', 'LAB'),
-    ).toBe('LAB');
+    expect(materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH', 'LAB')).toBe(
+      'LAB',
+    );
     expect(
       materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH_AREA', 'LAB'),
     ).toBe('FACULTY_RESEARCH_AREA');
@@ -1109,6 +1107,20 @@ describe('leadPiSchoolInheritanceGate (#2158 PI->school inheritance)', () => {
   it('never overwrites a better-sourced existing school', () => {
     expect(leadPiSchoolInheritanceGate({ school: 'School of Medicine', kind: 'lab' })).toBe(
       'has-school',
+    );
+  });
+
+  it('treats an existing schools[] facet as a school even when the scalar mirror is empty', () => {
+    expect(
+      leadPiSchoolInheritanceGate({
+        school: '',
+        schools: ['School of the Environment'],
+        kind: 'lab',
+      }),
+    ).toBe('has-school');
+    expect(leadPiSchoolInheritanceGate({ school: '', schools: [], kind: 'lab' })).toBe('eligible');
+    expect(leadPiSchoolInheritanceGate({ school: '', schools: ['  '], kind: 'lab' })).toBe(
+      'eligible',
     );
   });
 

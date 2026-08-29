@@ -92,7 +92,10 @@ import {
   namesNonYaleInstitution,
 } from './sources/labMicrositeUndergradLLMExtractor';
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
-import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
+import {
+  applyResearchEntityOrgUnitCanonicalization,
+  getOrgUnitCanonicalizer,
+} from './orgUnitCanonicalization';
 import {
   applyResearchEntityResearchAreaCanonicalization,
   getResearchAreaCanonicalizer,
@@ -1498,6 +1501,10 @@ async function materializeCanonicalPiMembership(
 
 const SCHOOL_INHERITANCE_LEAD_ROLES = ['PI', 'DIRECTOR'];
 
+export const LEAD_PI_SCHOOL_INHERITANCE_SOURCE = 'lead-pi-school-inheritance';
+
+const LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE = 0.6;
+
 async function resolveSingleLeadResearcherId(
   researchEntityId: string,
 ): Promise<string | undefined> {
@@ -1513,22 +1520,22 @@ async function resolveSingleLeadResearcherId(
     .select('personId')
     .lean()) as Array<{ personId?: unknown }>;
   const distinctPersonIds = new Set(
-    leads.map((assignment) => materializerDocumentId(assignment.personId)).filter((id) => id.length > 0),
+    leads
+      .map((assignment) => materializerDocumentId(assignment.personId))
+      .filter((id) => id.length > 0),
   );
   return distinctPersonIds.size === 1 ? distinctPersonIds.values().next().value : undefined;
 }
 
 async function leadResearcherDepartment(researcherId: string): Promise<string | undefined> {
   const researcher = (await Researcher.findById(researcherId)
-    .select('primaryDepartment profile accountId')
+    .select('profile accountId')
     .lean()) as {
-    primaryDepartment?: unknown;
     profile?: { primaryDepartment?: unknown };
     accountId?: unknown;
   } | null;
   if (!researcher) return undefined;
-  const direct =
-    textValue(researcher.primaryDepartment) || textValue(researcher.profile?.primaryDepartment);
+  const direct = textValue(researcher.profile?.primaryDepartment);
   if (direct) return direct;
   if (researcher.accountId) {
     const account = (await Account.findById(materializerDocumentId(researcher.accountId))
@@ -1558,13 +1565,33 @@ export interface LeadPiSchoolInheritanceResult {
 export function leadPiSchoolInheritanceGate(input: {
   manuallyLockedFields?: string[];
   school?: unknown;
+  schools?: unknown;
   kind?: unknown;
 }): Extract<LeadPiSchoolInheritanceSkip, 'locked' | 'has-school' | 'multi-pi-kind'> | 'eligible' {
   const locked = input.manuallyLockedFields ?? [];
   if (locked.includes('school') || locked.includes('departments')) return 'locked';
   if (textValue(input.school)) return 'has-school';
+  const existingSchools = Array.isArray(input.schools)
+    ? (input.schools as unknown[]).map((value) => textValue(value)).filter(Boolean)
+    : [];
+  if (existingSchools.length > 0) return 'has-school';
   if (MULTI_PI_ORG_KINDS.has(textValue(input.kind).toLowerCase())) return 'multi-pi-kind';
   return 'eligible';
+}
+
+async function leadDepartmentWithParentSchool(
+  rawDepartment: string,
+): Promise<{ department: string; school: string } | undefined> {
+  try {
+    const canonicalizer = await getOrgUnitCanonicalizer();
+    const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
+    if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return undefined;
+    const department = canonical.values[0];
+    const school = canonicalizer.schoolForDepartment(department);
+    return school ? { department, school } : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function inheritSchoolFromLeadPi(
@@ -1583,30 +1610,43 @@ export async function inheritSchoolFromLeadPi(
   const gate = leadPiSchoolInheritanceGate({
     manuallyLockedFields: options.manuallyLockedFields,
     school: entity.school,
+    schools: entity.schools,
     kind: entity.kind,
   });
   if (gate !== 'eligible') return { inherited: false, skipped: gate };
 
   const leadResearcherId = await resolveSingleLeadResearcherId(researchEntityId);
   if (!leadResearcherId) return { inherited: false, skipped: 'no-single-lead' };
-  const department = await leadResearcherDepartment(leadResearcherId);
-  if (!department) return { inherited: false, skipped: 'no-department' };
+  const rawDepartment = await leadResearcherDepartment(leadResearcherId);
+  if (!rawDepartment) return { inherited: false, skipped: 'no-department' };
+  const leadOrgUnit = await leadDepartmentWithParentSchool(rawDepartment);
+  if (!leadOrgUnit) return { inherited: false, skipped: 'no-school-derivable' };
 
   const existingDepartments = Array.isArray(entity.departments)
     ? (entity.departments as unknown[]).map((value) => textValue(value)).filter(Boolean)
     : [];
   const set: Record<string, unknown> = {
-    departments: Array.from(new Set([...existingDepartments, department])),
+    school: leadOrgUnit.school,
+    ...(existingDepartments.length === 0 ? { departments: [leadOrgUnit.department] } : {}),
   };
   await applyResearchEntityOrgUnitCanonicalization(set, entity);
   const derivedSchool = textValue(set.school);
   if (!derivedSchool) return { inherited: false, skipped: 'no-school-derivable' };
-  const departments = Array.isArray(set.departments) ? (set.departments as string[]) : [];
+  const departments = Array.isArray(set.departments)
+    ? (set.departments as string[])
+    : existingDepartments;
 
   if (options.dryRun) return { inherited: true, school: derivedSchool, departments };
 
-  await mutateAndRefreshAdminAccessReviewProjection(toMaterializerObjectId(researchEntityId), (session) =>
-    ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
+  set['confidenceByField.school'] = LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE;
+  set['fieldProvenance.school'] = {
+    sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+    observedAt: new Date(),
+    confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
+  };
+  await mutateAndRefreshAdminAccessReviewProjection(
+    toMaterializerObjectId(researchEntityId),
+    (session) => ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
   );
   const fresh = await ResearchEntity.findById(researchEntityId).lean();
   if (fresh) await syncEntity('researchEntity', fresh);
@@ -2719,7 +2759,7 @@ function hasRequiredFieldsForCreate(
 // rollback-retired rows. `superseded` is overloaded (latest-wins supersession
 // vs. retireObservations permanent removal), so dropping it wholesale would
 // resurface purged data; rollback rows are distinguished by rollback.rolledBackAt.
-function materializationReadScopeFilter(): Record<string, unknown> {
+export function materializationReadScopeFilter(): Record<string, unknown> {
   return c4LosslessIngestEnabled()
     ? { 'rollback.rolledBackAt': { $exists: false } }
     : { superseded: false };

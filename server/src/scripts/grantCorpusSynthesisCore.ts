@@ -115,6 +115,24 @@ export interface FullDescriptionObservationLike {
   sourceName?: string;
 }
 
+export function fullDescriptionObservationFilter(input: {
+  entityKey?: unknown;
+  entityId?: unknown;
+  readScope: Record<string, unknown>;
+}): Record<string, unknown> {
+  const anchors: Record<string, unknown>[] = [];
+  if (typeof input.entityKey === 'string' && input.entityKey) {
+    anchors.push({ entityKey: input.entityKey });
+  }
+  if (input.entityId) anchors.push({ entityId: input.entityId });
+  return {
+    entityType: 'researchEntity',
+    field: 'fullDescription',
+    ...input.readScope,
+    ...(anchors.length > 0 ? { $or: anchors } : { _id: { $in: [] } }),
+  };
+}
+
 export function entityHasBetterSourcedDescription(
   fullDescriptionObservations: FullDescriptionObservationLike[],
   researchAreas: unknown,

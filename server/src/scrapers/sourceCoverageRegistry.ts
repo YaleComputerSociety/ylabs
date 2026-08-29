@@ -514,6 +514,15 @@ export const sourceCoverageRegistry = {
     notes:
       'DOE physical-sciences funding activity via OSTI technical reports; enriches entity context but is not undergraduate-access evidence alone.',
   },
+  'grant-corpus-synthesis-llm': {
+    priority: 7,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['TOPICS', 'METHODS', 'FUNDING_ACTIVITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      'Grounded PI-level research description synthesized from the aggregated grant corpus already recorded on the entity (NIH/NSF/NEH/USASpending/DOE titles and abstracts). Derived from the funding lanes rather than an official page, so it ranks above the single-abstract grant fallback and below every official-profile source; fails closed when the output is not grounded in the grant text. Never creates access, route, opportunity, or contact evidence.',
+  },
 } satisfies Record<string, SourceCoverageMetadata>;
 
 export type SourceCoverageName = keyof typeof sourceCoverageRegistry;

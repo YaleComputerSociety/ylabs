@@ -6,6 +6,7 @@ import {
   assertGrantCorpusSynthesisApplyAllowed,
   buildGrantCorpusSnippets,
   entityHasBetterSourcedDescription,
+  fullDescriptionObservationFilter,
   parseGrantCorpusSynthesisArgs,
 } from '../grantCorpusSynthesisCore';
 
@@ -141,6 +142,38 @@ describe('entityHasBetterSourcedDescription', () => {
         'LAB',
       ),
     ).toBe(false);
+  });
+});
+
+describe('fullDescriptionObservationFilter', () => {
+  it("carries the materializer's read scope so a retired description never blocks recovery", () => {
+    const filter = fullDescriptionObservationFilter({
+      entityKey: 'lin-lab',
+      entityId: 'entity-1',
+      readScope: { superseded: false },
+    });
+    expect(filter.superseded).toBe(false);
+    expect(filter.entityType).toBe('researchEntity');
+    expect(filter.field).toBe('fullDescription');
+  });
+
+  it('matches both the entityKey- and entityId-anchored observations for the entity', () => {
+    const filter = fullDescriptionObservationFilter({
+      entityKey: 'lin-lab',
+      entityId: 'entity-1',
+      readScope: { 'rollback.rolledBackAt': { $exists: false } },
+    });
+    expect(filter.$or).toEqual([{ entityKey: 'lin-lab' }, { entityId: 'entity-1' }]);
+    expect(filter['rollback.rolledBackAt']).toEqual({ $exists: false });
+  });
+
+  it('drops an anchor it does not have instead of widening to every entity', () => {
+    expect(fullDescriptionObservationFilter({ entityId: 'entity-1', readScope: {} }).$or).toEqual([
+      { entityId: 'entity-1' },
+    ]);
+    expect(fullDescriptionObservationFilter({ entityKey: '', readScope: {} })).toMatchObject({
+      _id: { $in: [] },
+    });
   });
 });
 

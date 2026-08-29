@@ -7,8 +7,11 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
-import { synthesizeCoverageDescription, defaultCoverageSynthesisLLM } from '../scrapers/coverageSynthesis';
-import { materializeEntity } from '../scrapers/entityMaterializer';
+import {
+  synthesizeCoverageDescription,
+  defaultCoverageSynthesisLLM,
+} from '../scrapers/coverageSynthesis';
+import { materializeEntity, materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -18,6 +21,7 @@ import {
   assertGrantCorpusSynthesisApplyAllowed,
   buildGrantCorpusSnippets,
   entityHasBetterSourcedDescription,
+  fullDescriptionObservationFilter,
   parseGrantCorpusSynthesisArgs,
   type FullDescriptionObservationLike,
 } from './grantCorpusSynthesisCore';
@@ -33,7 +37,7 @@ interface GrantCorpusEntityReport {
   synthesized: boolean;
   written: boolean;
   gainedSchool: boolean;
-  promotedToStudentReady: boolean;
+  wouldPromoteToStudentReady: boolean;
   school?: string;
   description?: string;
   sourceUrls?: string[];
@@ -92,7 +96,7 @@ async function main() {
       synthesized: false,
       written: false,
       gainedSchool: false,
-      promotedToStudentReady: false,
+      wouldPromoteToStudentReady: false,
     };
     const manuallyLockedFields: string[] = Array.isArray(entity.manuallyLockedFields)
       ? entity.manuallyLockedFields
@@ -103,11 +107,13 @@ async function main() {
       continue;
     }
 
-    const fullDescriptionObservations = (await Observation.find({
-      entityType: 'researchEntity',
-      entityKey: entity.slug,
-      field: 'fullDescription',
-    })
+    const fullDescriptionObservations = (await Observation.find(
+      fullDescriptionObservationFilter({
+        entityKey: entity.slug,
+        entityId: entity._id,
+        readScope: materializationReadScopeFilter(),
+      }),
+    )
       .select('value sourceName')
       .lean()) as unknown as FullDescriptionObservationLike[];
     if (
@@ -169,8 +175,7 @@ async function main() {
       report.written = true;
       written += 1;
 
-      const beforeSchool =
-        typeof entity.school === 'string' ? entity.school.trim() : '';
+      const beforeSchool = typeof entity.school === 'string' ? entity.school.trim() : '';
       const materializeResult = await materializeEntity(
         'researchEntity',
         { entityKey: entity.slug },
@@ -204,7 +209,7 @@ async function main() {
     reports.push(report);
   }
 
-  let promotedToStudentReady = 0;
+  let wouldPromoteToStudentReady = 0;
   if (args.apply && materializedEntityIds.length > 0) {
     const plans = await planStudentVisibilityGate({
       collection: 'research',
@@ -219,9 +224,9 @@ async function main() {
         continue;
       }
       const entityReport = reportByEntityId.get(plan.recordId);
-      if (entityReport && !entityReport.promotedToStudentReady) {
-        entityReport.promotedToStudentReady = true;
-        promotedToStudentReady += 1;
+      if (entityReport && !entityReport.wouldPromoteToStudentReady) {
+        entityReport.wouldPromoteToStudentReady = true;
+        wouldPromoteToStudentReady += 1;
       }
     }
   }
@@ -235,7 +240,7 @@ async function main() {
     synthesized: reports.filter((r) => r.synthesized).length,
     written,
     gainedSchool,
-    promotedToStudentReady,
+    wouldPromoteToStudentReady,
     entities: reports,
   };
   console.log(JSON.stringify(report, null, 2));
