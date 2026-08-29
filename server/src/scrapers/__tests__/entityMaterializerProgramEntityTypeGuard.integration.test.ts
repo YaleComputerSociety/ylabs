@@ -28,9 +28,11 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import {
+  healedEntityTypeForRetiredProgramObservations,
   isRetiredProgramResearchEntityType,
   materializeEntity,
   winningObservedEntityTypeIsRetiredProgram,
+  withHealedRetiredProgramEntityType,
 } from '../entityMaterializer';
 
 describe('materializeEntity refuses to mint or resurrect a PROGRAM research entity', () => {
@@ -111,6 +113,97 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
         observation('INITIATIVE', 1),
       ]),
     ).toBe(false);
+  });
+
+  it('heals a retired PROGRAM assertion from the co-observed kind rather than dropping the entity (#2206)', () => {
+    const kindObservation = (value: string) => ({
+      field: 'kind',
+      value,
+      sourceName: 'department-undergrad-research',
+      confidence: 0.8,
+      observedAt: new Date('2026-08-24T00:00:00Z'),
+    });
+
+    expect(healedEntityTypeForRetiredProgramObservations([kindObservation('program')])).toBe(
+      'INITIATIVE',
+    );
+    expect(healedEntityTypeForRetiredProgramObservations([kindObservation('lab')])).toBe('LAB');
+    expect(healedEntityTypeForRetiredProgramObservations([kindObservation('individual')])).toBe(
+      'FACULTY_RESEARCH_AREA',
+    );
+  });
+
+  it('fails closed instead of defaulting an unusable kind to LAB (#2206)', () => {
+    const kindObservation = (value: unknown) => ({
+      field: 'kind',
+      value,
+      sourceName: 'department-undergrad-research',
+      confidence: 0.8,
+      observedAt: new Date('2026-08-24T00:00:00Z'),
+    });
+
+    expect(healedEntityTypeForRetiredProgramObservations([])).toBeUndefined();
+    expect(healedEntityTypeForRetiredProgramObservations([kindObservation('')])).toBeUndefined();
+    expect(
+      healedEntityTypeForRetiredProgramObservations([kindObservation('not-a-kind')]),
+    ).toBeUndefined();
+    expect(healedEntityTypeForRetiredProgramObservations([kindObservation(null)])).toBeUndefined();
+  });
+
+  it('rewrites only the retired entityType observations and leaves the rest alone', () => {
+    const base = { sourceName: 'x', confidence: 0.9, observedAt: new Date() };
+    const healed = withHealedRetiredProgramEntityType(
+      [
+        { ...base, field: 'entityType', value: 'PROGRAM' },
+        { ...base, field: 'entityType', value: 'LAB' },
+        { ...base, field: 'name', value: 'PROGRAM' },
+      ],
+      'INITIATIVE',
+    );
+
+    expect(healed.map((o) => o.value)).toEqual(['INITIATIVE', 'LAB', 'PROGRAM']);
+  });
+
+  it('mints a department research pathway that used to be dropped, typed from its kind (#2206)', async () => {
+    await seedObservation(
+      'department-undergrad-research-psychology',
+      'name',
+      'Psychology Undergraduate Research Opportunities',
+    );
+    await seedObservation('department-undergrad-research-psychology', 'entityType', 'PROGRAM');
+    await seedObservation('department-undergrad-research-psychology', 'kind', 'program');
+
+    const result = await materializeEntity('researchEntity', {
+      entityKey: 'department-undergrad-research-psychology',
+    });
+
+    expect(result.skipped).not.toBe('program-entity-type-retired');
+    expect(result.created).toBe(true);
+
+    const doc = await ResearchEntity.findOne({
+      slug: 'department-undergrad-research-psychology',
+    }).lean<{ entityType?: string; kind?: string; name?: string }>();
+    expect(doc?.entityType).toBe('INITIATIVE');
+    expect(doc?.kind).toBe('initiative');
+    expect(doc?.name).toBe('Psychology Undergraduate Research Opportunities');
+  });
+
+  it('mints a PI lab whose stale entityType said PROGRAM but whose kind said lab (#2206)', async () => {
+    await seedObservation('nih-pi-example-researcher', 'name', 'Example Researcher Lab');
+    await seedObservation('nih-pi-example-researcher', 'entityType', 'PROGRAM', {
+      confidence: 0.96,
+    });
+    await seedObservation('nih-pi-example-researcher', 'kind', 'lab');
+
+    const result = await materializeEntity('researchEntity', {
+      entityKey: 'nih-pi-example-researcher',
+    });
+
+    expect(result.created).toBe(true);
+    const doc = await ResearchEntity.findOne({ slug: 'nih-pi-example-researcher' }).lean<{
+      entityType?: string;
+    }>();
+    expect(doc?.entityType).toBe('LAB');
   });
 
   it('skips minting a new research entity when observations assert entityType PROGRAM', async () => {
