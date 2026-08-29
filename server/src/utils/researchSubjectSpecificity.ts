@@ -26,6 +26,36 @@
  * because the model's scope judgement moved between runs and false-rejected a
  * confirmed good description. Re-measure with that harness before wiring
  * judgeResearchSubject into extraction or serving.
+ *
+ * ## What the extraction around this gate can and cannot see (#2272, 2026-08-29)
+ *
+ * `scripts/offEntityGraftAudit.ts` supplies the missing extraction and runs it
+ * over the served LAB and FACULTY_RESEARCH_AREA corpus with the record name and
+ * type in the prompt, `reasoning_effort: 'medium'` set explicitly, and a verdict
+ * recorded only when three runs agree. At that setting the field IS stable: 289 of
+ * 300 sampled student_ready records came back unanimous.
+ *
+ * It is also nearly silent. Unanimous `parent_org` was 1 of 300 (0.3%, Wilson
+ * 0.1-1.9%), and `parent_org` or `unclear` together 3 of 300 (1.0%, 0.3-2.9%).
+ * Two structural blind spots explain the gap between that and the hand-read
+ * estimate of the class, and both were confirmed by re-judging known grafts:
+ *
+ *   1. `subjectScope` compares the prose to the record's SERVED NAME, not to the
+ *      record's identity. When a graft took the name and the prose together, the
+ *      two agree and the verdict is a confident, unanimous `this_entity`: a lab
+ *      member's record serving "The Liu Lab" plus that lab's research paragraph
+ *      scored this_entity 3 for 3, and only re-judging it under the person's real
+ *      name moved it off. 25 served student_ready records carry a name that
+ *      provably belongs to a different served record, so the instrument is blind
+ *      by construction on more records than it flags.
+ *   2. The rubric has no bucket for a PEER entity. `parent_org` is defined as an
+ *      organization that CONTAINS the record, so another lab's prose has no
+ *      correct answer and lands on `unclear` or splits the runs.
+ *
+ * So a `parent_org` rate is a floor on this defect class and never its size. An
+ * instrument that measures it needs to judge prose against an identity derived
+ * independently of the served name (the entity key, the roster, the profile), and
+ * a scope value for a peer entity.
  */
 
 export type ResearchSubjectScope = 'this_entity' | 'parent_org' | 'unclear';

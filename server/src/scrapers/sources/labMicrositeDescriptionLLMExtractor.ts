@@ -656,6 +656,10 @@ export function descriptionExtractionToObservations(
   },
 ): ObservationInput[] {
   if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
+  const labName = usefulLabName(extraction.name);
+  const pageAttribution = classifyExtractedPageAttribution(labName, context);
+  if (pageAttribution === 'ANOTHER_PERSONS_LAB') return [];
+
   const fullDescription = normalizeKnownDescriptionAcronyms(
     usefulDescription(extraction.fullDescription),
   );
@@ -690,13 +694,50 @@ export function descriptionExtractionToObservations(
   const methods = uniqueStrings(extraction.methods || []).slice(0, 12);
   if (methods.length) observations.push({ ...base, field: 'methods', value: methods });
 
-  const labName = usefulLabName(extraction.name);
-  if (labName && nameCarriesIdentityAuthority(labName, context)) {
+  if (labName && pageAttribution === 'THIS_ENTITY') {
     const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
     observations.push({ ...nameBase, field: 'name', value: labName });
     observations.push({ ...nameBase, field: 'displayName', value: labName });
   }
   return observations;
+}
+
+/**
+ * Whose page the extractor just read, judged from the name the page gives itself.
+ *
+ * `THIS_ENTITY` - the page may both name and describe this record.
+ *
+ * `AFFILIATED_ORGANIZATION` - the page's own name is an umbrella organization, or
+ * the page is a person's unbranded CMS profile. Neither may become this record's
+ * identity, but in both cases the prose can still be this person's own research,
+ * so the description is kept.
+ *
+ * `ANOTHER_PERSONS_LAB` - the page is provably a DIFFERENT named person's lab, the
+ * eponym in its name corroborated by its own URL path. Nothing on it belongs here.
+ */
+type ExtractedPageAttribution = 'THIS_ENTITY' | 'AFFILIATED_ORGANIZATION' | 'ANOTHER_PERSONS_LAB';
+
+export interface ExtractedPageIdentityContext {
+  sourceUrl: string;
+  entityKey?: string;
+  entityType?: string;
+  kind?: string;
+}
+
+/**
+ * Whether the page an extraction came from is another named person's lab, and so
+ * describes nothing that belongs to this record. Exported because the caller's
+ * methods-only fallback fires precisely when `descriptionExtractionToObservations`
+ * returns nothing, and a foreign lab's techniques are as much a graft as its prose.
+ */
+export function extractedPageDescribesAnotherPersonsLab(
+  extraction: { name?: unknown },
+  context: ExtractedPageIdentityContext,
+): boolean {
+  return (
+    classifyExtractedPageAttribution(usefulLabName(extraction.name), context) ===
+    'ANOTHER_PERSONS_LAB'
+  );
 }
 
 /**
@@ -706,19 +747,46 @@ export function descriptionExtractionToObservations(
  * person-scoped entity's identity no matter how cleanly it was extracted
  * (issue #2234). Judging the name rather than only the URL is what makes this
  * hold for a directory shape nobody has enumerated yet.
+ *
+ * `ANOTHER_PERSONS_LAB` additionally governs the page's DESCRIPTION (#2272).
+ * Refusing only the name left the prose half of the graft in place: a trainee
+ * whose profile links their principal investigator's lab site kept "The Liu
+ * laboratory is dedicated to developing a high-throughput cryo-electron
+ * tomography (cryo-ET) pipeline" as their own research description while the name
+ * it came from was correctly refused, so seven of the eight records serving that
+ * paragraph were lab members rather than the lab. A page we have already decided
+ * cannot name this record cannot describe it either.
+ *
+ * `AFFILIATED_ORGANIZATION` deliberately does NOT reach the description, and the
+ * asymmetry is measured rather than assumed. Of 22 served records whose harvested
+ * name was an umbrella organization, 9 carried a CORRECT description of the
+ * person ("He studies how financial reporting regulation and the accessibility of
+ * information shape the behavior of organizations"), because the LLM had returned
+ * an affiliation line from the person's own site as the name. Withholding those
+ * descriptions would lose more good prose than bad. Separating the harvested
+ * name's own subject from the description's subject needs the LLM subject-scope
+ * judgement, not this predicate.
+ *
+ * An empty harvested name fails OPEN. The extraction prompt asks for an empty
+ * name when a page states none, which is the normal answer for a person's own
+ * unbranded lab site, and treating "no name to judge" as "attribution failed"
+ * would withhold the description of every such site in the corpus.
  */
-function nameCarriesIdentityAuthority(
+function classifyExtractedPageAttribution(
   labName: string,
-  context: { sourceUrl: string; entityKey?: string; entityType?: string; kind?: string },
-): boolean {
-  if (isPersonCmsProfileUrl(context.sourceUrl)) return false;
-  if (!isPersonScopedResearchEntity(context)) return true;
-  if (isUmbrellaOrganizationName(labName)) return false;
-  return !claimsAnotherPersonsLab({
+  context: ExtractedPageIdentityContext,
+): ExtractedPageAttribution {
+  if (isPersonCmsProfileUrl(context.sourceUrl)) return 'AFFILIATED_ORGANIZATION';
+  if (!isPersonScopedResearchEntity(context)) return 'THIS_ENTITY';
+  if (!labName) return 'THIS_ENTITY';
+  if (isUmbrellaOrganizationName(labName)) return 'AFFILIATED_ORGANIZATION';
+  return claimsAnotherPersonsLab({
     harvestedName: labName,
     websiteUrl: context.sourceUrl,
     identityTokens: entityKeyPersonTokens(context.entityKey),
-  });
+  })
+    ? 'ANOTHER_PERSONS_LAB'
+    : 'THIS_ENTITY';
 }
 
 async function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
@@ -1258,8 +1326,13 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         if (observations.length === 0) {
           // No usable description this run, but grounded methods (e.g. derived
           // from the stored description when the live page is an empty shell)
-          // should still fill the field on their own.
-          if (methods.length > 0) {
+          // should still fill the field on their own - unless the page turned out
+          // to belong to another person's lab, in which case its techniques are
+          // as foreign as its prose (#2272).
+          const foreignLabPage = groundedLlmExtraction
+            ? extractedPageDescribesAnotherPersonsLab(groundedLlmExtraction, identity)
+            : false;
+          if (methods.length > 0 && !foreignLabPage) {
             const methodsObservation: ObservationInput = {
               entityType: 'researchEntity',
               entityId: identity.entityId,

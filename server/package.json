@@ -53,6 +53,7 @@
     "meili:seed": "yarn meili:rebuild-research-entities --clear --confirm-meili-rebuild",
     "research-entity:coverage-audit": "tsx src/scripts/researchEntityCoverageAudit.ts",
     "research-entity:audit-public-descriptions": "tsx src/scripts/publicResearchEntityDescriptionAudit.ts",
+    "research-entity:audit-off-entity-graft": "tsx src/scripts/offEntityGraftAudit.ts",
     "model-refactor:inventory": "tsx src/scripts/researchModelInventory.ts",
     "model-refactor:identity-collisions": "tsx src/scripts/phase0IdentityCollisionAudit.ts",
     "model-refactor:search-baseline": "tsx src/scripts/phase0ResearchSearchBaseline.ts",
