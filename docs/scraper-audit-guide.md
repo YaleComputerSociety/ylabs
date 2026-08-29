@@ -357,7 +357,7 @@ Audit focus:
 - CommunityForce links should be retained as `applicationLink`/`links` values, not fetched.
 - Generic fellowship-administration, advising, navigation, and alternative-funding pages should either be suppressed or kept in operator review rather than becoming student-ready program records.
 - The source should emit program/funding evidence only; it must not create access signals or student-facing research opportunities from fellowship funding pages.
-- Run `yarn --cwd server programs:backfill-classification` and `yarn --cwd server student-visibility:backfill` in dry-run mode before applying any DB updates.
+- Run `yarn --cwd server programs:backfill-classification` and `yarn --cwd server student-visibility:gate` in dry-run mode before applying any DB updates.
 
 Project impact:
 
