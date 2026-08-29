@@ -95,7 +95,7 @@ describe('buildResearchGroupFilterString', () => {
         [
           'archived = false',
           '(kind = "lab")',
-          '(entityType = "LAB" OR entityType = "GROUP")',
+          '(entityType = "LAB" OR entityType = "INITIATIVE")',
           '(departments = "Genetics")',
         ].join(' AND '),
       );
