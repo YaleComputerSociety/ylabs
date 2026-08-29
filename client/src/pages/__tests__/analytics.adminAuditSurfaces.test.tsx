@@ -91,8 +91,8 @@ const auditEventsPage1 = {
     {
       id: 'evt-3',
       actorNetid: 'ops1001',
-      action: 'listing.update',
-      targetType: 'listing',
+      action: 'fellowship.update',
+      targetType: 'fellowship',
       targetId: '664f0c2a9b1e4a0012ab34cd',
       summary: { fields: ['title', 'description'] },
       timestamp: '2026-05-17T11:47:00.000Z',
@@ -167,19 +167,8 @@ const buildUserRow = (index: number) => ({
   totalEvents: 30 - index,
   logins: 5,
   searches: 4,
-  views: 3,
   researchViews: 2,
   fellowshipViews: 0,
-  listingFavorites: 0,
-  listingUnfavorites: 0,
-  fellowshipFavorites: 0,
-  fellowshipUnfavorites: 0,
-  outreachClicks: 0,
-  outreachOutcomes: 0,
-  listingCreates: 0,
-  listingUpdates: 0,
-  listingArchives: 0,
-  listingUnarchives: 0,
   profileUpdates: 0,
   loginCount: 5,
   lastActive: `2026-05-17T${String(index % 24).padStart(2, '0')}:00:00.000Z`,
@@ -254,7 +243,7 @@ describe('Analytics admin audit + grant history + user pagination surfaces', () 
       expect(auditTable().getByText('Admin revoked')).toBeTruthy();
     });
     expect(auditTable().getByText('Admin granted')).toBeTruthy();
-    expect(auditTable().getByText('Listing edited')).toBeTruthy();
+    expect(auditTable().getByText('Fellowship edited')).toBeTruthy();
     expect(auditTable().getByText('ops2001')).toBeTruthy();
     expect(auditTable().getByText('coverage rotation complete')).toBeTruthy();
     expect(auditTable().getByText('title, description')).toBeTruthy();

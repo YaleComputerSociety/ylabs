@@ -729,19 +729,8 @@ describe('Analytics page', () => {
       totalEvents: 9,
       logins: 2,
       searches: 4,
-      views: 3,
       researchViews: 2,
       fellowshipViews: 0,
-      listingFavorites: 0,
-      listingUnfavorites: 0,
-      fellowshipFavorites: 0,
-      fellowshipUnfavorites: 0,
-      outreachClicks: 0,
-      outreachOutcomes: 0,
-      listingCreates: 0,
-      listingUpdates: 0,
-      listingArchives: 0,
-      listingUnarchives: 0,
       profileUpdates: 0,
       loginCount: 2,
       lastActive: '2026-05-17T00:00:00.000Z',
@@ -796,7 +785,7 @@ describe('Analytics page', () => {
     expect(screen.getAllByText('nameless02').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('undefined')).toBeNull();
 
-    expect(screen.getAllByText(/Listing Views/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/Listing Views/)).toBeNull();
     expect(screen.getAllByText(/Research Views/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: /Research Views/ })).toBeTruthy();
   });
