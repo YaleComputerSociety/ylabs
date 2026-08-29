@@ -853,6 +853,98 @@ describe('person-bio demotion for fullDescription', () => {
     expect(resolved?.value).toBe(BIO);
   });
 
+  it('lets research prose already recorded by an ordinary source outrank a biography', () => {
+    // The synthesis lane skips an entity that already has usable non-bio prose,
+    // so keying the demotion on that lane's own source left the two mechanisms
+    // deadlocked and the biography served (#2200 follow-up).
+    const FIRST_PERSON_BIO =
+      'I am an Associate Professor of Chemistry at the university. I received my Ph.D. from a midwestern graduate program and completed postdoctoral training before joining the faculty.';
+    const RESEARCH_PROSE =
+      'Research focuses on catalytic reactions in aqueous media, developing earth-abundant metal complexes that convert waste carbon dioxide into liquid fuels.';
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(FIRST_PERSON_BIO, 'lab-microsite-description-llm', 0.59),
+        obs(RESEARCH_PROSE, 'lab-microsite-undergrad-llm', 0.41),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.value).toBe(RESEARCH_PROSE);
+  });
+
+  it('does not reorder on a bare titled-name opener alone', () => {
+    // Measured on the served corpus, that opener leads ordinary research prose
+    // roughly three times as often as it leads a biography, so it is not enough
+    // evidence to rank a description below another one.
+    const TITLED_NAME_PROSE =
+      "Professor Lindqvist's research investigates how engineered proteins fold inside living cells, combining single-molecule spectroscopy with computational modelling of folding pathways.";
+    const RESEARCH_PROSE =
+      'Research focuses on catalytic reactions in aqueous media, developing earth-abundant metal complexes that convert waste carbon dioxide into liquid fuels.';
+    expect(isHighConfidencePersonBio(TITLED_NAME_PROSE)).toBe(true);
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        obs(TITLED_NAME_PROSE, 'lab-microsite-description-llm', 0.59),
+        obs(RESEARCH_PROSE, 'lab-microsite-undergrad-llm', 0.41),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(ranked.map((entry) => entry.value)).toEqual([TITLED_NAME_PROSE, RESEARCH_PROSE]);
+  });
+
+  it('keeps the biography when the value that would be promoted is a recruiting pitch', () => {
+    const CREDENTIAL_BIO =
+      'Avery Lindqvist, PhD, is an assistant professor in the department of applied physics. She completed doctoral training in optics and joined the faculty after two postdoctoral appointments.';
+    const RECRUITING_PITCH =
+      'We are recruiting a postdoctoral fellow and two graduate students to join the group; if you are interested in joining, please reach out by email.';
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(CREDENTIAL_BIO, 'lab-microsite-description-llm', 0.59),
+        obs(RECRUITING_PITCH, 'lab-microsite-undergrad-llm', 0.41),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.value).toBe(CREDENTIAL_BIO);
+  });
+
+  it('requires the highest-weighted survivor to qualify, not any value further down', () => {
+    // Counting a qualifying value anywhere in the set is how a good description
+    // ranked third licensed promoting the unvetted value ranked second.
+    const CREDENTIAL_BIO =
+      'Avery Lindqvist, PhD, is an assistant professor in the department of applied physics. She completed doctoral training in optics and joined the faculty after two postdoctoral appointments.';
+    const RECRUITING_PITCH =
+      'We are recruiting a postdoctoral fellow and two graduate students to join the group; if you are interested in joining, please reach out by email.';
+    const RESEARCH_PROSE =
+      'Research focuses on catalytic reactions in aqueous media, developing earth-abundant metal complexes that convert waste carbon dioxide into liquid fuels.';
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        obs(CREDENTIAL_BIO, 'lab-microsite-description-llm', 0.6),
+        obs(RECRUITING_PITCH, 'lab-microsite-undergrad-llm', 0.5),
+        obs(RESEARCH_PROSE, 'department-undergrad-research', 0.2),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(ranked[0].value).toBe(CREDENTIAL_BIO);
+  });
+
+  it('never reorders a curated manual override', () => {
+    const CURATED_BIO =
+      'Avery Lindqvist, PhD, is an assistant professor in the department of applied physics. She completed doctoral training in optics and joined the faculty after two postdoctoral appointments.';
+    const RESEARCH_PROSE =
+      'Research focuses on catalytic reactions in aqueous media, developing earth-abundant metal complexes that convert waste carbon dioxide into liquid fuels.';
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(CURATED_BIO, 'manual-admin-edit', 0.43),
+        obs(RESEARCH_PROSE, 'lab-microsite-undergrad-llm', 0.41),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.value).toBe(CURATED_BIO);
+  });
+
   it('does not demote a person bio for the bio field itself', () => {
     const resolved = resolveField(
       'bio',

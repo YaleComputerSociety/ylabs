@@ -14,7 +14,11 @@
  * module scope, so importing this module still requires mongoose to resolve.
  */
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
-import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
+import {
+  isDemotablePersonBio,
+  isHighConfidencePersonBio,
+  scoreResearchHomeDescriptionCandidate,
+} from '../utils/researchHomeDescriptionSelection';
 
 export interface ResolverObservation {
   field: string;
@@ -209,25 +213,87 @@ function hasBioReplacingSynthesisSource(group: { sources: Set<string> }): boolea
   return false;
 }
 
+function isUsefulProseGroup(group: { value: unknown }): boolean {
+  return typeof group.value === 'string' && fullDescriptionQuality(group.value).isUseful;
+}
+
+// A curated override is a human decision about what this entity should say, so
+// it is never reordered by a text heuristic. Same set as the decay exemption
+// above, for the same reason: these two sources are the manual-edit lanes.
+function isCuratedGroup(group: { sources: Set<string> }): boolean {
+  for (const source of group.sources) {
+    if (NON_DECAYING_SOURCES.has(source)) return true;
+  }
+  return false;
+}
+
+function isDemotableBioProseGroup(group: RankedGroup): boolean {
+  return (
+    typeof group.value === 'string' && !isCuratedGroup(group) && isDemotablePersonBio(group.value)
+  );
+}
+
+/**
+ * The bar the value that would be promoted has to clear on its own: the
+ * research-home candidate score (which rejects a person-centric lead, a
+ * recruiting pitch, a mission statement, and navigational copy) plus the
+ * description-quality bar every other consumer applies.
+ */
+function isServableResearchHomeProseGroup(group: RankedGroup): boolean {
+  return (
+    typeof group.value === 'string' &&
+    scoreResearchHomeDescriptionCandidate(group.value, 'organization') === 0 &&
+    isUsefulProseGroup(group)
+  );
+}
+
+function highestWeightedGroup(groups: RankedGroup[]): RankedGroup | undefined {
+  return groups.reduce<RankedGroup | undefined>(
+    (best, group) => (best && best.weight >= group.weight ? best : group),
+    undefined,
+  );
+}
+
 /**
  * Marks bio groups as demoted rather than dropping them, so they sort last but
  * stay in the ranked list. `entityMaterializer` walks that list when the winner
  * fails its own content gates, and a removed bio left the walk with nothing to
  * fall back to, blanking a description that had been served.
+ *
+ * Two mechanisms license the demotion. The synthesis-source rule above is one.
+ * The other is research prose an ordinary source already recorded, which the
+ * synthesis lane cannot supply because it skips an entity precisely when such
+ * prose exists: with only the source rule, the two deadlocked and the biography
+ * stayed served (#2200 follow-up).
+ *
+ * The over-reporting the source rule was guarding against is handled by
+ * narrowing both sides rather than by naming a source. The biography must carry
+ * a signal that organization prose does not produce (`isDemotablePersonBio`
+ * drops the bare `Dr./Professor <Name>` opener), and the value that would be
+ * promoted must clear the research-home bar on its own. Testing the value that
+ * would actually be promoted, rather than counting a qualifying value anywhere
+ * in the set, is what stops a bare grant abstract ranked second from being
+ * promoted because a good description sat third.
  */
 function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void {
   if (!PERSON_BIO_DEMOTION_FIELDS.has(field)) return;
   const bioGroups = groups.filter(isPersonBioProseGroup);
   if (bioGroups.length === 0 || bioGroups.length === groups.length) return;
-  const replacementExists = groups.some(
+  const synthesisReplacementExists = groups.some(
     (group) =>
       !isPersonBioProseGroup(group) &&
       hasBioReplacingSynthesisSource(group) &&
-      typeof group.value === 'string' &&
-      fullDescriptionQuality(group.value).isUseful,
+      isUsefulProseGroup(group),
   );
-  if (!replacementExists) return;
-  for (const group of bioGroups) group.demoted = true;
+  if (synthesisReplacementExists) {
+    for (const group of bioGroups) group.demoted = true;
+    return;
+  }
+  const demotable = bioGroups.filter(isDemotableBioProseGroup);
+  if (demotable.length === 0) return;
+  const promoted = highestWeightedGroup(groups.filter((group) => !demotable.includes(group)));
+  if (!promoted || !isServableResearchHomeProseGroup(promoted)) return;
+  for (const group of demotable) group.demoted = true;
 }
 
 function nameHasResearchHomeHeadNoun(value: unknown): boolean {
