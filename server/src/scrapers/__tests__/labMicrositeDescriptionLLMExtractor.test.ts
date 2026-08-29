@@ -11,6 +11,7 @@ import {
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
+import { SOURCE_CONTENT_HASH_FIELD } from '../contentHashGate';
 
 function makeContext(): { ctx: ScraperContext; emitted: ObservationInput[]; logs: string[] } {
   const emitted: ObservationInput[] = [];
@@ -1282,20 +1283,18 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(callLLM).not.toHaveBeenCalled();
     expect(logs.some((line) => /linked research page could not be read/.test(line))).toBe(true);
   });
-  it('leaves a usable stored description alone when the primary page yields nothing (#2180)', async () => {
+  it('leaves a stored description worth keeping alone when the primary page yields nothing (#2180)', async () => {
     const { ctx, emitted } = makeContext();
     const STORED =
       'The Michael Hatridge Lab focuses on quantum information research, particularly using superconducting microwave circuits as a platform to entangle larger quantum systems.';
+    const CRAWLED =
+      'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
     const fetchPage = vi.fn(async (url: string) => {
       if (url === 'https://examplelab.org/') {
         // A JS shell: no prose for either the deterministic or the LLM path.
         return { url: 'https://examplelab.org/', html: '<main><a href="/research">Research</a></main>' };
       }
-      return {
-        url: 'https://examplelab.org/research',
-        html:
-          '<main><p>The aluminum housing for a 6-qubit, 2 module processor design set on the still stage of one of our new dilution refrigerators for ambience. From top left, the input lines run to the mixing chamber plate.</p></main>',
-      };
+      return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
     });
     const scraper = new LabMicrositeDescriptionLLMExtractor({
       apiKey: 'test-key',
@@ -1319,6 +1318,47 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const full = emitted.find((obs) => obs.field === 'fullDescription');
     expect(full).toBeUndefined();
+    // The suppression is decided by the stored description, which the content
+    // hash does not cover, so this run must not memoize it - otherwise clearing
+    // the stored description later never gets reconsidered (#2180).
+    expect(emitted.some((obs) => obs.field === SOURCE_CONTENT_HASH_FIELD)).toBe(false);
+  });
+
+  it('replaces a stored description that would not survive selection with crawled research prose (#2180)', async () => {
+    const { ctx, emitted } = makeContext();
+    const STORED_CAPTION =
+      'The aluminum housing for a 6-qubit, 2 module processor design set on the still stage of one of our new dilution refrigerators for ambience. From top left, the input lines run to the mixing chamber plate.';
+    const CRAWLED =
+      'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return { url: 'https://examplelab.org/', html: '<main><a href="/research">Research</a></main>' };
+      }
+      return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'hat-lab',
+          name: 'Hat Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: STORED_CAPTION,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi
+        .fn()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full?.value).toBe(CRAWLED);
+    expect(full?.sourceUrl).toBe('https://examplelab.org/research');
   });
 
   it('still fills an empty description from a crawled page when the primary page yields nothing (#2180)', async () => {

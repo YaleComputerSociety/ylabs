@@ -35,6 +35,7 @@ import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
 import {
+  describesResearchHome,
   scoreResearchHomeDescriptionCandidate,
   type DescriptionEntityKind,
 } from '../../utils/researchHomeDescriptionSelection';
@@ -279,9 +280,16 @@ function descriptionUrlPriority(value: string): number {
 const RESEARCH_SUBPAGE_ANCHOR_RE =
   /^(?:our\s+|the\s+|current\s+)?(?:research(?:\s+(?:areas?|interests?|overview|projects?|topics?|themes?))?|projects?|research\s+&\s+publications|science|what\s+we\s+(?:do|study)|areas\s+of\s+research)$/i;
 
-// Mirrors the selection floor in researchHomeDescriptionSelection so "already has
-// something worth keeping" means the same thing on both sides (#2180).
+// Mirrors the selection floor in researchHomeDescriptionSelection - its length
+// floor plus the same describesResearchHome test - so "already has something
+// worth keeping" means the same thing on both sides. Length alone would also
+// protect text that would never survive selection (a figure caption, directory
+// index chrome, a person bio on an organization) and pin it forever (#2180).
 const USABLE_STORED_DESCRIPTION_MIN_LENGTH = 120;
+
+function storedDescriptionIsWorthKeeping(stored: string): boolean {
+  return stored.length >= USABLE_STORED_DESCRIPTION_MIN_LENGTH && describesResearchHome(stored);
+}
 
 const MAX_RESEARCH_SUBPAGE_CANDIDATES = 2;
 
@@ -1112,13 +1120,21 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // then a crawled candidate would win unopposed - which is how a figure
         // caption on hatlab.yale.edu/research replaced a good stored description
         // (#2180). A crawled page the primary page cannot vouch for may only FILL
-        // a description, never replace a usable one.
-        const storedDescriptionIsUsable =
-          textValue(lab.fullDescription).length >= USABLE_STORED_DESCRIPTION_MIN_LENGTH;
+        // a description, never replace one worth keeping.
+        const storedDescription = textValue(lab.fullDescription);
+        const unopposedCrawledProseSuppressed =
+          bestCrawledProse !== null &&
+          primaryCandidate === null &&
+          storedDescriptionIsWorthKeeping(storedDescription);
+        if (unopposedCrawledProseSuppressed) {
+          ctx.log(
+            `[${lab.slug || 'candidate'}] keeping the stored description: ${primaryPage.url} yielded no candidate of its own, so a crawled page cannot replace it.`,
+          );
+        }
         const crawledProseWins =
           bestCrawledProse !== null &&
           (primaryCandidate === null
-            ? !storedDescriptionIsUsable
+            ? !unopposedCrawledProseSuppressed
             : scoreResearchHomeDescriptionCandidate(bestCrawledProse.fullDescription, kind) >
               scoreResearchHomeDescriptionCandidate(primaryCandidate.fullDescription, kind));
 
@@ -1127,7 +1143,15 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         }
         const officialProse = crawledProseWins ? bestCrawledProse : primaryProse;
 
-        const hashObservation = contentHashObservation(entityRef, page.url, contentHash);
+        // The suppression above is decided by the stored description, which is
+        // not an input to contentHash, so recording the hash would freeze that
+        // decision: clearing the stored description later would never be
+        // reconsidered because the content-unchanged gate returns first. Leave
+        // the hash unwritten so the next run re-decides on current state, like
+        // the crawl-incomplete guard that returns before hashing (#2180).
+        const hashObservations = unopposedCrawledProseSuppressed
+          ? []
+          : [contentHashObservation(entityRef, page.url, contentHash)];
 
         // Methods are grounded in the text of the page that is actually cited, so
         // a crawled winner never attributes home-page methods to its own URL.
@@ -1157,7 +1181,6 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         let methods = citedPageExtraction
           ? groundMethods(citedPageExtraction.methods, pageText)
           : [];
-        const storedDescription = textValue(lab.fullDescription);
         if (methods.length === 0 && storedDescription.length >= 120) {
           const descExtraction = await this.callLLM({
             model: this.model,
@@ -1207,17 +1230,17 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               field: 'methods',
               value: methods,
             };
-            await ctx.emit([methodsObservation, hashObservation]);
+            await ctx.emit([methodsObservation, ...hashObservations]);
             observationCount += 1;
             entitiesObserved += 1;
           } else {
-            await ctx.emit([hashObservation]);
+            await ctx.emit(hashObservations);
           }
           return;
         }
 
         const withCard = await this.withSynthesizedCard(observations);
-        await ctx.emit([...withCard, hashObservation]);
+        await ctx.emit([...withCard, ...hashObservations]);
         observationCount += withCard.length;
         entitiesObserved += 1;
       } catch (error) {
