@@ -1478,6 +1478,35 @@ export function isFaqDumpText(text: string): boolean {
   return faqMarkerPattern.test(normalized) && questionMarks >= 1;
 }
 
+/**
+ * Drop the interrogative sentences from question-dominated text, keeping the
+ * declarative remainder. `isFaqDumpText`'s marker-less arms fire on genuine
+ * research prose that poses a cluster of research questions among its framing
+ * sentences - an art historian asking "What constitutes a war crime and can a
+ * photograph stand as evidence?", a neuroscientist asking "how does
+ * internally-generated activity improve brain function?" - because the
+ * question-to-sentence ratio crosses 0.4 on a paragraph that is still mostly
+ * declarative. Rejecting the whole body then serves nothing at all, which is
+ * strictly worse than serving its prose without the questions.
+ *
+ * The remainder is only worth serving when the declarative sentences OUTNUMBER
+ * the interrogative ones, which is what "questions among many declarative
+ * sentences" means. That keeps a research paragraph (7 declaratives to 6
+ * questions) while still rejecting chrome-prefixed question runs (1 declarative
+ * to 3 questions) and bare Q&A pairs, where the surviving text would be a run
+ * of answers rather than a description. The sentence walk is lossless, matching
+ * the other strip helpers.
+ */
+export function stripInterrogativeSentences(text: string): string {
+  const value = String(text || '');
+  if (!value.includes('?')) return normalizeHygieneWhitespace(value);
+  const sentences = partitionSentencesLossless(value);
+  const declarative = sentences.filter((sentence) => !sentence.includes('?'));
+  const interrogative = sentences.length - declarative.length;
+  if (declarative.filter((sentence) => sentence.trim()).length <= interrogative) return '';
+  return normalizeHygieneWhitespace(declarative.join(''));
+}
+
 const formFieldLabelPattern = /\b[A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+){0,3}:\s/g;
 
 /**
@@ -2110,13 +2139,23 @@ export function sanitizeCatalogDescription(
   if (
     isRosterShapedText(stripped) ||
     isNavigationDumpText(stripped) ||
-    isFaqDumpText(stripped) ||
     isFormFieldDumpText(stripped) ||
     isCurationRationaleText(stripped) ||
     isStaffContactBlockText(stripped) ||
     isCtaNewsTickerDumpText(stripped)
   ) {
     return '';
+  }
+  if (isFaqDumpText(stripped)) {
+    // An explicitly marked FAQ page is a dump whatever its prose looks like, so
+    // it is still rejected outright. Marker-less question dominance is not
+    // conclusive - genuine research prose clusters research questions among its
+    // declarative sentences - so keep the declarative remainder instead of
+    // discarding a body that is mostly prose.
+    if (faqMarkerPattern.test(normalizeHygieneWhitespace(stripped))) return '';
+    const withoutQuestions = stripInterrogativeSentences(stripped);
+    if (!withoutQuestions) return '';
+    return repairMidSentenceTruncation(withoutQuestions);
   }
   return repairMidSentenceTruncation(stripped);
 }
