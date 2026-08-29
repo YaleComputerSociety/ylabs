@@ -397,9 +397,37 @@ function parseLabelListFields(text: string): string[] | null {
  * or a much larger tuning corpus than this issue affords, so those are left
  * for one-off data correction rather than a general rule.
  */
+const labelListBodyKey = (value: string): string =>
+  value
+    .replace(LABEL_LIST_LEAD_PATTERN, '')
+    .replace(/[.!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+/**
+ * The short restates its own full's list under a different interchangeable lead
+ * ("<Name>'s research interests include A, B, C." -> "Studies A, B, C."), so it
+ * contributes zero delta over the full.
+ *
+ * This deliberately compares the two bodies rather than just asking whether the
+ * full also matches LABEL_LIST_SHORT_PATTERN. That pattern is only a lead plus
+ * `[^.]+\.$`, so it matches ANY single-sentence text opening with "Studies " -
+ * including several hundred characters of genuinely rich, semicolon-joined
+ * research prose that simply carries no internal period (and which
+ * `repairSubjectlessResearchLead` has just re-led with "Studies "). Treating
+ * that as "the full is itself a bare label list" rejected 19 faithful,
+ * self-contained cards whose fulls were nothing of the kind, holding those
+ * entities out of every public surface.
+ */
+function shortRestatesFullLabelList(text: string, full: string): boolean {
+  if (!LABEL_LIST_SHORT_PATTERN.test(full)) return false;
+  return labelListBodyKey(text) === labelListBodyKey(full);
+}
+
 function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
   if (!LABEL_LIST_SHORT_PATTERN.test(text)) return false;
-  if (!full || text.toLowerCase() === full.toLowerCase() || LABEL_LIST_SHORT_PATTERN.test(full)) {
+  if (!full || text.toLowerCase() === full.toLowerCase() || shortRestatesFullLabelList(text, full)) {
     return true;
   }
   const fields = parseLabelListFields(text);

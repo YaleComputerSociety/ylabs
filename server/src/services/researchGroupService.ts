@@ -61,6 +61,7 @@ import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/research
 import {
   buildResearchEntityPublicDescriptionRepresentation,
   researchEntityServesPublicDetail,
+  withPublicDescriptionGateFields,
 } from './researchEntityPublicDescription';
 import {
   researchEntityHasDeceasedLead,
@@ -2021,8 +2022,9 @@ const MAX_PUBLIC_DETAIL_MEMBERS = 100;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
-const PUBLIC_RELATED_ENTITY_PROJECTION =
-  '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier descriptionSource sourceUrls website websiteUrl';
+export const PUBLIC_RELATED_ENTITY_PROJECTION = withPublicDescriptionGateFields(
+  '_id slug departments studentVisibilityTier',
+);
 
 const MAX_SIMILAR_RESEARCH_ENTITIES = 6;
 const SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL = 40;

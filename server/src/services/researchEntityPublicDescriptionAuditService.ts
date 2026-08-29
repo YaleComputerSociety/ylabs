@@ -94,13 +94,17 @@ export async function auditStudentReadyPublicDescriptions({
   includeSamples?: boolean;
   sampleLimit?: number;
 } = {}): Promise<PublicDescriptionAuditReport> {
+  // Deliberately unprojected. This audit exists to reproduce the live serve
+  // verdict, and the gate fails closed on any field it cannot see, so a
+  // `.select()` here silently inflates the violation count instead of erroring:
+  // omitting `researchAreas` alone reported 307 violations where the real serve
+  // path has 32, because card derivation and quality assessment both behave as
+  // if the entity had no research areas. Reading whole documents makes the
+  // instrument structurally incapable of drifting from the surfaces it audits.
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
     studentVisibilityTier: 'student_ready',
   })
-    .select(
-      '_id slug name displayName kind entityType website websiteUrl sourceUrls shortDescription fullDescription profileSynthesisDescription descriptionSource',
-    )
     .sort({ name: 1 })
     .lean();
   const entityIds = (entities as any[]).map((entity) => entity._id);

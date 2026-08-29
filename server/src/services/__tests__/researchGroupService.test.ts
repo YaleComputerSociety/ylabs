@@ -101,7 +101,9 @@ import {
   resolveArchivedResearchEntityCanonicalSlug,
   searchResearchGroupsViaMeili,
   HYBRID_CANDIDATE_POOL_SIZE,
+  PUBLIC_RELATED_ENTITY_PROJECTION,
 } from '../researchGroupService';
+import { missingPublicDescriptionGateFields } from '../researchEntityPublicDescription';
 import {
   invalidateResearchEntitySearchEmbedderCache,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
@@ -3450,9 +3452,8 @@ describe('listResearchEntityRelationshipPayload', () => {
 
     const result = await listResearchEntityRelationshipPayload(currentEntityId);
 
-    expect(select).toHaveBeenCalledWith(
-      '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier descriptionSource sourceUrls website websiteUrl',
-    );
+    expect(select).toHaveBeenCalledWith(PUBLIC_RELATED_ENTITY_PROJECTION);
+    expect(missingPublicDescriptionGateFields(PUBLIC_RELATED_ENTITY_PROJECTION)).toEqual([]);
     expect(result.relatedResearchEntities).toHaveLength(50);
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 50, truncated: true });
     expect(Object.keys(result.relatedResearchEntities[0]).sort()).toEqual(
