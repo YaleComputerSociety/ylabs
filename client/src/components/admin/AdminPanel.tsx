@@ -5,13 +5,11 @@ import { useState } from 'react';
 import AdminFellowshipsTable from './AdminFellowshipsTable';
 import AdminResearchAreas from './AdminResearchAreas';
 import AdminDepartments from './AdminDepartments';
-import AdminAccessReview from './AdminAccessReview';
 import AdminOperatorBoard from './AdminOperatorBoard';
 import AdminCorrectionReports from './AdminCorrectionReports';
 
 const TABS = [
   'Operator Board',
-  'Access Review',
   'Correction Reports',
   'Fellowships',
   'Research Areas',
@@ -60,7 +58,6 @@ const AdminPanel = () => {
       </div>
 
       {activeTab === 'Operator Board' && <AdminOperatorBoard />}
-      {activeTab === 'Access Review' && <AdminAccessReview />}
       {activeTab === 'Correction Reports' && <AdminCorrectionReports />}
       {activeTab === 'Fellowships' && <AdminFellowshipsTable />}
       {activeTab === 'Research Areas' && <AdminResearchAreas />}

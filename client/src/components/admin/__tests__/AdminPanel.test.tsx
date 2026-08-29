@@ -41,7 +41,6 @@ describe('AdminPanel', () => {
 
     for (const tab of [
       'Operator Board',
-      'Access Review',
       'Fellowships',
       'Research Areas',
       'Departments',

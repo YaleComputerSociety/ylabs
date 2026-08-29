@@ -23,7 +23,7 @@ import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { upsertSignal, type UpsertSignalInput } from './signalService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
+import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
 
 export type VisibilityRepairMode = 'dry-run' | 'apply';
 
@@ -2080,7 +2080,7 @@ const defaultRepairDeps: RepairDeps = {
   async updateResearchEntity(id, patch) {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return;
-    await mutateAndRefreshAdminAccessReviewProjection(safeId, (session) =>
+    await withResearchEntityWriteTransaction((session) =>
       ResearchEntity.updateOne({ _id: safeId }, { $set: patch }, { session }).then(() => undefined),
     );
   },

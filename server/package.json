@@ -60,7 +60,6 @@
     "model-refactor:identity-collisions": "tsx src/scripts/phase0IdentityCollisionAudit.ts",
     "model-refactor:search-baseline": "tsx src/scripts/phase0ResearchSearchBaseline.ts",
     "model-refactor:query-cost": "tsx src/scripts/phase0HotPathQueryCost.ts",
-    "model-refactor:access-review-projection": "tsx src/scripts/rebuildAdminAccessReviewProjection.ts",
     "model-refactor:validators": "tsx src/scripts/canonicalMongoValidators.ts",
     "model-refactor:strict-readiness": "tsx src/scripts/canonicalValidatorStrictReadinessAudit.ts",
     "model-refactor:reference-integrity": "tsx src/scripts/canonicalReferenceIntegrityAudit.ts",
