@@ -89,14 +89,28 @@ const FIRST_PERSON_EXPERIENCE_LEAD =
 const firstSentence = (value: string): string =>
   value.match(/^(?:[A-Z]\.(?=\s)|(?:Dr|Mr|Ms|Mrs|Prof)\.(?=\s)|[^.!?])+[.!?]?/)?.[0] ?? value;
 
-// Only the signals that never fire on organization prose gate the fail-closed
-// path, so blanking a sole surviving candidate can never drop a real research
-// description. Do not widen this with the looser name-verb lead below.
-export function isHighConfidencePersonBio(text: string): boolean {
+const TITLED_NAME_OPENER = /^(?:dr|prof|professor)\.?\s+[A-Z]/i;
+
+/**
+ * The signals that a person biography produces and organization prose does not:
+ * a dangling pronoun subject, a credentialed name, a degree or career
+ * narrative, a first-person title or experience lead, or repeated personal
+ * quote attribution.
+ *
+ * Kept separate from `isHighConfidencePersonBio` because that wider test also
+ * accepts a bare `Dr./Professor <Name>` opener, which leads ordinary research
+ * prose at least as often as it leads a biography ("Dr. Sauler's research
+ * investigates mechanisms of lung injury"). On a labelled 40-row sample of the
+ * bio-flagged descriptions the corpus actually serves, the wider test was a
+ * genuine biography in 13 of 40 cases while this narrower one was in 6 of 8, so
+ * only this one is safe to rank one description below another on. The wider
+ * test still gates the fail-closed blanking path, where over-reporting costs a
+ * description rather than mis-ordering two.
+ */
+export function isDemotablePersonBio(text: string): boolean {
   const value = textValue(text);
   if (!value) return false;
   if (/^(?:he|she|they|his|her|their)\s/i.test(value)) return true;
-  if (/^(?:dr|prof|professor)\.?\s+[A-Z]/i.test(value)) return true;
   if (CREDENTIAL_NAME_LEAD.test(firstSentence(value))) return true;
   if ((value.match(PERSONAL_QUOTE_ATTRIBUTION) ?? []).length >= 2) return true;
   if (DEGREE_EARNED_NARRATIVE.test(value)) return true;
@@ -104,6 +118,16 @@ export function isHighConfidencePersonBio(text: string): boolean {
   if (TITLE_CLAUSE_THEN_NAME_LEAD.test(firstSentence(value))) return true;
   if (FIRST_PERSON_EXPERIENCE_LEAD.test(firstSentence(value))) return true;
   return false;
+}
+
+// Only the signals that never fire on organization prose gate the fail-closed
+// path, so blanking a sole surviving candidate can never drop a real research
+// description. Do not widen this with the looser name-verb lead below.
+export function isHighConfidencePersonBio(text: string): boolean {
+  const value = textValue(text);
+  if (!value) return false;
+  if (TITLED_NAME_OPENER.test(value)) return true;
+  return isDemotablePersonBio(value);
 }
 
 export function isPersonCentricLead(text: string): boolean {

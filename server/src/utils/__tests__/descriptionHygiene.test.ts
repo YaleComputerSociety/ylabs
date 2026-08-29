@@ -20,6 +20,7 @@ import {
   stripGluedResearchRoleTrackToken,
   isContentlessResearchProjectsBoilerplateText,
   isCurationRationaleText,
+  isCurriculumVitaePositionListingText,
   isInstitutionalCenterBlurbText,
   isFaqDumpText,
   isFirstPersonResearchVoiceText,
@@ -3106,5 +3107,28 @@ describe('short description whole-sentence cap (#2184)', () => {
     const CLEAN =
       'The lab maps how salt-marsh sediments lock away atmospheric carbon along the Atlantic coast.';
     expect(sanitizeResearchEntityShortDescription(CLEAN)).toBe(CLEAN);
+  });
+});
+
+describe('isCurriculumVitaePositionListingText', () => {
+  it('flags a positions list scraped whole into a description field', () => {
+    expect(
+      isCurriculumVitaePositionListingText(
+        'Research Assistant - Some Lab, A University August 2023 - Present Conduct mixed-methods interviews with caregivers. Research Assistant - Another Lab, A University August 2021 - Present Design and analyse studies of resilience.',
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves prose that mentions a single span of time alone', () => {
+    expect(
+      isCurriculumVitaePositionListingText(
+        'The laboratory has studied intertidal community assembly since August 2019 - Present, combining long-term monitoring transects with manipulative field experiments on rocky shores.',
+      ),
+    ).toBe(false);
+  });
+
+  it('is blank-safe', () => {
+    expect(isCurriculumVitaePositionListingText('')).toBe(false);
+    expect(isCurriculumVitaePositionListingText(undefined)).toBe(false);
   });
 });

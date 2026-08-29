@@ -5,6 +5,7 @@ import {
   isBareLabelOrTopicEnumerationText,
   isCitationAuthorListDumpText,
   isConnectedToKeywordListStub,
+  isCurriculumVitaePositionListingText,
   isNonSelfContainedShortDescription,
   isResearchAreaTemplateLeakText,
   isStudiesResearchAreaEchoDescription,
@@ -1116,7 +1117,12 @@ export function fullDescriptionQuality(
   ) {
     flags.push('profile-chrome');
   }
-  if (text && (hasContactBlockResidue(text) || isCitationAuthorListDumpText(text))) {
+  if (
+    text &&
+    (hasContactBlockResidue(text) ||
+      isCitationAuthorListDumpText(text) ||
+      isCurriculumVitaePositionListingText(text))
+  ) {
     flags.push('profile-chrome');
   }
   if (text && isTeachingOnlyProfileDescription(text)) flags.push('profile-chrome');

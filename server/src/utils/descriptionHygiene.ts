@@ -682,6 +682,32 @@ export function isCitationAuthorListDumpText(text: unknown): boolean {
   return citationAuthorInitialsListPattern.test(normalizeHygieneWhitespace(String(text || '')));
 }
 
+const CV_MONTH =
+  'January|February|March|April|May|June|July|August|September|October|November|December';
+const curriculumVitaeEmploymentRangePattern = new RegExp(
+  `\\b(?:${CV_MONTH})\\s+\\d{4}\\s*[\\u2013\\u2014-]\\s*(?:Present\\b|(?:${CV_MONTH})\\s+\\d{4})`,
+  'g',
+);
+const MIN_CURRICULUM_VITAE_EMPLOYMENT_RANGES = 2;
+
+/**
+ * A curriculum-vitae position listing scraped whole into a description field
+ * ("Research Assistant - Some Lab, Some University August 2023 - Present
+ * Conduct mixed-methods research on ... Supervisor: ..."). Keyed on repeated
+ * employment date ranges rather than on any single one: research prose can
+ * mention one span of time, but two or more "<Month> <Year> - Present/<Month>
+ * <Year>" ranges in one passage is a positions list, not a description of what
+ * a research home studies.
+ */
+export function isCurriculumVitaePositionListingText(text: unknown): boolean {
+  const value = normalizeHygieneWhitespace(String(text || ''));
+  if (!value) return false;
+  return (
+    (value.match(curriculumVitaeEmploymentRangePattern) ?? []).length >=
+    MIN_CURRICULUM_VITAE_EMPLOYMENT_RANGES
+  );
+}
+
 const bibliographyCitationEntryPattern =
   /,\s*[A-Z][\p{L}.&'\s-]*?\b(?:University\s+Press|Press|Publishers?|Books)\b,?\s*(?:19|20)\d{2}\.?$/u;
 const firstPersonOrResearchPronounPattern = /\b(?:I|we|my|our)\b/i;

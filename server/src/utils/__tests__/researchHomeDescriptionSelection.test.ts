@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   collectDescriptionCandidates,
+  isDemotablePersonBio,
   isHighConfidencePersonBio,
   isMissionOrCultureProse,
   isRecruitingNoticeLead,
@@ -344,5 +345,42 @@ describe('selectResearchHomeDescription', () => {
     expect(
       selectResearchHomeDescription([CENTER_MISSION_STATEMENT, WEAK_JOURNAL_CLUB_PASSAGE]),
     ).toBe(CENTER_MISSION_STATEMENT);
+  });
+});
+
+describe('isDemotablePersonBio', () => {
+  const TITLED_NAME_PROSE =
+    "Professor Lindqvist's research investigates how engineered proteins fold inside living cells, combining single-molecule spectroscopy with computational modelling of folding pathways.";
+
+  it('drops the bare titled-name opener the wider bio test accepts', () => {
+    expect(isHighConfidencePersonBio(TITLED_NAME_PROSE)).toBe(true);
+    expect(isDemotablePersonBio(TITLED_NAME_PROSE)).toBe(false);
+  });
+
+  it('still fires on a titled name whose passage also carries a degree narrative', () => {
+    expect(
+      isDemotablePersonBio(
+        'Dr. Lindqvist is an assistant professor of applied physics who received a Ph.D. from a midwestern university and joined the faculty after two postdoctoral appointments.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps the signals that organization prose never produces', () => {
+    expect(
+      isDemotablePersonBio(
+        'I am an Associate Professor of Chemistry at the university, and my group works on catalysis.',
+      ),
+    ).toBe(true);
+    expect(
+      isDemotablePersonBio(
+        'Avery Lindqvist, PhD, is an assistant professor in the department of applied physics.',
+      ),
+    ).toBe(true);
+    expect(
+      isDemotablePersonBio(
+        'His research examines how coastal wetlands store carbon across tidal cycles.',
+      ),
+    ).toBe(true);
+    expect(isDemotablePersonBio(LAB_RESEARCH_BLOCK)).toBe(false);
   });
 });
