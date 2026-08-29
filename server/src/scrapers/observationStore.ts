@@ -19,7 +19,7 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import type { ObservationInput } from './types';
 
-const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
+export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
 // When set, the log is kept lossless at write time: the regressive-prose drop and the
 // value-less latest-wins supersession are skipped, and the materializer reads the full
@@ -39,7 +39,7 @@ interface ProseQualityContext {
   entityType?: unknown;
 }
 
-function proseValueIsUseful(
+export function proseValueIsUseful(
   field: string,
   value: unknown,
   context: ProseQualityContext = {},
@@ -75,21 +75,36 @@ export type ActiveProseLoader = (query: {
   field: string;
 }) => Promise<string | undefined>;
 
+// Historical rows carry only `entityKey` while a run that has resolved the entity emits
+// `entityId` too, so matching on whichever single form the caller happens to hold misses
+// the other form's rows for the same entity. Match either form so the regression guard and
+// supersession both see the entity's full active history (#2177).
+export function observationEntityIdentityFilter(query: {
+  entityId?: unknown;
+  entityKey?: unknown;
+}): Record<string, unknown> | undefined {
+  const alternatives: Record<string, unknown>[] = [];
+  if (query.entityKey) alternatives.push({ entityKey: query.entityKey });
+  if (query.entityId) alternatives.push({ entityId: query.entityId });
+  if (alternatives.length === 0) return undefined;
+  return alternatives.length === 1 ? alternatives[0] : { $or: alternatives };
+}
+
 const loadActiveProseValue: ActiveProseLoader = async (query) => {
   // Fail open when no DB connection is available (e.g. unit tests that mock
   // insertMany): the guard must never hang or block a write, only prevent a
   // proven regression.
   if (mongoose.connection.readyState !== 1) return undefined;
-  if (!query.entityId && !query.entityKey) return undefined;
+  const identity = observationEntityIdentityFilter(query);
+  if (!identity) return undefined;
   const filter: Record<string, unknown> = {
     entityType: query.entityType,
     sourceName: query.sourceName,
     field: query.field,
     superseded: false,
+    ...identity,
   };
-  if (query.entityId) filter.entityId = query.entityId;
-  else filter.entityKey = query.entityKey;
-  const row = await Observation.findOne(filter).select('value').lean();
+  const row = await Observation.findOne(filter).sort({ observedAt: -1 }).select('value').lean();
   const value = (row as { value?: unknown } | null)?.value;
   return typeof value === 'string' ? value : undefined;
 };
@@ -265,7 +280,7 @@ export async function appendObservations(
             ? {
                 sourceName: input.sourceName,
                 entityType: input.entityType,
-                ...(input.entityId ? { entityId: input.entityId } : { entityKey: input.entityKey }),
+                ...observationEntityIdentityFilter(input),
                 field: input.field,
               }
             : { observationFingerprint: fingerprint }),
@@ -382,6 +397,13 @@ export function collapseLatestWins<
   });
 }
 
+// `entityKey` is canonical rather than `entityId` because a scraper always knows the
+// slug it is emitting against while `entityId` is only present once the entity exists,
+// so the same (source, entity, field) alternated between `key:` and `id:` fingerprints
+// run to run. That split left both rows active and defeated supersession and
+// `isRegressiveProseRefresh` (#2177). Preferring the key form also makes the identity
+// resolvable without a slug lookup. Changing this order requires re-running
+// `observations:normalize-fingerprints`, or historical rows stop matching new ones.
 export function buildObservationFingerprint(input: {
   sourceName: string;
   entityType: string;
@@ -392,7 +414,7 @@ export function buildObservationFingerprint(input: {
 }): string | undefined {
   const entityId = stringifyIdentifier(input.entityId);
   const entityKey = stringifyIdentifier(input.entityKey);
-  const entity = entityId ? `id:${entityId}` : entityKey ? `key:${entityKey}` : undefined;
+  const entity = entityKey ? `key:${entityKey}` : entityId ? `id:${entityId}` : undefined;
   if (!entity) return undefined;
 
   const parts: unknown[] = [input.sourceName, input.entityType, entity, input.field];

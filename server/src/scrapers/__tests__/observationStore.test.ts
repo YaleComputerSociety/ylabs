@@ -4,6 +4,7 @@ import {
   appendObservations,
   buildObservationFingerprint,
   isRegressiveProseRefresh,
+  observationEntityIdentityFilter,
   retireObservations,
 } from '../observationStore';
 import {
@@ -855,5 +856,83 @@ describe('retireObservations', () => {
     const result = await retireObservations({ entityKey: 'smith-lab' }, 'test');
 
     expect(result).toEqual({ retired: 0 });
+  });
+});
+
+describe('observation entity identity (#2177)', () => {
+  const base = {
+    sourceName: 'lab-microsite-description-llm',
+    entityType: 'researchEntity',
+    field: 'fullDescription',
+    value: USEFUL_DESCRIPTION,
+  };
+
+  it('gives a key-only run and a run that also resolved the id the same fingerprint', () => {
+    const legacyRun = buildObservationFingerprint({ ...base, entityKey: 'dept-mcdb-horsley' });
+    const resolvedRun = buildObservationFingerprint({
+      ...base,
+      entityKey: 'dept-mcdb-horsley',
+      entityId: '6a0fa8959fc810ec168cdcfd',
+    });
+
+    expect(legacyRun).toBe(resolvedRun);
+  });
+
+  it('still fingerprints a row that only carries an entityId', () => {
+    expect(
+      buildObservationFingerprint({ ...base, entityId: '6a0fa8959fc810ec168cdcfd' }),
+    ).toBeDefined();
+  });
+
+  it('keeps distinct entities distinct', () => {
+    expect(buildObservationFingerprint({ ...base, entityKey: 'a-lab' })).not.toBe(
+      buildObservationFingerprint({ ...base, entityKey: 'b-lab' }),
+    );
+  });
+
+  it('matches either identity form so the prior row is found', () => {
+    expect(observationEntityIdentityFilter({ entityKey: 'smith-lab', entityId: 'abc' })).toEqual({
+      $or: [{ entityKey: 'smith-lab' }, { entityId: 'abc' }],
+    });
+    expect(observationEntityIdentityFilter({ entityKey: 'smith-lab' })).toEqual({
+      entityKey: 'smith-lab',
+    });
+    expect(observationEntityIdentityFilter({ entityId: 'abc' })).toEqual({ entityId: 'abc' });
+    expect(observationEntityIdentityFilter({})).toBeUndefined();
+  });
+
+  it('supersedes a legacy key-only row when the new run also carries an entityId', async () => {
+    vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-row', observationFingerprint: 'fp' },
+    ] as any);
+    const bulkWrite = vi
+      .spyOn(Observation, 'bulkWrite')
+      .mockResolvedValue({ modifiedCount: 1 } as any);
+
+    await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'dept-mcdb-horsley',
+          entityId: '6a0fa8959fc810ec168cdcfd',
+          field: 'fullDescription',
+          value: USEFUL_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      { loadActiveProse: async () => undefined },
+    );
+
+    const filter = (bulkWrite.mock.calls[0][0] as any[])[0].updateMany.filter;
+    expect(filter.$or).toEqual([
+      { entityKey: 'dept-mcdb-horsley' },
+      { entityId: '6a0fa8959fc810ec168cdcfd' },
+    ]);
   });
 });
