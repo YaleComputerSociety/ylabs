@@ -85,10 +85,12 @@ const UNGROUNDED_DESCRIPTION =
 const OFFICIAL_PROFILE_DESCRIPTION =
   'The Lin Laboratory studies how epithelial tissues repair themselves after injury, using organoid culture, live imaging, and single-cell sequencing to map the signaling circuits that coordinate collective cell behavior during regeneration.';
 
-const stubLLM = (fullDescription: string): CoverageSynthesisLLMFn => async ({ snippets }) => ({
-  fullDescription,
-  usedSnippetIndexes: snippets.map((_snippet, index) => index),
-});
+const stubLLM =
+  (fullDescription: string): CoverageSynthesisLLMFn =>
+  async ({ snippets }) => ({
+    fullDescription,
+    usedSnippetIndexes: snippets.map((_snippet, index) => index),
+  });
 
 interface LaneOutcome {
   slug: string;
