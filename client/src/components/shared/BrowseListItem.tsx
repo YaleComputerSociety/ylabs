@@ -60,43 +60,11 @@ const BrowseListItem = React.memo(
     );
     const trackView = useViewTracking(item.type, getItemId(item));
 
-    const hasPrerequisites =
-      item.type === 'listing' &&
-      !!item.data.applicantDescription &&
-      item.data.applicantDescription.trim() !== '';
-
     const daysUntil = getDaysUntilDeadline(item);
     const urgentBadge =
       item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
 
-    const isListing = item.type === 'listing';
     const isResearchGroup = item.type === 'researchGroup';
-    const professorName = isListing
-      ? `${item.data.ownerFirstName} ${item.data.ownerLastName}`
-      : null;
-    const isArchived = isListing && item.data.archived;
-
-    const deptInfo = useMemo(() => {
-      if (!isListing) return null;
-      return getOrderedDeptAbbrs(
-        item.data.departments,
-        item.data.ownerPrimaryDepartment,
-        DEPT_CAP,
-        departments,
-      );
-    }, [item, isListing, departments]);
-
-    const deptLabel =
-      deptInfo && deptInfo.abbrs.length > 0
-        ? deptInfo.abbrs.join(' | ') + (deptInfo.truncated > 0 ? ` +${deptInfo.truncated}` : '')
-        : null;
-
-    const listingDept =
-      isListing && item.data.departments && item.data.departments.length > 0
-        ? getDepartmentAbbreviation(
-            getDepartmentCanonicalLabel(item.data.departments[0], departments),
-          )
-        : null;
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
@@ -114,17 +82,11 @@ const BrowseListItem = React.memo(
 
     return (
       <div
-        className={`group bg-[var(--yr-panel)] rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-[var(--yr-line)]'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer ${isArchived ? 'opacity-75' : ''}`}
+        className={`group bg-[var(--yr-panel)] rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-[var(--yr-line)]'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer`}
         onClick={item.type === 'fellowship' ? undefined : handleClick}
       >
         <div className="p-4 grid grid-cols-12 gap-4 items-start">
           <div className={`col-span-12 ${isCompact ? 'md:col-span-10' : 'md:col-span-4'}`}>
-            <div className="flex items-center gap-2 mb-0.5">
-              {deptLabel && (
-                <span className="text-xs font-semibold text-blue-700 truncate">{deptLabel}</span>
-              )}
-              {isArchived && <ArchivedBadge />}
-            </div>
             {urgentBadge && daysUntil !== null && (
               <UrgentBadge daysUntil={daysUntil} variant="inline" />
             )}
@@ -139,14 +101,6 @@ const BrowseListItem = React.memo(
                   {getResearchGroupDisplayName(item.data)}
                 </h3>
                 <p className="text-xs text-gray-500 truncate">{subtitle}</p>
-              </>
-            ) : isListing ? (
-              <>
-                <h3 className="text-sm font-semibold text-gray-900 truncate">{professorName}</h3>
-                <p className="text-xs text-gray-500 truncate">
-                  {item.data.title}
-                  {listingDept ? ` · ${listingDept}` : ''}
-                </p>
               </>
             ) : (
               <>
@@ -183,21 +137,18 @@ const BrowseListItem = React.memo(
           {!isCompact && (
             <div className="col-span-6 hidden md:block">
               <p className={`text-sm text-gray-600 ${DESCRIPTION_CLAMP_CLASS}`}>
-                {item.type === 'listing'
-                  ? item.data.description
-                  : item.type === 'researchGroup'
-                    ? item.data.shortDescription
-                    : item.data.bestNextStep ||
-                      fellowshipJourneySummary ||
-                      item.data.summary ||
-                      item.data.description}
+                {item.type === 'researchGroup'
+                  ? item.data.shortDescription
+                  : item.data.bestNextStep ||
+                    fellowshipJourneySummary ||
+                    item.data.summary ||
+                    item.data.description}
               </p>
             </div>
           )}
 
           <div className="col-span-12 md:col-span-2 flex md:flex-col items-center md:items-end gap-2 flex-shrink-0">
             <div className="flex items-center gap-1">
-              {hasPrerequisites && <HasPrerequisitesIcon />}
               {fellowshipCycleStatus ? (
                 <span
                   className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
