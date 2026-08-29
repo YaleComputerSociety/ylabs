@@ -191,7 +191,7 @@ function isArchivedOwner(collection: string, owner: Record<string, unknown>): bo
     return owner.superseded === true || Boolean(record(owner.rollback).rolledBackAt);
   }
   return (
-    owner.archived === true || stringValue(record(owner.review).status) === 'archived_by_review'
+    owner.archived === true || Boolean(stringValue(record(owner.suppression).reason))
   );
 }
 
@@ -753,9 +753,9 @@ async function applyRematerialization(
       {
         $set: {
           archived: true,
-          'review.status': 'archived_by_review',
-          'review.reviewedAt': new Date(),
-          'review.note':
+          'suppression.reason': 'evidence_replaced',
+          'suppression.suppressedAt': new Date(),
+          'suppression.note':
             decision.reviewNote ||
             'Archived after canonical access artifacts were rematerialized from surviving evidence.',
         },
@@ -841,9 +841,9 @@ async function applyArchiveOwner(
     {
       $set: {
         archived: true,
-        'review.status': 'archived_by_review',
-        'review.reviewedAt': new Date(),
-        'review.note':
+        'suppression.reason': 'evidence_lost',
+        'suppression.suppressedAt': new Date(),
+        'suppression.note':
           decision.reviewNote || 'Archived after reviewed unrecoverable evidence loss.',
       },
       ...removal,
