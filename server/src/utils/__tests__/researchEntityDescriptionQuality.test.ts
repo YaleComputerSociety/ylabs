@@ -7,6 +7,7 @@ import {
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
+  isPoorerThanCardDescription,
   isReplaceableResearchAreaChipEchoShort,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
@@ -1883,5 +1884,40 @@ describe('isFullDescriptionRestatementOfShortDescription (#1721)', () => {
     const full =
       'The research investigates atmospheric chemistry and aerosol formation in urban environments.';
     expect(isFullDescriptionRestatementOfShortDescription(full, short)).toBe(true);
+  });
+});
+
+describe('isPoorerThanCardDescription (#2259)', () => {
+  it('flags a full that is shorter than the card derived from the same page', () => {
+    const short =
+      'Studies microscopy methods that push the temporal and spatial resolution of fluorescence imaging past the limits of conventional light microscopy.';
+    const full =
+      'The lab focuses on developing advanced fluorescence microscopy techniques for biological research.';
+    expect(isPoorerThanCardDescription(full, short)).toBe(true);
+  });
+
+  it('flags a one-character inversion, because the detail page still says less than the card', () => {
+    expect(isPoorerThanCardDescription('a'.repeat(140), 'a'.repeat(141))).toBe(true);
+  });
+
+  it('accepts a full exactly as long as the card', () => {
+    expect(isPoorerThanCardDescription('a'.repeat(140), 'a'.repeat(140))).toBe(false);
+  });
+
+  it('accepts a full that carries more than the card', () => {
+    const short = 'Studies plant genomics and abiotic stress responses in cereal crops.';
+    const full =
+      'The lab studies plant genomics and abiotic stress responses in cereal crops, combining field trials with transcriptomics to map the regulatory networks behind drought tolerance.';
+    expect(isPoorerThanCardDescription(full, short)).toBe(false);
+  });
+
+  it('ignores leading and trailing whitespace rather than counting it as content', () => {
+    expect(isPoorerThanCardDescription(`   ${'a'.repeat(140)}   `, 'a'.repeat(140))).toBe(false);
+  });
+
+  it('returns false when either side is missing, so it never blocks on absent evidence', () => {
+    expect(isPoorerThanCardDescription('', 'a'.repeat(140))).toBe(false);
+    expect(isPoorerThanCardDescription('a'.repeat(10), '')).toBe(false);
+    expect(isPoorerThanCardDescription(undefined, undefined)).toBe(false);
   });
 });

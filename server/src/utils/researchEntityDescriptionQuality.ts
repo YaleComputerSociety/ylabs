@@ -1357,6 +1357,35 @@ export function isFullDescriptionRestatementOfShortDescription(
 }
 
 /**
+ * Whether a candidate `fullDescription` would give the detail page less prose
+ * than the card the student clicked to get there. `shortDescription` is a card
+ * line capped near 280 characters and `fullDescription` is the detail-page body,
+ * so a full shorter than its own short is an inverted pair: the student reads a
+ * specific card, follows it, and lands on a thinner sentence (#2259).
+ *
+ * Deliberately compared against the RAW stored short rather than the short
+ * `entityDocShortDescriptionForRestatementGuard` selects. That selection drops a
+ * short the materializer derived from this same full, because a derived short
+ * always reads as a restatement of its parent. Derivation is lossy, so a derived
+ * short can never be longer than the full it came from - which means the
+ * exemption cannot apply here, and honouring it would only blind the check to
+ * whichever inverted pairs happen to share one source name.
+ *
+ * Length is the whole test on purpose: this is about how much the detail page has
+ * to say relative to the card, not about what either text asserts. The
+ * restatement and quality predicates already own the content questions.
+ */
+export function isPoorerThanCardDescription(
+  fullValue: unknown,
+  shortValue: unknown,
+): boolean {
+  const full = textValue(fullValue);
+  const short = textValue(shortValue);
+  if (!full || !short) return false;
+  return full.length < short.length;
+}
+
+/**
  * `isFullDescriptionRestatementOfShortDescription` answers "was one of these
  * derived from the other", because the short IS derived from the full via
  * `resolveMaterializedShortDescription`, so heavy token overlap is evidence of
