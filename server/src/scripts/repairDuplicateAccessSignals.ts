@@ -37,8 +37,8 @@ export interface DuplicateAccessSignalRecord {
   archived?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
-  review?: {
-    status?: string;
+  suppression?: {
+    reason?: string;
     lockedFields?: string[];
   };
 }
@@ -195,14 +195,13 @@ function timestamp(value: Date | string | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function isReviewLocked(record?: {
-  review?: {
-    status?: string;
+function isSuppressionLocked(record?: {
+  suppression?: {
+    reason?: string;
     lockedFields?: string[];
   };
 }): boolean {
-  const status = record?.review?.status || 'unreviewed';
-  return status !== 'unreviewed' || Boolean(record?.review?.lockedFields?.length);
+  return Boolean(record?.suppression?.reason || record?.suppression?.lockedFields?.length);
 }
 
 function groupKey(signalIds: string[]): string {
@@ -211,7 +210,7 @@ function groupKey(signalIds: string[]): string {
 
 function scoreSignal(signal: DuplicateAccessSignalRecord): number {
   return [
-    isReviewLocked(signal) ? 1000 : 0,
+    isSuppressionLocked(signal) ? 1000 : 0,
     stringId(signal.derivationKey).startsWith('application-route-backfill:') ? 5 : 0,
   ].reduce((sum, value) => sum + value, 0);
 }
@@ -302,12 +301,12 @@ export function buildDuplicateAccessSignalRepairPlans(
     }
 
     const [canonical, ...duplicates] = sortedSignalsForCanonicalChoice(activeSignals);
-    const lockedDuplicate = duplicates.find(isReviewLocked);
+    const lockedDuplicate = duplicates.find(isSuppressionLocked);
     if (lockedDuplicate) {
       result.blocked.push({
         signalIds: group.signalIds,
         identityFields: group.identityFields,
-        reason: `review-locked-duplicate-signal:${stringId(lockedDuplicate._id)}`,
+        reason: `suppression-locked-duplicate-signal:${stringId(lockedDuplicate._id)}`,
       });
       continue;
     }

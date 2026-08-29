@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 import { Signal } from '../models/signal';
-import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
+import {
+  findSuppressionLockedRecord,
+  omitSuppressionLockedFields,
+} from './suppressionLockUtils';
 import { publicAccessHttpUrl } from '../utils/publicAccessArtifact';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -77,7 +80,7 @@ export async function upsertSignal(
     type: input.type,
     derivationKey,
   });
-  const existing = await findReviewLockedRecord(Signal, filter);
+  const existing = await findSuppressionLockedRecord(Signal, filter);
 
   const update = {
     $setOnInsert: compactObject({
@@ -85,7 +88,7 @@ export async function upsertSignal(
       type: input.type,
       derivationKey,
     }),
-    $set: omitReviewLockedFields(
+    $set: omitSuppressionLockedFields(
       compactObject({
         'source.evidenceIds': sourceEvidenceId ? [sourceEvidenceId] : undefined,
         'source.name': input.sourceName,

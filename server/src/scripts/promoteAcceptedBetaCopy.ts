@@ -106,7 +106,6 @@ export interface PromotionSummary {
 const USER_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
   { collection: 'faculty_members', field: 'userId' },
   { collection: 'research_entities', field: 'studentVisibilityReviewedByAccountId' },
-  { collection: 'signals', field: 'review.reviewedByAccountId' },
   { collection: 'research_scholarly_links', field: 'userId' },
   { collection: 'research_scholarly_attributions', field: 'targetUserId' },
   { collection: 'listings', field: 'createdByUserId' },

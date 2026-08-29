@@ -3,13 +3,14 @@
  */
 import mongoose from 'mongoose';
 
-export const recordReviewStatuses = [
-  'unreviewed',
-  'approved',
-  'needs_source',
-  'disputed',
-  'archived_by_review',
+export const suppressionReasons = [
+  'evidence_replaced',
+  'evidence_lost',
+  'duplicate_collapsed',
+  'source_audit',
 ] as const;
+
+export type SuppressionReason = (typeof suppressionReasons)[number];
 
 export const fieldProvenanceSchema = new mongoose.Schema(
   {
@@ -45,19 +46,19 @@ export const fieldProvenanceSchema = new mongoose.Schema(
   { _id: false },
 );
 
-export const recordReviewSchema = new mongoose.Schema(
+/**
+ * Absent `reason` is the resting state: the record is not suppressed. A present
+ * `reason` is a tombstone that stops materializers from resurrecting a record
+ * they would otherwise rewrite, so it must never be defaulted on insert.
+ */
+export const recordSuppressionSchema = new mongoose.Schema(
   {
-    status: {
+    reason: {
       type: String,
-      enum: [...recordReviewStatuses],
-      default: 'unreviewed',
-    },
-    reviewedByAccountId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Account',
+      enum: [...suppressionReasons],
       required: false,
     },
-    reviewedAt: {
+    suppressedAt: {
       type: Date,
       required: false,
     },

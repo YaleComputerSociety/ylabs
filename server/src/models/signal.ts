@@ -10,7 +10,7 @@
  * and the materializers must not cross-infer one type from another.
  */
 import mongoose from 'mongoose';
-import { recordReviewSchema } from './modelPrimitives';
+import { recordSuppressionSchema } from './modelPrimitives';
 import { signalConfidences, signalStatuses, signalTypes } from './researchAccessTypes';
 
 const signalSourceSchema = new mongoose.Schema(
@@ -105,9 +105,9 @@ const signalSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    review: {
-      type: recordReviewSchema,
-      default: () => ({}),
+    suppression: {
+      type: recordSuppressionSchema,
+      required: false,
     },
   },
   {
@@ -124,8 +124,6 @@ signalSchema.index({ expiresAt: 1, archived: 1 });
 signalSchema.index({ 'source.evidenceIds': 1 });
 signalSchema.index({ 'source.scrapeRunIds': 1 });
 signalSchema.index({ archived: 1 });
-signalSchema.index({ 'review.status': 1 });
-signalSchema.index({ researchEntityId: 1, 'review.status': 1, 'review.reviewedAt': -1 });
 signalSchema.index(
   { researchEntityId: 1, type: 1, derivationKey: 1 },
   {

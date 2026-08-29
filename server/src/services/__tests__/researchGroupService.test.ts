@@ -2899,7 +2899,6 @@ describe('getResearchGroupDetail', () => {
           derivationKey: 'private-signal-key',
           archived: false,
           lastMaterializedAt: new Date('2026-01-03T00:00:00.000Z'),
-          review: { status: 'unreviewed' },
         },
       ]),
     );
@@ -2962,7 +2961,6 @@ describe('getResearchGroupDetail', () => {
           },
           observedAt: new Date('2026-01-02T00:00:00.000Z'),
           archived: false,
-          review: { status: 'unreviewed' },
         },
       ]),
     );

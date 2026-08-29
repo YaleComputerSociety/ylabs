@@ -391,15 +391,6 @@ async function buildReferenceIntegrity(
       includeSamples,
     ),
     referenceAudit(
-      'signals.review.reviewedByAccountId',
-      'signals',
-      'review.reviewedByAccountId',
-      'accounts',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
       'contact_routes.researchEntityId',
       'contact_routes',
       'researchEntityId',
