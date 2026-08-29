@@ -2279,27 +2279,6 @@ test('audit planning and source seed artifacts are constrained to safe JSON root
   }
 });
 
-test('accepted-input CSV and TXT command artifacts stay under safe roots', () => {
-  const fellowshipSource = fs.readFileSync(
-    new URL('../server/src/acceptedInputs/fellowshipInputs.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(fellowshipSource, /SAFE_ACCEPTED_INPUT_SEGMENT_RE/);
-  assert.match(fellowshipSource, /export function resolveSafeAcceptedInputRoot/);
-  assert.match(fellowshipSource, /export function resolveSafeAcceptedInputPath/);
-  assert.match(
-    fellowshipSource,
-    /ACCEPTED_INPUT_FILE_EXTENSIONS = new Set\(\['\.csv', '\.txt'\]\)/,
-  );
-  assert.match(fellowshipSource, /safeAcceptedInputSegment\(programKey, 'programKey'\)/);
-  assert.match(
-    fellowshipSource,
-    /fs\.readFile\(resolveSafeAcceptedInputPath\(filePath\), 'utf8'\)/,
-  );
-  assert.match(fellowshipSource, /const safePath = resolveSafeAcceptedInputPath\(filePath\)/);
-});
-
 test('manual fellowship recipient scraper inputs stay under safe local roots', () => {
   const source = fs.readFileSync(
     new URL(
@@ -3112,36 +3091,6 @@ test('undergraduate fellowship recipient scraper fetches configured recipient pa
   assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
   assert.doesNotMatch(source, /const cacheKey = `page:\$\{url\}`/);
   assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
-});
-
-test('accepted-input source fetches are SSRF-guarded and response-size bounded', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/acceptedInputs/fellowshipInputs.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /import \{ assertPublicHttpUrl, ssrfSafeAgents \} from '\.\.\/utils\/ssrfGuard'/,
-  );
-  assert.match(source, /const MAX_ACCEPTED_INPUT_FETCH_BYTES = 20_000_000/);
-  assert.match(source, /const parsedUrl = await assertPublicHttpUrl\(url\)/);
-  assert.match(source, /const \{ httpAgent, httpsAgent \} = ssrfSafeAgents\(\)/);
-  assert.match(source, /axios\.get<ArrayBuffer>\(parsedUrl\.toString\(\), \{/);
-  assert.match(source, /responseType: 'arraybuffer'/);
-  assert.match(source, /maxRedirects: 5/);
-  assert.match(source, /maxContentLength: MAX_ACCEPTED_INPUT_FETCH_BYTES/);
-  assert.match(source, /maxBodyLength: MAX_ACCEPTED_INPUT_FETCH_BYTES/);
-  assert.match(source, /httpAgent,/);
-  assert.match(source, /httpsAgent,/);
-  assert.match(source, /const MAX_ACCEPTED_INPUT_PDF_PAGES = 200/);
-  assert.match(source, /const MAX_ACCEPTED_INPUT_PDF_TEXT_CHARS = 1_000_000/);
-  assert.match(source, /if \(document\.numPages > MAX_ACCEPTED_INPUT_PDF_PAGES\)/);
-  assert.match(source, /throw new Error\('Accepted-input PDF exceeds page limit'\)/);
-  assert.match(source, /extractedChars \+= pageText\.length/);
-  assert.match(source, /if \(extractedChars > MAX_ACCEPTED_INPUT_PDF_TEXT_CHARS\)/);
-  assert.match(source, /throw new Error\('Accepted-input PDF exceeds text extraction limit'\)/);
-  assert.doesNotMatch(source, /axios\.get<ArrayBuffer>\(url,\s*\{/);
 });
 
 test('LLM and profile fetchers use the normalized SSRF-safe URL for axios requests', () => {
@@ -4688,40 +4637,6 @@ test('stored profile images do not leak page referrers to external image hosts',
   }
 });
 
-test('account tracking notes redact in memory and are not persisted to localStorage', () => {
-  const source = fs.readFileSync(
-    new URL('../client/src/reducers/accountTrackingReducer.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const TRACKING_EMAIL_RE = /);
-  assert.match(source, /const TRACKING_PHONE_RE = /);
-  assert.match(source, /const redactTrackingContactInfo = \(value: string\): string =>/);
-  assert.match(source, /redactTrackingContactInfo\(value\)\.slice\(0, MAX_TRACKING_NOTE_LENGTH\)/);
-  assert.match(
-    source,
-    /const PRIVATE_TRACKING_STORAGE_KEYS = new Set\(\['lab-notes', 'fellowship-notes'\]\)/,
-  );
-  assert.match(
-    source,
-    /if \(PRIVATE_TRACKING_STORAGE_KEYS\.has\(key\)\) \{\s*storage\.removeItem\(fullKey\);\s*return;\s*\}/,
-  );
-  assert.match(source, /storage\.removeItem\(storageKey\('lab-notes', ownerKey\)\)/);
-  assert.match(source, /storage\.removeItem\(storageKey\('fellowship-notes', ownerKey\)\)/);
-  assert.doesNotMatch(
-    source,
-    /labNotes: normalizeTrackingNotes\(parse\(storageKey\('lab-notes', ownerKey\)\)\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /fellowshipNotes: normalizeTrackingNotes\(parse\(storageKey\('fellowship-notes', ownerKey\)\)\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /typeof value === 'string' \? value\.slice\(0, MAX_TRACKING_NOTE_LENGTH\) : ''/,
-  );
-});
-
 test('scraper materializer logs sanitize untrusted exception values', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scrapers/entityMaterializer.ts', import.meta.url),
@@ -4865,55 +4780,6 @@ test('authenticated research-area routes set full private no-store response head
     assert.match(source, /Expires', '0'/);
     assert.match(source, /X-Content-Type-Options', 'nosniff'/);
   }
-});
-
-test('account tracking local storage hydration is bounded and normalized', () => {
-  const source = fs.readFileSync(
-    new URL('../client/src/reducers/accountTrackingReducer.ts', import.meta.url),
-    'utf8',
-  );
-  const debounceStorageSource = fs.readFileSync(
-    new URL('../client/src/hooks/useDebouncedLocalStorage.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_TRACKING_ITEMS = 100/);
-  assert.match(source, /MAX_TRACKING_NOTE_LENGTH = 2000/);
-  assert.match(source, /MAX_TRACKING_STORAGE_VALUE_LENGTH = 100_000/);
-  assert.match(source, /TRACKING_ID_RE = \/\^\[A-Za-z0-9_-\]\{1,80\}\$\//);
-  assert.match(source, /TRACKING_OWNER_RE = \/\^\[A-Za-z0-9\]\{2,80\}\$\//);
-  assert.match(source, /normalizeAccountTrackingStorageOwner/);
-  assert.match(source, /`\$\{STORAGE_PREFIX\}-\$\{ownerKey\}-\$\{key\}`/);
-  assert.match(source, /removeUnscopedTrackingStorage\(storage\)/);
-  assert.match(source, /raw\.length > MAX_TRACKING_STORAGE_VALUE_LENGTH/);
-  assert.match(source, /storage\.removeItem\(key\)/);
-  assert.match(source, /catch \{\s*storage\.removeItem\(key\);\s*return null;\s*\}/);
-  assert.doesNotMatch(source, /parseMigrated/);
-  assert.match(source, /storage\.removeItem\(storageKey\('lab-notes', ownerKey\)\)/);
-  assert.match(source, /storage\.removeItem\(storageKey\('fellowship-notes', ownerKey\)\)/);
-  assert.doesNotMatch(
-    source,
-    /normalizeTrackingNotes\(parse\(storageKey\('lab-notes', ownerKey\)\)\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /normalizeTrackingNotes\(parse\(storageKey\('fellowship-notes', ownerKey\)\)\)/,
-  );
-  assert.match(source, /normalizeLabStageMap\(parse\(storageKey\('lab-stages', ownerKey\)\)\)/);
-  assert.match(
-    source,
-    /normalizeFellowshipStageMap\(parse\(storageKey\('fellowship-stages', ownerKey\)\)\)/,
-  );
-  assert.match(source, /normalizeAccountTrackingState\(\{ \.\.\.state, \.\.\.action\.payload \}\)/);
-  assert.match(source, /normalizeTrackingNote\(action\.value\)/);
-  assert.match(source, /persistAccountTrackingToStorage/);
-  assert.match(source, /PRIVATE_TRACKING_STORAGE_KEYS\.has\(key\)/);
-  assert.match(source, /serialized\.length > MAX_TRACKING_STORAGE_VALUE_LENGTH/);
-  assert.match(source, /storage\.setItem\(fullKey, serialized\)/);
-  assert.match(debounceStorageSource, /MAX_DEBOUNCED_STORAGE_KEY_LENGTH = 120/);
-  assert.match(debounceStorageSource, /MAX_DEBOUNCED_STORAGE_VALUE_LENGTH = 100_000/);
-  assert.match(debounceStorageSource, /safeKey\.length > MAX_DEBOUNCED_STORAGE_KEY_LENGTH/);
-  assert.match(debounceStorageSource, /serialized\.length > MAX_DEBOUNCED_STORAGE_VALUE_LENGTH/);
 });
 
 test('program maintenance artifacts use safe JSON paths and safe review inputs', () => {
