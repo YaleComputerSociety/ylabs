@@ -72,12 +72,58 @@ export interface ResearchEntityRedirectLookup {
   entityId?: string | mongoose.Types.ObjectId;
 }
 
+export type ResearchEntityCanonicalAcceptance = (candidate: Record<string, any>) => boolean;
+
+const acceptAnyLiveCanonical: ResearchEntityCanonicalAcceptance = (candidate) =>
+  candidate.archived !== true;
+
+export interface ResearchEntityCanonicalResolutionInput extends ResearchEntityRedirectLookup {
+  /**
+   * Extra chain entry points tried before the redirect table, in order. The
+   * public detail route seeds the merged shell's own `canonicalGroupId`
+   * tombstone here so a surviving shell resolves without a redirect row.
+   */
+  seedCanonicalIds?: Array<string | mongoose.Types.ObjectId | null | undefined>;
+  isAcceptableCanonical?: ResearchEntityCanonicalAcceptance;
+}
+
 /**
- * Resolves a merged shell's source identifiers to the live canonical entity it
- * was folded into, following redirect and `canonicalGroupId` chains so a canonical
- * that was itself later merged still resolves onward. Returns the canonical
- * ResearchEntity document (lean) or null when no live canonical is reachable.
- * Delete-safe: resolution never depends on the shell row still existing.
+ * Resolves a merged entity's identifiers to the canonical entity it was folded
+ * into, following `canonicalGroupId` tombstones and `research_entity_redirects`
+ * rows so a canonical that was itself later merged still resolves onward.
+ *
+ * This is the single canonical-redirect resolver. Resolving from
+ * `research_entities` alone is NOT delete-safe: `research-entity:cleanup-archived`
+ * is designed to delete merged shell rows, which erases the `canonicalGroupId`
+ * tombstone. Any new caller must come through here so it also reads the
+ * redirect table, which outlives the shell.
+ */
+export async function resolveResearchEntityCanonical(
+  input: ResearchEntityCanonicalResolutionInput,
+): Promise<Record<string, any> | null> {
+  const slug = typeof input.slug === 'string' && input.slug.trim() ? input.slug.trim() : undefined;
+  const entityId = toObjectId(input.entityId);
+  const isAcceptableCanonical = input.isAcceptableCanonical ?? acceptAnyLiveCanonical;
+
+  for (const seed of input.seedCanonicalIds ?? []) {
+    const seedId = toObjectId(seed);
+    if (!seedId) continue;
+    const resolved = await walkCanonicalChain(seedId, entityId, isAcceptableCanonical);
+    if (resolved) return resolved;
+  }
+
+  if (!slug && !entityId) return null;
+  const or: Array<Record<string, unknown>> = [];
+  if (entityId) or.push({ mergedEntityId: entityId });
+  if (slug) or.push({ mergedSlug: slug });
+  const redirectCanonicalId = await lookupRedirectCanonicalId({ $or: or });
+  if (!redirectCanonicalId) return null;
+  return walkCanonicalChain(redirectCanonicalId, entityId, isAcceptableCanonical);
+}
+
+/**
+ * Delete-safe shell -> canonical resolution for scraper materialization: any
+ * live (non-archived) canonical is acceptable regardless of student visibility.
  */
 export async function resolveResearchEntityMergeRedirectCanonical(
   lookup: ResearchEntityRedirectLookup,
@@ -86,26 +132,27 @@ export async function resolveResearchEntityMergeRedirectCanonical(
     typeof lookup.slug === 'string' && lookup.slug.trim() ? lookup.slug.trim() : undefined;
   const entityId = toObjectId(lookup.entityId);
   if (!slug && !entityId) return null;
+  return resolveResearchEntityCanonical({ slug, entityId });
+}
 
-  const or: Array<Record<string, unknown>> = [];
-  if (entityId) or.push({ mergedEntityId: entityId });
-  if (slug) or.push({ mergedSlug: slug });
-  const redirectCanonicalId = await lookupRedirectCanonicalId({ $or: or });
-  if (!redirectCanonicalId) return null;
-
+async function walkCanonicalChain(
+  seedCanonicalId: mongoose.Types.ObjectId,
+  originEntityId: mongoose.Types.ObjectId | undefined,
+  isAcceptableCanonical: ResearchEntityCanonicalAcceptance,
+): Promise<Record<string, any> | null> {
   const visited = new Set<string>();
-  if (entityId) visited.add(String(entityId));
-  let nextId: mongoose.Types.ObjectId | null | undefined = redirectCanonicalId;
+  if (originEntityId) visited.add(String(originEntityId));
+  let nextId: mongoose.Types.ObjectId | null | undefined = seedCanonicalId;
 
   for (let hop = 0; hop < MAX_RESEARCH_ENTITY_REDIRECT_HOPS && nextId; hop += 1) {
     const nextKey = String(nextId);
     if (visited.has(nextKey)) return null;
     visited.add(nextKey);
 
-    const candidate = (await ResearchEntity.findById(
-      nextId,
-    ).lean()) as ResearchEntityChainNode | null;
-    if (candidate && candidate.archived !== true) return candidate;
+    const candidate = (await ResearchEntity.findOne({
+      _id: nextId,
+    }).lean()) as ResearchEntityChainNode | null;
+    if (candidate && isAcceptableCanonical(candidate)) return candidate;
     if (candidate?.canonicalGroupId) {
       nextId = candidate.canonicalGroupId;
       continue;
@@ -118,7 +165,7 @@ export async function resolveResearchEntityMergeRedirectCanonical(
   return null;
 }
 
-interface ResearchEntityChainNode {
+interface ResearchEntityChainNode extends Record<string, any> {
   _id: mongoose.Types.ObjectId;
   archived?: boolean;
   canonicalGroupId?: mongoose.Types.ObjectId | null;

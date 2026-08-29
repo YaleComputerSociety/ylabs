@@ -305,7 +305,7 @@ async function loadArchivedResearchEntityCandidates(
     query.canonicalGroupId = { $exists: true, $ne: null };
   }
   const archivedEntities = await ResearchEntity.find(query)
-    .select('_id name slug entityType')
+    .select('_id name slug entityType canonicalGroupId')
     .limit(limit)
     .lean();
   const db = mongoose.connection.db;
@@ -334,9 +334,7 @@ async function loadArchivedResearchEntityCandidates(
     }
   }
 
-  const redirectPresence = mergeResidueOnly
-    ? await loadRedirectPresence(archivedEntities, archivedIdMatchValues)
-    : undefined;
+  const redirectPresence = await loadRedirectPresence(archivedEntities, archivedIdMatchValues);
 
   return archivedEntities.map((entity: any) => ({
     id: stringId(entity._id),
@@ -344,7 +342,8 @@ async function loadArchivedResearchEntityCandidates(
     ...(entity.slug ? { slug: String(entity.slug) } : {}),
     ...(entity.entityType ? { entityType: String(entity.entityType) } : {}),
     liveReferences: references.get(stringId(entity._id)) || [],
-    ...(redirectPresence ? { redirectPresent: redirectPresence.has(stringId(entity._id)) } : {}),
+    redirectPresent: redirectPresence.has(stringId(entity._id)),
+    hasCanonicalTombstone: Boolean(entity.canonicalGroupId),
   }));
 }
 

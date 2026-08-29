@@ -127,6 +127,37 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     expect(plan.eligible).toEqual(['a']);
   });
 
+  it('blocks a merge shell with no redirect row even when requireRedirect is unset', () => {
+    const plan = buildArchivedResearchEntityCleanupPlan({
+      candidates: [
+        {
+          id: 'tombstoned',
+          slug: 'faculty-research-area-example-lead',
+          liveReferences: [],
+          hasCanonicalTombstone: true,
+          redirectPresent: false,
+        },
+        {
+          id: 'recorded',
+          slug: 'faculty-research-area-recorded-lead',
+          liveReferences: [],
+          hasCanonicalTombstone: true,
+          redirectPresent: true,
+        },
+      ],
+    });
+    expect(plan.eligible).toEqual(['recorded']);
+    expect(plan.blocked).toEqual([
+      {
+        id: 'tombstoned',
+        slug: 'faculty-research-area-example-lead',
+        reason: 'missing_redirect',
+        references: [],
+      },
+    ]);
+    expect(plan.deferredByReason.missing_redirect).toBe(1);
+  });
+
   it('handles an empty candidate set', () => {
     expect(buildArchivedResearchEntityCleanupPlan({ candidates: [] })).toEqual({
       scanned: 0,

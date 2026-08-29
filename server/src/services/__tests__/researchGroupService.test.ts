@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listingFind: vi.fn(),
   researchEntityFindOne: vi.fn(),
   researchEntityFind: vi.fn(),
+  researchEntityRedirectFindOne: vi.fn(),
   researchEntityRelationshipFind: vi.fn(),
   roleAssignmentFind: vi.fn(),
   personFind: vi.fn(),
@@ -41,6 +42,12 @@ vi.mock('../../models/researchEntity', () => ({
   ResearchEntity: {
     findOne: mocks.researchEntityFindOne,
     find: mocks.researchEntityFind,
+  },
+}));
+
+vi.mock('../../models/researchEntityRedirect', () => ({
+  ResearchEntityRedirect: {
+    findOne: mocks.researchEntityRedirectFindOne,
   },
 }));
 
@@ -146,6 +153,8 @@ beforeEach(() => {
   mocks.listingFind.mockReset();
   mocks.researchEntityFindOne.mockReset();
   mocks.researchEntityFind.mockReset();
+  mocks.researchEntityRedirectFindOne.mockReset();
+  mocks.researchEntityRedirectFindOne.mockReturnValue(leanResult(null));
   mocks.listPlanningContextsForResearchEntities.mockReset();
   mocks.getPublicUndergraduateLogistics.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();

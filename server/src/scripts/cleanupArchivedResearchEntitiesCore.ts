@@ -18,6 +18,7 @@ export interface ArchivedResearchEntityCandidate {
   entityType?: string;
   liveReferences: ArchivedEntityLiveReference[];
   redirectPresent?: boolean;
+  hasCanonicalTombstone?: boolean;
 }
 
 export interface BlockedArchivedResearchEntity {
@@ -80,7 +81,13 @@ export function buildArchivedResearchEntityCleanupPlan(input: {
       deferredByReason.retired_entity_type += 1;
       continue;
     }
-    if (input.requireRedirect && candidate.redirectPresent !== true) {
+    // Deleting a merge shell erases its `canonicalGroupId` tombstone, so the
+    // public detail route can only keep redirecting the shell's slug if a
+    // `research_entity_redirects` row survives it. Fail closed in every mode:
+    // an unrecorded merge deleted here becomes a permanent 404.
+    const requiresRedirect =
+      input.requireRedirect === true || candidate.hasCanonicalTombstone === true;
+    if (requiresRedirect && candidate.redirectPresent !== true) {
       blocked.push({ ...identity, reason: 'missing_redirect', references: [] });
       deferredByReason.missing_redirect += 1;
       continue;
