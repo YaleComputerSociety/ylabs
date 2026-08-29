@@ -121,7 +121,8 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'TaxonomyTerm',
     group: 'canonical-domain',
     phase: 1,
-    target: 'Removed - canonicalized researchAreas[] strings + semantic search (no TaxonomyTerm)',
+    target:
+      'TaxonomyTerm retained as the governed ingest-time canonicalization registry (TOPIC/METHOD); researchAreas[] stays plain canonical strings and never a foreign key (owner-approved option A of #208, closed by #457)',
   },
   {
     collection: 'users',
@@ -238,7 +239,8 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'ResearchArea',
     group: 'reference-data',
     phase: 4,
-    target: 'Removed - canonicalized researchAreas[] strings + semantic search (no TaxonomyTerm)',
+    target:
+      'ResearchArea retained as client-facing reference data: served through configService and editable through the admin research-area routes',
   },
   {
     collection: 'grants',
@@ -452,19 +454,46 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'ResearchArea (legacy physical name)',
     group: 'legacy-residue',
     phase: 0,
-    target: 'research_areas, then TaxonomyTerm in Phase 4',
+    target: 'research_areas (the canonical physical name); TaxonomyTerm is a separate retained registry, not this collection',
+    expectPresent: false,
+  },
+  {
+    collection: 'canonical_aliases',
+    model: 'CanonicalAlias',
+    group: 'canonical-domain',
+    phase: null,
+    target:
+      'CanonicalAlias (retained): resolve-at-mint identity aliasing, written and read by entityMaterializer through canonicalAliasService',
+  },
+  {
+    collection: 'research_entity_redirects',
+    model: 'ResearchEntityRedirect',
+    group: 'canonical-domain',
+    phase: null,
+    target:
+      'ResearchEntityRedirect (retained): preserves archived-entity slugs so a merged or archived research home still resolves',
+  },
+  {
+    collection: 'entitycorrectionreports',
+    model: 'EntityCorrectionReport',
+    group: 'private',
+    phase: null,
+    target:
+      'EntityCorrectionReport (retained): student- and operator-submitted corrections, never evidence and never a materializer input',
+  },
+  {
+    collection: 'student_applications',
+    model: 'StudentApplication (retired)',
+    group: 'legacy-residue',
+    phase: 0,
+    target:
+      'No target collection: the StudentProfile/outreach subsystem was deleted 2026-08-27 (see docs/decisions.md), so this is drop-only residue',
     expectPresent: false,
   },
 ];
 
 /** Legacy fields whose lingering prevalence gates their retirement phase. */
 export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
-  {
-    collection: 'research_entities',
-    field: 'kind',
-    meaning: 'Legacy type field superseded by entityType',
-    target: 'Retire after read cutover',
-  },
   {
     collection: 'research_entities',
     field: 'acceptingUndergrads',
@@ -536,18 +565,6 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     field: 'featuredPaperIds',
     meaning: 'Curated paper references',
     target: 'Remove with scholarly collections',
-  },
-  {
-    collection: 'research_entities',
-    field: 'shortDescription',
-    meaning: 'Duplicate description field',
-    target: 'Single description',
-  },
-  {
-    collection: 'research_entities',
-    field: 'fullDescription',
-    meaning: 'Duplicate description field',
-    target: 'Single description',
   },
   {
     collection: 'research_entity_members',

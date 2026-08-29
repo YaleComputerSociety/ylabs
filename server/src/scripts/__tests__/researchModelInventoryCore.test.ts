@@ -94,7 +94,7 @@ describe('INVENTORY_COLLECTIONS', () => {
         model: 'TaxonomyTerm',
         group: 'canonical-domain',
         target:
-          'Removed - canonicalized researchAreas[] strings + semantic search (no TaxonomyTerm)',
+          'TaxonomyTerm retained as the governed ingest-time canonicalization registry (TOPIC/METHOD); researchAreas[] stays plain canonical strings and never a foreign key (owner-approved option A of #208, closed by #457)',
       },
     ]);
   });
