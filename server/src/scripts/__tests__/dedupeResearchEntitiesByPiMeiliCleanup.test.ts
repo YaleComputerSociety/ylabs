@@ -3,9 +3,12 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const deleteFromIndexMock = vi.fn(async (_entityType: string, _id: string) => {});
+const syncEntitiesMock = vi.fn(async (_entityType: string, _docs: unknown[]) => {});
 
 vi.mock('../../services/meiliSyncService', () => ({
   deleteFromIndex: (entityType: string, id: string) => deleteFromIndexMock(entityType, id),
+  syncEntities: (entityType: string, docs: unknown[]) => syncEntitiesMock(entityType, docs),
+  syncEntity: vi.fn(async () => {}),
 }));
 
 import { applyResearchEntityDedupeMergeGroup } from '../dedupeResearchEntitiesByPi';

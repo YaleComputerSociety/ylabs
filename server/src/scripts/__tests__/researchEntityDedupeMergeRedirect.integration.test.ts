@@ -16,6 +16,8 @@ vi.mock('../../services/meiliSyncService', () => ({
 
 vi.mock('../../services/studentVisibilityGateService', () => ({
   runStudentVisibilityGate: vi.fn(async () => ({ counts: { scanned: 1 } })),
+  planStudentVisibilityGate: vi.fn(async () => []),
+  applyStudentVisibilityGatePlans: vi.fn(async () => {}),
 }));
 
 import { ResearchEntityRedirect } from '../../models/researchEntityRedirect';
