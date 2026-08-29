@@ -97,7 +97,11 @@ export class SweepRunLogger {
     );
   }
 
-  private appendRunner(input: { event: 'start' | 'done' | 'failed'; stepId: string; detail?: string }): void {
+  private appendRunner(input: {
+    event: 'start' | 'done' | 'failed';
+    stepId: string;
+    detail?: string;
+  }): void {
     fs.appendFileSync(
       this.runnerLogPath,
       `${formatRunnerLogLine({ at: this.now().toISOString(), ...input })}\n`,

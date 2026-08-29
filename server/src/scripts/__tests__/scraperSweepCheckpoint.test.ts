@@ -86,7 +86,13 @@ describe('scraper sweep checkpoint', () => {
       ownerPid: process.pid,
       createdAt: now().toISOString(),
       updatedAt: now().toISOString(),
-      steps: { [sourceStepId('yale-directory')]: { id: sourceStepId('yale-directory'), kind: 'source', status: 'done' } },
+      steps: {
+        [sourceStepId('yale-directory')]: {
+          id: sourceStepId('yale-directory'),
+          kind: 'source',
+          status: 'done',
+        },
+      },
     });
     const { store, resumed } = SweepCheckpointStore.start({
       mode: 'development-full',
@@ -227,7 +233,9 @@ describe('scraper sweep checkpoint', () => {
     ]);
     expect(store.isDone(stageStepId('faculty-projection'))).toBe(false);
     expect(store.isDone(sourceStepId('yale-directory'))).toBe(true);
-    expect(readSweepCheckpoint(checkpointPath)?.steps[stageStepId('search-rebuild')]).toBeUndefined();
+    expect(
+      readSweepCheckpoint(checkpointPath)?.steps[stageStepId('search-rebuild')],
+    ).toBeUndefined();
     expect(store.clearStageSteps(now())).toEqual([]);
   });
 });

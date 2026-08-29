@@ -1454,7 +1454,9 @@ export async function runScraperSweep(
     if (store.isDone(stepId)) {
       const resumedRow = succeededRowFromArtifact(source, artifactPath);
       if (resumedRow) {
-        console.log(`\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (resume: already done)`);
+        console.log(
+          `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (resume: already done)`,
+        );
         rows[index] = resumedRow;
         return;
       }

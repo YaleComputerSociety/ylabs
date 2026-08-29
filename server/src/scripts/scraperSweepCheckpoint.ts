@@ -133,9 +133,7 @@ function assertCheckpointNotOwnedByLiveSweep(
   checkpoint: SweepCheckpoint,
   checkpointPath: string,
 ): void {
-  const hasRunningStep = Object.values(checkpoint.steps).some(
-    (step) => step.status === 'running',
-  );
+  const hasRunningStep = Object.values(checkpoint.steps).some((step) => step.status === 'running');
   if (!hasRunningStep || !isSweepOwnerProcessAlive(checkpoint.ownerPid)) return;
   throw new Error(
     `Another ${checkpoint.mode} sweep (pid ${checkpoint.ownerPid}) is still running against ${checkpointPath}. Wait for it to finish, or pass --restart to abandon its checkpoint.`,

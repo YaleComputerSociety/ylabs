@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
+import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
 import {
   DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
@@ -900,6 +901,26 @@ describe('runScraperSweep', () => {
     );
     expect(forced).toContain('--force-llm');
     expect(forced.indexOf('--force-llm')).toBeLessThan(forced.indexOf('--output'));
+  });
+
+  it('hands the scraper CLI a child arg vector it accepts, with force-llm reaching its options', () => {
+    const scraperProcessArgv = (options: { forceLlm?: boolean }): string[] => {
+      const childArgs = buildScraperSweepChildArgs(
+        'development-full',
+        'yale-directory',
+        path.join(os.tmpdir(), 'yale-directory.json'),
+        options,
+      );
+      return ['node', 'cli.ts', ...childArgs.slice(childArgs.indexOf('scrape') + 1)];
+    };
+
+    const forced = parseArgs(scraperProcessArgv({ forceLlm: true }));
+    expect(forced.command).toBe('run');
+    expect(parseScraperOptions(forced.flags).forceLlm).toBe(true);
+
+    const plain = parseArgs(scraperProcessArgv({}));
+    expect(parseScraperOptions(plain.flags).forceLlm).toBe(false);
+    expect(parseScraperOptions(plain.flags).exhaustive).toBe(true);
   });
 
   it('builds the gated dead-observation prune child command', () => {

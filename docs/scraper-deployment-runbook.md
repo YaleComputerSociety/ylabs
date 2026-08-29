@@ -539,6 +539,9 @@ Use `--output <path>` on dry-runs and apply runs so the private promotion packet
 Production retention stays disabled.
 A future reviewed issue must change the executable guard before any Production apply command can be prepared.
 
+`observations:prune-dead` is a separate command, not part of this semester review: it drops the age floor to reclaim storage mid-run or on demand, keeps the last runs per source so claim-local rollback survives, and is blocked against production.
+`docs/research-data-pipeline.md` owns its contract, guards, and sweep wiring.
+
 ### Repair orphaned Observation references in Development
 
 Run this workflow only after a strict Development audit reports an Observation reference whose target no longer exists.

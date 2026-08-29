@@ -53,7 +53,10 @@ describe('scraper sweep logging', () => {
   it('reads only a bounded tail from the end of a large step log', () => {
     const logPath = path.join(dir, 'huge.log');
     const line = `${'x'.repeat(1000)}`;
-    fs.writeFileSync(logPath, `${Array.from({ length: 5000 }, (_, i) => `${i}-${line}`).join('\n')}\n`);
+    fs.writeFileSync(
+      logPath,
+      `${Array.from({ length: 5000 }, (_, i) => `${i}-${line}`).join('\n')}\n`,
+    );
     const tail = readLogTail(logPath, 5, 8 * 1024);
 
     expect(tail).toHaveLength(5);

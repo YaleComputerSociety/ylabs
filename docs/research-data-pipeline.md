@@ -118,6 +118,7 @@ The `fellowship-development-full` mode runs the fellowship engine's own post-run
 7. `catalog-refresh` (`fellowships:refresh`, opt-in and off by default)
 8. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
 9. `freshness-audit` (`programs:audit-freshness`, report-only)
+10. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Each backfill applies with the script's own confirm flag (production writes are blocked by each script's own apply guard, so the Development mode is safe), and the two audits run report-only.
 Every stage that takes an `--output` path is held to a report contract: a stage that exits successfully without a readable, valid JSON report at the path recorded in `summary.json` fails loud, and a stage that writes no report records no `artifactPath` at all.

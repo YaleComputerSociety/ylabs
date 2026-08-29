@@ -220,9 +220,11 @@ describe('observation retention', () => {
     });
 
     it('keeps the rollback predecessor set by retaining the last runs per source by default', async () => {
-      const aggregate = vi.spyOn(ScrapeRun, 'aggregate').mockResolvedValue([
-        { _id: 'openalex', runIds: ['newest-run', 'previous-run', 'older-run'] },
-      ] as any);
+      const aggregate = vi
+        .spyOn(ScrapeRun, 'aggregate')
+        .mockResolvedValue([
+          { _id: 'openalex', runIds: ['newest-run', 'previous-run', 'older-run'] },
+        ] as any);
       mockReferencedObservationRows();
       vi.spyOn(Observation, 'countDocuments').mockResolvedValue(4 as any);
       const deleteMany = vi
