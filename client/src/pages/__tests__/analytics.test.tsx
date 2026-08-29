@@ -39,16 +39,8 @@ const analyticsData: AnalyticsData = {
   engagement: {
     search: { totalSearches: 0, searchesLast7Days: 0, searchesToday: 0 },
     topSearchQueries: [],
-    views: { totalViews: 0, viewsLast7Days: 0, viewsToday: 0 },
-    favorites: [],
-    trendingListings: [],
     userActivity: { activeUsers: 0, avgEventsPerUser: 0 },
     mostActiveUsers: [],
-    totalViewsFromCounters: 0,
-    totalFavoritesFromCounters: 0,
-    avgViews: 0,
-    avgFavorites: 0,
-    viewsByDepartment: [],
   },
   research: {
     byEventType: [
@@ -58,7 +50,7 @@ const analyticsData: AnalyticsData = {
     ],
     byEntityType: [
       { entityType: 'profile', eventType: 'research_view', count: 7 },
-      { entityType: 'listing', eventType: 'pathway_save', count: 4 },
+      { entityType: 'fellowship', eventType: 'pathway_save', count: 4 },
     ],
     byUserType: [{ userType: 'undergraduate', count: 6 }],
     topEntities: [
@@ -69,16 +61,6 @@ const analyticsData: AnalyticsData = {
         uniqueViewers: 3,
       },
     ],
-  },
-  listings: {
-    overview: { total: 0, active: 0, archived: 0, unconfirmed: 0 },
-    newListingsLast7Days: 0,
-    newListingsToday: 0,
-    byDepartment: [],
-    byProfessor: [],
-    listingsWithZeroViews: 0,
-    topViewedListings: [],
-    topFavoritedListings: [],
   },
   users: {
     overview: { total: 1, confirmed: 1 },
