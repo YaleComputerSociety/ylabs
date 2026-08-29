@@ -248,10 +248,15 @@ const searchResearchEntities = async (
   };
 };
 
-const isResearchEntitySearchExhausted = (page: ResearchEntitySearchPage) =>
-  page.researchEntities.length === 0 ||
-  (page.researchEntities.length < page.pageSize &&
-    page.page * page.pageSize >= page.estimatedTotalHits);
+// An empty page is not by itself exhaustion. Server-side gate filtering drops
+// entities after Meilisearch has counted them, and those drops cluster in
+// contiguous score-ordered windows, so a whole page can come back empty while
+// later pages still hold servable homes. Only the reported total may end
+// pagination, which also bounds the walk: page advances until it passes
+// estimatedTotalHits.
+export const isResearchEntitySearchExhausted = (page: ResearchEntitySearchPage) =>
+  page.researchEntities.length < page.pageSize &&
+  page.page * page.pageSize >= page.estimatedTotalHits;
 
 const SectionHeading = ({ children }: { children: string }) => (
   <div className="mb-3 flex w-full items-center justify-between gap-3">
