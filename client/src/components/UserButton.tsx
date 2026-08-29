@@ -9,7 +9,6 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import UserContext from '../contexts/UserContext';
 import { buildApiUrl } from '../utils/apiBaseUrl';
-import { safeRouteSegment } from '../utils/url';
 
 const MAX_LOGOUT_RETURN_PATH_LENGTH = 2048;
 

@@ -18,7 +18,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
-import { serializedDocumentId } from '../../utils/idSerialization';
 import { deriveShortDescriptionFromFullDescription } from '../../utils/researchEntityDescriptionQuality';
 import {
   selectResearchHomeDescription,
@@ -116,10 +115,6 @@ export function inferPiNameFromLabName(name: string): PiNameHint | null {
     firstName: nameTokens.slice(0, -1).join(' '),
     lastName,
   };
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function fetchPage(useCache: boolean): Promise<string> {

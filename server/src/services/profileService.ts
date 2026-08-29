@@ -7,7 +7,6 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isLikelyPublicProfileImageUrl,
-  isSharedProfileImageAcrossDifferentNames,
 } from '../scripts/profileImageQualityAuditCore';
 
 const normalizeNameToken = (value: unknown): string =>
@@ -1810,70 +1809,9 @@ const boundedPublicProfileUrl = (value: unknown): string | undefined => {
   return url && url.length <= MAX_SELF_PROFILE_URL_LENGTH ? url : undefined;
 };
 
-const sanitizeSelfEditableProfileUrlFields = (update: Record<string, any>) => {
-  if ('website' in update) {
-    const website = boundedPublicProfileUrl(update.website);
-    if (website) update.website = website;
-    else delete update.website;
-  }
-
-  if ('imageUrl' in update) {
-    if (update.imageUrl === '') {
-      update.imageUrl = '';
-    } else {
-      const imageUrl = boundedPublicProfileUrl(update.imageUrl);
-      if (!imageUrl) {
-        delete update.imageUrl;
-      } else {
-        update.imageUrl = imageUrl;
-      }
-    }
-  }
-
-  if ('profileUrls' in update) {
-    const profileUrlsSource =
-      update.profileUrls &&
-      typeof update.profileUrls === 'object' &&
-      !Array.isArray(update.profileUrls)
-        ? (update.profileUrls as Record<string, unknown>)
-        : undefined;
-    const profileUrls = profileUrlsSource
-      ? Object.fromEntries(
-          Object.keys(profileUrlsSource)
-            .slice(0, MAX_SELF_PROFILE_URLS)
-            .flatMap((key) => {
-              const url = profileUrlsSource[key];
-              const normalizedKey = boundedProfileUrlKey(key);
-              const normalizedUrl = boundedPublicProfileUrl(url);
-              return normalizedKey && normalizedUrl
-                ? [[normalizedKey, normalizedUrl] as const]
-                : [];
-            }),
-        )
-      : {};
-
-    if (Object.keys(profileUrls).length > 0) update.profileUrls = profileUrls;
-    else delete update.profileUrls;
-  }
-};
-
 /**
  * Admin: update any profile field.
  */
-const ADMIN_UPDATE_FIELDS = [
-  ...ALLOWED_SELF_UPDATE_FIELDS,
-  'fname',
-  'lname',
-  'email',
-  'title',
-  'hIndex',
-  'orcid',
-  'openAlexId',
-  'profileVerified',
-  'userType',
-  'userConfirmed',
-];
-
 const MAX_ADMIN_PROFILE_NAME_LENGTH = 120;
 const MAX_ADMIN_PROFILE_EMAIL_LENGTH = 254;
 const MAX_ADMIN_PROFILE_TITLE_LENGTH = 300;
@@ -1913,79 +1851,5 @@ const boundedAdminProfileEmail = (value: unknown): string | undefined => {
   const email = boundedProfileString(value, MAX_ADMIN_PROFILE_EMAIL_LENGTH);
   if (!email || /[\r\n]/.test(email)) return undefined;
   return email.toLowerCase();
-};
-
-const sanitizeAdminProfileTextFields = (update: Record<string, any>) => {
-  if ('bio' in update) {
-    const bio = boundedAdminProfileText(update.bio, MAX_SELF_PROFILE_TEXT_LENGTH);
-    if (bio !== undefined) update.bio = bio;
-    else delete update.bio;
-  }
-
-  if ('primaryDepartment' in update) {
-    const primaryDepartment = boundedAdminProfileText(
-      update.primaryDepartment,
-      MAX_SELF_PROFILE_ARRAY_VALUE_LENGTH,
-    );
-    if (primaryDepartment !== undefined) update.primaryDepartment = primaryDepartment;
-    else delete update.primaryDepartment;
-  }
-
-  for (const field of ['secondaryDepartments', 'researchInterests', 'topics']) {
-    if (field in update) {
-      update[field] = boundedProfileStringArray(update[field])
-        .map((value) => redactDirectContactInfo(value))
-        .filter(Boolean);
-    }
-  }
-};
-
-const sanitizeAdminProfileScalarFields = (update: Record<string, any>) => {
-  for (const field of ['fname', 'lname']) {
-    if (field in update) {
-      const value = boundedAdminProfileText(update[field], MAX_ADMIN_PROFILE_NAME_LENGTH);
-      if (value !== undefined) update[field] = value;
-      else delete update[field];
-    }
-  }
-
-  if ('email' in update) {
-    const email = boundedAdminProfileEmail(update.email);
-    if (email !== undefined) update.email = email;
-    else delete update.email;
-  }
-
-  if ('title' in update) {
-    const title = boundedAdminProfileText(update.title, MAX_ADMIN_PROFILE_TITLE_LENGTH);
-    if (title !== undefined) update.title = title;
-    else delete update.title;
-  }
-
-  for (const field of ['orcid', 'openAlexId']) {
-    if (field in update) {
-      const value = boundedProfileString(update[field], MAX_ADMIN_PROFILE_IDENTIFIER_LENGTH);
-      if (value !== undefined) update[field] = value;
-      else delete update[field];
-    }
-  }
-
-  if ('hIndex' in update) {
-    const hIndex = boundedAdminProfileNumber(update.hIndex);
-    if (hIndex !== undefined) update.hIndex = hIndex;
-    else delete update.hIndex;
-  }
-
-  for (const field of ['profileVerified', 'userConfirmed']) {
-    if (field in update && typeof update[field] !== 'boolean') delete update[field];
-  }
-
-  if ('userType' in update) {
-    const userType = boundedProfileString(
-      update.userType,
-      MAX_ADMIN_PROFILE_NAME_LENGTH,
-    )?.toLowerCase();
-    if (userType && ADMIN_PROFILE_USER_TYPES.has(userType)) update.userType = userType;
-    else delete update.userType;
-  }
 };
 

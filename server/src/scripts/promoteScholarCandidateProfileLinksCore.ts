@@ -1,4 +1,3 @@
-import type { ResearcherProfileLink } from '../models/researcher';
 
 export const SCHOLAR_PROFILE_LINK_URL_MAXLENGTH = 2048;
 

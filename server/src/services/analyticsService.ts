@@ -381,9 +381,6 @@ const normalizeAnalyticsEventNetid = (value: string): string => {
   return normalizeAnalyticsNetid(trimmed);
 };
 
-const isAnalyticsUserNetid = (value: string): boolean =>
-  !ANALYTICS_NON_USER_NETIDS.has(value) && ANALYTICS_NETID_RE.test(value);
-
 const sanitizeAnalyticsUserType = (value: unknown): string => {
   if (typeof value !== 'string') return 'unknown';
   const trimmed = value.trim().slice(0, MAX_ANALYTICS_USER_TYPE_LENGTH);

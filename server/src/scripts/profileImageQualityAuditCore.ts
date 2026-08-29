@@ -103,12 +103,3 @@ export function isSharedProfileImageAcrossDifferentNames(
   });
 }
 
-const sampleForUser = (user: ProfileImageAuditUser): ProfileImageIssueSample => ({
-  id: user.id,
-  netid: user.netid,
-  name: userName(user),
-  email: user.email,
-  title: user.title,
-  imageUrl: textValue(user.imageUrl),
-  profileUrls: user.profileUrls,
-});

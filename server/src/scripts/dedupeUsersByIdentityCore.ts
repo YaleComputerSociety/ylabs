@@ -1,8 +1,4 @@
 import type { DuplicatePersonGroup } from '../scrapers/integrityGate';
-import {
-  parsePhase0SummaryOnlyEnvironment,
-  type Phase0SummaryOnlyEnvironment,
-} from './phase0SummaryOnlyAudit';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export type UserIdentityField = DuplicatePersonGroup['identityField'];
@@ -26,14 +22,6 @@ export interface UserIdentityDedupeUser {
   createdAt?: Date | string | null;
   updatedAt?: Date | string | null;
 }
-
-const IDENTITY_FIELDS: UserIdentityField[] = [
-  'netid',
-  'email',
-  'orcid',
-  'openAlexId',
-  'googleScholarId',
-];
 
 export function normalizePersonName(user: Pick<UserIdentityDedupeUser, 'fname' | 'lname'>): string {
   return `${user.fname || ''} ${user.lname || ''}`

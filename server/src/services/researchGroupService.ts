@@ -1624,7 +1624,6 @@ const searchResearchGroupsViaMongoFallback = async (
     sort,
   );
   const pageEntities = sortedCandidates.slice(offset, offset + safePageSize);
-  const pageEntityIds = pageEntities.map((entity) => entity._id);
   return addResearchEntitySearchAliases(
     {
       hits: pageEntities.map((entity) => ({
@@ -2326,11 +2325,6 @@ export function researchDetailLeadIdentity(
   if (leadMembers.some((member) => personNameHasLifespanSuffix(memberDisplayName(member)))) {
     return { leadIdentityStatus: 'under_review' };
   }
-  const qualitySummary = buildResearchEntityQualitySummary({
-    entity: group,
-    leadMembers:
-      rawLeadMembers || leadMembers.map((member) => ({ ...member.row, user: member.user })),
-  });
   const entityProfileDestinations = entityOfficialPersonProfileDestinations(group);
   const matchingMembers = leadMembers.filter((member) =>
     entityProfileDestinations.has(
@@ -2541,9 +2535,6 @@ const publicHttpUrl = (value: unknown): string | undefined => {
   }
 };
 
-const publicHttpUrls = (values: unknown): string[] =>
-  Array.isArray(values) ? values.flatMap((value) => publicHttpUrl(value) ?? []) : [];
-
 const MAX_PUBLIC_DETAIL_TEXT_LENGTH = 5000;
 const MAX_PUBLIC_DETAIL_ARRAY_ITEMS = 100;
 
@@ -2551,12 +2542,6 @@ const publicString = (value: unknown): string | undefined =>
   typeof value === 'string'
     ? redactDirectContactInfo(value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH))
     : undefined;
-
-const publicStringArray = (values: unknown): string[] =>
-  Array.isArray(values)
-    ? values.slice(0, MAX_PUBLIC_DETAIL_ARRAY_ITEMS).flatMap((value) => publicString(value) ?? [])
-    : [];
-
 
 const publicResearchDetailSourceUrl = (value: unknown): string | undefined => {
   const url = publicHttpUrl(value);
@@ -2779,15 +2764,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   });
   if (!publicDescription.invariant.pass) return null;
   const publicGroup = publicDescription.entity;
-  const memberDisplayIds = Array.from(
-    new Set(
-      dedupedMembersWithRows
-        .map((member) => member.user?._id)
-        .filter(Boolean)
-        .map(normalizeResearchGroupObjectId)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  );
   const publicMemberKeysByInternalId = new Map(
     dedupedMembersWithRows
       .map((member) => {
@@ -2800,14 +2776,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
           : undefined;
       })
       .filter((entry): entry is [string, string] => Boolean(entry)),
-  );
-  const memberAppointmentsByInternalId = new Map(
-    dedupedMembersWithRows.flatMap((member) => {
-      const id = normalizeResearchGroupObjectId(member.user?._id);
-      return id
-        ? [[id, { startedAt: member.row?.startedAt, endedAt: member.row?.endedAt }] as const]
-        : [];
-    }),
   );
   const availableRosterMembers = dedupedMembersWithRows.filter((member) =>
     isFreshVerifiedOfficialRosterRow(member.row, new Date(), (group as any).rosterEnrichment),
