@@ -246,6 +246,28 @@ The professor's appointment title is **not** stored structurally anywhere (`cont
 It survives only inside the profile-bio observation, which append-only storage retains after synthesis outranks it.
 Capture it from a structured region before anything starts deleting bio observations.
 
+#### Never roll back one description field alone
+
+`fullDescription` and `shortDescription` are coupled through a materializer guard, and treating either in isolation blanks the other.
+Any rollback or replacement of one must revert or re-derive the other in the same operation, then re-materialize.
+
+The `winnerFullUseful` guard in `server/src/scrapers/entityMaterializer.ts` accepts a resolved winner only when `fullDescriptionQuality(...).isUseful` holds **and** `isFullDescriptionRestatementOfShortDescription(...)` does not, so a winner that restates the stored short is rejected and the ranked walk can end having written nothing.
+The guard only clears `fullDescription`, which makes the failure invisible to the visibility gate: the short survives, the record looks complete, and the tier stays `student_ready` while the detail page serves no prose.
+
+Attribution, not duplication, decides whether a pair is stable, which is why a source must never emit one string as both fields under two different attributions.
+The `studentReadyDescription` emit block in `sources/labMicrositeUndergradLLMExtractor.ts` pushes one string as `fullDescription` and the same string again as `shortDescription` when it is card-length; both pushes share one `...base`, so the two rows carry the same `sourceName` and `sourceUrl`, the materializer reads the projected short as self-derived from the full, the guard is skipped, and the row keeps serving.
+Re-attribute that same string across two URLs or two sources and the short reads as independent evidence, so the guard fires and blanks the full - and no data repair holds until the emitting source stops producing it.
+
+`server/src/scripts/descriptionPairRollbackCore.ts` encodes the rollback contract (`descriptionPairObservationFilter`, `planDescriptionPairRollback`, `describeDescriptionPairRisk`); build any description rollback or repair from it rather than hand-writing the query or re-specifying the guard's predicates.
+`docs/scraper-deployment-runbook.md` (`Rollback` -> `Rolling back a written description`) owns the operator procedure and the incident it came from.
+
+#### Detecting grafted prose deterministically
+
+Byte-identical `fullDescription` across more than one served entity is definitionally wrong for at least one of them, so it needs no sampling, no judgement, and no LLM spend.
+On the Development corpus this found 39 entities across 15 groups, e.g. one PI's lab description propagating onto five lab members' individual records.
+Treat it as a floor rather than a total: a center's description on a single person's row with no duplicate elsewhere stays invisible to it.
+Three distinct upstream mechanisms produce wrong-attribution prose and a single repair lane will be designed for the wrong shape if they are conflated: an affiliated-center name taken as the entity name, group prose propagating onto members, and department boilerplate.
+
 ### Official directories
 
 | Scraper | Data |
