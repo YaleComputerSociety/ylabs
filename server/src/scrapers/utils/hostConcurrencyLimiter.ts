@@ -7,33 +7,97 @@ export function resolvePerHostConcurrency(env: NodeJS.ProcessEnv = process.env):
   return Number.isInteger(raw) && raw >= 1 ? raw : DEFAULT_PER_HOST_CONCURRENCY;
 }
 
+export interface HostThrottle {
+  concurrency: number;
+  minIntervalMs: number;
+}
+
+export const HOST_THROTTLE_OVERRIDES: Readonly<Record<string, HostThrottle>> = {
+  'medicine.yale.edu': { concurrency: 2, minIntervalMs: 400 },
+  'ysph.yale.edu': { concurrency: 2, minIntervalMs: 400 },
+};
+
+export function resolveHostThrottle(
+  host: string | undefined,
+  defaults: HostThrottle,
+): HostThrottle {
+  const key = host?.toLowerCase();
+  const override =
+    key && Object.hasOwn(HOST_THROTTLE_OVERRIDES, key) ? HOST_THROTTLE_OVERRIDES[key] : undefined;
+  if (!override) return defaults;
+  return {
+    concurrency: Math.min(defaults.concurrency, override.concurrency),
+    minIntervalMs: Math.max(defaults.minIntervalMs, override.minIntervalMs),
+  };
+}
+
 export type HostSlotRelease = () => void;
 
-export class HostConcurrencyLimiter {
-  private readonly cap: number;
-  private readonly active = new Map<string, number>();
-  private readonly waiters = new Map<string, Array<() => void>>();
+const realSleep = (ms: number): Promise<void> =>
+  ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
-  constructor(cap: number = DEFAULT_PER_HOST_CONCURRENCY) {
-    this.cap = Math.max(1, Math.floor(cap) || 1);
+interface HostSlotState {
+  active: number;
+  lastGrantAt: number;
+  waiters: Array<() => void>;
+}
+
+export interface HostConcurrencyLimiterOptions {
+  minIntervalMs?: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export class HostConcurrencyLimiter {
+  private readonly baseThrottle: HostThrottle;
+  private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly states = new Map<string, HostSlotState>();
+
+  constructor(
+    cap: number = DEFAULT_PER_HOST_CONCURRENCY,
+    options: HostConcurrencyLimiterOptions = {},
+  ) {
+    this.baseThrottle = {
+      concurrency: Math.max(1, Math.floor(cap) || 1),
+      minIntervalMs: Math.max(0, options.minIntervalMs ?? 0),
+    };
+    this.now = options.now ?? Date.now;
+    this.sleep = options.sleep ?? realSleep;
   }
 
-  acquire(host: string): Promise<HostSlotRelease> {
+  async acquire(host: string): Promise<HostSlotRelease> {
     const key = host || '(unknown-host)';
-    const active = this.active.get(key) ?? 0;
-    if (active < this.cap) {
-      this.active.set(key, active + 1);
-      return Promise.resolve(this.makeRelease(key));
+    const throttle = this.throttleFor(key);
+    const state = this.stateFor(key);
+    while (state.active >= throttle.concurrency) {
+      await new Promise<void>((resolve) => state.waiters.push(resolve));
     }
-    return new Promise<HostSlotRelease>((resolve) => {
-      const queue = this.waiters.get(key) ?? [];
-      queue.push(() => resolve(this.makeRelease(key)));
-      this.waiters.set(key, queue);
-    });
+    state.active += 1;
+    // Reserve the grant instant before awaiting: overlapping acquirers that read
+    // lastGrantAt only after sleeping would all compute the same wait and fire together.
+    const grantAt = Math.max(this.now(), state.lastGrantAt + throttle.minIntervalMs);
+    state.lastGrantAt = grantAt;
+    const waitMs = grantAt - this.now();
+    if (waitMs > 0) await this.sleep(waitMs);
+    return this.makeRelease(key);
   }
 
   activeCount(host: string): number {
-    return this.active.get(host || '(unknown-host)') ?? 0;
+    return this.states.get(host || '(unknown-host)')?.active ?? 0;
+  }
+
+  private throttleFor(host: string): HostThrottle {
+    return resolveHostThrottle(host, this.baseThrottle);
+  }
+
+  private stateFor(key: string): HostSlotState {
+    let state = this.states.get(key);
+    if (!state) {
+      state = { active: 0, lastGrantAt: Number.NEGATIVE_INFINITY, waiters: [] };
+      this.states.set(key, state);
+    }
+    return state;
   }
 
   private makeRelease(key: string): HostSlotRelease {
@@ -41,21 +105,11 @@ export class HostConcurrencyLimiter {
     return () => {
       if (released) return;
       released = true;
-      const next = (this.active.get(key) ?? 1) - 1;
-      if (next <= 0) this.active.delete(key);
-      else this.active.set(key, next);
-      this.pump(key);
+      const state = this.stateFor(key);
+      state.active = Math.max(0, state.active - 1);
+      const next = state.waiters.shift();
+      if (next) next();
     };
-  }
-
-  private pump(key: string): void {
-    const queue = this.waiters.get(key);
-    if (!queue || queue.length === 0) return;
-    if ((this.active.get(key) ?? 0) >= this.cap) return;
-    const grant = queue.shift() as () => void;
-    if (queue.length === 0) this.waiters.delete(key);
-    this.active.set(key, (this.active.get(key) ?? 0) + 1);
-    grant();
   }
 }
 

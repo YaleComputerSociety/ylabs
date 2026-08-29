@@ -1,12 +1,52 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   HostConcurrencyLimiter,
   hostnameForLimiter,
+  resolveHostThrottle,
   resolvePerHostConcurrency,
   withHostSlot,
 } from '../hostConcurrencyLimiter';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('resolveHostThrottle', () => {
+  const defaults = { concurrency: 4, minIntervalMs: 0 };
+
+  it('tightens concurrency and interval for rate-limited Yale medical hosts', () => {
+    expect(resolveHostThrottle('medicine.yale.edu', defaults)).toEqual({
+      concurrency: 2,
+      minIntervalMs: 400,
+    });
+    expect(resolveHostThrottle('ysph.yale.edu', defaults)).toEqual({
+      concurrency: 2,
+      minIntervalMs: 400,
+    });
+  });
+
+  it('matches the override regardless of host casing', () => {
+    expect(resolveHostThrottle('Medicine.Yale.EDU', defaults)).toEqual({
+      concurrency: 2,
+      minIntervalMs: 400,
+    });
+  });
+
+  it('returns the caller defaults for hosts without an override', () => {
+    expect(resolveHostThrottle('lab.example.edu', defaults)).toEqual(defaults);
+    expect(resolveHostThrottle(undefined, defaults)).toEqual(defaults);
+  });
+
+  it('ignores inherited object keys that are not real overrides', () => {
+    expect(resolveHostThrottle('__proto__', defaults)).toEqual(defaults);
+    expect(resolveHostThrottle('constructor', defaults)).toEqual(defaults);
+    expect(resolveHostThrottle('toString', defaults)).toEqual(defaults);
+  });
+
+  it('never loosens a default that is already tighter than the override', () => {
+    expect(
+      resolveHostThrottle('medicine.yale.edu', { concurrency: 1, minIntervalMs: 1000 }),
+    ).toEqual({ concurrency: 1, minIntervalMs: 1000 });
+  });
+});
 
 describe('resolvePerHostConcurrency', () => {
   it('reads a positive integer from the env', () => {
@@ -56,6 +96,77 @@ describe('HostConcurrencyLimiter', () => {
     await Promise.all(jobs);
     expect(peak).toBe(2);
     expect(active).toBe(0);
+  });
+
+  it('caps a rate-limited host below the base concurrency', async () => {
+    const limiter = new HostConcurrencyLimiter(8, { sleep: async () => {} });
+    let active = 0;
+    let peak = 0;
+    const jobs = Array.from({ length: 6 }, () =>
+      withHostSlot(
+        'https://medicine.yale.edu/profile/x',
+        async () => {
+          active += 1;
+          peak = Math.max(peak, active);
+          await tick();
+          active -= 1;
+        },
+        limiter,
+      ),
+    );
+    await Promise.all(jobs);
+    expect(peak).toBe(2);
+    expect(active).toBe(0);
+  });
+
+  it('enforces the override minimum interval between same-host grants', async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const limiter = new HostConcurrencyLimiter(8, {
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+    (await limiter.acquire('medicine.yale.edu'))();
+    (await limiter.acquire('medicine.yale.edu'))();
+    expect(sleeps).toEqual([400]);
+  });
+
+  it('spaces every same-host grant when acquirers overlap in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      const limiter = new HostConcurrencyLimiter(8);
+      const startedAt = Date.now();
+      const grants: number[] = [];
+      const jobs = Array.from({ length: 6 }, () =>
+        limiter.acquire('medicine.yale.edu').then((release) => {
+          grants.push(Date.now() - startedAt);
+          release();
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await Promise.all(jobs);
+      expect(grants).toEqual([0, 400, 800, 1200, 1600, 2000]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not space out hosts without an override', async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const limiter = new HostConcurrencyLimiter(8, {
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+    (await limiter.acquire('lab.example.edu'))();
+    (await limiter.acquire('lab.example.edu'))();
+    expect(sleeps).toEqual([]);
   });
 
   it('tracks separate budgets per host', async () => {

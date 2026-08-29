@@ -10,6 +10,7 @@
  */
 import axios from 'axios';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { HostConcurrencyLimiter, hostnameForLimiter } from './hostConcurrencyLimiter';
 
 export interface FetchedHttpPage {
   url: string;
@@ -36,63 +37,27 @@ export interface HostRateLimiterOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-interface HostState {
-  active: number;
-  lastStartAt: number;
-  waiters: Array<() => void>;
-}
-
 const realSleep = (ms: number): Promise<void> =>
   ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 export class HostRateLimiter {
-  private readonly maxConcurrency: number;
-  private readonly minIntervalMs: number;
-  private readonly now: () => number;
-  private readonly sleep: (ms: number) => Promise<void>;
-  private readonly hosts = new Map<string, HostState>();
+  private readonly slots: HostConcurrencyLimiter;
 
   constructor(options: HostRateLimiterOptions = {}) {
-    this.maxConcurrency = Math.max(1, options.maxConcurrency ?? 2);
-    this.minIntervalMs = Math.max(0, options.minIntervalMs ?? 400);
-    this.now = options.now ?? Date.now;
-    this.sleep = options.sleep ?? realSleep;
+    this.slots = new HostConcurrencyLimiter(options.maxConcurrency ?? 2, {
+      minIntervalMs: options.minIntervalMs ?? 400,
+      now: options.now,
+      sleep: options.sleep,
+    });
   }
 
   async run<T>(host: string, fn: () => Promise<T>): Promise<T> {
-    await this.acquire(host);
+    const release = await this.slots.acquire(host);
     try {
       return await fn();
     } finally {
-      this.release(host);
+      release();
     }
-  }
-
-  private stateFor(host: string): HostState {
-    let state = this.hosts.get(host);
-    if (!state) {
-      state = { active: 0, lastStartAt: Number.NEGATIVE_INFINITY, waiters: [] };
-      this.hosts.set(host, state);
-    }
-    return state;
-  }
-
-  private async acquire(host: string): Promise<void> {
-    const state = this.stateFor(host);
-    while (state.active >= this.maxConcurrency) {
-      await new Promise<void>((resolve) => state.waiters.push(resolve));
-    }
-    state.active += 1;
-    const waitMs = state.lastStartAt + this.minIntervalMs - this.now();
-    if (waitMs > 0) await this.sleep(waitMs);
-    state.lastStartAt = this.now();
-  }
-
-  private release(host: string): void {
-    const state = this.stateFor(host);
-    state.active = Math.max(0, state.active - 1);
-    const next = state.waiters.shift();
-    if (next) next();
   }
 }
 
@@ -149,11 +114,7 @@ const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
 };
 
 function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
+  return hostnameForLimiter(url) ?? url;
 }
 
 export async function fetchPageWithPolicy(

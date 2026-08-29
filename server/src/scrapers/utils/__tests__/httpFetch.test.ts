@@ -63,6 +63,61 @@ describe('HostRateLimiter', () => {
     await limiter.run('b', async () => true);
     expect(sleeps).toEqual([]);
   });
+
+  it('applies the per-host override interval to rate-limited Yale medical hosts', async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const limiter = new HostRateLimiter({
+      maxConcurrency: 8,
+      minIntervalMs: 0,
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+    await limiter.run('medicine.yale.edu', async () => true);
+    await limiter.run('medicine.yale.edu', async () => true);
+    expect(sleeps).toEqual([400]);
+  });
+
+  it('caps a rate-limited host below a looser configured concurrency', async () => {
+    const limiter = new HostRateLimiter({
+      maxConcurrency: 8,
+      minIntervalMs: 0,
+      sleep: async () => {},
+    });
+    let active = 0;
+    let peak = 0;
+    const task = async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      active -= 1;
+      return true;
+    };
+    await Promise.all(Array.from({ length: 6 }, () => limiter.run('ysph.yale.edu', task)));
+    expect(peak).toBe(2);
+  });
+
+  it('spaces overlapping same-host runs instead of releasing them in bursts', async () => {
+    vi.useFakeTimers();
+    try {
+      const limiter = new HostRateLimiter({ maxConcurrency: 8, minIntervalMs: 0 });
+      const startedAt = Date.now();
+      const starts: number[] = [];
+      const jobs = Array.from({ length: 4 }, () =>
+        limiter.run('medicine.yale.edu', async () => {
+          starts.push(Date.now() - startedAt);
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await Promise.all(jobs);
+      expect(starts).toEqual([0, 400, 800, 1200]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('fetchPageWithPolicy', () => {
@@ -82,6 +137,24 @@ describe('fetchPageWithPolicy', () => {
       status: 200,
     });
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('keys the limiter by hostname so an explicit port still gets the host override', async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const limiter = new HostRateLimiter({
+      maxConcurrency: 8,
+      minIntervalMs: 0,
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+    const request: HttpRequestFn = async (url) => ({ status: 200, data: 'ok', finalUrl: url });
+    await fetchPageWithPolicy('https://medicine.yale.edu/x', { ...base, limiter, request });
+    await fetchPageWithPolicy('https://medicine.yale.edu:8443/y', { ...base, limiter, request });
+    expect(sleeps).toEqual([400]);
   });
 
   it('retries a 403 with backoff and then succeeds', async () => {

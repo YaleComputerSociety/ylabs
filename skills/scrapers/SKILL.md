@@ -83,6 +83,14 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 - `observationRetention.ts` - TTL/cleanup for old observation rows
 - `renderedFetch.ts` - headless-browser fetch helper for JS-rendered pages
 - `utils/httpFetch.ts` - shared SSRF-guarded page fetch (`fetchPageWithPolicy`, wrapping `ssrfGuard`) with a per-host rate limiter and exponential backoff that retries 403/429/5xx and honors `Retry-After`; microsite LLM extractors fetch through it so exhaustive per-entity scrapes stop tripping host WAF 403s
+- `utils/hostConcurrencyLimiter.ts` - the single per-host slot-and-spacing core (`HostConcurrencyLimiter`) plus the `HOST_THROTTLE_OVERRIDES` map.
+  Both fetch paths share this one core: the axios request interceptor that gates the `renderedFetch`/sweep path, and `httpFetch`'s `HostRateLimiter`, which delegates its per-host slot and spacing here rather than reimplementing them.
+  Keying is by lowercased `hostname` (`hostnameForLimiter`), so an explicit port never splits a host's budget or bypasses its override.
+  `resolveHostThrottle` only ever tightens the caller's base throttle (lower concurrency, longer interval), so an override can never loosen what a caller asked for, and an operator raising `SCRAPER_PER_HOST_CONCURRENCY` cannot lift an overridden host's cap.
+  `medicine.yale.edu` and `ysph.yale.edu` are empirically rate/concurrency throttled, not IP-banned: a 403 storm at high concurrency recovers instantly on the next single request, whereas a ban would persist.
+  Both are therefore pinned to concurrency 2 with a 400ms minimum inter-request interval, which measured clean across a 60-profile batch, and that unblocks direct YSM scraping (`ysm-faculty-directory` and the medicine-hosted lab-microsite fetches).
+  Add a further rate-limited host by adding one entry to `HOST_THROTTLE_OVERRIDES`.
+  Absent an override, the sweep path leaves a host at `DEFAULT_PER_HOST_CONCURRENCY` with no spacing, while the `httpFetch` shared limiter already defaults *every* host to concurrency 2 and 400ms, so on that path these two overrides only matter when a caller passes looser `HostRateLimiterOptions`.
 - `runReport.ts` - structured report for a completed scrape run
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources
