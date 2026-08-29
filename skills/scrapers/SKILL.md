@@ -178,6 +178,28 @@ Discovery-only producers, mostly for the `ARCHIVE_OR_MUSEUM_PROJECT` entity type
 | `labMicrositeUndergradLLMExtractor.ts` | LLM extraction of undergrad-access signals and claim-specific logistics from lab microsites. |
 | `labMicrositeDescriptionLLMExtractor.ts` | Research-home description extraction from microsites: prefers the home's own official prose (JSON-LD, meta, About/Overview body) extracted deterministically, and falls back to verbatim LLM extraction gated by a deterministic grounding check. It also crawls the site's own research page (`researchSubPageCrawlUrls`, same-host, published anchors only, never blind path probes) because a home page often carries only a mission or welcome blurb while `/research` carries the research prose. A crawled page may only ADD a description or replace an off-topic one: it must score strictly better than the primary page's own candidate (`scoreResearchHomeDescriptionCandidate`), and an off-topic crawled candidate is discarded outright. Ties go to the primary page. This conservatism is load-bearing - a dry-run over the 504 homepage-sourced entities showed that preferring a research page whenever one exists regresses about a third of them onto figure captions, single-project leads, textbook background, and CV/contact blocks (#2176). A primary page that is a JS shell yields no candidate at all, and a crawled page must not win that comparison by default: when the primary page has neither deterministic prose nor groundable LLM prose, a crawled page may only FILL a description, never replace a stored one worth keeping, where "worth keeping" means the stored text clears the selection floor itself (at least 120 characters and `describesResearchHome`), so stored directory-index chrome or a stored figure caption stays replaceable (#2180). |
 
+#### Measuring a description-prompt change before shipping it
+
+`yarn --cwd server scraper-llm:description-ab` (`server/src/scripts/descriptionPromptAbHarness.ts`) A/B tests a candidate extraction prompt against the live one.
+Read-only against Mongo, writes only its report.
+Both arms run against identical cached page text, so the prompt is the only variable.
+Candidate prompts live inside the harness, never in `src/scrapers/prompts/`, so measuring one never changes what the sweep runs.
+Everything around the prompt must stay production-identical or the guardrail rates describe nothing: the sample picks its page through `candidateDescriptionLabsFromDocs`, resolves person-vs-organization identity through `isFacultyResearchTextEntity` with both `entityType` and `kind`, and redacts contact details before the call exactly as `defaultCallLLM` does.
+
+Keep the metric split it enforces: grant corroboration and blind pairwise preference are win metrics, while non-empty rate and grounding rate are guardrails.
+A stricter prompt can always look better by blanking the corpus, so a run that improves the win metrics while collapsing coverage is a failed run.
+Include the regression anchors (`dept-mcdb-valerie-horsley` for #2176, `dept-seas-michael-hatridge` for #2180) and look them up by slug only: Horsley is `archived` and Hatridge is `operator_review`, so filtering the named sample by tier or `archived` silently drops both.
+
+Prompt wording is not the lever for off-topic descriptions, and #2183 has the data.
+A candidate that gated on a named research subject instead of on the page section the text came from changed 25 of 42 outputs while fixing none of its target cases, and its attribution judgement was unstable enough across runs to false-reject a known-good description.
+Horsley's real prose sits on a subpage, and the parent-org cases turn on knowing which record is being extracted for, which the page text never states.
+Test acquisition (which page is read) and record identity before spending a cycle on prompt text.
+The scoring the rejected gate used survives in `server/src/utils/researchSubjectSpecificity.ts`, and nothing in extraction or serving calls it: it exists for the harness, so re-measure before wiring `judgeResearchSubject` into either path.
+
+Do not add an eleventh source-type predicate to `researchEntityDescriptionText.ts`.
+Across the served corpus the existing ten fire once in total, while fluent, well-formed, research-adjacent prose that names no subject passes all of them.
+Source type is also the wrong axis: most served descriptions containing "Our Mission" name a real subject and are good, so demoting the category discards more good prose than bad.
+
 ### Official directories
 
 | Scraper | Data |
