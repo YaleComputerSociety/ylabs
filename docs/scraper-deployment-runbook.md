@@ -47,6 +47,33 @@ The web app can stay on Render while scraper execution remains separate:
 
 `MONGODBURL` decides the target database. Always read the CLI's printed Mongo target before accepting a run.
 
+### Rolling back a written description
+
+`fullDescription` and `shortDescription` are coupled, and treating either in isolation blanks the other.
+Never roll back or replace one without reverting or re-deriving the other in the same operation, then re-materializing.
+
+The coupling is a guard in the materializer (`entityMaterializer.ts:3182`): a resolved winner is accepted only when it is useful **and** is not a restatement of the stored short description.
+A winner that restates the stored short is rejected, and the ranked walk can terminate having written nothing.
+The guard only ever clears `fullDescription`, so the failure is invisible to the visibility gate: the short description survives, the record still looks complete, and the tier stays `student_ready` while the detail page has no prose to serve.
+
+This is how 19 entities lost their description, 14 of them served, after 99 synthesized `fullDescription` observations were superseded without touching the `shortDescription` values that had been derived from them.
+Marking the observations superseded and re-materializing was not enough, because the stale short was the thing causing the blank.
+A perfectly good alternative was active and unused the entire time.
+
+Procedure:
+
+- Check first whether the prior pair is itself a manufactured duplicate.
+Restoring both fields to their pre-rollback values is **not** automatically safe: `labMicrositeUndergradLLMExtractor.ts:822` emits one string as `fullDescription` at 0.55 and, when it is card-length, the same string again as `shortDescription` at 0.55.
+Both are observation-backed, so restoring them recreates the condition the guard blanks.
+2,723 entities carry such a pair and 216 have already been silently emptied this way.
+- When the pair is a manufactured duplicate, no data repair holds until the emitting source stops producing it.
+Fix the source, then repair the rows.
+- Use `descriptionPairRollbackCore.ts` to build the observation filter, so the query cannot be scoped to one field by accident.
+- Verify afterwards on the served record, not on the supersede count.
+`describeDescriptionPairRisk` reports the two failure states: an empty full description, and a full that restates the short and will therefore blank on the next materialize.
+- Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.
+This failure cannot be caught by tier checks, by construction.
+
 ## Data Flow
 
 ```txt

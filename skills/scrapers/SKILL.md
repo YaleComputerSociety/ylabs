@@ -242,6 +242,26 @@ The professor's appointment title is **not** stored structurally anywhere (`cont
 It survives only inside the profile-bio observation, which append-only storage retains after synthesis outranks it.
 Capture it from a structured region before anything starts deleting bio observations.
 
+#### Never roll back one description field alone
+
+`fullDescription` and `shortDescription` are coupled through a materializer guard, and treating either in isolation blanks the other.
+Any rollback or replacement of one must revert or re-derive the other in the same operation, then re-materialize.
+
+At `entityMaterializer.ts:3182` a resolved winner is accepted only when it is useful **and** not a restatement of the stored short description, so a winner that restates the stored short is rejected and the ranked walk can end having written nothing.
+The guard only clears `fullDescription`, which makes the failure invisible to the visibility gate: the short survives, the record looks complete, and the tier stays `student_ready` while the detail page serves no prose.
+
+19 entities lost their description this way (14 of them served) after 99 synthesized `fullDescription` observations were superseded without touching the `shortDescription` values derived from them.
+Superseding plus re-materializing was not sufficient, because the stale short was the cause.
+Do not assume the prior pair is safe to restore. `labMicrositeUndergradLLMExtractor.ts:822` emits one string as `fullDescription` at 0.55 and the same string again as `shortDescription` when it is card-length, so restoring both recreates the blanking condition; 2,723 entities carry such a pair and 216 have already been silently emptied. Where the pair is a manufactured duplicate, fix the emitting source before repairing any row.
+Build the query with `descriptionPairRollbackCore.ts` so it cannot be scoped to one field by accident, verify on the served record with `describeDescriptionPairRisk` rather than on the supersede count, and include an empty-`fullDescription`-on-`student_ready` line in any post-run diff.
+
+#### Detecting grafted prose deterministically
+
+Byte-identical `fullDescription` across more than one served entity is definitionally wrong for at least one of them, so it needs no sampling, no judgement, and no LLM spend.
+On the Development corpus this found 39 entities across 15 groups, e.g. one PI's lab description propagating onto five lab members' individual records.
+Treat it as a floor rather than a total: a center's description on a single person's row with no duplicate elsewhere stays invisible to it.
+Three distinct upstream mechanisms produce wrong-attribution prose and a single repair lane will be designed for the wrong shape if they are conflated: an affiliated-center name taken as the entity name, group prose propagating onto members, and department boilerplate.
+
 ### Official directories
 
 | Scraper | Data |
