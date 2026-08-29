@@ -22,14 +22,6 @@ import {
 } from '../controllers/entityCorrectionReportController';
 import { buildSafeSearchRegex } from '../utils/regex';
 import {
-  AccessReviewRequestError,
-  AdminAccessReviewProjectionUnavailableError,
-  getAccessReviewEntity,
-  listAccessReviewEntities,
-  updateAccessReviewManualLocks,
-  updateAccessReviewRecordReview,
-} from '../services/adminAccessReviewService';
-import {
   AdminGrantValidationError,
   AdminGrantConflictError,
   grantAdminAccess,
@@ -74,9 +66,6 @@ const ACCESS_REVIEW_RECORD_TYPES = new Set([
   'contactRoute',
   'postedOpportunity',
 ]);
-const MAX_ADMIN_ACCESS_REVIEW_NOTE_LENGTH = 2000;
-const MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELDS = 100;
-const MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELD_LENGTH = 120;
 
 
 const adminPayloadId = (value: unknown): string => {
@@ -84,35 +73,6 @@ const adminPayloadId = (value: unknown): string => {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   if (value instanceof mongoose.Types.ObjectId) return value.toHexString();
   return '';
-};
-
-const adminAccessReviewLockedFields = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value.slice(0, MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELDS).flatMap((field) => {
-        if (typeof field !== 'string') return [];
-        const text = field.trim().slice(0, MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELD_LENGTH);
-        return text ? [text] : [];
-      })
-    : [];
-
-export const adminAccessReviewRecordUpdateDto = (record: any) => {
-  const id = adminPayloadId(record?._id || record?.id);
-  const review = record?.review && typeof record.review === 'object' ? record.review : {};
-
-  return {
-    _id: id,
-    id,
-    archived: record?.archived === true,
-    review: {
-      status: typeof review.status === 'string' ? review.status : 'unreviewed',
-      reviewedAt: review.reviewedAt,
-      note:
-        typeof review.note === 'string'
-          ? review.note.trim().slice(0, MAX_ADMIN_ACCESS_REVIEW_NOTE_LENGTH)
-          : '',
-      lockedFields: adminAccessReviewLockedFields(review.lockedFields),
-    },
-  };
 };
 
 export const adminResearchAreaDto = (area: any) => ({
@@ -431,83 +391,6 @@ router.get('/operator-board', async (_req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch operator board' });
   }
 });
-
-router.get('/access-review', async (req: Request, res: Response) => {
-  try {
-    const result = await listAccessReviewEntities({
-      search: typeof req.query.search === 'string' ? req.query.search : undefined,
-      page: req.query.page,
-      pageSize: req.query.pageSize,
-      hasUnreviewed: req.query.hasUnreviewed,
-      sort: req.query.sort,
-    });
-    res.json(result);
-  } catch (error) {
-    if (error instanceof AccessReviewRequestError) {
-      return res.status(400).json({ error: 'Search query is too long' });
-    }
-    if (error instanceof AdminAccessReviewProjectionUnavailableError) {
-      return res.status(503).json({ error: 'Access review queue is rebuilding' });
-    }
-    console.error('Admin: Error fetching access review entities:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch access review entities' });
-  }
-});
-
-router.get('/access-review/:id', validateObjectId('id'), async (req: Request, res: Response) => {
-  try {
-    const result = await getAccessReviewEntity(req.params.id);
-    if (!result) return res.status(404).json({ error: 'Research entity not found' });
-    res.json(result);
-  } catch (error) {
-    console.error('Admin: Error fetching access review entity:', sanitizeLogValue(error));
-    res.status(500).json({ error: 'Failed to fetch access review entity' });
-  }
-});
-
-router.put(
-  '/access-review/:id/manual-locks',
-  writeLimit,
-  validateObjectId('id'),
-  async (req: Request, res: Response) => {
-    try {
-      const group = await updateAccessReviewManualLocks(req.params.id, req.body?.fields);
-      if (!group) return res.status(400).json({ error: 'Invalid manual lock fields' });
-      res.json({ group });
-    } catch (error) {
-      console.error('Admin: Error updating access review manual locks:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
-    }
-  },
-);
-
-router.put(
-  '/access-review/records/:type/:recordId/review',
-  writeLimit,
-  validateObjectId('recordId'),
-  async (req: Request, res: Response) => {
-    try {
-      const type = typeof req.params.type === 'string' ? req.params.type : '';
-      if (!ACCESS_REVIEW_RECORD_TYPES.has(type)) {
-        return res.status(400).json({ error: 'Invalid review record type' });
-      }
-
-      const record = await updateAccessReviewRecordReview({
-        type: type as any,
-        id: req.params.recordId,
-        status: req.body?.status,
-        note: req.body?.note,
-        lockedFields: req.body?.lockedFields,
-        reviewerNetid: (req.user as { netId?: string } | undefined)?.netId,
-      });
-      if (!record) return res.status(400).json({ error: 'Invalid review update' });
-      res.json({ record: adminAccessReviewRecordUpdateDto(record) });
-    } catch (error) {
-      console.error('Admin: Error updating access review record:', sanitizeLogValue(error));
-      res.status(400).json({ error: 'Request failed' });
-    }
-  },
-);
 
 router.get('/correction-reports', listAdminEntityCorrectionReports);
 router.put(

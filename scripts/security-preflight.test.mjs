@@ -141,13 +141,6 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
   }
 });
 
-test('admin access-review validation responses use fixed public copy', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
-
-  assert.match(source, /res\.status\(400\)\.json\(\{ error: 'Search query is too long' \}\)/);
-  assert.doesNotMatch(source, /res\.status\(400\)\.json\(\{ error: error\.message \}\)/);
-});
-
 test('analytics query controls are parsed through allowlisted route guards', () => {
   const source = fs.readFileSync(
     new URL('../server/src/routes/analytics.ts', import.meta.url),
@@ -505,10 +498,6 @@ test('client dynamic internal route segments are encoded before rendering', () =
 });
 
 test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
-  const adminAccessReview = fs.readFileSync(
-    new URL('../client/src/components/admin/AdminAccessReview.tsx', import.meta.url),
-    'utf8',
-  );
   const labDetail = fs.readFileSync(
     new URL('../client/src/pages/labDetail.tsx', import.meta.url),
     'utf8',
@@ -521,12 +510,6 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
     new URL('../client/src/utils/programLinks.ts', import.meta.url),
     'utf8',
   );
-
-  assert.match(
-    adminAccessReview,
-    /const applicationUrl = safeHttpUrl\(opportunity\.applicationUrl\)/,
-  );
-  assert.doesNotMatch(adminAccessReview, /safeUrl\(opportunity\.applicationUrl\)/);
 
   assert.doesNotMatch(labDetail, /const officialRouteUrl = safeUrl\(officialRoute\?\.url\)/);
 
@@ -897,7 +880,6 @@ test('admin client surfaces avoid raw caught console errors', () => {
   const files = [
     '../client/src/pages/analytics.tsx',
     '../client/src/components/admin/AdminOperatorBoard.tsx',
-    '../client/src/components/admin/AdminAccessReview.tsx',
     '../client/src/components/admin/AdminResearchAreas.tsx',
     '../client/src/components/admin/AdminFellowshipsTable.tsx',
     '../client/src/components/admin/AdminFellowshipEditModal.tsx',
@@ -947,26 +929,6 @@ test('admin grant route error responses do not trust thrown message prefixes', (
   assert.match(routeSource, /error instanceof AdminGrantValidationError/);
   assert.doesNotMatch(routeSource, /message\.startsWith\('Invalid'\)/);
   assert.doesNotMatch(routeSource, /error instanceof Error \? error\.message/);
-});
-
-test('admin access-review route error responses do not trust thrown messages', () => {
-  const routeSource = fs.readFileSync(
-    new URL('../server/src/routes/admin.ts', import.meta.url),
-    'utf8',
-  );
-  const serviceSource = fs.readFileSync(
-    new URL('../server/src/services/adminAccessReviewService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(serviceSource, /export class AccessReviewRequestError extends Error/);
-  assert.match(serviceSource, /throw new AccessReviewRequestError\('Search query is too long'\)/);
-  assert.match(routeSource, /AccessReviewRequestError/);
-  assert.match(routeSource, /error instanceof AccessReviewRequestError/);
-  assert.doesNotMatch(
-    routeSource,
-    /error instanceof Error && error\.message === 'Search query is too long'/,
-  );
 });
 
 test('admin list search responses map coded validation failures to fixed copy', () => {
@@ -1133,116 +1095,6 @@ test('mounted API routes sanitize caught errors before logging', () => {
       `${file} logs a raw caught error instead of sanitizeLogValue(error)`,
     );
   }
-});
-
-test('admin access-review record updates allowlist record types at the route boundary', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
-
-  assert.match(source, /const ACCESS_REVIEW_RECORD_TYPES = new Set\(\[/);
-  assert.match(source, /'entryPathway'/);
-  assert.match(source, /'accessSignal'/);
-  assert.match(source, /'contactRoute'/);
-  assert.match(source, /'postedOpportunity'/);
-  assert.match(source, /if \(!ACCESS_REVIEW_RECORD_TYPES\.has\(type\)\)/);
-  assert.match(
-    source,
-    /return res\.status\(400\)\.json\(\{ error: 'Invalid review record type' \}\)/,
-  );
-  assert.match(source, /type: type as any/);
-});
-
-test('admin access-review record update responses are minimized', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
-
-  const serializer = source.match(
-    /export const adminAccessReviewRecordUpdateDto = \(record: any\) => \{[\s\S]*?\n\};/,
-  );
-  assert.ok(serializer, 'admin access-review record update serializer should exist');
-  assert.match(source, /const MAX_ADMIN_ACCESS_REVIEW_NOTE_LENGTH = 2000/);
-  assert.match(source, /const adminAccessReviewLockedFields = \(value: unknown\): string\[\] =>/);
-  assert.match(source, /res\.json\(\{ record: adminAccessReviewRecordUpdateDto\(record\) \}\)/);
-  assert.doesNotMatch(source, /res\.json\(\{ record \}\)/);
-  assert.match(serializer[0], /_id: id/);
-  assert.match(serializer[0], /archived: record\?\.archived === true/);
-  assert.match(
-    serializer[0],
-    /status: typeof review\.status === 'string' \? review\.status : 'unreviewed'/,
-  );
-  assert.match(
-    serializer[0],
-    /lockedFields: adminAccessReviewLockedFields\(review\.lockedFields\)/,
-  );
-  assert.doesNotMatch(serializer[0], /reviewedByAccountId/);
-  assert.doesNotMatch(serializer[0], /sourceEvidence/);
-  assert.doesNotMatch(serializer[0], /observationId/);
-  assert.doesNotMatch(serializer[0], /evidenceItems/);
-  assert.doesNotMatch(serializer[0], /sourceUrl/);
-  assert.doesNotMatch(serializer[0], /email/);
-  assert.doesNotMatch(serializer[0], /personName/);
-});
-
-test('admin access-review lock fields are bounded before persistence', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/adminAccessReviewService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_ACCESS_REVIEW_LOCKED_FIELDS = 100/);
-  assert.match(source, /MAX_ACCESS_REVIEW_LOCK_FIELD_LENGTH = 120/);
-  assert.match(source, /MAX_ACCESS_REVIEW_EVIDENCE_IDS = 100/);
-  assert.ok(source.includes('const ACCESS_REVIEW_LOCK_FIELD_PATTERN = /^[A-Za-z0-9_.:-]+$/;'));
-  assert.match(
-    source,
-    /export function normalizeAccessReviewObjectId\(id: unknown\): mongoose\.Types\.ObjectId \| null/,
-  );
-  assert.match(source, /import \{ serializedDocumentId \} from '..\/utils\/idSerialization'/);
-  assert.match(
-    source,
-    /const accessReviewDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
-  );
-  assert.match(source, /typeof id === 'string'/);
-  assert.match(source, /id instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /id\.toHexString\(\)/);
-  assert.match(source, /if \(!\/\^\[a-f0-9\]\{24\}\$\/i\.test\(value\)\) return null/);
-  assert.match(source, /accessReviewDocumentId\(group\.researchEntityId\)/);
-  assert.match(source, /records\.map\(\(record\) => accessReviewDocumentId\(record\._id\)\)/);
-  assert.match(source, /accessReviewDocumentId\(obs\._id\)/);
-  assert.match(source, /scrapeRunId: accessReviewDocumentId\(obs\.scrapeRunId\) \|\| undefined/);
-  assert.match(source, /evidenceByRecordId\.get\(accessReviewDocumentId\(record\._id\)\)/);
-  assert.match(source, /const id = accessReviewDocumentId\(group\.researchEntityId\)/);
-  assert.match(
-    source,
-    /export function normalizeAccessReviewLockedFields\(input: unknown\): string\[\] \| null/,
-  );
-  assert.match(source, /field\.length > MAX_ACCESS_REVIEW_LOCK_FIELD_LENGTH/);
-  assert.match(source, /!ACCESS_REVIEW_LOCK_FIELD_PATTERN\.test\(field\)/);
-  assert.match(source, /normalized\.length >= MAX_ACCESS_REVIEW_LOCKED_FIELDS/);
-  assert.match(source, /for \(const rawId of rawIds\.slice\(0, MAX_ACCESS_REVIEW_EVIDENCE_IDS\)\)/);
-  assert.match(source, /const objectId = normalizeAccessReviewObjectId\(rawId\)/);
-  // Reviewer attribution never persists a caller-supplied id. The netid is
-  // normalized and the stored value is the Account's own _id from a lookup.
-  assert.match(
-    source,
-    /const reviewerAccountId = await resolveReviewerAccountId\(input\.reviewerNetid\)/,
-  );
-  assert.match(source, /update\['review\.reviewedByAccountId'\] = reviewerAccountId/);
-  assert.match(source, /if \(typeof netid !== 'string'\) return null/);
-  assert.match(source, /const normalized = netid\.trim\(\)\.toLowerCase\(\)/);
-  assert.match(source, /Account\.findOne\(\{ netid: normalized \}\)\.select\('_id'\)\.lean\(\)/);
-  assert.doesNotMatch(source, /update\['review\.reviewedByAccountId'\] = input\./);
-  assert.match(source, /const manuallyLockedFields = normalizeAccessReviewLockedFields\(fields\)/);
-  assert.match(
-    source,
-    /update\['review\.lockedFields'\] = normalizeAccessReviewLockedFields\(input\.lockedFields\) \|\| \[\]/,
-  );
-  assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(id\)\)/);
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(String\(id\)\)/);
-  assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(input\.reviewerNetid\)\)/);
-  assert.doesNotMatch(source, /String\(row\._id\)/);
-  assert.doesNotMatch(source, /String\(record\._id\)/);
-  assert.doesNotMatch(source, /String\(obs\._id\)/);
-  assert.doesNotMatch(source, /String\(obs\.scrapeRunId\)/);
-  assert.doesNotMatch(source, /const id = String\(group\._id\)/);
 });
 
 test('research discovery write services reject object-shaped ids before Mongo upserts', () => {
@@ -1611,37 +1463,6 @@ test('admin taxonomy write routes bound labels and category arrays before persis
   assert.doesNotMatch(source, /findById\(req\.params\.id\)/);
   assert.doesNotMatch(source, /findByIdAndUpdate\(req\.params\.id/);
   assert.doesNotMatch(source, /findByIdAndDelete\(req\.params\.id\)/);
-});
-
-test('admin access-review evidence completeness only trusts safe source URLs', () => {
-  const source = fs.readFileSync(
-    new URL('../client/src/components/admin/AdminAccessReview.tsx', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /const hasSafeSourceUrl = \(value: unknown\): boolean => Boolean\(safeHttpUrl\(value\)\)/,
-  );
-  assert.match(
-    source,
-    /const sourceUrls = Array\.isArray\(record\.sourceUrls\) \? record\.sourceUrls : \[\]/,
-  );
-  assert.match(source, /sourceUrls\.some\(hasSafeSourceUrl\)/);
-  assert.match(source, /hasSafeSourceUrl\(record\.sourceUrl\)/);
-  assert.doesNotMatch(source, /\(record\.sourceUrls \|\| \[\]\)\.filter\(Boolean\)\.length > 0/);
-  assert.doesNotMatch(source, /Boolean\(record\.sourceUrl\)/);
-});
-
-test('admin access-review queue withholds direct contact destinations', () => {
-  const source = fs.readFileSync(
-    new URL('../client/src/components/admin/AdminAccessReview.tsx', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /route\.email \|\| route\.url \? ' · destination withheld' : ''/);
-  assert.doesNotMatch(source, /` · \$\{route\.email\}`/);
-  assert.doesNotMatch(source, /` · \$\{route\.url\}`/);
 });
 
 test('scraper integrity report outputs are constrained to safe JSON artifact paths', () => {
@@ -4735,27 +4556,6 @@ test('scraper materializer logs sanitize untrusted exception values', () => {
     /console\.error\('Failed to recompute browseRankScore for', entityIdString, error\)/,
   );
   assert.doesNotMatch(source, /\(err as Error\)\?\.message \|\| err/);
-});
-
-test('scraper ResearchEntity writes refresh the admin access-review projection', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scrapers/entityMaterializer.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ mutateAndRefreshAdminAccessReviewProjection \}/);
-  assert.match(
-    source,
-    /mutateAndRefreshAdminAccessReviewProjection\(entityDoc\._id, \(session\) =>\s*Model\.updateOne\(\{ _id: entityDoc\._id \}, update, \{ session \}\)/,
-  );
-  assert.match(
-    source,
-    /mutateAndRefreshAdminAccessReviewProjection\(\s*researchEntityId,\s*async \(session\) =>/,
-  );
-  assert.match(
-    source,
-    /Model\.create\(\[\{ _id: researchEntityId, \.\.\.insert \}\], \{\s*session,\s*\}\)/,
-  );
 });
 
 test('scraper cron heartbeat logs sanitize lock exceptions', () => {

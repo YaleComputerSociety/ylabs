@@ -40,10 +40,6 @@ import {
   normalizeOfficialProfileDestination,
   resolveLeadOfficialProfileUrl,
 } from './leadProfileIdentity';
-import {
-  invalidateAdminAccessReviewProjection,
-  refreshAdminAccessReviewProjection,
-} from './adminAccessReviewProjectionService';
 import { buildResearchGroupFilterString, ResearchGroupFilterInput } from './researchGroupFilters';
 import {
   buildResearchEntityQualitySummary,
@@ -237,7 +233,6 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   };
 
   let group: any;
-  let projectionGeneration: number | null = null;
   await mongoose.connection.transaction(async (session) => {
     group = await ResearchEntity.findOneAndUpdate({ slug }, update, {
       upsert: true,
@@ -245,12 +240,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       setDefaultsOnInsert: true,
       session,
     }).lean();
-    projectionGeneration = await invalidateAdminAccessReviewProjection(group._id, { session });
   });
-  if (projectionGeneration !== null) {
-    await refreshAdminAccessReviewProjection(group._id, projectionGeneration);
-  }
-
   if (ownerPersonId) {
     const now = new Date();
     await RoleAssignment.updateOne(

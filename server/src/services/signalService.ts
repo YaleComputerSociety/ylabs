@@ -4,7 +4,7 @@ import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtil
 import { publicAccessHttpUrl } from '../utils/publicAccessArtifact';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
+import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
 import type { SignalConfidence, SignalType } from '../models/researchAccessTypes';
 
 export type { SignalConfidence, SignalType } from '../models/researchAccessTypes';
@@ -114,7 +114,7 @@ export async function upsertSignal(
   };
   const doc = deps.model
     ? await write()
-    : await mutateAndRefreshAdminAccessReviewProjection(researchEntityId, write);
+    : await withResearchEntityWriteTransaction(write);
 
   return {
     signalId: serializedDocumentId(doc?._id),

@@ -91,7 +91,7 @@ import {
   isHistoricalUndergradEvidence,
   namesNonYaleInstitution,
 } from './sources/labMicrositeUndergradLLMExtractor';
-import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
+import { withResearchEntityWriteTransaction } from '../services/researchEntityWriteTransaction';
 import {
   applyResearchEntityOrgUnitCanonicalization,
   getOrgUnitCanonicalizer,
@@ -1644,9 +1644,7 @@ export async function inheritSchoolFromLeadPi(
     observedAt: new Date(),
     confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
   };
-  await mutateAndRefreshAdminAccessReviewProjection(
-    toMaterializerObjectId(researchEntityId),
-    (session) => ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
+  await withResearchEntityWriteTransaction((session) => ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
   );
   const fresh = await ResearchEntity.findById(researchEntityId).lean();
   if (fresh) await syncEntity('researchEntity', fresh);
@@ -3786,7 +3784,7 @@ export async function materializeEntity(
       const update: Record<string, unknown> = { $set: set };
       if (Object.keys(unset).length > 0) update.$unset = unset;
       if (isResearchEntityObservationType(entityType)) {
-        await mutateAndRefreshAdminAccessReviewProjection(entityDoc._id, (session) =>
+        await withResearchEntityWriteTransaction((session) =>
           Model.updateOne({ _id: entityDoc._id }, update, { session }),
         );
       } else {
@@ -3820,9 +3818,7 @@ export async function materializeEntity(
     if (isResearchEntityObservationType(entityType)) {
       const researchEntityId = new mongoose.Types.ObjectId();
       try {
-        created_ = await mutateAndRefreshAdminAccessReviewProjection(
-          researchEntityId,
-          async (session) => {
+        created_ = await withResearchEntityWriteTransaction(async (session) => {
             const createdDocuments = await Model.create([{ _id: researchEntityId, ...insert }], {
               session,
             });

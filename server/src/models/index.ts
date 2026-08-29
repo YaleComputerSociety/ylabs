@@ -3,10 +3,6 @@
  */
 export { AdminGrant } from './adminGrant';
 export { AdminAuditEvent } from './adminAuditEvent';
-export {
-  AdminAccessReviewProjection,
-  AdminAccessReviewProjectionState,
-} from './adminAccessReviewProjection';
 export { EntityCorrectionReport } from './entityCorrectionReport';
 export { Fellowship } from './fellowship';
 export { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from './analytics';

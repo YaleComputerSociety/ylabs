@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   revokeAdminAccess: vi.fn(),
   getListingModel: vi.fn(),
   fellowshipFind: vi.fn(),
-  listAccessReviewEntities: vi.fn(),
   listAdminAuditEvents: vi.fn(),
 }));
 
@@ -19,11 +18,6 @@ vi.mock('../../services/adminGrantService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/adminGrantService')>()),
   grantAdminAccess: mocks.grantAdminAccess,
   revokeAdminAccess: mocks.revokeAdminAccess,
-}));
-
-vi.mock('../../services/adminAccessReviewService', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/adminAccessReviewService')>()),
-  listAccessReviewEntities: mocks.listAccessReviewEntities,
 }));
 
 vi.mock('../../db/connections', async (importOriginal) => ({
@@ -39,16 +33,11 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   },
 }));
 
-import {
-  AccessReviewRequestError,
-  AdminAccessReviewProjectionUnavailableError,
-} from '../../services/adminAccessReviewService';
 import { AdminGrantValidationError } from '../../services/adminGrantService';
 import router, {
   MAX_ADMIN_DEPARTMENT_ABBREVIATION_LENGTH,
   MAX_ADMIN_DEPARTMENT_CATEGORIES,
   MAX_ADMIN_TAXONOMY_LABEL_LENGTH,
-  adminAccessReviewRecordUpdateDto,
   adminDepartmentDto,
   adminFellowshipDto,
   adminResearchAreaDto,
@@ -273,22 +262,6 @@ describe('admin routes', () => {
     ).toBeUndefined();
   });
 
-  it('serializes admin DTO ids without arbitrary object string coercion', () => {
-    const maliciousId = {
-      toString: () => {
-        throw new Error('admin DTO stringified arbitrary id');
-      },
-    };
-
-    expect(adminFellowshipDto({ _id: maliciousId })).toMatchObject({ _id: '', id: '' });
-    expect(adminResearchAreaDto({ _id: maliciousId })).toMatchObject({ _id: '' });
-    expect(adminDepartmentDto({ _id: maliciousId })).toMatchObject({ _id: '' });
-    expect(adminAccessReviewRecordUpdateDto({ _id: maliciousId })).toMatchObject({
-      _id: '',
-      id: '',
-    });
-  });
-
   it('serializes admin fellowships through an allowlist payload', () => {
     const rawFellowship = {
       _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439012'),
@@ -367,66 +340,6 @@ describe('admin routes', () => {
     expect(serialized).not.toHaveProperty('studentVisibilityReviewedByAccountId');
     expect(serialized).not.toHaveProperty('studentVisibilityReasons');
     expect(serialized).not.toHaveProperty('__v');
-  });
-
-  it('rejects invalid access-review record types before review update work', async () => {
-    const res = await invokeRouteHandler(
-      '/access-review/records/:type/:recordId/review',
-      {
-        params: {
-          type: '$where',
-          recordId: '507f1f77bcf86cd799439011',
-        },
-        body: {
-          status: 'reviewed',
-        },
-      },
-      'put',
-    );
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Invalid review record type' });
-  });
-
-  it('minimizes access-review record update responses', () => {
-    const payload = adminAccessReviewRecordUpdateDto({
-      _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439013'),
-      archived: true,
-      review: {
-        status: 'approved',
-        reviewedByAccountId: 'internal-reviewer-id',
-        reviewedAt: '2026-06-11T12:00:00.000Z',
-        note: 'Reviewed note',
-        lockedFields: ['bestNextStep', 'sourceEvidenceIds'],
-      },
-      sourceEvidenceIds: ['evidence-1'],
-      sourceEvidenceId: 'evidence-2',
-      observationId: 'observation-1',
-      sourceUrls: ['https://example.edu/source'],
-      sourceName: 'Private Source',
-      email: 'person@example.edu',
-      personName: 'Private Person',
-      evidenceItems: [{ excerpt: 'private evidence excerpt' }],
-      confidenceByField: { label: 0.2 },
-      manuallyLockedFields: ['sourceName'],
-      __v: 3,
-    }) as Record<string, unknown>;
-
-    expect(payload).toEqual({
-      _id: '507f1f77bcf86cd799439013',
-      id: '507f1f77bcf86cd799439013',
-      archived: true,
-      review: {
-        status: 'approved',
-        reviewedAt: '2026-06-11T12:00:00.000Z',
-        note: 'Reviewed note',
-        lockedFields: ['bestNextStep', 'sourceEvidenceIds'],
-      },
-    });
-    expect(JSON.stringify(payload)).not.toContain('internal-reviewer-id');
-    expect(JSON.stringify(payload)).not.toContain('evidence-1');
-    expect(JSON.stringify(payload)).not.toContain('person@example.edu');
-    expect(JSON.stringify(payload)).not.toContain('private evidence excerpt');
   });
 
   it('caps admin list pagination before building Mongo skip and limit values', () => {
@@ -566,33 +479,5 @@ describe('admin routes', () => {
     expect(JSON.stringify(areaPayload)).not.toContain('faculty123');
     expect(JSON.stringify(deptPayload)).not.toContain('sourceRecords');
     expect(JSON.stringify(deptPayload)).not.toContain('ycps_subject');
-  });
-
-  it('returns a client error for oversized access-review search terms', async () => {
-    mocks.listAccessReviewEntities.mockRejectedValue(
-      new AccessReviewRequestError('Search query is too long'),
-    );
-
-    const res = await invokeRouteHandler(
-      '/access-review',
-      {
-        query: { search: 'a'.repeat(121) },
-      },
-      'get',
-    );
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Search query is too long' });
-  });
-
-  it('fails the access-review list closed while its projection is stale', async () => {
-    mocks.listAccessReviewEntities.mockRejectedValue(
-      new AdminAccessReviewProjectionUnavailableError(),
-    );
-
-    const res = await invokeRouteHandler('/access-review', { query: {} }, 'get');
-
-    expect(res.statusCode).toBe(503);
-    expect(res.body).toEqual({ error: 'Access review queue is rebuilding' });
   });
 });
