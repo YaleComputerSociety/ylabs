@@ -377,7 +377,11 @@ describe('relationshipTypeLabel', () => {
   it('maps known relationship types', () => {
     expect(relationshipTypeLabel('AFFILIATED_LAB')).toBe('Affiliated lab');
     expect(relationshipTypeLabel('MEMBER_RESEARCH_AREA')).toBe('Member');
-    expect(relationshipTypeLabel('HOSTED_PROGRAM')).toBe('Hosted program');
+  });
+
+  it('drops the tag for the relationship types retired in #2213', () => {
+    expect(relationshipTypeLabel('HOSTED_PROGRAM')).toBe('');
+    expect(relationshipTypeLabel('AFFILIATED_RESEARCH_GROUP')).toBe('');
   });
 
   it('returns empty string for unknown/missing types so the tag is dropped', () => {

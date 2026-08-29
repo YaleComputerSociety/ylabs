@@ -1093,7 +1093,8 @@ describe('center relationship type + label resolution', () => {
   it('labels each relationship type, with a generic fallback', () => {
     expect(relationshipLabelForType('AFFILIATED_LAB')).toBe('Affiliated lab');
     expect(relationshipLabelForType('MEMBER_RESEARCH_AREA')).toBe('Member');
-    expect(relationshipLabelForType('HOSTED_PROGRAM')).toBe('Hosted program');
+    // Dropped in #2213: unreachable, so it takes the generic fallback now.
+    expect(relationshipLabelForType('HOSTED_PROGRAM')).toBe('Related research home');
     expect(relationshipLabelForType('SOMETHING_ELSE')).toBe('Related research home');
   });
 });
