@@ -207,13 +207,14 @@ That is why 464 served FRA descriptions read as person bios: a structural limit 
 A probe of 27 such profile pages found research prose on 27 of 27 and an appointment line on 27 of 27, while the deterministic extractor produced prose on 0 of 27.
 
 `research-entity:fra-profile-synthesis` (`fraProfileSynthesis.ts`, the pure `fraProfileSynthesisCore.ts`, and the DB-facing per-entity step in `fraProfileSynthesisLane.ts`) handles this cohort.
-It scopes to unlocked, non-archived `FACULTY_RESEARCH_AREA` entities whose stored description is bio-shaped and which have a `/profile/` source URL (checked per entity, so a `--slug` pointing at the LAB the same profile page also mints is skipped rather than written to), skips any entity that already has a recorded non-bio research description, harvests research sentences from that page, strips career, credential, and navigation sentences before synthesis, reuses `synthesizeCoverageDescription` (passing `entityType` and `researchAreas` so the topic-label and area-echo quality flags actually fire), repairs orphan pronoun subjects, and fails closed when the output still reads as a biography or keeps a dangling pronoun.
+It scopes to unlocked, non-archived `FACULTY_RESEARCH_AREA` entities whose stored description is a career biography and which have a `/profile/` source URL (checked per entity, so a `--slug` pointing at the LAB the same profile page also mints is skipped rather than written to), skips any entity that already has a recorded non-bio description that actually describes research, harvests research sentences from that page, strips career, credential, and navigation sentences before synthesis, reuses `synthesizeCoverageDescription` (passing `entityType` and `researchAreas` so the topic-label and area-echo quality flags actually fire), repairs orphan pronoun subjects, and fails closed when the output still reads as a biography or keeps a dangling pronoun.
 Dry-run by default and needs `OPENAI_API_KEY` in either mode; apply requires `--confirm-fra-profile-synthesis`, `SCRAPER_ENV=development`, a Mongo URL whose database matches the configured development database name, and the `fra-profile-research-synthesis` source row already seeded (`scrape:seed-sources`).
 Measured against the stored extract on 25 entities, bio signal fell from 100% to 10% with names-a-research-subject holding at 100% (#2200).
 
 A synthesis lane cannot outrank a biography on confidence alone.
 Every such lane deliberately ranks below official-profile extraction (0.55) so a genuine verbatim research statement still wins, but the bio it exists to replace is emitted by that same official extraction at 0.55 and re-emitted weekly, so weight alone leaves the replacement permanently losing.
-`confidenceResolver` therefore sorts bio-shaped `fullDescription` value groups last (`demotePersonBioProseGroups`), mirroring how it demotes synthesized-source prose and bare person names.
+`confidenceResolver` therefore sorts biography `fullDescription` value groups last (`demotePersonBioProseGroups`), mirroring how it demotes synthesized-source prose and bare person names.
+That demotion has to stay at least as wide as whatever a bio-replacing lane selects on, so it treats a group as a biography when `isHighConfidencePersonBio` **or** `isCareerBiographyDescription` fires: while it keyed on person-voice shape alone, an endowed-chair or joined-the-faculty bio re-emitted weekly at 0.55 outranked the 0.48 replacement forever, so the lane reported success while the biography stayed served (#2200).
 Two scoping rules keep that from re-ranking the whole corpus.
 The demotion only fires when the useful non-bio alternative comes from a source in `BIO_REPLACING_DESCRIPTION_SOURCES`, because `isHighConfidencePersonBio` also flags genuine organization prose ("Professor Jane Doe's laboratory investigates ...") that several scrapers emit with no write-time bio guard, and a field-wide rule promoted a bare grant abstract over an authoritative official description on labs and centers this lane never touches.
 The bio is demoted, never dropped: `entityMaterializer` walks the ranked list when its own content gates reject the winner, and removing the bio left that walk with no last resort and blanked descriptions that had been served.
@@ -222,8 +223,11 @@ Do not "fix" a lane that cannot displace a bio by raising its confidence above o
 
 Do not reach for the grant-corpus lane here: only 12 of the 464 bio-shaped FRAs have any grant at all, so #2191 reaches 3% of the cohort.
 
-Two traps this lane already paid for:
+Traps this lane already paid for:
 
+- Do not select rewrite targets with `isHighConfidencePersonBio`.
+It is the right check on this lane's OUTPUT (a synthesized description should carry no person-voiced prose at all) and the wrong one for choosing what to rewrite: it fires on name-framed research prose that is already exactly what a student needs, over-reports roughly four to one on the served corpus, and scoping selection to it replaced 99 already-good descriptions on Development before they were reverted.
+Select on career facts instead (`isCareerBiographyDescription` in `server/src/utils/careerBiographyDescription.ts`, which also owns the shared sentence splitter), and keep `confidenceResolver`'s bio demotion at least as wide as whatever that selector accepts.
 - Do not gate on snippet count as a proxy for output quality.
 A two-snippet floor skipped 6 of 12 entities in a dry run, most of which synthesized cleanly.
 The precise control is the post-synthesis bio check.

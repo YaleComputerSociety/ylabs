@@ -22,6 +22,7 @@ import { Source } from '../../models/source';
 import { materializeEntity } from '../../scrapers/entityMaterializer';
 import { resetOrgUnitCanonicalizerCache } from '../../scrapers/orgUnitCanonicalization';
 import { toPublicResearchEntityDto } from '../../services/researchEntityDto';
+import { isHighConfidencePersonBio } from '../../utils/researchHomeDescriptionSelection';
 import type { CoverageSynthesisLLMFn } from '../../scrapers/coverageSynthesis';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
@@ -74,6 +75,23 @@ const PRONOUN_LED_SYNTHESIS = `Her laboratory investigates how mucosal immune ce
  */
 const REPAIR_SHORTENED_SYNTHESIS =
   'Her research investigates how mucosal immune cells restrain inflammation in the human intestine.';
+
+/**
+ * A career biography that `isHighConfidencePersonBio` does not flag: no leading
+ * pronoun, no "Dr." lead, no credentialed name, no degree narrative. It is the
+ * cohort selection reaches on career facts, so the resolver has to demote it too
+ * or the 0.55 directory bio outranks the 0.48 replacement forever.
+ */
+const NAME_LED_CAREER_BIO =
+  'Avery Lin is an immunologist at Yale University, where she teaches in the graduate immunology program, mentors postdoctoral trainees, and advises undergraduates on research careers.';
+
+/**
+ * Useful by `fullDescriptionQuality` and carrying no career marker, yet it never
+ * says what the research is. Treating it as a better-sourced description leaves
+ * the entity with no research description at all.
+ */
+const CLINICAL_SERVICE_PROSE =
+  'Lin sees patients in the digestive diseases clinic at Yale New Haven Hospital and serves on the hospital ethics committee, work she has continued since 2011.';
 
 const OFFICIAL_RESEARCH_STATEMENT =
   'The Lin Laboratory studies how mucosal immune cells restrain intestinal inflammation, combining organoid co-culture, single-cell sequencing, and computational modeling to predict relapse in inflammatory bowel disease.';
@@ -312,6 +330,52 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     expect(
       await Observation.countDocuments({ sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME }),
     ).toBe(0);
+  });
+
+  it('proceeds when the recorded alternative is useful prose that never describes research', async () => {
+    await seedFra();
+    await seedFullDescriptionObservation(
+      CLINICAL_SERVICE_PROSE,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const callLLM = vi.fn(stubLLM(SYNTHESIZED_RESEARCH));
+
+    const report = await runLane(callLLM);
+
+    expect(report.skipped).toBeUndefined();
+    expect(report).toMatchObject({ synthesized: true, written: true });
+    expect(callLLM).toHaveBeenCalledTimes(1);
+  });
+
+  it('displaces a served career biography that the person-voice check alone does not flag', async () => {
+    expect(isHighConfidencePersonBio(NAME_LED_CAREER_BIO)).toBe(false);
+    await seedFra();
+    await seedFullDescriptionObservation(
+      NAME_LED_CAREER_BIO,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    await materializeEntity(
+      'researchEntity',
+      { entityKey: SLUG },
+      { dryRun: false, synthesizeCardDescription: async () => '' },
+    );
+    const beforeLane = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(beforeLane.fullDescription).toBe(NAME_LED_CAREER_BIO);
+    const entity = (await ResearchEntity.findOne({
+      slug: SLUG,
+    }).lean()) as FraProfileSynthesisEntity;
+    expect(selectFraProfileSynthesisTargets([entity])).toHaveLength(1);
+
+    const report = await runLane(stubLLM(SYNTHESIZED_RESEARCH));
+
+    expect(report).toMatchObject({ synthesized: true, written: true });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+    expect(persisted.fieldProvenance?.fullDescription?.sourceName).toBe(
+      FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+    );
   });
 
   it('fails closed on a synthesis that keeps a dangling pronoun subject', async () => {

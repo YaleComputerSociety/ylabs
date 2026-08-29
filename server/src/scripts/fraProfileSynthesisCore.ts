@@ -18,6 +18,10 @@
  * the #2191 grant-corpus lane reaches 3% of it.
  */
 import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
+import {
+  isCareerBiographyDescription,
+  splitDescriptionSentences as splitSentences,
+} from '../utils/careerBiographyDescription';
 import { MAX_COVERAGE_SNIPPETS, MAX_COVERAGE_SNIPPET_CHARS } from '../scrapers/coverageSynthesis';
 import type { CoverageSnippet } from '../scrapers/coverageSynthesis';
 import {
@@ -34,8 +38,10 @@ export const FRA_PROFILE_SYNTHESIS_SOURCE_NAME = 'fra-profile-research-synthesis
  * statement still wins when one exists.
  *
  * Ranking below 0.55 is only survivable because `confidenceResolver` sorts
- * bio-shaped `fullDescription` values last once this lane has recorded a useful
- * research description (`BIO_REPLACING_DESCRIPTION_SOURCES` names it there).
+ * biography `fullDescription` values last - person-voiced prose and career
+ * biographies alike, so the cohort this lane selects is demotable - once this lane
+ * has recorded a useful research description
+ * (`BIO_REPLACING_DESCRIPTION_SOURCES` names it there).
  * Weight alone would leave this lane unable to displace the very biography it
  * exists to replace, since that bio is re-emitted weekly at 0.55.
  */
@@ -80,34 +86,8 @@ const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 const PRONOUN_SUBJECT = 'he|she|they|his|her|their|him|hers|theirs';
-const CAPITALIZED_PRONOUN_SUBJECT = 'He|She|They|His|Her|Their|Him|Hers|Theirs';
 
-/**
- * A bare `/(?<=[.!?])\s+/` split cuts "the epidemiology of HIV in the U.S. and
- * develop statistical methods" into two sub-floor fragments and drops both, so a
- * page whose only research sentence contains an abbreviation ("U.S.",
- * "M. tuberculosis", "Dr. Smith") reports zero snippets. A boundary therefore
- * needs both a non-abbreviation left side and a sentence-opening right side.
- *
- * The second alternative exists because the single-capital abbreviation guard
- * also suppresses the boundary after ordinary biomedical prose ending in a
- * letter-suffixed term: "the immunology of hepatitis C. She directs ..." stayed
- * one sentence, which hid the orphan pronoun from both the repair pass and the
- * residual check. No abbreviation is ever followed by a capitalised pronoun, so
- * that right-hand side is always a real sentence start.
- */
-const SENTENCE_BOUNDARY = new RegExp(
-  '(?<!\\b(?:[A-Z]|Dr|Mr|Ms|Mrs|Prof|St|Jr|Sr|vs|no|al|e\\.g|i\\.e|approx|Fig|eds?)\\.)' +
-    '(?<=[.!?])\\s+(?=["\'“‘(]?[A-Z])' +
-    `|(?<=[.!?])\\s+(?=(?:${CAPITALIZED_PRONOUN_SUBJECT})\\b)`,
-);
-
-export function splitSentences(value: string): string[] {
-  return value
-    .split(SENTENCE_BOUNDARY)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
+export { isCareerBiographyDescription, splitSentences };
 
 export function profileResearchSentences(pageText: string): string[] {
   return splitSentences(textValue(pageText))
@@ -150,6 +130,10 @@ export function profileResearchSnippets(
   return snippets;
 }
 
+/**
+ * Retained for the OUTPUT check only: a synthesized description must not read as
+ * person prose at all. Do not use this to select entities to rewrite.
+ */
 export function isBioShapedFacultyDescription(value: unknown): boolean {
   const text = textValue(value);
   return text ? isHighConfidencePersonBio(text) : false;

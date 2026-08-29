@@ -15,13 +15,17 @@ import {
   fullDescriptionObservationFilter,
   type FullDescriptionObservationLike,
 } from './grantCorpusSynthesisCore';
-import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import {
+  describesResearchFocus,
+  fullDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
   MIN_SNIPPETS_TO_SYNTHESIZE,
   hasResidualPronounLead,
   isBioShapedFacultyDescription,
+  isCareerBiographyDescription,
   profileResearchSnippets,
   repairPronounLead,
 } from './fraProfileSynthesisCore';
@@ -116,7 +120,11 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
     (entity) =>
       isFraProfileSynthesisScopedEntity(entity) &&
       !isFullDescriptionLocked(entity) &&
-      isBioShapedFacultyDescription(entity.fullDescription) &&
+      // Selection keys on a career biography, never on isHighConfidencePersonBio:
+      // that detector flags name-framed research prose ("Dr. Sauler's research
+      // investigates mechanisms of lung injury") which must be left alone. Scoping
+      // selection to it rewrote 99 already-good descriptions on Development.
+      isCareerBiographyDescription(entity.fullDescription) &&
       profileUrlOf(entity.sourceUrls),
   );
 }
@@ -125,8 +133,14 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
  * A recorded non-bio research description already beats this lane on the
  * author's own ranking, so spending a fetch and an LLM call to append an
  * observation that must lose is waste. Mirrors the grant-corpus lane's
- * better-sourced skip, restricted to non-bio values because the bio-shaped
- * cohort is exactly what this lane targets.
+ * better-sourced skip, restricted to non-bio values because the
+ * career-biography cohort is exactly what this lane targets.
+ *
+ * The alternative has to actually describe research, not merely lack career
+ * markers: `fullDescriptionQuality` is flag-based, so clinical-service prose
+ * ("sees patients at Smilow Cancer Hospital and serves on the ethics committee")
+ * clears it while saying nothing about the research, and skipping on it leaves
+ * the entity with no research description at all.
  */
 export async function entityHasNonBioSourcedDescription(
   entity: FraProfileSynthesisEntity,
@@ -143,7 +157,8 @@ export async function entityHasNonBioSourcedDescription(
   return observations.some(
     (observation) =>
       observation.sourceName !== FRA_PROFILE_SYNTHESIS_SOURCE_NAME &&
-      !isBioShapedFacultyDescription(observation.value) &&
+      !isCareerBiographyDescription(observation.value) &&
+      describesResearchFocus(observation.value) &&
       fullDescriptionQuality(observation.value, entity.researchAreas, entity.entityType).isUseful,
   );
 }

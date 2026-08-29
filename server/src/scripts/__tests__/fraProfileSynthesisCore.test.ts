@@ -5,6 +5,7 @@ import {
   assertFraProfileSynthesisApplyAllowed,
   hasResidualPronounLead,
   isBioShapedFacultyDescription,
+  isCareerBiographyDescription,
   parseFraProfileSynthesisArgs,
   profileResearchSentences,
   profileResearchSnippets,
@@ -317,5 +318,129 @@ describe('repairPronounLead safety', () => {
     expect(repairPronounLead('She directs a community partnership on health equity.')).toBe(
       'Directs a community partnership on health equity.',
     );
+  });
+});
+
+describe('isCareerBiographyDescription', () => {
+  // The selection trigger. isHighConfidencePersonBio over-reports about four to
+  // one (35 genuine biographies out of 155 org-type entities it flags), and
+  // scoping a rewrite lane to it replaced 99 already-good descriptions on
+  // Development, so selection keys on career FACTS instead.
+  const FLAG: Array<[string, string]> = [
+    [
+      'credential lead',
+      'Dr. Carolyn Roberts is an historian of science and medicine at Yale University.',
+    ],
+    [
+      'endowed chair with initials',
+      'Nicholas R. Parrillo is William K. Townsend Professor of Law at Yale.',
+    ],
+    ['tenure history', 'David W. Blight joined the faculty at Yale in January 2003.'],
+    [
+      // An organization noun sitting later in the opening is an object, not the
+      // subject, so it must not exempt a genuine biography.
+      'endowed title above an organization object',
+      'Jane Doe is Professor of Neurology and chief of the Sleep Program, which is nationally ranked.',
+    ],
+    [
+      'subspecialty training',
+      'Dr Mirza is a physician-scientist. He is a practicing pathologist with subspecialty training in GI Pathology.',
+    ],
+    [
+      'spelled-out degree',
+      'Dr. Sanchez received his undergraduate degree at Fairfield University and his medical degree at Georgetown.',
+    ],
+    [
+      'joint appointment',
+      'She holds a joint appointment in the Department of Statistics and Data Science.',
+    ],
+  ];
+  const LEAVE: Array<[string, string]> = [
+    // Hand-labeled by a parallel review as "bio-framed opener, research subject
+    // clearly stated" - good copy, must survive.
+    [
+      'name-framed research',
+      "Dr. Tigelaar's research focuses on dendritic epidermal T cells and their role in cutaneous immune surveillance.",
+    ],
+    [
+      'the alfred-lee regression',
+      "Dr. Alfred Lee's research focuses on classical hematology, particularly thrombosis.",
+    ],
+    [
+      'possessive research lead',
+      "Dr. Sauler's research investigates mechanisms of lung injury and cytoprotection.",
+    ],
+    [
+      'org subject',
+      'PittLab studies the contributions of the basal ganglia to normal behavior and neuropsychiatric disease.',
+    ],
+    [
+      'org is-directed-by',
+      'Welcome to the Thinking Lab at Yale University! The Thinking Lab is directed by Woo-kyoung Ahn, Professor of Psychology.',
+    ],
+    [
+      'organization voice',
+      'The laboratory investigates mechanisms of immune surveillance against precancerous cells.',
+    ],
+    // Biomedical vocabulary ends in the same suffixes as a specialist role noun,
+    // and at a medical school these words are everywhere. A role noun is only a
+    // career fact when the subject is a person, so none of these may be flagged.
+    [
+      'mammalian in research prose',
+      'Our research is focused on the mammalian circadian clock and its role in metabolism.',
+    ],
+    [
+      'ovarian in research prose',
+      'The overall goal is to understand ovarian follicle development at single-cell resolution.',
+    ],
+    [
+      'agonist in research prose',
+      'A major aim is to identify novel agonist compounds for this receptor family.',
+    ],
+    [
+      'Bayesian in research prose',
+      'The focus is on Bayesian methods for causal inference in observational health data.',
+    ],
+    [
+      'clinician-facing in research prose',
+      'The assay is a clinician-facing readout that reports drug response within one day.',
+    ],
+    [
+      'chief as a superlative, not a post',
+      'Sudden cardiac death is the chief cause of mortality in this cohort, and we study why.',
+    ],
+    [
+      'organization joining a consortium',
+      'The Smith Lab joined the Yale Cancer Biology Institute in 2019 and studies tumor metabolism.',
+    ],
+  ];
+
+  for (const [label, text] of FLAG) {
+    it(`flags a career biography: ${label}`, () => {
+      expect(isCareerBiographyDescription(text)).toBe(true);
+    });
+  }
+  for (const [label, text] of LEAVE) {
+    it(`leaves good research prose alone: ${label}`, () => {
+      expect(isCareerBiographyDescription(text)).toBe(false);
+    });
+  }
+
+  it('only inspects the opening, so a career fact past it does not count', () => {
+    // Whole-text scanning flagged descriptions that merely name a credential in
+    // passing. A career bio always leads with career facts, and the credential
+    // here sits in the third sentence with no organization-subject or led-by
+    // phrasing to reject the passage on instead.
+    const value =
+      'Genomic analyses map the inheritance of psychiatric traits across large cohorts. Current work spans imaging and electrophysiology. Jane Doe received her Ph.D. from Duke in 2004.';
+    expect(isCareerBiographyDescription(value)).toBe(false);
+    expect(isCareerBiographyDescription('Jane Doe received her Ph.D. from Duke in 2004.')).toBe(
+      true,
+    );
+  });
+
+  it('is empty-safe', () => {
+    expect(isCareerBiographyDescription('')).toBe(false);
+    expect(isCareerBiographyDescription(undefined)).toBe(false);
   });
 });

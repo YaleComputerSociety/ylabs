@@ -14,8 +14,11 @@ A probe of 27 such pages found research prose on 27 of 27 while the deterministi
 The content contract is unchanged and the grounding requirement is not relaxed: the output must be grounded in that page's own research prose, must not read as a person biography, and the lane fails closed rather than writing a weaker value.
 Only synthesis, not the source of authority, changes.
 
+The cohort to rewrite is defined by career facts (degrees earned, appointments, honours), not by whether the served text reads as person prose.
+Person-voice shape is the right test on the lane's output and the wrong test for choosing targets, because name-framed research prose is already good student-facing copy; selecting on it replaced 99 correct descriptions on Development.
+
 A synthesis lane cannot displace a biography on confidence alone, because every such lane deliberately ranks below official-profile extraction so a genuine verbatim research statement still wins, while the bio it replaces is emitted by that same extraction at a higher weight and re-emitted weekly.
-So `confidenceResolver` sorts bio-shaped `fullDescription` groups last once a bio-replacing lane has recorded a useful non-bio value for the entity.
+So `confidenceResolver` sorts biography `fullDescription` groups last once a bio-replacing lane has recorded a useful non-bio value for the entity, and that demotion is kept at least as wide as the predicate the lane selects on: a narrower demotion leaves the selected cohort undemotable and the lane reporting success while the biography stays served.
 The bio is demoted, never dropped, so an entity with only a bio still serves it and the materializer keeps a last resort when its own content gates reject the winner.
 Future work must not "fix" a losing synthesis lane by raising its confidence above official extraction; that trades away a real verbatim research statement.
 
