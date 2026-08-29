@@ -8,6 +8,7 @@ import {
   readSweepCheckpoint,
   sourceStepId,
   stageStepId,
+  sweepCheckpointFlagSignature,
   writeSweepCheckpointAtomic,
 } from '../scraperSweepCheckpoint';
 
@@ -80,7 +81,9 @@ describe('scraper sweep checkpoint', () => {
     const checkpointPath = path.join(dir, 'checkpoint.json');
     writeSweepCheckpointAtomic(checkpointPath, {
       mode: 'beta-fetch',
+      flags: '',
       outputDirectory: path.join(dir, 'beta-out'),
+      ownerPid: process.pid,
       createdAt: now().toISOString(),
       updatedAt: now().toISOString(),
       steps: { [sourceStepId('yale-directory')]: { id: sourceStepId('yale-directory'), kind: 'source', status: 'done' } },
@@ -123,5 +126,108 @@ describe('scraper sweep checkpoint', () => {
     const checkpointPath = path.join(dir, 'checkpoint.json');
     fs.writeFileSync(checkpointPath, 'not json');
     expect(readSweepCheckpoint(checkpointPath)).toBeUndefined();
+  });
+
+  it('keys the checkpoint path per worktree so parallel worktrees never share one', () => {
+    expect(checkpointPathForMode('development-full', dir, '/repos/worktree-a')).not.toBe(
+      checkpointPathForMode('development-full', dir, '/repos/worktree-b'),
+    );
+    expect(checkpointPathForMode('development-full', dir, '/repos/worktree-a')).toBe(
+      checkpointPathForMode('development-full', dir, '/repos/worktree-a'),
+    );
+  });
+
+  it('does not resume a checkpoint recorded under a different flag set', () => {
+    const checkpointPath = path.join(dir, 'checkpoint.json');
+    const first = SweepCheckpointStore.start({
+      mode: 'development-full',
+      flags: sweepCheckpointFlagSignature({ forceLlm: true, pruneBetweenPhases: true }),
+      checkpointPath,
+      outputDirectory: path.join(dir, 'out'),
+      now: now(),
+      restart: false,
+    }).store;
+    first.markDone(sourceStepId('yale-directory'), 'source', 0, now());
+
+    const plain = SweepCheckpointStore.start({
+      mode: 'development-full',
+      flags: sweepCheckpointFlagSignature({}),
+      checkpointPath,
+      outputDirectory: path.join(dir, 'out2'),
+      now: now(),
+      restart: false,
+    });
+    expect(plain.resumed).toBe(false);
+    expect(plain.store.isDone(sourceStepId('yale-directory'))).toBe(false);
+
+    const sameFlags = SweepCheckpointStore.start({
+      mode: 'development-full',
+      flags: sweepCheckpointFlagSignature({ pruneBetweenPhases: true, forceLlm: true }),
+      checkpointPath,
+      outputDirectory: path.join(dir, 'out3'),
+      now: now(),
+      restart: false,
+    });
+    expect(sameFlags.resumed).toBe(false);
+  });
+
+  it('refuses to resume a checkpoint whose owner process is still running a step', () => {
+    const checkpointPath = path.join(dir, 'checkpoint.json');
+    writeSweepCheckpointAtomic(checkpointPath, {
+      mode: 'development-full',
+      flags: '',
+      outputDirectory: path.join(dir, 'out'),
+      ownerPid: 1,
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      steps: {
+        [sourceStepId('yale-directory')]: {
+          id: sourceStepId('yale-directory'),
+          kind: 'source',
+          status: 'running',
+        },
+      },
+    });
+    expect(() =>
+      SweepCheckpointStore.start({
+        mode: 'development-full',
+        checkpointPath,
+        outputDirectory: path.join(dir, 'out'),
+        now: now(),
+        restart: false,
+      }),
+    ).toThrow(/still running/);
+    expect(
+      SweepCheckpointStore.start({
+        mode: 'development-full',
+        checkpointPath,
+        outputDirectory: path.join(dir, 'fresh'),
+        now: now(),
+        restart: true,
+      }).resumed,
+    ).toBe(false);
+  });
+
+  it('clears only the aggregate stage steps so the post-run chain re-runs', () => {
+    const checkpointPath = path.join(dir, 'checkpoint.json');
+    const { store } = SweepCheckpointStore.start({
+      mode: 'development-full',
+      checkpointPath,
+      outputDirectory: path.join(dir, 'out'),
+      now: now(),
+      restart: false,
+    });
+    store.markDone(sourceStepId('yale-directory'), 'source', 0, now());
+    store.markDone(stageStepId('faculty-projection'), 'stage', 0, now());
+    store.markDone(stageStepId('search-rebuild'), 'stage', 0, now());
+
+    expect(store.clearStageSteps(now()).sort()).toEqual([
+      stageStepId('faculty-projection'),
+      stageStepId('search-rebuild'),
+    ]);
+    expect(store.isDone(stageStepId('faculty-projection'))).toBe(false);
+    expect(store.isDone(sourceStepId('yale-directory'))).toBe(true);
+    expect(readSweepCheckpoint(checkpointPath)?.steps[stageStepId('search-rebuild')]).toBeUndefined();
+    expect(store.clearStageSteps(now())).toEqual([]);
   });
 });

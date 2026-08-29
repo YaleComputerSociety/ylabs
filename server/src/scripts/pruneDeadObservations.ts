@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ScrapeSnapshot } from '../models/scrapeSnapshot';
 import { pruneDeadObservations } from '../scrapers/observationRetention';
+import { applyObservationPruneEnvironmentGuards } from '../scrapers/scraperEnvironment';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -33,31 +34,38 @@ async function dropSnapshotCache(apply: boolean): Promise<number> {
 }
 
 async function main(args: PruneDeadObservationsArgs): Promise<void> {
-  const guard = assertScriptApplyAllowed({
+  assertScriptApplyAllowed({
     apply: args.apply,
     scriptName: 'observations:prune-dead',
     mongoUrl: process.env.MONGODBURL,
   });
-  assertPruneDeadObservationsApplyAllowed(args, guard.dbLabel);
+  const guard = applyObservationPruneEnvironmentGuards({
+    apply: args.apply,
+    mongoUrl: process.env.MONGODBURL,
+  });
+  for (const warning of guard.warnings) console.warn(`[prune-dead-observations] ${warning}`);
+  const apply = guard.apply;
+  assertPruneDeadObservationsApplyAllowed({ ...args, apply }, guard.dbLabel, guard.environment);
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for prune-dead-observations');
   await mongoose.connect(mongoUrl);
 
   const prune = await pruneDeadObservations({
-    apply: args.apply,
+    apply,
+    ...(args.keepRuns !== undefined ? { keepRuns: args.keepRuns } : {}),
     ...(args.sourceName ? { sourceName: args.sourceName } : {}),
   });
-  const snapshotsAffected = args.dropSnapshotCache ? await dropSnapshotCache(args.apply) : undefined;
+  const snapshotsAffected = args.dropSnapshotCache ? await dropSnapshotCache(apply) : undefined;
 
   const report = {
     generatedAt: new Date().toISOString(),
     environment: guard.environment,
     db: guard.dbLabel,
-    mode: args.apply ? 'apply' : 'dry-run',
+    mode: apply ? 'apply' : 'dry-run',
     prune,
     ...(snapshotsAffected !== undefined
-      ? { snapshotCache: { dropped: args.apply, affected: snapshotsAffected } }
+      ? { snapshotCache: { dropped: apply, affected: snapshotsAffected } }
       : {}),
   };
   console.log(JSON.stringify(report, null, 2));

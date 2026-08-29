@@ -1,7 +1,10 @@
+import type { ScraperEnvironment } from '../scrapers/scraperEnvironment';
+
 export interface PruneDeadObservationsArgs {
   apply: boolean;
   confirm: boolean;
   dropSnapshotCache: boolean;
+  keepRuns?: number;
   sourceName?: string;
   output?: string;
 }
@@ -25,6 +28,11 @@ export function parsePruneDeadObservationsArgs(argv: string[]): PruneDeadObserva
       args.confirm = true;
     } else if (arg === '--drop-snapshot-cache') {
       args.dropSnapshotCache = true;
+    } else if (arg.startsWith('--keep-runs=')) {
+      args.keepRuns = parseKeepRuns(arg.slice('--keep-runs='.length));
+    } else if (arg === '--keep-runs') {
+      args.keepRuns = parseKeepRuns(argv[index + 1]);
+      index += 1;
     } else if (arg.startsWith('--source=')) {
       args.sourceName = arg.slice('--source='.length);
     } else if (arg === '--source') {
@@ -42,17 +50,26 @@ export function parsePruneDeadObservationsArgs(argv: string[]): PruneDeadObserva
   return args;
 }
 
+function parseKeepRuns(raw: string | undefined): number {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`--keep-runs requires a non-negative integer; received ${raw}`);
+  }
+  return value;
+}
+
 export function assertPruneDeadObservationsApplyAllowed(
   args: PruneDeadObservationsArgs,
   dbLabel: string,
+  environment: ScraperEnvironment,
 ): void {
   if (!args.apply) return;
   if (!args.confirm) {
     throw new Error(`${PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG} is required when --apply is set.`);
   }
-  if (/\/(prod|production)$/i.test(dbLabel)) {
+  if (environment === 'production' || /\/(prod|production)$/i.test(dbLabel)) {
     throw new Error(
-      `prune-dead-observations --apply is blocked against a production database (target: ${dbLabel}).`,
+      `prune-dead-observations --apply is blocked against a production database (environment: ${environment}, target: ${dbLabel}).`,
     );
   }
 }

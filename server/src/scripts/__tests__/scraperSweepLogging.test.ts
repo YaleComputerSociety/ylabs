@@ -50,6 +50,40 @@ describe('scraper sweep logging', () => {
     expect(runner).toContain('[failed] source:yale-directory');
   });
 
+  it('reads only a bounded tail from the end of a large step log', () => {
+    const logPath = path.join(dir, 'huge.log');
+    const line = `${'x'.repeat(1000)}`;
+    fs.writeFileSync(logPath, `${Array.from({ length: 5000 }, (_, i) => `${i}-${line}`).join('\n')}\n`);
+    const tail = readLogTail(logPath, 5, 8 * 1024);
+
+    expect(tail).toHaveLength(5);
+    expect(tail.at(-1)?.startsWith('4999-')).toBe(true);
+    for (const captured of tail) {
+      expect(captured).toMatch(/^\d+-x+$/);
+    }
+  });
+
+  it('redacts scraped contact data and credentials captured in a failing step tail', () => {
+    const logPath = path.join(dir, 'leaky.log');
+    fs.writeFileSync(
+      logPath,
+      [
+        'MongoServerError: connection to mongodb+srv://sweeper:hunter2@cluster.example.net/Development failed',
+        'scraped contact: someone@example.edu / 203-555-0147',
+      ].join('\n'),
+    );
+    const logger = new SweepRunLogger(dir, now);
+    logger.logFailed('source:yale-directory', 1, logPath);
+
+    const errors = fs.readFileSync(path.join(dir, 'errors.log'), 'utf8');
+    expect(errors).not.toContain('sweeper:hunter2');
+    expect(errors).not.toContain('someone@example.edu');
+    expect(errors).not.toContain('203-555-0147');
+    expect(errors).toContain('[credentials-redacted]');
+    expect(errors).toContain('[email redacted]');
+    expect(errors).toContain('[phone redacted]');
+  });
+
   it('emits a placeholder when a failing step wrote no captured output', () => {
     expect(readLogTail(path.join(dir, 'missing.log'))).toEqual([]);
     const entry = formatErrorLogEntry({

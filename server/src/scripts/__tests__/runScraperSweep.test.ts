@@ -15,6 +15,7 @@ import {
   buildScraperSweepChildArgs,
   fellowshipCatalogRefreshBlocker,
   fellowshipPostRunArtifactError,
+  isDeadObservationPruneSweepMode,
   orderedScraperSweepPhases,
   parseDevelopmentPostRunStageResult,
   parseEponymousFraMergeResult,
@@ -926,6 +927,35 @@ describe('runScraperSweep', () => {
         'observations:prune-dead',
         '--apply',
         '--confirm-prune-dead-observations',
+      ]),
+    );
+  });
+
+  it('only allows the dead-observation prune on Development-database sweep modes', () => {
+    expect(isDeadObservationPruneSweepMode('development-full')).toBe(true);
+    expect(isDeadObservationPruneSweepMode('development-incremental')).toBe(true);
+    expect(isDeadObservationPruneSweepMode('fellowship-development-full')).toBe(true);
+    expect(isDeadObservationPruneSweepMode('development-plan')).toBe(false);
+    expect(isDeadObservationPruneSweepMode('development-sample')).toBe(false);
+    expect(isDeadObservationPruneSweepMode('beta-plan')).toBe(false);
+    expect(isDeadObservationPruneSweepMode('beta-fetch')).toBe(false);
+  });
+
+  it('omits the fellowship dead-data-prune stage by default and appends it last when enabled', () => {
+    expect(
+      buildFellowshipPostRunStages('/tmp/fellowship-sweep').map((stage) => stage.name),
+    ).not.toContain('dead-data-prune');
+    const enabled = buildFellowshipPostRunStages('/tmp/fellowship-sweep', {
+      pruneDeadObservations: true,
+    });
+    expect(enabled.map((stage) => stage.name).at(-1)).toBe('dead-data-prune');
+    const prune = enabled.find((stage) => stage.name === 'dead-data-prune');
+    expect(prune?.args).toEqual(
+      expect.arrayContaining([
+        'observations:prune-dead',
+        '--apply',
+        '--confirm-prune-dead-observations',
+        '--output=/tmp/fellowship-sweep/fellowship-dead-data-prune.json',
       ]),
     );
   });

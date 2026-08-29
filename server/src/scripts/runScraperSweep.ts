@@ -35,6 +35,7 @@ import {
   removeSweepCheckpoint,
   sourceStepId,
   stageStepId,
+  sweepCheckpointFlagSignature,
 } from './scraperSweepCheckpoint';
 import { SweepRunLogger } from './scraperSweepLogging';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
@@ -201,6 +202,10 @@ export function isFellowshipSweepMode(mode: ScraperSweepMode): boolean {
   return mode === 'fellowship-development-full';
 }
 
+export function isDeadObservationPruneSweepMode(mode: ScraperSweepMode): boolean {
+  return isDevelopmentSweepMode(mode) || isFellowshipSweepMode(mode);
+}
+
 export function resolveDevelopmentPostRunOptions(
   mode: ScraperSweepMode,
   env: NodeJS.ProcessEnv,
@@ -250,7 +255,8 @@ export interface FellowshipPostRunStage {
     | 'source-link-health'
     | 'catalog-refresh'
     | 'research-relevance-audit'
-    | 'freshness-audit';
+    | 'freshness-audit'
+    | 'dead-data-prune';
   status: 'succeeded' | 'failed';
   artifactPath?: string;
   exitCode: number;
@@ -265,6 +271,7 @@ export interface FellowshipPostRunStageOptions {
   fellowshipRefreshLimit?: number;
   sweepRefreshTarget?: string;
   applyLimit?: number;
+  pruneDeadObservations?: boolean;
 }
 
 const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
@@ -952,12 +959,14 @@ interface SweepRuntimeContext {
   now: () => Date;
 }
 
-function reconstructDevelopmentStageDelta(planned: PlannedPostRunStage): PostRunStageDelta {
+function reconstructDevelopmentStageDelta(
+  planned: PlannedPostRunStage,
+): PostRunStageDelta | undefined {
   if (!planned.definition.parseResult) return {};
   try {
     return parseDevelopmentPostRunStageResult(planned.artifactPath, planned.definition.parseResult);
   } catch {
-    return {};
+    return undefined;
   }
 }
 
@@ -971,16 +980,24 @@ async function runDevelopmentPostRunStages(
   const stages: DevelopmentPostRunStage[] = [];
   for (const planned of planDevelopmentPostRunStages(outputDirectory, options)) {
     const stepId = stageStepId(planned.name);
-    if (ctx?.store.isDone(stepId)) {
+    const resumedDelta = ctx?.store.isDone(stepId)
+      ? reconstructDevelopmentStageDelta(planned)
+      : undefined;
+    if (resumedDelta) {
       console.log(`\n[post-run] ${planned.name} (resume: already done)`);
       stages.push({
         name: planned.name,
         status: 'succeeded',
         artifactPath: planned.artifactPath,
         exitCode: 0,
-        ...reconstructDevelopmentStageDelta(planned),
+        ...resumedDelta,
       });
       continue;
+    }
+    if (ctx?.store.isDone(stepId)) {
+      console.warn(
+        `[post-run] ${planned.name} was marked done but its result artifact is missing or invalid; re-running`,
+      );
     }
     console.log(`\n[post-run] ${planned.name}`);
     const logPath = `${planned.artifactPath}.log`;
@@ -1196,6 +1213,14 @@ export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefini
     isEnabled: () => true,
     appendsOutputArtifact: true,
   },
+  {
+    name: 'dead-data-prune',
+    command: 'observations:prune-dead',
+    artifactName: 'fellowship-dead-data-prune.json',
+    buildArgs: () => ['--apply', PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG],
+    isEnabled: (options) => Boolean(options.pruneDeadObservations),
+    appendsOutputArtifact: true,
+  },
 ];
 
 interface PlannedFellowshipPostRunStage {
@@ -1272,14 +1297,22 @@ async function runFellowshipPostRunStages(
   for (const planned of planFellowshipPostRunStages(outputDirectory, options)) {
     const stepId = stageStepId(planned.name);
     if (ctx?.store.isDone(stepId)) {
-      console.log(`\n[fellowship-post-run] ${planned.name} (resume: already done)`);
-      stages.push({
-        name: planned.name,
-        status: 'succeeded',
-        ...(planned.artifactPath ? { artifactPath: planned.artifactPath } : {}),
-        exitCode: 0,
-      });
-      continue;
+      const resumeArtifactError = planned.artifactPath
+        ? fellowshipPostRunArtifactError(planned.artifactPath)
+        : undefined;
+      if (!resumeArtifactError) {
+        console.log(`\n[fellowship-post-run] ${planned.name} (resume: already done)`);
+        stages.push({
+          name: planned.name,
+          status: 'succeeded',
+          ...(planned.artifactPath ? { artifactPath: planned.artifactPath } : {}),
+          exitCode: 0,
+        });
+        continue;
+      }
+      console.warn(
+        `[fellowship-post-run] ${planned.name} was marked done but its report artifact is missing or invalid; re-running`,
+      );
     }
     console.log(`\n[fellowship-post-run] ${planned.name}`);
     const logPath = planned.artifactPath
@@ -1344,9 +1377,11 @@ export async function runScraperSweep(
 
   const now = dependencies.now || (() => new Date());
   const startedAt = now();
-  const checkpointPath = checkpointPathForMode(options.mode);
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+  const checkpointPath = checkpointPathForMode(options.mode, os.tmpdir(), repoRoot);
   const { store, resumed } = SweepCheckpointStore.start({
     mode: options.mode,
+    flags: sweepCheckpointFlagSignature(options),
     checkpointPath,
     outputDirectory: defaultScraperSweepOutputDirectory(options.mode, startedAt),
     now: startedAt,
@@ -1361,11 +1396,19 @@ export async function runScraperSweep(
   );
   const logger = new SweepRunLogger(outputDirectory, now);
   const ctx: SweepRuntimeContext = { store, logger, now };
-  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
   const childRunner = dependencies.childRunner || spawnChild;
   const sweepSources = sweepSourcesForMode(options.mode);
   const rows = new Array<ScraperSweepRunRow>(sweepSources.length);
   let stopped = false;
+
+  if (resumed && sweepSources.some((source) => !store.isDone(sourceStepId(source.name)))) {
+    const invalidated = store.clearStageSteps(startedAt);
+    if (invalidated.length > 0) {
+      console.log(
+        `Re-running ${invalidated.length} post-run stage(s) because at least one source still has to run: ${invalidated.join(', ')}`,
+      );
+    }
+  }
 
   const artifactPathFor = (source: ScraperSweepSource, index: number): string =>
     path.join(outputDirectory, `${String(index + 1).padStart(2, '0')}-${source.name}.json`);
@@ -1380,13 +1423,14 @@ export async function runScraperSweep(
   const succeededRowFromArtifact = (
     source: ScraperSweepSource,
     artifactPath: string,
-  ): ScraperSweepRunRow => {
-    let artifact: ScraperSweepArtifactSummary = {};
+  ): ScraperSweepRunRow | undefined => {
+    let artifact: ScraperSweepArtifactSummary;
     try {
       artifact = safeArtifactSummary(artifactPath);
     } catch {
-      artifact = {};
+      return undefined;
     }
+    if (scraperSweepArtifactError(options.mode, artifact)) return undefined;
     const row: ScraperSweepRunRow = {
       sourceName: source.name,
       phase: source.phase,
@@ -1408,9 +1452,15 @@ export async function runScraperSweep(
     const artifactPath = artifactPathFor(source, index);
     const stepId = sourceStepId(source.name);
     if (store.isDone(stepId)) {
-      console.log(`\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (resume: already done)`);
-      rows[index] = succeededRowFromArtifact(source, artifactPath);
-      return;
+      const resumedRow = succeededRowFromArtifact(source, artifactPath);
+      if (resumedRow) {
+        console.log(`\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (resume: already done)`);
+        rows[index] = resumedRow;
+        return;
+      }
+      console.warn(
+        `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} was marked done but its artifact is missing or invalid; re-running`,
+      );
     }
     if (stopped) {
       rows[index] = notRunRow(source, index);
@@ -1483,7 +1533,9 @@ export async function runScraperSweep(
   };
 
   const runBetweenPhasesPrune = async (phase: ScraperSweepPhase): Promise<void> => {
-    if (!options.pruneBetweenPhases || !config.writes || stopped) return;
+    if (!options.pruneBetweenPhases || !isDeadObservationPruneSweepMode(options.mode) || stopped) {
+      return;
+    }
     const stepId = pruneStepId(phase);
     if (store.isDone(stepId)) {
       console.log(`\n[prune] between phases after ${phase} (resume: already done)`);
@@ -1537,10 +1589,15 @@ export async function runScraperSweep(
     process.env,
     startedAt.toISOString(),
   );
-  if (developmentPostRunOptions && options.pruneBetweenPhases) {
+  const pruneDeadObservations =
+    Boolean(options.pruneBetweenPhases) && isDeadObservationPruneSweepMode(options.mode);
+  if (developmentPostRunOptions && pruneDeadObservations) {
     developmentPostRunOptions.pruneDeadObservations = true;
   }
   const fellowshipPostRunOptions = resolveFellowshipPostRunOptions(options.mode, process.env);
+  if (fellowshipPostRunOptions && pruneDeadObservations) {
+    fellowshipPostRunOptions.pruneDeadObservations = true;
+  }
   let postRun: ScraperSweepSummary['postRun'];
   if (developmentPostRunOptions) {
     postRun = await runDevelopmentPostRunStages(

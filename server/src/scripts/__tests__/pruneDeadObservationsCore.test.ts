@@ -28,6 +28,13 @@ describe('prune dead observations core', () => {
     });
   });
 
+  it('parses an explicit run-retention override and rejects a negative one', () => {
+    expect(parsePruneDeadObservationsArgs(['--keep-runs=0']).keepRuns).toBe(0);
+    expect(parsePruneDeadObservationsArgs(['--keep-runs', '5']).keepRuns).toBe(5);
+    expect(() => parsePruneDeadObservationsArgs(['--keep-runs=-1'])).toThrow(/keep-runs/);
+    expect(() => parsePruneDeadObservationsArgs(['--keep-runs=two'])).toThrow(/keep-runs/);
+  });
+
   it('rejects unknown arguments', () => {
     expect(() => parsePruneDeadObservationsArgs(['--nope'])).toThrow(/Unknown/);
   });
@@ -37,6 +44,7 @@ describe('prune dead observations core', () => {
       assertPruneDeadObservationsApplyAllowed(
         { apply: false, confirm: false, dropSnapshotCache: false },
         'cluster/Production',
+        'production',
       ),
     ).not.toThrow();
   });
@@ -46,19 +54,32 @@ describe('prune dead observations core', () => {
       assertPruneDeadObservationsApplyAllowed(
         { apply: true, confirm: false, dropSnapshotCache: false },
         'cluster/Development',
+        'development',
       ),
     ).toThrow(/confirm-prune-dead-observations/);
     expect(() =>
       assertPruneDeadObservationsApplyAllowed(
         { apply: true, confirm: true, dropSnapshotCache: false },
         'cluster/Production',
+        'development',
       ),
     ).toThrow(/production/i);
     expect(() =>
       assertPruneDeadObservationsApplyAllowed(
         { apply: true, confirm: true, dropSnapshotCache: false },
         'cluster/Development',
+        'development',
       ),
     ).not.toThrow();
+  });
+
+  it('blocks a production environment even when the database label looks non-production', () => {
+    expect(() =>
+      assertPruneDeadObservationsApplyAllowed(
+        { apply: true, confirm: true, dropSnapshotCache: false },
+        'cluster/YaleResearch',
+        'production',
+      ),
+    ).toThrow(/production/i);
   });
 });

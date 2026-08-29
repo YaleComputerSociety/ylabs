@@ -3,6 +3,7 @@ import path from 'path';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 export const DEFAULT_ERROR_LOG_TAIL_LINES = 40;
+export const DEFAULT_LOG_TAIL_BYTES = 64 * 1024;
 
 export function tailLines(content: string, count: number): string[] {
   const lines = content.split(/\r?\n/);
@@ -10,12 +11,33 @@ export function tailLines(content: string, count: number): string[] {
   return count > 0 ? lines.slice(-count) : [];
 }
 
-export function readLogTail(logPath: string | undefined, count = DEFAULT_ERROR_LOG_TAIL_LINES): string[] {
-  if (!logPath) return [];
+export function readLogTail(
+  logPath: string | undefined,
+  count = DEFAULT_ERROR_LOG_TAIL_LINES,
+  maxBytes = DEFAULT_LOG_TAIL_BYTES,
+): string[] {
+  if (!logPath || count <= 0) return [];
+  let fd: number | undefined;
   try {
-    return tailLines(fs.readFileSync(logPath, 'utf8'), count);
+    fd = fs.openSync(logPath, 'r');
+    const size = fs.fstatSync(fd).size;
+    const length = Math.min(size, Math.max(0, maxBytes));
+    if (length === 0) return [];
+    const buffer = Buffer.alloc(length);
+    fs.readSync(fd, buffer, 0, length, size - length);
+    const lines = tailLines(buffer.toString('utf8'), count + 1);
+    const whole = size <= length ? lines : lines.slice(1);
+    return whole.slice(-count);
   } catch {
     return [];
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* the fd is already gone; nothing to release */
+      }
+    }
   }
 }
 
@@ -38,7 +60,7 @@ export function formatErrorLogEntry(input: {
   const header = `${input.at} [failed] ${input.stepId} exitCode=${input.exitCode}`;
   const body =
     input.tail.length > 0
-      ? input.tail.map((line) => `  | ${line}`).join('\n')
+      ? input.tail.map((line) => `  | ${sanitizeLogValue(line)}`).join('\n')
       : '  | (no captured output)';
   return `${header}\n${body}\n`;
 }

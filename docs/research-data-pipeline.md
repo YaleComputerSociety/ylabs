@@ -65,16 +65,26 @@ Beta modes fetch observations into the `Beta` database and emit per-source `beta
 #### Checkpoint, resume, and structured logging
 
 The sweep is resumable and observable so a long run that dies mid-way does not restart from scratch (issue #2182).
-Every step - each source step and each post-run stage - is tracked in a durable per-mode checkpoint JSON at `<os.tmpdir>/ylabs-sweep-checkpoint-<mode>.json` (for example `/tmp/ylabs-sweep-checkpoint-development-full.json`), written atomically (temp file plus rename) after every `pending -> running -> done|failed` transition with the step's exit code and timestamps.
+Every step - each source step and each post-run stage - is tracked in a durable checkpoint JSON at `<os.tmpdir>/ylabs-sweep-checkpoint-<mode>-<worktree-fingerprint>.json`, written atomically (temp file plus rename) after every `pending -> running -> done|failed` transition with the step's exit code and timestamps.
+The checkpoint key includes a fingerprint of the repository root, so two worktrees running the same mode at the same time never share or clobber one checkpoint.
 A normal invocation resumes automatically: if a checkpoint for the same mode exists it reuses that run's output directory, skips every step already marked `done`, and re-runs anything not `done` (failed, interrupted, or never started); resume granularity is per step, so an interrupted source re-runs whole.
+Three conditions deliberately refuse or narrow a resume, because a checkpoint alone is not enough evidence that a step's work is still valid:
+
+- The checkpoint records the invocation's behavior-changing flag set (`--force-llm`, `--prune-between-phases`). A re-invocation with a different flag set starts fresh instead of inheriting `done` steps that were produced under different semantics.
+- The checkpoint records its owner pid. If a step is still `running` and that pid is alive, the sweep refuses to start rather than interleaving two writers against one checkpoint; use `--restart` to abandon a checkpoint whose owner is truly gone.
+- Post-run stages are whole-database aggregate stages, not per-source work. If any source step still has to run, every `stage:` entry is cleared at plan time so the entire post-run chain (faculty projection, visibility gate, search rebuild, and the rest) re-runs over the newly written data. A resumed sweep can never report green while a re-fetched source is missing from the projections or the search index.
+
+A step marked `done` whose declared result or artifact is missing, unreadable, or invalid is treated as not done and re-run, so the resume path keeps the same fail-loud artifact contract as a fresh run (#2050) instead of reporting an empty delta as success.
 `--restart` wipes the checkpoint and starts a fresh run.
 A fully successful sweep (no failures, nothing not-run, post-run not failed) clears its checkpoint so the next plain invocation starts fresh rather than resuming a completed run.
 Alongside `summary.json` the sweep writes, into the same output directory, a `runner.log` (a timestamped step-start/done/fail timeline), an `errors.log` (each failure with its step id, exit code, and the tail of that step's captured output), and per-step `.log` files capturing each child's output.
+`errors.log` reads a bounded tail from the end of a step log (never the whole file, which can reach hundreds of megabytes on an exhaustive run) and passes every captured line through `sanitizeLogValue`, so scraped contact data and connection credentials never land in the file operators are told to read and share.
 
 #### `--force-llm` and mid-run storage headroom
 
 `--force-llm` (off by default) threads `--force-llm` into every per-source `scrape run` child, re-running paid LLM extraction even when a page's content hash is unchanged; use it for a full re-derivation pass.
-`--prune-between-phases` (off by default) runs the gated dead-observation prune (`observations:prune-dead`) between phases and adds a final `dead-data-prune` post-run stage, so a `--force-llm` run can hold storage headroom without a separate watchdog process.
+`--prune-between-phases` (off by default) runs the gated dead-observation prune (`observations:prune-dead`) between phases and adds a final `dead-data-prune` post-run stage to both engines' chains, so a `--force-llm` run can hold storage headroom without a separate watchdog process.
+Both the between-phases hook and the final stage are restricted to the Development-database write modes (`development-full`, `development-incremental`, `fellowship-development-full`), matching the rest of the post-run chain: a Beta or Prod sweep never deletes mid-run, because in `beta-fetch` materialization is deferred to the Beta Render service and nothing has consumed the run yet.
 The between-phases prune is best-effort: a prune failure is logged to `errors.log` and does not stop the sweep.
 
 The two exhaustive Development modes (`development-full`, `development-incremental`) run a fixed chain of post-run stages after every source has fetched and materialized:
@@ -400,5 +410,8 @@ Follow the reviewed dry-run-first retention procedure in `docs/scraper-deploymen
 
 `observations:prune-dead` (`server/src/scripts/pruneDeadObservations.ts`) is the committed, gated dead-data prune used for mid-run and on-demand storage reclamation.
 It deletes observations that are both superseded and unreferenced regardless of age, reusing the same `observationRetention.ts` primitives (`buildSupersededObservationPruneFilter` with `cutoff = now`, plus `buildObservationReferencePipeline` over `OBSERVATION_REFERENCE_SPECS` to protect every referenced observation id), and can optionally drop the `scrape_snapshots` fetch cache with `--drop-snapshot-cache`.
-It is dry-run first; `--apply` requires `--confirm-prune-dead-observations` and is blocked against a production database.
-The sweep runs it between phases and as the final `dead-data-prune` post-run stage only when invoked with `--prune-between-phases`.
+Dropping the age floor does not drop run retention: the dead prune keeps the last 3 runs per source (`keepRuns`, same default as the compact prune) so the immediately preceding run's superseded observations survive.
+Those predecessors are exactly what `undergraduate-logistics-rollback` restores, and `OBSERVATION_REFERENCE_SPECS` protects only the newer target of `supersededBy`, so without run retention a single prune would silently destroy claim-local rollback for the last run.
+`--keep-runs=<n>` overrides the default, and `--keep-runs=0` explicitly forfeits claim-local rollback for every source; only pass it when rollback for the retained window is no longer needed.
+It is dry-run first; `--apply` requires `--confirm-prune-dead-observations` and routes through the shared `applyObservationPruneEnvironmentGuards`, so it enforces `SCRAPER_ENV`/Mongo-target coherence, downgrades to dry-run outside production without `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and is unconditionally blocked when the resolved environment is production, independent of how the database happens to be named.
+The sweep runs it between phases and as the final `dead-data-prune` post-run stage of both engines, only when invoked with `--prune-between-phases` on a Development-database write mode.
