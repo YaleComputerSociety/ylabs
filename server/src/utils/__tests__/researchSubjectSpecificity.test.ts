@@ -54,6 +54,13 @@ describe('isGenericResearchSubject', () => {
     // "ECMO" and "VAD" are the whole subject for ysm-karam, and lowercasing
     // alone would drop them under the short-token floor.
     expect(isGenericResearchSubject('ECMO and VAD support')).toBe(false);
+    expect(isGenericResearchSubject('AI for protein design')).toBe(false);
+  });
+
+  it('rejects an all-caps heading of ordinary words rather than reading it as acronyms', () => {
+    expect(isGenericResearchSubject('OUR MISSION AND VISION')).toBe(true);
+    expect(isGenericResearchSubject('WHO WE ARE')).toBe(true);
+    expect(isGenericResearchSubject('IT IS ALL ABOUT EXCELLENCE')).toBe(true);
   });
 });
 
@@ -81,6 +88,13 @@ describe('researchSubjectSpecificityScore', () => {
       'neurons glia astrocytes oligodendrocytes microglia synapses dendrites axons myelin cortex hippocampus',
     );
     expect(verbose).toBe(8);
+  });
+
+  it('counts a repeated acronym once, and never twice with its lowercased term', () => {
+    expect(researchSubjectSpecificityScore('ECMO support, ECMO outcomes, ECMO cannulation')).toBe(
+      researchSubjectSpecificityScore('ECMO cannulation'),
+    );
+    expect(researchSubjectSpecificityScore('ECMO')).toBe(1);
   });
 
   it('is zero for an absent subject, leaving a caller score unchanged', () => {

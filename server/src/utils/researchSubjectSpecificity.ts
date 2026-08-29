@@ -20,6 +20,12 @@
  * This module judges the extracted subject on the two axes that do carry signal:
  * whether a concrete subject is named, and whether that subject belongs to this
  * entity rather than to its parent department, center, or hospital (#2183).
+ *
+ * Nothing in the pipeline gates on this yet. The A/B run recorded in
+ * scripts/descriptionPromptAbHarness.ts rejected gating on `subjectScope`,
+ * because the model's scope judgement moved between runs and false-rejected a
+ * confirmed good description. Re-measure with that harness before wiring
+ * judgeResearchSubject into extraction or serving.
  */
 
 export type ResearchSubjectScope = 'this_entity' | 'parent_org' | 'unclear';
@@ -282,7 +288,10 @@ const GENERIC_SUBJECT_TERMS = new Set([
 /**
  * Function words carry no subject matter but are long enough to clear the
  * short-token floor, so without them "the nexus between hardware, computing, and
- * data science" scores as specific on the strength of "between".
+ * data science" scores as specific on the strength of "between". The same list
+ * guards the acronym path, where all-caps headings ("WHO WE ARE", "OUR MISSION")
+ * would otherwise read as subject-bearing acronyms, so short function words that
+ * the floor already drops belong here too.
  */
 const FUNCTION_WORDS = new Set([
   'about',
@@ -293,10 +302,13 @@ const FUNCTION_WORDS = new Set([
   'all',
   'along',
   'also',
+  'am',
   'among',
   'any',
   'are',
   'around',
+  'as',
+  'be',
   'because',
   'been',
   'before',
@@ -310,10 +322,12 @@ const FUNCTION_WORDS = new Set([
   'beyond',
   'both',
   'but',
+  'by',
   'can',
   'could',
   'developed',
   'did',
+  'do',
   'does',
   'during',
   'each',
@@ -325,14 +339,18 @@ const FUNCTION_WORDS = new Set([
   'had',
   'has',
   'have',
+  'he',
   'her',
   'here',
   'his',
   'how',
   'however',
+  'if',
   'including',
   'inside',
   'into',
+  'is',
+  'it',
   'its',
   'itself',
   'just',
@@ -343,14 +361,17 @@ const FUNCTION_WORDS = new Set([
   'major',
   'many',
   'may',
+  'me',
   'might',
   'more',
   'most',
   'much',
   'must',
+  'my',
   'near',
   'neither',
   'new',
+  'no',
   'nor',
   'not',
   'now',
@@ -375,6 +396,7 @@ const FUNCTION_WORDS = new Set([
   'she',
   'should',
   'since',
+  'so',
   'some',
   'such',
   'than',
@@ -394,7 +416,9 @@ const FUNCTION_WORDS = new Set([
   'two',
   'under',
   'until',
+  'up',
   'upon',
+  'us',
   'use',
   'used',
   'uses',
@@ -441,37 +465,53 @@ function subjectTerms(value: string): string[] {
     .filter(Boolean);
 }
 
+function isNonSubjectWord(term: string): boolean {
+  return GENERIC_SUBJECT_TERMS.has(term) || FUNCTION_WORDS.has(term);
+}
+
 function isSubjectBearingTerm(term: string): boolean {
   if (term.length < MIN_SPECIFIC_TERM_LENGTH) return false;
-  if (GENERIC_SUBJECT_TERMS.has(term)) return false;
-  if (FUNCTION_WORDS.has(term)) return false;
+  if (isNonSubjectWord(term)) return false;
   if (/^\d+$/.test(term)) return false;
   return true;
 }
 
+const ACRONYM_PATTERN = /\b[A-Z]{2,}[0-9]*\b/g;
+
 /**
  * An acronym a lab uses for its own subject ("ECMO", "VAD", "REEES") is highly
  * specific even though it is short, so case is evidence here and the lowercased
- * term list cannot be the only input.
+ * term list cannot be the only input. Counted distinctly and only when the term
+ * list did not already count it, so a repeated acronym and an all-caps heading of
+ * ordinary words ("WHO WE ARE") cannot inflate the score.
  */
-function acronymCount(value: string): number {
-  return (value.match(/\b[A-Z]{2,}[0-9]*\b/g) ?? []).filter(
-    (token) => !GENERIC_SUBJECT_TERMS.has(token.toLowerCase()),
-  ).length;
+function subjectBearingAcronyms(value: string, countedTerms: Set<string>): string[] {
+  const distinct = new Set<string>();
+  for (const token of value.match(ACRONYM_PATTERN) ?? []) {
+    const term = token.toLowerCase();
+    if (isNonSubjectWord(term)) continue;
+    if (countedTerms.has(term)) continue;
+    distinct.add(term);
+  }
+  return [...distinct];
+}
+
+function subjectSpecificity(text: string): { terms: string[]; acronyms: string[] } {
+  const seen = new Set<string>();
+  const terms: string[] = [];
+  for (const term of subjectTerms(text)) {
+    if (!isSubjectBearingTerm(term)) continue;
+    if (seen.has(term)) continue;
+    seen.add(term);
+    terms.push(term);
+  }
+  return { terms, acronyms: subjectBearingAcronyms(text, seen) };
 }
 
 export function specificResearchSubjectTerms(value: unknown): string[] {
   const text = textValue(value);
   if (!text) return [];
-  const seen = new Set<string>();
-  const specific: string[] = [];
-  for (const term of subjectTerms(text)) {
-    if (!isSubjectBearingTerm(term)) continue;
-    if (seen.has(term)) continue;
-    seen.add(term);
-    specific.push(term);
-  }
-  return specific;
+  return subjectSpecificity(text).terms;
 }
 
 /**
@@ -483,7 +523,8 @@ export function specificResearchSubjectTerms(value: unknown): string[] {
 export function isGenericResearchSubject(value: unknown): boolean {
   const text = textValue(value);
   if (!text) return true;
-  return specificResearchSubjectTerms(text).length === 0 && acronymCount(text) === 0;
+  const { terms, acronyms } = subjectSpecificity(text);
+  return terms.length === 0 && acronyms.length === 0;
 }
 
 /**
@@ -495,7 +536,8 @@ export function isGenericResearchSubject(value: unknown): boolean {
 export function researchSubjectSpecificityScore(value: unknown): number {
   const text = textValue(value);
   if (!text) return 0;
-  return Math.min(specificResearchSubjectTerms(text).length + acronymCount(text), 8);
+  const { terms, acronyms } = subjectSpecificity(text);
+  return Math.min(terms.length + acronyms.length, 8);
 }
 
 export interface ResearchSubjectJudgement {

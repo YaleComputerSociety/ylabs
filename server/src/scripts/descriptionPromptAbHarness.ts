@@ -54,9 +54,13 @@ import { Observation } from '../models/observation';
 import {
   DESCRIPTION_EXTRACTION_SYSTEM_PROMPT,
   DEFAULT_MODEL,
+  candidateDescriptionLabsFromDocs,
   htmlToText,
+  type CandidateDescriptionLab,
+  type CandidateDescriptionLabDoc,
   type DescriptionExtraction,
 } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isDescriptionGroundedInSource } from '../utils/officialResearchDescription';
 import { isFacultyResearchTextEntity } from '../utils/researchEntityDescriptionText';
 import type { DescriptionEntityKind } from '../utils/researchHomeDescriptionSelection';
@@ -111,6 +115,7 @@ interface Arm {
   name: ArmName;
   systemPrompt: string;
   fieldInstructions: string[];
+  gatesOnSubject: boolean;
 }
 
 const ARMS: Arm[] = [
@@ -118,11 +123,13 @@ const ARMS: Arm[] = [
     name: 'A_baseline',
     systemPrompt: DESCRIPTION_EXTRACTION_SYSTEM_PROMPT,
     fieldInstructions: BASELINE_FIELD_INSTRUCTIONS,
+    gatesOnSubject: false,
   },
   {
     name: 'B_subject_gate',
     systemPrompt: CANDIDATE_SYSTEM_PROMPT,
     fieldInstructions: CANDIDATE_FIELD_INSTRUCTIONS,
+    gatesOnSubject: true,
   },
 ];
 
@@ -143,14 +150,67 @@ function argValue(flag: string): string | undefined {
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+const DEFAULT_RANDOM_SAMPLE = 30;
+
+/**
+ * A malformed `--random` must fail the run rather than degrade it: an unchecked
+ * NaN silently drops both random strata while the report still prints a sample
+ * size and metrics, which reads as a valid result for the named cases alone.
+ */
+function randomSampleCount(value: string | undefined): number {
+  if (value === undefined) return DEFAULT_RANDOM_SAMPLE;
+  const count = Number(value);
+  if (!Number.isInteger(count) || count < 0) {
+    throw new Error(`--random must be a non-negative integer, received "${value}".`);
+  }
+  return count;
+}
+
+/**
+ * Side assignment from the slug, not from position: with index parity every
+ * even case put arm A on the left, so a reviewer could infer the arm from the
+ * ordering even with the labels removed.
+ */
+function placesBaselineOnLeft(slug: string): boolean {
+  let hash = 5381;
+  for (let index = 0; index < slug.length; index += 1) {
+    hash = ((hash << 5) + hash + slug.charCodeAt(index)) >>> 0;
+  }
+  return hash % 2 === 0;
+}
+
 interface SampleEntity {
   slug: string;
   name: string;
   entityType: string;
+  kind: string;
   pageUrl: string;
   storedFullDescription: string;
   stratum: string;
 }
+
+/**
+ * The projection production uses to pick a description page, so the sample is
+ * built by `candidateDescriptionLabsFromDocs` rather than by a local URL guess.
+ * Measuring a page the sweep would never extract from makes the guardrail rates
+ * statements about nothing.
+ */
+const CANDIDATE_PROJECTION = {
+  slug: 1,
+  name: 1,
+  displayName: 1,
+  entityType: 1,
+  kind: 1,
+  website: 1,
+  websiteUrl: 1,
+  sourceUrls: 1,
+  sourceLinkHealth: 1,
+  manuallyLockedFields: 1,
+  school: 1,
+  schools: 1,
+  departments: 1,
+  fullDescription: 1,
+} as const;
 
 const YALE_HOST = /(^|\.)yale\.edu$/;
 
@@ -201,37 +261,22 @@ async function buildSample(randomCount: number): Promise<SampleEntity[]> {
     studentVisibilityTier: 'student_ready',
     archived: { $ne: true },
   })
-    .select({
-      slug: 1,
-      name: 1,
-      entityType: 1,
-      website: 1,
-      websiteUrl: 1,
-      sourceUrls: 1,
-      fullDescription: 1,
-    })
+    .select(CANDIDATE_PROJECTION)
     .lean();
 
-  const pageUrlOf = (doc: Record<string, unknown>): string => {
-    const candidates = [
-      doc.website,
-      doc.websiteUrl,
-      ...(Array.isArray(doc.sourceUrls) ? doc.sourceUrls : []),
-    ]
-      .map((value) => textValue(value))
-      .filter((value) => /^https?:\/\//i.test(value));
-    return candidates[0] ?? '';
-  };
+  const candidatesOf = (rows: unknown[]): CandidateDescriptionLab[] =>
+    candidateDescriptionLabsFromDocs(rows as CandidateDescriptionLabDoc[]);
 
-  const toSample = (doc: Record<string, unknown>, stratum: string): SampleEntity | null => {
-    const pageUrl = pageUrlOf(doc);
+  const toSample = (candidate: CandidateDescriptionLab, stratum: string): SampleEntity | null => {
+    const pageUrl = textValue(candidate.websiteUrl);
     if (!pageUrl) return null;
     return {
-      slug: String(doc.slug ?? ''),
-      name: String(doc.name ?? 'Research entity'),
-      entityType: String(doc.entityType ?? ''),
+      slug: candidate.slug ?? '',
+      name: candidate.name || 'Research entity',
+      entityType: candidate.entityType ?? '',
+      kind: candidate.kind ?? '',
       pageUrl,
-      storedFullDescription: textValue(doc.fullDescription),
+      storedFullDescription: textValue(candidate.fullDescription),
       stratum,
     };
   };
@@ -243,51 +288,43 @@ async function buildSample(randomCount: number): Promise<SampleEntity[]> {
   // exists to check.
   const sample: SampleEntity[] = [];
   const namedDocs = await ResearchEntity.find({ slug: { $in: named } })
-    .select({
-      slug: 1,
-      name: 1,
-      entityType: 1,
-      website: 1,
-      websiteUrl: 1,
-      sourceUrls: 1,
-      fullDescription: 1,
-    })
+    .select(CANDIDATE_PROJECTION)
     .lean();
-  const bySlug = new Map(
-    namedDocs.map((doc) => [String((doc as { slug?: unknown }).slug ?? ''), doc]),
+  const presentSlugs = new Set(
+    namedDocs.map((doc) => String((doc as { slug?: unknown }).slug ?? '')),
+  );
+  const namedCandidates = new Map(
+    candidatesOf(namedDocs).map((candidate) => [candidate.slug ?? '', candidate]),
   );
   for (const slug of named) {
-    const doc = bySlug.get(slug);
-    if (!doc) {
+    if (!presentSlugs.has(slug)) {
       console.log(`WARN: named sample entity is absent from the corpus: ${slug}`);
       continue;
     }
-    const entry = toSample(doc as Record<string, unknown>, strata.get(slug) ?? 'named');
+    const candidate = namedCandidates.get(slug);
+    const entry = candidate ? toSample(candidate, strata.get(slug) ?? 'named') : null;
     if (entry) sample.push(entry);
-    else console.log(`WARN: named sample entity has no fetchable URL: ${slug}`);
+    else console.log(`WARN: named sample entity has no usable description URL: ${slug}`);
   }
 
   // Two random strata, because the cohorts fail differently: an own-site lab has
   // real research prose somewhere to find, while a yale.edu profile often does
   // not, and a single pooled sample would hide a regression in either one.
-  const remaining = docs.filter(
-    (doc) => !named.includes(String((doc as { slug?: unknown }).slug ?? '')),
-  );
-  const ownSite: Record<string, unknown>[] = [];
-  const yaleOnly: Record<string, unknown>[] = [];
-  for (const doc of remaining) {
-    const url = pageUrlOf(doc as Record<string, unknown>);
-    if (!url) continue;
-    const host = hostOf(url);
+  const remaining = candidatesOf(docs).filter((candidate) => !named.includes(candidate.slug ?? ''));
+  const ownSite: CandidateDescriptionLab[] = [];
+  const yaleOnly: CandidateDescriptionLab[] = [];
+  for (const candidate of remaining) {
+    const host = hostOf(candidate.websiteUrl);
     if (!host) continue;
-    (YALE_HOST.test(host) ? yaleOnly : ownSite).push(doc as Record<string, unknown>);
+    (YALE_HOST.test(host) ? yaleOnly : ownSite).push(candidate);
   }
 
-  const half = Math.max(1, Math.floor(randomCount / 2));
-  const take = (pool: Record<string, unknown>[], count: number, stratum: string): void => {
+  const half = Math.floor(randomCount / 2);
+  const take = (pool: CandidateDescriptionLab[], count: number, stratum: string): void => {
+    if (count <= 0 || pool.length === 0) return;
     // Deterministic stride rather than a random draw so a re-run compares the
     // same entities and the two arms can be re-scored later.
-    const stride = Math.max(1, Math.floor(pool.length / Math.max(count, 1)));
+    const stride = Math.max(1, Math.floor(pool.length / count));
     for (let index = 0, taken = 0; index < pool.length && taken < count; index += stride) {
       const entry = toSample(pool[index], stratum);
       if (!entry) continue;
@@ -323,14 +360,16 @@ async function grantCorpusFor(slug: string): Promise<string> {
 }
 
 /**
- * Share of the named subject's specific terms that also appear in the entity's
- * own funded grants. Objective and model-free: a mission statement or a figure
- * caption does not share vocabulary with the PI's grants, and real research prose
- * does. Reported only for entities that have grant text at all.
+ * Share of the extracted description's specific terms that also appear in the
+ * entity's own funded grants. Scored on the description itself, not on the
+ * candidate arm's subject phrase, because only the description exists in both
+ * arms. Objective and model-free: a mission statement or a figure caption does
+ * not share vocabulary with the PI's grants, and real research prose does.
+ * Reported only for entities that have grant text at all.
  */
-function corroborationRate(subject: string, grantCorpus: string): number | null {
+function corroborationRate(description: string, grantCorpus: string): number | null {
   if (!grantCorpus) return null;
-  const terms = specificResearchSubjectTerms(subject);
+  const terms = specificResearchSubjectTerms(description);
   if (!terms.length) return 0;
   const haystack = grantCorpus.toLowerCase();
   const hits = terms.filter((term) => haystack.includes(term)).length;
@@ -348,15 +387,21 @@ async function callArm(
     entityKind: DescriptionEntityKind;
   },
 ): Promise<AbExtraction> {
+  // Contact details are redacted exactly as `defaultCallLLM` does, so the arms
+  // receive the input production would send and no email or phone number reaches
+  // the API that the sweep deliberately withholds.
+  const labName = redactDirectContactInfo(input.labName).slice(0, 240);
+  const sourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
+  const pageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
   // Arm A never saw a record-type line, so it must not receive one here: adding
   // it would change two variables at once and the comparison would not isolate
   // the prompt reframe.
   const recordLine =
     arm.name === 'A_baseline'
-      ? `Lab: ${input.labName}`
+      ? `Lab: ${labName}`
       : input.entityKind === 'person'
-        ? `Record: ${input.labName}. This record is an INDIVIDUAL PERSON, not an organization.`
-        : `Record: ${input.labName}. This record is an ORGANIZATION (a lab, center, institute, or similar).`;
+        ? `Record: ${labName}. This record is an INDIVIDUAL PERSON, not an organization.`
+        : `Record: ${labName}. This record is an ORGANIZATION (a lab, center, institute, or similar).`;
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -368,9 +413,9 @@ async function callArm(
           role: 'user',
           content: [
             recordLine,
-            `Source URL: ${input.sourceUrl}`,
+            `Source URL: ${sourceUrl}`,
             ...arm.fieldInstructions,
-            input.pageText,
+            pageText,
           ].join('\n\n'),
         },
       ],
@@ -433,7 +478,7 @@ async function main(): Promise<void> {
   const mongoUrl = process.env.MONGODBURL;
   if (!apiKey || !mongoUrl) throw new Error('OPENAI_API_KEY and MONGODBURL must be set.');
   const model = argValue('--model') ?? DEFAULT_MODEL;
-  const randomCount = Number(argValue('--random') ?? '30');
+  const randomCount = randomSampleCount(argValue('--random'));
   const reportPath = argValue('--output')
     ? resolveSafeJsonReportOutputPath(argValue('--output') as string)
     : '';
@@ -476,7 +521,10 @@ async function main(): Promise<void> {
           labName: entity.name,
           sourceUrl: entity.pageUrl,
           pageText,
-          entityKind: isFacultyResearchTextEntity({ entityType: entity.entityType })
+          entityKind: isFacultyResearchTextEntity({
+            entityType: entity.entityType,
+            kind: entity.kind,
+          })
             ? 'person'
             : 'organization',
         });
@@ -485,10 +533,12 @@ async function main(): Promise<void> {
         const subject = textValue(extraction.researchSubject);
         const scope = textValue(extraction.subjectScope);
         const grounded = full ? isDescriptionGroundedInSource(full, pageText) : true;
-        // Arm A returns no judgement fields, so it is scored as ungated. Its
-        // servable rate is therefore its non-empty-and-grounded rate, which is
-        // exactly the behaviour in production today.
-        const judged = subject || scope ? judgeResearchSubject({ subject, scope }) : null;
+        // Keyed on the arm, never on field presence: a gated arm that omits both
+        // judgement fields must be judged (and tallied as no_subject) rather than
+        // waived, or its servable rate silently drifts back toward the baseline.
+        // Arm A is ungated, so its servable rate is its non-empty-and-grounded
+        // rate, which is exactly the behaviour in production today.
+        const judged = arm.gatesOnSubject ? judgeResearchSubject({ subject, scope }) : null;
         const servable = Boolean(full) && grounded && (judged ? judged.isServable : true);
         if (full) tally.nonEmpty += 1;
         if (full) {
@@ -580,6 +630,20 @@ async function main(): Promise<void> {
   console.log(`\ndiffering cases (for blind pairwise review): ${differing.length}/${pairs.length}`);
 
   if (reportPath) {
+    const reviewCases = differing.map((pair, index) => {
+      const [a, b] = pair.outcomes;
+      const baselineLeft = placesBaselineOnLeft(pair.entity.slug);
+      return {
+        caseId: index,
+        slug: pair.entity.slug,
+        entityType: pair.entity.entityType,
+        stratum: pair.entity.stratum,
+        left: baselineLeft ? a.fullDescription : b.fullDescription,
+        right: baselineLeft ? b.fullDescription : a.fullDescription,
+        leftArm: baselineLeft ? a.arm : b.arm,
+        rightArm: baselineLeft ? b.arm : a.arm,
+      };
+    });
     fs.writeFileSync(
       reportPath,
       `${JSON.stringify(
@@ -589,24 +653,22 @@ async function main(): Promise<void> {
           sampleSize: sample.length,
           scoredPairs: pairs.length,
           metrics: Object.fromEntries([...tallies.entries()]),
-          // Arm labels are stripped from the review payload so the pairwise
-          // judgement is genuinely blind. The key maps back after scoring.
-          blindReview: pairs
-            .filter((pair) => pair.outcomes[0].fullDescription !== pair.outcomes[1].fullDescription)
-            .map((pair, index) => {
-              const flip = index % 2 === 0;
-              const [a, b] = pair.outcomes;
-              return {
-                caseId: index,
-                slug: pair.entity.slug,
-                entityType: pair.entity.entityType,
-                stratum: pair.entity.stratum,
-                left: flip ? a.fullDescription : b.fullDescription,
-                right: flip ? b.fullDescription : a.fullDescription,
-                leftArm: flip ? a.arm : b.arm,
-                rightArm: flip ? b.arm : a.arm,
-              };
-            }),
+          // Arm labels live only in blindReviewKey, so the pairwise judgement is
+          // genuinely blind: a reviewer scores blindReview and joins the key by
+          // caseId afterwards.
+          blindReview: reviewCases.map((entry) => ({
+            caseId: entry.caseId,
+            slug: entry.slug,
+            entityType: entry.entityType,
+            stratum: entry.stratum,
+            left: entry.left,
+            right: entry.right,
+          })),
+          blindReviewKey: reviewCases.map((entry) => ({
+            caseId: entry.caseId,
+            leftArm: entry.leftArm,
+            rightArm: entry.rightArm,
+          })),
         },
         null,
         2,
