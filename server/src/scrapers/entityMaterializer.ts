@@ -2262,9 +2262,7 @@ async function materializeResearchEntityRelationship(
 
 const RESEARCH_ENTITY_RELATIONSHIP_LABELS: Record<string, string> = {
   AFFILIATED_LAB: 'Affiliated lab',
-  AFFILIATED_RESEARCH_GROUP: 'Related research group',
   MEMBER_RESEARCH_AREA: 'Member',
-  HOSTED_PROGRAM: 'Hosted program',
 };
 
 export function relationshipLabelForType(relationshipType: string): string {
