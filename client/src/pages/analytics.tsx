@@ -1002,14 +1002,12 @@ const Analytics = () => {
               >
                 <option value="all">All targets</option>
                 <option value="adminGrant">Admin grant</option>
-                <option value="listing">Listing</option>
                 <option value="profile">Profile</option>
                 <option value="department">Department</option>
                 <option value="researchArea">Research area</option>
                 <option value="fellowship">Fellowship</option>
                 <option value="researchEntity">Research entity</option>
                 <option value="accessReviewRecord">Access review record</option>
-                <option value="listingClaim">Listing claim</option>
               </select>
             </label>
           </div>

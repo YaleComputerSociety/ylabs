@@ -3,8 +3,6 @@ import { ReactNode } from 'react';
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin_grant.grant': 'Admin granted',
   'admin_grant.revoke': 'Admin revoked',
-  'listing.update': 'Listing edited',
-  'listing.delete': 'Listing deleted',
   'profile.update': 'Profile edited',
   'department.create': 'Department created',
   'department.update': 'Department edited',
@@ -17,7 +15,6 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'fellowship.delete': 'Fellowship deleted',
   'access_review.manual_locks': 'Visibility locks changed',
   'access_review.record_review': 'Access review recorded',
-  'listing_claim.review': 'Listing claim reviewed',
 };
 
 export const auditActionLabel = (action: string): string => AUDIT_ACTION_LABELS[action] || action;
@@ -55,13 +52,6 @@ export const formatDateTime = (value?: string | null): string => {
 export const formatEventType = (eventType: string): string => {
   const labelMap: Record<string, string> = {
     research_search: 'Research searches',
-    listing_view: 'Opportunity View',
-    listing_favorite: 'Opportunity Save',
-    listing_unfavorite: 'Opportunity Unsave',
-    listing_create: 'Opportunity Create',
-    listing_update: 'Opportunity Update',
-    listing_archive: 'Opportunity Archive',
-    listing_unarchive: 'Opportunity Unarchive',
   };
 
   return (
