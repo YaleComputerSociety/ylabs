@@ -24,6 +24,7 @@ import {
   entityDocShortDescriptionForRestatementGuard,
   fullDescriptionQuality,
   isFullDescriptionRestatementOfShortDescription,
+  isPoorerThanCardDescription,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
@@ -3138,19 +3139,27 @@ export async function projectFromLog(
       const currentShortForFullDistinctness = textValue(
         set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
       );
+      const cardShortForFullInversion = textValue(
+        set.shortDescription ?? entityDoc?.shortDescription,
+      );
       const winnerFull = textValue(set.fullDescription);
-      const winnerFullUseful =
-        !!winnerFull &&
-        fullDescriptionQuality(winnerFull).isUseful &&
+      const fullDescriptionIsAcceptable = (candidateText: string): boolean =>
+        !!candidateText &&
+        fullDescriptionQuality(candidateText).isUseful &&
         !isFullDescriptionRestatementOfShortDescription(
-          winnerFull,
+          candidateText,
           currentShortForFullDistinctness,
         );
+      const winnerFullAcceptable = fullDescriptionIsAcceptable(winnerFull);
+      const winnerFullUseful =
+        winnerFullAcceptable && !isPoorerThanCardDescription(winnerFull, cardShortForFullInversion);
       if (!winnerFullUseful) {
         const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
           manuallyLockedFields,
           manualValues,
         });
+        let fallback: { materialized: unknown; candidate: ResolvedField } | undefined;
+        let preferred: { materialized: unknown; candidate: ResolvedField } | undefined;
         for (const candidate of rankedFull) {
           const materialized = sanitizeProjectedField(
             entityType,
@@ -3160,28 +3169,27 @@ export async function projectFromLog(
             sourceEntityIdentity,
           );
           const materializedText = textValue(materialized);
-          if (
-            !materializedText ||
-            !fullDescriptionQuality(materializedText).isUseful ||
-            isFullDescriptionRestatementOfShortDescription(
-              materializedText,
-              currentShortForFullDistinctness,
-            )
-          ) {
-            continue;
+          if (!fullDescriptionIsAcceptable(materializedText)) continue;
+          if (!fallback) fallback = { materialized, candidate };
+          if (!isPoorerThanCardDescription(materializedText, cardShortForFullInversion)) {
+            preferred = { materialized, candidate };
+            break;
           }
-          if (materialized !== set.fullDescription) {
-            set.fullDescription = materialized;
-            confidenceByField.fullDescription = candidate.confidence;
-            const provenance = fieldProvenanceForResolvedObservation(
-              'fullDescription',
-              candidate,
-              materializationObs,
-            );
-            if (provenance) set['fieldProvenance.fullDescription'] = provenance;
-            fieldsWritten++;
-          }
-          break;
+        }
+        // An already-acceptable winner is only ever replaced by a candidate that
+        // also fixes the inversion: falling back to the ranked runner-up when no
+        // such candidate exists would demote a full the current rules accept.
+        const chosen = preferred ?? (winnerFullAcceptable ? undefined : fallback);
+        if (chosen && chosen.materialized !== set.fullDescription) {
+          set.fullDescription = chosen.materialized;
+          confidenceByField.fullDescription = chosen.candidate.confidence;
+          const provenance = fieldProvenanceForResolvedObservation(
+            'fullDescription',
+            chosen.candidate,
+            materializationObs,
+          );
+          if (provenance) set['fieldProvenance.fullDescription'] = provenance;
+          fieldsWritten++;
         }
       }
       const finalFullText = textValue(set.fullDescription);
