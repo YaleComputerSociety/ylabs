@@ -5,7 +5,6 @@ import { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from '../mo
 import { ResearchEntity, Fellowship } from '../models/index';
 import { Account } from '../models/account';
 import { Researcher } from '../models/researcher';
-import { getListingModel } from '../db/connections';
 import { Types, type PipelineStage } from 'mongoose';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -14,7 +13,6 @@ export interface LogEventParams {
   eventType: AnalyticsEventType;
   netid: string;
   userType?: string;
-  listingId?: string;
   fellowshipId?: string;
   entityType?: string;
   entityId?: string;
@@ -104,7 +102,6 @@ const sanitizeAnalyticsMetadata = (value: unknown, depth = 0): unknown => {
 
 const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
   const eventType = sanitizeAnalyticsEventType(event?.eventType) || AnalyticsEventType.VISITOR;
-  const listingId = normalizeAnalyticsStoredObjectIdString(event?.listingId);
   const fellowshipId = normalizeAnalyticsStoredObjectIdString(event?.fellowshipId);
   const searchQuery = sanitizeAnalyticsText(event?.searchQuery);
   const searchDepartments = sanitizeAnalyticsStringArray(event?.searchDepartments);
@@ -114,7 +111,6 @@ const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
     id: normalizeAnalyticsStoredObjectIdString(event?._id) || '',
     eventType,
     userType: sanitizeAnalyticsUserType(event?.userType),
-    ...(listingId ? { listingId } : {}),
     ...(fellowshipId ? { fellowshipId } : {}),
     ...(searchQuery !== undefined ? { searchQuery } : {}),
     ...(searchDepartments !== undefined ? { searchDepartments } : {}),
@@ -128,7 +124,6 @@ export type AnalyticsUserSort =
   | 'totalEvents'
   | 'logins'
   | 'searches'
-  | 'views'
   | 'researchViews';
 export type AnalyticsSortDirection = 'asc' | 'desc';
 
@@ -155,19 +150,8 @@ export interface AnalyticsUserSummary {
   totalEvents: number;
   logins: number;
   searches: number;
-  views: number;
   researchViews: number;
   fellowshipViews: number;
-  listingFavorites: number;
-  listingUnfavorites: number;
-  fellowshipFavorites: number;
-  fellowshipUnfavorites: number;
-  outreachClicks: number;
-  outreachOutcomes: number;
-  listingCreates: number;
-  listingUpdates: number;
-  listingArchives: number;
-  listingUnarchives: number;
   profileUpdates: number;
   firstSeen?: Date;
   lastEventAt?: Date;
@@ -192,8 +176,6 @@ export interface AnalyticsUserEvent {
   id: string;
   eventType: AnalyticsEventType;
   userType: string;
-  listingId?: string;
-  listingTitle?: string;
   fellowshipId?: string;
   fellowshipTitle?: string;
   searchQuery?: string;
@@ -264,11 +246,8 @@ export interface SearchQueryAnalytics {
 export interface FunnelAnalytics {
   logins: number;
   searches: number;
-  listingViews: number;
   fellowshipViews: number;
   favoritesOrSaves: number;
-  outreachClicks: number;
-  outreachOutcomes: number;
   researchSearches: number;
   researchProfileOpens: number;
   researchSaves: number;
@@ -291,22 +270,8 @@ export interface HighSearchLowResultsAction {
   uniqueSearchers: number;
 }
 
-export interface ListingHighViewsLowFavoritesAction {
-  listingId: string;
-  title?: string;
-  ownerFirstName?: string;
-  ownerLastName?: string;
-  departments?: string[];
-  rangeViews: number;
-  rangeFavorites: number;
-  lifetimeViews: number;
-  lifetimeFavorites: number;
-  favoriteRate: number;
-}
-
 export interface ActionNeededAnalytics {
   highSearchLowResults: HighSearchLowResultsAction[];
-  listingsHighViewsLowFavorites: ListingHighViewsLowFavoritesAction[];
 }
 
 const USER_ANALYTICS_SORTS = new Set<AnalyticsUserSort>([
@@ -314,7 +279,6 @@ const USER_ANALYTICS_SORTS = new Set<AnalyticsUserSort>([
   'totalEvents',
   'logins',
   'searches',
-  'views',
   'researchViews',
 ]);
 
@@ -361,19 +325,8 @@ export const MAX_USER_ANALYTICS_SEARCH_LENGTH = 120;
 const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   logins: AnalyticsEventType.LOGIN,
   searches: AnalyticsEventType.SEARCH,
-  views: AnalyticsEventType.LISTING_VIEW,
   researchViews: AnalyticsEventType.RESEARCH_VIEW,
   fellowshipViews: AnalyticsEventType.FELLOWSHIP_VIEW,
-  listingFavorites: AnalyticsEventType.LISTING_FAVORITE,
-  listingUnfavorites: AnalyticsEventType.LISTING_UNFAVORITE,
-  fellowshipFavorites: AnalyticsEventType.FELLOWSHIP_FAVORITE,
-  fellowshipUnfavorites: AnalyticsEventType.FELLOWSHIP_UNFAVORITE,
-  outreachClicks: AnalyticsEventType.OUTREACH_CLICK,
-  outreachOutcomes: AnalyticsEventType.OUTREACH_OUTCOME,
-  listingCreates: AnalyticsEventType.LISTING_CREATE,
-  listingUpdates: AnalyticsEventType.LISTING_UPDATE,
-  listingArchives: AnalyticsEventType.LISTING_ARCHIVE,
-  listingUnarchives: AnalyticsEventType.LISTING_UNARCHIVE,
   profileUpdates: AnalyticsEventType.PROFILE_UPDATE,
 };
 
@@ -661,19 +614,8 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         totalEvents: 1,
         logins: 1,
         searches: 1,
-        views: 1,
         researchViews: 1,
         fellowshipViews: 1,
-        listingFavorites: 1,
-        listingUnfavorites: 1,
-        fellowshipFavorites: 1,
-        fellowshipUnfavorites: 1,
-        outreachClicks: 1,
-        outreachOutcomes: 1,
-        listingCreates: 1,
-        listingUpdates: 1,
-        listingArchives: 1,
-        listingUnarchives: 1,
         profileUpdates: 1,
         firstSeen: 1,
         lastEventAt: 1,
@@ -744,45 +686,27 @@ export const getUserAnalyticsDrilldown = async (
     .lean();
 
   const publicEvents = events.map(publicAnalyticsUserEvent);
-  const listingIds = Array.from(
-    new Set(publicEvents.map((event) => event.listingId).filter((id): id is string => Boolean(id))),
-  );
   const fellowshipIds = Array.from(
     new Set(
       publicEvents.map((event) => event.fellowshipId).filter((id): id is string => Boolean(id)),
     ),
   );
-  const [drilldownListings, drilldownFellowships] = await Promise.all([
-    listingIds.length
-      ? getListingModel()
-          .find({ _id: { $in: toAnalyticsObjectIds(listingIds) } })
-          .select('title')
-          .lean()
-      : Promise.resolve([]),
-    fellowshipIds.length
-      ? Fellowship.find({ _id: { $in: toAnalyticsObjectIds(fellowshipIds) } })
-          .select('title')
-          .lean()
-      : Promise.resolve([]),
-  ]);
-  const listingTitleById = new Map(
-    (drilldownListings as Array<{ _id: unknown; title?: string }>).map(
-      (listing) => [String(listing._id), listing.title] as const,
-    ),
-  );
+  const drilldownFellowships = fellowshipIds.length
+    ? await Fellowship.find({ _id: { $in: toAnalyticsObjectIds(fellowshipIds) } })
+        .select('title')
+        .lean()
+    : [];
   const fellowshipTitleById = new Map(
     (drilldownFellowships as Array<{ _id: unknown; title?: string }>).map(
       (fellowship) => [String(fellowship._id), fellowship.title] as const,
     ),
   );
   const enrichedEvents = publicEvents.map((event) => {
-    const listingTitle = event.listingId ? listingTitleById.get(event.listingId) : undefined;
     const fellowshipTitle = event.fellowshipId
       ? fellowshipTitleById.get(event.fellowshipId)
       : undefined;
     return {
       ...event,
-      ...(listingTitle ? { listingTitle } : {}),
       ...(fellowshipTitle ? { fellowshipTitle } : {}),
     };
   });
@@ -808,7 +732,6 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       return;
     }
 
-    const listingId = sanitizeAnalyticsObjectId(params.listingId);
     const fellowshipId = sanitizeAnalyticsObjectId(params.fellowshipId);
     const entityType = sanitizeResearchEntityType(params.entityType);
     const entityId = sanitizeResearchEntityId(params.entityId);
@@ -822,7 +745,6 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       metadata: sanitizeAnalyticsMetadata(params.metadata),
       timestamp: new Date(),
     };
-    if (listingId) eventPayload.listingId = listingId;
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
     if (entityType) eventPayload.entityType = entityType;
     if (entityId) eventPayload.entityId = entityId;
@@ -838,12 +760,6 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     } else {
       await AnalyticsEvent.create(eventPayload);
     }
-
-    const now = new Date();
-    const updateFields: any = {
-      lastActive: now,
-    };
-
   } catch (error) {
     console.error('Error logging analytics event:', sanitizeLogValue(error));
   }
@@ -853,10 +769,7 @@ const SEARCH_ATTRIBUTION_WINDOW_MINUTES = 30;
 
 const SEARCH_ATTRIBUTION_EVENT_TYPES = [
   AnalyticsEventType.SEARCH,
-  AnalyticsEventType.LISTING_VIEW,
-  AnalyticsEventType.LISTING_FAVORITE,
   AnalyticsEventType.FELLOWSHIP_VIEW,
-  AnalyticsEventType.FELLOWSHIP_FAVORITE,
   AnalyticsEventType.RESEARCH_VIEW,
   AnalyticsEventType.PATHWAY_SAVE,
 ];
@@ -936,7 +849,7 @@ const computeSearchQualityAnalytics = async (
     {
       $addFields: {
         normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
-        searchEntityType: { $ifNull: ['$metadata.entityType', 'listing'] },
+        searchEntityType: { $ifNull: ['$metadata.entityType', 'unknown'] },
         resultCount: {
           $convert: {
             input: '$metadata.resultCount',
