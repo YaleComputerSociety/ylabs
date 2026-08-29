@@ -309,7 +309,7 @@ The full command runs every source in the canonical sweep manifest with `--exhau
 This can take hours and can make many paid API calls.
 Only run it after the bounded sample succeeds.
 After the source sweep, the same command projects active faculty into the Account/Researcher model, runs a full-corpus student-visibility gate so gate-logic changes propagate before the index rebuild, rebuilds local Development Meilisearch, runs the coverage audit, strict data-quality audit, integrity gate, and strict student trust contract, and finishes with a report-only archived-cleanup stage that lists deletable dedup-residue archived entities without ever deleting them.
-All eight post-run stages execute even when an earlier quality gate fails, so the operator receives every report.
+Every post-run stage executes even when an earlier quality gate fails, so the operator receives every report; `docs/research-data-pipeline.md` owns the authoritative stage list.
 The overall command exits nonzero when a source or post-run stage fails.
 The runner prints an output directory under `/tmp`.
 That directory contains one JSON report per source, `summary.json`, the faculty projection report, the student-visibility gate report, the search rebuild report, all four coverage and quality reports, and the report-only archived-cleanup report.
@@ -319,6 +319,7 @@ Development continues after a source failure so the summary captures every probl
 A plain re-invocation of the same sweep mode resumes the previous run from its durable checkpoint instead of starting from scratch: it reuses that run's output directory, skips every step already marked done, and re-runs the rest.
 Append `--restart` to the command (for example `yarn scrape:development:all:full --restart`) to abandon the checkpoint and force a fresh run.
 Alongside the per-source reports the printed directory holds `runner.log`, `errors.log`, and one `.log` file per step, so a failed step's captured output is on disk without re-running it.
+Step output goes to those log files rather than the terminal, so follow a long run with `tail -f` on the current step's `.log` path.
 `docs/research-data-pipeline.md` owns the resume rules, the conditions under which the sweep refuses or narrows a resume, and the optional `--force-llm` and `--prune-between-phases` flags.
 
 For routine recurring refreshes, run the incremental sweep instead of the full sweep:
