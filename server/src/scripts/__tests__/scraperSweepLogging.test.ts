@@ -71,7 +71,7 @@ describe('scraper sweep logging', () => {
     fs.writeFileSync(
       logPath,
       [
-        'MongoServerError: connection to mongodb+srv://sweeper:hunter2@cluster.example.net/Development failed',
+        'MongoServerError: connection to mongodb+srv://user:pass@cluster.example.invalid/Development failed',
         'scraped contact: someone@example.edu / 203-555-0147',
       ].join('\n'),
     );
@@ -79,7 +79,7 @@ describe('scraper sweep logging', () => {
     logger.logFailed('source:yale-directory', 1, logPath);
 
     const errors = fs.readFileSync(path.join(dir, 'errors.log'), 'utf8');
-    expect(errors).not.toContain('sweeper:hunter2');
+    expect(errors).not.toContain('user:pass@');
     expect(errors).not.toContain('someone@example.edu');
     expect(errors).not.toContain('203-555-0147');
     expect(errors).toContain('[credentials-redacted]');
