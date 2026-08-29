@@ -133,8 +133,8 @@ export function selectFraProfileSynthesisTargets<T extends FraProfileSynthesisEn
  * A recorded non-bio research description already beats this lane on the
  * author's own ranking, so spending a fetch and an LLM call to append an
  * observation that must lose is waste. Mirrors the grant-corpus lane's
- * better-sourced skip, restricted to non-bio values because the bio-shaped
- * cohort is exactly what this lane targets.
+ * better-sourced skip, restricted to non-bio values because the
+ * career-biography cohort is exactly what this lane targets.
  *
  * The alternative has to actually describe research, not merely lack career
  * markers: `fullDescriptionQuality` is flag-based, so clinical-service prose

@@ -38,8 +38,10 @@ export const FRA_PROFILE_SYNTHESIS_SOURCE_NAME = 'fra-profile-research-synthesis
  * statement still wins when one exists.
  *
  * Ranking below 0.55 is only survivable because `confidenceResolver` sorts
- * bio-shaped `fullDescription` values last once this lane has recorded a useful
- * research description (`BIO_REPLACING_DESCRIPTION_SOURCES` names it there).
+ * biography `fullDescription` values last - person-voiced prose and career
+ * biographies alike, so the cohort this lane selects is demotable - once this lane
+ * has recorded a useful research description
+ * (`BIO_REPLACING_DESCRIPTION_SOURCES` names it there).
  * Weight alone would leave this lane unable to displace the very biography it
  * exists to replace, since that bio is re-emitted weekly at 0.55.
  */
