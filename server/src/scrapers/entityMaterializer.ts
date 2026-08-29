@@ -13,6 +13,8 @@ import {
   researchGroupKinds,
   researchEntityTypes,
   mapEntityTypeToResearchGroupKind,
+  mapResearchGroupKindToEntityType,
+  type ResearchEntityType,
   type ResearchGroupKind,
 } from '../models/researchAccessTypes';
 import { ScrapeRun } from '../models/scrapeRun';
@@ -473,6 +475,51 @@ export function winningObservedEntityTypeIsRetiredProgram(
   if (entityTypeObservations.length === 0) return false;
   const [winner] = resolveFieldRanked('entityType', entityTypeObservations);
   return isRetiredProgramResearchEntityType(winner?.value);
+}
+
+/**
+ * Heal a retired-`PROGRAM` entityType assertion into a live entity type using the
+ * co-observed `kind` from the same observation set, which already states the
+ * classification (issue #2206).
+ *
+ * Fails closed on purpose. `mapResearchGroupKindToEntityType` defaults an
+ * unrecognized kind to `LAB`, so a row carrying no usable `kind` would otherwise
+ * be silently minted as a lab. Gate on `researchGroupKinds` first and return
+ * undefined instead, leaving the caller to keep skipping.
+ */
+export function healedEntityTypeForRetiredProgramObservations(
+  observations: MaterializerObservationLike[],
+): ResearchEntityType | undefined {
+  const kindObservations: ResolverObservation[] = observations
+    .filter((observation) => observation.field === 'kind')
+    .map((observation) => ({
+      field: 'kind',
+      value: observation.value,
+      sourceName: observation.sourceName || '',
+      confidence: typeof observation.confidence === 'number' ? observation.confidence : 0,
+      observedAt: observation.observedAt instanceof Date ? observation.observedAt : new Date(0),
+    }));
+  if (kindObservations.length === 0) return undefined;
+  const [winner] = resolveFieldRanked('kind', kindObservations);
+  const kind = textValue(winner?.value).toLowerCase();
+  if (!researchGroupKinds.includes(kind as ResearchGroupKind)) return undefined;
+  return mapResearchGroupKindToEntityType(kind);
+}
+
+/**
+ * Rewrite retired-`PROGRAM` entityType observations to the healed type for this
+ * materialization only. The stored observations are left untouched: provenance
+ * still points at the source that classified the row, via its own `kind`.
+ */
+export function withHealedRetiredProgramEntityType<T extends MaterializerObservationLike>(
+  observations: T[],
+  healedEntityType: ResearchEntityType,
+): T[] {
+  return observations.map((observation) =>
+    observation.field === 'entityType' && isRetiredProgramResearchEntityType(observation.value)
+      ? { ...observation, value: healedEntityType }
+      : observation,
+  );
 }
 
 function hasNonEmptyStringArray(...values: unknown[]): boolean {
@@ -3601,11 +3648,9 @@ export async function materializeEntity(
     };
   }
 
-  if (
-    isResearchEntityObservationType(entityType) &&
-    (isRetiredProgramResearchEntityType(entityDoc?.entityType) ||
-      (!entityDoc && winningObservedEntityTypeIsRetiredProgram(obs)))
-  ) {
+  // An existing row stored as the retired PROGRAM type stays frozen: it is legacy
+  // data awaiting its own archive lane, not something to re-type in place.
+  if (isResearchEntityObservationType(entityType) && isRetiredProgramResearchEntityType(entityDoc?.entityType)) {
     return {
       entityType,
       entityId: entityDoc ? materializerDocumentId(entityDoc._id) : undefined,
@@ -3616,6 +3661,30 @@ export async function materializeEntity(
       resolved: {},
       skipped: 'program-entity-type-retired',
     };
+  }
+
+  // A row that does not exist yet, whose winning observed entityType is the
+  // retired PROGRAM, used to be dropped entirely (issue #2206): 27 entityKeys
+  // carrying complete observation sets produced no entity at all, 22 of them
+  // department undergraduate research pathways. Those observations are never
+  // superseded, so a sweep reproduced the gap on every run. Heal the type from the
+  // same source's co-observed `kind` and mint, and only skip when no usable kind
+  // resolves, so an unclassifiable row still fails closed instead of defaulting to
+  // LAB.
+  if (isResearchEntityObservationType(entityType) && !entityDoc && winningObservedEntityTypeIsRetiredProgram(obs)) {
+    const healedEntityType = healedEntityTypeForRetiredProgramObservations(obs);
+    if (!healedEntityType) {
+      return {
+        entityType,
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'program-entity-type-retired',
+      };
+    }
+    obs = withHealedRetiredProgramEntityType(obs, healedEntityType);
   }
 
   // C4 resolve-at-mint for research entities and fellowships (env-flagged, separate
