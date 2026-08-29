@@ -4,6 +4,23 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-29: A `FACULTY_RESEARCH_AREA` Research Description Is Synthesized From The Professor's Own Profile Page, Not Extracted
+
+The 2026-08-25 decision below prescribed "extract the research, not the bio" for the remaining `FACULTY_RESEARCH_AREA` description defects.
+That mechanism cannot work for this cohort, so it is amended: the description is synthesized from the professor's own official Yale profile page instead.
+A lab-less faculty member's only source is that profile page, which states the research but interleaves it with credentials, and the description prompt requires an exact contiguous substring, so the only copyable span is bio-shaped.
+A probe of 27 such pages found research prose on 27 of 27 while the deterministic extractor produced prose on 0 of 27, so the 464 bio-shaped served descriptions are a structural limit of copying rather than a ranking bug.
+
+The content contract is unchanged and the grounding requirement is not relaxed: the output must be grounded in that page's own research prose, must not read as a person biography, and the lane fails closed rather than writing a weaker value.
+Only synthesis, not the source of authority, changes.
+
+A synthesis lane cannot displace a biography on confidence alone, because every such lane deliberately ranks below official-profile extraction so a genuine verbatim research statement still wins, while the bio it replaces is emitted by that same extraction at a higher weight and re-emitted weekly.
+So `confidenceResolver` sorts bio-shaped `fullDescription` groups last once a bio-replacing lane has recorded a useful non-bio value for the entity.
+The bio is demoted, never dropped, so an entity with only a bio still serves it and the materializer keeps a last resort when its own content gates reject the winner.
+Future work must not "fix" a losing synthesis lane by raising its confidence above official extraction; that trades away a real verbatim research statement.
+
+The lane, its guards, and its operator contract live in [`research-data-pipeline.md`](./research-data-pipeline.md); the traps it already paid for and the measurement harness live in [`skills/scrapers/SKILL.md`](../skills/scrapers/SKILL.md).
+
 ## 2026-08-29: Retire The Listing And Outreach Analytics Lane
 
 A data-model audit of the live databases established that the Listing product surface and the outreach-recording analytics built on top of it have no data and no writers anywhere, so they were removed rather than carried further.
@@ -131,6 +148,7 @@ Faculty are represented once.
 A professor is a `LAB` if they have a named lab and a `FACULTY_RESEARCH_AREA` (a lab of one) only if they do not; the two share one content contract, a research-focus description grounded in the professor's own official source, never a bio or CV.
 A `FACULTY_RESEARCH_AREA` that duplicates a lab is evidence the professor has a lab, so it merges into the lab rather than being held for review; a standalone `FACULTY_RESEARCH_AREA` remains only for genuinely lab-less faculty.
 The remaining `FACULTY_RESEARCH_AREA` description defects are a scraper and data-quality problem (extract the research, not the bio; do not graft a sibling entity's areas), not a schema problem.
+The "extract the research" half of that is amended by the 2026-08-29 decision above, which records that extraction structurally cannot reach the research on a profile page and that the description is synthesized from that page instead.
 
 The programs and fellowships board stays a separate surface, as it is today after the split-brain resolution (#1948 removed the `Fellowship`-to-`ResearchEntity` projection).
 The directory is find a person and reach out; the board is apply to a program.
