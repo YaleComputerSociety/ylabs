@@ -37,6 +37,7 @@ import {
   type WorkPlanLoaderFn,
 } from '../sources/labMicrositeUndergradLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
+import { isFullDescriptionRestatementOfShortDescription } from '../../utils/researchEntityDescriptionQuality';
 
 // ---------------------------------------------------------------------------
 // Test harness
@@ -615,14 +616,70 @@ describe('extractionToObservations', () => {
 
     const shortDescription = obs.find((o) => o.field === 'shortDescription');
     const fullDescription = obs.find((o) => o.field === 'fullDescription');
-    expect(shortDescription?.value).toBe(
-      'The lab studies urban climate adaptation using satellite imagery and field sensors.',
-    );
-    expect(shortDescription?.confidenceOverride).toBe(0.55);
     expect(fullDescription?.value).toBe(
       'The lab studies urban climate adaptation using satellite imagery and field sensors.',
     );
     expect(fullDescription?.confidenceOverride).toBe(0.55);
+    // A summary that is already one card-length sentence has no distinct shorter
+    // form, so no card observation is emitted and the derivation path owns it.
+    expect(shortDescription).toBeUndefined();
+  });
+
+  it('never emits a shortDescription equal to the fullDescription it accompanies', () => {
+    const summaries = [
+      'The lab studies urban climate adaptation using satellite imagery and field sensors.',
+      'Research in the group focuses on protein folding kinetics, single-molecule spectroscopy, and computational structure prediction.',
+      'We investigate coastal sediment transport, estuary hydrodynamics, and marsh accretion under sea-level rise.',
+    ];
+
+    for (const summary of summaries) {
+      const ext: LLMExtraction = {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: null,
+        researchSummary: summary,
+        methodsQuote: summary.slice(0, 40),
+        topicsQuote: summary.slice(10, 45),
+      };
+      const obs = extractionToObservations('lab-pair', 'https://x.example/', ext, fixedDate, {
+        sourceTexts: [summary],
+      });
+      const short = obs.find((o) => o.field === 'shortDescription');
+      const full = obs.find((o) => o.field === 'fullDescription');
+      if (!short || !full) continue;
+      expect(short.value).not.toBe(full.value);
+      expect(
+        isFullDescriptionRestatementOfShortDescription(full.value, short.value),
+      ).toBe(false);
+    }
+  });
+
+  it('emits a genuinely shorter card when the full prose compresses to a distinct line', () => {
+    const summary =
+      'Primary research interests include computational genomics and statistical modeling of gene regulation. The group builds open analysis pipelines, trains graduate students in reproducible workflows, and collaborates with clinical partners across the medical campus on translational projects.';
+    const ext: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary: summary,
+      methodsQuote: 'statistical modeling of gene regulation',
+      topicsQuote: 'computational genomics',
+    };
+    const obs = extractionToObservations('lab-card', 'https://x.example/', ext, fixedDate, {
+      sourceTexts: [summary],
+    });
+
+    const full = obs.find((o) => o.field === 'fullDescription');
+    const short = obs.find((o) => o.field === 'shortDescription');
+    expect(full?.value).toBeTruthy();
+    expect(short?.value).toBeTruthy();
+    expect(short?.value).not.toBe(full?.value);
+    expect(String(short?.value).length).toBeLessThan(String(full?.value).length);
+    expect(short?.confidenceOverride).toBe(0.55);
   });
 
   it('does not emit description observations when researchSummary is empty', () => {
