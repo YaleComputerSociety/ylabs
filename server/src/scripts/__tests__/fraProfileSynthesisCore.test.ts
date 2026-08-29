@@ -3,6 +3,7 @@ import {
   FRA_PROFILE_SYNTHESIS_CONFIDENCE,
   MIN_SNIPPETS_TO_SYNTHESIZE,
   assertFraProfileSynthesisApplyAllowed,
+  hasResidualPronounLead,
   isBioShapedFacultyDescription,
   parseFraProfileSynthesisArgs,
   profileResearchSentences,
@@ -32,6 +33,20 @@ describe('profileResearchSentences', () => {
 
   it('drops sentences too short to carry a research claim', () => {
     expect(profileResearchSentences('We study cells.')).toHaveLength(0);
+  });
+
+  it('keeps a research sentence containing an abbreviation instead of fragmenting it', () => {
+    // A bare [.!?] split cut this at "U.S. " into a 44-char and a 54-char
+    // fragment, dropping both and reporting zero snippets for the page.
+    const sentence =
+      'We study the epidemiology of HIV in the U.S. and develop statistical methods for surveillance data.';
+    expect(profileResearchSentences(sentence)).toEqual([sentence]);
+  });
+
+  it('keeps a research sentence naming an abbreviated organism', () => {
+    const sentence =
+      'Our laboratory investigates how M. tuberculosis evades macrophage killing inside the granuloma.';
+    expect(profileResearchSentences(sentence)).toEqual([sentence]);
   });
 });
 
@@ -83,6 +98,18 @@ describe('repairPronounLead', () => {
   it('does not strip a pronoun that is not the sentence subject', () => {
     const value = 'Research on how her collaborators model protein folding across species.';
     expect(repairPronounLead(value)).toBe(value);
+  });
+
+  it('repairs a possessive lead whose verb the possessive list used to omit', () => {
+    // "leads" existed only in the non-possessive verb list, so "Her group leads
+    // ..." survived repair with a dangling subject.
+    expect(
+      repairPronounLead(
+        'Investigates histories of slavery and medicine. Her group leads a national consortium on health equity.',
+      ),
+    ).toBe(
+      'Investigates histories of slavery and medicine. Leads a national consortium on health equity.',
+    );
   });
 
   it('repairs a dangling pronoun in a later sentence, not only the lead', () => {
@@ -139,36 +166,97 @@ describe('parseFraProfileSynthesisArgs', () => {
   });
 });
 
+describe('hasResidualPronounLead', () => {
+  it('flags a sentence-initial pronoun the verb allowlist does not repair', () => {
+    // "has" is deliberately absent from the repair allowlist, so this is the
+    // shape that must fail closed instead of shipping a dangling reference.
+    expect(
+      hasResidualPronounLead(
+        'Investigates histories of slavery and medicine. Her group has published widely on health equity.',
+      ),
+    ).toBe(true);
+  });
+
+  it('passes a description with no pronoun subjects left', () => {
+    expect(
+      hasResidualPronounLead(
+        'Investigates histories of slavery and medicine. Directs a community partnership on health equity.',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag a pronoun that is not the sentence subject', () => {
+    expect(
+      hasResidualPronounLead('Research on how her collaborators model protein folding.'),
+    ).toBe(false);
+  });
+});
+
 describe('assertFraProfileSynthesisApplyAllowed', () => {
+  const PRODUCTION = {
+    environment: 'production' as const,
+    dbLabel: 'cluster-development.example.net/Production',
+    mongoUrl: 'mongodb://cluster-development.example.net/Production',
+    env: {} as NodeJS.ProcessEnv,
+  };
+  const DEVELOPMENT = {
+    environment: 'development' as const,
+    dbLabel: 'cluster0.example.net/Development',
+    mongoUrl: 'mongodb://cluster0.example.net/Development',
+    env: {} as NodeJS.ProcessEnv,
+  };
+
   it('allows a dry run anywhere', () => {
     expect(() =>
-      assertFraProfileSynthesisApplyAllowed(parseFraProfileSynthesisArgs([]), 'Production'),
+      assertFraProfileSynthesisApplyAllowed(parseFraProfileSynthesisArgs([]), PRODUCTION),
     ).not.toThrow();
   });
 
   it('requires the explicit confirm flag to apply', () => {
     expect(() =>
-      assertFraProfileSynthesisApplyAllowed(
-        parseFraProfileSynthesisArgs(['--apply']),
-        'Development',
-      ),
+      assertFraProfileSynthesisApplyAllowed(parseFraProfileSynthesisArgs(['--apply']), DEVELOPMENT),
     ).toThrow(/--confirm-fra-profile-synthesis/);
   });
 
-  it('refuses to apply outside Development', () => {
+  it('refuses to apply against a Production database on a host merely named development', () => {
+    // The old guard substring-matched `${hostname}/${db}`, so this exact target
+    // passed as "Development" while writing to Production.
     expect(() =>
       assertFraProfileSynthesisApplyAllowed(
         parseFraProfileSynthesisArgs(['--apply', '--confirm-fra-profile-synthesis']),
-        'Production',
+        PRODUCTION,
       ),
-    ).toThrow(/restricted to the Development database/);
+    ).toThrow(/restricted to the Development environment/);
+  });
+
+  it('refuses to apply when the development environment points at another database', () => {
+    expect(() =>
+      assertFraProfileSynthesisApplyAllowed(
+        parseFraProfileSynthesisArgs(['--apply', '--confirm-fra-profile-synthesis']),
+        { ...DEVELOPMENT, mongoUrl: 'mongodb://cluster0.example.net/Production' },
+      ),
+    ).toThrow(/requires Mongo database "Development"/);
+  });
+
+  it('allows a confirmed apply on a renamed development database', () => {
+    expect(() =>
+      assertFraProfileSynthesisApplyAllowed(
+        parseFraProfileSynthesisArgs(['--apply', '--confirm-fra-profile-synthesis']),
+        {
+          environment: 'development',
+          dbLabel: 'cluster0.example.net/ylabs-dev',
+          mongoUrl: 'mongodb://cluster0.example.net/ylabs-dev',
+          env: { SCRAPER_DEVELOPMENT_DB_NAME: 'ylabs-dev' } as NodeJS.ProcessEnv,
+        },
+      ),
+    ).not.toThrow();
   });
 
   it('allows a confirmed apply on Development', () => {
     expect(() =>
       assertFraProfileSynthesisApplyAllowed(
         parseFraProfileSynthesisArgs(['--apply', '--confirm-fra-profile-synthesis']),
-        'Development',
+        DEVELOPMENT,
       ),
     ).not.toThrow();
   });

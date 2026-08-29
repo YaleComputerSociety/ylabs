@@ -11,6 +11,8 @@
  *
  * Deliberately pure — no DB calls — so it's testable in isolation.
  */
+import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
 
 export interface ResolverObservation {
   field: string;
@@ -68,6 +70,16 @@ const NON_DECAYING_SOURCE_HALF_LIFE_DAYS = 36500;
 const SYNTHESIZED_DESCRIPTION_SOURCES = new Set(['dept-faculty-roster']);
 const SYNTHESIZED_SOURCE_DEMOTION_FIELDS = new Set(['fullDescription']);
 const PROSE_EXTENSION_BONUS = 1.25;
+
+// A research entity is a lab, faculty research area, or program - never a
+// person - so a person biography is never a correct description for one, at any
+// confidence. Without this, weight alone decides: an official profile page emits
+// its bio-shaped prose at 0.55 while every synthesis lane that exists to replace
+// that bio deliberately ranks below official extraction, so the replacement can
+// never win and the bio is restored on the next weekly re-scrape (#2200).
+// Demotion is conditional on a genuinely useful non-bio alternative existing, so
+// a sole bio is still served rather than blanked in favour of a worse value.
+const PERSON_BIO_DEMOTION_FIELDS = new Set(['fullDescription']);
 
 // Name selection favors a genuinely branded name (extracted from the lab's own
 // microsite or a curated directory) over a synthesized PI-derived label. These
@@ -179,6 +191,23 @@ function preferExtractedProseGroups<T extends { sources: Set<string> }>(
   return extracted.length > 0 ? extracted : groups;
 }
 
+function isPersonBioProseGroup(group: { value: unknown }): boolean {
+  return typeof group.value === 'string' && isHighConfidencePersonBio(group.value);
+}
+
+function preferNonPersonBioProseGroups<T extends { value: unknown }>(
+  field: string,
+  groups: T[],
+): T[] {
+  if (!PERSON_BIO_DEMOTION_FIELDS.has(field)) return groups;
+  const nonBio = groups.filter((group) => !isPersonBioProseGroup(group));
+  if (nonBio.length === groups.length) return groups;
+  const usable = nonBio.some(
+    (group) => typeof group.value === 'string' && fullDescriptionQuality(group.value).isUseful,
+  );
+  return usable ? nonBio : groups;
+}
+
 function nameHasResearchHomeHeadNoun(value: unknown): boolean {
   return typeof value === 'string' && RESEARCH_HOME_HEAD_NOUN_RE.test(value);
 }
@@ -285,7 +314,10 @@ function rankFieldGroups(
 
   const rankable = preferGenuineEntityNameGroups(
     field,
-    preferExtractedProseGroups(field, Array.from(groups.values())),
+    preferNonPersonBioProseGroups(
+      field,
+      preferExtractedProseGroups(field, Array.from(groups.values())),
+    ),
   );
   return rankable.sort((a, b) => b.weight - a.weight);
 }

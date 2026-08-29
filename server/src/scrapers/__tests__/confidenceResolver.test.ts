@@ -754,3 +754,74 @@ describe('resolveFieldRanked', () => {
     expect(ranked[0].contributingSources).toEqual(['manual']);
   });
 });
+
+describe('person-bio demotion for fullDescription', () => {
+  const BIO =
+    'Dr. Carolyn Roberts is an historian of science and medicine at Yale University, where she teaches in the history of science and medicine program and advises undergraduates.';
+  const RESEARCH =
+    'Investigates how the histories of slavery and colonial medicine shaped modern clinical practice, combining archival research on eighteenth-century medical records with public history collaborations.';
+
+  const obs = (value: string, sourceName: string, confidence: number) => ({
+    field: 'fullDescription',
+    value,
+    sourceName,
+    confidence,
+    observedAt: D('2026-02-01'),
+  });
+
+  it('lets a lower-confidence research description displace a higher-confidence profile bio', () => {
+    // The profile bio is re-emitted weekly at 0.55 while every synthesis lane
+    // ranks below official extraction, so on weight alone the replacement can
+    // never win and the bio returns on the next scrape (#2200).
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(BIO, 'ysm-faculty-directory', 0.55),
+        obs(RESEARCH, 'fra-profile-research-synthesis', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.value).toBe(RESEARCH);
+    expect(resolved?.contributingSources).toEqual(['fra-profile-research-synthesis']);
+  });
+
+  it('drops the bio from the ranked fallback list too, so materialization cannot walk back to it', () => {
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        obs(BIO, 'ysm-faculty-directory', 0.55),
+        obs(RESEARCH, 'fra-profile-research-synthesis', 0.48),
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(ranked.map((entry) => entry.value)).toEqual([RESEARCH]);
+  });
+
+  it('still serves a sole bio rather than blanking the description', () => {
+    const resolved = resolveField('fullDescription', [obs(BIO, 'ysm-faculty-directory', 0.55)], {
+      now: D('2026-02-08'),
+    });
+    expect(resolved?.value).toBe(BIO);
+  });
+
+  it('keeps the bio when the only non-bio alternative is not a useful description', () => {
+    const resolved = resolveField(
+      'fullDescription',
+      [obs(BIO, 'ysm-faculty-directory', 0.55), obs('Research areas:', 'dept-roster-index', 0.48)],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.value).toBe(BIO);
+  });
+
+  it('does not demote a person bio for the bio field itself', () => {
+    const resolved = resolveField(
+      'bio',
+      [
+        { ...obs(BIO, 'ysm-faculty-directory', 0.55), field: 'bio' },
+        { ...obs(RESEARCH, 'fra-profile-research-synthesis', 0.48), field: 'bio' },
+      ],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.value).toBe(BIO);
+  });
+});

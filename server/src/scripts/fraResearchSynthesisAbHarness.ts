@@ -40,26 +40,14 @@ import { htmlToText } from '../scrapers/sources/labMicrositeDescriptionLLMExtrac
 import {
   synthesizeCoverageDescription,
   defaultCoverageSynthesisLLM,
-  MAX_COVERAGE_SNIPPETS,
-  MAX_COVERAGE_SNIPPET_CHARS,
   type CoverageSnippet,
 } from '../scrapers/coverageSynthesis';
 import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
 import { researchSubjectSpecificityScore } from '../utils/researchSubjectSpecificity';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { profileResearchSnippets } from './fraProfileSynthesisCore';
 
 dotenv.config();
-
-const RESEARCH_SENTENCE =
-  /\b(we\s|our\s|research|stud(?:y|ies|ying)|investigat|explor|examin|focus(?:es|ed)?\s+on|interested\s+in|develop|mechanism|analy[sz])/i;
-
-/**
- * Credential and career sentences are excluded from the snippets rather than
- * left for the model to ignore. Feeding them back in is how a synthesis run
- * reproduces the bio it was meant to replace.
- */
-const CAREER_SENTENCE =
-  /\b(received|earned|obtained|completed)\s+(?:his|her|their|a|an)\b|\bjoined\s+(?:the\s+)?Yale\b|\bbefore\s+(?:coming|joining)\b|\bB\.?A\.?\b|\bM\.?D\.?\b|\bPh\.?D\.?\b|\bresidency\b|\bfellowship\s+at\b|\bwas\s+(?:appointed|named)\b|\bis\s+the\s+recipient\b|\bwas\s+awarded\b/i;
 
 const APPOINTMENT_LINE =
   /\b(?:Associate|Assistant|Adjunct|Emeritus|Clinical|Research)?\s*(?:Professor|Lecturer|Instructor|Senior\s+Research\s+Scientist|Chair|Chief|Director)\b[^.]{0,90}/;
@@ -72,37 +60,17 @@ function argValue(flag: string): string | undefined {
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+/**
+ * Delegates to the production lane's harvester rather than carrying a second
+ * copy. The two copies had already drifted (no navigation filter, exclusive
+ * length bounds, a different overflow split), which meant arm B no longer
+ * measured what an apply run would actually write.
+ */
 export function researchSnippetsFromPageText(
   pageText: string,
   sourceUrl: string,
 ): CoverageSnippet[] {
-  const sentences = pageText
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => textValue(sentence))
-    .filter((sentence) => sentence.length > 60 && sentence.length < 600);
-
-  const research = sentences.filter(
-    (sentence) => RESEARCH_SENTENCE.test(sentence) && !CAREER_SENTENCE.test(sentence),
-  );
-
-  // Grouped into paragraph-sized snippets so the synthesizer sees connected
-  // reasoning rather than a bag of disconnected clauses.
-  const snippets: CoverageSnippet[] = [];
-  let buffer: string[] = [];
-  for (const sentence of research) {
-    const candidate = [...buffer, sentence].join(' ');
-    if (candidate.length > MAX_COVERAGE_SNIPPET_CHARS && buffer.length) {
-      snippets.push({ text: buffer.join(' '), sourceUrl, sourceName: 'official-profile-page' });
-      buffer = [sentence];
-    } else {
-      buffer.push(sentence);
-    }
-    if (snippets.length >= MAX_COVERAGE_SNIPPETS) break;
-  }
-  if (buffer.length && snippets.length < MAX_COVERAGE_SNIPPETS) {
-    snippets.push({ text: buffer.join(' '), sourceUrl, sourceName: 'official-profile-page' });
-  }
-  return snippets;
+  return profileResearchSnippets(pageText, sourceUrl);
 }
 
 export function appointmentLabelFromPageText(pageText: string): string {

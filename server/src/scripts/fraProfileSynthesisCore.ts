@@ -20,14 +20,23 @@
 import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
 import { MAX_COVERAGE_SNIPPETS, MAX_COVERAGE_SNIPPET_CHARS } from '../scrapers/coverageSynthesis';
 import type { CoverageSnippet } from '../scrapers/coverageSynthesis';
+import {
+  assertScraperEnvironmentMatchesMongoTarget,
+  type ScraperEnvironment,
+} from '../scrapers/scraperEnvironment';
 
 export const FRA_PROFILE_SYNTHESIS_SOURCE_NAME = 'fra-profile-research-synthesis';
 
 /**
  * Above the grant-corpus lane (0.45) because a professor's own profile page is a
  * better authority on their research than an aggregate of grant abstracts, and
- * below official-profile extraction so a genuine verbatim research statement
- * still wins when one exists.
+ * below official-profile extraction (0.55) so a genuine verbatim research
+ * statement still wins when one exists.
+ *
+ * Ranking below 0.55 is only survivable because `confidenceResolver` demotes
+ * bio-shaped `fullDescription` values whenever a useful non-bio alternative
+ * exists. Weight alone would leave this lane unable to displace the very
+ * biography it exists to replace, since that bio is re-emitted weekly at 0.55.
  */
 export const FRA_PROFILE_SYNTHESIS_CONFIDENCE = 0.48;
 
@@ -69,9 +78,25 @@ export const MIN_SNIPPETS_TO_SYNTHESIZE = 1;
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+/**
+ * A bare `/(?<=[.!?])\s+/` split cuts "the epidemiology of HIV in the U.S. and
+ * develop statistical methods" into two sub-floor fragments and drops both, so a
+ * page whose only research sentence contains an abbreviation ("U.S.",
+ * "M. tuberculosis", "Dr. Smith") reports zero snippets. A boundary therefore
+ * needs both a non-abbreviation left side and a sentence-opening right side.
+ */
+const SENTENCE_BOUNDARY =
+  /(?<!\b(?:[A-Z]|Dr|Mr|Ms|Mrs|Prof|St|Jr|Sr|vs|no|al|e\.g|i\.e|approx|Fig|eds?)\.)(?<=[.!?])\s+(?=["'“‘(]?[A-Z])/;
+
+export function splitSentences(value: string): string[] {
+  return value
+    .split(SENTENCE_BOUNDARY)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
 export function profileResearchSentences(pageText: string): string[] {
-  return textValue(pageText)
-    .split(/(?<=[.!?])\s+/)
+  return splitSentences(textValue(pageText))
     .map((sentence) => textValue(sentence))
     .filter(
       (sentence) =>
@@ -87,17 +112,17 @@ export function profileResearchSentences(pageText: string): string[] {
  * Grouped into paragraph-sized snippets so the synthesizer sees connected
  * reasoning rather than a bag of disconnected clauses.
  */
-export function profileResearchSnippets(pageText: string, sourceUrl: string): CoverageSnippet[] {
+export function profileResearchSnippets(
+  pageText: string,
+  sourceUrl: string,
+  sourceName: string = FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+): CoverageSnippet[] {
   const sentences = profileResearchSentences(pageText);
   const snippets: CoverageSnippet[] = [];
   let buffer: string[] = [];
   const flush = (): void => {
     if (!buffer.length) return;
-    snippets.push({
-      text: buffer.join(' '),
-      sourceUrl,
-      sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
-    });
+    snippets.push({ text: buffer.join(' '), sourceUrl, sourceName });
     buffer = [];
   };
   for (const sentence of sentences) {
@@ -123,11 +148,24 @@ export function isBioShapedFacultyDescription(value: unknown): boolean {
  * than leaving the pronoun in place: the bio check downstream can still reject
  * the whole description, but it cannot un-launder a bio disguised as research.
  */
-const PRONOUN_LEAD =
-  /^(?:he|she|they|his|her|their)\s+(investigates?|studies|study|examines?|explores?|researches?|analy[sz]es?|develops?|focuses|works|directs?|co-directs?|leads?|collaborates?|combines?|applies|employs|uses|builds?|designs?|models?|maintains?|oversees)\b/i;
+const RESEARCH_ACTIVITY_VERB =
+  'investigates?|studies|study|examines?|explores?|researches?|analy[sz]es?|develops?|focuses|centers?|centres?|works|directs?|co-directs?|leads?|collaborates?|combines?|applies|employs|uses|builds?|designs?|models?|maintains?|oversees';
 
-const PRONOUN_POSSESSIVE_LEAD =
-  /^(?:his|her|their)\s+(?:research|work|lab|laboratory|group)\s+(investigates?|studies|examines?|explores?|focuses|centers?)\b/i;
+const PRONOUN_LEAD = new RegExp(
+  `^(?:he|she|they|his|her|their)\\s+(${RESEARCH_ACTIVITY_VERB})\\b`,
+  'i',
+);
+
+// The possessive form shares the verb allowlist rather than carrying a narrower
+// copy of it: "Her group leads a national consortium" is the same orphan pronoun
+// as "She leads ...", and a verb missing from only one of the two lists left the
+// dangling subject in place (#2200).
+const PRONOUN_POSSESSIVE_LEAD = new RegExp(
+  `^(?:his|her|their)\\s+(?:research|work|lab|laboratory|group|team|program|programme|project)\\s+(${RESEARCH_ACTIVITY_VERB})\\b`,
+  'i',
+);
+
+const RESIDUAL_PRONOUN_LEAD = /^(?:he|she|they|his|her|their|him|hers|theirs)\b/i;
 
 function repairSentencePronounLead(sentence: string): string {
   const possessive = sentence.match(PRONOUN_POSSESSIVE_LEAD);
@@ -154,11 +192,23 @@ function repairSentencePronounLead(sentence: string): string {
 export function repairPronounLead(value: unknown): string {
   const text = textValue(value);
   if (!text) return '';
-  return text
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => repairSentencePronounLead(sentence.trim()))
+  return splitSentences(text)
+    .map((sentence) => repairSentencePronounLead(sentence))
     .filter(Boolean)
     .join(' ');
+}
+
+/**
+ * The verb allowlist is deliberately incomplete, so repair cannot be the only
+ * defence: any sentence still opening with a pronoun after repair is a dangling
+ * reference on a research card, and `isHighConfidencePersonBio` only anchors that
+ * check at the start of the whole description. The lane fails closed on this
+ * rather than widening the allowlist into laundering a biography as research.
+ */
+export function hasResidualPronounLead(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return splitSentences(text).some((sentence) => RESIDUAL_PRONOUN_LEAD.test(sentence));
 }
 
 function capitalize(value: string): string {
@@ -201,9 +251,23 @@ export function parseFraProfileSynthesisArgs(argv: string[]): FraProfileSynthesi
   return args;
 }
 
+export interface FraProfileSynthesisApplyTarget {
+  environment: ScraperEnvironment;
+  dbLabel: string;
+  mongoUrl?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * Gated on the resolved environment plus the environment's configured database
+ * name, never on the `dbLabel` text. That label is `${hostname}/${db}`, so a
+ * substring match on it passes for a cluster host merely containing
+ * "development" while pointing at Production, and fails for a Development
+ * database renamed through SCRAPER_DEVELOPMENT_DB_NAME.
+ */
 export function assertFraProfileSynthesisApplyAllowed(
   args: FraProfileSynthesisArgs,
-  dbLabel: string,
+  target: FraProfileSynthesisApplyTarget,
 ): void {
   if (!args.apply) return;
   if (!args.confirm) {
@@ -211,9 +275,14 @@ export function assertFraProfileSynthesisApplyAllowed(
       'research-entity:fra-profile-synthesis --apply requires --confirm-fra-profile-synthesis',
     );
   }
-  if (!/development/i.test(dbLabel)) {
+  if (target.environment !== 'development') {
     throw new Error(
-      `research-entity:fra-profile-synthesis --apply is restricted to the Development database (saw ${dbLabel})`,
+      `research-entity:fra-profile-synthesis --apply is restricted to the Development environment (saw ${target.environment} targeting ${target.dbLabel})`,
     );
   }
+  assertScraperEnvironmentMatchesMongoTarget({
+    environment: target.environment,
+    mongoUrl: target.mongoUrl,
+    env: target.env,
+  });
 }
