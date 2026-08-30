@@ -2316,7 +2316,6 @@ function memberDisplayName(member: { user?: any }): string {
 export function researchDetailLeadIdentity(
   group: Record<string, any>,
   members: Array<{ user: any; role: string; row?: any }>,
-  rawLeadMembers?: Array<Record<string, any>>,
 ): { leadIdentityStatus: 'verified' | 'under_review'; leadProfessorPublicKey?: string } {
   const leadMembers = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
   if (leadMembers.some((member) => member.row?.reviewStatus === 'DISPUTED')) {
@@ -2536,7 +2535,6 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 };
 
 const MAX_PUBLIC_DETAIL_TEXT_LENGTH = 5000;
-const MAX_PUBLIC_DETAIL_ARRAY_ITEMS = 100;
 
 const publicString = (value: unknown): string | undefined =>
   typeof value === 'string'
@@ -2724,17 +2722,9 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   const corroboratedMembers = dropUncorroboratedPhantomLeads(canonicalMembers);
   const imageGuardedMembersWithRows = await withPublicMemberImageGuards(corroboratedMembers);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
-  const rawLeadMembers = dedupedMembersWithRows
-    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
-    .map((member) => ({
-      name: memberDisplayName(member),
-      role: member.role,
-      user: member.user,
-    }));
   const leadIdentity = researchDetailLeadIdentity(
     group as Record<string, any>,
     dedupedMembersWithRows,
-    rawLeadMembers,
   );
   const leadMemberNames = dedupedMembersWithRows
     .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
@@ -2746,19 +2736,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   });
   if (!publicDescription.invariant.pass) return null;
   const publicGroup = publicDescription.entity;
-  const publicMemberKeysByInternalId = new Map(
-    dedupedMembersWithRows
-      .map((member) => {
-        const id = normalizeResearchGroupObjectId(member.user?._id);
-        return id
-          ? [
-              id,
-              publicMemberKeyForResearchDetail(member.user, member.role, member.row?.identityKey),
-            ]
-          : undefined;
-      })
-      .filter((entry): entry is [string, string] => Boolean(entry)),
-  );
   const availableRosterMembers = dedupedMembersWithRows.filter((member) =>
     isFreshVerifiedOfficialRosterRow(member.row, new Date(), (group as any).rosterEnrichment),
   );
@@ -2797,11 +2774,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const [
-    accessSignals,
-    planningContexts,
-    undergraduateLogistics,
-  ] = await Promise.all([
+  const [accessSignals, planningContexts, undergraduateLogistics] = await Promise.all([
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
