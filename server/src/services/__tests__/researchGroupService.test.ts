@@ -75,7 +75,6 @@ vi.mock('../../models/account', () => ({
   },
 }));
 
-
 vi.mock('../../models/signal', () => ({
   Signal: {
     find: mocks.accessSignalFind,
@@ -132,10 +131,6 @@ const queryResult = <T>(value: T) => {
 const leanResult = <T>(value: T) => queryResult(value);
 
 const sortLeanResult = <T>(value: T) => queryResult(value);
-
-const sortLimitLeanResult = <T>(value: T) => queryResult(value);
-
-const selectSortLimitLeanResult = <T>(value: T) => queryResult(value);
 
 const validPublicDescriptions = {
   shortDescription:
@@ -384,8 +379,16 @@ describe('searchResearchGroupsViaMeili', () => {
 
   it('promoteExactAliasFieldMatches tiers exact department, then exact area, above the rest (#983)', () => {
     const hits = [
-      { slug: 'fuzzy-only', departments: ['Computer Science'], researchAreas: ['behavioral research'] },
-      { slug: 'area-match', departments: ['Economics'], researchAreas: ['Social Psychology', 'Psychology'] },
+      {
+        slug: 'fuzzy-only',
+        departments: ['Computer Science'],
+        researchAreas: ['behavioral research'],
+      },
+      {
+        slug: 'area-match',
+        departments: ['Economics'],
+        researchAreas: ['Social Psychology', 'Psychology'],
+      },
       { slug: 'dept-match', departments: ['Psychology'], researchAreas: ['Positive Psychology'] },
     ];
     expect(
@@ -760,7 +763,10 @@ describe('searchResearchGroupsViaMeili', () => {
         name: 'Volkmar Lab',
         kind: 'lab',
         departments: ['Child Study Center'],
-        researchAreas: ['Autism Spectrum Disorder Research', 'Genetics and Neurodevelopmental Disorders'],
+        researchAreas: [
+          'Autism Spectrum Disorder Research',
+          'Genetics and Neurodevelopmental Disorders',
+        ],
         sourceUrls: [],
       },
       {
@@ -784,9 +790,7 @@ describe('searchResearchGroupsViaMeili', () => {
     ];
     mocks.search.mockResolvedValueOnce({ hits: meiliOrder, estimatedTotalHits: meiliOrder.length });
     mocks.researchEntityFind.mockReturnValue(
-      queryResult(
-        meiliOrder.map((hit) => ({ ...hit, _id: hit.id, ...validPublicDescriptions })),
-      ),
+      queryResult(meiliOrder.map((hit) => ({ ...hit, _id: hit.id, ...validPublicDescriptions }))),
     );
 
     const result = await searchResearchGroupsViaMeili('psych', {}, 1, 24);
@@ -948,9 +952,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const [conjunctiveFilter] = mocks.search.mock.calls[0];
     const disjunctiveCall = mocks.search.mock.calls[1];
     expect(mocks.search.mock.calls[0][1].filter).toMatch(/schools = "Law School"/);
-    expect(disjunctiveCall[1]).toEqual(
-      expect.objectContaining({ facets: ['schools'], limit: 0 }),
-    );
+    expect(disjunctiveCall[1]).toEqual(expect.objectContaining({ facets: ['schools'], limit: 0 }));
     expect(disjunctiveCall[1].filter).not.toMatch(/schools = /);
     expect(conjunctiveFilter).toBe('');
     expect(result.facetDistribution?.school).toEqual({
@@ -976,12 +978,7 @@ describe('searchResearchGroupsViaMeili', () => {
       },
     });
 
-    const result = await searchResearchGroupsViaMeili(
-      '',
-      { currentAvailability: ['OPEN'] },
-      1,
-      24,
-    );
+    const result = await searchResearchGroupsViaMeili('', { currentAvailability: ['OPEN'] }, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[0][1].filter).toMatch(
@@ -1187,9 +1184,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[0][1].filter).toContain('schools = "Law School"');
     const disjunctiveCall = mocks.search.mock.calls[1][1];
-    expect(disjunctiveCall).toEqual(
-      expect.objectContaining({ facets: ['schools'], limit: 0 }),
-    );
+    expect(disjunctiveCall).toEqual(expect.objectContaining({ facets: ['schools'], limit: 0 }));
     expect(disjunctiveCall.filter).toContain('archived = false');
     expect(disjunctiveCall.filter).not.toContain('schools = "Law School"');
     expect(result.facetDistribution).toEqual({
@@ -1683,7 +1678,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.facetDistribution).toEqual({ school: { 'School of Medicine': 768 } });
   });
 
-  it('does not let a shallow first page fall back to Meilisearch\'s pre-threshold estimate (#885)', async () => {
+  it("does not let a shallow first page fall back to Meilisearch's pre-threshold estimate (#885)", async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search
       .mockResolvedValueOnce({
@@ -2138,9 +2133,16 @@ describe('searchResearchGroupsViaMeili', () => {
     const publicResult = await searchResearchGroupsViaMeili('', {}, 1, 24);
     expect(publicResult.researchEntities.map((entity: any) => entity.slug)).toEqual(['live-lab']);
 
-    const operatorResult = await searchResearchGroupsViaMeili('', {}, 1, 24, {}, {
-      includeNonPublic: true,
-    });
+    const operatorResult = await searchResearchGroupsViaMeili(
+      '',
+      {},
+      1,
+      24,
+      {},
+      {
+        includeNonPublic: true,
+      },
+    );
     expect(operatorResult.researchEntities.map((entity: any) => entity.slug).sort()).toEqual(
       ['demarque-lab-prd2', 'live-lab'].sort(),
     );
@@ -3075,6 +3077,66 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('userConfirmed');
     expect(detail?.members[0].user).not.toHaveProperty('userType');
     expect(detail?.members[0].user).not.toHaveProperty('raw');
+  });
+
+  it('withholds an official profile link the verification lane proved gone', async () => {
+    const entityObjectId = new mongoose.Types.ObjectId('67d8928150621bcef434a1d5');
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityObjectId,
+        slug: 'dead-link-lab',
+        name: 'Dead Link Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'AFFILIATED',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
+          archived: false,
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        {
+          _id: personId,
+          displayName: 'Fixture Advisor',
+          accountId,
+          profile: { title: 'Professor of Computer Science', primaryDepartment: '', imageUrl: '' },
+          profileLinks: [
+            {
+              kind: 'YALE_OFFICIAL',
+              purpose: 'PRIMARY_IDENTITY',
+              url: 'https://cs.yale.edu/people/fixture-advisor',
+              verifiedAt: new Date(),
+              healthStatus: 'UNAVAILABLE',
+            },
+          ],
+        },
+      ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'abc123', email: 'fixture.advisor@example.edu' }]),
+    );
+
+    const detail = await getResearchGroupDetail('dead-link-lab');
+
+    expect(detail?.members).toHaveLength(1);
+    expect(detail?.members[0].user).not.toHaveProperty('profileUrls');
+    expect(detail?.members[0].user).not.toHaveProperty('profile_urls');
   });
 
   it('suppresses a surname-colliding uncorroborated phantom co-PI when a corroborated PI exists', async () => {

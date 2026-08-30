@@ -4901,7 +4901,10 @@ test('public research detail omits internal entity, relationship, and member ids
   );
   assert.ok(memberSerializer, 'public member serializer should exist');
   assert.doesNotMatch(memberSerializer[0], /addPublicMemberField\(publicUser, '_id'/);
-  assert.match(serviceSource, /publicMemberKeysByInternalId/);
+  assert.match(
+    serviceSource,
+    /publicKey: publicMemberKeyForResearchDetail\(member\.user, member\.role, row\?\.identityKey\)/,
+  );
   // The scholarly payload builder that emitted `memberKey: pair.memberDisplayId`
   // is retired; the negative guards below still bar raw member ids.
   assert.doesNotMatch(serviceSource, /userId: pair\.memberDisplayId/);
