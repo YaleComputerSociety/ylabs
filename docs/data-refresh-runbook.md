@@ -228,11 +228,12 @@ Use this one-way sync when Development should start from the current accepted Be
 The command can read only from a remote database named `Beta` and can write only to a different remote database named `Development`.
 It refuses local MongoDB and any Production database.
 
-The sync mirrors every document in the approved Beta research, source-audit, faculty, support, and compatibility collections.
+The sync mirrors every document in the approved Beta research-discovery, identity-spine, source-audit, and base-support collections, and leaves `observations` behind in Beta unless `--include-observations` is passed.
+See ["Observations stay in Development"](#observations-stay-in-development) above for the exact copy set and why it is drawn that way.
 The standard plan declares, and the standard apply clears, Atlas Development collections that are outside that approved mirror.
-It never reads Beta analytics, admin grants, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, or release queues.
-Every Beta user ID and role has a Development counterpart so references and role distributions remain valid.
-Public faculty identities remain recognizable, while other identities are deterministically pseudonymized and all copied users have student and account-activity fields removed.
+It never reads Beta analytics, admin grants, admin audit and access-review projections, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, private research plans, or release queues; the plan artifact's `excludedOperationalCollections` is the authoritative list.
+Every Beta account and role assignment has a Development counterpart so references and role distributions remain valid.
+Accounts reachable from a `Researcher` keep the directory netid and email Yale already publishes, every other account is deterministically pseudonymized, and each copied account is reduced to an allow-list of identity fields so student profile and account-activity state never crosses.
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
@@ -254,7 +255,7 @@ yarn development:refresh-from-beta:plan
 ```
 
 The artifact is `/tmp/ylabs-beta-to-development-plan.json`.
-Confirm that the source ends in `/Beta`, the destination ends in `/Development`, every mirrored source count matches its copy count, and `unclassifiedBetaCollections` is empty.
+Confirm that the source ends in `/Beta`, the destination ends in `/Development`, every mirrored source count matches its copy count, `includesObservations` is `false` unless the evidence log was deliberately requested, and `unclassifiedBetaCollections` is empty.
 
 Apply the reviewed sync:
 
@@ -642,6 +643,7 @@ Review the artifact and confirm all of the following:
 - `targetEnvironment` is `production`.
 - `syntheticReferenceBlockersClear` is `true`.
 - `applyBlockers` is empty.
+- `includesObservations` is `false` unless the evidence log was deliberately requested with `--include-observations`.
 - Every source copy count is expected.
 
 Create and record a real Production Atlas restore point.
