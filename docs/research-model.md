@@ -28,8 +28,8 @@ Public research identity, and a first-class findable entity in its own right: a 
 `Researcher` rows are created only from Yale-confirmed evidence; an external identifier such as ORCID never creates one by itself.
 
 `profileLinks[].healthStatus` is a probed fact, not a default (#2292).
-`yarn researchers:verify-official-profile-links` walks each `YALE_OFFICIAL` link grouped by department host, probes it through the SSRF-guarded `checkSourceLinkHealth`, and records `HEALTHY` or `UNAVAILABLE` with a fresh `verifiedAt`.
-Only 404 and 410 retire a link: a 403, 429, 5xx, or transport failure means the department site would not answer us, so it stays `UNKNOWN` and the stored link is left alone.
+`yarn --cwd server researchers:verify-official-profile-links` walks each `YALE_OFFICIAL` link grouped by department host, probes it through the SSRF-guarded `checkSourceLinkHealth`, and records `HEALTHY` or `UNAVAILABLE` with a fresh `verifiedAt`; [research-data-pipeline.md](research-data-pipeline.md) owns its invocation and apply guards.
+Only 404 and 410 settle a link: a 403, 429, 5xx, or transport failure means the department site would not answer us, so the run stamps a fresh `verifiedAt` but writes no health status, leaving the stored verdict alone, because `UNKNOWN` is the absence of a probed fact and writing it would un-retire a page an earlier probe already proved gone.
 When a link is proved gone the lane probes replacement candidates in trust order (an observed same-slug URL, then an observed same-host page whose slug names the same person, then the `/profile/<slug>` twin of the dead path) and adopts one only if it too probes live, which is how a department re-slug (`/people/douglas-stone` becoming `/profile/a-douglas-stone`) is followed.
 A link left `UNAVAILABLE` is withheld at serve time, so an entity page falls back to the person's website rather than offering a 404.
 This probe lane is the safety net behind the cheaper sweep-time rule in the materializer (#2290), which upgrades a stored link when the same host is *observed* publishing the person on its canonical `/profile/<slug>` page and needs no network call.
