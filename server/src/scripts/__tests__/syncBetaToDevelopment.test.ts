@@ -12,6 +12,7 @@ import {
   assertSafeBetaToDevelopmentOptions,
   betaToDevelopmentCollectionNames,
   buildBetaToDevelopmentSummary,
+  collectionsForOptions,
   parseBetaToDevelopmentOptions,
   researchPersonAccountIds,
   replaceMongoDatabaseName,
@@ -348,6 +349,48 @@ describe('Beta to Development sync guards', () => {
 
     expect(resolved.map((id) => id.toHexString())).toEqual([researchAccountId.toHexString()]);
     expect(queriedCollections).toEqual(['researchers.accountId']);
+  });
+
+  // The previous rule read `faculty_members`, a collection that no longer
+  // exists, so it silently protected nothing while every helper-level test
+  // passed. Drive the wiring, not the helper.
+  it('wires the accounts transform so a non-research account is pseudonymized by value', () => {
+    const researchAccountId = new ObjectId('507f1f77bcf86cd799439011');
+    const studentAccountId = new ObjectId('507f1f77bcf86cd799439022');
+    const collections = collectionsForOptions(
+      { includeObservations: false } as never,
+      [researchAccountId],
+    );
+    const accounts = collections.find((collection) => collection.name === 'accounts');
+
+    expect(accounts?.category).toBe('identity-spine');
+    expect(accounts?.transform).toBeTypeOf('function');
+
+    const preserved = accounts?.transform?.({
+      _id: researchAccountId,
+      netid: 'faculty.person',
+      email: 'faculty.person@yale.edu',
+      status: 'ACTIVE',
+      lastLoginAt: new Date('2026-07-25T00:00:00Z'),
+      profile: { userType: 'professor', college: 'Example', major: ['Computer Science'] },
+    }) as Document;
+
+    expect(preserved.netid).toBe('faculty.person');
+    expect(preserved.email).toBe('faculty.person@yale.edu');
+    expect(preserved).not.toHaveProperty('lastLoginAt');
+    expect(preserved.profile).toEqual({ userType: 'professor' });
+
+    const pseudonymized = accounts?.transform?.({
+      _id: studentAccountId,
+      netid: 'student.person',
+      email: 'student.person@yale.edu',
+      status: 'ACTIVE',
+      profile: { college: 'Example', major: ['Computer Science'] },
+    }) as Document;
+
+    expect(pseudonymized.netid).toBe('mirrored-507f1f77bcf86cd799439022');
+    expect(pseudonymized.email).toBe('mirrored-507f1f77bcf86cd799439022@example.invalid');
+    expect(pseudonymized).not.toHaveProperty('profile');
   });
 
   it('strips nested student profile fields and login state from a preserved account', () => {
