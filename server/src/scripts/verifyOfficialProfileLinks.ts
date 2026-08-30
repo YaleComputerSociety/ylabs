@@ -9,12 +9,13 @@ import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/source
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
+import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import {
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
-  storedHealthStatusFor,
+  settledHealthStatusFor,
   summarizeDepartmentLinkHealth,
   type DepartmentLinkHealthSummary,
   type OfficialProfileLinkRow,
@@ -134,9 +135,18 @@ interface OfficialLinkTarget {
   storedHealthStatus?: string;
 }
 
+/**
+ * Read scope matters here as much as it does in the materializer: a superseded or
+ * rollback-retired observation is no longer evidence that the site publishes that
+ * page, so honouring it would license a replacement built on retracted evidence.
+ */
 const observedProfileUrlsByHost = async (): Promise<Map<string, string[]>> => {
   const index = new Map<string, string[]>();
-  const cursor = Observation.find({ entityType: 'user', field: 'profileUrls' })
+  const cursor = Observation.find({
+    entityType: 'user',
+    field: 'profileUrls',
+    ...materializationReadScopeFilter(),
+  })
     .select('value')
     .lean()
     .cursor();
@@ -242,15 +252,15 @@ export async function runVerifyOfficialProfileLinks(
 
     if (!options.apply) return;
 
-    const nextStatus = storedHealthStatusFor(health);
+    const settledStatus = settledHealthStatusFor(health);
     const update: Record<string, unknown> = {
       'profileLinks.$[link].verifiedAt': new Date(),
     };
     if (replacementUrl) {
       update['profileLinks.$[link].url'] = replacementUrl;
       update['profileLinks.$[link].healthStatus'] = 'HEALTHY';
-    } else {
-      update['profileLinks.$[link].healthStatus'] = nextStatus;
+    } else if (settledStatus) {
+      update['profileLinks.$[link].healthStatus'] = settledStatus;
     }
     const result = await Researcher.updateOne(
       { _id: target.researcherId },

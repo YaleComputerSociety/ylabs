@@ -51,6 +51,19 @@ export function storedHealthStatusFor(
   return 'UNKNOWN';
 }
 
+/**
+ * The health status an apply run may write, or `undefined` when the probe settled
+ * nothing. `UNKNOWN` is the absence of a probed fact, so writing it would erase
+ * the verdict of an earlier decisive probe: a bot-blocked re-probe would un-retire
+ * a page already proved gone and start serving that 404 to students again.
+ */
+export function settledHealthStatusFor(
+  health: SourceLinkHealth | undefined,
+): ResearcherProfileLinkHealthStatus | undefined {
+  const status = storedHealthStatusFor(health);
+  return status === 'UNKNOWN' ? undefined : status;
+}
+
 export function officialProfileLinkHost(url: unknown): string | undefined {
   if (!isYaleOfficialProfileUrl(url)) return undefined;
   try {
@@ -71,22 +84,19 @@ const personNameTokens = (displayName: unknown): string[] =>
 /**
  * Whether a candidate person-page slug names the same person as a display name.
  * A department can re-slug someone (`douglas-stone` becoming `a-douglas-stone`,
- * `paul-l-tipton` becoming `paul-tipton`), so surname equality plus a first-name
- * or first-initial match is the tie that survives re-slugging while still
- * refusing a colleague who merely shares the surname.
+ * `paul-l-tipton` becoming `paul-tipton`), so surname equality plus a whole
+ * given-name token appearing on both sides is the tie that survives re-slugging.
+ * A first-initial match is deliberately not enough: an initial-led display name
+ * ("A Douglas Stone") would otherwise claim any same-surname colleague whose
+ * given name starts with that letter ("Alison Stone"), and same-slug people
+ * really do exist across Yale sites (#468).
  */
 export function profileSlugNamesPerson(candidateUrl: unknown, displayName: unknown): boolean {
   const slugTokens = personProfileNameTokensFromUrl(candidateUrl);
   const nameTokens = personNameTokens(displayName);
   if (!slugTokens || slugTokens.length === 0 || nameTokens.length < 2) return false;
   if (slugTokens.at(-1) !== nameTokens.at(-1)) return false;
-  const slugFirst = slugTokens[0];
-  const nameFirst = nameTokens[0];
-  return (
-    slugFirst === nameFirst ||
-    nameTokens.some((token) => token === slugFirst || token[0] === slugFirst) ||
-    slugTokens.some((token) => token === nameFirst || token[0] === nameFirst)
-  );
+  return nameTokens.includes(slugTokens[0]) || slugTokens.includes(nameTokens[0]);
 }
 
 /**

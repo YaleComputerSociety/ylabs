@@ -5,6 +5,7 @@ import {
   officialProfileLinkCandidates,
   officialProfileLinkHost,
   profileSlugNamesPerson,
+  settledHealthStatusFor,
   storedHealthStatusFor,
   summarizeDepartmentLinkHealth,
   type OfficialProfileLinkRow,
@@ -49,6 +50,28 @@ describe('storedHealthStatusFor', () => {
   });
 });
 
+describe('settledHealthStatusFor', () => {
+  it('offers a status to write only when the probe settled one', () => {
+    expect(settledHealthStatusFor({ healthStatus: 'HEALTHY', httpStatusCode: 200 })).toBe(
+      'HEALTHY',
+    );
+    expect(settledHealthStatusFor({ healthStatus: 'UNAVAILABLE', httpStatusCode: 410 })).toBe(
+      'UNAVAILABLE',
+    );
+  });
+
+  it('offers nothing for a bot-blocked, overloaded, or unreachable department site', () => {
+    expect(
+      settledHealthStatusFor({ healthStatus: 'UNAVAILABLE', httpStatusCode: 403 }),
+    ).toBeUndefined();
+    expect(
+      settledHealthStatusFor({ healthStatus: 'UNAVAILABLE', httpStatusCode: 503 }),
+    ).toBeUndefined();
+    expect(settledHealthStatusFor({ healthStatus: 'UNKNOWN' })).toBeUndefined();
+    expect(settledHealthStatusFor(undefined)).toBeUndefined();
+  });
+});
+
 describe('officialProfileLinkHost', () => {
   it('accepts a Yale host and rejects anything else', () => {
     expect(officialProfileLinkHost('https://Classics.YALE.edu/people/ada-example')).toBe(
@@ -81,6 +104,21 @@ describe('profileSlugNamesPerson', () => {
   it('refuses a colleague who only shares the surname', () => {
     expect(
       profileSlugNamesPerson('https://example-dept.yale.edu/profile/robin-example', 'Dana Example'),
+    ).toBe(false);
+  });
+
+  it('refuses a same-surname colleague whose given name merely starts with a leading initial', () => {
+    expect(
+      profileSlugNamesPerson(
+        'https://example-dept.yale.edu/profile/alison-example',
+        'A Douglas Example',
+      ),
+    ).toBe(false);
+    expect(
+      profileSlugNamesPerson(
+        'https://example-dept.yale.edu/profile/dana-example',
+        'D Robin Example',
+      ),
     ).toBe(false);
   });
 
@@ -125,6 +163,16 @@ describe('officialProfileLinkCandidates', () => {
       'https://example-dept.yale.edu/profile/a-douglas-example',
       'https://example-dept.yale.edu/profile/douglas-example',
     ]);
+  });
+
+  it('never proposes a same-surname colleague page for an initial-led display name', () => {
+    expect(
+      officialProfileLinkCandidates(
+        'https://example-dept.yale.edu/people/douglas-example',
+        'A Douglas Example',
+        ['https://example-dept.yale.edu/profile/alison-example'],
+      ),
+    ).toEqual(['https://example-dept.yale.edu/profile/douglas-example']);
   });
 
   it('offers the constructed twin when nothing was observed', () => {
