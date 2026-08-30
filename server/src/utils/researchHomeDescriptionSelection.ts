@@ -33,7 +33,8 @@ export function describesResearchHome(text: string): boolean {
   );
 }
 
-const ACADEMIC_CREDENTIAL = 'M\\.?D|Ph\\.?D|MBBS|MPH|D\\.?O|DVM|DDS|Sc\\.?D|Pharm\\.?D|D\\.?Phil|Dr\\.?PH';
+const ACADEMIC_CREDENTIAL =
+  'M\\.?D|Ph\\.?D|MBBS|MPH|D\\.?O|DVM|DDS|Sc\\.?D|Pharm\\.?D|D\\.?Phil|Dr\\.?PH';
 
 const CREDENTIAL_NAME_LEAD = new RegExp(
   `\\b[A-Z][a-z]+(?:\\s+(?:[A-Z]\\.?|van|von|de|del|della|di|da|la|le|[A-Z][a-z]+)){1,3},\\s*(?:${ACADEMIC_CREDENTIAL})\\b`,
@@ -74,7 +75,8 @@ const FIRST_PERSON_TITLE_LEAD = new RegExp(
 // at Yale School of Medicine, Dr. Russi focuses on ...") pushes the Dr./Prof.
 // name out of sentence-initial position, but it is the same third-person
 // credential lead as the bare "Dr./Prof. ..." check above.
-const TITLE_CLAUSE_THEN_NAME_LEAD = /^as\s+(?:an?|the)\s+[^,]{0,120},\s*(?:dr|prof|professor)\.?\s+[A-Z]/i;
+const TITLE_CLAUSE_THEN_NAME_LEAD =
+  /^as\s+(?:an?|the)\s+[^,]{0,120},\s*(?:dr|prof|professor)\.?\s+[A-Z]/i;
 
 // A first-person career/experience narrative ("I have a broad background in
 // ..."; "I have twenty five plus years of experience in ...") is a CV lead
@@ -272,6 +274,23 @@ function personCentricPenalty(text: string, kind: DescriptionEntityKind): number
   return kind === 'organization' && isPersonCentricLead(text) ? PERSON_CENTRIC_PENALTY : 0;
 }
 
+/**
+ * How far a passage strays from saying what the home studies, independent of
+ * whose voice it is written in. Separated from the person-centric penalty below
+ * because a caller that cannot tell a faculty research home from a lab must not
+ * be forced to guess: on a faculty home, person-voiced research prose is the
+ * expected shape, and charging it the organization-only bio penalty ranks it
+ * below a mission statement (#2232).
+ */
+export function offTopicResearchHomeDemotionScore(text: unknown): number {
+  const value = textValue(text);
+  let score = 0;
+  if (isNavigationalCrossReferenceProse(value)) score -= 40;
+  if (isRecruitingNoticeLead(value)) score -= 30;
+  if (isMissionOrCultureProse(value)) score -= 20;
+  return score;
+}
+
 // The off-topic demotions rank a weaker passage below a research passage from
 // the same site, but they must never on their own make a candidate look
 // person-centric to the caller's bio guard, which would blank a description
@@ -281,11 +300,7 @@ export function scoreResearchHomeDescriptionCandidate(
   kind: DescriptionEntityKind = 'organization',
 ): number {
   const value = textValue(text);
-  let score = personCentricPenalty(value, kind);
-  if (isNavigationalCrossReferenceProse(value)) score -= 40;
-  if (isRecruitingNoticeLead(value)) score -= 30;
-  if (isMissionOrCultureProse(value)) score -= 20;
-  return score;
+  return personCentricPenalty(value, kind) + offTopicResearchHomeDemotionScore(value);
 }
 
 export function collectDescriptionCandidates(
