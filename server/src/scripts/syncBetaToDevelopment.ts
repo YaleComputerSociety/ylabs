@@ -24,7 +24,11 @@ if (fs.existsSync(betaOperatorProfilePath) && !process.env.BETA_MONGODBURL) {
 dotenv.config({ path: path.join(SERVER_ROOT, '.env') });
 
 type SyncMode = 'dry-run' | 'apply';
-type SyncCollectionCategory = 'research-discovery' | 'source-audit' | 'base-support';
+type SyncCollectionCategory =
+  | 'research-discovery'
+  | 'identity-spine'
+  | 'source-audit'
+  | 'base-support';
 
 export interface SyncCollection {
   name: string;
@@ -36,21 +40,24 @@ export interface SyncCollection {
 const BATCH_SIZE = 1000;
 const LOCAL_MONGO_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
+// The reviewable corpus plus the identity spine that resolves its leads. A
+// mirrored environment that carries research_entities without researchers,
+// accounts, and role_assignments serves a corpus whose every lead is
+// unresolvable, so identity is not optional here.
 const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
-  { name: 'faculty_members', category: 'research-discovery' },
+  { name: 'research_entity_redirects', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
-  { name: 'research_entity_stats', category: 'research-discovery' },
-  { name: 'research_scholarly_links', category: 'research-discovery' },
-  { name: 'research_scholarly_attributions', category: 'research-discovery' },
+  { name: 'researchers', category: 'identity-spine' },
+  { name: 'role_assignments', category: 'identity-spine' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },
-  { name: 'listings', category: 'base-support' },
   { name: 'departments', category: 'base-support' },
+  { name: 'org_units', category: 'base-support' },
   { name: 'research_areas', category: 'base-support' },
-  { name: 'researchareas', category: 'base-support' },
+  { name: 'taxonomy_terms', category: 'base-support' },
   { name: 'fellowships', category: 'base-support' },
 ];
 
@@ -120,9 +127,15 @@ interface ParsedMongoTarget {
 }
 
 const EXCLUDED_BETA_COLLECTIONS = [
+  'admin_access_review_projection_state',
+  'admin_access_review_projections',
+  'admin_audit_events',
   'admin_grants',
   'analytics_events',
+  'entitycorrectionreports',
   'listingclaimrequests',
+  'observation_reference_repair_audits',
+  'research_plans',
   'scrape_job_locks',
   'scrape_snapshots',
   'student_applications',
@@ -132,6 +145,18 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'student_trackings',
   'visibility_release_queue_items',
 ];
+
+// Copying either of these is a defect rather than a policy choice: telemetry
+// would attribute one environment's student behavior to another, and a copied
+// lock lets a second environment's scraper believe a job is already held.
+const NEVER_COPY_COLLECTIONS = ['analytics_events', 'scrape_job_locks'];
+
+export function assertNoNeverCopyCollections(collectionNames: string[]): void {
+  const forbidden = collectionNames.filter((name) => NEVER_COPY_COLLECTIONS.includes(name));
+  if (forbidden.length > 0) {
+    throw new Error(`Refusing to mirror environment-local collections: ${forbidden.join(', ')}`);
+  }
+}
 
 export function parseMongoTarget(value: string): ParsedMongoTarget {
   let parsed: URL;
@@ -173,7 +198,7 @@ export function parseBetaToDevelopmentOptions(
   let confirmSync = env.CONFIRM_BETA_TO_DEVELOPMENT_SYNC === 'true';
   let confirmAtlasDevelopmentOverwrite = env.CONFIRM_ATLAS_DEVELOPMENT_OVERWRITE === 'true';
   let clearDevelopmentNonMirrorData = false;
-  let includeObservations = true;
+  let includeObservations = false;
   let output: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -201,6 +226,10 @@ export function parseBetaToDevelopmentOptions(
     }
     if (arg === '--skip-observations') {
       includeObservations = false;
+      continue;
+    }
+    if (arg === '--include-observations') {
+      includeObservations = true;
       continue;
     }
     if (arg.startsWith('--output=')) {
@@ -260,24 +289,22 @@ export function assertSafeBetaToDevelopmentOptions(options: BetaToDevelopmentOpt
   }
 }
 
-export function sanitizeDevelopmentUser(
+export function sanitizeMirroredAccount(
   document: Document,
   preservePublicIdentity = true,
 ): Document {
   if (!preservePublicIdentity) {
     const rawId = document._id as { toHexString?: () => string } | undefined;
     if (!rawId || typeof rawId.toHexString !== 'function') {
-      throw new Error('Development user pseudonymization requires an ObjectId _id');
+      throw new Error('Mirrored account pseudonymization requires an ObjectId _id');
     }
     const token = rawId.toHexString().toLowerCase();
     return {
       _id: document._id,
-      netid: `dev-${token}`,
-      email: `dev-${token}@example.invalid`,
-      userType: document.userType || 'unknown',
-      userConfirmed: false,
-      fname: 'Development',
-      lname: `User ${token.slice(-6)}`,
+      schemaVersion: document.schemaVersion,
+      netid: `mirrored-${token}`,
+      email: `mirrored-${token}@example.invalid`,
+      status: document.status,
       archived: document.archived === true,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
@@ -311,32 +338,33 @@ async function distinctObjectIds(
   );
 }
 
-export async function referencedFacultyUserIds(betaDb: Db): Promise<ObjectId[]> {
-  const facultyUserIds = await distinctObjectIds(betaDb, 'faculty_members', 'userId');
-  return [...new Map(facultyUserIds.map((id) => [id.toHexString(), id])).values()];
+// An account reachable from a Researcher is a directory identity whose netid and
+// email Yale already publishes. Every other account is somebody's real login, so
+// it crosses environments pseudonymized or not at all.
+export async function researchPersonAccountIds(sourceDb: Db): Promise<ObjectId[]> {
+  const accountIds = await distinctObjectIds(sourceDb, 'researchers', 'accountId');
+  return [...new Map(accountIds.map((id) => [id.toHexString(), id])).values()];
 }
 
 export function collectionsForOptions(
   options: BetaToDevelopmentOptions,
-  facultyUserIds: ObjectId[],
+  researchAccountIds: ObjectId[],
 ): SyncCollection[] {
-  const facultyUserIdSet = new Set(facultyUserIds.map((id) => id.toHexString()));
+  const researchAccountIdSet = new Set(researchAccountIds.map((id) => id.toHexString()));
   const collections = BASE_COPY_COLLECTIONS.filter(
     (collection) => options.includeObservations || collection.name !== 'observations',
   );
+  assertNoNeverCopyCollections(collections.map((collection) => collection.name));
   return [
     ...collections,
     {
-      name: 'users',
-      category: 'base-support',
+      name: 'accounts',
+      category: 'identity-spine',
       transform: (document) => {
         const rawId = document._id as { toHexString?: () => string } | undefined;
-        const userId = rawId && typeof rawId.toHexString === 'function' ? rawId.toHexString() : '';
-        const preservePublicIdentity =
-          document.userType === 'professor' ||
-          document.userType === 'staff' ||
-          facultyUserIdSet.has(userId);
-        return sanitizeDevelopmentUser(document, preservePublicIdentity);
+        const accountId =
+          rawId && typeof rawId.toHexString === 'function' ? rawId.toHexString() : '';
+        return sanitizeMirroredAccount(document, researchAccountIdSet.has(accountId));
       },
     },
   ];
@@ -409,7 +437,7 @@ export function buildBetaToDevelopmentSummary(
     unclassifiedBetaCollections,
     localCollectionsClearedOnApply,
     userCopyPolicy:
-      'Copy every user ID and role. Preserve public faculty identities, pseudonymize other identities, and remove account activity fields.',
+      'Copy the identity spine. Preserve accounts reachable from a Researcher, pseudonymize every other account, and remove account activity fields.',
   };
 }
 
@@ -618,8 +646,8 @@ async function main(): Promise<void> {
     await developmentClient.connect();
     const betaDb = betaClient.db();
     const developmentDb = developmentClient.db();
-    const facultyUserIds = await referencedFacultyUserIds(betaDb);
-    const collections = collectionsForOptions(options, facultyUserIds);
+    const researchAccountIds = await researchPersonAccountIds(betaDb);
+    const collections = collectionsForOptions(options, researchAccountIds);
     const approvedMirrorCollectionNames = betaToDevelopmentCollectionNames(true);
     const [betaCollectionRows, developmentCollectionRows] = await Promise.all([
       betaDb.listCollections({}, { nameOnly: true }).toArray(),

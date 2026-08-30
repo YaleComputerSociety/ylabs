@@ -15,7 +15,7 @@ describe('Development to Beta sync guards', () => {
     expect(options).toMatchObject({
       mode: 'dry-run',
       confirmSync: false,
-      includeObservations: true,
+      includeObservations: false,
     });
     expect(() => assertSafeDevelopmentToBetaOptions(options)).not.toThrow();
   });

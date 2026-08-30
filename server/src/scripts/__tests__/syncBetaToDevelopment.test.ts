@@ -7,9 +7,9 @@ import {
   betaToDevelopmentCollectionNames,
   buildBetaToDevelopmentSummary,
   parseBetaToDevelopmentOptions,
-  referencedFacultyUserIds,
+  researchPersonAccountIds,
   replaceMongoDatabaseName,
-  sanitizeDevelopmentUser,
+  sanitizeMirroredAccount,
   unclassifiedBetaCollectionNames,
 } from '../syncBetaToDevelopment';
 
@@ -96,7 +96,7 @@ describe('Beta to Development sync guards', () => {
       confirmSync: false,
       confirmAtlasDevelopmentOverwrite: false,
       clearDevelopmentNonMirrorData: false,
-      includeObservations: true,
+      includeObservations: false,
     });
     expect(() => assertSafeBetaToDevelopmentOptions(options)).not.toThrow();
   });
@@ -196,16 +196,27 @@ describe('Beta to Development sync guards', () => {
       expect.arrayContaining([
         'research_entities',
         'research_entity_relationships',
-        'faculty_members',
+        'research_entity_redirects',
         'signals',
-        'research_entity_stats',
-        'research_scholarly_links',
-        'research_scholarly_attributions',
+        'researchers',
+        'role_assignments',
+        'accounts',
         'sources',
         'scrape_runs',
         'observations',
+        'org_units',
+        'taxonomy_terms',
+      ]),
+    );
+    expect(names).not.toEqual(
+      expect.arrayContaining([
+        'faculty_members',
+        'research_entity_stats',
+        'research_scholarly_links',
+        'research_scholarly_attributions',
         'researchareas',
         'users',
+        'listings',
       ]),
     );
     expect(names).not.toEqual(
@@ -229,7 +240,7 @@ describe('Beta to Development sync guards', () => {
     const memberOnlyUserId = new ObjectId('507f1f77bcf86cd799439012');
     const queriedCollections: string[] = [];
     const distinctById: Record<string, ObjectId[]> = {
-      faculty_members: [facultyUserId],
+      researchers: [facultyUserId],
       research_entity_members: [memberOnlyUserId],
     };
     const betaDb = {
@@ -244,16 +255,16 @@ describe('Beta to Development sync guards', () => {
       }),
     } as unknown as Db;
 
-    const resolved = await referencedFacultyUserIds(betaDb);
+    const resolved = await researchPersonAccountIds(betaDb);
 
     expect(resolved.map((id) => id.toHexString())).toEqual([facultyUserId.toHexString()]);
-    expect(queriedCollections).toContain('faculty_members.userId');
+    expect(queriedCollections).toContain('researchers.accountId');
     expect(queriedCollections).not.toContain('research_entity_members.userId');
     expect(resolved.map((id) => id.toHexString())).not.toContain(memberOnlyUserId.toHexString());
   });
 
   it('removes account activity and student fields from copied faculty users', () => {
-    const sanitized = sanitizeDevelopmentUser({
+    const sanitized = sanitizeMirroredAccount({
       _id: 'faculty-1',
       netid: 'faculty.person',
       email: 'faculty.person@yale.edu',
@@ -284,7 +295,7 @@ describe('Beta to Development sync guards', () => {
 
   it('pseudonymizes non-faculty users while preserving IDs and roles', () => {
     const id = new ObjectId('507f1f77bcf86cd799439011');
-    const sanitized = sanitizeDevelopmentUser(
+    const sanitized = sanitizeMirroredAccount(
       {
         _id: id,
         netid: 'student.person',
@@ -302,12 +313,8 @@ describe('Beta to Development sync guards', () => {
 
     expect(sanitized).toMatchObject({
       _id: id,
-      netid: 'dev-507f1f77bcf86cd799439011',
-      email: 'dev-507f1f77bcf86cd799439011@example.invalid',
-      userType: 'undergraduate',
-      userConfirmed: false,
-      fname: 'Development',
-      lname: 'User 439011',
+      netid: 'mirrored-507f1f77bcf86cd799439011',
+      email: 'mirrored-507f1f77bcf86cd799439011@example.invalid',
     });
     expect(sanitized).not.toHaveProperty('college');
     expect(sanitized).not.toHaveProperty('major');
@@ -348,7 +355,7 @@ describe('Beta to Development sync guards', () => {
       targetEnvironment: 'development',
       betaTarget: 'beta.example.test/Beta',
       developmentTarget: 'development.example.test/Development',
-      includesObservations: true,
+      includesObservations: false,
       unclassifiedBetaCollections: [],
       localCollectionsClearedOnApply: [],
     });

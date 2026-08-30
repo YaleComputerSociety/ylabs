@@ -33,20 +33,18 @@ const SYNTHETIC_USER_FILTER: Document = { $nor: SYNTHETIC_USER_MATCHES };
 const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
-  { name: 'faculty_members', category: 'research-discovery' },
-  { name: 'accounts', category: 'research-discovery' },
+  { name: 'research_entity_redirects', category: 'research-discovery' },
+  { name: 'accounts', category: 'research-discovery', filter: SYNTHETIC_USER_FILTER },
   { name: 'researchers', category: 'research-discovery' },
   { name: 'role_assignments', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
-  { name: 'research_scholarly_links', category: 'research-discovery' },
-  { name: 'research_scholarly_attributions', category: 'research-discovery' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },
-  { name: 'users', category: 'base-support', filter: SYNTHETIC_USER_FILTER },
-  { name: 'listings', category: 'base-support' },
   { name: 'departments', category: 'base-support' },
+  { name: 'org_units', category: 'base-support' },
   { name: 'research_areas', category: 'base-support' },
+  { name: 'taxonomy_terms', category: 'base-support' },
   { name: 'fellowships', category: 'base-support' },
 ];
 
@@ -103,12 +101,9 @@ export interface PromotionSummary {
   blockedSyntheticUserReferences: SyntheticUserReference[];
 }
 
-const USER_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
-  { collection: 'faculty_members', field: 'userId' },
+const ACCOUNT_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
+  { collection: 'researchers', field: 'accountId' },
   { collection: 'research_entities', field: 'studentVisibilityReviewedByAccountId' },
-  { collection: 'research_scholarly_links', field: 'userId' },
-  { collection: 'research_scholarly_attributions', field: 'targetUserId' },
-  { collection: 'listings', field: 'createdByUserId' },
   { collection: 'fellowships', field: 'studentVisibilityReviewedByAccountId' },
 ];
 
@@ -125,7 +120,7 @@ export function parsePromotionOptions(
   let mode: Mode = 'dry-run';
   let datasetVersion = env.PROMOTION_DATASET_VERSION || '';
   let restorePoint = env.ATLAS_RESTORE_POINT || '';
-  let includeObservations = true;
+  let includeObservations = false;
   let output: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -141,6 +136,10 @@ export function parsePromotionOptions(
     }
     if (arg === '--skip-observations') {
       includeObservations = false;
+      continue;
+    }
+    if (arg === '--include-observations') {
+      includeObservations = true;
       continue;
     }
     if (arg.startsWith('--dataset-version=')) {
@@ -248,7 +247,7 @@ export function buildPromotionSummary(
     includesObservations: options.includeObservations,
     collections: plan,
     collectionCategories,
-    excludedSyntheticUsers: plan.find((row) => row.name === 'users')?.excludedCount || 0,
+    excludedSyntheticUsers: plan.find((row) => row.name === 'accounts')?.excludedCount || 0,
     syntheticReferenceBlockersClear: applyBlockers.length === 0,
     applyBlockers,
     blockedSyntheticUserReferences,
@@ -336,14 +335,14 @@ async function buildPlan(
 
 async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
   const excludedUsers = await betaDb
-    .collection('users')
+    .collection('accounts')
     .find(SYNTHETIC_USER_MATCH, { projection: { _id: 1 } })
     .toArray();
   const excludedIds = excludedUsers.map((user) => user._id);
   if (excludedIds.length === 0) return [];
 
   const rows = await Promise.all(
-    USER_REFERENCE_FIELDS.map(async ({ collection, field }) => {
+    ACCOUNT_REFERENCE_FIELDS.map(async ({ collection, field }) => {
       const exists = await betaDb
         .listCollections({ name: collection }, { nameOnly: true })
         .hasNext();
