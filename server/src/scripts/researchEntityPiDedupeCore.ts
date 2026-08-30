@@ -151,7 +151,7 @@ function isFundingShellSlug(slug: string | undefined): boolean {
   );
 }
 
-function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
+export function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
   return isAreaShellSlug(slug) || isFundingShellSlug(slug);
 }
 
