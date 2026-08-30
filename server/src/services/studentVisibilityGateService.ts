@@ -165,6 +165,7 @@ const suppressionRepairReasons = new Set([
   'generic_directory_shell',
   'inactive_at_yale',
   'non_owner_grant_shell',
+  'grant_only_no_current_yale_source',
   'non_research_entity',
   'non_research_program',
   'not_undergraduate_relevant',

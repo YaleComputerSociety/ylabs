@@ -2044,3 +2044,46 @@ describe('enforceStudentReadyDescriptionInvariant', () => {
     expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
   });
 });
+
+describe('grant-only entities cannot be published to students (#2280)', () => {
+  const grantOnlyLab = {
+    slug: 'nih-pi-example-lead',
+    name: 'Example Lead Lab',
+    displayName: 'Example Lead Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    websiteUrl: '',
+    sourceUrls: ['https://reporter.nih.gov/project-details/10899610'],
+    researchAreas: ['Epidemiology'],
+    shortDescription: 'Studies transmission dynamics of respiratory viruses in community settings.',
+    fullDescription:
+      'The lab studies transmission dynamics of respiratory viruses in community settings, combining household cohort sampling with statistical modelling to estimate infection risk.',
+  };
+
+  it('suppresses a lab whose every url is a grant record', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: grantOnlyLab,
+      leadMembers: [{ role: 'PI', user: { displayName: 'Example Lead' } }],
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).toContain('grant_only_no_current_yale_source');
+    expect(result.tier).toBe('suppressed');
+  });
+
+  it('leaves an entity with a real official page alone', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        ...grantOnlyLab,
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/10899610',
+          'https://medicine.yale.edu/profile/example-lead/',
+        ],
+      },
+      leadMembers: [{ role: 'PI', user: { displayName: 'Example Lead' } }],
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).not.toContain('grant_only_no_current_yale_source');
+  });
+});
