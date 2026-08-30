@@ -113,6 +113,25 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   const orcidLinkUrls = (links: Array<{ kind: string; url: string }> | undefined) =>
     (links || []).filter((link) => link.kind === 'ORCID').map((link) => link.url);
 
+  const officialLinkUrls = (links: Array<{ kind: string; url: string }> | undefined) =>
+    (links || []).filter((link) => link.kind === 'YALE_OFFICIAL').map((link) => link.url);
+
+  const seedRosterProfileUrls = async (netid: string, profileUrls: Record<string, string>) =>
+    Observation.create({
+      ...directoryObservationBase(netid),
+      sourceName: 'dept-faculty-roster',
+      field: 'profileUrls',
+      value: profileUrls,
+    });
+
+  const yaleOfficialProfileLink = (url: string) => ({
+    kind: 'YALE_OFFICIAL' as const,
+    purpose: 'PRIMARY_IDENTITY' as const,
+    url,
+    verifiedAt: new Date('2026-01-01T00:00:00Z'),
+    healthStatus: 'UNKNOWN' as const,
+  });
+
   it('skips and creates neither Account nor Researcher for a directory-only identity', async () => {
     await seedDirectoryIdentity('phantom1', 'Pat', 'Phantom');
 
@@ -270,6 +289,42 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     const enriched = await enrichedResearcher(enrichTarget._id);
     expect(enriched?.identifiers?.orcid).toBe(nextOrcid);
     expect(orcidLinkUrls(enriched?.profileLinks)).toEqual([`https://orcid.org/${nextOrcid}`]);
+  });
+
+  it('replaces a stale official link when its own department moved the person onto /profile/', async () => {
+    const enrichTarget = await attachedResearcher('moved2', 'Dana Moved', {
+      profileLinks: [yaleOfficialProfileLink('https://example-dept.yale.edu/people/dana-moved')],
+    });
+
+    await seedDirectoryIdentity('moved2', 'Dana', 'Moved');
+    await seedRosterProfileUrls('moved2', {
+      departmental: 'https://example-dept.yale.edu/profile/dana-moved',
+    });
+
+    await materializeEntity('user', { entityKey: 'moved2' }, {});
+
+    const enriched = await enrichedResearcher(enrichTarget._id);
+    expect(officialLinkUrls(enriched?.profileLinks)).toEqual([
+      'https://example-dept.yale.edu/profile/dana-moved',
+    ]);
+  });
+
+  it('keeps the stored official link when the candidate comes from another host', async () => {
+    const enrichTarget = await attachedResearcher('kept1', 'Kit Kept', {
+      profileLinks: [yaleOfficialProfileLink('https://example-dept.yale.edu/people/kit-kept')],
+    });
+
+    await seedDirectoryIdentity('kept1', 'Kit', 'Kept');
+    await seedRosterProfileUrls('kept1', {
+      departmental: 'https://other-dept.yale.edu/profile/kit-kept',
+    });
+
+    await materializeEntity('user', { entityKey: 'kept1' }, {});
+
+    const enriched = await enrichedResearcher(enrichTarget._id);
+    expect(officialLinkUrls(enriched?.profileLinks)).toEqual([
+      'https://example-dept.yale.edu/people/kit-kept',
+    ]);
   });
 
   it('clamps a directory title beyond the profile bound instead of failing the run', async () => {

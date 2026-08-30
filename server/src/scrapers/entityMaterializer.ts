@@ -128,7 +128,10 @@ import {
   type ResearcherProfileLink,
 } from '../models/researcher';
 import { Account } from '../models/account';
-import { composeOfficialProfileLink } from '../scripts/backfillResearcherOfficialProfileLinksCore';
+import {
+  composeOfficialProfileLink,
+  supersedesOfficialProfileUrl,
+} from '../scripts/backfillResearcherOfficialProfileLinksCore';
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
 import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
 import { reconcileFacultyRosterDeparturesFromRun } from './facultyRosterDepartureReconciler';
@@ -2971,6 +2974,15 @@ async function materializeUserIdentityToResearcher(
   if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {
     researcher.profileLinks.push(officialLink);
     fieldsWritten += 1;
+  } else if (officialLink) {
+    const supersedesStoredOfficialLink = (link: ResearcherProfileLink): boolean =>
+      link.kind === 'YALE_OFFICIAL' && supersedesOfficialProfileUrl(link.url, officialLink.url);
+    if ((researcher.profileLinks || []).some(supersedesStoredOfficialLink)) {
+      researcher.profileLinks = (researcher.profileLinks || []).map(
+        (link: ResearcherProfileLink) => (supersedesStoredOfficialLink(link) ? officialLink : link),
+      );
+      fieldsWritten += 1;
+    }
   }
   const scholarUrl = profileUrls
     ? canonicalScholarCitationUrl(profileUrls.googleScholar)
