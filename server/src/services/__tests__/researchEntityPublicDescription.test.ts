@@ -251,4 +251,48 @@ describe('researchEntityPublicDescription', () => {
       ).toBe(false);
     });
   });
+
+  describe('the name-agnostic gate is NOT nested with the lead-aware detail gate (#2241)', () => {
+    // Pins the refutation of a former comment claiming lead-name stripping "only
+    // ever removes more text, so ... dropping it can never hide a card the detail
+    // page would serve". Removing text is not the same as a monotonically stricter
+    // verdict. If someone reintroduces a nesting assumption, these fail.
+    const leadNameOpenerEntity = {
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      name: 'Andrew B Cohen - Research',
+      sourceUrls: ['https://example.yale.edu/profile/andrew-cohen'],
+      studentVisibilityTier: 'student_ready',
+      shortDescription:
+        "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers.",
+      fullDescription:
+        "Dr. Cohen's research aims to understand how immune cells recognise tumour antigens in solid cancers, using single-cell sequencing of patient biopsies to map antigen presentation across tumour microenvironments.",
+    };
+
+    it('passes the name-agnostic gate while the lead-aware gate fails, so browse can advertise a card whose detail page 404s', () => {
+      expect(researchEntityServesPublicDetail(leadNameOpenerEntity)).toBe(true);
+
+      const leadAware = buildResearchEntityPublicDescriptionRepresentation({
+        entity: leadNameOpenerEntity,
+        leadMemberNames: ['Andrew B Cohen'],
+      });
+      expect(leadAware.invariant.pass).toBe(false);
+      expect(leadAware.invariant.reasons).toContain('missing_public_card_description');
+    });
+
+    it('shows stripping CREATING the failure rather than only removing text', () => {
+      const leadAware = buildResearchEntityPublicDescriptionRepresentation({
+        entity: leadNameOpenerEntity,
+        leadMemberNames: ['Andrew B Cohen'],
+      });
+      // The lead-name self-reference is stripped, and what remains is what fails.
+      expect(leadAware.fullDescription).toContain('This research aims to');
+      expect(leadAware.fullDescription).not.toContain("Dr. Cohen's");
+      // Sharper than "stripping empties the card": the card still renders, falling
+      // back to the stripped full. The gate fails on the stored short's own quality
+      // after stripping, so it rejects an entity that HAS renderable card copy.
+      expect(leadAware.cardDescription).toContain('This research aims to');
+      expect(leadAware.invariant.cardDescriptionUseful).toBe(false);
+    });
+  });
 });
