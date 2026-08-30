@@ -3,6 +3,7 @@ import { isBlockingVisibilityReason } from '../services/studentVisibilityGateSer
 import {
   deriveResearchEntityYaleStatus,
   hasEvidencelessInactiveYaleStatus,
+  yaleStatusCacheIsWritable,
   type ResearchEntityYaleStatusReason,
 } from '../utils/researchEntityYaleStatus';
 
@@ -41,6 +42,7 @@ export interface YaleStatusCachePlan {
   toHeal: YaleStatusCacheHealRow[];
   countsByReason: Record<string, number>;
   flipToSuppressedCount: number;
+  manuallyLockedSkipped: number;
 }
 
 const VALID_OVERRIDE_TIERS = new Set(['student_ready', 'limited_but_safe', 'operator_review', 'suppressed']);
@@ -67,11 +69,24 @@ export function planYaleStatusCacheBackfill(docs: YaleStatusCacheDoc[]): YaleSta
   const toHeal: YaleStatusCacheHealRow[] = [];
   const countsByReason: Record<string, number> = {};
   let flipToSuppressedCount = 0;
+  let manuallyLockedSkipped = 0;
 
   for (const doc of docs) {
+    // An operator lock on either status-cache field wins over both directions of
+    // this command, matching the materializer and the roster reconciler. Gating
+    // here rather than per branch keeps the two directions from disagreeing.
+    if (!yaleStatusCacheIsWritable(doc)) {
+      manuallyLockedSkipped++;
+      continue;
+    }
+
     const signal = deriveResearchEntityYaleStatus(doc);
     if (!signal) {
       if (hasEvidencelessInactiveYaleStatus(doc)) {
+        const healPreviousStudentVisibilityTier = textOr(
+          doc.studentVisibilityTier,
+          'operator_review',
+        );
         const reasons = existingReasons(doc);
         toHeal.push({
           id: doc.id,
@@ -79,8 +94,9 @@ export function planYaleStatusCacheBackfill(docs: YaleStatusCacheDoc[]): YaleSta
           previousYaleStatusCache: textOr(doc.yaleStatusCache, 'unknown'),
           previousActiveAtYaleCache: doc.activeAtYaleCache !== false,
           previousYaleStatusReasonCache: textOr(doc.yaleStatusReasonCache, ''),
-          previousStudentVisibilityTier: textOr(doc.studentVisibilityTier, 'operator_review'),
+          previousStudentVisibilityTier: healPreviousStudentVisibilityTier,
           suppressedOnlyByInactiveAtYale:
+            healPreviousStudentVisibilityTier === 'suppressed' &&
             reasons.includes('inactive_at_yale') &&
             reasons.filter((reason) => isBlockingVisibilityReason(reason)).length === 1,
         });
@@ -136,5 +152,12 @@ export function planYaleStatusCacheBackfill(docs: YaleStatusCacheDoc[]): YaleSta
     });
   }
 
-  return { scanned: docs.length, toUpdate, toHeal, countsByReason, flipToSuppressedCount };
+  return {
+    scanned: docs.length,
+    toUpdate,
+    toHeal,
+    countsByReason,
+    flipToSuppressedCount,
+    manuallyLockedSkipped,
+  };
 }

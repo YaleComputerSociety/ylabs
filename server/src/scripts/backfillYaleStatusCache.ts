@@ -175,6 +175,7 @@ async function main() {
     gainingCacheValue: plan.toUpdate.length,
     countsByReason: plan.countsByReason,
     flipToSuppressedCount: plan.flipToSuppressedCount,
+    manuallyLockedSkipped: plan.manuallyLockedSkipped,
     healingStaleInactiveCache: plan.toHeal.length,
     healingSuppressedOnlyByInactiveAtYale: plan.toHeal.filter(
       (target) => target.suppressedOnlyByInactiveAtYale,

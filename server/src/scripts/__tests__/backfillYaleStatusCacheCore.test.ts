@@ -83,6 +83,20 @@ describe('planYaleStatusCacheBackfill', () => {
       ]);
 
       expect(plan.toHeal).toHaveLength(0);
+      expect(plan.manuallyLockedSkipped).toBe(1);
+    }
+  });
+
+  it('leaves a manually locked status cache alone in the suppress direction too', () => {
+    for (const lockedField of ['activeAtYaleCache', 'yaleStatusCache']) {
+      const plan = planYaleStatusCacheBackfill([
+        { ...baseDoc, manuallyLockedFields: [lockedField] },
+      ]);
+
+      expect(plan.toUpdate).toHaveLength(0);
+      expect(plan.flipToSuppressedCount).toBe(0);
+      expect(plan.countsByReason).toEqual({});
+      expect(plan.manuallyLockedSkipped).toBe(1);
     }
   });
 
@@ -106,6 +120,21 @@ describe('planYaleStatusCacheBackfill', () => {
       },
     ]);
 
+    expect(plan.toHeal[0].suppressedOnlyByInactiveAtYale).toBe(false);
+  });
+
+  it('does not claim a heal row is suppressed when its tier is not suppressed', () => {
+    const plan = planYaleStatusCacheBackfill([
+      {
+        ...liveDoc,
+        activeAtYaleCache: false,
+        yaleStatusCache: 'departed',
+        studentVisibilityTier: 'student_ready',
+        studentVisibilityReasons: ['inactive_at_yale'],
+      },
+    ]);
+
+    expect(plan.toHeal).toHaveLength(1);
     expect(plan.toHeal[0].suppressedOnlyByInactiveAtYale).toBe(false);
   });
 

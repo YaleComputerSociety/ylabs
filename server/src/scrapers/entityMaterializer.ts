@@ -142,6 +142,7 @@ import {
   CLEARED_RESEARCH_ENTITY_YALE_STATUS,
   deriveResearchEntityYaleStatus,
   hasEvidencelessInactiveYaleStatus,
+  yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 
 interface MaterializeOptions {
@@ -3324,10 +3325,7 @@ export async function projectFromLog(
         }
       }
     }
-    if (
-      !manuallyLockedFields.includes('activeAtYaleCache') &&
-      !manuallyLockedFields.includes('yaleStatusCache')
-    ) {
+    if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
       const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
         if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
         if (Array.isArray(setValue)) return setValue.length > 0 ? setValue : docValue;
