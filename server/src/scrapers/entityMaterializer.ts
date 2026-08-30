@@ -898,24 +898,6 @@ export function deriveResearchEntityWebsiteUrl(
   });
 }
 
-function isInitialOnlyNameValue(value: unknown): boolean {
-  const raw = textValue(value);
-  if (/^[A-Z]{2,}$/.test(raw)) return false;
-  const tokens = identityTokens(value);
-  return tokens.length === 1 && (tokens[0].length === 1 || raw.includes('.'));
-}
-
-export function shouldPreserveExistingUserIdentityField(
-  field: string,
-  nextValue: unknown,
-  existingDoc: Record<string, unknown> | null,
-): boolean {
-  if (!existingDoc || (field !== 'fname' && field !== 'firstName')) return false;
-  const existingValue = existingDoc[field] || existingDoc.fname || existingDoc.firstName;
-  if (!textValue(existingValue)) return false;
-  return isInitialOnlyNameValue(nextValue) && !isInitialOnlyNameValue(existingValue);
-}
-
 function comparableObservationValue(value: unknown): string {
   if (typeof value === 'string') return value.trim().toLowerCase();
   return JSON.stringify(value);

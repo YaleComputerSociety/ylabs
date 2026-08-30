@@ -19,7 +19,6 @@ import {
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
   selectOfficialProfileObservationUserMatch,
-  shouldPreserveExistingUserIdentityField,
   shouldIgnoreObservationForEntityMaterialization,
   uniqueKeyValueForIdentifier,
   userLookupFiltersForOfficialProfileObservations,
@@ -320,15 +319,6 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(
       selectOfficialProfileObservationUserMatch(observations, [alias, canonical], 'az248'),
     ).toBeNull();
-  });
-
-  it('preserves existing non-initial user names over roster initials', () => {
-    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'AZ' })).toBe(true);
-    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'Anna' })).toBe(true);
-    expect(shouldPreserveExistingUserIdentityField('fname', 'Anna', { fname: 'AZ' })).toBe(false);
-    expect(shouldPreserveExistingUserIdentityField('lname', 'Zayaruznaya', { fname: 'AZ' })).toBe(
-      false,
-    );
   });
 
   it('drops content-page URLs from materialized research entity source URLs', () => {
