@@ -132,10 +132,14 @@ Development holds roughly 1.07 GB across 514,366 objects, and 412,997 of those o
 A mirror that carried observations would copy 436,026 documents and duplicate that footprint inside the same quota, which can exhaust the cluster and take the live site down to populate a staging environment.
 Without them the same mirror copies about 23,000 documents across the reviewable corpus and the identity spine.
 
-What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `research_entity_redirects`, `signals`, `researchers`, `role_assignments`, `accounts`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
+What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `research_entity_redirects`, `canonical_aliases`, `signals`, `researchers`, `role_assignments`, `accounts`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
 Identity is not optional in that list.
 A mirrored environment holding `research_entities` without `researchers`, `role_assignments`, and `accounts` serves a corpus whose every lead is unresolvable, which fails as `missing_lead` across the whole dataset rather than in one place.
+Copying `canonical_aliases` carries the resolve-at-mint alias ledger, so a scrape on the target resolves to the same canonical records instead of minting duplicates beside them.
 Copying `taxonomy_terms` also carries the approved research-area vocabulary, which nothing else can currently seed into a fresh environment.
+
+The frozen evidence claim-graph collections (`evidence_claims`, `source_documents`, `review_decisions`) are classified as excluded rather than copied: they are unwired do-not-build-on contracts, and the live evidence path is `observations` to `signals`.
+The mirror carries each replaced collection's `$jsonSchema` validator onto its replacement, so a mirrored target keeps rejecting the writes the canonical validators reject.
 
 Two consequences follow, and both are load-bearing.
 

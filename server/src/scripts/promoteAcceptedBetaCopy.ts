@@ -4,6 +4,7 @@ import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -281,9 +282,11 @@ export function writePromotionOutput(report: unknown, output?: string): void {
 }
 
 function promotionCollectionsForOptions(options: PromotionOptions): PromotionCollection[] {
-  return COPY_COLLECTIONS.filter(
+  const collections = COPY_COLLECTIONS.filter(
     (collection) => options.includeObservations || collection.name !== 'observations',
   );
+  assertNoNeverCopyCollections(collections.map((collection) => collection.name));
+  return collections;
 }
 
 export function promotionCollectionNamesForOptions(options: PromotionOptions): string[] {

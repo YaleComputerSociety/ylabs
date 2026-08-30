@@ -3,6 +3,7 @@ import fs from 'fs';
 import {
   MongoClient,
   type AnyBulkWriteOperation,
+  type CreateCollectionOptions,
   type Db,
   type Document,
   type ObjectId,
@@ -11,6 +12,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -48,6 +50,7 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
   { name: 'research_entity_redirects', category: 'research-discovery' },
+  { name: 'canonical_aliases', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
   { name: 'researchers', category: 'identity-spine' },
   { name: 'role_assignments', category: 'identity-spine' },
@@ -61,28 +64,25 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'fellowships', category: 'base-support' },
 ];
 
-const ACCOUNT_STATE_USER_FIELDS = [
-  'studentProfileId',
-  'college',
-  'year',
-  'major',
-  'phone',
-  'upi',
-  'physicalLocation',
-  'buildingDesk',
-  'mailingAddress',
-  'ownListings',
-  'savedResearchEntities',
-  'savedResearchEntityMigrationCompleted',
-  'savedResearchEntityPlans',
-  'savedResearchEntityPlanMigrationConflicts',
-  'savedPathwayPlans',
-  'publications',
-  'profileVerificationRequestedAt',
-  'lastLogin',
-  'lastLoginAt',
-  'loginCount',
-  'lastActive',
+// An allow-list rather than a delete-list: account state and student PII live
+// under `profile` on the current model, so a top-level field blocklist silently
+// stops covering them the moment a field moves or a new one is added.
+const MIRRORED_ACCOUNT_FIELDS = [
+  '_id',
+  'schemaVersion',
+  'netid',
+  'email',
+  'status',
+  'createdAt',
+  'updatedAt',
+];
+
+const MIRRORED_ACCOUNT_PROFILE_FIELDS = [
+  'firstName',
+  'lastName',
+  'userType',
+  'title',
+  'department',
 ];
 
 export interface BetaToDevelopmentOptions {
@@ -133,11 +133,14 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'admin_grants',
   'analytics_events',
   'entitycorrectionreports',
+  'evidence_claims',
   'listingclaimrequests',
   'observation_reference_repair_audits',
   'research_plans',
+  'review_decisions',
   'scrape_job_locks',
   'scrape_snapshots',
+  'source_documents',
   'student_applications',
   'student_engagement_events',
   'student_outreaches',
@@ -145,18 +148,6 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'student_trackings',
   'visibility_release_queue_items',
 ];
-
-// Copying either of these is a defect rather than a policy choice: telemetry
-// would attribute one environment's student behavior to another, and a copied
-// lock lets a second environment's scraper believe a job is already held.
-const NEVER_COPY_COLLECTIONS = ['analytics_events', 'scrape_job_locks'];
-
-export function assertNoNeverCopyCollections(collectionNames: string[]): void {
-  const forbidden = collectionNames.filter((name) => NEVER_COPY_COLLECTIONS.includes(name));
-  if (forbidden.length > 0) {
-    throw new Error(`Refusing to mirror environment-local collections: ${forbidden.join(', ')}`);
-  }
-}
 
 export function parseMongoTarget(value: string): ParsedMongoTarget {
   let parsed: URL;
@@ -311,11 +302,25 @@ export function sanitizeMirroredAccount(
     };
   }
 
-  const sanitized = { ...document };
-  for (const field of ACCOUNT_STATE_USER_FIELDS) {
-    delete sanitized[field];
-  }
+  const sanitized: Document = pickDefinedFields(document, MIRRORED_ACCOUNT_FIELDS);
+  sanitized.archived = document.archived === true;
+  const profile = mirroredAccountProfile(document.profile);
+  if (profile) sanitized.profile = profile;
   return sanitized;
+}
+
+function pickDefinedFields(source: Document, fields: string[]): Document {
+  const picked: Document = {};
+  for (const field of fields) {
+    if (source[field] !== undefined) picked[field] = source[field];
+  }
+  return picked;
+}
+
+function mirroredAccountProfile(profile: unknown): Document | undefined {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return undefined;
+  const picked = pickDefinedFields(profile as Document, MIRRORED_ACCOUNT_PROFILE_FIELDS);
+  return Object.keys(picked).length > 0 ? picked : undefined;
 }
 
 function collectionExists(db: Db, collectionName: string): Promise<boolean> {
@@ -351,12 +356,10 @@ export function collectionsForOptions(
   researchAccountIds: ObjectId[],
 ): SyncCollection[] {
   const researchAccountIdSet = new Set(researchAccountIds.map((id) => id.toHexString()));
-  const collections = BASE_COPY_COLLECTIONS.filter(
-    (collection) => options.includeObservations || collection.name !== 'observations',
-  );
-  assertNoNeverCopyCollections(collections.map((collection) => collection.name));
-  return [
-    ...collections,
+  const collections: SyncCollection[] = [
+    ...BASE_COPY_COLLECTIONS.filter(
+      (collection) => options.includeObservations || collection.name !== 'observations',
+    ),
     {
       name: 'accounts',
       category: 'identity-spine',
@@ -368,6 +371,8 @@ export function collectionsForOptions(
       },
     },
   ];
+  assertNoNeverCopyCollections(collections.map((collection) => collection.name));
+  return collections;
 }
 
 export function betaToDevelopmentCollectionNames(includeObservations = true): string[] {
@@ -493,6 +498,34 @@ async function syncIndexes(
   );
 }
 
+// The cutover renames staging over the target, and a rename carries no
+// collection options, so any $jsonSchema validator on the replaced collection is
+// lost unless staging is created with it. Source options win because the mirror
+// makes the target match the source; the target's own options are the fallback
+// so a mirror never downgrades a validated collection to unvalidated.
+async function mirroredValidationOptions(
+  sourceDb: Db,
+  targetDb: Db,
+  collectionName: string,
+): Promise<CreateCollectionOptions> {
+  const sourceOptions = await collectionValidationOptions(sourceDb, collectionName);
+  if (Object.keys(sourceOptions).length > 0) return sourceOptions;
+  return collectionValidationOptions(targetDb, collectionName);
+}
+
+async function collectionValidationOptions(
+  db: Db,
+  collectionName: string,
+): Promise<CreateCollectionOptions> {
+  const [info] = await db.listCollections({ name: collectionName }).toArray();
+  const options = ((info as { options?: Document } | undefined)?.options ?? {}) as Document;
+  const validation: CreateCollectionOptions = {};
+  if (options.validator) validation.validator = options.validator;
+  if (options.validationLevel) validation.validationLevel = options.validationLevel;
+  if (options.validationAction) validation.validationAction = options.validationAction;
+  return validation;
+}
+
 async function copyCollection(
   betaDb: Db,
   developmentDb: Db,
@@ -506,7 +539,10 @@ async function copyCollection(
   }
 
   try {
-    await developmentDb.createCollection(stagingName);
+    await developmentDb.createCollection(
+      stagingName,
+      await mirroredValidationOptions(betaDb, developmentDb, collection.name),
+    );
     if (await collectionExists(betaDb, collection.name)) {
       const cursor = betaDb.collection(collection.name).find(collection.filter || {});
       let batch: AnyBulkWriteOperation<Document>[] = [];
