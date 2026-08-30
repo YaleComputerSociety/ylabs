@@ -86,9 +86,7 @@ export function getFellowshipCycleStatus(
   }
 
   if (isOpen && deadline) {
-    const daysUntil = Math.ceil(
-      (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-    );
+    const daysUntil = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     if (daysUntil <= CLOSING_SOON_DAYS && daysUntil > 0) {
       return {
         category: 'closingSoon',

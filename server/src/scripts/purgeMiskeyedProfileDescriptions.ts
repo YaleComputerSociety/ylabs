@@ -37,7 +37,8 @@ export function parseArgs(argv: string[]): PurgeMiskeyedProfileDescriptionsArgs 
     if (arg === '--apply' || arg === '--mode=apply') args.apply = true;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === '--confirm-purge-miskeyed-descriptions') args.confirm = true;
-    else if (arg.startsWith('--max-apply=')) args.maxApply = parsePositiveInteger(arg.slice('--max-apply='.length));
+    else if (arg.startsWith('--max-apply='))
+      args.maxApply = parsePositiveInteger(arg.slice('--max-apply='.length));
     else if (arg === '--max-apply') args.maxApply = parsePositiveInteger(argv[++index]);
     else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length);
     else if (arg === '--output') args.output = argv[++index];
@@ -99,7 +100,9 @@ export async function loadMiskeyedGroups(): Promise<MiskeyedGroup[]> {
     const entity = await ResearchEntity.findOne(
       group.entityKey ? { slug: group.entityKey } : { _id: group.entityId },
     )
-      .select('slug name displayName school schools departments sourceUrls fullDescription recentGrants')
+      .select(
+        'slug name displayName school schools departments sourceUrls fullDescription recentGrants',
+      )
       .lean();
     if (!entity) continue;
     if (personProfileSourceMatchesEntity(group.sourceUrl, entity as any)) continue;
@@ -182,7 +185,8 @@ async function main() {
   await mongoose.disconnect();
 }
 
-const invokedDirectly = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+const invokedDirectly =
+  process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
   main().catch((error) => {
     console.error(error);

@@ -13,7 +13,9 @@ export async function countResearchEntityAlternateAccessPaths(
   entityIds: unknown[],
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
-  const objectIds = entityIds.map(toObjectId).filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const objectIds = entityIds
+    .map(toObjectId)
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   if (objectIds.length === 0) return counts;
   const inScopeIds = new Set(objectIds.map((id) => id.toString()));
 

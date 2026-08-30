@@ -137,7 +137,9 @@ function significantTokens(...sources: unknown[]): Set<string> {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .split(' ')
-    .filter((token) => token.length >= MIN_SIGNIFICANT_TOKEN_LENGTH && !COHERENCE_STOPWORDS.has(token));
+    .filter(
+      (token) => token.length >= MIN_SIGNIFICANT_TOKEN_LENGTH && !COHERENCE_STOPWORDS.has(token),
+    );
   return new Set(tokens.map(fuzzyToken));
 }
 

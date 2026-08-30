@@ -256,13 +256,15 @@ export function parseDepartmentResearchThemes(html: string, pageUrl: string): Re
 
     section.each((_j, node) => {
       const el = $(node);
-      el.find('a[href]').addBack('a[href]').each((_k, anchor) => {
-        const ref = facultyRefFromAnchor($, anchor, pageUrl);
-        if (ref) {
-          const key = normalizeMatchUrl(ref.profileUrl);
-          if (key && !faculty.has(key)) faculty.set(key, ref);
-        }
-      });
+      el.find('a[href]')
+        .addBack('a[href]')
+        .each((_k, anchor) => {
+          const ref = facultyRefFromAnchor($, anchor, pageUrl);
+          if (ref) {
+            const key = normalizeMatchUrl(ref.profileUrl);
+            if (key && !faculty.has(key)) faculty.set(key, ref);
+          }
+        });
     });
 
     if (faculty.size === 0) return;
@@ -330,9 +332,7 @@ export interface DeptAreaMatchIndex {
   entityIdByNameKey: Map<string, Set<string>>;
 }
 
-export function buildDeptAreaMatchIndex(
-  candidates: DeptAreaCandidateEntity[],
-): DeptAreaMatchIndex {
+export function buildDeptAreaMatchIndex(candidates: DeptAreaCandidateEntity[]): DeptAreaMatchIndex {
   const entityIdByUrl = new Map<string, Set<string>>();
   const entityIdByNameKey = new Map<string, Set<string>>();
   for (const candidate of candidates) {

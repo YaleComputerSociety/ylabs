@@ -58,15 +58,11 @@ describe('canonicalizeResearcherDepartmentLabel', () => {
     expect(canonicalizeResearcherDepartmentLabel('FASMCD MCDB', departmentTable)).toBe(
       'Molecular, Cellular, and Developmental Biology',
     );
-    expect(
-      canonicalizeResearcherDepartmentLabel('FASMCD MCDB', undefined, ['MCDB']),
-    ).toBe('MCDB');
+    expect(canonicalizeResearcherDepartmentLabel('FASMCD MCDB', undefined, ['MCDB'])).toBe('MCDB');
   });
 
   it('drops a leading org code whose all-caps remainder does not resolve to a real department', () => {
-    expect(
-      canonicalizeResearcherDepartmentLabel('MEDCSC TS/OCD/ADHD', departmentTable),
-    ).toBeNull();
+    expect(canonicalizeResearcherDepartmentLabel('MEDCSC TS/OCD/ADHD', departmentTable)).toBeNull();
   });
 
   it('passes through an already-clean department unchanged', () => {

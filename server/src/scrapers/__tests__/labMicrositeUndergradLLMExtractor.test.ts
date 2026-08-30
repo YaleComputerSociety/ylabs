@@ -650,9 +650,7 @@ describe('extractionToObservations', () => {
       const full = obs.find((o) => o.field === 'fullDescription');
       if (!short || !full) continue;
       expect(short.value).not.toBe(full.value);
-      expect(
-        isFullDescriptionRestatementOfShortDescription(full.value, short.value),
-      ).toBe(false);
+      expect(isFullDescriptionRestatementOfShortDescription(full.value, short.value)).toBe(false);
     }
   });
 
@@ -990,7 +988,12 @@ describe('extractionToObservations', () => {
       evidenceSource: 'members_section',
       joinPageUrl: null,
     };
-    const historicalObs = extractionToObservations('lab-historical', 'https://x/', historical, fixedDate);
+    const historicalObs = extractionToObservations(
+      'lab-historical',
+      'https://x/',
+      historical,
+      fixedDate,
+    );
     expect(historicalObs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
 
     const visiting: LLMExtraction = {
@@ -1579,12 +1582,8 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
 
     await scraper.run(ctx);
 
-    expect(
-      emitted.some((item) => item.field === 'undergraduateLogisticsCompensation'),
-    ).toBe(false);
-    expect(
-      logs.some((log) => log.includes('CONFIRM_LOGISTICS_ACQUISITION=true')),
-    ).toBe(true);
+    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(false);
+    expect(logs.some((log) => log.includes('CONFIRM_LOGISTICS_ACQUISITION=true'))).toBe(true);
   });
 
   it('emits corpus-wide logistics once production mode is confirmed via environment', async () => {

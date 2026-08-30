@@ -52,7 +52,9 @@ export interface CenterDirectorsBackfillCliOptions {
   output?: string;
 }
 
-export function parseCenterDirectorsBackfillArgs(argv: string[]): CenterDirectorsBackfillCliOptions {
+export function parseCenterDirectorsBackfillArgs(
+  argv: string[],
+): CenterDirectorsBackfillCliOptions {
   const options: CenterDirectorsBackfillCliOptions = {
     dryRun: true,
     limit: 0,
@@ -197,7 +199,12 @@ export interface CenterDirectorsBackfillResult {
 
 /** Map the extractor's ObservationInput[] onto the materializer's shape. */
 function toMaterializerObservations(
-  observations: { field: string; value: unknown; sourceUrl?: string; confidenceOverride?: number }[],
+  observations: {
+    field: string;
+    value: unknown;
+    sourceUrl?: string;
+    confidenceOverride?: number;
+  }[],
   observedAt: Date,
 ): MaterializerObservationLike[] {
   return observations.map((obs) => ({
@@ -240,7 +247,9 @@ export async function runCenterDirectorsBackfill(options: {
 
   for (const candidate of candidates) {
     try {
-      const extraction = await extractor.extractDirectorForCenter(candidate, (msg) => console.log(msg));
+      const extraction = await extractor.extractDirectorForCenter(candidate, (msg) =>
+        console.log(msg),
+      );
       if (!extraction) continue;
       result.directorsExtracted += 1;
 

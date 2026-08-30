@@ -63,7 +63,10 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
       /--output requires a path/,
     );
     expect(() =>
-      parseRepairArchivedEntityArtifactsArgs(['--output', '/var/tmp/archived-artifact-repair.json']),
+      parseRepairArchivedEntityArtifactsArgs([
+        '--output',
+        '/var/tmp/archived-artifact-repair.json',
+      ]),
     ).toThrow(/--output must write under/);
     expect(() =>
       parseRepairArchivedEntityArtifactsArgs(['--output', '/tmp/archived-artifact-repair.txt']),
@@ -99,9 +102,7 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
       }),
     ).toThrow(/--limit is required when --apply is set/);
 
-    expect(
-      parseRepairArchivedEntityArtifactsArgs(['--apply', '--limit=10']),
-    ).toMatchObject({
+    expect(parseRepairArchivedEntityArtifactsArgs(['--apply', '--limit=10'])).toMatchObject({
       apply: true,
       confirmArchivedArtifactRepair: false,
       limit: 10,

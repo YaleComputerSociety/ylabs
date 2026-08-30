@@ -6,7 +6,8 @@ describe('classifyProgram', () => {
     expect(
       classifyProgram({
         title: 'STARS Summer Research Program',
-        summary: 'Students conduct summer research in a Yale lab and need a lab commitment before applying.',
+        summary:
+          'Students conduct summer research in a Yale lab and need a lab commitment before applying.',
       }),
     ).toMatchObject({
       programKind: 'STRUCTURED_PROGRAM',
@@ -82,7 +83,8 @@ describe('classifyProgram', () => {
     expect(
       classifyProgram({
         title: 'Graduate Research Fellowships of the Gilder Lehrman Center',
-        summary: 'This fellowship is for graduate students conducting doctoral dissertation research.',
+        summary:
+          'This fellowship is for graduate students conducting doctoral dissertation research.',
       }),
     ).toMatchObject({
       undergraduateOnly: false,
@@ -190,7 +192,8 @@ describe('classifyProgram', () => {
     expect(
       classifyProgram({
         title: 'The Ferenc Gyorgyey/Stanley Simbonis YSM Research Travel Grant',
-        summary: 'Available to historians, medical practitioners, and other researchers outside of Yale.',
+        summary:
+          'Available to historians, medical practitioners, and other researchers outside of Yale.',
       }),
     ).toMatchObject({
       undergraduateOnly: false,

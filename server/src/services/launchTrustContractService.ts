@@ -244,9 +244,7 @@ export function buildLaunchTrustContractReport(
     contractVersion: LAUNCH_TRUST_CONTRACT_VERSION,
     mode: options.mode,
     collection: options.collection,
-    pass:
-      violations.length === 0 &&
-      counts.publicVisibilityViolations === 0,
+    pass: violations.length === 0 && counts.publicVisibilityViolations === 0,
     counts,
     repairLanes,
     violations: sampledViolations,

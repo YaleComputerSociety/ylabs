@@ -2790,11 +2790,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     availableRosterMembers.length,
     availableRosterMembers.map((member) => member.row),
   );
-  const [
-    accessSignals,
-    planningContexts,
-    undergraduateLogistics,
-  ] = await Promise.all([
+  const [accessSignals, planningContexts, undergraduateLogistics] = await Promise.all([
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },

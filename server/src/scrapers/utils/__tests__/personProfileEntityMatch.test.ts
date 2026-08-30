@@ -32,20 +32,28 @@ describe('personProfileNameTokensFromUrl', () => {
       personProfileNameTokensFromUrl('https://linguistics.yale.edu/people/linguistics-faculty'),
     ).toBeNull();
     expect(personProfileNameTokensFromUrl('https://cbb.yale.edu/people/our-people')).toBeNull();
-    expect(personProfileNameTokensFromUrl('https://medicine.yale.edu/people/ladder-faculty')).toBeNull();
+    expect(
+      personProfileNameTokensFromUrl('https://medicine.yale.edu/people/ladder-faculty'),
+    ).toBeNull();
   });
 });
 
 describe('researchEntityIdentityTokens', () => {
   it('draws person tokens from name and slug and drops role, prefix, and suffix noise', () => {
     expect(
-      researchEntityIdentityTokens({ slug: 'dept-physics-charles-brown', name: 'Charles Brown Lab' }),
+      researchEntityIdentityTokens({
+        slug: 'dept-physics-charles-brown',
+        name: 'Charles Brown Lab',
+      }),
     ).toEqual(expect.arrayContaining(['charles', 'brown', 'physics']));
-    expect(researchEntityIdentityTokens({ slug: 'nih-pi-hualiang-pi', name: 'Hualiang Pi Lab' })).toEqual(
-      expect.arrayContaining(['hualiang', 'pi']),
-    );
     expect(
-      researchEntityIdentityTokens({ slug: 'faculty-research-area-david-fiellin', name: 'Program in Addiction Medicine' }),
+      researchEntityIdentityTokens({ slug: 'nih-pi-hualiang-pi', name: 'Hualiang Pi Lab' }),
+    ).toEqual(expect.arrayContaining(['hualiang', 'pi']));
+    expect(
+      researchEntityIdentityTokens({
+        slug: 'faculty-research-area-david-fiellin',
+        name: 'Program in Addiction Medicine',
+      }),
     ).toEqual(expect.arrayContaining(['david', 'fiellin']));
   });
 });
@@ -230,15 +238,12 @@ describe('personProfileSourceMatchesEntity', () => {
       ),
     ).toBe(true);
     expect(
-      personProfileSourceMatchesEntity(
-        'https://anthropology.yale.edu/profile/richard-bribiescas',
-        {
-          slug: 'nsf-pi-67d891d950621bcef4347e63',
-          name: 'Yale Reproductive Ecology Laboratory',
-          fullDescription:
-            'The Yale Reproductive Ecology Laboratory studies human life history. PI Dr. Richard Bribiescas.',
-        },
-      ),
+      personProfileSourceMatchesEntity('https://anthropology.yale.edu/profile/richard-bribiescas', {
+        slug: 'nsf-pi-67d891d950621bcef4347e63',
+        name: 'Yale Reproductive Ecology Laboratory',
+        fullDescription:
+          'The Yale Reproductive Ecology Laboratory studies human life history. PI Dr. Richard Bribiescas.',
+      }),
     ).toBe(true);
   });
 
@@ -251,7 +256,8 @@ describe('personProfileSourceMatchesEntity', () => {
           'https://physics.yale.edu/people/keith-baker',
           'https://physics.yale.edu/people/charles-brown',
         ],
-        fullDescription: 'The Charles Brown Lab studies condensed matter physics. PI Charles Brown.',
+        fullDescription:
+          'The Charles Brown Lab studies condensed matter physics. PI Charles Brown.',
       }),
     ).toBe(false);
   });
@@ -270,7 +276,10 @@ describe('personProfileSourceMatchesEntity', () => {
       ),
     ).toBe(false);
     expect(
-      personProfileSourceMatchesEntity('https://som.yale.edu/profile/jordan-avery/', medicineGrantShell),
+      personProfileSourceMatchesEntity(
+        'https://som.yale.edu/profile/jordan-avery/',
+        medicineGrantShell,
+      ),
     ).toBe(false);
   });
 
@@ -313,7 +322,10 @@ describe('personProfileSourceMatchesEntity', () => {
       departments: ['Computer Science'],
     };
     expect(
-      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/rex-ying', engineeringEntity),
+      personProfileSourceMatchesEntity(
+        'https://medicine.yale.edu/profile/rex-ying',
+        engineeringEntity,
+      ),
     ).toBe(false);
 
     const medicalEntity = {
@@ -334,7 +346,8 @@ describe('personProfileSourceMatchesEntity', () => {
         name: 'Rex Ying Research',
         school: 'School of Engineering & Applied Science',
         departments: ['Computer Science'],
-        fullDescription: "Rex Ying's research focuses on graph neural networks and scalable machine learning.",
+        fullDescription:
+          "Rex Ying's research focuses on graph neural networks and scalable machine learning.",
       }),
     ).toBe(false);
   });
@@ -416,9 +429,9 @@ describe('sourceUrlSchoolContradictsEntity', () => {
         school: 'School of Medicine',
       }),
     ).toBe(false);
-    expect(
-      sourceUrlSchoolContradictsEntity('https://faculty.som.yale.edu/jordanavery/', {}),
-    ).toBe(false);
+    expect(sourceUrlSchoolContradictsEntity('https://faculty.som.yale.edu/jordanavery/', {})).toBe(
+      false,
+    );
   });
 
   it('allows a source school that matches any of a multi-school entity', () => {

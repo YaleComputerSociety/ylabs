@@ -66,7 +66,6 @@ const ACCESS_REVIEW_RECORD_TYPES = new Set([
   'postedOpportunity',
 ]);
 
-
 const adminPayloadId = (value: unknown): string => {
   if (typeof value === 'string') return value.trim();
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);

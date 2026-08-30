@@ -67,7 +67,11 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     id: 'institutional-center-graft-blurb',
     issues: '#893',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'blank',
     expectContains:
       'This is a leading center of excellence for cancer research and teaching on the local, national, and international levels.',
@@ -76,10 +80,13 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     id: 'research-area-echo',
     issues: '#623',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'blank',
-    expectContains:
-      'Research fields include neoplasms, parathyroid disorders, and immunotherapy.',
+    expectContains: 'Research fields include neoplasms, parathyroid disorders, and immunotherapy.',
   },
   {
     id: 'literal-html-markup',
@@ -93,7 +100,11 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     id: 'academic-appointment-only',
     issues: '#1010/#1161',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'blank',
     expectContains: 'Robin Hansen is an Associate Professor of Immunobiology.',
   },
@@ -109,7 +120,11 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     id: 'source-page-chrome',
     issues: '#569/#605',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'blank',
     expectContains: 'View Full Profile Related Publications ORCID 0000-0000-0000-0000',
   },
@@ -188,7 +203,11 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     id: 'i-verb-opener',
     issues: '#1526',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'transformed',
     expectContains: 'This researcher studies',
     expectNotContains: 'I study',
@@ -206,7 +225,11 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     id: 'individual-cv-bio-recruiting-note',
     issues: '#1526',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'blank',
     expectContains:
       'I would be happy to meet regularly with an undergraduate or two to do some directed reading in theoretical physics.',
@@ -244,21 +267,31 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     field: 'fullDescription',
     entity: { entityType: 'LAB', kind: 'lab' },
     disposition: 'blank',
-    expectContains: 'I am an Instructor in the Department of Medicine, Section of Infectious Diseases.',
+    expectContains:
+      'I am an Instructor in the Department of Medicine, Section of Infectious Diseases.',
   },
   {
     id: 'degree-receipt-cv-opener',
     issues: '#1745',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'blank',
-    expectContains: 'Robin Hansen received her PhD in Linguistics from the University of Pennsylvania in 1991.',
+    expectContains:
+      'Robin Hansen received her PhD in Linguistics from the University of Pennsylvania in 1991.',
   },
   {
     id: 'pronoun-awards-cv-opener',
     issues: '#1745',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'blank',
     expectContains:
       'He has received the Best Economics PhD Advisor Award at Yale University in 2022 and 2023, and was a runner-up in 2024. Hansen is a fellow of the Econometric Society and has received several prestigious awards.',
@@ -267,9 +300,14 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     id: 'fra-credential-title-lead',
     issues: '#1793',
     field: 'fullDescription',
-    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    entity: {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      displayName: 'Robin Hansen',
+    },
     disposition: 'transformed',
-    expectContains: 'His research focuses on big data and data-driven policy analyses and solutions.',
+    expectContains:
+      'His research focuses on big data and data-driven policy analyses and solutions.',
     expectNotContains: 'is a senior lecturer',
   },
 ];
@@ -291,7 +329,8 @@ describe('research-entity description serve contract (#1269)', () => {
       expect(served).not.toBe('');
       expect(served).not.toBe(rawText);
       if (failureCase.expectContains) expect(served).toContain(failureCase.expectContains);
-      if (failureCase.expectNotContains) expect(served).not.toContain(failureCase.expectNotContains);
+      if (failureCase.expectNotContains)
+        expect(served).not.toContain(failureCase.expectNotContains);
     });
   }
 

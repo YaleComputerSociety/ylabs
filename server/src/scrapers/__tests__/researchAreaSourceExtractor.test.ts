@@ -71,9 +71,9 @@ describe('isRejectedAreaSourceUrl', () => {
   });
 
   it('rejects a shared directory/listing page a per-entity graft can bleed from (#1580)', () => {
-    expect(isRejectedAreaSourceUrl('https://research.yale.edu/cores?f%5B0%5D=result_type%3A1')).toBe(
-      true,
-    );
+    expect(
+      isRejectedAreaSourceUrl('https://research.yale.edu/cores?f%5B0%5D=result_type%3A1'),
+    ).toBe(true);
     expect(isRejectedAreaSourceUrl('https://research.yale.edu/centers-institutes')).toBe(true);
     expect(isRejectedAreaSourceUrl('https://example.edu/people/faculty')).toBe(true);
   });

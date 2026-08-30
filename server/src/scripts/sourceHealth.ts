@@ -133,10 +133,7 @@ export interface SourceHealthReviewSummary {
   }>;
 }
 
-export type SourceHealthReviewQueueName =
-  | 'priority_review'
-  | 'context_review'
-  | 'metadata_review';
+export type SourceHealthReviewQueueName = 'priority_review' | 'context_review' | 'metadata_review';
 
 export interface SourceHealthReviewQueueSummary {
   queue: SourceHealthReviewQueueName;
@@ -228,11 +225,7 @@ const SOURCE_HEALTH_REVIEW_QUEUE_DEFINITIONS: Array<{
   },
 ];
 
-const PRIORITY_REVIEW_CATEGORIES = new Set([
-  'identity_or_routing',
-  'access_evidence',
-  'content',
-]);
+const PRIORITY_REVIEW_CATEGORIES = new Set(['identity_or_routing', 'access_evidence', 'content']);
 const METADATA_REVIEW_CATEGORIES = new Set(['additive_metadata']);
 const SOURCE_HEALTH_REVIEW_LIMIT = 1000;
 const SOURCE_HEALTH_REVIEW_SAMPLE_SIZE = 20;
@@ -284,10 +277,7 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsed;
 }
 
-export function writeSourceHealthOutput(
-  report: Record<string, unknown>,
-  output?: string,
-): void {
+export function writeSourceHealthOutput(report: Record<string, unknown>, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
@@ -379,11 +369,7 @@ function hasCompleteMaterializationConflictReview(
 
   return activeReviewQueues.every((queue) => {
     const staleReview = attachReviewArtifactSummary(
-      buildStaleObservationReviewCommand(
-        row.sourceName,
-        sameSourceConflictCount,
-        queue.queue,
-      ),
+      buildStaleObservationReviewCommand(row.sourceName, sameSourceConflictCount, queue.queue),
       readReportJson,
     );
     const crossSourceReview = attachReviewArtifactSummary(
@@ -418,8 +404,8 @@ function reviewArtifactIsComplete(artifact: {
   const validation = artifact.acceptedDecisionValidation;
   return Boolean(
     validation?.artifactAvailable &&
-      numberValue(validation.invalidDecisionCount) === 0 &&
-      numberValue(validation.unreviewedPlanCount) === 0,
+    numberValue(validation.invalidDecisionCount) === 0 &&
+    numberValue(validation.unreviewedPlanCount) === 0,
   );
 }
 
@@ -453,9 +439,7 @@ export function buildSourceHealthReviewSummary(
     }
     if (conflictReviewAvailable) {
       reportArtifactsWithConflictReview += 1;
-      activeObservationConflictCount += numberValue(
-        conflictReview?.activeObservationConflictCount,
-      );
+      activeObservationConflictCount += numberValue(conflictReview?.activeObservationConflictCount);
       actionableConflictCount += numberValue(conflictReview?.actionableConflictCount);
       sameSourceConflictCount += numberValue(conflictReview?.sameSourceConflictCount);
       crossSourceConflictCount += numberValue(conflictReview?.crossSourceConflictCount);
@@ -463,9 +447,7 @@ export function buildSourceHealthReviewSummary(
         categoryCounts.set(item.category, (categoryCounts.get(item.category) || 0) + item.count);
       }
     }
-    const rowReviewQueues = buildReviewQueues(
-      categoryCountValues(conflictReview?.categoryCounts),
-    );
+    const rowReviewQueues = buildReviewQueues(categoryCountValues(conflictReview?.categoryCounts));
     const rowQueueCounts = countsForReviewQueues(rowReviewQueues);
     const primaryReviewQueue = rowReviewQueues.find((queue) => queue.count > 0)?.queue;
     const rowSameSourceConflictCount = numberValue(conflictReview?.sameSourceConflictCount);
@@ -525,9 +507,7 @@ export function buildSourceHealthReviewSummary(
             ...(staleObservationReview ? { staleObservationReview } : {}),
             ...(staleObservationReviews.length > 0 ? { staleObservationReviews } : {}),
             ...(crossSourceObservationReview ? { crossSourceObservationReview } : {}),
-            ...(crossSourceObservationReviews.length > 0
-              ? { crossSourceObservationReviews }
-              : {}),
+            ...(crossSourceObservationReviews.length > 0 ? { crossSourceObservationReviews } : {}),
             reviewQueues: rowReviewQueues,
             categoryCounts: categoryCountValues(conflictReview.categoryCounts),
           }
@@ -559,7 +539,9 @@ export function buildSourceHealthReviewSummary(
     ...queueCounts,
     categoryCounts: Array.from(categoryCounts.entries())
       .map(([category, count]) => ({ category, count }))
-      .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category)),
+      .sort(
+        (left, right) => right.count - left.count || left.category.localeCompare(right.category),
+      ),
     reviewQueues,
     reviewArtifactStatus,
     reviewDecisionValidationStatus,
@@ -651,7 +633,9 @@ function readJsonIfExists(reportPath: string): unknown | undefined {
   }
 }
 
-function extractMaterializationConflictReview(report: unknown): Record<string, unknown> | undefined {
+function extractMaterializationConflictReview(
+  report: unknown,
+): Record<string, unknown> | undefined {
   if (!report || typeof report !== 'object') {
     return undefined;
   }
@@ -661,9 +645,7 @@ function extractMaterializationConflictReview(report: unknown): Record<string, u
   }
   const review = (quality as { materializationConflictReview?: unknown })
     .materializationConflictReview;
-  return review && typeof review === 'object'
-    ? (review as Record<string, unknown>)
-    : undefined;
+  return review && typeof review === 'object' ? (review as Record<string, unknown>) : undefined;
 }
 
 function numberValue(value: unknown): number {
@@ -716,7 +698,9 @@ function buildReviewQueues(
   return SOURCE_HEALTH_REVIEW_QUEUE_DEFINITIONS.map((definition) => {
     const categories = (categoriesByQueue.get(definition.queue) || [])
       .filter((item) => item.count > 0)
-      .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category));
+      .sort(
+        (left, right) => right.count - left.count || left.category.localeCompare(right.category),
+      );
     return {
       queue: definition.queue,
       label: definition.label,
@@ -743,52 +727,51 @@ function countsForReviewQueues(reviewQueues: SourceHealthReviewQueueSummary[]): 
 function buildReviewArtifactStatus(
   rows: SourceHealthReviewSummary['rows'],
 ): SourceHealthReviewSummary['reviewArtifactStatus'] {
-  const staleCommands = rows.flatMap(
-    (row): ReviewArtifactCommandInput[] =>
-      (row.staleObservationReviews || (row.staleObservationReview ? [row.staleObservationReview] : [])).map(
-        (review) => ({
-          sourceName: row.sourceName,
-          command: review.command,
-          outputPath: review.outputPath,
-          artifactAvailable: review.artifactAvailable,
-          sameSourceConflictCount: review.sameSourceConflictCount,
-          ...(review.reviewQueue ? { reviewQueue: review.reviewQueue } : {}),
-          ...(review.acceptedDecisionTemplate
-            ? {
-                acceptedDecisionTemplate: review.acceptedDecisionTemplate,
-              }
-            : {}),
-          ...(review.acceptedDecisionValidation
-            ? {
-                acceptedDecisionValidation: review.acceptedDecisionValidation,
-              }
-            : {}),
-        }),
-      ),
+  const staleCommands = rows.flatMap((row): ReviewArtifactCommandInput[] =>
+    (
+      row.staleObservationReviews ||
+      (row.staleObservationReview ? [row.staleObservationReview] : [])
+    ).map((review) => ({
+      sourceName: row.sourceName,
+      command: review.command,
+      outputPath: review.outputPath,
+      artifactAvailable: review.artifactAvailable,
+      sameSourceConflictCount: review.sameSourceConflictCount,
+      ...(review.reviewQueue ? { reviewQueue: review.reviewQueue } : {}),
+      ...(review.acceptedDecisionTemplate
+        ? {
+            acceptedDecisionTemplate: review.acceptedDecisionTemplate,
+          }
+        : {}),
+      ...(review.acceptedDecisionValidation
+        ? {
+            acceptedDecisionValidation: review.acceptedDecisionValidation,
+          }
+        : {}),
+    })),
   );
-  const crossSourceCommands = rows.flatMap(
-    (row): ReviewArtifactCommandInput[] =>
-      (
-        row.crossSourceObservationReviews ||
-        (row.crossSourceObservationReview ? [row.crossSourceObservationReview] : [])
-      ).map((review) => ({
-        sourceName: row.sourceName,
-        command: review.command,
-        outputPath: review.outputPath,
-        artifactAvailable: review.artifactAvailable,
-        crossSourceConflictCount: review.crossSourceConflictCount,
-        ...(review.reviewQueue ? { reviewQueue: review.reviewQueue } : {}),
-        ...(review.acceptedDecisionTemplate
-          ? {
-              acceptedDecisionTemplate: review.acceptedDecisionTemplate,
-            }
-          : {}),
-        ...(review.acceptedDecisionValidation
-          ? {
-              acceptedDecisionValidation: review.acceptedDecisionValidation,
-            }
-          : {}),
-      })),
+  const crossSourceCommands = rows.flatMap((row): ReviewArtifactCommandInput[] =>
+    (
+      row.crossSourceObservationReviews ||
+      (row.crossSourceObservationReview ? [row.crossSourceObservationReview] : [])
+    ).map((review) => ({
+      sourceName: row.sourceName,
+      command: review.command,
+      outputPath: review.outputPath,
+      artifactAvailable: review.artifactAvailable,
+      crossSourceConflictCount: review.crossSourceConflictCount,
+      ...(review.reviewQueue ? { reviewQueue: review.reviewQueue } : {}),
+      ...(review.acceptedDecisionTemplate
+        ? {
+            acceptedDecisionTemplate: review.acceptedDecisionTemplate,
+          }
+        : {}),
+      ...(review.acceptedDecisionValidation
+        ? {
+            acceptedDecisionValidation: review.acceptedDecisionValidation,
+          }
+        : {}),
+    })),
   );
 
   return {
@@ -818,30 +801,31 @@ function summarizeReviewArtifactCommands(
 function buildReviewDecisionValidationStatus(
   rows: SourceHealthReviewSummary['rows'],
 ): SourceHealthReviewSummary['reviewDecisionValidationStatus'] {
-  const staleCommands = rows.flatMap(
-    (row): AcceptedDecisionValidationCommandInput[] =>
-      (row.staleObservationReviews || (row.staleObservationReview ? [row.staleObservationReview] : []))
-        .filter((review) => review.acceptedDecisionValidation)
-        .map((review) => ({
-          sourceName: row.sourceName,
-          validation: review.acceptedDecisionValidation!,
-          ...(review.reviewQueue ? { reviewQueue: review.reviewQueue } : {}),
-          sameSourceConflictCount: review.sameSourceConflictCount,
-        })),
+  const staleCommands = rows.flatMap((row): AcceptedDecisionValidationCommandInput[] =>
+    (
+      row.staleObservationReviews ||
+      (row.staleObservationReview ? [row.staleObservationReview] : [])
+    )
+      .filter((review) => review.acceptedDecisionValidation)
+      .map((review) => ({
+        sourceName: row.sourceName,
+        validation: review.acceptedDecisionValidation!,
+        ...(review.reviewQueue ? { reviewQueue: review.reviewQueue } : {}),
+        sameSourceConflictCount: review.sameSourceConflictCount,
+      })),
   );
-  const crossSourceCommands = rows.flatMap(
-    (row): AcceptedDecisionValidationCommandInput[] =>
-      (
-        row.crossSourceObservationReviews ||
-        (row.crossSourceObservationReview ? [row.crossSourceObservationReview] : [])
-      )
-        .filter((review) => review.acceptedDecisionValidation)
-        .map((review) => ({
-          sourceName: row.sourceName,
-          validation: review.acceptedDecisionValidation!,
-          ...(review.reviewQueue ? { reviewQueue: review.reviewQueue } : {}),
-          crossSourceConflictCount: review.crossSourceConflictCount,
-        })),
+  const crossSourceCommands = rows.flatMap((row): AcceptedDecisionValidationCommandInput[] =>
+    (
+      row.crossSourceObservationReviews ||
+      (row.crossSourceObservationReview ? [row.crossSourceObservationReview] : [])
+    )
+      .filter((review) => review.acceptedDecisionValidation)
+      .map((review) => ({
+        sourceName: row.sourceName,
+        validation: review.acceptedDecisionValidation!,
+        ...(review.reviewQueue ? { reviewQueue: review.reviewQueue } : {}),
+        crossSourceConflictCount: review.crossSourceConflictCount,
+      })),
   );
 
   return {
@@ -1130,9 +1114,7 @@ function attachReviewArtifactSummary<
     artifactAvailable: true,
     ...optionalNumberField(record, 'candidateGroups'),
     ...optionalNumberField(record, 'plannedGroups'),
-    ...(typeof record.planTruncated === 'boolean'
-      ? { planTruncated: record.planTruncated }
-      : {}),
+    ...(typeof record.planTruncated === 'boolean' ? { planTruncated: record.planTruncated } : {}),
     ...optionalFieldCounts(record),
     ...optionalCategoryCounts(record),
     ...optionalPolicyBucketCounts(record),
@@ -1141,10 +1123,7 @@ function attachReviewArtifactSummary<
 
 function attachAcceptedDecisionValidationSummary<
   T extends { acceptedDecisionValidation?: SourceHealthAcceptedDecisionValidationCommand },
->(
-  command: T,
-  readReportJson: (reportPath: string) => unknown | undefined,
-): T {
+>(command: T, readReportJson: (reportPath: string) => unknown | undefined): T {
   const validation = command.acceptedDecisionValidation;
   if (!validation) return command;
   const artifact = readReportJson(validation.outputPath);
@@ -1203,9 +1182,9 @@ function optionalNumberField(
   return typeof value === 'number' && Number.isFinite(value) ? { [field]: value } : {};
 }
 
-function optionalCategoryCounts(
-  record: Record<string, unknown>,
-): { categoryCounts?: Array<{ category: string; count: number }> } {
+function optionalCategoryCounts(record: Record<string, unknown>): {
+  categoryCounts?: Array<{ category: string; count: number }>;
+} {
   const value = record.categoryCounts;
   if (!Array.isArray(value)) {
     return {};
@@ -1222,9 +1201,9 @@ function optionalCategoryCounts(
   return counts.length > 0 ? { categoryCounts: counts } : {};
 }
 
-function optionalFieldCounts(
-  record: Record<string, unknown>,
-): { fieldCounts?: Array<{ field: string; count: number }> } {
+function optionalFieldCounts(record: Record<string, unknown>): {
+  fieldCounts?: Array<{ field: string; count: number }>;
+} {
   const value = record.fieldCounts;
   if (!Array.isArray(value)) {
     return {};
@@ -1241,9 +1220,9 @@ function optionalFieldCounts(
   return counts.length > 0 ? { fieldCounts: counts } : {};
 }
 
-function optionalPolicyBucketCounts(
-  record: Record<string, unknown>,
-): { policyBucketCounts?: Array<{ policyBucket: string; count: number }> } {
+function optionalPolicyBucketCounts(record: Record<string, unknown>): {
+  policyBucketCounts?: Array<{ policyBucket: string; count: number }>;
+} {
   const value = record.policyBucketCounts;
   if (!Array.isArray(value)) {
     return {};

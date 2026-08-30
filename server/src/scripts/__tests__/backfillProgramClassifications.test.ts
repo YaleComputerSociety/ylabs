@@ -32,9 +32,9 @@ describe('backfillProgramClassifications CLI helpers', () => {
     expect(() => parseBackfillProgramClassificationsArgs(['--limit=bad'])).toThrow(
       /--limit requires a positive integer/,
     );
-    expect(() =>
-      parseBackfillProgramClassificationsArgs(['--limit=9007199254740992']),
-    ).toThrow(/--limit requires a positive integer/);
+    expect(() => parseBackfillProgramClassificationsArgs(['--limit=9007199254740992'])).toThrow(
+      /--limit requires a positive integer/,
+    );
   });
 
   it('rejects malformed program classification output paths', () => {

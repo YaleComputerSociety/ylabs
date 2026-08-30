@@ -109,7 +109,10 @@ export function parseOstiAuthor(raw: string): ParsedOstiAuthor {
   const withoutOrcid = trimmed.replace(/\(ORCID:[^)]*\)/gi, '').trim();
   const bracket = withoutOrcid.match(/\[([^\]]*)\]/);
   const affiliation = bracket ? bracket[1].trim() : '';
-  const name = withoutOrcid.replace(/\[[^\]]*\]/g, '').replace(/\s{2,}/g, ' ').trim();
+  const name = withoutOrcid
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
   return { name, affiliation };
 }
 
@@ -129,9 +132,7 @@ function affiliationIsExplicitlyNonYale(affiliation: string): boolean {
  * never be attributed to Yale.
  */
 export function selectYalePiCandidates(authors: string[]): ParsedOstiAuthor[] {
-  const parsed = (Array.isArray(authors) ? authors : [])
-    .map(parseOstiAuthor)
-    .filter((a) => a.name);
+  const parsed = (Array.isArray(authors) ? authors : []).map(parseOstiAuthor).filter((a) => a.name);
   const yaleTagged = parsed.filter((a) => affiliationIsYale(a.affiliation));
   if (yaleTagged.length > 0) return yaleTagged;
   return parsed.filter((a) => !affiliationIsExplicitlyNonYale(a.affiliation));
@@ -189,7 +190,9 @@ interface ResolvedReport {
 
 export type PiResolver = (
   canonicalName: string,
-) => Promise<{ status: 'matched'; userId: string } | { status: 'absent' } | { status: 'ambiguous' }>;
+) => Promise<
+  { status: 'matched'; userId: string } | { status: 'absent' } | { status: 'ambiguous' }
+>;
 
 /**
  * Resolve a report to exactly one Yale faculty User across its candidate
@@ -259,7 +262,12 @@ export function buildResearchGroupObservations(
     { ...base, field: 'recentGrants', value: top },
     { ...base, field: 'recentGrantCount', value: grants.length },
     { ...base, field: 'fundingAgencies', value: ['DOE'] },
-    { ...base, field: 'inferredPiUserId', value: group.userId, confidenceOverride: INFERRED_PI_CONFIDENCE },
+    {
+      ...base,
+      field: 'inferredPiUserId',
+      value: group.userId,
+      confidenceOverride: INFERRED_PI_CONFIDENCE,
+    },
   ];
   const lastObserved = top[0]?.startDate;
   if (lastObserved) out.push({ ...base, field: 'lastObservedAt', value: lastObserved });
@@ -328,7 +336,9 @@ export class DoeOstiGrantScraper implements IScraper {
       throw new Error('--limit must be a safe positive integer');
     }
 
-    ctx.log(`Fetching DOE OSTI technical reports for Yale University since ${cutoff.toISOString()}`);
+    ctx.log(
+      `Fetching DOE OSTI technical reports for Yale University since ${cutoff.toISOString()}`,
+    );
 
     const records: OstiRecord[] = [];
     let reachedCutoff = false;

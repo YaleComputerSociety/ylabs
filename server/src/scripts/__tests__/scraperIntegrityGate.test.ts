@@ -35,9 +35,9 @@ describe('scraperIntegrityGate CLI helpers', () => {
   });
 
   it('rejects malformed paired CLI values before running the integrity gate', () => {
-    expect(() =>
-      parseScraperIntegrityGateArgs(['--output', '--include-samples']),
-    ).toThrow('--output requires a value');
+    expect(() => parseScraperIntegrityGateArgs(['--output', '--include-samples'])).toThrow(
+      '--output requires a value',
+    );
     expect(() =>
       parseScraperIntegrityGateArgs(['--output', path.join(os.tmpdir(), 'integrity.txt')]),
     ).toThrow('--output must point to a .json report file');

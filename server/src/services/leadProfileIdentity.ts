@@ -57,7 +57,8 @@ const isGenericProfileCategorySegment = (segment: string): boolean =>
     .split('-')
     .some(
       (token) =>
-        GENERIC_PERSON_DIRECTORY_SEGMENTS.has(token) || GENERIC_PROFILE_CATEGORY_SEGMENTS.has(token),
+        GENERIC_PERSON_DIRECTORY_SEGMENTS.has(token) ||
+        GENERIC_PROFILE_CATEGORY_SEGMENTS.has(token),
     );
 
 export const hasSpecificOfficialPersonPathSegment = (
@@ -315,10 +316,7 @@ const givenNamesAbbreviationMatch = (slugGiven: string, leadGiven: string): bool
 // A first-initial + surname slug (`dfischer`, `e-gordon`) names only an initial,
 // never a competing given name, so it corroborates when both the lead's given
 // initial and full surname line up.
-const firstInitialSurnameMatch = (
-  normalizedSlug: string,
-  nameTokenList: string[],
-): boolean => {
+const firstInitialSurnameMatch = (normalizedSlug: string, nameTokenList: string[]): boolean => {
   if (nameTokenList.length < 2) return false;
   const given = nameTokenList[0];
   const surname = nameTokenList[nameTokenList.length - 1];

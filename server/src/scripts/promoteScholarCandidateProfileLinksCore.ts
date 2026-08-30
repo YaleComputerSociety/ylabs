@@ -1,4 +1,3 @@
-
 export const SCHOLAR_PROFILE_LINK_URL_MAXLENGTH = 2048;
 
 const cleanString = (value: unknown): string | undefined => {

@@ -1,5 +1,4 @@
 import type { DuplicatePersonGroup } from '../scrapers/integrityGate';
-import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export type UserIdentityField = DuplicatePersonGroup['identityField'];
 
@@ -101,4 +100,3 @@ export function emailLooksPersonSpecific(identityValue: string, normalizedName: 
     ),
   );
 }
-

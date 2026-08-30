@@ -156,17 +156,23 @@ describe('foreign lab prose guard (#2272)', () => {
       extractedPageDescribesAnotherPersonsLab({ name: 'The Vandermolen Lab' }, memberContext),
     ).toBe(true);
     expect(
-      extractedPageDescribesAnotherPersonsLab({ name: 'The Vandermolen Lab' }, {
-        ...memberContext,
-        entityKey: 'ysm-rhea-vandermolen',
-      }),
+      extractedPageDescribesAnotherPersonsLab(
+        { name: 'The Vandermolen Lab' },
+        {
+          ...memberContext,
+          entityKey: 'ysm-rhea-vandermolen',
+        },
+      ),
     ).toBe(false);
     expect(extractedPageDescribesAnotherPersonsLab({ name: '' }, memberContext)).toBe(false);
     expect(
-      extractedPageDescribesAnotherPersonsLab({ name: 'Yale Center for Customer Insights' }, {
-        ...memberContext,
-        sourceUrl: 'https://www.marisolabarca-example.org/',
-      }),
+      extractedPageDescribesAnotherPersonsLab(
+        { name: 'Yale Center for Customer Insights' },
+        {
+          ...memberContext,
+          sourceUrl: 'https://www.marisolabarca-example.org/',
+        },
+      ),
     ).toBe(false);
   });
 

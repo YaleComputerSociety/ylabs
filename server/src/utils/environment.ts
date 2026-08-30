@@ -2,7 +2,9 @@
  * Environment variable configuration and validation.
  */
 export const nodeEnvValue = (env: NodeJS.ProcessEnv = process.env) =>
-  String(env.NODE_ENV || '').trim().toLowerCase();
+  String(env.NODE_ENV || '')
+    .trim()
+    .toLowerCase();
 
 export const isCI = (env: NodeJS.ProcessEnv = process.env) => nodeEnvValue(env) === 'ci';
 export const isDevelopment = (env: NodeJS.ProcessEnv = process.env) =>
@@ -34,9 +36,8 @@ export const isLocalHostValue = (value: string | undefined): boolean => {
 export const isLocalDevelopmentRuntime = (env: NodeJS.ProcessEnv = process.env): boolean =>
   isDevelopment(env) && isLocalHostValue(env.SERVER_BASE_URL);
 
-export const allowsNonProductionSecurityBypass = (
-  env: NodeJS.ProcessEnv = process.env,
-): boolean => isCI(env) || isTest(env) || isLocalDevelopmentRuntime(env);
+export const allowsNonProductionSecurityBypass = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  isCI(env) || isTest(env) || isLocalDevelopmentRuntime(env);
 
 export const requiresDeployedRuntimeSecurity = (env: NodeJS.ProcessEnv = process.env): boolean =>
   isProduction(env) || !allowsNonProductionSecurityBypass(env);

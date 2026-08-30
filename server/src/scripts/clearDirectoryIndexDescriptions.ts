@@ -253,7 +253,10 @@ export async function runClearDirectoryIndexDescriptions(options: {
     const plan = planDirectoryIndexCleanup(
       entityInput,
       reDerived
-        ? { fullDescription: reDerived.fullDescription, shortDescription: reDerived.shortDescription }
+        ? {
+            fullDescription: reDerived.fullDescription,
+            shortDescription: reDerived.shortDescription,
+          }
         : null,
     );
 

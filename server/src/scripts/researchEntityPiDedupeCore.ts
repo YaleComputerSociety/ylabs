@@ -103,9 +103,7 @@ function grantRecordStartTime(grant: unknown): number {
   return Number.isFinite(time) ? time : 0;
 }
 
-export function mergedGrantEvidenceFromEntities(
-  entities: ResearchEntityPiDedupeRow['entities'],
-): {
+export function mergedGrantEvidenceFromEntities(entities: ResearchEntityPiDedupeRow['entities']): {
   mergedRecentGrants: unknown[];
   mergedRecentGrantCount: number;
   mergedFundingAgencies: string[];
@@ -123,7 +121,9 @@ export function mergedGrantEvidenceFromEntities(
   const mergedRecentGrants = [...grants.values()]
     .sort((left, right) => grantRecordStartTime(right) - grantRecordStartTime(left))
     .slice(0, MAX_MERGED_RECENT_GRANTS);
-  const mergedFundingAgencies = uniqueStrings(entities.flatMap((entity) => entity.fundingAgencies || []));
+  const mergedFundingAgencies = uniqueStrings(
+    entities.flatMap((entity) => entity.fundingAgencies || []),
+  );
   return {
     mergedRecentGrants,
     mergedRecentGrantCount: recentGrantCount,

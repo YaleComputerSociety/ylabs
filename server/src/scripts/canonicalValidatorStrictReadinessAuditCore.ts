@@ -114,9 +114,8 @@ export function buildStrictReadinessReport(input: {
   const summary: StrictReadinessSummary = {
     collectionsChecked: collections.length,
     collectionsClean: collections.filter((row) => row.clean).length,
-    collectionsAlreadyStrict: collections.filter(
-      (row) => row.currentValidationLevel === 'strict',
-    ).length,
+    collectionsAlreadyStrict: collections.filter((row) => row.currentValidationLevel === 'strict')
+      .length,
     collectionsReadyToFlip: collections.filter((row) => row.strictReady).length,
     readyToFlipCollectionNames: collections
       .filter((row) => row.strictReady)

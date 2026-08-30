@@ -42,26 +42,29 @@ function protectAbbreviations(value: string): string {
     const withToken = abbreviation.split('.').join(INITIAL_DOT_TOKEN);
     protectedText = protectedText.split(abbreviation).join(withToken);
   }
-  return protectedText
-    .replace(/\b(Dr|Prof|Mr|Mrs|Ms|Jr|Sr)\./g, `$1${INITIAL_DOT_TOKEN}`)
-    // A degree abbreviation with a space before its second initial ("Ph. D.",
-    // "M. D.", "U. S.") is otherwise invisible to every rule below, which all
-    // expect the two letters glued together - the sentence splitter then
-    // treats the lone second initial as its own one-word "sentence" that
-    // survives CV-sentence stripping intact (#1533 reopen: angluin-lab-dca3's
-    // "her Ph. D. in Engineering Science" left a bare "D." at the front of
-    // the rebuilt fullDescription once the name-lead sentence around it was
-    // stripped as a career-timeline fact).
-    .replace(
-      /\b([A-Z][a-z]{0,2})\.\s([A-Z])\.(?=\s|,|$)/g,
-      (_match, first: string, second: string) => `${first}${INITIAL_DOT_TOKEN} ${second}${INITIAL_DOT_TOKEN}`,
-    )
-    .replace(/\b(?:[A-Z]\.){2,}/g, (match) => match.split('.').join(INITIAL_DOT_TOKEN))
-    .replace(/\b([A-Z])\.(?=\s*[A-Z][A-Za-z.'-]*)/g, `$1${INITIAL_DOT_TOKEN}`)
-    // A genuine sentence-ending period is always followed by whitespace or
-    // end-of-string; anything else (glued abbreviation, decimal, a period
-    // before a closing bracket/quote) is not a sentence boundary.
-    .replace(/\.(?!\s|$)/g, INITIAL_DOT_TOKEN);
+  return (
+    protectedText
+      .replace(/\b(Dr|Prof|Mr|Mrs|Ms|Jr|Sr)\./g, `$1${INITIAL_DOT_TOKEN}`)
+      // A degree abbreviation with a space before its second initial ("Ph. D.",
+      // "M. D.", "U. S.") is otherwise invisible to every rule below, which all
+      // expect the two letters glued together - the sentence splitter then
+      // treats the lone second initial as its own one-word "sentence" that
+      // survives CV-sentence stripping intact (#1533 reopen: angluin-lab-dca3's
+      // "her Ph. D. in Engineering Science" left a bare "D." at the front of
+      // the rebuilt fullDescription once the name-lead sentence around it was
+      // stripped as a career-timeline fact).
+      .replace(
+        /\b([A-Z][a-z]{0,2})\.\s([A-Z])\.(?=\s|,|$)/g,
+        (_match, first: string, second: string) =>
+          `${first}${INITIAL_DOT_TOKEN} ${second}${INITIAL_DOT_TOKEN}`,
+      )
+      .replace(/\b(?:[A-Z]\.){2,}/g, (match) => match.split('.').join(INITIAL_DOT_TOKEN))
+      .replace(/\b([A-Z])\.(?=\s*[A-Z][A-Za-z.'-]*)/g, `$1${INITIAL_DOT_TOKEN}`)
+      // A genuine sentence-ending period is always followed by whitespace or
+      // end-of-string; anything else (glued abbreviation, decimal, a period
+      // before a closing bracket/quote) is not a sentence boundary.
+      .replace(/\.(?!\s|$)/g, INITIAL_DOT_TOKEN)
+  );
 }
 
 export function protectedSentenceList(value: string): string[] {
@@ -134,7 +137,7 @@ export function stripTrailingProfileChromeFooter(value: unknown): string {
 }
 
 const DEGREE_TOKEN_PATTERN =
-  "(?:Ph\\.?\\s?D\\.?|Sc\\.?\\s?D\\.?|Ed\\.?\\s?D\\.?|Psy\\.?\\s?D\\.?|Th\\.?\\s?D\\.?|D\\.?\\s?Phil\\.?|M\\.?\\s?Phil\\.?|M\\.?\\s?D\\.?|J\\.?\\s?D\\.?|LL\\.?\\s?B\\.?|LL\\.?\\s?M\\.?|M\\.?\\s?T\\.?\\s?S\\.?|M\\.?\\s?Div\\.?|M\\.?\\s?Arch\\.?|M\\.?\\s?F\\.?\\s?A\\.?|M\\.?\\s?B\\.?\\s?A\\.?|B\\.?\\s?Litt\\.?|A\\.?\\s?B\\.?|B\\.?\\s?A\\.?|M\\.?\\s?A\\.?|M\\.?\\s?S\\.?|Hon\\.?)";
+  '(?:Ph\\.?\\s?D\\.?|Sc\\.?\\s?D\\.?|Ed\\.?\\s?D\\.?|Psy\\.?\\s?D\\.?|Th\\.?\\s?D\\.?|D\\.?\\s?Phil\\.?|M\\.?\\s?Phil\\.?|M\\.?\\s?D\\.?|J\\.?\\s?D\\.?|LL\\.?\\s?B\\.?|LL\\.?\\s?M\\.?|M\\.?\\s?T\\.?\\s?S\\.?|M\\.?\\s?Div\\.?|M\\.?\\s?Arch\\.?|M\\.?\\s?F\\.?\\s?A\\.?|M\\.?\\s?B\\.?\\s?A\\.?|B\\.?\\s?Litt\\.?|A\\.?\\s?B\\.?|B\\.?\\s?A\\.?|M\\.?\\s?A\\.?|M\\.?\\s?S\\.?|Hon\\.?)';
 
 // The institution clause after a degree token is usually "<Name> University"
 // but sometimes the qualifying name comes after the keyword ("Graduate
@@ -411,14 +414,17 @@ export function repairPersonBiographyLeakedDescription({
     ),
   );
   const sentences = protectedSentenceList(dechromed);
-  const keptSentences = sentences.filter((sentence) => !isEducationOrCareerTimelineSentence(sentence));
+  const keptSentences = sentences.filter(
+    (sentence) => !isEducationOrCareerTimelineSentence(sentence),
+  );
   const strippedSentenceCount = sentences.length - keptSentences.length;
   const hadChrome = dechromed !== originalFull;
 
   // originalShort is checked only when non-empty: a blank short is a
   // separate, already-tracked coverage gap (missing_card_description), not a
   // defect this repair path should start populating as a side effect.
-  const hasDefectiveNonEmptyShort = Boolean(originalShort) && isDefectiveShortDescription(originalShort);
+  const hasDefectiveNonEmptyShort =
+    Boolean(originalShort) && isDefectiveShortDescription(originalShort);
   if (strippedSentenceCount === 0 && !hadChrome && !hasDefectiveNonEmptyShort) {
     return {
       outcome: 'unchanged',

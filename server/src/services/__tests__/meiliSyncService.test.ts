@@ -40,7 +40,6 @@ vi.mock('../../models/account', () => ({
   },
 }));
 
-
 import {
   syncEntity,
   syncEntities,

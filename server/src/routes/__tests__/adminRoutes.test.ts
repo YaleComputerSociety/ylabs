@@ -429,7 +429,6 @@ describe('admin routes', () => {
     expect(mocks.fellowshipFind).not.toHaveBeenCalled();
   });
 
-
   it('minimizes admin taxonomy management payloads', () => {
     const areaPayload = adminResearchAreaDto({
       _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439014'),

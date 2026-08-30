@@ -283,7 +283,9 @@ export function toPublicResearchEntitySummaryDto(
 ): PublicResearchEntitySummaryDto {
   const served = servedResearchEntityCopy(group);
   const summaryEntityType =
-    group.entityType === undefined ? mapResearchGroupKindToEntityType(group.kind) : group.entityType;
+    group.entityType === undefined
+      ? mapResearchGroupKindToEntityType(group.kind)
+      : group.entityType;
   const blurbSource =
     groundedShortDescriptionString(served.shortDescription || '', served.fullDescription) ||
     servedShortDescriptionFallback(served, summaryEntityType);
@@ -372,7 +374,10 @@ export function toPublicResearchEntityDto(
   const kind = group.kind;
   const entityType = group.entityType || mapResearchGroupKindToEntityType(kind);
   const served = servedResearchEntityCopy(group);
-  const groundedShort = groundedShortDescriptionString(served.shortDescription, served.fullDescription);
+  const groundedShort = groundedShortDescriptionString(
+    served.shortDescription,
+    served.fullDescription,
+  );
 
   const dto: PublicResearchEntityDto = {
     _id: id,

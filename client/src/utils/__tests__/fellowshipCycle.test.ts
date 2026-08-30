@@ -110,9 +110,7 @@ describe('fellowshipCycle', () => {
       label: 'Next Cycle Signal',
       likelyRecurring: true,
     });
-    expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe(
-      'Past cycle; track for reopening',
-    );
+    expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe('Past cycle; track for reopening');
   });
 
   it('keeps unsourced inactive fellowships in the plain closed bucket', () => {

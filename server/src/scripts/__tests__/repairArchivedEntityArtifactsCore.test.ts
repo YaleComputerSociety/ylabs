@@ -86,13 +86,15 @@ describe('buildArchivedEntityArtifactRepairPlan', () => {
       },
     ];
 
-    expect(buildArchivedEntityArtifactRepairPlan({ artifacts, canonicalArtifacts }).relink).toEqual([
-      {
-        artifactType: 'AccessSignal',
-        id: 'signal-duplicate',
-        canonicalResearchEntityId: 'canonical-entity',
-      },
-    ]);
+    expect(buildArchivedEntityArtifactRepairPlan({ artifacts, canonicalArtifacts }).relink).toEqual(
+      [
+        {
+          artifactType: 'AccessSignal',
+          id: 'signal-duplicate',
+          canonicalResearchEntityId: 'canonical-entity',
+        },
+      ],
+    );
   });
 
   it('archives active artifacts when their archived entity has no canonical target', () => {

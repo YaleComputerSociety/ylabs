@@ -75,7 +75,6 @@ vi.mock('../../models/account', () => ({
   },
 }));
 
-
 vi.mock('../../models/signal', () => ({
   Signal: {
     find: mocks.accessSignalFind,
@@ -384,8 +383,16 @@ describe('searchResearchGroupsViaMeili', () => {
 
   it('promoteExactAliasFieldMatches tiers exact department, then exact area, above the rest (#983)', () => {
     const hits = [
-      { slug: 'fuzzy-only', departments: ['Computer Science'], researchAreas: ['behavioral research'] },
-      { slug: 'area-match', departments: ['Economics'], researchAreas: ['Social Psychology', 'Psychology'] },
+      {
+        slug: 'fuzzy-only',
+        departments: ['Computer Science'],
+        researchAreas: ['behavioral research'],
+      },
+      {
+        slug: 'area-match',
+        departments: ['Economics'],
+        researchAreas: ['Social Psychology', 'Psychology'],
+      },
       { slug: 'dept-match', departments: ['Psychology'], researchAreas: ['Positive Psychology'] },
     ];
     expect(
@@ -760,7 +767,10 @@ describe('searchResearchGroupsViaMeili', () => {
         name: 'Volkmar Lab',
         kind: 'lab',
         departments: ['Child Study Center'],
-        researchAreas: ['Autism Spectrum Disorder Research', 'Genetics and Neurodevelopmental Disorders'],
+        researchAreas: [
+          'Autism Spectrum Disorder Research',
+          'Genetics and Neurodevelopmental Disorders',
+        ],
         sourceUrls: [],
       },
       {
@@ -784,9 +794,7 @@ describe('searchResearchGroupsViaMeili', () => {
     ];
     mocks.search.mockResolvedValueOnce({ hits: meiliOrder, estimatedTotalHits: meiliOrder.length });
     mocks.researchEntityFind.mockReturnValue(
-      queryResult(
-        meiliOrder.map((hit) => ({ ...hit, _id: hit.id, ...validPublicDescriptions })),
-      ),
+      queryResult(meiliOrder.map((hit) => ({ ...hit, _id: hit.id, ...validPublicDescriptions }))),
     );
 
     const result = await searchResearchGroupsViaMeili('psych', {}, 1, 24);
@@ -948,9 +956,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const [conjunctiveFilter] = mocks.search.mock.calls[0];
     const disjunctiveCall = mocks.search.mock.calls[1];
     expect(mocks.search.mock.calls[0][1].filter).toMatch(/schools = "Law School"/);
-    expect(disjunctiveCall[1]).toEqual(
-      expect.objectContaining({ facets: ['schools'], limit: 0 }),
-    );
+    expect(disjunctiveCall[1]).toEqual(expect.objectContaining({ facets: ['schools'], limit: 0 }));
     expect(disjunctiveCall[1].filter).not.toMatch(/schools = /);
     expect(conjunctiveFilter).toBe('');
     expect(result.facetDistribution?.school).toEqual({
@@ -976,12 +982,7 @@ describe('searchResearchGroupsViaMeili', () => {
       },
     });
 
-    const result = await searchResearchGroupsViaMeili(
-      '',
-      { currentAvailability: ['OPEN'] },
-      1,
-      24,
-    );
+    const result = await searchResearchGroupsViaMeili('', { currentAvailability: ['OPEN'] }, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[0][1].filter).toMatch(
@@ -1187,9 +1188,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[0][1].filter).toContain('schools = "Law School"');
     const disjunctiveCall = mocks.search.mock.calls[1][1];
-    expect(disjunctiveCall).toEqual(
-      expect.objectContaining({ facets: ['schools'], limit: 0 }),
-    );
+    expect(disjunctiveCall).toEqual(expect.objectContaining({ facets: ['schools'], limit: 0 }));
     expect(disjunctiveCall.filter).toContain('archived = false');
     expect(disjunctiveCall.filter).not.toContain('schools = "Law School"');
     expect(result.facetDistribution).toEqual({
@@ -1683,7 +1682,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.facetDistribution).toEqual({ school: { 'School of Medicine': 768 } });
   });
 
-  it('does not let a shallow first page fall back to Meilisearch\'s pre-threshold estimate (#885)', async () => {
+  it("does not let a shallow first page fall back to Meilisearch's pre-threshold estimate (#885)", async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search
       .mockResolvedValueOnce({
@@ -2138,9 +2137,16 @@ describe('searchResearchGroupsViaMeili', () => {
     const publicResult = await searchResearchGroupsViaMeili('', {}, 1, 24);
     expect(publicResult.researchEntities.map((entity: any) => entity.slug)).toEqual(['live-lab']);
 
-    const operatorResult = await searchResearchGroupsViaMeili('', {}, 1, 24, {}, {
-      includeNonPublic: true,
-    });
+    const operatorResult = await searchResearchGroupsViaMeili(
+      '',
+      {},
+      1,
+      24,
+      {},
+      {
+        includeNonPublic: true,
+      },
+    );
     expect(operatorResult.researchEntities.map((entity: any) => entity.slug).sort()).toEqual(
       ['demarque-lab-prd2', 'live-lab'].sort(),
     );

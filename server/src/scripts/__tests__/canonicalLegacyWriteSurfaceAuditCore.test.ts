@@ -11,7 +11,10 @@ const GENERATED_AT = '2026-01-01T00:00:00.000Z';
 describe('scanLegacyWriteSurface', () => {
   it('flags raw retired-collection access and retired-model writes', () => {
     const scan = scanLegacyWriteSurface([
-      { relPath: 'services/x.ts', content: "await db.collection('research_groups').insertOne(doc);" },
+      {
+        relPath: 'services/x.ts',
+        content: "await db.collection('research_groups').insertOne(doc);",
+      },
       { relPath: 'services/y.ts', content: 'await Paper.bulkWrite(ops);' },
     ]);
     const ruleIds = scan.findings.map((finding) => finding.ruleId);
@@ -44,7 +47,10 @@ describe('scanLegacyWriteSurface', () => {
   it('does not flag retired field names used as string values rather than object keys', () => {
     const scan = scanLegacyWriteSurface([
       { relPath: 'scrapers/z.ts', content: "  emitObservation({ field: 'acceptingUndergrads' });" },
-      { relPath: 'services/w.ts', content: "  const RETIRED = ['acceptingUndergrads', 'openness'];" },
+      {
+        relPath: 'services/w.ts',
+        content: "  const RETIRED = ['acceptingUndergrads', 'openness'];",
+      },
     ]);
     expect(scan.actionableTotal).toBe(0);
   });

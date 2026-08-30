@@ -363,14 +363,20 @@ describe('grantAbstractToDescription', () => {
   });
 
   it('strips numbered, parenthetical, and PROPOSAL/OVERALL header variants', () => {
-    expect(grantAbstractToDescription('7. PROJECT SUMMARY/ABSTRACT Stimulant use disorder is a major burden.')).toBe(
-      'Stimulant use disorder is a major burden.',
-    );
-    expect(grantAbstractToDescription('(ABSTRACT) Humoral immunity forms the basis for vaccine protection.')).toBe(
-      'Humoral immunity forms the basis for vaccine protection.',
-    );
     expect(
-      grantAbstractToDescription('Modified Project Summary/Abstract Section Vascular smooth muscle cells adapt to stress.'),
+      grantAbstractToDescription(
+        '7. PROJECT SUMMARY/ABSTRACT Stimulant use disorder is a major burden.',
+      ),
+    ).toBe('Stimulant use disorder is a major burden.');
+    expect(
+      grantAbstractToDescription(
+        '(ABSTRACT) Humoral immunity forms the basis for vaccine protection.',
+      ),
+    ).toBe('Humoral immunity forms the basis for vaccine protection.');
+    expect(
+      grantAbstractToDescription(
+        'Modified Project Summary/Abstract Section Vascular smooth muscle cells adapt to stress.',
+      ),
     ).toBe('Vascular smooth muscle cells adapt to stress.');
   });
 
@@ -399,7 +405,10 @@ describe('grantAbstractToDescription', () => {
     expect(
       labDescriptionFromRecentGrants([
         grantToRecord({ ...grantArnsten, abstract_text: 'No Abstract' }),
-        grantToRecord({ ...grantArnsten, abstract_text: 'PROJECT SUMMARY The circuit study is underway.' }),
+        grantToRecord({
+          ...grantArnsten,
+          abstract_text: 'PROJECT SUMMARY The circuit study is underway.',
+        }),
       ]),
     ).toBe('The circuit study is underway.');
   });
@@ -415,7 +424,9 @@ describe('grantAbstractToDescription', () => {
     const out = grantAbstractToDescription(
       'Respiratory syncytial virus (RSV) is a significant source of morbidity and mortality in the pediatric population. This project develops a maternal RSV vaccine to prevent severe infection in infants.',
     );
-    expect(out).toBe('This project develops a maternal RSV vaccine to prevent severe infection in infants.');
+    expect(out).toBe(
+      'This project develops a maternal RSV vaccine to prevent severe infection in infants.',
+    );
   });
 
   it('returns empty when the whole abstract is a significance/background opener with nothing else', () => {
@@ -425,10 +436,14 @@ describe('grantAbstractToDescription', () => {
       ),
     ).toBe('');
     expect(
-      grantAbstractToDescription('Excessive alcohol intake is the third leading cause of preventable death in the US.'),
+      grantAbstractToDescription(
+        'Excessive alcohol intake is the third leading cause of preventable death in the US.',
+      ),
     ).toBe('');
     expect(
-      grantAbstractToDescription('The United States is at the forefront of the global obesity epidemic.'),
+      grantAbstractToDescription(
+        'The United States is at the forefront of the global obesity epidemic.',
+      ),
     ).toBe('');
     expect(
       grantAbstractToDescription(
@@ -451,14 +466,18 @@ describe('grantAbstractToDescription', () => {
     const out = grantAbstractToDescription(
       'Major surgery is a common event in the lives of community-living older persons. The United States is at the forefront of the global obesity epidemic. This study characterizes recovery trajectories after major abdominal surgery in older adults.',
     );
-    expect(out).toBe('This study characterizes recovery trajectories after major abdominal surgery in older adults.');
+    expect(out).toBe(
+      'This study characterizes recovery trajectories after major abdominal surgery in older adults.',
+    );
   });
 
   it('collapses a PDF line-wrap hyphenation artifact without dropping a genuine hyphenated compound', () => {
     const out = grantAbstractToDescription(
       'This study examines alcohol- associated liver disease with a 5-year cumulative inci- dence of 13.8%.',
     );
-    expect(out).toBe('This study examines alcohol-associated liver disease with a 5-year cumulative inci-dence of 13.8%.');
+    expect(out).toBe(
+      'This study examines alcohol-associated liver disease with a 5-year cumulative inci-dence of 13.8%.',
+    );
   });
 });
 
@@ -495,7 +514,8 @@ describe('labDescriptionFromRecentGrants (non-research grant guard)', () => {
     const iCorps = grantToRecord({
       ...grantArnsten,
       project_title: 'I-Corps: Translation potential of segmentation software',
-      abstract_text: 'The broader impact of this I-Corps project is the development of a novel analytic software tool.',
+      abstract_text:
+        'The broader impact of this I-Corps project is the development of a novel analytic software tool.',
     });
     expect(labDescriptionFromRecentGrants([iCorps])).toBe('');
   });
@@ -504,7 +524,8 @@ describe('labDescriptionFromRecentGrants (non-research grant guard)', () => {
     const travel = grantToRecord({
       ...grantArnsten,
       project_title: 'Travel: NSF Student Travel Grant for 2025 Symposium',
-      abstract_text: 'This grant supports student participation in the 4th Symposium on Computer Science and Law.',
+      abstract_text:
+        'This grant supports student participation in the 4th Symposium on Computer Science and Law.',
     });
     expect(labDescriptionFromRecentGrants([travel])).toBe('');
   });

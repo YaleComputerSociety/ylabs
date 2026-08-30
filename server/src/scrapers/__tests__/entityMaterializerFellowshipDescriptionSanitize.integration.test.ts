@@ -88,7 +88,9 @@ describe('materializeEntity sanitizes fellowship/program descriptions at the wri
 
     await materializeEntity('fellowship', { entityKey: SOURCE_KEY });
 
-    const persisted = await Fellowship.findOne({ sourceKey: SOURCE_KEY }).lean<PersistedFellowship>();
+    const persisted = await Fellowship.findOne({
+      sourceKey: SOURCE_KEY,
+    }).lean<PersistedFellowship>();
     expect(persisted?.description).toBe('');
     expect(persisted?.description).not.toContain('Frequently Asked Questions');
   });
@@ -101,7 +103,9 @@ describe('materializeEntity sanitizes fellowship/program descriptions at the wri
 
     await materializeEntity('fellowship', { entityKey: SOURCE_KEY });
 
-    const persisted = await Fellowship.findOne({ sourceKey: SOURCE_KEY }).lean<PersistedFellowship>();
+    const persisted = await Fellowship.findOne({
+      sourceKey: SOURCE_KEY,
+    }).lean<PersistedFellowship>();
     expect(persisted?.description).toBe(CHROME_AND_EMAIL_CLEAN);
     expect(persisted?.description).not.toMatch(/breadcrumbs|Skip to main content/i);
     expect(persisted?.description).not.toMatch(/redacted/i);
@@ -116,7 +120,9 @@ describe('materializeEntity sanitizes fellowship/program descriptions at the wri
 
     await materializeEntity('fellowship', { entityKey: SOURCE_KEY });
 
-    const persisted = await Fellowship.findOne({ sourceKey: SOURCE_KEY }).lean<PersistedFellowship>();
+    const persisted = await Fellowship.findOne({
+      sourceKey: SOURCE_KEY,
+    }).lean<PersistedFellowship>();
     expect(persisted?.description).toBe(CLEAN_DESCRIPTION);
   });
 
@@ -132,7 +138,9 @@ describe('materializeEntity sanitizes fellowship/program descriptions at the wri
 
     await materializeEntity('fellowship', { entityKey: SOURCE_KEY });
 
-    const persisted = await Fellowship.findOne({ sourceKey: SOURCE_KEY }).lean<PersistedFellowship>();
+    const persisted = await Fellowship.findOne({
+      sourceKey: SOURCE_KEY,
+    }).lean<PersistedFellowship>();
     expect(persisted?.summary).toBe('');
     expect(persisted?.description).toBe(CLEAN_DESCRIPTION);
   });

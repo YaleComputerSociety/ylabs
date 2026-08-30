@@ -7,10 +7,7 @@ import mongoose from 'mongoose';
  * AFFILIATED_LAB, so AFFILIATED_RESEARCH_GROUP and HOSTED_PROGRAM were
  * unreachable with 0 edges in every environment and were dropped (#2213).
  */
-export const researchEntityRelationshipTypes = [
-  'AFFILIATED_LAB',
-  'MEMBER_RESEARCH_AREA',
-] as const;
+export const researchEntityRelationshipTypes = ['AFFILIATED_LAB', 'MEMBER_RESEARCH_AREA'] as const;
 
 const researchEntityRelationshipSchema = new mongoose.Schema(
   {

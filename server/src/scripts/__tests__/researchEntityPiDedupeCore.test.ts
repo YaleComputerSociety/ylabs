@@ -2954,7 +2954,12 @@ describe('buildFundingResearchEntityDedupePlan', () => {
             recentGrantCount: 1,
             fundingAgencies: ['NSF'],
             recentGrants: [
-              { id: 'nsf-0000001', agency: 'NSF', title: 'Existing NSF award', startDate: '2024-01-01' },
+              {
+                id: 'nsf-0000001',
+                agency: 'NSF',
+                title: 'Existing NSF award',
+                startDate: '2024-01-01',
+              },
             ],
           },
           {
@@ -2992,11 +2997,9 @@ describe('buildFundingResearchEntityDedupePlan', () => {
     expect(plan[0]?.duplicateEntityIds).toEqual(['nih-fixture-oakley']);
     expect(plan[0]?.mergedRecentGrantCount).toBe(3);
     expect(plan[0]?.mergedFundingAgencies).toEqual(['NSF', 'NIH']);
-    expect((plan[0]?.mergedRecentGrants as Array<{ id: string }>).map((grant) => grant.id)).toEqual([
-      'nsf-0000001',
-      '10000001',
-      '10000002',
-    ]);
+    expect((plan[0]?.mergedRecentGrants as Array<{ id: string }>).map((grant) => grant.id)).toEqual(
+      ['nsf-0000001', '10000001', '10000002'],
+    );
   });
 
   it('does not add merged grant fields when neither the canonical entity nor its duplicates carry grant data', () => {
@@ -3342,9 +3345,10 @@ describe('buildResearchEntityPiDedupePlan center carve-out', () => {
       (group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home',
     );
     expect(shadowGroup?.canonicalEntityId).toBe('johnson-lab');
-    expect([shadowGroup?.canonicalEntityId, ...(shadowGroup?.duplicateEntityIds || [])]).not.toContain(
-      'johnson-center',
-    );
+    expect([
+      shadowGroup?.canonicalEntityId,
+      ...(shadowGroup?.duplicateEntityIds || []),
+    ]).not.toContain('johnson-center');
   });
 
   it('does not fold an FRA shell into a same-PI center when there is no lab', () => {

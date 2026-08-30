@@ -40,9 +40,15 @@ describe('itemOperations', () => {
       },
     };
 
-    await expect(addView(model as any, unsafeId)).rejects.toThrow('Did not receive expected id type ObjectId');
-    await expect(addFavorite(model as any, unsafeId)).rejects.toThrow('Did not receive expected id type ObjectId');
-    await expect(removeFavorite(model as any, unsafeId)).rejects.toThrow('Did not receive expected id type ObjectId');
+    await expect(addView(model as any, unsafeId)).rejects.toThrow(
+      'Did not receive expected id type ObjectId',
+    );
+    await expect(addFavorite(model as any, unsafeId)).rejects.toThrow(
+      'Did not receive expected id type ObjectId',
+    );
+    await expect(removeFavorite(model as any, unsafeId)).rejects.toThrow(
+      'Did not receive expected id type ObjectId',
+    );
     expect(model.findOneAndUpdate).not.toHaveBeenCalled();
     expect(model.findOne).not.toHaveBeenCalled();
   });

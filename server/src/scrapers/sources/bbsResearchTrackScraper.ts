@@ -34,10 +34,7 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import { splitName } from '../utils/scraperHelpers';
-import {
-  facultyNameMatchKey,
-  normalizeYsmProfileUrl,
-} from './ysmMeshKeywordScraper';
+import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const SOURCE_KEY = 'bbs-research-track';
@@ -354,10 +351,7 @@ export function bbsGraftObservations(
  * lead is keyed to a synthetic BBS user observation; the materializer resolves
  * the actual canonical Researcher from the name under the existing person-match guards.
  */
-export function bbsMintObservations(
-  pi: BbsTrackPi,
-  links: BbsProfileLinks,
-): ObservationInput[] {
+export function bbsMintObservations(pi: BbsTrackPi, links: BbsProfileLinks): ObservationInput[] {
   const ysmProfileUrl = links.canonicalProfileUrl;
   const identitySourceUrl = ysmProfileUrl || pi.profileUrl;
   const profileSlug = ysmProfileUrl
@@ -371,7 +365,11 @@ export function bbsMintObservations(
 
   const userKey = `bbs:${profileSlug}`;
   const { first, last } = splitName(pi.name);
-  const userBase = { entityType: 'user' as const, entityKey: userKey, sourceUrl: identitySourceUrl };
+  const userBase = {
+    entityType: 'user' as const,
+    entityKey: userKey,
+    sourceUrl: identitySourceUrl,
+  };
   const userObs: ObservationInput[] = [{ ...userBase, field: 'userType', value: 'faculty' }];
   if (first) userObs.push({ ...userBase, field: 'fname', value: first });
   if (last) userObs.push({ ...userBase, field: 'lname', value: last });
@@ -564,11 +562,7 @@ export class BbsResearchTrackScraper implements IScraper {
         ctx.log(`[${pi.profileSlug}] profile fetch failed: ${sanitizeLogValue(error)}`);
       }
 
-      const resolution = resolveBbsResearchHome(
-        links,
-        facultyNameMatchKey(pi.name),
-        index,
-      );
+      const resolution = resolveBbsResearchHome(links, facultyNameMatchKey(pi.name), index);
 
       if (resolution.status === 'ambiguous') {
         ambiguous += 1;

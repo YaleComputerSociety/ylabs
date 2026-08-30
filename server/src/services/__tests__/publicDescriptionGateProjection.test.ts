@@ -60,9 +60,7 @@ const plainEntity = {
 
 const applyProjection = <T extends Record<string, any>>(entity: T, projection: string): T => {
   const projected = new Set(projection.split(/\s+/).filter(Boolean));
-  return Object.fromEntries(
-    Object.entries(entity).filter(([key]) => projected.has(key)),
-  ) as T;
+  return Object.fromEntries(Object.entries(entity).filter(([key]) => projected.has(key))) as T;
 };
 
 const auditOver = (entities: Array<Record<string, any>>) =>

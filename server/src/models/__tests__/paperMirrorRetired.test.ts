@@ -30,9 +30,9 @@ describe('Paper publication mirror retirement', () => {
   });
 
   it('keeps verified Scholar and ORCID scholarly links as public destinations', () => {
-    expect(isPublicResearchPaperLink({ url: 'https://scholar.google.com/citations?user=abc' })).toBe(
-      true,
-    );
+    expect(
+      isPublicResearchPaperLink({ url: 'https://scholar.google.com/citations?user=abc' }),
+    ).toBe(true);
     expect(isPublicResearchPaperLink({ externalIds: { doi: '10.1000/xyz' } })).toBe(true);
   });
 });

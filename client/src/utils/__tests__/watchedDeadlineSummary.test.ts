@@ -14,7 +14,7 @@ import {
 const NOW = new Date('2099-01-01T12:00:00.000Z');
 
 const program = (id: string, deadline: string | null): Fellowship =>
-  ({ id, title: `Program ${id}`, deadline } as Fellowship);
+  ({ id, title: `Program ${id}`, deadline }) as Fellowship;
 
 const daysFromNow = (days: number): string =>
   new Date(NOW.getTime() + days * 24 * 60 * 60 * 1000).toISOString();

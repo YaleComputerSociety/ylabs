@@ -33,7 +33,11 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsed;
 }
 
-function parseRequiredValue(value: string | undefined, flag: string, requirement = 'a value'): string {
+function parseRequiredValue(
+  value: string | undefined,
+  flag: string,
+  requirement = 'a value',
+): string {
   const trimmed = value?.trim();
   if (!trimmed || trimmed.startsWith('--')) {
     throw new Error(`${flag} requires ${requirement}`);

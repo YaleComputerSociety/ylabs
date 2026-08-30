@@ -105,8 +105,18 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
 
   it('promotes a lower-ranked full over a top-ranked one that is thinner than the stored card', async () => {
     await seedEntity();
-    await seedFull(GENERIC_LOGISTICS_FULL, 'lab-microsite-undergrad-llm', 0.55, '2026-08-01T00:00:00Z');
-    await seedFull(RICH_MICROSITE_FULL, 'lab-microsite-description-llm', 0.82, '2026-01-01T00:00:00Z');
+    await seedFull(
+      GENERIC_LOGISTICS_FULL,
+      'lab-microsite-undergrad-llm',
+      0.55,
+      '2026-08-01T00:00:00Z',
+    );
+    await seedFull(
+      RICH_MICROSITE_FULL,
+      'lab-microsite-description-llm',
+      0.82,
+      '2026-01-01T00:00:00Z',
+    );
 
     await materialize();
 
@@ -117,7 +127,12 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
 
   it('keeps the top-ranked full when no candidate is at least as long as the card', async () => {
     await seedEntity();
-    await seedFull(GENERIC_LOGISTICS_FULL, 'lab-microsite-undergrad-llm', 0.55, '2026-08-01T00:00:00Z');
+    await seedFull(
+      GENERIC_LOGISTICS_FULL,
+      'lab-microsite-undergrad-llm',
+      0.55,
+      '2026-08-01T00:00:00Z',
+    );
     await seedFull(SHORTER_ALTERNATIVE_FULL, 'dept-faculty-roster', 0.4, '2026-01-01T00:00:00Z');
 
     await materialize();
@@ -127,8 +142,18 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
 
   it('leaves a top-ranked full that already carries more than the card in place', async () => {
     await seedEntity();
-    await seedFull(LONGER_THAN_CARD_WINNER, 'lab-microsite-description-llm', 0.82, '2026-08-01T00:00:00Z');
-    await seedFull(RICH_MICROSITE_FULL, 'lab-microsite-undergrad-llm', 0.55, '2026-01-01T00:00:00Z');
+    await seedFull(
+      LONGER_THAN_CARD_WINNER,
+      'lab-microsite-description-llm',
+      0.82,
+      '2026-08-01T00:00:00Z',
+    );
+    await seedFull(
+      RICH_MICROSITE_FULL,
+      'lab-microsite-undergrad-llm',
+      0.55,
+      '2026-01-01T00:00:00Z',
+    );
 
     await materialize();
 
@@ -148,8 +173,18 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
         },
       },
     });
-    await seedFull(GENERIC_LOGISTICS_FULL, 'lab-microsite-undergrad-llm', 0.55, '2026-08-01T00:00:00Z');
-    await seedFull(RICH_MICROSITE_FULL, 'lab-microsite-description-llm', 0.82, '2026-01-01T00:00:00Z');
+    await seedFull(
+      GENERIC_LOGISTICS_FULL,
+      'lab-microsite-undergrad-llm',
+      0.55,
+      '2026-08-01T00:00:00Z',
+    );
+    await seedFull(
+      RICH_MICROSITE_FULL,
+      'lab-microsite-description-llm',
+      0.82,
+      '2026-01-01T00:00:00Z',
+    );
 
     await materialize();
 

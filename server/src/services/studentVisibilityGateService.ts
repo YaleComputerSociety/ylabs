@@ -403,10 +403,7 @@ export function reachOutPlausibleSignalCreditsActionEvidence(input: {
   return Boolean(officialNonGrantSourceUrl(entity));
 }
 
-const profileAreaDuplicateCounterpartEntityTypes = new Set([
-  'LAB',
-  'FACULTY_PROJECT',
-]);
+const profileAreaDuplicateCounterpartEntityTypes = new Set(['LAB', 'FACULTY_PROJECT']);
 
 const profileAreaDuplicateCounterpartKinds = new Set(['lab', 'group', 'project']);
 

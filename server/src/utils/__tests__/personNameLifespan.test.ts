@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  personNameHasLifespanSuffix,
-  stripPersonNameLifespanSuffix,
-} from '../personNameLifespan';
+import { personNameHasLifespanSuffix, stripPersonNameLifespanSuffix } from '../personNameLifespan';
 
 describe('stripPersonNameLifespanSuffix', () => {
   it('strips a trailing birth-death lifespan glued onto a display name (#982)', () => {

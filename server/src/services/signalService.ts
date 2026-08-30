@@ -1,9 +1,6 @@
 import mongoose from 'mongoose';
 import { Signal } from '../models/signal';
-import {
-  findSuppressionLockedRecord,
-  omitSuppressionLockedFields,
-} from './suppressionLockUtils';
+import { findSuppressionLockedRecord, omitSuppressionLockedFields } from './suppressionLockUtils';
 import { publicAccessHttpUrl } from '../utils/publicAccessArtifact';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -115,9 +112,7 @@ export async function upsertSignal(
     });
     return typeof (query as any).lean === 'function' ? (query as any).lean() : query;
   };
-  const doc = deps.model
-    ? await write()
-    : await withResearchEntityWriteTransaction(write);
+  const doc = deps.model ? await write() : await withResearchEntityWriteTransaction(write);
 
   return {
     signalId: serializedDocumentId(doc?._id),

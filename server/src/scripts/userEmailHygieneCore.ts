@@ -1,5 +1,4 @@
 import { isInvalidOptionalEmail } from './betaDataQualityCore';
-import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export const SUSPICIOUS_USER_EMAIL_PATTERN =
   /(^test(?:\d+|[+@.])|@example\.|placeholder|unknown|invalid|dummy|no-?reply|^none@|^na@)/i;
@@ -26,10 +25,10 @@ export function isSuspiciousUserEmail(email: string): boolean {
   return getSuspiciousUserEmailReason(email) !== undefined;
 }
 
-export function isExcludedByLaneAProductionCopy(
-  user: UserEmailHygieneInputUser,
-): boolean {
-  const netid = String(user.netid || '').trim().toLowerCase();
+export function isExcludedByLaneAProductionCopy(user: UserEmailHygieneInputUser): boolean {
+  const netid = String(user.netid || '')
+    .trim()
+    .toLowerCase();
   const email = String(user.email || '').trim();
   return (
     netid === 'devadmin' ||

@@ -4,9 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
-import {
-  getResearchEntityRoster,
-} from '../researchEntityMembershipAccessor';
+import { getResearchEntityRoster } from '../researchEntityMembershipAccessor';
 
 describe('getResearchEntityRoster display profile projection', () => {
   let replSet: MongoMemoryReplSet;
@@ -177,4 +175,3 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(roster[0].role).toBe('pi');
   });
 });
-

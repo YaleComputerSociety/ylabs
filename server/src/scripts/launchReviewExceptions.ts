@@ -5,7 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
-import type { StudentVisibilityGateCollection, StudentVisibilityGatePlan } from '../services/studentVisibilityGateService';
+import type {
+  StudentVisibilityGateCollection,
+  StudentVisibilityGatePlan,
+} from '../services/studentVisibilityGateService';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { classifyVisibilityRepairStage } from '../services/visibilityRepairQueueService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -21,8 +24,7 @@ export const LAUNCH_REVIEW_EXCEPTION_DECISION_VALUES = [
   'defer_review',
 ] as const;
 
-type LaunchReviewExceptionDecisionValue =
-  (typeof LAUNCH_REVIEW_EXCEPTION_DECISION_VALUES)[number];
+type LaunchReviewExceptionDecisionValue = (typeof LAUNCH_REVIEW_EXCEPTION_DECISION_VALUES)[number];
 
 export interface LaunchReviewExceptionCliOptions {
   collection: StudentVisibilityGateCollection;
@@ -92,7 +94,7 @@ const APPLY_BLOCKED_REASON =
 const REQUIRED_REVIEWER_DECISION =
   'Confirm whether official source evidence proves a real entry route or only formalization/funding.';
 const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
-const textValue = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 function isStudentReadyLaunchViolation(plan: StudentVisibilityGatePlan): boolean {
   const launchEligible = plan.tier === 'student_ready';
@@ -288,10 +290,7 @@ export function validateLaunchReviewExceptionDecisions(
     if (!acceptedValues.has(decisionValue)) {
       errors.push('decision must be one of acceptedDecisionValues');
     }
-    if (
-      decisionValue === 'promote_entry_route' &&
-      !textValue(decision.promotionEvidenceUrl)
-    ) {
+    if (decisionValue === 'promote_entry_route' && !textValue(decision.promotionEvidenceUrl)) {
       errors.push('promotionEvidenceUrl is required for promote_entry_route decisions');
     }
     if (!reviewedBy) errors.push('reviewedBy is required');
