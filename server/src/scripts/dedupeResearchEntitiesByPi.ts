@@ -18,6 +18,7 @@ import {
   normalizeWebsiteUrlIdentityKey,
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
+  isLowTrustAreaShellSlug,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
   type OrgNameDedupeEntity,
@@ -1809,6 +1810,61 @@ function pickBestUsefulText(values: string[], isUseful: (value: string) => boole
   return pool.sort((a, b) => b.length - a.length)[0] || '';
 }
 
+/**
+ * Picks the descriptions a merge survivor should end up with: the longest
+ * quality-passing `fullDescription` and `shortDescription` across every twin,
+ * read from the live documents rather than from a plan-time projection.
+ *
+ * This is deliberately lane-agnostic. The plan builders each compute their own
+ * `canonicalFullDescription` carry from an aggregate projection, and not every
+ * lane computes one, so a merge that relied on the plan could leave the richer
+ * paragraph stranded on the archived twin (#2208).
+ */
+function bestMergeDescriptions(
+  docs: Array<Record<string, any>>,
+  unionAreas: string[],
+): { fullDescription: string; shortDescription: string } {
+  const fullDescription = pickBestUsefulText(
+    docs.map((doc) => String(doc.fullDescription || '')),
+    (value) => fullDescriptionQuality(value).isUseful,
+  );
+  const shortDescription = pickBestUsefulText(
+    docs.map((doc) => String(doc.shortDescription || '')),
+    (value) => shortDescriptionQuality(value, fullDescription, unionAreas, {}).isUseful,
+  );
+  return { fullDescription, shortDescription };
+}
+
+/**
+ * Lane-agnostic description hydration for the merge apply path. `neverDemote`
+ * already hydrates as part of its simulate-then-verify resolution; every other
+ * lane previously fell back to whatever the plan carried, which is how the
+ * richer paragraph was stranded in #2208.
+ */
+async function hydrateMergeDescriptions(
+  canonicalId: mongoose.Types.ObjectId,
+  duplicateIds: mongoose.Types.ObjectId[],
+): Promise<{ fullDescription: string; shortDescription: string }> {
+  const allDocs = await ResearchEntity.find({ _id: { $in: [canonicalId, ...duplicateIds] } })
+    .select('_id slug fullDescription shortDescription researchAreas')
+    .lean<Array<Record<string, any>>>();
+  // Mirror the plan builders' `trustedAreaShellEntities` guard: an area or
+  // funding shell's generated blurb must never be promoted onto a real research
+  // home. Fall back to the full set when every twin is a shell, matching the
+  // plan's own fallback.
+  const trusted = allDocs.filter((doc) => !isLowTrustAreaShellSlug(doc.slug));
+  const docs = trusted.length > 0 ? trusted : allDocs;
+  const unionAreas = Array.from(
+    new Set(
+      docs
+        .flatMap((doc) => (Array.isArray(doc.researchAreas) ? doc.researchAreas : []))
+        .map((value) => String(value))
+        .filter(Boolean),
+    ),
+  );
+  return bestMergeDescriptions(docs, unionAreas);
+}
+
 export interface NonDemotingMergeResolution {
   defer: boolean;
   canonicalId: mongoose.Types.ObjectId;
@@ -1855,13 +1911,9 @@ export async function resolveNonDemotingMerge(
   const unionAreas = unionStrings('researchAreas');
   const unionSourceUrls = unionStrings('sourceUrls');
   const unionDepartments = unionStrings('departments');
-  const bestFull = pickBestUsefulText(
-    docs.map((doc) => String(doc.fullDescription || '')),
-    (value) => fullDescriptionQuality(value).isUseful,
-  );
-  const bestShort = pickBestUsefulText(
-    docs.map((doc) => String(doc.shortDescription || '')),
-    (value) => shortDescriptionQuality(value, bestFull, unionAreas, {}).isUseful,
+  const { fullDescription: bestFull, shortDescription: bestShort } = bestMergeDescriptions(
+    docs,
+    unionAreas,
   );
 
   const rosterMap = await getResearchEntityRosterByEntityId(allIds);
@@ -1977,6 +2029,17 @@ export async function applyResearchEntityDedupeMergeGroup(
     duplicateIds = resolution.duplicateIds;
     hydratedFullDescription = resolution.hydratedFullDescription;
     hydratedShortDescription = resolution.hydratedShortDescription;
+  } else {
+    // Fill-only: when the plan builder carried a description we keep it
+    // authoritative, but a lane that carried nothing must not leave the richer
+    // paragraph stranded on the archived twin (#2208).
+    const needsFull = !String(group.canonicalFullDescription || '').trim();
+    const needsShort = !String(group.canonicalShortDescription || '').trim();
+    if (needsFull || needsShort) {
+      const hydrated = await hydrateMergeDescriptions(canonicalId, duplicateIds);
+      if (needsFull) hydratedFullDescription = hydrated.fullDescription;
+      if (needsShort) hydratedShortDescription = hydrated.shortDescription;
+    }
   }
 
   const duplicateSlugDocs = await ResearchEntity.find({ _id: { $in: duplicateIds } })
