@@ -21,8 +21,8 @@ const About = () => {
           >
             Yale Computer Society
           </a>{' '}
-          product that gives students a single place to discover research structures, evidence,
-          openings, and practical next steps at Yale. The goal is to help undergraduates move from a
+          product that gives students a single place to discover research homes at Yale, with
+          signals pointing to more information. The goal is to help undergraduates move from a
           topic or method they care about to a credible research home without already knowing the
           right lab or professor name.
         </p>
