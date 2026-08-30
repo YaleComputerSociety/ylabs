@@ -73,10 +73,10 @@ const Login = () => {
           </h1>
           <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
             Search by idea, method, professor, or pathway. Yale Research maps undergraduate
-            curiosity to research structures, evidence, and practical next steps.
+            curiosity to research homes, and surfaces signals pointing you to more information.
           </p>
           <div className="mt-6 grid gap-2 text-left sm:grid-cols-3">
-            {['Research homes', 'Evidence', 'Best next steps'].map((item) => (
+            {['Research homes', 'Signals', 'Official sources'].map((item) => (
               <div key={item} className="yr-card rounded-md px-3 py-3">
                 <p className="text-sm font-semibold text-slate-950">{item}</p>
               </div>
