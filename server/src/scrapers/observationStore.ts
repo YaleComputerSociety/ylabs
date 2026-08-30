@@ -18,6 +18,11 @@ import {
   isFullDescriptionRestatementOfShortDescription,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
+import {
+  scoreResearchHomeDescriptionCandidate,
+  type DescriptionEntityKind,
+} from '../utils/researchHomeDescriptionSelection';
+import { isFacultyResearchTextEntity } from '../utils/researchEntityDescriptionText';
 import type { ObservationInput } from './types';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
@@ -88,6 +93,61 @@ export function isRegressiveProseRefresh(input: {
     return false;
   }
   return !proseValueIsUseful(input.field, input.incomingValue, input.incomingContext);
+}
+
+/**
+ * How strongly a prose value reads as a statement of what this home researches.
+ * Deliberately NOT the subtractive `isUseful` verdict, which cannot rank two
+ * flag-free candidates against each other: every known regression in this class
+ * passes `fullDescriptionQuality` with zero flags (#2232).
+ *
+ * `researchSubjectSpecificityScore` is not used here despite being the obvious
+ * positive candidate: measured against these values it saturates at 8.00 for a
+ * mission statement, a recruitment notice, a figure caption and real research
+ * prose alike, because it was built to grade a short extracted SUBJECT phrase,
+ * not a paragraph. Its term list also counts "hiring" and "aluminum" as
+ * subject-bearing, so term count is a length proxy. The demotion scorer is the
+ * only signal that separates these values today: mission -20, recruitment -30,
+ * research 0.
+ */
+export function prosePreferenceScore(value: unknown, context: ProseQualityContext = {}): number {
+  if (typeof value !== 'string' || !value.trim()) return Number.NEGATIVE_INFINITY;
+  const kind: DescriptionEntityKind = isFacultyResearchTextEntity({
+    entityType: typeof context.entityType === 'string' ? context.entityType : undefined,
+  })
+    ? 'person'
+    : 'organization';
+  return scoreResearchHomeDescriptionCandidate(value, kind);
+}
+
+/**
+ * An incoming prose value that is useful, and so invisible to
+ * `isRegressiveProseRefresh`, but reads as a WORSE statement of the home's
+ * research than the clean incumbent it would displace. Without this the winner
+ * is decided by the confidence gap alone - 0.82 for a non-`/profile/` capture
+ * against 0.55 for official-profile extraction - so a mission statement
+ * displaced grounded research prose and served silently from May to August
+ * (#2232).
+ *
+ * Ties pass. A refresh must be demonstrably worse to be dropped, never merely
+ * not-better, so ordinary same-quality re-scrapes keep their existing
+ * newest-wins behaviour and the corpus cannot freeze on its first capture.
+ */
+export function isWeakerProseRefresh(input: {
+  field: string;
+  incomingValue: unknown;
+  existingValue: unknown;
+  incomingContext?: ProseQualityContext;
+  existingContext?: ProseQualityContext;
+}): boolean {
+  if (!QUALITY_GUARDED_PROSE_FIELDS.has(input.field)) return false;
+  if (typeof input.existingValue !== 'string' || !input.existingValue.trim()) return false;
+  if (!proseValueIsUseful(input.field, input.existingValue, input.existingContext)) return false;
+  if (!proseValueIsUseful(input.field, input.incomingValue, input.incomingContext)) return false;
+  return (
+    prosePreferenceScore(input.incomingValue, input.incomingContext) <
+    prosePreferenceScore(input.existingValue, input.existingContext)
+  );
 }
 
 export type ActiveProseLoader = (query: {
@@ -199,6 +259,7 @@ export async function appendObservations(
   const keptInputs: ObservationInput[] = [];
   let regressiveProseGuarded = 0;
   let selfDefeatingCardGuarded = 0;
+  let weakerProseGuarded = 0;
   for (const obs of acceptedInputs) {
     if (!losslessIngest && QUALITY_GUARDED_PROSE_FIELDS.has(obs.field)) {
       const entityKey = entityKeyForProse(obs);
@@ -210,7 +271,11 @@ export async function appendObservations(
       if (obs.field === 'shortDescription') {
         incomingContext.fullContext = incomingFullByEntity.get(entityKey);
       }
-      if (!proseValueIsUseful(obs.field, obs.value, incomingContext)) {
+      // The incumbent must be loaded even when the incoming value IS useful:
+      // the useful-but-worse case (#2232) is invisible from the incoming value
+      // alone, and gating the load on `!proseValueIsUseful` made this guard
+      // unreachable on exactly the path that caused the damage.
+      {
         const existingValue = await loadActiveProse({
           entityType: obs.entityType,
           sourceName: ctx.sourceName,
@@ -248,6 +313,18 @@ export async function appendObservations(
           regressiveProseGuarded += 1;
           continue;
         }
+        if (
+          isWeakerProseRefresh({
+            field: obs.field,
+            incomingValue: obs.value,
+            existingValue,
+            incomingContext,
+            existingContext,
+          })
+        ) {
+          weakerProseGuarded += 1;
+          continue;
+        }
       }
     }
     keptInputs.push(obs);
@@ -258,6 +335,7 @@ export async function appendObservations(
     rejectedFurniture +
     rejectedInvalidEnum.length +
     regressiveProseGuarded +
+    weakerProseGuarded +
     selfDefeatingCardGuarded;
   if (keptInputs.length === 0) {
     return { inserted: 0, skipped: skippedCount, superseded: 0 };
@@ -404,20 +482,40 @@ function latestWinsObservedTime(value: unknown): number {
 // On an active-only read this is a no-op (write-time supersession already left one active row
 // per key), so it is safe to land before a full-log read replaces that supersession.
 export function collapseLatestWins<
-  T extends { field: string; sourceName: string; observedAt?: unknown },
+  T extends { field: string; sourceName: string; observedAt?: unknown; value?: unknown },
 >(observations: T[], entityType: string): T[] {
   const newestIndexByKey = new Map<string, number>();
   observations.forEach((observation, index) => {
     if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return;
     const key = JSON.stringify([observation.sourceName, observation.field]);
     const currentIndex = newestIndexByKey.get(key);
-    if (
-      currentIndex === undefined ||
-      latestWinsObservedTime(observation.observedAt) >
-        latestWinsObservedTime(observations[currentIndex].observedAt)
-    ) {
+    if (currentIndex === undefined) {
       newestIndexByKey.set(key, index);
+      return;
     }
+    const incumbent = observations[currentIndex];
+    if (
+      latestWinsObservedTime(observation.observedAt) <=
+      latestWinsObservedTime(incumbent.observedAt)
+    ) {
+      return;
+    }
+    // Under C4_LOSSLESS_INGEST the write-time guard is skipped and this collapse
+    // plus the resolver decide, so a pure newest-wins here would reinstate the
+    // exact regression the write path now blocks. Keep the incumbent when the
+    // newer row is a strictly worse statement of the home's research (#2232).
+    if (
+      isWeakerProseRefresh({
+        field: observation.field,
+        incomingValue: observation.value,
+        existingValue: incumbent.value,
+        incomingContext: { entityType },
+        existingContext: { entityType },
+      })
+    ) {
+      return;
+    }
+    newestIndexByKey.set(key, index);
   });
   return observations.filter((observation, index) => {
     if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return true;

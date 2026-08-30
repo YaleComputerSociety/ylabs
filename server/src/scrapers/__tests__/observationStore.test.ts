@@ -4,7 +4,9 @@ import {
   appendObservations,
   buildObservationFingerprint,
   isRegressiveProseRefresh,
+  isWeakerProseRefresh,
   observationEntityIdentityFilter,
+  prosePreferenceScore,
   retireObservations,
   selfDefeatingCardRestatesFullDescription,
 } from '../observationStore';
@@ -1071,5 +1073,85 @@ describe('observation entity identity (#2177)', () => {
       { entityKey: 'dept-mcdb-horsley' },
       { entityId: '6a0fa8959fc810ec168cdcfd' },
     ]);
+  });
+});
+
+describe('isWeakerProseRefresh (#2232)', () => {
+  const MISSION =
+    'Our Mission Create and communicate high-quality and creative science on the cellular and molecular mechanisms that control tissue biology: development, homeostasis, regeneration, and disease. Our research uses multiple epithelial tissues to explore these scientific interests. To foster personal and scientific growth and excellence.';
+  const RESEARCH =
+    'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment. Using multi pronged approaches including mouse genetics, cell culture models, genomics and microscopy, we tackle complex biological processes focusing on the contribution of cell-intrinsic and cell-extrinsic factors that contribute to regenerative processes.';
+  const OTHER_RESEARCH =
+    'The lab investigates chromatin regulation of genome stability in multicellular eukaryotes, using histone variants and post-translational modifications to map repair pathways across tissues.';
+  const ctx = { entityType: 'LAB' };
+  const refresh = (incomingValue: string, existingValue: string) =>
+    isWeakerProseRefresh({
+      field: 'fullDescription',
+      incomingValue,
+      existingValue,
+      incomingContext: ctx,
+      existingContext: ctx,
+    });
+
+  it('blocks a mission statement from displacing grounded research prose', () => {
+    // Both pass the subtractive quality bar, which is why the pre-existing guard
+    // cannot see this at all - it is the Horsley regression that served from May
+    // to August.
+    expect(fullDescriptionQuality(MISSION, [], 'LAB').isUseful).toBe(true);
+    expect(fullDescriptionQuality(RESEARCH, [], 'LAB').isUseful).toBe(true);
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: MISSION,
+        existingValue: RESEARCH,
+        incomingContext: ctx,
+        existingContext: ctx,
+      }),
+    ).toBe(false);
+
+    expect(refresh(MISSION, RESEARCH)).toBe(true);
+  });
+
+  it('still allows research prose to displace a mission incumbent, so recovery is possible', () => {
+    expect(refresh(RESEARCH, MISSION)).toBe(false);
+  });
+
+  it('allows an equally clean refresh, so the corpus cannot freeze on its first capture', () => {
+    expect(refresh(OTHER_RESEARCH, RESEARCH)).toBe(false);
+    expect(refresh(RESEARCH, RESEARCH)).toBe(false);
+  });
+
+  it('does not fire when there is no incumbent to protect', () => {
+    expect(refresh(MISSION, '')).toBe(false);
+    expect(
+      isWeakerProseRefresh({
+        field: 'fullDescription',
+        incomingValue: MISSION,
+        existingValue: undefined,
+        incomingContext: ctx,
+        existingContext: ctx,
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores fields outside the guarded prose set', () => {
+    expect(
+      isWeakerProseRefresh({
+        field: 'name',
+        incomingValue: MISSION,
+        existingValue: RESEARCH,
+        incomingContext: ctx,
+        existingContext: ctx,
+      }),
+    ).toBe(false);
+  });
+
+  it('scores mission and recruitment prose below research prose', () => {
+    expect(prosePreferenceScore(RESEARCH, ctx)).toBeGreaterThan(prosePreferenceScore(MISSION, ctx));
+    const recruiting =
+      'Hiring! Our group has open positions for a postdoc and a graduate student. We study quantum many-body systems out of equilibrium using ultracold atomic gases as a platform for these experiments.';
+    expect(prosePreferenceScore(RESEARCH, ctx)).toBeGreaterThan(
+      prosePreferenceScore(recruiting, ctx),
+    );
   });
 });
