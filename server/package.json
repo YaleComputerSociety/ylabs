@@ -122,6 +122,7 @@
     "sources:strip-directory-loaders": "tsx src/scripts/stripDirectoryLoaderSourceUrls.ts",
     "sources:repair-ysm-atoz-index-url": "tsx src/scripts/repairYsmAtozIndexSourceUrl.ts",
     "researchers:repair-superseded-official-profile-links": "tsx src/scripts/repairSupersededOfficialProfileLinks.ts",
+    "researchers:verify-official-profile-links": "tsx src/scripts/verifyOfficialProfileLinks.ts",
     "e2e:seed-smoke": "tsx src/scripts/seedE2eSmokeData.ts",
     "scrape": "tsx src/scrapers/cli.ts",
     "scrape:sweep": "tsx src/scripts/runScraperSweep.ts",

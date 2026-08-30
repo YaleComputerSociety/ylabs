@@ -3077,6 +3077,66 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('raw');
   });
 
+  it('withholds an official profile link the verification lane proved gone', async () => {
+    const entityObjectId = new mongoose.Types.ObjectId('67d8928150621bcef434a1d5');
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityObjectId,
+        slug: 'dead-link-lab',
+        name: 'Dead Link Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'AFFILIATED',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
+          archived: false,
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        {
+          _id: personId,
+          displayName: 'Fixture Advisor',
+          accountId,
+          profile: { title: 'Professor of Computer Science', primaryDepartment: '', imageUrl: '' },
+          profileLinks: [
+            {
+              kind: 'YALE_OFFICIAL',
+              purpose: 'PRIMARY_IDENTITY',
+              url: 'https://cs.yale.edu/people/fixture-advisor',
+              verifiedAt: new Date(),
+              healthStatus: 'UNAVAILABLE',
+            },
+          ],
+        },
+      ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'abc123', email: 'fixture.advisor@example.edu' }]),
+    );
+
+    const detail = await getResearchGroupDetail('dead-link-lab');
+
+    expect(detail?.members).toHaveLength(1);
+    expect(detail?.members[0].user).not.toHaveProperty('profileUrls');
+    expect(detail?.members[0].user).not.toHaveProperty('profile_urls');
+  });
+
   it('suppresses a surname-colliding uncorroborated phantom co-PI when a corroborated PI exists', async () => {
     const entityObjectId = new mongoose.Types.ObjectId('67d8928150621bcef434a1d5');
     const corroboratedPersonId = new mongoose.Types.ObjectId();

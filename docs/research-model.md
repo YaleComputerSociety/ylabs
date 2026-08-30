@@ -27,6 +27,13 @@ Public research identity, and a first-class findable entity in its own right: a 
 [`server/src/models/researcher.ts`](../server/src/models/researcher.ts) defines `displayName`, an optional `accountId` link to the private login principal, `profileLinks[]` (`kind`: `YALE_OFFICIAL` | `LAB_ABOUT` | `PERSONAL_ACADEMIC` | `GOOGLE_SCHOLAR` | `ORCID`, each with `url`, `verifiedAt`, and `healthStatus`), an optional `identifiers.orcid` and `identifiers.netid` (the netid disambiguation spine), a `profile` display projection (`title`, `primaryDepartment`, `imageUrl`, `websiteUrl`), `status` (`ACTIVE` | `DEPARTED` | `UNKNOWN`), and `archived`.
 `Researcher` rows are created only from Yale-confirmed evidence; an external identifier such as ORCID never creates one by itself.
 
+`profileLinks[].healthStatus` is a probed fact, not a default (#2292).
+`yarn researchers:verify-official-profile-links` walks each `YALE_OFFICIAL` link grouped by department host, probes it through the SSRF-guarded `checkSourceLinkHealth`, and records `HEALTHY` or `UNAVAILABLE` with a fresh `verifiedAt`.
+Only 404 and 410 retire a link: a 403, 429, 5xx, or transport failure means the department site would not answer us, so it stays `UNKNOWN` and the stored link is left alone.
+When a link is proved gone the lane probes replacement candidates in trust order (an observed same-slug URL, then an observed same-host page whose slug names the same person, then the `/profile/<slug>` twin of the dead path) and adopts one only if it too probes live, which is how a department re-slug (`/people/douglas-stone` becoming `/profile/a-douglas-stone`) is followed.
+A link left `UNAVAILABLE` is withheld at serve time, so an entity page falls back to the person's website rather than offering a 404.
+This probe lane is the safety net behind the cheaper sweep-time rule in the materializer (#2290), which upgrades a stored link when the same host is *observed* publishing the person on its canonical `/profile/<slug>` page and needs no network call.
+
 ### `Account` (`accounts`)
 
 The private login principal: the student or user who logs in.

@@ -77,6 +77,7 @@ import {
   stripPersonNameLifespanSuffix,
 } from '../utils/personNameLifespan';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
+import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   getPublicUndergraduateLogistics,
@@ -1777,7 +1778,13 @@ const canonicalProfileLinkUrl = (
 ): string | undefined => {
   if (!Array.isArray(links)) return undefined;
   for (const link of links) {
-    if (link && kinds.has(link.kind) && typeof link.url === 'string' && link.url.trim()) {
+    if (
+      link &&
+      kinds.has(link.kind) &&
+      typeof link.url === 'string' &&
+      link.url.trim() &&
+      isServableOfficialProfileLink(link)
+    ) {
       return link.url.trim();
     }
   }
