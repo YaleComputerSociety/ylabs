@@ -20,22 +20,10 @@ export interface SupersededOfficialProfileLinkPlanRow {
 const profileLinkList = (value: unknown): ResearcherProfileLink[] =>
   Array.isArray(value) ? (value as ResearcherProfileLink[]) : [];
 
-const cmsProfileTwinUrl = (url: string): string | undefined => {
-  if (!isYaleOfficialProfileUrl(url)) return undefined;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return undefined;
-  }
-  const slug = parsed.pathname.replace(/\/+$/, '').split('/').pop();
-  if (!slug) return undefined;
-  return `https://${parsed.hostname.toLowerCase()}/profile/${slug.toLowerCase()}`;
-};
-
 /**
- * Canonical form for comparing an observed profile URL against a stored link's
- * candidate twin: host and path only, lower-cased, without a trailing slash.
+ * Canonical form for de-duplicating observed profile URLs: host and path only,
+ * lower-cased, without a trailing slash. Only ever a comparison key - never the
+ * value written back, because Yale's web servers treat paths as case-sensitive.
  */
 export function canonicalOfficialProfileUrlKey(value: unknown): string | undefined {
   if (!isYaleOfficialProfileUrl(value)) return undefined;
@@ -48,25 +36,40 @@ export function canonicalOfficialProfileUrlKey(value: unknown): string | undefin
 }
 
 /**
- * A stale link is only repaired when the department site itself was observed
- * publishing the same person's slug under its canonical `/profile/` page, so the
- * replacement stays evidence-backed rather than a rewritten guess.
+ * `user` observations are anchored by netid, either bare or `netid:`-prefixed
+ * depending on the scraper, so both forms have to fold to one token before
+ * observed evidence can be matched to the researcher it belongs to. A key that
+ * is not netid-shaped (a roster slug such as `ysm:some-slug`) simply never
+ * matches a researcher, which keeps unattributable evidence out of the repair.
+ */
+export function officialProfileEvidenceKey(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const netid = value.trim().toLowerCase().replace(/^netid:/, '').trim();
+  return netid || undefined;
+}
+
+/**
+ * A stale link is only repaired when this same researcher's own observations
+ * recorded the department publishing them on its canonical profile page, and the
+ * replacement is that observed URL verbatim, so the repair stays evidence-backed
+ * rather than a rewritten guess that could 404 the same way.
  */
 export function planSupersededOfficialProfileLinkRepair(
   facts: SupersededOfficialProfileLinkFacts,
-  observedProfileUrlKeys: ReadonlySet<string>,
+  observedOfficialProfileUrls: readonly string[],
 ): SupersededOfficialProfileLinkPlanRow | undefined {
   for (const link of profileLinkList(facts.profileLinks)) {
     if (link?.kind !== 'YALE_OFFICIAL') continue;
-    const twin = cmsProfileTwinUrl(String(link.url || ''));
-    if (!twin) continue;
-    if (!observedProfileUrlKeys.has(twin)) continue;
-    if (!supersedesOfficialProfileUrl(link.url, twin)) continue;
+    const before = String(link.url || '');
+    const after = observedOfficialProfileUrls.find((observed) =>
+      supersedesOfficialProfileUrl(before, observed),
+    );
+    if (!after) continue;
     return {
       id: facts.id,
       displayName: facts.displayName,
-      before: String(link.url),
-      after: twin,
+      before,
+      after,
     };
   }
   return undefined;

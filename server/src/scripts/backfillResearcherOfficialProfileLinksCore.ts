@@ -61,14 +61,16 @@ const parsedYaleProfileUrl = (value: unknown): URL | undefined => {
 const normalizedProfilePath = (url: URL): string => url.pathname.replace(/\/+$/, '').toLowerCase();
 
 const isCmsProfilePath = (url: URL): boolean =>
-  /^\/profile\/[^/]+$/.test(normalizedProfilePath(url));
+  /^(\/[^/]+)?\/profile\/[^/]+$/.test(normalizedProfilePath(url));
 
 /**
  * A Yale department site is the authority on its own person-page path, so when a
- * site moves a person from a directory path onto the canonical CMS `/profile/<slug>`
- * page the stored link is a dead end and must yield. The move is only ever accepted
- * in that direction on the same host, which keeps two roster pages on different
- * hosts from overwriting each other's link every sweep.
+ * site moves a person from a directory path onto its canonical CMS profile page
+ * (`/profile/<slug>`, or `/<section>/profile/<slug>` on the sites that nest it,
+ * the same shape `normalizeOfficialProfileUrl` folds together) the stored link is
+ * a dead end and must yield. The move is only ever accepted in that direction on
+ * the same host, which keeps two roster pages on different hosts from overwriting
+ * each other's link every sweep.
  */
 export function supersedesOfficialProfileUrl(priorUrl: unknown, nextUrl: unknown): boolean {
   const prior = parsedYaleProfileUrl(priorUrl);

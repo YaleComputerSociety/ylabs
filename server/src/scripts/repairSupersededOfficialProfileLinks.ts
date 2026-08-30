@@ -3,12 +3,15 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import { Account } from '../models/account';
 import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
+import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   canonicalOfficialProfileUrlKey,
+  officialProfileEvidenceKey,
   planSupersededOfficialProfileLinkRepair,
   summarizeSupersededOfficialProfileLinkRepair,
   type SupersededOfficialProfileLinkPlanRow,
@@ -88,44 +91,127 @@ export interface RepairSupersededOfficialProfileLinksResult extends SupersededOf
   rows: SupersededOfficialProfileLinkPlanRow[];
 }
 
-async function observedProfileUrlKeys(): Promise<Set<string>> {
-  const keys = new Set<string>();
-  const cursor = Observation.find({ entityType: 'user', field: 'profileUrls' })
-    .select('value')
+interface ObservedProfileUrl {
+  url: string;
+  observedAt: number;
+}
+
+/**
+ * Read scope matters here as much as it does in the materializer: a superseded or
+ * rollback-retired observation is no longer evidence that the site publishes that
+ * page, so honouring it would install a fresh dead link.
+ */
+async function observedOfficialProfileUrlsByEvidenceKey(): Promise<Map<string, string[]>> {
+  const observedByEvidenceKey = new Map<string, Map<string, ObservedProfileUrl>>();
+  const cursor = Observation.find({
+    entityType: 'user',
+    field: 'profileUrls',
+    ...materializationReadScopeFilter(),
+  })
+    .select('entityKey value observedAt')
     .lean()
     .cursor();
   for await (const observation of cursor) {
-    const value = (observation as { value?: unknown }).value;
-    if (!value || typeof value !== 'object') continue;
-    for (const candidate of Object.values(value as Record<string, unknown>)) {
-      const key = canonicalOfficialProfileUrlKey(candidate);
-      if (key) keys.add(key);
+    const row = observation as { entityKey?: unknown; value?: unknown; observedAt?: unknown };
+    const evidenceKey = officialProfileEvidenceKey(row.entityKey);
+    if (!evidenceKey) continue;
+    if (!row.value || typeof row.value !== 'object') continue;
+    const observedAt = row.observedAt instanceof Date ? row.observedAt.getTime() : 0;
+    const observedForKey =
+      observedByEvidenceKey.get(evidenceKey) || new Map<string, ObservedProfileUrl>();
+    for (const candidate of Object.values(row.value as Record<string, unknown>)) {
+      const canonicalKey = canonicalOfficialProfileUrlKey(candidate);
+      if (!canonicalKey) continue;
+      const known = observedForKey.get(canonicalKey);
+      if (known && known.observedAt >= observedAt) continue;
+      observedForKey.set(canonicalKey, { url: String(candidate).trim(), observedAt });
+    }
+    observedByEvidenceKey.set(evidenceKey, observedForKey);
+  }
+  return new Map(
+    Array.from(observedByEvidenceKey, ([evidenceKey, observedForKey]) => [
+      evidenceKey,
+      Array.from(observedForKey.values())
+        .sort((left, right) => right.observedAt - left.observedAt)
+        .map((observed) => observed.url),
+    ]),
+  );
+}
+
+interface OfficialProfileLinkCandidate {
+  _id: unknown;
+  displayName?: string;
+  profileLinks?: unknown;
+  identifiers?: { netid?: string };
+  accountId?: unknown;
+}
+
+/**
+ * Same-slug people exist across Yale sites (#468), so evidence is only ever
+ * matched to the researcher it was observed for. A researcher with no netid on
+ * either the record or its account is unmatchable and is left alone.
+ */
+async function evidenceKeyByResearcherId(
+  candidates: OfficialProfileLinkCandidate[],
+): Promise<Map<string, string>> {
+  const evidenceKeys = new Map<string, string>();
+  const researcherIdsByAccountId = new Map<string, string[]>();
+  for (const candidate of candidates) {
+    const researcherId = String(candidate._id);
+    const netid = officialProfileEvidenceKey(candidate.identifiers?.netid);
+    if (netid) {
+      evidenceKeys.set(researcherId, netid);
+      continue;
+    }
+    if (!candidate.accountId) continue;
+    const accountId = String(candidate.accountId);
+    researcherIdsByAccountId.set(accountId, [
+      ...(researcherIdsByAccountId.get(accountId) || []),
+      researcherId,
+    ]);
+  }
+  if (researcherIdsByAccountId.size === 0) return evidenceKeys;
+  const accounts = await Account.find({
+    _id: { $in: Array.from(researcherIdsByAccountId.keys()) },
+  })
+    .select('_id netid')
+    .lean();
+  for (const account of accounts) {
+    const netid = officialProfileEvidenceKey((account as { netid?: string }).netid);
+    if (!netid) continue;
+    for (const researcherId of researcherIdsByAccountId.get(String(account._id)) || []) {
+      evidenceKeys.set(researcherId, netid);
     }
   }
-  return keys;
+  return evidenceKeys;
 }
 
 export async function runRepairSupersededOfficialProfileLinks(options: {
   apply: boolean;
   limit?: number;
 }): Promise<RepairSupersededOfficialProfileLinksResult> {
-  const observedKeys = await observedProfileUrlKeys();
-  const candidates = await Researcher.find({
+  const observedByEvidenceKey = await observedOfficialProfileUrlsByEvidenceKey();
+  const candidates = (await Researcher.find({
     archived: { $ne: true },
     profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL' } },
   })
-    .select('_id displayName profileLinks')
-    .lean();
+    .select('_id displayName profileLinks identifiers.netid accountId')
+    .lean()) as unknown as OfficialProfileLinkCandidate[];
+  const evidenceKeys = await evidenceKeyByResearcherId(candidates);
 
   const rows: SupersededOfficialProfileLinkPlanRow[] = [];
   for (const candidate of candidates) {
+    const researcherId = String(candidate._id);
+    const evidenceKey = evidenceKeys.get(researcherId);
+    const observedUrls = evidenceKey ? observedByEvidenceKey.get(evidenceKey) : undefined;
+    if (!observedUrls?.length) continue;
     const row = planSupersededOfficialProfileLinkRepair(
       {
-        id: String(candidate._id),
-        displayName: (candidate as { displayName?: string }).displayName,
-        profileLinks: (candidate as { profileLinks?: unknown }).profileLinks,
+        id: researcherId,
+        displayName: candidate.displayName,
+        profileLinks: candidate.profileLinks,
       },
-      observedKeys,
+      observedUrls,
     );
     if (row) rows.push(row);
   }
@@ -155,6 +241,30 @@ export async function runRepairSupersededOfficialProfileLinks(options: {
     mode: options.apply ? 'apply' : 'dry-run',
     updated,
     rows: selected,
+  };
+}
+
+const STDOUT_ROW_SAMPLE_LIMIT = 25;
+
+/**
+ * Reviewing the planned rewrites is the operator's only guard against a
+ * mis-targeted apply, so the sample goes to stdout rather than only to `--output`.
+ * Display names stay out of the console; the before/after URLs are what a
+ * reviewer needs and are already public department pages.
+ */
+export function stdoutReport(result: RepairSupersededOfficialProfileLinksResult): Record<
+  string,
+  unknown
+> {
+  const sample = result.rows.slice(0, STDOUT_ROW_SAMPLE_LIMIT);
+  return {
+    considered: result.considered,
+    repairable: result.repairable,
+    mode: result.mode,
+    updated: result.updated,
+    selected: result.rows.length,
+    rowsOmittedFromSample: result.rows.length - sample.length,
+    rows: sample.map((row) => ({ id: row.id, before: row.before, after: row.after })),
   };
 }
 
@@ -192,7 +302,7 @@ async function main(): Promise<void> {
       fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
       console.log(`Saved repair report to ${safeOutput}`);
     }
-    console.log(JSON.stringify({ ...result, rows: result.rows.length }, null, 2));
+    console.log(JSON.stringify(stdoutReport(result), null, 2));
   } finally {
     await mongoose.disconnect();
   }
