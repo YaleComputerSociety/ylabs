@@ -357,10 +357,9 @@ describe('Beta to Development sync guards', () => {
   it('wires the accounts transform so a non-research account is pseudonymized by value', () => {
     const researchAccountId = new ObjectId('507f1f77bcf86cd799439011');
     const studentAccountId = new ObjectId('507f1f77bcf86cd799439022');
-    const collections = collectionsForOptions(
-      { includeObservations: false } as never,
-      [researchAccountId],
-    );
+    const collections = collectionsForOptions({ includeObservations: false } as never, [
+      researchAccountId,
+    ]);
     const accounts = collections.find((collection) => collection.name === 'accounts');
 
     expect(accounts?.category).toBe('identity-spine');
