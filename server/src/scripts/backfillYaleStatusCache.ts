@@ -7,6 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { syncEntities } from '../services/meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { CLEARED_RESEARCH_ENTITY_YALE_STATUS } from '../utils/researchEntityYaleStatus';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   assertScriptApplyAllowed,
@@ -147,10 +148,21 @@ async function main() {
         },
       );
     }
-    if (plan.toUpdate.length > 0) {
-      const updatedDocs = await ResearchEntity.find({
-        _id: { $in: plan.toUpdate.map((target) => target.id) },
-      }).lean();
+    // A heal only resets the status cache. The resulting tier depends on leads
+    // and access signals this script does not load, so it is left to
+    // `student-visibility:gate` rather than guessed here.
+    for (const target of plan.toHeal) {
+      await ResearchEntity.updateOne(
+        { _id: target.id },
+        { $set: { ...CLEARED_RESEARCH_ENTITY_YALE_STATUS } },
+      );
+    }
+    const touchedIds = [
+      ...plan.toUpdate.map((target) => target.id),
+      ...plan.toHeal.map((target) => target.id),
+    ];
+    if (touchedIds.length > 0) {
+      const updatedDocs = await ResearchEntity.find({ _id: { $in: touchedIds } }).lean();
       await syncEntities('researchEntity', updatedDocs);
     }
   }
@@ -163,7 +175,16 @@ async function main() {
     gainingCacheValue: plan.toUpdate.length,
     countsByReason: plan.countsByReason,
     flipToSuppressedCount: plan.flipToSuppressedCount,
+    healingStaleInactiveCache: plan.toHeal.length,
+    healingSuppressedOnlyByInactiveAtYale: plan.toHeal.filter(
+      (target) => target.suppressedOnlyByInactiveAtYale,
+    ).length,
+    nextStep:
+      plan.toHeal.length > 0
+        ? 'Run student-visibility:gate --apply to recompute tiers for the healed rows.'
+        : undefined,
     sample: plan.toUpdate.slice(0, 50),
+    healSample: plan.toHeal.slice(0, 50),
     options,
   };
 

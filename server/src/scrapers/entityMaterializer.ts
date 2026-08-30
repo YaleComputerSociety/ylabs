@@ -138,7 +138,11 @@ import {
   personProfileSourceMatchesEntity,
   type ResearchEntityIdentity,
 } from './utils/personProfileEntityMatch';
-import { deriveResearchEntityYaleStatus } from '../utils/researchEntityYaleStatus';
+import {
+  CLEARED_RESEARCH_ENTITY_YALE_STATUS,
+  deriveResearchEntityYaleStatus,
+  hasEvidencelessInactiveYaleStatus,
+} from '../utils/researchEntityYaleStatus';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -3349,13 +3353,10 @@ export async function projectFromLog(
         set.yaleStatusCache = yaleStatusSignal.yaleStatusCache;
         set.activeAtYaleCache = yaleStatusSignal.activeAtYaleCache;
         set.yaleStatusReasonCache = yaleStatusSignal.reason;
-      } else if (
-        entityDoc?.yaleStatusReasonCache !== 'departed' &&
-        (entityDoc?.activeAtYaleCache === false || entityDoc?.yaleStatusCache === 'departed')
-      ) {
-        set.yaleStatusCache = 'unknown';
-        set.activeAtYaleCache = true;
-        set.yaleStatusReasonCache = '';
+      } else if (hasEvidencelessInactiveYaleStatus(entityDoc)) {
+        set.yaleStatusCache = CLEARED_RESEARCH_ENTITY_YALE_STATUS.yaleStatusCache;
+        set.activeAtYaleCache = CLEARED_RESEARCH_ENTITY_YALE_STATUS.activeAtYaleCache;
+        set.yaleStatusReasonCache = CLEARED_RESEARCH_ENTITY_YALE_STATUS.yaleStatusReasonCache;
         fieldsWritten++;
       }
     }
