@@ -221,13 +221,36 @@ export function buildResearchEntityPublicDescriptionRepresentation({
 // card. A stored `student_ready` tier can go stale relative to that live gate
 // (e.g. after a hygiene change that empties a person-bio description, or a lead
 // later confirmed deceased), so any surface that lists entities by stored tier
-// alone must run this predicate to stay consistent with the detail gate. Running
-// it without the roster-derived lead names the detail path uses is safe: lead-name
-// self-reference stripping only ever removes more text, so an entity that fails
-// this name-agnostic invariant necessarily also fails the detail path's stricter
-// invariant, and dropping it can never hide a card the detail page would serve.
-// The deceased-lead check (#982) is likewise name-agnostic (entity name and
-// description signals only) and mirrors the detail resolver's own guard.
+// alone must run this predicate to stay consistent with the detail gate.
+//
+// This predicate is NOT nested with the detail path, and an earlier version of
+// this comment claimed it was. The claim was that running without the
+// roster-derived lead names is safe because stripping "only ever removes more
+// text", so a name-agnostic failure implies a detail failure. That inference does
+// not hold: removing more text is not the same as yielding a monotonically
+// stricter verdict, and a text-length argument cannot establish a verdict
+// ordering. Two independent mechanisms break it (#2241):
+//   - `shortDescriptionQuality(value, fullDescription, ...)` scores the short
+//     RELATIVE to the full (`same-as-full`, `copied-first-sentence`), so changing
+//     the full flips the verdict on a byte-identical short.
+//   - Stripping can CREATE a failure: "Dr. Cohen's research aims to ..." becomes
+//     "This research aims to ..." and the stripped short then fails its own
+//     quality check. Note the card still RENDERS in that case, falling back to the
+//     stripped full, so the lead-aware gate rejects an entity that has usable card
+//     copy - the failure is in the stored short's post-strip quality, not in the
+//     absence of anything to show.
+// Measured on the live corpus: 5 entities fail here but PASS the detail path, and
+// 2 do the reverse. So this predicate can hide a card the detail page would serve,
+// and it can also pass a card whose detail page 404s. Do not reintroduce a nesting
+// or monotonicity assumption in either direction.
+//
+// Do not "fix" that by calling the detail sanitizer from the browse path: it
+// needs roster-derived lead names that browse deliberately does not fetch, and
+// because the transform is not monotonic it could newly hide cards whose detail
+// pages serve correctly. #2240 holds the options and the decision.
+//
+// The deceased-lead check (#982) is name-agnostic (entity name and description
+// signals only) and mirrors the detail resolver's own guard.
 export const researchEntityServesPublicDetail = (entity: Record<string, any>): boolean =>
   buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass &&
   !researchEntityHasDeceasedLead(entity);
