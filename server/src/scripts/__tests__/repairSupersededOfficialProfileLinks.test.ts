@@ -139,10 +139,9 @@ describe('planSupersededOfficialProfileLinkRepair', () => {
   });
 
   it('writes the observed URL verbatim rather than a lower-cased rewrite', () => {
-    const row = planSupersededOfficialProfileLinkRepair(
-      { id: 'r1', profileLinks: [staleLink] },
-      ['https://example-dept.yale.edu/profile/AdaExample'],
-    );
+    const row = planSupersededOfficialProfileLinkRepair({ id: 'r1', profileLinks: [staleLink] }, [
+      'https://example-dept.yale.edu/profile/AdaExample',
+    ]);
     expect(row?.after).toBe('https://example-dept.yale.edu/profile/AdaExample');
   });
 

@@ -252,10 +252,9 @@ const STDOUT_ROW_SAMPLE_LIMIT = 25;
  * Display names stay out of the console; the before/after URLs are what a
  * reviewer needs and are already public department pages.
  */
-export function stdoutReport(result: RepairSupersededOfficialProfileLinksResult): Record<
-  string,
-  unknown
-> {
+export function stdoutReport(
+  result: RepairSupersededOfficialProfileLinksResult,
+): Record<string, unknown> {
   const sample = result.rows.slice(0, STDOUT_ROW_SAMPLE_LIMIT);
   return {
     considered: result.considered,

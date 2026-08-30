@@ -44,7 +44,11 @@ export function canonicalOfficialProfileUrlKey(value: unknown): string | undefin
  */
 export function officialProfileEvidenceKey(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const netid = value.trim().toLowerCase().replace(/^netid:/, '').trim();
+  const netid = value
+    .trim()
+    .toLowerCase()
+    .replace(/^netid:/, '')
+    .trim();
   return netid || undefined;
 }
 
