@@ -117,7 +117,11 @@ export function assertBackfillYaleStatusCacheApplyAllowed(
 
 async function main() {
   const options = parseBackfillYaleStatusCacheArgs(process.argv.slice(2));
-  const guard = assertBackfillYaleStatusCacheApplyAllowed(options, process.env, process.env.MONGODBURL);
+  const guard = assertBackfillYaleStatusCacheApplyAllowed(
+    options,
+    process.env,
+    process.env.MONGODBURL,
+  );
   await initializeConnections();
 
   const query = ResearchEntity.find({ archived: { $ne: true } }).sort({ name: 1 });

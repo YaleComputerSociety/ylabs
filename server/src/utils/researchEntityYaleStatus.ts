@@ -84,9 +84,7 @@ export function yaleStatusCacheIsWritable(entity: Record<string, any> | null | u
   const lockedFields = Array.isArray(entity?.manuallyLockedFields)
     ? entity?.manuallyLockedFields
     : [];
-  return (
-    !lockedFields.includes('activeAtYaleCache') && !lockedFields.includes('yaleStatusCache')
-  );
+  return !lockedFields.includes('activeAtYaleCache') && !lockedFields.includes('yaleStatusCache');
 }
 
 // Callers must first confirm `deriveResearchEntityYaleStatus` yields no signal:
