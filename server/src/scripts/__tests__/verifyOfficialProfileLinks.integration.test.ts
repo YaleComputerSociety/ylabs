@@ -10,6 +10,8 @@ import { runVerifyOfficialProfileLinks } from '../verifyOfficialProfileLinks';
 const DEAD_URL = 'https://example-dept.yale.edu/people/ada-example';
 const MOVED_URL = 'https://example-dept.yale.edu/profile/ada-example';
 
+const instantSleep = async (): Promise<void> => {};
+
 describe('runVerifyOfficialProfileLinks against stored researchers', () => {
   let replSet: MongoMemoryReplSet;
 
@@ -178,7 +180,7 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
 
   it('keeps an already-proved-dead link retired when the site refuses to answer', async () => {
     const researcher = await seedResearcher('Ada Example', DEAD_URL, 'UNAVAILABLE');
-    const { probe } = probeReturning({
+    const { probe, probed } = probeReturning({
       [DEAD_URL]: { healthStatus: 'UNAVAILABLE', httpStatusCode: 403 },
     });
 
@@ -187,13 +189,64 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
       hostConcurrency: 1,
       limit: 10,
       probe,
+      sleep: instantSleep,
     });
 
     expect(result).toMatchObject({ inconclusive: 1, dead: 0, repaired: 0 });
+    expect(probed.filter((url) => url === DEAD_URL)).toHaveLength(3);
     expect(await storedOfficialLink(researcher._id)).toMatchObject({
       url: DEAD_URL,
       healthStatus: 'UNAVAILABLE',
     });
+  });
+
+  it('retries a throttled probe and trusts the answer the site finally gives', async () => {
+    const researcher = await seedResearcher('Ada Example', MOVED_URL);
+    const answers: SourceLinkHealth[] = [
+      { healthStatus: 'UNAVAILABLE', httpStatusCode: 403 },
+      { healthStatus: 'UNAVAILABLE', httpStatusCode: 429 },
+      { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+    ];
+    let attempt = 0;
+    const probe = async (): Promise<SourceLinkHealth> => answers[attempt++];
+
+    const result = await runVerifyOfficialProfileLinks({
+      apply: true,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+      sleep: instantSleep,
+    });
+
+    expect(result).toMatchObject({ healthy: 1, inconclusive: 0, dead: 0 });
+    expect(attempt).toBe(3);
+    expect(await storedOfficialLink(researcher._id)).toMatchObject({
+      url: MOVED_URL,
+      healthStatus: 'HEALTHY',
+    });
+  });
+
+  it('paces successive probes of one department without pacing the first', async () => {
+    await seedResearcher('Ada Example', MOVED_URL);
+    await seedResearcher('Robin Example', 'https://example-dept.yale.edu/profile/robin-example');
+    const waits: number[] = [];
+    const probe = async (): Promise<SourceLinkHealth> => ({
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+    });
+
+    await runVerifyOfficialProfileLinks({
+      apply: false,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+      paceDelayMs: 40,
+      sleep: async (ms: number) => {
+        waits.push(ms);
+      },
+    });
+
+    expect(waits).toEqual([40]);
   });
 
   it('adopts an observed off-pattern page a source still publishes', async () => {

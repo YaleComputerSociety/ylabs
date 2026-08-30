@@ -13,8 +13,10 @@ import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import {
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
+  isRetryableProbe,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
+  probeRetryDelayMs,
   settledHealthStatusFor,
   summarizeDepartmentLinkHealth,
   type DepartmentLinkHealthSummary,
@@ -26,6 +28,9 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const DEFAULT_HOST_CONCURRENCY = 4;
+const DEFAULT_PROBE_RETRIES = 2;
+const DEFAULT_RETRY_DELAY_MS = 2000;
+const DEFAULT_PACE_DELAY_MS = 250;
 
 export interface VerifyOfficialProfileLinksOptions {
   apply: boolean;
@@ -34,7 +39,17 @@ export interface VerifyOfficialProfileLinksOptions {
   explicitLimit: boolean;
   host?: string;
   hostConcurrency: number;
+  paceDelayMs: number;
   output?: string;
+}
+
+function parseNonNegativeInt(value: string | undefined, flag: string): number {
+  if (!value || value.startsWith('--') || !/^\d+$/.test(value)) {
+    throw new Error(`${flag} must be a non-negative integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${flag} must be a non-negative integer`);
+  return parsed;
 }
 
 function parsePositiveInt(value: string | undefined, flag: string): number {
@@ -63,6 +78,7 @@ export function parseVerifyOfficialProfileLinksArgs(
     limit: 0,
     explicitLimit: false,
     hostConcurrency: DEFAULT_HOST_CONCURRENCY,
+    paceDelayMs: DEFAULT_PACE_DELAY_MS,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -89,6 +105,14 @@ export function parseVerifyOfficialProfileLinksArgs(
       );
     } else if (arg === '--host-concurrency') {
       options.hostConcurrency = parsePositiveInt(argv[i + 1], '--host-concurrency');
+      i += 1;
+    } else if (arg.startsWith('--pace-delay-ms=')) {
+      options.paceDelayMs = parseNonNegativeInt(
+        arg.slice('--pace-delay-ms='.length),
+        '--pace-delay-ms',
+      );
+    } else if (arg === '--pace-delay-ms') {
+      options.paceDelayMs = parseNonNegativeInt(argv[i + 1], '--pace-delay-ms');
       i += 1;
     } else if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(argv[i + 1]);
@@ -202,6 +226,10 @@ export async function runVerifyOfficialProfileLinks(
     limit?: number;
     probe?: (url: string) => Promise<SourceLinkHealth>;
     onHostVerified?: (host: string, links: number) => void;
+    sleep?: (ms: number) => Promise<unknown>;
+    retries?: number;
+    retryDelayMs?: number;
+    paceDelayMs?: number;
   },
 ): Promise<VerifyOfficialProfileLinksResult> {
   const probe = options.probe ?? checkSourceLinkHealth;
@@ -220,8 +248,22 @@ export async function runVerifyOfficialProfileLinks(
   let statusesWritten = 0;
   let urlsRepaired = 0;
 
+  const sleep = options.sleep ?? ((ms: number) => new Promise((done) => setTimeout(done, ms)));
+  const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  const retries = options.retries ?? DEFAULT_PROBE_RETRIES;
+  const paceDelayMs = options.paceDelayMs ?? DEFAULT_PACE_DELAY_MS;
+
+  const probeWithBackoff = async (url: string): Promise<SourceLinkHealth> => {
+    let health = await probe(url);
+    for (let attempt = 1; attempt <= retries && isRetryableProbe(health); attempt += 1) {
+      await sleep(probeRetryDelayMs(attempt, retryDelayMs));
+      health = await probe(url);
+    }
+    return health;
+  };
+
   const verifyTarget = async (target: OfficialLinkTarget): Promise<void> => {
-    const health = await probe(target.url);
+    const health = await probeWithBackoff(target.url);
     let verdict: OfficialProfileLinkRow['verdict'] = 'inconclusive';
     let replacementUrl: string | undefined;
 
@@ -232,7 +274,7 @@ export async function runVerifyOfficialProfileLinks(
       const observed = observedIndex.get(target.host) || [];
       const candidates = officialProfileLinkCandidates(target.url, target.displayName, observed);
       for (const candidate of candidates) {
-        if (isDecisivelyLiveProbe(await probe(candidate))) {
+        if (isDecisivelyLiveProbe(await probeWithBackoff(candidate))) {
           verdict = 'repaired';
           replacementUrl = candidate;
           break;
@@ -279,7 +321,10 @@ export async function runVerifyOfficialProfileLinks(
     while (cursor < hosts.length) {
       const bucket = hosts[cursor];
       cursor += 1;
-      for (const target of bucket) await verifyTarget(target);
+      for (const [index, target] of bucket.entries()) {
+        if (index > 0 && paceDelayMs > 0) await sleep(paceDelayMs);
+        await verifyTarget(target);
+      }
       options.onHostVerified?.(bucket[0].host, bucket.length);
     }
   };
@@ -325,6 +370,7 @@ async function main(): Promise<void> {
       apply: options.apply,
       host: options.host,
       hostConcurrency: options.hostConcurrency,
+      paceDelayMs: options.paceDelayMs,
       limit: options.explicitLimit ? options.limit : undefined,
       onHostVerified: (host, links) => console.log(`verified ${host} (${links} links)`),
     });
@@ -336,6 +382,7 @@ async function main(): Promise<void> {
         apply: options.apply,
         host: options.host,
         hostConcurrency: options.hostConcurrency,
+        paceDelayMs: options.paceDelayMs,
         limit: options.explicitLimit ? options.limit : undefined,
       },
       result,

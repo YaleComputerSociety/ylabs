@@ -64,6 +64,24 @@ export function settledHealthStatusFor(
   return status === 'UNKNOWN' ? undefined : status;
 }
 
+/**
+ * A probe worth retrying: the site answered with a throttle or a server-side
+ * failure rather than a verdict. Sustained sequential probing of a large host
+ * (medicine.yale.edu carries most of the corpus) draws 403s partway through a run,
+ * which left roughly a tenth of the links unverified until the run backed off.
+ */
+export function isRetryableProbe(health: SourceLinkHealth | undefined): boolean {
+  if (!health) return true;
+  if (isDecisivelyLiveProbe(health) || isDecisivelyDeadProbe(health)) return false;
+  const status = health.httpStatusCode;
+  if (typeof status !== 'number') return true;
+  return status === 403 || status === 408 || status === 429 || status >= 500;
+}
+
+export function probeRetryDelayMs(attempt: number, baseDelayMs: number): number {
+  return baseDelayMs * 2 ** Math.max(0, attempt - 1);
+}
+
 export function officialProfileLinkHost(url: unknown): string | undefined {
   if (!isYaleOfficialProfileUrl(url)) return undefined;
   try {

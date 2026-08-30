@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
+  isRetryableProbe,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
+  probeRetryDelayMs,
   profileSlugNamesPerson,
   settledHealthStatusFor,
   storedHealthStatusFor,
@@ -257,5 +259,34 @@ describe('isServableOfficialProfileLink', () => {
   it('still serves a healthy or unprobed link', () => {
     expect(isServableOfficialProfileLink(link('HEALTHY'))).toBe(true);
     expect(isServableOfficialProfileLink(link('UNKNOWN'))).toBe(true);
+  });
+});
+
+describe('isRetryableProbe', () => {
+  it('retries a throttle or a server-side failure', () => {
+    for (const httpStatusCode of [403, 408, 429, 500, 503]) {
+      expect(isRetryableProbe({ healthStatus: 'UNAVAILABLE', httpStatusCode })).toBe(true);
+    }
+    expect(isRetryableProbe({ healthStatus: 'UNKNOWN' })).toBe(true);
+    expect(isRetryableProbe(undefined)).toBe(true);
+  });
+
+  it('never retries an answer that already settled the link', () => {
+    expect(isRetryableProbe({ healthStatus: 'HEALTHY', httpStatusCode: 200 })).toBe(false);
+    expect(isRetryableProbe({ healthStatus: 'REDIRECTED', httpStatusCode: 301 })).toBe(false);
+    expect(isRetryableProbe({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 })).toBe(false);
+    expect(isRetryableProbe({ healthStatus: 'UNAVAILABLE', httpStatusCode: 410 })).toBe(false);
+  });
+
+  it('does not retry a 401, which is a decision rather than a throttle', () => {
+    expect(isRetryableProbe({ healthStatus: 'UNAVAILABLE', httpStatusCode: 401 })).toBe(false);
+  });
+});
+
+describe('probeRetryDelayMs', () => {
+  it('backs off geometrically from the first retry', () => {
+    expect(probeRetryDelayMs(1, 2000)).toBe(2000);
+    expect(probeRetryDelayMs(2, 2000)).toBe(4000);
+    expect(probeRetryDelayMs(3, 2000)).toBe(8000);
   });
 });
