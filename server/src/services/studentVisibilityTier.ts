@@ -324,6 +324,35 @@ function isNonOwnerGrantShell({
   });
 }
 
+/**
+ * A grant record proves that work happened; it does not prove a person is
+ * currently at Yale, and it is never citeable to a student -
+ * `isDisallowedResearchEntitySourceUrl` strips it from the served payload. So an
+ * entity whose every URL is a grant/ORCID record ships with no surviving
+ * student-facing route at all: no website, no source link, nothing to click.
+ *
+ * It is also undetectably stale. NIH RePORTER keeps serving an award after the
+ * PI leaves Yale, so `lastObservedAt` refreshes forever while the record rots,
+ * and corroborated departure detection (#2127) can fire on neither of its two
+ * signals: the entity was never in a roster to go absent from, and it has no
+ * official page whose link can die.
+ *
+ * This is deliberately independent of action evidence and of lead titles,
+ * because `isNonOwnerGrantShell` - written for the same family - is escapable on
+ * both. `nih-pi-margaret-lind` returns early there because the lead-optional
+ * `REACH_OUT_PLAUSIBLE` fallback counts as action evidence, and
+ * `nih-pi-dennis-shung` escapes because its lead carries no non-owner title.
+ * Both published as `student_ready` on a single `reporter.nih.gov` URL.
+ *
+ * An entity with any non-grant URL is unaffected: a real lab website or official
+ * Yale page is exactly the corroboration this requires.
+ */
+function isUncorroboratedGrantOnlyEntity(entity: Record<string, any>): boolean {
+  const urls = entityUrls(entity);
+  if (urls.length === 0) return false;
+  return urls.every(isGrantOrOrcidSourceUrl);
+}
+
 const FORMALIZATION_PROGRAM_KINDS = new Set([
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
@@ -527,6 +556,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'non_research_program',
   'research_infrastructure_only',
   'non_owner_grant_shell',
+  'grant_only_no_current_yale_source',
   'lab_name_org_type_mismatch',
   'inactive_at_yale',
   'archive_review',
@@ -629,6 +659,7 @@ export function computeResearchEntityStudentVisibility({
     hasActionEvidence,
   });
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
+  const uncorroboratedGrantOnly = isUncorroboratedGrantOnlyEntity(entity);
   const labNameOrgTypeMismatch = isLabNameOrgTypeMismatch(entity);
   const missingFacetSignal = missingFacultyResearchAreaFacetSignal(entity);
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
@@ -658,6 +689,7 @@ export function computeResearchEntityStudentVisibility({
   if (genericDirectoryShell) reasons.push('generic_directory_shell');
   if (profileBiographyShell) reasons.push('profile_biography_shell');
   if (nonOwnerGrantShell) reasons.push('non_owner_grant_shell');
+  if (uncorroboratedGrantOnly) reasons.push('grant_only_no_current_yale_source');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
   if (missingFacetSignal) reasons.push('missing_facet_signal');
 
@@ -689,6 +721,7 @@ export function computeResearchEntityStudentVisibility({
     genericDirectoryShell ||
     profileBiographyShell ||
     nonOwnerGrantShell ||
+    uncorroboratedGrantOnly ||
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';
