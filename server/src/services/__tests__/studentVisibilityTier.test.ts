@@ -2100,3 +2100,74 @@ describe('grant-only entities cannot be published to students (#2280)', () => {
     expect(result.reasons).not.toContain('grant_only_no_current_yale_source');
   });
 });
+
+describe('recorded closure suppresses, and its absence does not (#2284)', () => {
+  const openLab = {
+    slug: 'dept-astronomy-example-lab',
+    name: 'Example Lab',
+    displayName: 'Example Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    websiteUrl: 'https://example.yale.edu/labs/example/',
+    sourceUrls: ['https://astronomy.yale.edu/people/faculty'],
+    researchAreas: ['Exoplanets'],
+    shortDescription: 'Studies exoplanet detection and atmospheric characterization.',
+    fullDescription:
+      'The lab studies exoplanet detection and atmospheric characterization, combining radial-velocity surveys with high-resolution spectroscopy of transiting planets.',
+  };
+  const leadMembers = [{ role: 'PI', user: { displayName: 'Example Lead' } }];
+
+  it('FAILS OPEN: no closure evidence must not suppress', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: openLab,
+      leadMembers,
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).not.toContain('permanently_closed');
+    expect(result.tier).not.toBe('suppressed');
+  });
+
+  it('suppresses only on a positively recorded closure marker', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: { ...openLab, studentVisibilitySuppressionReason: 'permanently_closed' },
+      leadMembers,
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).toContain('permanently_closed');
+    expect(result.tier).toBe('suppressed');
+    // computedTier, not just tier: the marker must suppress in the computation
+    // itself rather than only via the post-override guard, so an operator board
+    // reading computedTier sees a closed row as closed.
+    expect(result.computedTier).toBe('suppressed');
+  });
+
+  it('does not treat NOT_CURRENTLY_AVAILABLE as closure', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        ...openLab,
+        undergraduateLogistics: { currentAvailability: 'NOT_CURRENTLY_AVAILABLE' },
+      },
+      leadMembers,
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).not.toContain('permanently_closed');
+    expect(result.tier).not.toBe('suppressed');
+  });
+
+  it('outranks an operator override to publish', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        ...openLab,
+        studentVisibilitySuppressionReason: 'permanently_closed',
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers,
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.tier).toBe('suppressed');
+  });
+});
