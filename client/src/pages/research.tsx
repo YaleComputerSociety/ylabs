@@ -1653,8 +1653,8 @@ const Research = () => {
     return () => mediaQuery.removeEventListener?.('change', handleChange);
   }, []);
   const searchPlaceholder = isCompactViewport
-    ? 'Type a topic, professor, lab, or method'
-    : 'Type a topic, professor, lab, method, or research question';
+    ? 'Type a topic, professor, lab, or technique'
+    : 'Type a topic, professor, lab, technique, or research question';
 
   const researchFilterProps = {
     facetDistribution,
