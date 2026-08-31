@@ -35,11 +35,14 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install dependencies
+        run: corepack enable && yarn install:all:immutable
+
       - name: Run production security smoke
         env:
           SMOKE_API_BASE: ${{ inputs.api_base || 'https://yalelabs.io/api' }}
           SMOKE_APP_BASE: ${{ inputs.app_base || 'https://yalelabs.io' }}
-          SMOKE_EXPECT_COMMIT: ${{ inputs.expect_commit || github.sha }}
+          SMOKE_EXPECT_COMMIT: ${{ inputs.expect_commit }}
         run: |
           set +e
           cmd=(yarn security:smoke:production)
