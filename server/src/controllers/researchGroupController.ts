@@ -25,6 +25,24 @@ import { hasAdminAuthorityForUser } from '../services/adminGrantService';
 
 const MAX_PAGE_SIZE = 100;
 const MAX_PAGE = 1000;
+
+/**
+ * Reachable pagination depth is capped by RECORDS rather than by page number,
+ * because the two caps interact: `MAX_PAGE_SIZE` 100 with `MAX_PAGE` 1000 made
+ * 100,000 records addressable against a served corpus of roughly 2,700, so a
+ * client could walk an offset two orders of magnitude past the data.
+ *
+ * A page cap alone cannot fix that without breaking browsing, because the client
+ * default page size is 24 and the research page scrolls infinitely: a "nothing
+ * pages past 10" rule would wall a student off after 240 records. Capping records
+ * keeps every real row reachable at any page size while removing the dead offset
+ * space, so the limit is expressed in the unit that actually bounds the data.
+ *
+ * Set above the live served corpus with headroom for growth rather than tuned to
+ * today's exact count, so ordinary corpus expansion does not silently truncate
+ * browsing.
+ */
+const MAX_REACHABLE_RECORDS = 5000;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_SEARCH_QUERY_LENGTH = 512;
 const MAX_FILTER_VALUES = 50;
@@ -184,6 +202,9 @@ export const searchResearchGroups = async (request: Request, response: Response)
       sortOrder?: 'asc' | 'desc';
       studentVisibilityTier?: unknown;
       includeSuppressed?: boolean;
+      // Opt-in for a caller with no retained facet copy (a fresh deep link, or a
+      // non-browser client). Page 1 always includes them.
+      includeFacets?: boolean;
       browseQuality?: unknown;
       qualityFilters?: unknown;
     };
@@ -194,9 +215,20 @@ export const searchResearchGroups = async (request: Request, response: Response)
 
     const q = typeof body.q === 'string' ? body.q : '';
     const requestedPage = parsePositiveIntegerParam(body.page, 1);
-    const page = Math.min(MAX_PAGE, Math.max(1, Math.floor(requestedPage) || 1));
     const requestedPageSize = parsePositiveIntegerParam(body.pageSize, DEFAULT_PAGE_SIZE);
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(requestedPageSize) || 1));
+    // Depth is bounded in records, so the reachable page number falls out of the
+    // requested page size rather than being a second independent client-controlled
+    // dimension (OWASP API4:2023).
+    const maxReachablePage = Math.max(1, Math.floor(MAX_REACHABLE_RECORDS / pageSize));
+    const page = Math.min(MAX_PAGE, maxReachablePage, Math.max(1, Math.floor(requestedPage) || 1));
+    // Facets describe the whole result set, not the page, and they dominate the
+    // payload: a 100-record page measured 568,858 characters with 805 distinct
+    // department values in one facet. They change on scrape cadence rather than per
+    // keystroke, so they are sent once for a result set and the client retains
+    // them while paging. `includeFacets: true` forces them for a caller that has
+    // no retained copy.
+    const includeFacets = page === 1 || body.includeFacets === true;
     const filters = parseFilters(body.filters);
     const currentUser = request.user as
       | { netId?: string; netid?: string; userType?: string }
@@ -230,7 +262,12 @@ export const searchResearchGroups = async (request: Request, response: Response)
       lowQualityFirst,
       qualityFilters: hasAdminAuthority ? parseQualityFilters(body.qualityFilters) : [],
     });
-    return response.json(result);
+    if (includeFacets) return response.json(result);
+    // Omitted rather than emptied: an empty object is indistinguishable from "this
+    // result set has no facets" to a client, which would clear a populated filter
+    // panel. Absent means "unchanged, keep what you have".
+    const { facetDistribution: _omittedFacets, ...withoutFacets } = result;
+    return response.json(withoutFacets);
   } catch (error) {
     console.error('ResearchEntity search failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Search failed' });

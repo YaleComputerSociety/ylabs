@@ -145,7 +145,9 @@ interface ResearchEntitySearchPage {
   estimatedTotalHits: number;
   page: number;
   pageSize: number;
-  facetDistribution: Record<string, Record<string, number>>;
+  // Absent when the server omitted facets for this page. Distinct from an empty
+  // object, which means "this result set genuinely has no facet values".
+  facetDistribution?: Record<string, Record<string, number>>;
 }
 
 interface ActiveResearchSearchRequest {
@@ -244,7 +246,7 @@ const searchResearchEntities = async (
     estimatedTotalHits: normalized.estimatedTotalHits || 0,
     page: normalized.page || page,
     pageSize: normalized.pageSize || pageSize,
-    facetDistribution: normalized.facetDistribution || {},
+    facetDistribution: normalized.facetDistribution,
   };
 };
 
@@ -713,7 +715,9 @@ const Research = () => {
       setDefaultResearchEntities((current) =>
         page === 1 ? researchEntities : [...current, ...researchEntities],
       );
-      if (page === 1) {
+      // Page 1 is where the server sends facets, but guard anyway: overwriting a
+      // populated panel with undefined would clear the browse filters.
+      if (page === 1 && researchEntitiesPage.facetDistribution) {
         setBrowseFacetDistribution(researchEntitiesPage.facetDistribution);
       }
       setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
@@ -862,7 +866,9 @@ const Research = () => {
       setHasFacetError(false);
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
-      setFacetDistribution(researchEntitiesPage.facetDistribution);
+      if (researchEntitiesPage.facetDistribution) {
+        setFacetDistribution(researchEntitiesPage.facetDistribution);
+      }
       setSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
 
       setGroupedResults(

@@ -159,11 +159,94 @@ describe('researchGroupController', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Invalid search request' });
   });
 
-  it('caps public research search page before dispatching search work', async () => {
+  it('sends facets on page 1 and omits them past it', async () => {
+    // Facets describe the result set rather than the page and dominate the
+    // payload: a 100-record page measured 568,858 characters, with 805 distinct
+    // department values in one facet. They change on scrape cadence, not per
+    // keystroke, so one copy per result set is enough.
+    const facetDistribution = { departments: { Chemistry: 12, Physics: 8 } };
+    for (const [page, shouldInclude] of [
+      [1, true],
+      [2, false],
+      [7, false],
+    ] as Array<[number, boolean]>) {
+      mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+        researchEntities: [],
+        estimatedTotalHits: 0,
+        page,
+        pageSize: 24,
+        facetDistribution,
+      });
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+      await searchResearchGroups({ body: { q: '', page, pageSize: 24, filters: {} } } as any, res);
+      const payload = res.json.mock.calls[0][0];
+      expect('facetDistribution' in payload).toBe(shouldInclude);
+    }
+  });
+
+  it('omits facets rather than emptying them, so a client can tell "unchanged" from "none"', async () => {
+    // An empty object is indistinguishable from "this result set has no facet
+    // values", which would clear a populated filter panel.
     mocks.searchResearchGroupsViaMeili.mockResolvedValue({
       researchEntities: [],
       estimatedTotalHits: 0,
-      page: 1000,
+      page: 3,
+      pageSize: 24,
+      facetDistribution: { departments: { Chemistry: 4 } },
+    });
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups({ body: { q: '', page: 3, pageSize: 24, filters: {} } } as any, res);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.facetDistribution).toBeUndefined();
+    expect('facetDistribution' in payload).toBe(false);
+  });
+
+  it('returns facets past page 1 when a caller explicitly asks', async () => {
+    // A fresh deep link or a non-browser client has no retained copy.
+    const facetDistribution = { departments: { Chemistry: 4 } };
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 4,
+      pageSize: 24,
+      facetDistribution,
+    });
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups(
+      { body: { q: '', page: 4, pageSize: 24, filters: {}, includeFacets: true } } as any,
+      res,
+    );
+    expect(res.json.mock.calls[0][0].facetDistribution).toEqual(facetDistribution);
+  });
+
+  it('keeps the whole served corpus reachable at the client default page size', async () => {
+    // A page-number cap of ~10 would wall browsing off after 240 records at the
+    // client default of 24. The records cap must not do that.
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 120,
+      pageSize: 24,
+    });
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups(
+      { body: { q: '', page: 120, pageSize: 24, filters: {} } } as any,
+      res,
+    );
+    const [, , dispatchedPage, dispatchedPageSize] =
+      mocks.searchResearchGroupsViaMeili.mock.calls[0];
+    expect(dispatchedPage * dispatchedPageSize).toBeGreaterThan(2800);
+  });
+
+  it('caps reachable pagination depth in records, not page number', async () => {
+    // MAX_PAGE 1000 with MAX_PAGE_SIZE 100 made 100,000 records addressable
+    // against a served corpus of roughly 2,700. Depth is now bounded in records,
+    // so the reachable page falls out of the requested page size instead of being
+    // a second client-controlled dimension.
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 50,
       pageSize: 100,
     });
     const req = {
@@ -184,7 +267,7 @@ describe('researchGroupController', () => {
     expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
       '',
       expect.any(Object),
-      1000,
+      50,
       100,
       expect.any(Object),
       expect.any(Object),
@@ -192,7 +275,7 @@ describe('researchGroupController', () => {
     expect(res.json).toHaveBeenCalledWith({
       researchEntities: [],
       estimatedTotalHits: 0,
-      page: 1000,
+      page: 50,
       pageSize: 100,
     });
   });
