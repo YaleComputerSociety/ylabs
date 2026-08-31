@@ -27,7 +27,33 @@ export const ensureAnonymousRateLimitId = (req: Request, _res: Response, next: N
   next();
 };
 
-const getRateLimitKey = (req: Request): string => {
+// A proxy may append a rotating source port to the forwarded address. Keying on
+// that would let one caller reset their own bucket by reopening the connection,
+// so the port is stripped. Only a bracketed IPv6 literal or an IPv4 literal can
+// carry a bare `:port`; a bare IPv6 address is all colons and must never be
+// split.
+const withoutTrailingPort = (value: string): string => {
+  const bracketed = value.match(/^\[(.+)\](?::\d+)?$/);
+  if (bracketed) return bracketed[1];
+  const ipv4WithPort = value.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  return ipv4WithPort ? ipv4WithPort[1] : value;
+};
+
+// Behind a load balancer, `req.socket.remoteAddress` is the PROXY, not the
+// caller, so keying on it collapses every client into a single bucket and turns
+// a per-client limit into a global one - express-rate-limit's own troubleshooting
+// guide describes this as becoming "effectively a global one and blocking all
+// requests once the limit is reached" (#2318). `authLimiter` is 20 per 15 minutes
+// on the CAS login path, so that was 20 logins per window for the entire user
+// base.
+//
+// `req.ip` is the client address that the validated `trust proxy` predicate in
+// app.ts already resolves from the forwarded chain, which is why that apparatus
+// has to be the input here rather than the raw socket.
+export const rateLimitClientIp = (req: Request): string =>
+  withoutTrailingPort(typeof req.ip === 'string' ? req.ip.trim() : '');
+
+export const getRateLimitKey = (req: Request): string => {
   const user = req.user as { netId?: unknown; netid?: unknown } | undefined;
   const netId = normalizedRateLimitNetId(user?.netId ?? user?.netid);
   if (netId) {
@@ -37,11 +63,11 @@ const getRateLimitKey = (req: Request): string => {
   const anonymousId = normalizedAnonymousRateLimitId(req.session?.rateLimitId);
   return anonymousId
     ? `anonymous:${anonymousId}`
-    : `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
+    : `ip:${ipKeyGenerator(rateLimitClientIp(req))}`;
 };
 
-const getPeerIpKey = (req: Request): string =>
-  `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
+export const getPeerIpKey = (req: Request): string =>
+  `ip:${ipKeyGenerator(rateLimitClientIp(req))}`;
 
 // Login availability must not depend on the general API traffic budget.
 // CAS ticket validation already gates the callback, so it is exempt from the
