@@ -1,7 +1,7 @@
 import type { ResearcherProfileLinkHealthStatus } from '../models/researcher';
 import type { SourceLinkHealth } from '../services/sourceLinkHealth';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
-import { personProfileNameTokensFromUrl } from '../scrapers/utils/personProfileEntityMatch';
+import { personPageNameTokensFromUrl } from '../scrapers/utils/personProfileEntityMatch';
 
 export type OfficialProfileLinkVerdict = 'healthy' | 'repaired' | 'dead' | 'inconclusive';
 
@@ -99,30 +99,67 @@ const personNameTokens = (displayName: unknown): string[] =>
         .filter(Boolean)
     : [];
 
+const SHORTEST_NICKNAME_TOKEN = 4;
+
+/**
+ * Whether two given-name tokens are the same name written short and long
+ * (`phil`/`philip`, `chris`/`christopher`). Requiring the shorter side to reach
+ * four characters is what keeps an initial out: `a` must never stand in for
+ * `alison`, because that is how a same-surname colleague gets claimed.
+ */
+export function givenNameTokensAgree(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  if (shorter.length < SHORTEST_NICKNAME_TOKEN) return false;
+  return longer.startsWith(shorter);
+}
+
 /**
  * Whether a candidate person-page slug names the same person as a display name.
  * A department can re-slug someone (`douglas-stone` becoming `a-douglas-stone`,
- * `paul-l-tipton` becoming `paul-tipton`), so surname equality plus a whole
- * given-name token appearing on both sides is the tie that survives re-slugging.
+ * `paul-l-tipton` becoming `paul-tipton`) or publish them under a nickname
+ * (`philip-gorski` becoming `phil-gorski`, #2308), so the tie is surname equality
+ * plus a given-name token that agrees whole or as a short form.
  * A first-initial match is deliberately not enough: an initial-led display name
  * ("A Douglas Stone") would otherwise claim any same-surname colleague whose
- * given name starts with that letter ("Alison Stone"), and same-slug people
+ * given name starts with that letter ("Alison Stone"), and same-surname people
  * really do exist across Yale sites (#468).
  */
 export function profileSlugNamesPerson(candidateUrl: unknown, displayName: unknown): boolean {
-  const slugTokens = personProfileNameTokensFromUrl(candidateUrl);
+  const slugTokens = personPageNameTokensFromUrl(candidateUrl);
   const nameTokens = personNameTokens(displayName);
   if (!slugTokens || slugTokens.length === 0 || nameTokens.length < 2) return false;
   if (slugTokens.at(-1) !== nameTokens.at(-1)) return false;
-  return nameTokens.includes(slugTokens[0]) || slugTokens.includes(nameTokens[0]);
+  return (
+    nameTokens.some((token) => givenNameTokensAgree(token, slugTokens[0])) ||
+    slugTokens.some((token) => givenNameTokensAgree(token, nameTokens[0]))
+  );
+}
+
+/**
+ * The person-page slug a department would mint from a display name.
+ */
+export function personNameSlug(displayName: unknown): string {
+  return String(displayName ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 /**
  * Replacement candidates for a dead official link, most trustworthy first: a URL
  * some source was observed publishing for this exact path, then an observed
  * same-host page whose slug names the same person, then the same-host
- * `/profile/<slug>` twin of the dead path. Every candidate is still probed before
+ * `/profile/<slug>` twin of the dead path, and last a page named after the person
+ * rather than after the dead slug. Every candidate is still probed before
  * adoption, so each one is a hypothesis to test rather than a rewrite rule.
+ *
+ * The name-derived pair is what recovers a link whose stored slug never named the
+ * person (`politicalscience.yale.edu/ian-home`) or whose department moved the page
+ * the opposite way to the usual migration (`ysph.yale.edu` moved a professor from
+ * `/profile/<slug>` to `/people/<slug>`), which is why both sections are tried.
  */
 export function officialProfileLinkCandidates(
   deadUrl: string,
@@ -173,6 +210,14 @@ export function officialProfileLinkCandidates(
     if (profileSlugNamesPerson(observed, displayName)) add(observed);
   }
   if (deadSlug) add(`https://${host}/profile/${deadSlug}`);
+  const nameSlug = personNameSlug(displayName);
+  if (nameSlug) {
+    // Compared by full path, not by slug: a department can move a person between
+    // sections while keeping the slug (`/profile/haiqun-lin` to `/people/haiqun-lin`),
+    // so the same slug under a different section is a real candidate.
+    add(`https://${host}/profile/${nameSlug}`);
+    add(`https://${host}/people/${nameSlug}`);
+  }
   return candidates;
 }
 

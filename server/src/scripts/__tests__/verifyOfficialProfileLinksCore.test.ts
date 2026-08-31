@@ -3,6 +3,7 @@ import {
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
   isRetryableProbe,
+  givenNameTokensAgree,
   officialProfileLinkCandidates,
   officialProfileLinkHost,
   probeRetryDelayMs,
@@ -135,6 +136,68 @@ describe('profileSlugNamesPerson', () => {
       ),
     ).toBe(false);
   });
+
+  it('follows a department that publishes the person under a nickname', () => {
+    expect(
+      profileSlugNamesPerson(
+        'https://example-dept.yale.edu/profile/phil-example',
+        'Philip Example',
+      ),
+    ).toBe(true);
+  });
+
+  it('reads the person slug out of a /person/ path', () => {
+    expect(
+      profileSlugNamesPerson('https://example-dept.yale.edu/person/dana-example/', 'Dana Example'),
+    ).toBe(true);
+  });
+
+  it('reads the person slug out of a section-nested people path', () => {
+    expect(
+      profileSlugNamesPerson(
+        'https://example-dept.yale.edu/people/full-part-time-lecturers/dana-example',
+        'Dana Example',
+      ),
+    ).toBe(true);
+  });
+
+  it('still refuses a section-nested roster page that names no person', () => {
+    expect(
+      profileSlugNamesPerson(
+        'https://example-dept.yale.edu/people/ladder-faculty',
+        'Ladder Faculty',
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses a nested person page whose slug names someone else', () => {
+    expect(
+      profileSlugNamesPerson(
+        'https://example-dept.yale.edu/person/casey-example/',
+        'William Example',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('givenNameTokensAgree', () => {
+  it('accepts a short form of the same given name', () => {
+    expect(givenNameTokensAgree('phil', 'philip')).toBe(true);
+    expect(givenNameTokensAgree('chris', 'christopher')).toBe(true);
+    expect(givenNameTokensAgree('dana', 'dana')).toBe(true);
+  });
+
+  it('refuses an initial or a two-letter stub standing in for a name', () => {
+    expect(givenNameTokensAgree('a', 'alison')).toBe(false);
+    expect(givenNameTokensAgree('j', 'jacqueline')).toBe(false);
+    expect(givenNameTokensAgree('li', 'lisa')).toBe(false);
+    expect(givenNameTokensAgree('ann', 'anna')).toBe(false);
+  });
+
+  it('refuses two different names that merely share a stem', () => {
+    expect(givenNameTokensAgree('robin', 'roberta')).toBe(false);
+    expect(givenNameTokensAgree('dave', 'david')).toBe(false);
+  });
 });
 
 describe('officialProfileLinkCandidates', () => {
@@ -164,6 +227,7 @@ describe('officialProfileLinkCandidates', () => {
     ).toEqual([
       'https://example-dept.yale.edu/profile/a-douglas-example',
       'https://example-dept.yale.edu/profile/douglas-example',
+      'https://example-dept.yale.edu/people/a-douglas-example',
     ]);
   });
 
@@ -174,7 +238,11 @@ describe('officialProfileLinkCandidates', () => {
         'A Douglas Example',
         ['https://example-dept.yale.edu/profile/alison-example'],
       ),
-    ).toEqual(['https://example-dept.yale.edu/profile/douglas-example']);
+    ).toEqual([
+      'https://example-dept.yale.edu/profile/douglas-example',
+      'https://example-dept.yale.edu/profile/a-douglas-example',
+      'https://example-dept.yale.edu/people/a-douglas-example',
+    ]);
   });
 
   it('offers the constructed twin when nothing was observed', () => {
@@ -192,10 +260,13 @@ describe('officialProfileLinkCandidates', () => {
         'https://medicine.yale.edu/lab/example/profile/ada-example/',
         'Ada Example',
       ),
-    ).toEqual(['https://medicine.yale.edu/profile/ada-example']);
+    ).toEqual([
+      'https://medicine.yale.edu/profile/ada-example',
+      'https://medicine.yale.edu/people/ada-example',
+    ]);
   });
 
-  it('never proposes a different host or the dead path itself', () => {
+  it('excludes another host and the dead path, but still offers the reverse-section page', () => {
     expect(
       officialProfileLinkCandidates(
         'https://example-dept.yale.edu/profile/ada-example',
@@ -205,7 +276,7 @@ describe('officialProfileLinkCandidates', () => {
           'https://example-dept.yale.edu/profile/ada-example/',
         ],
       ),
-    ).toEqual([]);
+    ).toEqual(['https://example-dept.yale.edu/people/ada-example']);
   });
 });
 

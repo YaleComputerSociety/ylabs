@@ -138,7 +138,10 @@ export function personProfileNameTokensFromUrl(value: unknown): string[] | null 
   if (!/(^|\.)yale\.edu$/i.test(url.hostname)) return null;
   const match = url.pathname.match(/^\/(?:people|profile)\/([^/]+)\/?$/i);
   if (!match) return null;
-  const rawSlug = match[1];
+  return personSlugNameTokens(match[1]);
+}
+
+function personSlugNameTokens(rawSlug: string): string[] | null {
   if (/\d/.test(rawSlug)) return null;
   const tokens = rawSlug
     .toLowerCase()
@@ -146,6 +149,34 @@ export function personProfileNameTokensFromUrl(value: unknown): string[] | null 
     .filter((token) => token.length >= 2 && !CREDENTIAL_TOKENS.has(token));
   if (tokens.some((token) => ROSTER_PAGE_WORDS.has(token))) return null;
   return tokens.length >= 2 ? tokens : null;
+}
+
+const PERSON_PAGE_SECTION = /^\/(?:people|profile|person)\//i;
+
+/**
+ * Like `personProfileNameTokensFromUrl`, but also reading the person slug out of
+ * the wider person-page shapes Yale sites actually publish: `/person/<slug>`
+ * (jackson.yale.edu) and a section-nested `/people/<section>/<slug>`
+ * (english.yale.edu/people/full-part-time-lecturers-creative-writers/<slug>).
+ * Kept separate from the strict reader on purpose: that one gates a materializer
+ * check on whether a field came *only* from person-profile pages, and widening
+ * what counts as such a page there would silently change which fields that guard
+ * suppresses. This reader is for finding a person's page, not for gating writes.
+ */
+export function personPageNameTokensFromUrl(value: unknown): string[] | null {
+  const urlText = textValue(value);
+  if (!urlText) return null;
+  let url: URL;
+  try {
+    url = new URL(urlText);
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)yale\.edu$/i.test(url.hostname)) return null;
+  if (!PERSON_PAGE_SECTION.test(url.pathname)) return null;
+  const slug = url.pathname.replace(/\/+$/, '').split('/').pop();
+  if (!slug) return null;
+  return personSlugNameTokens(slug);
 }
 
 /**
