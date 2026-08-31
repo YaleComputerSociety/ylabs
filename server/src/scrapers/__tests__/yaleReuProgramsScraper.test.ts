@@ -63,12 +63,12 @@ describe('parseReuProgramPage', () => {
       referenceDate,
     );
     expect(candidate).toBeDefined();
-    expect(candidate?.title).toBe('Fixture Astronomy Research Experiences for Undergraduates (REU)');
+    expect(candidate?.title).toBe(
+      'Fixture Astronomy Research Experiences for Undergraduates (REU)',
+    );
     expect(candidate?.sourceUrl).toBe(astronomyUrl);
     expect(candidate?.description).toMatch(/ten-week summer research program in astrophysics/);
-    expect(candidate?.competitionType).toBe(
-      'NSF REU (Research Experiences for Undergraduates)',
-    );
+    expect(candidate?.competitionType).toBe('NSF REU (Research Experiences for Undergraduates)');
     expect(candidate?.deadline?.toISOString()).toBe(
       parseDeadlineToUtcEndOfDay('February 6, 2026', referenceDate)?.toISOString(),
     );
@@ -77,7 +77,12 @@ describe('parseReuProgramPage', () => {
   });
 
   it('extracts a summer research program that does not use the REU acronym', () => {
-    const candidate = parseReuProgramPage(mathSummerHtml, mathUrl, 'Yale Mathematics', referenceDate);
+    const candidate = parseReuProgramPage(
+      mathSummerHtml,
+      mathUrl,
+      'Yale Mathematics',
+      referenceDate,
+    );
     expect(candidate).toBeDefined();
     expect(candidate?.title).toBe('Summer Undergraduate Math Research at Yale');
     expect(candidate?.competitionType).toBe('Summer Undergraduate Research Program');
@@ -135,7 +140,12 @@ describe('candidateToObservations classification', () => {
   });
 
   it('classifies a program that matches admitted students with mentors as DIRECT_FACULTY_MATCHING', () => {
-    const candidate = parseReuProgramPage(mathSummerHtml, mathUrl, 'Yale Mathematics', referenceDate)!;
+    const candidate = parseReuProgramPage(
+      mathSummerHtml,
+      mathUrl,
+      'Yale Mathematics',
+      referenceDate,
+    )!;
     const observations = candidateToObservations(candidate);
     const byField = (field: string) => observations.find((o) => o.field === field)?.value;
     expect(byField('programCategory')).toBe('SUMMER_RESEARCH_PROGRAM');

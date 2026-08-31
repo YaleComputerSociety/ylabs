@@ -52,11 +52,11 @@ export const relationshipTypeLabel = (relationshipType?: string | null): string 
 export const isFacultyResearchEntity = (entity?: ResearchEntityCopyInput | null): boolean =>
   Boolean(
     entity &&
-      (entity.kind === 'individual' ||
-        entity.kind === 'solo' ||
-        entity.entityType === 'FACULTY_RESEARCH' ||
-        entity.entityType === 'FACULTY_RESEARCH_AREA' ||
-        entity.entityType === 'INDIVIDUAL_RESEARCH'),
+    (entity.kind === 'individual' ||
+      entity.kind === 'solo' ||
+      entity.entityType === 'FACULTY_RESEARCH' ||
+      entity.entityType === 'FACULTY_RESEARCH_AREA' ||
+      entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
 
 export const researchEntityDisplayName = (entity?: ResearchEntityCopyInput | null): string =>
@@ -80,7 +80,9 @@ export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): s
   isFacultyResearchEntity(entity) ? 'research website' : `${researchHomeLabel(entity)} website`;
 
 export const researchWebsiteCtaLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  isFacultyResearchEntity(entity) ? 'Visit research website' : `Visit ${researchWebsiteLabel(entity)}`;
+  isFacultyResearchEntity(entity)
+    ? 'Visit research website'
+    : `Visit ${researchWebsiteLabel(entity)}`;
 
 export const researchStructureLabel = (entity?: ResearchEntityCopyInput | null): string =>
   isFacultyResearchEntity(entity) ? 'faculty research profile' : researchHomeLabel(entity);
@@ -149,7 +151,10 @@ export const stripLeadingPageChrome = (value: string): string => {
 };
 
 const capitalizeSentenceStarts = (value: string): string =>
-  value.replace(/(^|[.!?]\s+)([a-z])/g, (_match, lead: string, letter: string) => lead + letter.toUpperCase());
+  value.replace(
+    /(^|[.!?]\s+)([a-z])/g,
+    (_match, lead: string, letter: string) => lead + letter.toUpperCase(),
+  );
 
 const IRREGULAR_THIRD_PERSON_SINGULAR_VERBS: Record<string, string> = {
   have: 'has',
@@ -176,7 +181,13 @@ const COMPOUND_PREDICATE_AFTER_PRONOUN =
 const neutralizeCompoundPredicateAgreement = (value: string): string =>
   value.replace(
     COMPOUND_PREDICATE_AFTER_PRONOUN,
-    (_match, firstVerb: string, middleVerbs: string, oxfordComma: string | undefined, lastVerb: string) =>
+    (
+      _match,
+      firstVerb: string,
+      middleVerbs: string,
+      oxfordComma: string | undefined,
+      lastVerb: string,
+    ) =>
       `this research ${toThirdPersonSingularVerb(firstVerb)}${conjugateCompoundPredicateVerbList(middleVerbs)}${oxfordComma || ''} and ${toThirdPersonSingularVerb(lastVerb)}`,
   );
 
@@ -185,11 +196,26 @@ export const neutralizeFirstPersonResearchCopy = (value: string): string =>
     neutralizeCompoundPredicateAgreement(value)
       .replace(/\bIn the (?:laboratory|lab),?\s+we\s+study\b/gi, 'this research studies')
       .replace(/\bIn the (?:laboratory|lab),?\s+we\s+investigate\b/gi, 'this research investigates')
-      .replace(/\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+is\s+focused\s+on\b/gi, 'this research is focused on')
-      .replace(/\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+focuses\s+on\b/gi, 'this research focuses on')
-      .replace(/\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+centers\s+on\b/gi, 'this research centers on')
-      .replace(/\bThe projects in (?:our|the)\s+(?:lab|laboratory)\s+have\s+focused\s+on\b/gi, 'this research has focused on')
-      .replace(/\bThe projects in (?:our|the)\s+(?:lab|laboratory)\s+focus\s+on\b/gi, 'this research focuses on')
+      .replace(
+        /\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+is\s+focused\s+on\b/gi,
+        'this research is focused on',
+      )
+      .replace(
+        /\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+focuses\s+on\b/gi,
+        'this research focuses on',
+      )
+      .replace(
+        /\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+centers\s+on\b/gi,
+        'this research centers on',
+      )
+      .replace(
+        /\bThe projects in (?:our|the)\s+(?:lab|laboratory)\s+have\s+focused\s+on\b/gi,
+        'this research has focused on',
+      )
+      .replace(
+        /\bThe projects in (?:our|the)\s+(?:lab|laboratory)\s+focus\s+on\b/gi,
+        'this research focuses on',
+      )
       .replace(/\bmy research\b/gi, 'this research')
       .replace(/\bmy lab(?:'|’)?s?\b/gi, 'this research')
       .replace(/\bmy work\b/gi, 'this research')
@@ -249,10 +275,7 @@ export const sanitizeFacultyResearchCopy = (
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+investigates\b/i,
       `${possessive} research investigates`,
     )
-    .replace(
-      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i,
-      `${possessive} research studies`,
-    )
+    .replace(/^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i, `${possessive} research studies`)
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+is\s+connected\s+to\b/i,
       `${possessive} research is connected to`,
@@ -268,16 +291,25 @@ export const sanitizeFacultyResearchCopy = (
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
+      '$1 research focuses on',
+    )
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu, '$1 research investigates')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
+      '$1 research investigates',
+    )
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g, '$1 research investigates')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g, '$1 research examines')
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
+      '$1 research examines',
+    )
     .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
     .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
     .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')

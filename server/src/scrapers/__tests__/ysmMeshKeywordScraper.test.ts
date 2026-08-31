@@ -362,12 +362,12 @@ describe('buildYsmMeshCandidateMatch', () => {
   it('drops the empty-areas restriction when explicit only targets are provided', () => {
     const match = buildYsmMeshCandidateMatch(['ysm-riverstone']);
     const and = (match.$and || []) as Record<string, unknown>[];
-    const hasEmptyAreasClause = and.some(
-      (clause) => JSON.stringify(clause).includes('researchAreas'),
+    const hasEmptyAreasClause = and.some((clause) =>
+      JSON.stringify(clause).includes('researchAreas'),
     );
     const hasIdentityClause = and.some((clause) =>
-      ((clause as { $or?: Record<string, unknown>[] }).$or || []).some(
-        (inner) => (inner as { slug?: { $in?: string[] } }).slug?.$in?.includes('ysm-riverstone'),
+      ((clause as { $or?: Record<string, unknown>[] }).$or || []).some((inner) =>
+        (inner as { slug?: { $in?: string[] } }).slug?.$in?.includes('ysm-riverstone'),
       ),
     );
     expect(hasEmptyAreasClause).toBe(false);
@@ -642,6 +642,8 @@ describe('selectYsmLeadProfileUrls', () => {
   });
 
   it('returns an empty list when no valid YSM profile url exists', () => {
-    expect(selectYsmLeadProfileUrls([{ rosterProvenance: {} }], [{ profileLinks: [] }])).toEqual([]);
+    expect(selectYsmLeadProfileUrls([{ rosterProvenance: {} }], [{ profileLinks: [] }])).toEqual(
+      [],
+    );
   });
 });

@@ -454,7 +454,8 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'ResearchArea (legacy physical name)',
     group: 'legacy-residue',
     phase: 0,
-    target: 'research_areas (the canonical physical name); TaxonomyTerm is a separate retained registry, not this collection',
+    target:
+      'research_areas (the canonical physical name); TaxonomyTerm is a separate retained registry, not this collection',
     expectPresent: false,
   },
   {

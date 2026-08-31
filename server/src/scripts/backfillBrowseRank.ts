@@ -92,7 +92,9 @@ export async function runBrowseRankBackfill(options: {
   limit?: number;
   batchSize: number;
 }): Promise<BrowseRankBackfillResult> {
-  const query = ResearchEntity.find({ archived: { $ne: true } }).select('_id name').sort({ _id: 1 });
+  const query = ResearchEntity.find({ archived: { $ne: true } })
+    .select('_id name')
+    .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
   const entities = (await query.lean()) as Array<{ _id: any; name?: string }>;
   const nameById = new Map(entities.map((e) => [String(e._id), e.name]));

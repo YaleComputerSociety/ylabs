@@ -54,7 +54,10 @@ describe('researchEntityCopy', () => {
       researchEntityTitle({ name: 'Scott Miller Research', entityType: 'FACULTY_RESEARCH_AREA' }),
     ).toBe('Scott Miller');
     expect(
-      researchEntityTitle({ name: 'Claudia Valeggia - Research', entityType: 'INDIVIDUAL_RESEARCH' }),
+      researchEntityTitle({
+        name: 'Claudia Valeggia - Research',
+        entityType: 'INDIVIDUAL_RESEARCH',
+      }),
     ).toBe('Claudia Valeggia');
   });
 
@@ -69,9 +72,9 @@ describe('researchEntityCopy', () => {
   });
 
   it('leaves non-faculty research-home titles untouched', () => {
-    expect(
-      researchEntityTitle({ name: 'Center for Genomic Research', entityType: 'CENTER' }),
-    ).toBe('Center for Genomic Research');
+    expect(researchEntityTitle({ name: 'Center for Genomic Research', entityType: 'CENTER' })).toBe(
+      'Center for Genomic Research',
+    );
   });
 
   it('keeps lab labels for real lab entities', () => {
@@ -138,7 +141,11 @@ describe('researchEntityCopy', () => {
   });
 
   it('falls back to the stored kind for a retired entityType', () => {
-    const retired = { name: 'Example Collections Program', kind: 'initiative', entityType: 'COLLECTIONS_INITIATIVE' };
+    const retired = {
+      name: 'Example Collections Program',
+      kind: 'initiative',
+      entityType: 'COLLECTIONS_INITIATIVE',
+    };
 
     expect(entityKindLabel(retired)).toBe('Initiative');
     expect(researchWebsiteLabel(retired)).toBe('initiative website');
@@ -252,7 +259,11 @@ describe('sanitizeResearchHomeSelfReferenceCopy', () => {
   it('leaves real lab and faculty-research copy untouched', () => {
     const copy = 'The lab studies neurons. The lab offers rotations.';
     expect(
-      sanitizeResearchHomeSelfReferenceCopy(copy, { name: 'Smith Lab', kind: 'lab', entityType: 'LAB' }),
+      sanitizeResearchHomeSelfReferenceCopy(copy, {
+        name: 'Smith Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+      }),
     ).toBe(copy);
     expect(
       sanitizeResearchHomeSelfReferenceCopy(copy, {
@@ -292,9 +303,9 @@ describe('neutralizeFirstPersonResearchCopy', () => {
     expect(
       neutralizeFirstPersonResearchCopy('I am an isotope geochemist who models climate.'),
     ).toBe('This researcher is an isotope geochemist who models climate.');
-    expect(
-      neutralizeFirstPersonResearchCopy('Broadly, I am a modeler interested in oceans.'),
-    ).toBe('Broadly, this researcher is a modeler interested in oceans.');
+    expect(neutralizeFirstPersonResearchCopy('Broadly, I am a modeler interested in oceans.')).toBe(
+      'Broadly, this researcher is a modeler interested in oceans.',
+    );
     expect(neutralizeFirstPersonResearchCopy('I study aesthetic objects.')).toBe(
       'This research studies aesthetic objects.',
     );
@@ -322,9 +333,9 @@ describe('neutralizeFirstPersonResearchCopy', () => {
     expect(
       neutralizeFirstPersonResearchCopy('We develop and apply electronic structure methods.'),
     ).toBe('This research develops and applies electronic structure methods.');
-    expect(neutralizeFirstPersonResearchCopy('We investigate and characterize novel materials.')).toBe(
-      'This research investigates and characterizes novel materials.',
-    );
+    expect(
+      neutralizeFirstPersonResearchCopy('We investigate and characterize novel materials.'),
+    ).toBe('This research investigates and characterizes novel materials.');
     expect(neutralizeFirstPersonResearchCopy('I design, build, and test robotic systems.')).toBe(
       'This research designs, builds, and tests robotic systems.',
     );

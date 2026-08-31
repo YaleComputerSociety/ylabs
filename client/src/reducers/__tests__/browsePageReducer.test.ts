@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  browsePageReducer,
-  createInitialBrowsePageState,
-} from '../browsePageReducer';
+import { browsePageReducer, createInitialBrowsePageState } from '../browsePageReducer';
 
 interface SampleItem {
   id: string;

@@ -70,7 +70,7 @@ describe('isNihNsfPiCenterLabConflation', () => {
 });
 
 describe('planNihNsfPiCenterLabConflationRepair', () => {
-  it('reverts entityType to LAB and regrounds the description in the PI\'s own grant abstract', () => {
+  it("reverts entityType to LAB and regrounds the description in the PI's own grant abstract", () => {
     const plan = planNihNsfPiCenterLabConflationRepair(
       {
         id: 'entity-1',
@@ -79,8 +79,10 @@ describe('planNihNsfPiCenterLabConflationRepair', () => {
         kind: 'lab',
         entityType: 'CENTER',
         websiteUrl: 'https://medicine.yale.edu/internal-medicine/livercenter/',
-        fullDescription: 'The Yale Liver Center is one of 17 Digestive Diseases Research Core Centers.',
-        shortDescription: 'The Yale Liver Center focuses on liver structure, function, and disease.',
+        fullDescription:
+          'The Yale Liver Center is one of 17 Digestive Diseases Research Core Centers.',
+        shortDescription:
+          'The Yale Liver Center focuses on liver structure, function, and disease.',
         researchAreas: ['Liver Disease', 'Calcium Signaling', 'Hepatology'],
         recentGrants: [
           {
@@ -100,7 +102,9 @@ describe('planNihNsfPiCenterLabConflationRepair', () => {
     // The card short is grounded in curated researchAreas, never the full grant
     // abstract, so the regrounded lab clears the card bar instead of stalling at
     // missing_card_description.
-    expect(plan?.set.shortDescription).toBe('Studies Liver Disease, Calcium Signaling, and Hepatology.');
+    expect(plan?.set.shortDescription).toBe(
+      'Studies Liver Disease, Calcium Signaling, and Hepatology.',
+    );
     expect(plan?.set.shortDescription).not.toBe(plan?.fullDescriptionAfter);
     expect(plan?.unset).toMatchObject({ website: '', websiteUrl: '', displayName: '' });
     expect(plan?.unset.fullDescription).toBeUndefined();
@@ -165,7 +169,13 @@ describe('planNihNsfPiCenterLabConflationRepair', () => {
   it('returns null for an entity that is not a conflation', () => {
     expect(
       planNihNsfPiCenterLabConflationRepair(
-        { id: 'entity-2', slug: 'nih-pi-someone', name: 'Someone Lab', kind: 'lab', entityType: 'LAB' },
+        {
+          id: 'entity-2',
+          slug: 'nih-pi-someone',
+          name: 'Someone Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+        },
         now,
       ),
     ).toBeNull();

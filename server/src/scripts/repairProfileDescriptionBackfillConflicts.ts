@@ -5,10 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
-import {
-  resolveField,
-  type ResolverObservation,
-} from '../scrapers/confidenceResolver';
+import { resolveField, type ResolverObservation } from '../scrapers/confidenceResolver';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -160,7 +157,9 @@ export function assertRepairProfileDescriptionBackfillConflictsApplyAllowed(
     throw new Error('--limit is required when --apply is set.');
   }
   if (plannedSupersedeObservations > args.maxApply) {
-    throw new Error(`Apply would supersede ${plannedSupersedeObservations} rows, above --max-apply.`);
+    throw new Error(
+      `Apply would supersede ${plannedSupersedeObservations} rows, above --max-apply.`,
+    );
   }
 }
 
@@ -357,10 +356,7 @@ async function main() {
     (sum, plan) => sum + plan.supersedeObservationIds.length,
     0,
   );
-  assertRepairProfileDescriptionBackfillConflictsApplyAllowed(
-    args,
-    plannedSupersedeObservations,
-  );
+  assertRepairProfileDescriptionBackfillConflictsApplyAllowed(args, plannedSupersedeObservations);
   const applied = args.apply ? await applyPlans(plans) : [];
 
   const report = {

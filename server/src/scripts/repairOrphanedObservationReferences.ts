@@ -190,9 +190,7 @@ function isArchivedOwner(collection: string, owner: Record<string, unknown>): bo
   if (collection === 'observations') {
     return owner.superseded === true || Boolean(record(owner.rollback).rolledBackAt);
   }
-  return (
-    owner.archived === true || Boolean(stringValue(record(owner.suppression).reason))
-  );
+  return owner.archived === true || Boolean(stringValue(record(owner.suppression).reason));
 }
 
 function ownerResearchEntityId(owner: Record<string, unknown>): string | undefined {

@@ -80,7 +80,10 @@ describe('descriptionOpensWithDeceasedLifespan', () => {
 
   it('does not fire when the range is not a plausible human lifespan', () => {
     expect(
-      descriptionOpensWithDeceasedLifespan('Founded 2015-2020, the program supports students.', YEAR),
+      descriptionOpensWithDeceasedLifespan(
+        'Founded 2015-2020, the program supports students.',
+        YEAR,
+      ),
     ).toBe(false);
   });
 
@@ -109,9 +112,9 @@ describe('researchEntityHasDeceasedLead', () => {
   });
 
   it('flags an entity whose display name itself carries a lifespan', () => {
-    expect(
-      researchEntityHasDeceasedLead({ displayName: 'Pierre Demarque 1932-2025' }, YEAR),
-    ).toBe(true);
+    expect(researchEntityHasDeceasedLead({ displayName: 'Pierre Demarque 1932-2025' }, YEAR)).toBe(
+      true,
+    );
   });
 
   it('does not flag an ordinary active lab', () => {

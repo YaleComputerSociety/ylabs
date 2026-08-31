@@ -14,8 +14,8 @@ const NotFound = () => {
           We couldn't find that Yale Research page
         </h1>
         <p className="mb-8 text-slate-600">
-          The link may be old, or the research profile may have moved. Explore Research is the
-          best place to search for a lab, program, faculty project, or pathway again.
+          The link may be old, or the research profile may have moved. Explore Research is the best
+          place to search for a lab, program, faculty project, or pathway again.
         </p>
         <Link
           to="/research"

@@ -1827,48 +1827,54 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
     uniqueViewers: number;
   }>;
   const topEntityIdsFor = (entityType: string): string[] =>
-    topEntitiesRaw.filter((entity) => entity.entityType === entityType).map((entity) => entity.entityId);
-  const [topResearchEntityDocs, topFellowshipDocs, topProfileDocs] =
-    await Promise.all([
-      topEntityIdsFor('research_entity').length
-        ? ResearchEntity.find({
-            _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('research_entity')) },
+    topEntitiesRaw
+      .filter((entity) => entity.entityType === entityType)
+      .map((entity) => entity.entityId);
+  const [topResearchEntityDocs, topFellowshipDocs, topProfileDocs] = await Promise.all([
+    topEntityIdsFor('research_entity').length
+      ? ResearchEntity.find({
+          _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('research_entity')) },
+        })
+          .select('name displayName slug')
+          .lean()
+      : Promise.resolve([]),
+    topEntityIdsFor('fellowship').length
+      ? Fellowship.find({ _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('fellowship')) } })
+          .select('title')
+          .lean()
+      : Promise.resolve([]),
+    topEntityIdsFor('profile').length
+      ? (async () => {
+          const accounts = await Account.find({ netid: { $in: topEntityIdsFor('profile') } })
+            .select('netid _id')
+            .lean();
+          const netidByAccountId = new Map(
+            accounts.map((account: any) => [String(account._id), account.netid] as const),
+          );
+          const researchers = await Researcher.find({
+            accountId: { $in: accounts.map((account: any) => account._id) },
           })
-            .select('name displayName slug')
-            .lean()
-        : Promise.resolve([]),
-      topEntityIdsFor('fellowship').length
-        ? Fellowship.find({ _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('fellowship')) } })
-            .select('title')
-            .lean()
-        : Promise.resolve([]),
-      topEntityIdsFor('profile').length
-        ? (async () => {
-            const accounts = await Account.find({ netid: { $in: topEntityIdsFor('profile') } })
-              .select('netid _id')
-              .lean();
-            const netidByAccountId = new Map(
-              accounts.map((account: any) => [String(account._id), account.netid] as const),
-            );
-            const researchers = await Researcher.find({
-              accountId: { $in: accounts.map((account: any) => account._id) },
-            })
-              .select('accountId displayName')
-              .lean();
-            return researchers
-              .map((researcher: any) => ({
-                netid: netidByAccountId.get(String(researcher.accountId)),
-                fname: researcher.displayName,
-                lname: '',
-              }))
-              .filter((row) => Boolean(row.netid));
-          })()
-        : Promise.resolve([]),
-    ]);
+            .select('accountId displayName')
+            .lean();
+          return researchers
+            .map((researcher: any) => ({
+              netid: netidByAccountId.get(String(researcher.accountId)),
+              fname: researcher.displayName,
+              lname: '',
+            }))
+            .filter((row) => Boolean(row.netid));
+        })()
+      : Promise.resolve([]),
+  ]);
   const researchEntityById = new Map(
-    (topResearchEntityDocs as Array<{ _id: unknown; name?: string; displayName?: string; slug?: string }>).map(
-      (doc) => [String(doc._id), doc] as const,
-    ),
+    (
+      topResearchEntityDocs as Array<{
+        _id: unknown;
+        name?: string;
+        displayName?: string;
+        slug?: string;
+      }>
+    ).map((doc) => [String(doc._id), doc] as const),
   );
   const fellowshipTitleById = new Map(
     (topFellowshipDocs as Array<{ _id: unknown; title?: string }>).map(

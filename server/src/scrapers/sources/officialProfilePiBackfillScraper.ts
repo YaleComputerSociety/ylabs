@@ -1664,7 +1664,6 @@ function nameMatchesEntity(displayName: string, entity: Record<string, any>): bo
   return entitySlug.includes(nameParts[0]) && entitySlug.includes(nameParts[nameParts.length - 1]);
 }
 
-
 /**
  * Single-discipline Yale profile hosts whose guessed match must be
  * corroborated by the entity's own recorded school/department text. Each
@@ -2111,7 +2110,11 @@ function shortOfficialProfileBio(value: string): string {
 
   const listParts = text
     .split(',')
-    .map((part) => textValue(part).replace(/[.;:]+$/g, '').replace(/^(?:and|or)\s+/i, ''))
+    .map((part) =>
+      textValue(part)
+        .replace(/[.;:]+$/g, '')
+        .replace(/^(?:and|or)\s+/i, ''),
+    )
     .filter((part) => part.length >= 8);
   if (!/[.!?]/.test(text) && listParts.length >= 3) {
     const lead = listParts.slice(0, 3);
@@ -2204,10 +2207,9 @@ function entityDepartmentsAreSchoolPollution(
 ): boolean {
   if (departments.length === 0) return true;
   const schoolValues = new Set(
-    uniqueStrings([
-      entity.school,
-      ...(Array.isArray(entity.schools) ? entity.schools : []),
-    ]).map((value) => value.toLowerCase()),
+    uniqueStrings([entity.school, ...(Array.isArray(entity.schools) ? entity.schools : [])]).map(
+      (value) => value.toLowerCase(),
+    ),
   );
   if (schoolValues.size === 0) return false;
   return departments.every((department) => schoolValues.has(department.toLowerCase()));

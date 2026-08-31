@@ -289,7 +289,11 @@ export function parseFundDetailPage(
   const bodyText = cleanText(root.text());
   const lines = fieldLines($, root);
   const description = extractDescription($, root);
-  const eligibility = labelValueFromLines(lines, ['eligibility', 'who can apply', 'who is eligible']);
+  const eligibility = labelValueFromLines(lines, [
+    'eligibility',
+    'who can apply',
+    'who is eligible',
+  ]);
   const sponsoringOrganization = labelValueFromLines(lines, [
     'sponsoring organization',
     'sponsor',

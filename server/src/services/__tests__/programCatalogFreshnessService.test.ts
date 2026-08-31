@@ -33,7 +33,11 @@ describe('computeCatalogFreshness', () => {
           sourceKey: `office:${index % 3}`,
         }),
       ),
-      record({ isAcceptingApplications: true, deadline: FUTURE_DEADLINE, sourceKey: 'office:live' }),
+      record({
+        isAcceptingApplications: true,
+        deadline: FUTURE_DEADLINE,
+        sourceKey: 'office:live',
+      }),
     ];
 
     const report = computeCatalogFreshness(staleCorpus, NOW);
@@ -92,10 +96,18 @@ describe('computeCatalogFreshness', () => {
   it('attributes staleness to contributing sourceKeys, ranked by past-deadline count', () => {
     const corpus = [
       ...repeat(18, () =>
-        record({ isAcceptingApplications: true, deadline: PAST_DEADLINE, sourceKey: 'stale-heavy' }),
+        record({
+          isAcceptingApplications: true,
+          deadline: PAST_DEADLINE,
+          sourceKey: 'stale-heavy',
+        }),
       ),
       ...repeat(5, () =>
-        record({ isAcceptingApplications: true, deadline: PAST_DEADLINE, sourceKey: 'stale-light' }),
+        record({
+          isAcceptingApplications: true,
+          deadline: PAST_DEADLINE,
+          sourceKey: 'stale-light',
+        }),
       ),
       ...repeat(2, () =>
         record({ isAcceptingApplications: true, deadline: FUTURE_DEADLINE, sourceKey: 'healthy' }),
@@ -106,7 +118,11 @@ describe('computeCatalogFreshness', () => {
 
     expect(report.status).toBe('stale');
     expect(report.staleSourceKeys.map((s) => s.sourceKey)).toEqual(['stale-heavy', 'stale-light']);
-    expect(report.staleSourceKeys[0]).toMatchObject({ visible: 18, accepting: 0, pastDeadline: 18 });
+    expect(report.staleSourceKeys[0]).toMatchObject({
+      visible: 18,
+      accepting: 0,
+      pastDeadline: 18,
+    });
   });
 
   it('buckets records with no sourceKey under an unattributed key', () => {

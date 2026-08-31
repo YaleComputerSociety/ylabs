@@ -35,9 +35,9 @@ const getLocalAdminDevLoginUrl = () => {
     return null;
   }
 
-  return buildApiUrl(`/dev-login?userType=admin&redirect=${encodeURIComponent(
-    getSafeLocalAdminRedirectTarget(),
-  )}`);
+  return buildApiUrl(
+    `/dev-login?userType=admin&redirect=${encodeURIComponent(getSafeLocalAdminRedirectTarget())}`,
+  );
 };
 
 const AdminRoute = ({ Component }: AdminRouteProps) => {
@@ -45,11 +45,7 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
   const localAdminDevLoginUrl = getLocalAdminDevLoginUrl();
 
   useEffect(() => {
-    if (
-      !isLoading &&
-      localAdminDevLoginUrl &&
-      (!isAuthenticated || (user && !user.isAdmin))
-    ) {
+    if (!isLoading && localAdminDevLoginUrl && (!isAuthenticated || (user && !user.isAdmin))) {
       window.location.assign(localAdminDevLoginUrl);
     }
   }, [isAuthenticated, isLoading, localAdminDevLoginUrl, user]);

@@ -54,8 +54,14 @@ describe('Account-backed auth spine (integration)', () => {
   });
 
   it('is idempotent across logins: one row, refreshed lastLoginAt, original email kept', async () => {
-    const first = await recordAccountLogin({ netid: 'planner1', email: 'planner1@example.invalid' });
-    const second = await recordAccountLogin({ netid: 'planner1', email: 'ignored@example.invalid' });
+    const first = await recordAccountLogin({
+      netid: 'planner1',
+      email: 'planner1@example.invalid',
+    });
+    const second = await recordAccountLogin({
+      netid: 'planner1',
+      email: 'ignored@example.invalid',
+    });
 
     expect(await Account.countDocuments({ netid: 'planner1' })).toBe(1);
     expect(second.email).toBe('planner1@example.invalid');

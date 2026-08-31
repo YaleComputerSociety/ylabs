@@ -14,10 +14,7 @@
  */
 import { Fellowship } from '../types/types';
 import { fellowshipFutureDeadlineDate } from './calendarExport';
-import {
-  DEFAULT_RESEARCH_PLAN_STAGE,
-  normalizeResearchPlanStage,
-} from './researchPlanStages';
+import { DEFAULT_RESEARCH_PLAN_STAGE, normalizeResearchPlanStage } from './researchPlanStages';
 
 export const DEFAULT_DEADLINE_WINDOW_DAYS = 14;
 

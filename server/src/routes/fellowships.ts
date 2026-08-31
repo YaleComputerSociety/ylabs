@@ -39,7 +39,9 @@ const logFellowshipEvent = (eventType: AnalyticsEventType) => {
             metadata: {
               entityType: 'fellowship',
             },
-          }).catch((err: unknown) => console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)));
+          }).catch((err: unknown) =>
+            console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)),
+          );
         }
       }
 

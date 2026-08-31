@@ -38,7 +38,7 @@ describe('sanitizeMongo', () => {
       },
       query: {
         page: '1',
-        '$ne': 'admin',
+        $ne: 'admin',
         'sort.field': 'createdAt',
       },
     });

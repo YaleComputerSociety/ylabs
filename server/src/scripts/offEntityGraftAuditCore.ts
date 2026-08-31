@@ -46,7 +46,7 @@ export const OFF_ENTITY_GRAFT_SYSTEM_PROMPT = [
   'You are judging attribution, not writing. You are shown one directory record and the description that record currently serves to students. Decide what research subject the description names, and whose research it is.',
   'researchSubject: name the subject in your own words, as specifically as the text supports. Use concrete subject matter: the system, organism, disease, material, phenomenon, method, or question. Return an empty string if the text names no subject. Prose that states only ambition, values, reputation, scale, career history, logistics, navigation, or a figure caption names no subject.',
   'subjectScope: use this_entity when the description describes the research of exactly the record named in the user message. Use parent_org when it describes a department, school, hospital, institute, or center that merely CONTAINS the record; a paragraph introducing "The Center for Outcomes Research and Evaluation (CORE)" is parent_org when the record is an individual faculty member who works there, and a paragraph describing a different core facility is parent_org when the record is this core facility. Use unclear when you cannot tell.',
-  'A record named after a person is a person\'s record whatever type label it carries. A person\'s own biography or research statement on their own record is this_entity, not parent_org.',
+  "A record named after a person is a person's record whatever type label it carries. A person's own biography or research statement on their own record is this_entity, not parent_org.",
   'Return JSON with exactly two fields: researchSubject and subjectScope.',
 ].join('\n\n');
 
@@ -120,7 +120,9 @@ export interface OffEntityGraftJudgement {
  * that does not know, and recording it as a verdict manufactures both false
  * accepts and false rejects out of noise.
  */
-export function judgeOffEntityGraftRuns(runs: readonly OffEntityGraftRunResult[]): OffEntityGraftJudgement {
+export function judgeOffEntityGraftRuns(
+  runs: readonly OffEntityGraftRunResult[],
+): OffEntityGraftJudgement {
   const scopes = runs.map((run) => run.scope);
   const subjects = runs.map((run) => run.subject);
   const distinct = new Set(scopes);
@@ -166,7 +168,10 @@ export function wilsonInterval(count: number, total: number, z = 1.96): Proporti
   };
 }
 
-export const projectedPopulationCount = (interval: ProportionInterval, population: number): {
+export const projectedPopulationCount = (
+  interval: ProportionInterval,
+  population: number,
+): {
   point: number;
   lower: number;
   upper: number;

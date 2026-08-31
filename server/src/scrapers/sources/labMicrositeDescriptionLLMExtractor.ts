@@ -825,7 +825,7 @@ async function defaultCallLLM(input: {
             `Lab: ${safeLabName}`,
             `Source URL: ${safeSourceUrl}`,
             'Return JSON with fullDescription, shortDescription, topics, methods, name.',
-            'fullDescription: copy the page\'s own overview/about/mission prose describing what this research entity studies, verbatim (one or more consecutive sentences, exactly as written). shortDescription: copy a single verbatim sentence that best summarizes the work, or an empty string.',
+            "fullDescription: copy the page's own overview/about/mission prose describing what this research entity studies, verbatim (one or more consecutive sentences, exactly as written). shortDescription: copy a single verbatim sentence that best summarizes the work, or an empty string.",
             'topics and methods: only terms that appear verbatim on the page.',
             'For name, return the research entity\'s own proper or branded name exactly as it appears prominently on the page (for example "The Efficient Computing Lab (ECL)"). If the page only identifies it by the principal investigator\'s personal name, or no clear proper name is stated, return an empty string.',
             safePageText,
@@ -960,9 +960,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     this.cardModel = deps.cardModel || CARD_SYNTHESIS_MODEL;
   }
 
-  private async withSynthesizedCard(
-    observations: ObservationInput[],
-  ): Promise<ObservationInput[]> {
+  private async withSynthesizedCard(observations: ObservationInput[]): Promise<ObservationInput[]> {
     const hasCard = observations.some(
       (observation) => observation.field === 'shortDescription' && textValue(observation.value),
     );
@@ -975,8 +973,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
     const apiKey = this.apiKey;
     const card = await synthesizeGroundedCardDescription({
       fullDescription,
-      callLLM: (llmInput) =>
-        this.callCardLLM({ ...llmInput, apiKey, model: this.cardModel }),
+      callLLM: (llmInput) => this.callCardLLM({ ...llmInput, apiKey, model: this.cardModel }),
     });
     if (!card) return observations;
     return [

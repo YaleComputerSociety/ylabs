@@ -160,12 +160,7 @@ function missingFacultyResearchAreaFacetSignal(entity: Record<string, any>): boo
 // that theory and turned out to publish 144 student-ready pages with no lead, no
 // roster, no affiliated labs, and no contact email, so they were retired (#2202).
 // CORE_FACILITY stays because it routes to labs on 38 of 57 rows.
-const ORGANIZATIONAL_ENTITY_TYPES = new Set([
-  'CENTER',
-  'INSTITUTE',
-  'INITIATIVE',
-  'CORE_FACILITY',
-]);
+const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
 
 /**
  * Organizational research homes (centers, institutes, initiatives, and core

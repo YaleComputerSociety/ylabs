@@ -46,17 +46,18 @@ async function currentValidatorLevels(db: Db): Promise<CurrentValidatorLevelForR
   const infos = (await db
     .listCollections({}, { nameOnly: false })
     .toArray()) as MongoCollectionInfo[];
-  const byName = new Map(infos.filter((info) => desiredNames.has(info.name)).map((info) => [
-    info.name,
-    info,
-  ]));
+  const byName = new Map(
+    infos.filter((info) => desiredNames.has(info.name)).map((info) => [info.name, info]),
+  );
 
   return CANONICAL_MONGO_VALIDATORS.map(({ collectionName }) => {
     const info = byName.get(collectionName);
     return {
       collectionName,
       validationLevel:
-        typeof info?.options?.validationLevel === 'string' ? info.options.validationLevel : undefined,
+        typeof info?.options?.validationLevel === 'string'
+          ? info.options.validationLevel
+          : undefined,
       validationAction:
         typeof info?.options?.validationAction === 'string'
           ? info.options.validationAction

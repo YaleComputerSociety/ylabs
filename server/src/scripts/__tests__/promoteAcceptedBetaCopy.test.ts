@@ -25,7 +25,7 @@ describe('promote accepted Beta copy guards', () => {
       mode: 'dry-run',
       datasetVersion: 'prod-promote-2026-05-29-lane-a-beta-copy',
       restorePoint: '',
-      includeObservations: true,
+      includeObservations: false,
       confirmLane: false,
       confirmProd: false,
     });
@@ -55,9 +55,12 @@ describe('promote accepted Beta copy guards', () => {
     expect(() => assertSafeOptions(allowed)).not.toThrow();
   });
 
-  it('keeps observations in the copy set unless the operator explicitly skips them', () => {
-    expect(parsePromotionOptions([], baseEnv).includeObservations).toBe(true);
+  it('leaves observations out of the copy set unless the operator explicitly opts in', () => {
+    expect(parsePromotionOptions([], baseEnv).includeObservations).toBe(false);
     expect(parsePromotionOptions(['--skip-observations'], baseEnv).includeObservations).toBe(false);
+    expect(parsePromotionOptions(['--include-observations'], baseEnv).includeObservations).toBe(
+      true,
+    );
   });
 
   it('parses output path for review artifacts', () => {
@@ -100,25 +103,35 @@ describe('promote accepted Beta copy guards', () => {
 
   it('keeps launch research activity collections in the Lane A copy allowlist', () => {
     const defaultNames = promotionCollectionNamesForOptions(parsePromotionOptions([], baseEnv));
-    const skipObservationNames = promotionCollectionNamesForOptions(
-      parsePromotionOptions(['--skip-observations'], baseEnv),
+    const includeObservationNames = promotionCollectionNamesForOptions(
+      parsePromotionOptions(['--include-observations'], baseEnv),
     );
 
     expect(defaultNames).toEqual(
       expect.arrayContaining([
+        'research_entities',
         'research_entity_relationships',
-        'faculty_members',
-        'research_scholarly_links',
-        'research_scholarly_attributions',
-        'observations',
+        'research_entity_redirects',
+        'accounts',
+        'researchers',
+        'role_assignments',
+        'org_units',
+        'taxonomy_terms',
       ]),
     );
-    expect(skipObservationNames).toEqual(
-      expect.arrayContaining(['research_scholarly_links', 'research_scholarly_attributions']),
-    );
-    expect(skipObservationNames).not.toContain('observations');
-    expect(defaultNames).not.toContain('papers');
-    expect(defaultNames).not.toContain('paper_authors');
+    expect(defaultNames).not.toContain('observations');
+    expect(includeObservationNames).toContain('observations');
+    for (const retired of [
+      'faculty_members',
+      'research_scholarly_links',
+      'research_scholarly_attributions',
+      'users',
+      'listings',
+      'papers',
+      'paper_authors',
+    ]) {
+      expect(defaultNames).not.toContain(retired);
+    }
   });
 
   it('builds a reviewable dry-run summary without requiring MongoDB connections', () => {
@@ -143,7 +156,7 @@ describe('promote accepted Beta copy guards', () => {
           excludedCount: 0,
         },
         {
-          name: 'users',
+          name: 'accounts',
           category: 'base-support',
           sourceCount: 10,
           sourceCopyCount: 8,
@@ -216,7 +229,7 @@ describe('promote accepted Beta copy guards', () => {
       options,
       [
         {
-          name: 'users',
+          name: 'accounts',
           category: 'base-support',
           sourceCount: 8,
           sourceCopyCount: 8,
@@ -238,7 +251,7 @@ describe('promote accepted Beta copy guards', () => {
       options,
       [
         {
-          name: 'users',
+          name: 'accounts',
           category: 'base-support',
           sourceCount: 10,
           sourceCopyCount: 8,
@@ -263,7 +276,7 @@ describe('promote accepted Beta copy guards', () => {
       options,
       [
         {
-          name: 'users',
+          name: 'accounts',
           category: 'base-support',
           sourceCount: 8,
           sourceCopyCount: 8,

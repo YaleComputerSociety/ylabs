@@ -62,11 +62,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       ...overrides,
     });
 
-  const seedDeptHealth = (
-    runId: string,
-    value: Record<string, unknown>,
-    deptName = 'Physics',
-  ) =>
+  const seedDeptHealth = (runId: string, value: Record<string, unknown>, deptName = 'Physics') =>
     Observation.create({
       entityType: 'departmentRosterHealth',
       entityKey: 'physics',

@@ -51,9 +51,7 @@ describe('launchTrustContract CLI helpers', () => {
     expect(() => parseLaunchTrustContractArgs(['--output=/tmp/launch-trust.txt'])).toThrow(
       /--output must point to a \.json report file/,
     );
-    expect(() => parseLaunchTrustContractArgs(['--source='])).toThrow(
-      /--source requires a value/,
-    );
+    expect(() => parseLaunchTrustContractArgs(['--source='])).toThrow(/--source requires a value/);
     expect(() => parseLaunchTrustContractArgs(['--record-id='])).toThrow(
       /--record-id requires a value/,
     );

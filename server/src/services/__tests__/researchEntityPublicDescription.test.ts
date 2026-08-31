@@ -121,7 +121,8 @@ describe('researchEntityPublicDescription', () => {
         kind: 'lab',
         entityType: 'LAB',
         shortDescription: '',
-        fullDescription: 'Dr. Example Lead is an Assistant Professor of Neuroscience at Yale University.',
+        fullDescription:
+          'Dr. Example Lead is an Assistant Professor of Neuroscience at Yale University.',
         sourceUrls: ['https://example.yale.edu/labs/example'],
       },
       leadMemberNames: ['Example Lead'],

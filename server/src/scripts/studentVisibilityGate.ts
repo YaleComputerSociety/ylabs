@@ -103,7 +103,11 @@ export function assertStudentVisibilityGateApplyConfirmed(
   if (options.mode === 'apply' && options.maxApply === undefined) {
     throw new Error('--max-apply is required when --apply is set for student-visibility:gate.');
   }
-  if (options.mode === 'apply' && changedRecords !== undefined && changedRecords > options.maxApply!) {
+  if (
+    options.mode === 'apply' &&
+    changedRecords !== undefined &&
+    changedRecords > options.maxApply!
+  ) {
     throw new Error(
       `Apply would update visibility for ${changedRecords} changed records, above --max-apply.`,
     );

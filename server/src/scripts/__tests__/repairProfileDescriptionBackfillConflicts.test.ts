@@ -122,9 +122,9 @@ describe('repairProfileDescriptionBackfillConflicts', () => {
     expect(() => parseRepairProfileDescriptionBackfillConflictsArgs(['--limit=1e3'])).toThrow(
       /--limit must be a positive integer/,
     );
-    expect(() =>
-      parseRepairProfileDescriptionBackfillConflictsArgs(['--max-apply=1e3']),
-    ).toThrow(/--max-apply must be a positive integer/);
+    expect(() => parseRepairProfileDescriptionBackfillConflictsArgs(['--max-apply=1e3'])).toThrow(
+      /--max-apply must be a positive integer/,
+    );
     expect(() =>
       parseRepairProfileDescriptionBackfillConflictsArgs([
         '--output',

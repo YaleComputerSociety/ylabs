@@ -282,7 +282,7 @@ Choose one lane before touching production.
 
 #### Lane A: Accepted Beta Copy
 
-Use this when Beta is the accepted production candidate and a fresh parity check confirms Beta already contains every production base record that must be preserved, such as users, listings, departments, fellowships, and research areas.
+Use this when Beta is the accepted production candidate and a fresh parity check confirms Beta already contains every production base record that must be preserved, such as accounts, departments, org units, research areas, and fellowships.
 
 Gate:
 
@@ -293,12 +293,11 @@ Gate:
 5. Rebuild or sync Meilisearch after Mongo copy completes.
 6. Run the smoke checklist before declaring the gate complete.
 
-Minimum copy set for the accepted full Beta posture:
+The copy set is owned by `COPY_COLLECTIONS` in `server/src/scripts/promoteAcceptedBetaCopy.ts`, and the dry-run artifact lists it with per-collection counts, so read it there rather than from a second list that can drift.
+[`data-refresh-runbook.md`](./data-refresh-runbook.md) explains why each collection is in or out and why `observations` is left behind unless `--include-observations` is passed.
+Base and support collections are only safe to replace after parity is fresh.
 
-- Research discovery: `research_entities`, `role_assignments`, `signals`, and `grants`.
-- Transitional note: until the human-gated `signalConsolidationMigration` is applied, the legacy `access_signals` and `undergraduate_logistics_claims` collections may still hold un-migrated rows and must also be copied and audited alongside `signals`.
-- Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
-- Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, `taxonomy_terms` (the governed research-area canonicalization registry - ingest fails closed to raw areas without it), and `fellowships`.
+Transitional note: until the human-gated `signalConsolidationMigration` is applied, the legacy `access_signals` and `undergraduate_logistics_claims` collections may still hold un-migrated rows and must also be copied and audited alongside `signals`.
 
 Rollback for a bad copy is restoring Production from the pre-copy Atlas backup, then rebuilding or resyncing Meilisearch.
 

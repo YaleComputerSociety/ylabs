@@ -324,9 +324,7 @@ async function main() {
   }
 
   const relinkSlugs = Array.from(
-    new Set(
-      VERIFIED_OBSERVATION_RELINKS.flatMap((r) => [r.fromEntitySlug, r.toEntitySlug]),
-    ),
+    new Set(VERIFIED_OBSERVATION_RELINKS.flatMap((r) => [r.fromEntitySlug, r.toEntitySlug])),
   );
   const relinkEntities = await ResearchEntity.find({ slug: { $in: relinkSlugs } })
     .select({ slug: 1 })

@@ -119,7 +119,9 @@ describe('buildIdentityConfidenceRecords', () => {
     expect(identities).toHaveLength(2);
     expect(identities[0].name).toBe('Ada Lovelace');
     expect(identities[1].name).toBe('Ada Lovelace');
-    expect(identities.every((identity) => identity.ambiguityLabel === 'Possible same-name ambiguity')).toBe(true);
+    expect(
+      identities.every((identity) => identity.ambiguityLabel === 'Possible same-name ambiguity'),
+    ).toBe(true);
     expect(identities[0].identityLabel).toBe('Identity: Yale-confirmed');
     expect(identities[1].identityLabel).toBe('Identity: unresolved');
   });
@@ -146,10 +148,7 @@ describe('buildGroupedSearchResults', () => {
       pathways: [],
     });
 
-    expect(grouped.clusters.map((cluster) => cluster.label)).toEqual([
-      'Neuro A',
-      'Neuro B',
-    ]);
+    expect(grouped.clusters.map((cluster) => cluster.label)).toEqual(['Neuro A', 'Neuro B']);
     expect(grouped.clusters.every((cluster) => cluster.entityCount === 1)).toBe(true);
     expect(grouped.clusters[0].contextLine).toBe('Neuroscience');
   });

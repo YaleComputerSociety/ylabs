@@ -238,8 +238,12 @@ describe('recordToNehGrant', () => {
     expect(grant.participants).toHaveLength(2);
   });
   it('returns null with no app number, title, or participants', () => {
-    expect(recordToNehGrant({ appnumber: '', projecttitle: 'x', participants: 'A [Project Director]' })).toBeNull();
-    expect(recordToNehGrant({ appnumber: 'x', projecttitle: '', participants: 'A [Project Director]' })).toBeNull();
+    expect(
+      recordToNehGrant({ appnumber: '', projecttitle: 'x', participants: 'A [Project Director]' }),
+    ).toBeNull();
+    expect(
+      recordToNehGrant({ appnumber: 'x', projecttitle: '', participants: 'A [Project Director]' }),
+    ).toBeNull();
     expect(recordToNehGrant({ appnumber: 'x', projecttitle: 'y', participants: '' })).toBeNull();
   });
 });

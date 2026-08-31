@@ -29,7 +29,10 @@ function isFacultyResearchAreaShellSlug(slug: string | undefined): boolean {
   return (slug || '').toLowerCase().startsWith('faculty-research-area-');
 }
 
-const FACULTY_RESEARCH_AREA_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'INDIVIDUAL_RESEARCH']);
+const FACULTY_RESEARCH_AREA_ENTITY_TYPES = new Set([
+  'FACULTY_RESEARCH_AREA',
+  'INDIVIDUAL_RESEARCH',
+]);
 
 function isFacultyResearchAreaShellEntity(entity: ScopeEntity | undefined): boolean {
   if (!entity) return false;
@@ -148,13 +151,16 @@ export async function recomputeVisibilityAndResyncCanonicals(
   return { visibilityRecomputed, canonicalEntitiesResynced };
 }
 
-export interface ApplyMergeGroupsWithResyncOptions<TGroup, TResult extends AppliedMergeResult>
-  extends CanonicalRepairHooks {
+export interface ApplyMergeGroupsWithResyncOptions<
+  TGroup,
+  TResult extends AppliedMergeResult,
+> extends CanonicalRepairHooks {
   applyMergeGroup: (group: TGroup) => Promise<TResult>;
 }
 
-export interface ApplyMergeGroupsWithResyncResult<TResult extends AppliedMergeResult>
-  extends CanonicalRepairResult {
+export interface ApplyMergeGroupsWithResyncResult<
+  TResult extends AppliedMergeResult,
+> extends CanonicalRepairResult {
   applied: TResult[];
   canonicalEntityIds: string[];
 }
@@ -181,8 +187,9 @@ export async function applyResearchEntityMergeGroupsWithCanonicalResync<
   return { applied, canonicalEntityIds, ...repair };
 }
 
-export interface RunEponymousFraLabMergeOptions<TResult extends AppliedMergeResult>
-  extends CanonicalRepairHooks {
+export interface RunEponymousFraLabMergeOptions<
+  TResult extends AppliedMergeResult,
+> extends CanonicalRepairHooks {
   apply: boolean;
   applyMergeGroup: (group: ResearchEntityPiDedupeGroup) => Promise<TResult>;
 }

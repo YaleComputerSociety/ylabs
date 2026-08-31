@@ -191,4 +191,3 @@ export const getProgramFilterOptions = async (_request: Request, response: Respo
     response.status(500).json({ error: 'Failed to fetch program filters' });
   }
 };
-

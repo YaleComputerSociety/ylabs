@@ -131,7 +131,11 @@ describe('fellowships surface accessibility', () => {
   it('has no serious or critical axe violations for a populated list', async () => {
     const { container } = renderPage([
       baseFellowship(),
-      baseFellowship({ id: 'f2', title: 'First-Year Summer Research', entryMode: 'APPLY_DIRECTLY' }),
+      baseFellowship({
+        id: 'f2',
+        title: 'First-Year Summer Research',
+        entryMode: 'APPLY_DIRECTLY',
+      }),
     ]);
     await screen.findByText('Summer Research Fellowship');
     await expectNoAxeViolations(container);

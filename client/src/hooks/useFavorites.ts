@@ -40,7 +40,10 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
   },
 };
 
-export const useFavorites = (kind: FavoritesKind, { enabled = true }: { enabled?: boolean } = {}) => {
+export const useFavorites = (
+  kind: FavoritesKind,
+  { enabled = true }: { enabled?: boolean } = {},
+) => {
   const config = ENDPOINTS[kind];
   const [favIds, setFavIds] = useState<string[]>([]);
 

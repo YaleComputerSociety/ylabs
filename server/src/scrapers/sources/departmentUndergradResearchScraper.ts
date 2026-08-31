@@ -75,248 +75,249 @@ export interface DepartmentUndergradResearchScraperDeps {
   fetchHtml?: FetchHtml;
 }
 
-export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradResearchPageConfig[] = [
-  {
-    key: 'chemistry',
-    url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
-    department: 'Chemistry',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Chemistry Undergraduate Research',
-  },
-  {
-    key: 'mcdb',
-    url: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
-    department: 'Molecular, Cellular and Developmental Biology',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Molecular, Cellular and Developmental Biology Undergraduate Research',
-  },
-  {
-    key: 'economics-tobin-ra',
-    url: 'https://economics.yale.edu/undergraduate/tobin-ra/tobin-research-assistantship-application',
-    department: 'Economics',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'structured-opportunity',
-    title: 'Tobin Undergraduate Research Assistantships',
-  },
-  {
-    key: 'psychology',
-    url: 'https://psychology.yale.edu/what-undergraduate-research-opportunities-are-available',
-    department: 'Psychology',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Psychology Undergraduate Research Opportunities',
-  },
-  {
-    key: 'astronomy',
-    url: 'https://astronomy.yale.edu/academics/undergraduate-program/undergraduate-research',
-    department: 'Astronomy',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Astronomy Undergraduate Research',
-  },
-  {
-    key: 'mathematics',
-    url: 'https://math.yale.edu/undergraduates/undergraduate-research',
-    department: 'Mathematics',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Mathematics Undergraduate Research',
-  },
-  {
-    key: 'engineering',
-    url: 'https://engineering.yale.edu/academic-study/undergraduate/research',
-    department: 'Engineering',
-    school: 'Yale School of Engineering & Applied Science',
-    parser: 'general-guidance',
-    title: 'Undergraduate Engineering Research',
-  },
-  {
-    key: 'cognitive-science',
-    url: 'https://cogsci.yale.edu/research/undergraduate-research-opportunities',
-    department: 'Cognitive Science',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Cognitive Science Undergraduate Research Opportunities',
-  },
-  {
-    key: 'eeb',
-    url: 'https://eeb.yale.edu/academics/undergraduate-program/undergraduate-research-opportunities',
-    department: 'Ecology and Evolutionary Biology',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
-  },
-  {
-    key: 'yale-undergraduate-research-science',
-    url: 'https://science.yalecollege.yale.edu/yale-undergraduate-research/research-opportunities',
-    department: 'Science and Quantitative Reasoning Education',
-    school: 'Yale College',
-    parser: 'general-guidance',
-    title: 'Yale Undergraduate Research in Science and Engineering',
-  },
-  {
-    key: 'anthropology',
-    url: 'https://anthropology.yale.edu/undergraduate-program/undergraduate-research-in-anthropology',
-    department: 'Anthropology',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Anthropology Undergraduate Research',
-  },
-  {
-    key: 'earth-planetary-sciences',
-    url: 'https://earth.yale.edu/undergraduate-program',
-    department: 'Earth and Planetary Sciences',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Earth and Planetary Sciences Research Opportunities',
-  },
-  {
-    key: 'political-science',
-    url: 'https://politicalscience.yale.edu/academics/about-undergraduate-program',
-    department: 'Political Science',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Political Science Undergraduate Research Opportunities',
-  },
-  {
-    key: 'history',
-    url: 'https://history.yale.edu/academics/undergraduate-program',
-    department: 'History',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'History Undergraduate Research',
-  },
-  {
-    key: 'neuroscience',
-    url: 'https://neuroscience.yale.edu/research-opportunities',
-    department: 'Neuroscience',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Neuroscience Undergraduate Research Opportunities',
-  },
-  {
-    key: 'molecular-biophysics-biochemistry',
-    url: 'https://mbb.yale.edu/introduction-undergraduate-program',
-    department: 'Molecular Biophysics and Biochemistry',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Molecular Biophysics and Biochemistry Undergraduate Research',
-  },
-  {
-    key: 'linguistics',
-    url: 'https://ling.yale.edu/academics/undergraduate/research-opportunities/linguistics-research-opportunities-yale',
-    department: 'Linguistics',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Linguistics Undergraduate Research Opportunities',
-  },
-  {
-    key: 'computer-science',
-    url: 'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
-    department: 'Computer Science',
-    school: 'Yale School of Engineering & Applied Science',
-    parser: 'structured-opportunity',
-    title: 'Computer Science Research Internship Program',
-  },
-  {
-    key: 'sociology',
-    url: 'https://sociology.yale.edu/undergraduate-program/senior-project',
-    department: 'Sociology',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Sociology Undergraduate Research',
-  },
-  {
-    key: 'biomedical-engineering',
-    url: 'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/undergraduate-study',
-    department: 'Biomedical Engineering',
-    school: 'Yale School of Engineering & Applied Science',
-    parser: 'general-guidance',
-    title: 'Biomedical Engineering Undergraduate Research',
-  },
-  {
-    key: 'statistics-and-data-science',
-    url: 'https://statistics.yale.edu/undergraduates/the-major/49104920-senior-essay',
-    department: 'Statistics and Data Science',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Statistics and Data Science Senior Research',
-  },
-  {
-    key: 'english',
-    url: 'https://english.yale.edu/undergraduate/senior-essay',
-    department: 'English',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'English Senior Essay Research',
-  },
-  {
-    key: 'comparative-literature',
-    url: 'https://complit.yale.edu/undergraduates/the-senior-essay',
-    department: 'Comparative Literature',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Comparative Literature Senior Essay Research',
-  },
-  {
-    key: 'religious-studies',
-    url: 'https://religiousstudies.yale.edu/undergraduate/senior-essay',
-    department: 'Religious Studies',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Religious Studies Senior Essay Research',
-  },
-  {
-    key: 'american-studies',
-    url: 'https://americanstudies.yale.edu/undergraduate-program/senior-year/senior-essay-course-requirements',
-    department: 'American Studies',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'American Studies Senior Essay Research',
-  },
-  {
-    key: 'womens-gender-sexuality-studies',
-    url: 'https://wgss.yale.edu/single-term-senior-essay-instructions-and-registration-form',
-    department: "Women's, Gender, and Sexuality Studies",
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: "Women's, Gender, and Sexuality Studies Senior Essay Research",
-  },
-  {
-    key: 'environmental-studies',
-    url: 'https://evst.yale.edu/evst-senior-essay',
-    department: 'Environmental Studies',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Environmental Studies Senior Essay Research',
-  },
-  {
-    key: 'global-affairs',
-    url: 'https://jackson.yale.edu/faculty-research/undergraduate-capstone-faculty',
-    department: 'Global Affairs',
-    school: 'Jackson School of Global Affairs',
-    parser: 'general-guidance',
-    title: 'Global Affairs Undergraduate Capstone Research',
-  },
-  {
-    key: 'history-of-art',
-    url: 'https://arthistory.yale.edu/undergraduate/senior-essay',
-    department: 'History of Art',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'History of Art Senior Essay Research',
-  },
-  {
-    key: 'film-and-media-studies',
-    url: 'https://filmstudies.yale.edu/undergraduate/senior-requirement',
-    department: 'Film and Media Studies',
-    school: 'Yale Faculty of Arts and Sciences',
-    parser: 'general-guidance',
-    title: 'Film and Media Studies Senior Essay Research',
-  },
-];
+export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradResearchPageConfig[] =
+  [
+    {
+      key: 'chemistry',
+      url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+      department: 'Chemistry',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Chemistry Undergraduate Research',
+    },
+    {
+      key: 'mcdb',
+      url: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+      department: 'Molecular, Cellular and Developmental Biology',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Molecular, Cellular and Developmental Biology Undergraduate Research',
+    },
+    {
+      key: 'economics-tobin-ra',
+      url: 'https://economics.yale.edu/undergraduate/tobin-ra/tobin-research-assistantship-application',
+      department: 'Economics',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'structured-opportunity',
+      title: 'Tobin Undergraduate Research Assistantships',
+    },
+    {
+      key: 'psychology',
+      url: 'https://psychology.yale.edu/what-undergraduate-research-opportunities-are-available',
+      department: 'Psychology',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Psychology Undergraduate Research Opportunities',
+    },
+    {
+      key: 'astronomy',
+      url: 'https://astronomy.yale.edu/academics/undergraduate-program/undergraduate-research',
+      department: 'Astronomy',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Astronomy Undergraduate Research',
+    },
+    {
+      key: 'mathematics',
+      url: 'https://math.yale.edu/undergraduates/undergraduate-research',
+      department: 'Mathematics',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Mathematics Undergraduate Research',
+    },
+    {
+      key: 'engineering',
+      url: 'https://engineering.yale.edu/academic-study/undergraduate/research',
+      department: 'Engineering',
+      school: 'Yale School of Engineering & Applied Science',
+      parser: 'general-guidance',
+      title: 'Undergraduate Engineering Research',
+    },
+    {
+      key: 'cognitive-science',
+      url: 'https://cogsci.yale.edu/research/undergraduate-research-opportunities',
+      department: 'Cognitive Science',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Cognitive Science Undergraduate Research Opportunities',
+    },
+    {
+      key: 'eeb',
+      url: 'https://eeb.yale.edu/academics/undergraduate-program/undergraduate-research-opportunities',
+      department: 'Ecology and Evolutionary Biology',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
+    },
+    {
+      key: 'yale-undergraduate-research-science',
+      url: 'https://science.yalecollege.yale.edu/yale-undergraduate-research/research-opportunities',
+      department: 'Science and Quantitative Reasoning Education',
+      school: 'Yale College',
+      parser: 'general-guidance',
+      title: 'Yale Undergraduate Research in Science and Engineering',
+    },
+    {
+      key: 'anthropology',
+      url: 'https://anthropology.yale.edu/undergraduate-program/undergraduate-research-in-anthropology',
+      department: 'Anthropology',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Anthropology Undergraduate Research',
+    },
+    {
+      key: 'earth-planetary-sciences',
+      url: 'https://earth.yale.edu/undergraduate-program',
+      department: 'Earth and Planetary Sciences',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Earth and Planetary Sciences Research Opportunities',
+    },
+    {
+      key: 'political-science',
+      url: 'https://politicalscience.yale.edu/academics/about-undergraduate-program',
+      department: 'Political Science',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Political Science Undergraduate Research Opportunities',
+    },
+    {
+      key: 'history',
+      url: 'https://history.yale.edu/academics/undergraduate-program',
+      department: 'History',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'History Undergraduate Research',
+    },
+    {
+      key: 'neuroscience',
+      url: 'https://neuroscience.yale.edu/research-opportunities',
+      department: 'Neuroscience',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Neuroscience Undergraduate Research Opportunities',
+    },
+    {
+      key: 'molecular-biophysics-biochemistry',
+      url: 'https://mbb.yale.edu/introduction-undergraduate-program',
+      department: 'Molecular Biophysics and Biochemistry',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Molecular Biophysics and Biochemistry Undergraduate Research',
+    },
+    {
+      key: 'linguistics',
+      url: 'https://ling.yale.edu/academics/undergraduate/research-opportunities/linguistics-research-opportunities-yale',
+      department: 'Linguistics',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Linguistics Undergraduate Research Opportunities',
+    },
+    {
+      key: 'computer-science',
+      url: 'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      department: 'Computer Science',
+      school: 'Yale School of Engineering & Applied Science',
+      parser: 'structured-opportunity',
+      title: 'Computer Science Research Internship Program',
+    },
+    {
+      key: 'sociology',
+      url: 'https://sociology.yale.edu/undergraduate-program/senior-project',
+      department: 'Sociology',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Sociology Undergraduate Research',
+    },
+    {
+      key: 'biomedical-engineering',
+      url: 'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/undergraduate-study',
+      department: 'Biomedical Engineering',
+      school: 'Yale School of Engineering & Applied Science',
+      parser: 'general-guidance',
+      title: 'Biomedical Engineering Undergraduate Research',
+    },
+    {
+      key: 'statistics-and-data-science',
+      url: 'https://statistics.yale.edu/undergraduates/the-major/49104920-senior-essay',
+      department: 'Statistics and Data Science',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Statistics and Data Science Senior Research',
+    },
+    {
+      key: 'english',
+      url: 'https://english.yale.edu/undergraduate/senior-essay',
+      department: 'English',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'English Senior Essay Research',
+    },
+    {
+      key: 'comparative-literature',
+      url: 'https://complit.yale.edu/undergraduates/the-senior-essay',
+      department: 'Comparative Literature',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Comparative Literature Senior Essay Research',
+    },
+    {
+      key: 'religious-studies',
+      url: 'https://religiousstudies.yale.edu/undergraduate/senior-essay',
+      department: 'Religious Studies',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Religious Studies Senior Essay Research',
+    },
+    {
+      key: 'american-studies',
+      url: 'https://americanstudies.yale.edu/undergraduate-program/senior-year/senior-essay-course-requirements',
+      department: 'American Studies',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'American Studies Senior Essay Research',
+    },
+    {
+      key: 'womens-gender-sexuality-studies',
+      url: 'https://wgss.yale.edu/single-term-senior-essay-instructions-and-registration-form',
+      department: "Women's, Gender, and Sexuality Studies",
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: "Women's, Gender, and Sexuality Studies Senior Essay Research",
+    },
+    {
+      key: 'environmental-studies',
+      url: 'https://evst.yale.edu/evst-senior-essay',
+      department: 'Environmental Studies',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Environmental Studies Senior Essay Research',
+    },
+    {
+      key: 'global-affairs',
+      url: 'https://jackson.yale.edu/faculty-research/undergraduate-capstone-faculty',
+      department: 'Global Affairs',
+      school: 'Jackson School of Global Affairs',
+      parser: 'general-guidance',
+      title: 'Global Affairs Undergraduate Capstone Research',
+    },
+    {
+      key: 'history-of-art',
+      url: 'https://arthistory.yale.edu/undergraduate/senior-essay',
+      department: 'History of Art',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'History of Art Senior Essay Research',
+    },
+    {
+      key: 'film-and-media-studies',
+      url: 'https://filmstudies.yale.edu/undergraduate/senior-requirement',
+      department: 'Film and Media Studies',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance',
+      title: 'Film and Media Studies Senior Essay Research',
+    },
+  ];
 
 function normalizeText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -416,8 +417,14 @@ function projectShortDescription(description: string): string | undefined {
 
   const candidates = [
     ...focusCandidates.map((focus) => `Studies ${focus.replace(/[.!?]+$/g, '').trim()}.`),
-    source && !/\b(?:studies|investigates|examines|explores|focuses|develops|uses|employs|researches|analyzes|models|measures|supports)\b/i.test(source)
-      ? `Studies ${source.replace(/[.!?]+$/g, '').trim().replace(/^\w/, (char) => char.toLowerCase())}.`
+    source &&
+    !/\b(?:studies|investigates|examines|explores|focuses|develops|uses|employs|researches|analyzes|models|measures|supports)\b/i.test(
+      source,
+    )
+      ? `Studies ${source
+          .replace(/[.!?]+$/g, '')
+          .trim()
+          .replace(/^\w/, (char) => char.toLowerCase())}.`
       : '',
     deriveShortDescriptionFromFullDescription(description),
   ].filter(Boolean);
@@ -470,8 +477,9 @@ function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | un
       url: absoluteUrl($(node).attr('href'), pageUrl),
     }))
     .filter((link): link is { text: string; url: string } => Boolean(link.url));
-  return links.find((link) => /apply|application|form|qualtrics|survey/i.test(`${link.text} ${link.url}`))
-    ?.url;
+  return links.find((link) =>
+    /apply|application|form|qualtrics|survey/i.test(`${link.text} ${link.url}`),
+  )?.url;
 }
 
 const seniorPathwayPattern =
@@ -615,8 +623,10 @@ function parsePage(
   html: string,
   config: DepartmentUndergradResearchPageConfig,
 ): DepartmentUndergradResearchRecord[] {
-  if (config.parser === 'physics-project-list') return parsePhysicsUndergradResearchPage(html, config);
-  if (config.parser === 'structured-opportunity') return parseStructuredOpportunityPage(html, config);
+  if (config.parser === 'physics-project-list')
+    return parsePhysicsUndergradResearchPage(html, config);
+  if (config.parser === 'structured-opportunity')
+    return parseStructuredOpportunityPage(html, config);
   return parseGeneralDepartmentResearchPage(html, config);
 }
 
@@ -645,17 +655,30 @@ function programRecordToFellowshipObservations(
     { ...base, field: 'programKind', value: classification.programKind },
     { ...base, field: 'entryMode', value: classification.entryMode },
     { ...base, field: 'studentFacingCategory', value: classification.studentFacingCategory },
-    { ...base, field: 'requiresMentorBeforeApply', value: classification.requiresMentorBeforeApply },
+    {
+      ...base,
+      field: 'requiresMentorBeforeApply',
+      value: classification.requiresMentorBeforeApply,
+    },
     { ...base, field: 'mentorMatching', value: classification.mentorMatching },
     { ...base, field: 'undergraduateOnly', value: classification.undergraduateOnly ?? true },
     { ...base, field: 'researchFocused', value: true },
     { ...base, field: 'bestNextStep', value: classification.bestNextStep },
     { ...base, field: 'prepSteps', value: classification.prepSteps },
-    { ...base, field: 'applicationLink', value: record.joinPageUrl || record.websiteUrl || record.sourceUrl },
+    {
+      ...base,
+      field: 'applicationLink',
+      value: record.joinPageUrl || record.websiteUrl || record.sourceUrl,
+    },
     { ...base, field: 'archived', value: false },
   ];
   if (record.contactEmail) {
-    observations.push({ ...base, field: 'contactEmail', value: record.contactEmail, confidenceOverride: 0.75 });
+    observations.push({
+      ...base,
+      field: 'contactEmail',
+      value: record.contactEmail,
+      confidenceOverride: 0.75,
+    });
   }
   return observations;
 }
@@ -704,7 +727,8 @@ export function departmentUndergradResearchRecordsToObservations(
       });
     }
 
-    if (record.contactName) observations.push({ ...base, field: 'contactName', value: record.contactName });
+    if (record.contactName)
+      observations.push({ ...base, field: 'contactName', value: record.contactName });
     if (record.contactEmail) {
       observations.push({
         ...base,
@@ -713,8 +737,10 @@ export function departmentUndergradResearchRecordsToObservations(
         confidenceOverride: 0.75,
       });
     }
-    if (record.contactRole) observations.push({ ...base, field: 'contactRole', value: record.contactRole });
-    if (record.joinPageUrl) observations.push({ ...base, field: 'joinPageUrl', value: record.joinPageUrl });
+    if (record.contactRole)
+      observations.push({ ...base, field: 'contactRole', value: record.contactRole });
+    if (record.joinPageUrl)
+      observations.push({ ...base, field: 'joinPageUrl', value: record.joinPageUrl });
     return observations;
   });
 }

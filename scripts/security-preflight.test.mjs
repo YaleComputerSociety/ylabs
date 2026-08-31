@@ -483,7 +483,7 @@ test('client dynamic internal route segments are encoded before rendering', () =
   assert.match(urlSource, /return encodeURIComponent\(trimmed\)/);
   assert.match(
     researchHomeCardSource,
-    /const primaryProfileUrl = primaryLinkedEntity \? `\/research\/\$\{safeRouteSegment\(primaryLinkedEntity\.slug\)\}` : ''/,
+    /const primaryProfileUrl = primaryLinkedEntity\s*\?\s*`\/research\/\$\{safeRouteSegment\(primaryLinkedEntity\.slug\)\}`\s*:\s*''/,
   );
   assert.doesNotMatch(researchHomeCardSource, /`\/research\/\$\{primaryLinkedEntity\.slug\}`/);
 
@@ -2262,8 +2262,6 @@ test('source health operator commands quote unsafe stored identifiers', () => {
 
 test('identity cleanup report outputs are constrained to safe JSON roots', () => {
   for (const [name, file] of [
-    ['user identity dedupe core', '../server/src/scripts/dedupeUsersByIdentityCore.ts'],
-    ['user email hygiene core', '../server/src/scripts/userEmailHygieneCore.ts'],
     ['beta student analytics core', '../server/src/scripts/clearBetaStudentAnalyticsCore.ts'],
     ['beta student analytics wrapper', '../server/src/scripts/clearBetaStudentAnalytics.ts'],
   ]) {
@@ -3666,7 +3664,7 @@ test('auth callback, check, and logout responses are private no-store', () => {
   );
   assert.match(
     adminRouteSource,
-    /encodeURIComponent\(\s*getSafeLocalAdminRedirectTarget\(\),\s*\)/,
+    /encodeURIComponent\(\s*getSafeLocalAdminRedirectTarget\(\),?\s*\)/,
   );
 });
 

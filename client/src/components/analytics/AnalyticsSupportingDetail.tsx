@@ -427,7 +427,6 @@ const AnalyticsSupportingDetail = ({
         </div>
       </section>
 
-
       <section id="high-impact-diagnostics" className="mb-10">
         <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
           <div>

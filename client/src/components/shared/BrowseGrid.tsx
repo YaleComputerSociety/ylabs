@@ -47,11 +47,13 @@ const BrowseGrid = ({
   const { viewMode } = useContext(UIContext);
   const isCompact = viewMode === 'compact';
   const showLoader = isLoading && items.length > 0;
-  
+
   const loadingLock = React.useRef(false);
   React.useEffect(() => {
     if (!isLoading) {
-      setTimeout(() => { loadingLock.current = false; }, 100);
+      setTimeout(() => {
+        loadingLock.current = false;
+      }, 100);
     } else {
       loadingLock.current = true;
     }
@@ -94,7 +96,7 @@ const BrowseGrid = ({
             ))}
           </div>
         ) : items.length > VIRTUALIZATION_THRESHOLD && !disableVirtualization ? (
-            <Virtuoso
+          <Virtuoso
             useWindowScroll
             data={items}
             increaseViewportBy={600}

@@ -23,9 +23,10 @@ import type { ObservationInput, ScraperContext } from '../types';
 
 const FIXED_NOW = new Date('2026-08-24T00:00:00Z');
 
-function ctxWith(
-  options: Partial<ScraperContext['options']> = {},
-): { ctx: ScraperContext; emitted: ObservationInput[] } {
+function ctxWith(options: Partial<ScraperContext['options']> = {}): {
+  ctx: ScraperContext;
+  emitted: ObservationInput[];
+} {
   const emitted: ObservationInput[] = [];
   const ctx: ScraperContext = {
     scrapeRunId: 'run',
@@ -56,10 +57,7 @@ const SUBAWARD_REPORT: OstiRecord = {
   osti_id: '949875',
   title: 'Model Developments for Improved Emission Scenarios',
   description: 'Integrated assessment modeling.',
-  authors: [
-    'Yang, Zili [Department of Economics, SUNY at Binghamton]',
-    'Nordhaus, William',
-  ],
+  authors: ['Yang, Zili [Department of Economics, SUNY at Binghamton]', 'Nordhaus, William'],
   research_orgs: ['The Research Foundation of SUNY at Binghamton', 'Yale University'],
   doe_contract_number: 'FG02-06ER64180;',
   publication_date: '2025-01-31T00:00:00Z',
@@ -236,7 +234,10 @@ describe('buildResearchGroupObservations', () => {
 });
 
 const safeShell: CanonicalResearchHomeResolution = { status: 'safe-shell' };
-const canonical = (slug: string): CanonicalResearchHomeResolution => ({ status: 'canonical', slug });
+const canonical = (slug: string): CanonicalResearchHomeResolution => ({
+  status: 'canonical',
+  slug,
+});
 
 describe('DoeOstiGrantScraper.run', () => {
   it('attributes Yale reports, drops stale ones, and enriches an existing home', async () => {

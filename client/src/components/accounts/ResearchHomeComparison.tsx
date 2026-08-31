@@ -388,7 +388,10 @@ const ResearchHomeComparison = ({
           <table className="w-full min-w-[640px] border-collapse text-left">
             <thead>
               <tr>
-                <th scope="col" className="w-40 p-3 align-bottom text-xs font-semibold text-gray-500">
+                <th
+                  scope="col"
+                  className="w-40 p-3 align-bottom text-xs font-semibold text-gray-500"
+                >
                   <span className="sr-only">Field</span>
                 </th>
                 {columns.map((column) => (
@@ -428,10 +431,7 @@ const ResearchHomeComparison = ({
                     {row.label}
                   </th>
                   {columns.map((column) => (
-                    <td
-                      key={column.base._id}
-                      className="border-b border-[var(--yr-line)] p-3"
-                    >
+                    <td key={column.base._id} className="border-b border-[var(--yr-line)] p-3">
                       {renderCell(column, row.key)}
                     </td>
                   ))}
@@ -449,10 +449,7 @@ const ResearchHomeComparison = ({
                     const note = (notesByEntityId[column.base._id] || '').trim();
                     const included = includedNoteIds.has(column.base._id) && note;
                     return (
-                      <td
-                        key={column.base._id}
-                        className="border-b border-[var(--yr-line)] p-3"
-                      >
+                      <td key={column.base._id} className="border-b border-[var(--yr-line)] p-3">
                         {included ? (
                           <p className="text-xs italic text-gray-700">{note}</p>
                         ) : (

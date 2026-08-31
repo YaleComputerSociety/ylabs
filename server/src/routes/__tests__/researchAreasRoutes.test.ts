@@ -30,7 +30,9 @@ vi.mock('../../models/researchArea', () => {
   return {
     ResearchArea,
     ResearchField,
-    fieldColorKeys: Object.fromEntries(Object.values(ResearchField).map((field) => [field, 'gray'])),
+    fieldColorKeys: Object.fromEntries(
+      Object.values(ResearchField).map((field) => [field, 'gray']),
+    ),
   };
 });
 
@@ -62,12 +64,12 @@ const invokeMiddleware = async (name: string) => {
 };
 
 const routesByPath = (path: string) =>
-  (router as any).stack.map((layer: any) => layer.route).filter((route: any) => route?.path === path);
+  (router as any).stack
+    .map((layer: any) => layer.route)
+    .filter((route: any) => route?.path === path);
 
 const routeHandlerNames = (route: any): string[] =>
-  (route?.stack || [])
-    .map((layer: any) => layer.handle?.name)
-    .filter(Boolean);
+  (route?.stack || []).map((layer: any) => layer.handle?.name).filter(Boolean);
 
 const invokeRouteHandler = async (path: string, method: string, request: any = {}) => {
   const route = routesByPath(path).find((candidate: any) => candidate.methods?.[method]);
@@ -118,10 +120,7 @@ describe('research area routes', () => {
 
     const { res, next } = await invokeMiddleware('setPrivateResearchAreaCacheHeaders');
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(next).toHaveBeenCalledOnce();
   });
@@ -179,5 +178,4 @@ describe('research area routes', () => {
     });
     expect(mocks.researchAreaFindOne).not.toHaveBeenCalled();
   });
-
 });

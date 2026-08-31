@@ -18,7 +18,10 @@ const CITABLE_ACCESS_SIGNAL_MIN_SCORE = 0.5;
 
 export const isCitableAccessSignal = (signal: DetailSourceSignal): boolean => {
   if ((signal.confidence || '').toUpperCase() === 'LOW') return false;
-  if (typeof signal.confidenceScore === 'number' && signal.confidenceScore < CITABLE_ACCESS_SIGNAL_MIN_SCORE) {
+  if (
+    typeof signal.confidenceScore === 'number' &&
+    signal.confidenceScore < CITABLE_ACCESS_SIGNAL_MIN_SCORE
+  ) {
     return false;
   }
   return true;

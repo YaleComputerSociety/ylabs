@@ -21,9 +21,7 @@ describe('runInferredPiLeadMaterializationBackfill', () => {
   const baseDeps = (
     overrides: Partial<InferredPiLeadMaterializationDeps> = {},
   ): InferredPiLeadMaterializationDeps => ({
-    findEntitiesWithInferredPiObservations: vi
-      .fn()
-      .mockResolvedValue([entity('a'), entity('b')]),
+    findEntitiesWithInferredPiObservations: vi.fn().mockResolvedValue([entity('a'), entity('b')]),
     findEntityIdsWithCurrentLead: vi.fn().mockResolvedValue(new Set(['b'])),
     loadCurrentObservationsForEntity: vi
       .fn()
@@ -40,7 +38,9 @@ describe('runInferredPiLeadMaterializationBackfill', () => {
     expect(report.scanned).toBe(2);
     expect(report.lagging).toBe(1);
     expect(deps.materializeInferredPiLead).not.toHaveBeenCalled();
-    expect(report.rows).toEqual([{ entityId: 'a', entityKey: 'nih-pi-a', disposition: 'pending-apply' }]);
+    expect(report.rows).toEqual([
+      { entityId: 'a', entityKey: 'nih-pi-a', disposition: 'pending-apply' },
+    ]);
     expect(report.tally['pending-apply']).toBe(1);
   });
 

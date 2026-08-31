@@ -102,7 +102,9 @@ Tradeoffs this model accepts:
 - Development must stay representative enough that a passing dry run is trustworthy, so keep the full source list rather than trimming to a tiny subset.
 
 The alternative model runs the full exhaustive sweep on Development and mirrors the accepted result up with `beta:refresh-from-development`.
-Choose it only when running the Yale fetch once and copying the result is worth keeping a second full dataset copy in Development.
+Choose it when running the Yale fetch once and copying the result is worth keeping the swept dataset in Development.
+The mirror no longer implies a second full copy: it leaves the evidence log behind, so it moves about 23,000 documents rather than 436,026.
+See "Observations stay in Development" below for what that costs on the target.
 Phase 1 below documents that optional full Development sweep, and Phase 2 documents the primary Beta release-candidate fetch.
 
 ## Fixed Environment Responsibilities
@@ -118,6 +120,38 @@ The mirror replaces approved research and evidence collections while preserving 
 The tested scraper code may instead be rerun against Beta from the local VPN-connected machine when a source-level refresh is required.
 The local Beta run writes observations only.
 The Beta Render service materializes those observations by run ID and updates its private Meilisearch indexes.
+
+### Observations stay in Development
+
+Every mirror leaves `observations` behind by default, in both directions and on the Beta to Production promotion.
+Pass `--include-observations` to opt in; `--skip-observations` remains accepted and is now the default behavior.
+
+The reason is storage, and it is not theoretical.
+All three databases live on one Atlas cluster (`yalelabs0`), so Development, Beta, and Production share a single quota.
+Development holds roughly 1.07 GB across 514,366 objects, and 412,997 of those objects are observations: about 95 percent of the volume is the evidence log rather than the product.
+A mirror that carried observations would copy 436,026 documents and duplicate that footprint inside the same quota, which can exhaust the cluster and take the live site down to populate a staging environment.
+Without them the same mirror copies about 23,000 documents across the reviewable corpus and the identity spine.
+
+What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `research_entity_redirects`, `canonical_aliases`, `signals`, `researchers`, `role_assignments`, `accounts`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
+Identity is not optional in that list.
+A mirrored environment holding `research_entities` without `researchers`, `role_assignments`, and `accounts` serves a corpus whose every lead is unresolvable, which fails as `missing_lead` across the whole dataset rather than in one place.
+Copying `canonical_aliases` carries the resolve-at-mint alias ledger, so a scrape on the target resolves to the same canonical records instead of minting duplicates beside them.
+Copying `taxonomy_terms` also carries the approved research-area vocabulary, which nothing else can currently seed into a fresh environment.
+
+The frozen evidence claim-graph collections (`evidence_claims`, `source_documents`, `review_decisions`) are classified as excluded rather than copied: they are unwired do-not-build-on contracts, and the live evidence path is `observations` to `signals`.
+The mirror carries each replaced collection's `$jsonSchema` validator onto its replacement, so a mirrored target keeps rejecting the writes the canonical validators reject.
+
+Two consequences follow, and both are load-bearing.
+
+First, a target mirrored without observations must not be re-materialized.
+The materializer derives fields from the observation trail, so running it against a target that has no trail replaces source-backed values with nothing.
+Serve, re-gate, and reindex on such a target; run `scrape materialize` only where the observations actually live.
+
+Second, `scrape_runs` and `signals.source.evidenceIds` arrive pointing at observation rows the target does not hold.
+That is expected on a mirrored environment and is not a data-integrity finding.
+
+`analytics_events` and `scrape_job_locks` are never copied by any mirror, in any mode.
+Copied telemetry would attribute one environment's student behavior to another, and a copied lock lets a second environment's scraper believe a job is already held.
 
 ## Where Each Step Runs
 
@@ -194,11 +228,12 @@ Use this one-way sync when Development should start from the current accepted Be
 The command can read only from a remote database named `Beta` and can write only to a different remote database named `Development`.
 It refuses local MongoDB and any Production database.
 
-The sync mirrors every document in the approved Beta research, source-audit, faculty, support, and compatibility collections.
+The sync mirrors every document in the approved Beta research-discovery, identity-spine, source-audit, and base-support collections, and leaves `observations` behind in Beta unless `--include-observations` is passed.
+See ["Observations stay in Development"](#observations-stay-in-development) above for the exact copy set and why it is drawn that way.
 The standard plan declares, and the standard apply clears, Atlas Development collections that are outside that approved mirror.
-It never reads Beta analytics, admin grants, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, or release queues.
-Every Beta user ID and role has a Development counterpart so references and role distributions remain valid.
-Public faculty identities remain recognizable, while other identities are deterministically pseudonymized and all copied users have student and account-activity fields removed.
+It never reads Beta analytics, admin grants, admin audit and access-review projections, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, private research plans, or release queues; the plan artifact's `excludedOperationalCollections` is the authoritative list.
+Every Beta account and role assignment has a Development counterpart so references and role distributions remain valid.
+Accounts reachable from a `Researcher` keep the directory netid and email Yale already publishes, every other account is deterministically pseudonymized, and each copied account is reduced to an allow-list of identity fields so student profile and account-activity state never crosses.
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
@@ -220,7 +255,7 @@ yarn development:refresh-from-beta:plan
 ```
 
 The artifact is `/tmp/ylabs-beta-to-development-plan.json`.
-Confirm that the source ends in `/Beta`, the destination ends in `/Development`, every mirrored source count matches its copy count, and `unclassifiedBetaCollections` is empty.
+Confirm that the source ends in `/Beta`, the destination ends in `/Development`, every mirrored source count matches its copy count, `includesObservations` is `false` unless the evidence log was deliberately requested, and `unclassifiedBetaCollections` is empty.
 
 Apply the reviewed sync:
 
@@ -389,9 +424,11 @@ Stop this phase if the report status is not `success`, materialization errors ar
 ### Fast path: mirror an accepted Development research dataset
 
 Use this path when the complete Development dataset already passed the same release quality gates and rerunning every scraper against Beta would duplicate accepted work.
-The command replaces only the approved research-discovery, source-audit, base-support, and sanitized user collections.
+The command replaces only the approved research-discovery, identity-spine, source-audit, and base-support collections, with account state sanitized.
 It preserves Beta operational collections such as sessions, analytics, admin grants, student workflows, locks, caches, and release queues.
+It leaves `observations` in Development unless `--include-observations` is passed, so review the plan's `observationPolicy` line before applying.
 It never writes to Meilisearch.
+After the mirror, rebuild Beta Meilisearch and re-gate on Beta; do not run `scrape materialize` against a Beta that holds no observations.
 
 Generate and review the plan locally:
 
@@ -606,6 +643,7 @@ Review the artifact and confirm all of the following:
 - `targetEnvironment` is `production`.
 - `syntheticReferenceBlockersClear` is `true`.
 - `applyBlockers` is empty.
+- `includesObservations` is `false` unless the evidence log was deliberately requested with `--include-observations`.
 - Every source copy count is expected.
 
 Create and record a real Production Atlas restore point.

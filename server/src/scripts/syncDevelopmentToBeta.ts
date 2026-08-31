@@ -11,7 +11,7 @@ import {
   buildPlan,
   collectionsForOptions,
   parseMongoTarget,
-  referencedFacultyUserIds,
+  researchPersonAccountIds,
   type BetaToDevelopmentOptions,
 } from './syncBetaToDevelopment';
 
@@ -38,7 +38,7 @@ export function parseDevelopmentToBetaOptions(
 ): DevelopmentToBetaOptions {
   let mode: 'dry-run' | 'apply' = 'dry-run';
   let confirmSync = env.CONFIRM_DEVELOPMENT_TO_BETA_SYNC === 'true';
-  let includeObservations = true;
+  let includeObservations = false;
   let output: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -47,6 +47,7 @@ export function parseDevelopmentToBetaOptions(
     else if (arg === '--dry-run') mode = 'dry-run';
     else if (arg === '--confirm-development-to-beta') confirmSync = true;
     else if (arg === '--skip-observations') includeObservations = false;
+    else if (arg === '--include-observations') includeObservations = true;
     else if (arg === '--output') {
       output = resolveSafeJsonReportOutputPath(argv[++index]?.trim());
     } else if (arg.startsWith('--output=')) {
@@ -96,8 +97,8 @@ async function main(): Promise<void> {
     const sharedOptions = {
       includeObservations: options.includeObservations,
     } as BetaToDevelopmentOptions;
-    const facultyUserIds = await referencedFacultyUserIds(sourceDb);
-    const collections = collectionsForOptions(sharedOptions, facultyUserIds);
+    const researchAccountIds = await researchPersonAccountIds(sourceDb);
+    const collections = collectionsForOptions(sharedOptions, researchAccountIds);
     const before = await buildPlan(sourceDb, targetDb, collections);
     let after = before;
     const report = {
@@ -110,7 +111,10 @@ async function main(): Promise<void> {
       collections: before,
       preservedBetaOperationalCollections: true,
       userCopyPolicy:
-        'Preserve faculty identities; pseudonymize other identities and remove account activity fields.',
+        'Preserve accounts reachable from a Researcher; pseudonymize every other account and remove account activity fields.',
+      observationPolicy: options.includeObservations
+        ? 'Observations included by explicit --include-observations opt-in.'
+        : 'Observations stay in Development: they are 95 percent of the volume on a shared Atlas cluster. A mirror without them must not be re-materialized.',
     };
     if (options.mode === 'dry-run') {
       console.log(JSON.stringify(report, null, 2));

@@ -518,9 +518,7 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    expect(
-      screen.queryByRole('link', { name: /Systems Neuroscience/ }),
-    ).toBeNull();
+    expect(screen.queryByRole('link', { name: /Systems Neuroscience/ })).toBeNull();
     expect(screen.getByText('Systems Neuroscience').tagName).toBe('SPAN');
   });
 

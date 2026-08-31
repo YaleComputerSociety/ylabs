@@ -78,9 +78,7 @@ describe('Login', () => {
     renderLogin('/dashboard');
 
     expect(screen.getByRole('heading', { name: /continue to your dashboard/i })).toBeTruthy();
-    expect(
-      screen.getByText(/manage saved research plans and program planning/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/manage saved research plans and program planning/i)).toBeTruthy();
   });
 
   it('keeps about page context on the CAS gate', () => {

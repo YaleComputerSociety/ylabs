@@ -1375,10 +1375,7 @@ export function isFullDescriptionRestatementOfShortDescription(
  * to say relative to the card, not about what either text asserts. The
  * restatement and quality predicates already own the content questions.
  */
-export function isPoorerThanCardDescription(
-  fullValue: unknown,
-  shortValue: unknown,
-): boolean {
+export function isPoorerThanCardDescription(fullValue: unknown, shortValue: unknown): boolean {
   const full = textValue(fullValue);
   const short = textValue(shortValue);
   if (!full || !short) return false;

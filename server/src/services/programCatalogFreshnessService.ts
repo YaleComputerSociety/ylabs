@@ -147,7 +147,14 @@ export function computeCatalogFreshness(
   return {
     status,
     thresholds,
-    totals: { visible, accepting, deadlinePast, deadlineFuture, deadlineFutureProjected, deadlineNone },
+    totals: {
+      visible,
+      accepting,
+      deadlinePast,
+      deadlineFuture,
+      deadlineFutureProjected,
+      deadlineNone,
+    },
     shares: { accepting: acceptingShare, pastDeadline: pastDeadlineShare },
     breaches,
     staleSourceKeys,

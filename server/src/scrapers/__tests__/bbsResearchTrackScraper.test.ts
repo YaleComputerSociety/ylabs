@@ -18,10 +18,7 @@ import type { ObservationInput, ScraperContext } from '../types';
 
 const IMMUNOLOGY_URL = 'https://medicine.yale.edu/bbs/people/immunology/';
 
-function trackListingHtml(
-  rows: Array<{ slug: string; label: string }>,
-  extraLinks = '',
-): string {
+function trackListingHtml(rows: Array<{ slug: string; label: string }>, extraLinks = ''): string {
   const items = rows
     .map(
       (row) =>
@@ -34,9 +31,7 @@ function trackListingHtml(
 }
 
 function bbsProfileHtml(options: { canonicalSlug: string; labUrls?: string[] }): string {
-  const labLinks = (options.labUrls || [])
-    .map((url) => `<a href="${url}">Lab</a>`)
-    .join('');
+  const labLinks = (options.labUrls || []).map((url) => `<a href="${url}">Lab</a>`).join('');
   return (
     `<html><head>` +
     `<link rel="canonical" href="https://medicine.yale.edu/profile/${options.canonicalSlug}/">` +
@@ -319,14 +314,10 @@ describe('BbsResearchTrackScraper.run', () => {
     );
     expect(graft?.value).toEqual(['Immunology']);
 
-    const mintedSlug = emitted.find(
-      (o) => o.entityType === 'researchEntity' && o.field === 'slug',
-    );
+    const mintedSlug = emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'slug');
     expect(mintedSlug?.value).toBe('ysm-faculty-morgan-lee');
 
-    expect(
-      emitted.some((o) => o.entityId?.startsWith('aaaaaaaaaaaaaaaaaaaaaaa')),
-    ).toBe(false);
+    expect(emitted.some((o) => o.entityId?.startsWith('aaaaaaaaaaaaaaaaaaaaaaa'))).toBe(false);
     expect(result.notes).toMatch(/1 PIs held/);
   });
 

@@ -79,8 +79,7 @@ vi.mock('../../models/researcher', () => ({
   },
 }));
 
-vi.mock('../../db/connections', () => ({
-}));
+vi.mock('../../db/connections', () => ({}));
 
 import {
   combineAnalyticsUserTypeCounts,
@@ -625,12 +624,10 @@ describe('getAnalytics research coverage and range scoping', () => {
       },
     ]);
 
-    const chainableFindReturning =
-      (docs: unknown[]) =>
-      () => ({
-        select: () => ({ lean: async () => docs }),
-        lean: async () => docs,
-      });
+    const chainableFindReturning = (docs: unknown[]) => () => ({
+      select: () => ({ lean: async () => docs }),
+      lean: async () => docs,
+    });
     mocks.researchEntityFind.mockImplementation(
       chainableFindReturning([
         {
@@ -799,12 +796,10 @@ describe('getUserAnalyticsDrilldown', () => {
         }),
       }),
     });
-    const chainableFindReturning =
-      (docs: unknown[]) =>
-      () => ({
-        select: () => ({ lean: async () => docs }),
-        lean: async () => docs,
-      });
+    const chainableFindReturning = (docs: unknown[]) => () => ({
+      select: () => ({ lean: async () => docs }),
+      lean: async () => docs,
+    });
     mocks.fellowshipFind.mockImplementation(
       chainableFindReturning([{ _id: fellowshipId, title: 'Summer Fellowship' }]),
     );

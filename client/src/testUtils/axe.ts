@@ -26,16 +26,17 @@ export const findBlockingAxeViolations = async (
     rules: { ...LAYOUT_DEPENDENT_RULES, ...(options.rules ?? {}) },
   });
 
-  return results.violations.filter((violation) =>
-    BLOCKING_IMPACTS.has(violation.impact ?? ''),
-  );
+  return results.violations.filter((violation) => BLOCKING_IMPACTS.has(violation.impact ?? ''));
 };
 
 const describeViolations = (violations: Result[]): string =>
   violations
     .map((violation) => {
       const nodes = violation.nodes
-        .map((node) => `      - ${node.target.join(' ')}${node.failureSummary ? `\n        ${node.failureSummary.replace(/\n/g, '\n        ')}` : ''}`)
+        .map(
+          (node) =>
+            `      - ${node.target.join(' ')}${node.failureSummary ? `\n        ${node.failureSummary.replace(/\n/g, '\n        ')}` : ''}`,
+        )
         .join('\n');
       return `  [${violation.impact}] ${violation.id}: ${violation.help}\n    ${violation.helpUrl}\n${nodes}`;
     })

@@ -221,16 +221,20 @@ describe('legacy cleanup CLI safety helpers', () => {
 
 describe('research entity migration CLI safety helpers', () => {
   it('parses mode and output flags', () => {
-    expect(parseResearchEntityMigrationArgs(['--rollback-plan', '--output=/tmp/migrate.json'])).toEqual({
+    expect(
+      parseResearchEntityMigrationArgs(['--rollback-plan', '--output=/tmp/migrate.json']),
+    ).toEqual({
       mode: 'rollback-plan',
       confirmResearchEntityMigration: false,
       output: '/tmp/migrate.json',
     });
-    expect(parseResearchEntityMigrationArgs([
-      '--apply',
-      '--confirm-research-entity-migration',
-      '--limit=25',
-    ])).toEqual({
+    expect(
+      parseResearchEntityMigrationArgs([
+        '--apply',
+        '--confirm-research-entity-migration',
+        '--limit=25',
+      ]),
+    ).toEqual({
       mode: 'apply',
       confirmResearchEntityMigration: true,
       limit: 25,
@@ -363,12 +367,12 @@ describe('research entity collection migration CLI safety helpers', () => {
   });
 
   it('rejects malformed dependent collection migration output paths', () => {
-    expect(() =>
-      parseResearchEntityCollectionMigrationArgs(['--output', '--drop-legacy']),
-    ).toThrow(/--output requires a path/);
-    expect(() =>
-      parseResearchEntityCollectionMigrationArgs(['--output=--drop-legacy']),
-    ).toThrow(/--output requires a path/);
+    expect(() => parseResearchEntityCollectionMigrationArgs(['--output', '--drop-legacy'])).toThrow(
+      /--output requires a path/,
+    );
+    expect(() => parseResearchEntityCollectionMigrationArgs(['--output=--drop-legacy'])).toThrow(
+      /--output requires a path/,
+    );
     expect(() =>
       parseResearchEntityCollectionMigrationArgs([
         '--output',

@@ -93,7 +93,12 @@ export interface ForeignLeadGraftPlanRow {
 }
 
 export function planForeignLeadGraftRetirement(input: {
-  entity: Record<string, unknown> & { _id: unknown; slug?: string; name?: string; entityType?: string };
+  entity: Record<string, unknown> & {
+    _id: unknown;
+    slug?: string;
+    name?: string;
+    entityType?: string;
+  };
   leadRows: GateLeadRow[];
 }): ForeignLeadGraftPlanRow | null {
   const grafts = selectForeignLeadGrafts({ entity: input.entity, leadRows: input.leadRows });

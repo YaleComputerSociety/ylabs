@@ -42,7 +42,11 @@ export const addFavorite = async (model: Model<any>, id: any, filter: ItemMutati
   return updated.toObject();
 };
 
-export const removeFavorite = async (model: Model<any>, id: any, filter: ItemMutationFilter = {}) => {
+export const removeFavorite = async (
+  model: Model<any>,
+  id: any,
+  filter: ItemMutationFilter = {},
+) => {
   const safeId = normalizeItemObjectId(id);
   // Atomic decrement guarded so favorites never drops below 0.
   const updated = await model.findOneAndUpdate(
