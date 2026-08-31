@@ -130,7 +130,8 @@ describe('app security runtime classification', () => {
     expect(
       keyGenerator({
         user: { netId: objectNetId },
-        socket: { remoteAddress: '203.0.113.7' },
+        ip: '203.0.113.7',
+        socket: { remoteAddress: '192.0.2.7' },
       }),
     ).toBe('ip:ip-key:203.0.113.7');
     expect(coerced).toBe(false);
@@ -151,7 +152,15 @@ describe('app security runtime classification', () => {
       socket: { remoteAddress: '192.0.2.8' },
       session: { rateLimitId: 'attacker-controlled' },
     };
-    expect(keyGenerator(malformedSessionRequest)).toBe('ip:ip-key:192.0.2.8');
+    // The bucket comes from `req.ip`, which express resolves only from a peer
+    // that passes the validated TRUSTED_PROXY_CIDRS predicate - never from the
+    // raw forwarding headers, which any caller can set. Asserting the raw
+    // x-forwarded-for / cf-connecting-ip values are absent is the point of this
+    // case and it still holds after #2318; only the trusted input changed, from
+    // the load balancer's socket address to the client address it forwards.
+    expect(keyGenerator(malformedSessionRequest)).toBe('ip:ip-key:198.51.100.8');
+    expect(keyGenerator(malformedSessionRequest)).not.toContain('203.0.113.8');
+    expect(keyGenerator(malformedSessionRequest)).not.toContain('203.0.113.9');
 
     expect(
       keyGenerator({
@@ -163,7 +172,7 @@ describe('app security runtime classification', () => {
         socket: { remoteAddress: '192.0.2.9' },
         session: { rateLimitId: 'ABCDEF0123456789ABCDEF0123456789' },
       }),
-    ).toBe('ip:ip-key:192.0.2.9');
+    ).toBe('ip:ip-key:198.51.100.9');
   });
 
   it.each(['10.0.0.0/99', '10.0.0.0/8/garbage', '10.0.0.0/', '10.0.0.0/1e1'])(
