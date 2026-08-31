@@ -38,6 +38,10 @@ import {
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeResearchAreaLabelList } from '../utils/researchAreaLabelHygiene';
 import { isResearchAreaLabelLeakage } from './researchAreaCanonicalization';
+import {
+  isNonIdentifyingLinkLabelName,
+  stripResearchHomeNameLinkWrapper,
+} from '../utils/researchHomeNameIdentityAuthority';
 import { isResearchSectionLabel } from './researchAreaLabels';
 import {
   normalizeResearchEntityNameDashes,
@@ -82,7 +86,9 @@ function sanitizePersonTitleField(value: string): SanitizedObservationField {
 function normalizeEntityName(value: string): string {
   return normalizeResearchEntityNameSmartQuotes(
     normalizeResearchEntityNameDashes(
-      collapseDuplicateResearchHomeSuffix(stripTrailingResearchHomeDescription(value)),
+      collapseDuplicateResearchHomeSuffix(
+        stripTrailingResearchHomeDescription(stripResearchHomeNameLinkWrapper(value)),
+      ),
     ),
   );
 }
@@ -91,6 +97,7 @@ function isEntityNameFurniture(value: string): boolean {
   return (
     isNavMenuChromeTitle(value) ||
     isSectionLabelTitle(value) ||
+    isNonIdentifyingLinkLabelName(value) ||
     hasRawEmailAddress(value) ||
     hasStreetAddressFragment(value) ||
     hasPhoneContactFragment(value) ||

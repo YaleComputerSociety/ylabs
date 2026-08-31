@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   claimsAnotherPersonsLab,
   classifyHarvestedResearchHomeName,
+  stripResearchHomeNameLinkWrapper,
   corroboratedLabNameEponyms,
   entityKeyPersonTokens,
   eponymousLabNameSurname,
@@ -201,5 +202,45 @@ describe('claimsAnotherPersonsLab', () => {
         identityTokens: [],
       }),
     ).toBe(false);
+  });
+});
+
+describe('link-label names and wrappers (#2285)', () => {
+  it('classifies a portfolio link label as non-identifying', () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'Portfolio Website',
+        personName: 'Imran Iqbal',
+      }),
+    ).toBe('NON_IDENTIFYING_LABEL');
+  });
+
+  it('classifies the name a wrapper wraps, not the wrapper', () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'Link to Boggon Lab',
+        personName: 'Titus Boggon',
+      }),
+    ).toBe('OWN_IDENTITY');
+    expect(stripResearchHomeNameLinkWrapper('Link to Boggon Lab')).toBe('Boggon Lab');
+    expect(stripResearchHomeNameLinkWrapper('Visit the Geha Research Group \u00bb')).toBe(
+      'Geha Research Group',
+    );
+  });
+
+  it('reduces a wrapper around nothing to a bare label rather than adopting it', () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'Link to Website',
+        personName: 'Ada Lovelace',
+      }),
+    ).toBe('NON_IDENTIFYING_LABEL');
+  });
+
+  it('leaves a real name and a trailing markup fragment alone', () => {
+    expect(stripResearchHomeNameLinkWrapper('Vanderlick Lab')).toBe('Vanderlick Lab');
+    expect(stripResearchHomeNameLinkWrapper('Smith Lab <span class="title">')).toBe(
+      'Smith Lab <span class="title">',
+    );
   });
 });

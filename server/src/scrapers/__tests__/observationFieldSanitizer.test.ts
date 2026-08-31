@@ -184,6 +184,57 @@ describe('sanitizeObservationField', () => {
       });
     });
 
+    // #2285: a faculty profile's link text became the entity name, so a student
+    // searching a professor found a card titled "Lab website".
+    it('rejects a link label offered as a research-entity name', () => {
+      for (const label of [
+        'Lab website',
+        'Portfolio Website',
+        'Website',
+        'Lab Site',
+        'My Research Page',
+      ]) {
+        expect(sanitizeObservationField('researchEntity', 'name', label)).toEqual({
+          value: undefined,
+          rejected: true,
+          reason: 'entity-name-furniture',
+        });
+      }
+    });
+
+    it('keeps the name a link label wraps instead of adopting the wrapper', () => {
+      expect(sanitizeObservationField('researchEntity', 'name', 'Link to Boggon Lab')).toEqual({
+        value: 'Boggon Lab',
+        rejected: false,
+      });
+      expect(
+        sanitizeObservationField(
+          'researchEntity',
+          'displayName',
+          'Visit the Geha Research Group »',
+        ),
+      ).toEqual({
+        value: 'Geha Research Group',
+        rejected: false,
+      });
+    });
+
+    it('leaves a legitimately named research home untouched', () => {
+      for (const name of [
+        'Geha Research Group',
+        'Vanderlick Lab',
+        'The Zimmerman Lab',
+        'Belief Lab',
+        'Vasiliou Laboratory (V-Lab)',
+        'Yale Center for Emotional Intelligence',
+      ]) {
+        expect(sanitizeObservationField('researchEntity', 'name', name)).toEqual({
+          value: name,
+          rejected: false,
+        });
+      }
+    });
+
     it('leaves source URLs, enum kinds, and non-string values alone', () => {
       expect(
         sanitizeObservationField('researchEntity', 'sourceUrls', ['https://x.example.edu']),
