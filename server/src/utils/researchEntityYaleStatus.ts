@@ -73,3 +73,29 @@ export function deriveResearchEntityYaleStatus(
   }
   return null;
 }
+
+export const CLEARED_RESEARCH_ENTITY_YALE_STATUS = {
+  yaleStatusCache: 'unknown',
+  activeAtYaleCache: true,
+  yaleStatusReasonCache: '',
+} as const;
+
+export function yaleStatusCacheIsWritable(entity: Record<string, any> | null | undefined): boolean {
+  const lockedFields = Array.isArray(entity?.manuallyLockedFields)
+    ? entity?.manuallyLockedFields
+    : [];
+  return !lockedFields.includes('activeAtYaleCache') && !lockedFields.includes('yaleStatusCache');
+}
+
+// Callers must first confirm `deriveResearchEntityYaleStatus` yields no signal:
+// this only decides whether an inactive cache with no live evidence behind it
+// may be reset. A roster-departure cache (#2127) is owned by the reconciler and
+// stays put, which is why the reason flag is checked rather than the tier.
+export function hasEvidencelessInactiveYaleStatus(
+  entity: Record<string, any> | null | undefined,
+): boolean {
+  if (!entity) return false;
+  if (!yaleStatusCacheIsWritable(entity)) return false;
+  if (entity.yaleStatusReasonCache === 'departed') return false;
+  return entity.activeAtYaleCache === false || entity.yaleStatusCache === 'departed';
+}

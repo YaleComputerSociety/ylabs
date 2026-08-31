@@ -25,7 +25,117 @@ describe('planYaleStatusCacheBackfill', () => {
 
     expect(plan.scanned).toBe(1);
     expect(plan.toUpdate).toHaveLength(0);
+    expect(plan.toHeal).toHaveLength(0);
     expect(plan.flipToSuppressedCount).toBe(0);
+  });
+
+  const liveDoc: YaleStatusCacheDoc = {
+    ...baseDoc,
+    sourceUrls: ['https://english.yale.edu/people/claude-rawson'],
+  };
+
+  it('heals an inactive cache that no live signal supports', () => {
+    const plan = planYaleStatusCacheBackfill([
+      {
+        ...liveDoc,
+        activeAtYaleCache: false,
+        yaleStatusCache: 'departed',
+        yaleStatusReasonCache: '',
+        studentVisibilityTier: 'suppressed',
+        studentVisibilityReasons: ['source_backed_description', 'inactive_at_yale'],
+      },
+    ]);
+
+    expect(plan.toUpdate).toHaveLength(0);
+    expect(plan.toHeal).toHaveLength(1);
+    expect(plan.toHeal[0]).toMatchObject({
+      id: 'entity-1',
+      previousYaleStatusCache: 'departed',
+      previousActiveAtYaleCache: false,
+      previousStudentVisibilityTier: 'suppressed',
+      suppressedOnlyByInactiveAtYale: true,
+    });
+  });
+
+  it('leaves a roster-departure cache to the reconciler that owns it', () => {
+    const plan = planYaleStatusCacheBackfill([
+      {
+        ...liveDoc,
+        activeAtYaleCache: false,
+        yaleStatusCache: 'departed',
+        yaleStatusReasonCache: 'departed',
+        absentFromRosterSinceRunId: 'run-42',
+      },
+    ]);
+
+    expect(plan.toHeal).toHaveLength(0);
+  });
+
+  it('leaves a manually locked status cache alone', () => {
+    for (const lockedField of ['activeAtYaleCache', 'yaleStatusCache']) {
+      const plan = planYaleStatusCacheBackfill([
+        {
+          ...liveDoc,
+          activeAtYaleCache: false,
+          yaleStatusCache: 'departed',
+          manuallyLockedFields: [lockedField],
+        },
+      ]);
+
+      expect(plan.toHeal).toHaveLength(0);
+      expect(plan.manuallyLockedSkipped).toBe(1);
+    }
+  });
+
+  it('leaves a manually locked status cache alone in the suppress direction too', () => {
+    for (const lockedField of ['activeAtYaleCache', 'yaleStatusCache']) {
+      const plan = planYaleStatusCacheBackfill([
+        { ...baseDoc, manuallyLockedFields: [lockedField] },
+      ]);
+
+      expect(plan.toUpdate).toHaveLength(0);
+      expect(plan.flipToSuppressedCount).toBe(0);
+      expect(plan.countsByReason).toEqual({});
+      expect(plan.manuallyLockedSkipped).toBe(1);
+    }
+  });
+
+  it('does not heal an entity that still derives a departed signal', () => {
+    const plan = planYaleStatusCacheBackfill([
+      { ...baseDoc, activeAtYaleCache: false, yaleStatusCache: 'departed' },
+    ]);
+
+    expect(plan.toHeal).toHaveLength(0);
+    expect(plan.toUpdate).toHaveLength(1);
+  });
+
+  it('flags a heal row whose suppression has another blocker behind it', () => {
+    const plan = planYaleStatusCacheBackfill([
+      {
+        ...liveDoc,
+        activeAtYaleCache: false,
+        yaleStatusCache: 'departed',
+        studentVisibilityTier: 'suppressed',
+        studentVisibilityReasons: ['inactive_at_yale', 'missing_lead'],
+      },
+    ]);
+
+    expect(plan.toHeal[0].suppressedOnlyByInactiveAtYale).toBe(false);
+  });
+
+  it('does not claim a heal row is suppressed when its tier is not suppressed', () => {
+    const plan = planYaleStatusCacheBackfill([
+      {
+        ...liveDoc,
+        activeAtYaleCache: false,
+        yaleStatusCache: 'departed',
+        studentVisibilityTier: 'student_ready',
+        studentVisibilityReasons: ['inactive_at_yale'],
+      },
+    ]);
+
+    expect(plan.toHeal).toHaveLength(1);
+    expect(plan.toHeal[0].suppressedOnlyByInactiveAtYale).toBe(false);
   });
 
   it('plans a departed-marked entity to gain the cache value and flip to suppressed', () => {

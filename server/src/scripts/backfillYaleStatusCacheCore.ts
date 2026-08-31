@@ -1,6 +1,9 @@
 import { classifyResearchEntityResearchScope } from '../services/researchEntityResearchScope';
+import { isBlockingVisibilityReason } from '../services/studentVisibilityGateService';
 import {
   deriveResearchEntityYaleStatus,
+  hasEvidencelessInactiveYaleStatus,
+  yaleStatusCacheIsWritable,
   type ResearchEntityYaleStatusReason,
 } from '../utils/researchEntityYaleStatus';
 
@@ -23,14 +26,31 @@ export interface YaleStatusCachePlanRow {
   operatorOverridePreserved: boolean;
 }
 
+export interface YaleStatusCacheHealRow {
+  id: string;
+  label: string;
+  previousYaleStatusCache: string;
+  previousActiveAtYaleCache: boolean;
+  previousYaleStatusReasonCache: string;
+  previousStudentVisibilityTier: string;
+  suppressedOnlyByInactiveAtYale: boolean;
+}
+
 export interface YaleStatusCachePlan {
   scanned: number;
   toUpdate: YaleStatusCachePlanRow[];
+  toHeal: YaleStatusCacheHealRow[];
   countsByReason: Record<string, number>;
   flipToSuppressedCount: number;
+  manuallyLockedSkipped: number;
 }
 
-const VALID_OVERRIDE_TIERS = new Set(['student_ready', 'limited_but_safe', 'operator_review', 'suppressed']);
+const VALID_OVERRIDE_TIERS = new Set([
+  'student_ready',
+  'limited_but_safe',
+  'operator_review',
+  'suppressed',
+]);
 
 function textOr(value: unknown, fallback: string): string {
   return typeof value === 'string' && value ? value : fallback;
@@ -51,12 +71,43 @@ function existingReasons(doc: Record<string, unknown>): string[] {
 // studentVisibilityTier.ts) -- that case is preserved rather than clobbered.
 export function planYaleStatusCacheBackfill(docs: YaleStatusCacheDoc[]): YaleStatusCachePlan {
   const toUpdate: YaleStatusCachePlanRow[] = [];
+  const toHeal: YaleStatusCacheHealRow[] = [];
   const countsByReason: Record<string, number> = {};
   let flipToSuppressedCount = 0;
+  let manuallyLockedSkipped = 0;
 
   for (const doc of docs) {
+    // An operator lock on either status-cache field wins over both directions of
+    // this command, matching the materializer and the roster reconciler. Gating
+    // here rather than per branch keeps the two directions from disagreeing.
+    if (!yaleStatusCacheIsWritable(doc)) {
+      manuallyLockedSkipped++;
+      continue;
+    }
+
     const signal = deriveResearchEntityYaleStatus(doc);
-    if (!signal) continue;
+    if (!signal) {
+      if (hasEvidencelessInactiveYaleStatus(doc)) {
+        const healPreviousStudentVisibilityTier = textOr(
+          doc.studentVisibilityTier,
+          'operator_review',
+        );
+        const reasons = existingReasons(doc);
+        toHeal.push({
+          id: doc.id,
+          label: doc.label,
+          previousYaleStatusCache: textOr(doc.yaleStatusCache, 'unknown'),
+          previousActiveAtYaleCache: doc.activeAtYaleCache !== false,
+          previousYaleStatusReasonCache: textOr(doc.yaleStatusReasonCache, ''),
+          previousStudentVisibilityTier: healPreviousStudentVisibilityTier,
+          suppressedOnlyByInactiveAtYale:
+            healPreviousStudentVisibilityTier === 'suppressed' &&
+            reasons.includes('inactive_at_yale') &&
+            reasons.filter((reason) => isBlockingVisibilityReason(reason)).length === 1,
+        });
+      }
+      continue;
+    }
 
     const previousActiveAtYaleCache = doc.activeAtYaleCache !== false;
     const previousYaleStatusCache = textOr(doc.yaleStatusCache, 'unknown');
@@ -106,5 +157,12 @@ export function planYaleStatusCacheBackfill(docs: YaleStatusCacheDoc[]): YaleSta
     });
   }
 
-  return { scanned: docs.length, toUpdate, countsByReason, flipToSuppressedCount };
+  return {
+    scanned: docs.length,
+    toUpdate,
+    toHeal,
+    countsByReason,
+    flipToSuppressedCount,
+    manuallyLockedSkipped,
+  };
 }

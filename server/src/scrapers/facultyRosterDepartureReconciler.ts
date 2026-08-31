@@ -7,6 +7,7 @@ import {
   probeSourceLink,
 } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { yaleStatusCacheIsWritable } from '../utils/researchEntityYaleStatus';
 
 export const DEPARTMENT_ROSTER_HEALTH_FIELD = 'departmentRosterHealth';
 export const FACULTY_DEPARTURE_ENTITY_TYPES = ['FACULTY_RESEARCH_AREA', 'LAB'];
@@ -221,12 +222,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   let held = 0;
   for (const entity of governed) {
     if (typeof entity.slug !== 'string' || !entity.slug) continue;
-    const lockedFields: string[] = Array.isArray(entity.manuallyLockedFields)
-      ? entity.manuallyLockedFields
-      : [];
-    if (lockedFields.includes('activeAtYaleCache') || lockedFields.includes('yaleStatusCache')) {
-      continue;
-    }
+    if (!yaleStatusCacheIsWritable(entity)) continue;
     const coveredDeptNames = (Array.isArray(entity.departments) ? entity.departments : []).filter(
       (deptName: unknown): deptName is string =>
         typeof deptName === 'string' && scrapedDeptNames.has(deptName),
