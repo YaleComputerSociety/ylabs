@@ -9,6 +9,8 @@ import {
   classifyUserType,
   isFacultyPerson,
   isFacultyTitle,
+  isSubordinateResearchRank,
+  looksLikeNonResearchTitle,
   personToObservations,
   YaleDirectoryScraper,
 } from '../sources/yaleDirectoryScraper';
@@ -398,5 +400,57 @@ describe('YaleDirectoryScraper.run', () => {
     expect(result.entitiesObserved).toBe(200);
     expect(emitted.length).toBeGreaterThan(0);
     expect(logs.some((l) => /ECONNRESET|aborting/i.test(l))).toBe(true);
+  });
+});
+
+describe('isSubordinateResearchRank (#2304)', () => {
+  it('treats ranks held inside another group as non-owners', () => {
+    for (const title of [
+      'Postdoctoral Associate',
+      'Postdoctoral Fellow',
+      'Post-Doctoral Fellow in Immunobiology',
+      'Associate Research Scientist in Neurology',
+      'Postgraduate Associate in Pediatrics',
+      'Research Associate',
+      'Research Fellow',
+      'Research Assistant 1 HSS',
+      'Research Affiliate',
+      'Staff Affiliate - YNHH',
+      'Visiting Scholar',
+      'Visiting Fellow',
+      'Graduate Student',
+      'Clinical Fellow',
+      'Resident',
+      'Trainee',
+    ]) {
+      expect(isSubordinateResearchRank(title)).toBe(true);
+    }
+  });
+
+  it('leaves research-home owners alone', () => {
+    for (const title of [
+      'Professor of Molecular Biophysics and Biochemistry',
+      'Associate Professor of Neuroscience',
+      'Assistant Professor Adjunct',
+      'Sterling Professor of Economics',
+      'Research Scientist',
+      'Senior Research Scientist in Genetics',
+      'Director, Yale Cancer Center',
+      'Chief of Cardiology',
+      'Lecturer in Computer Science',
+      'Professor Emeritus of History',
+    ]) {
+      expect(isSubordinateResearchRank(title)).toBe(false);
+    }
+  });
+
+  it('does not fire on an absent title, which is a separate decision', () => {
+    expect(isSubordinateResearchRank(undefined)).toBe(false);
+    expect(isSubordinateResearchRank('')).toBe(false);
+  });
+
+  it('keeps a trainee inside the researcher-identity vocabulary', () => {
+    expect(isFacultyTitle('Postdoctoral Associate')).toBe(true);
+    expect(looksLikeNonResearchTitle('Postdoctoral Associate')).toBe(false);
   });
 });
