@@ -24,6 +24,8 @@ describe('production promotion smoke core', () => {
         'tmp/custom-smoke',
         '--expect-commit',
         '852f4a0',
+        '--deployment-token',
+        'ops-token-value',
       ],
       {
         SMOKE_COOKIE: 'sid=secret',
@@ -39,14 +41,17 @@ describe('production promotion smoke core', () => {
       explicitOpportunityId: 'opp-123',
       smokeCookie: 'sid=secret',
       expectedCommit: '852f4a0',
+      deploymentToken: 'ops-token-value',
     });
 
     const report = createSmokeReport(config, new Date('2026-05-29T00:00:00.000Z'));
     expect(JSON.stringify(report)).not.toContain('sid=secret');
+    expect(JSON.stringify(report)).not.toContain('ops-token-value');
     expect(report.mode).toMatchObject({
       writes: false,
       usesDevLogin: false,
       usesSmokeCookie: true,
+      usesDeploymentToken: true,
       uiAuth: 'route-interception-only',
     });
     expect(report.expected).toEqual({ gitCommit: '852f4a0' });

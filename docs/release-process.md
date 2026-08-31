@@ -80,15 +80,25 @@ Keep the gap between `beta` and `main` small.
 Divergence costs nothing at a handful of commits and becomes expensive at hundreds, because every hotfix then needs a back-merge across a large refactor.
 If `beta` runs more than a sprint ahead of `main`, that is a signal to promote or to gate the unfinished work behind a flag.
 
-## Verifying and rolling back
+## Verifying a release
 
 `Production Security Smoke` runs on a schedule and on demand against production.
 It verifies live hardening headers and current API routes.
 
-It cannot currently verify **which commit** is live.
-The smoke script's `--expect-commit` check reads `deployment.gitCommit` from `GET /api/config`, but the public config deliberately exposes only a coarse `provider` field, and `scripts/security-preflight.test.mjs` forbids the commit by source literal.
-So a non-empty `expect_commit` always fails with a missing-fingerprint reason.
-Until that is resolved, treat the smoke as a surface health check rather than a release verification, and confirm the deployed commit in the Render dashboard.
+`Post-Promotion Verify` runs on every push to `main`.
+It polls `GET /api/deployment` until production reports the promoted commit, then runs the smoke with `--expect-commit` against it.
+If production never serves the commit inside the deploy window, the run fails, so a promotion that silently failed to deploy is visible rather than assumed good.
+
+The deployed commit is **not** in the public config payload.
+`GET /api/config` exposes only a coarse `provider`, and `scripts/security-preflight.test.mjs` forbids the commit there by source literal.
+The commit and branch live on `GET /api/deployment`, which answers only to a caller presenting `X-Deployment-Token` matching `DEPLOYMENT_FINGERPRINT_TOKEN`, compared timing-safely.
+Any other caller gets `404`, not `401`, so the route does not advertise itself.
+The route fails closed: with no token configured on the service, every request gets `404`.
+
+Set `DEPLOYMENT_FINGERPRINT_TOKEN` in the Render `ylabs-prod` environment group and as the `DEPLOYMENT_FINGERPRINT_TOKEN` GitHub Actions secret.
+Both must hold the same value, or post-promotion verification fails closed.
+
+## Rolling back
 
 To roll back, prefer the Render dashboard rollback to the previous deploy.
 Otherwise revert the promotion merge on `main` with `git revert -m 1 <merge-commit>` through a pull request, and Render redeploys automatically.
