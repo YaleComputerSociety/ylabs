@@ -668,9 +668,13 @@ test('production security smoke workflow checks live hardening headers and curre
     /SMOKE_EXPECT_COMMIT:\s*\$\{\{\s*inputs\.expect_commit\s*\}\}/,
   );
   assert.doesNotMatch(productionSecuritySmokeWorkflow, /github\.sha/);
-  assert.match(
+  assert.match(productionSecuritySmokeWorkflow, /run:\s*corepack enable/);
+  assert.match(productionSecuritySmokeWorkflow, /yarn install --immutable/);
+  assert.match(productionSecuritySmokeWorkflow, /yarn --cwd server install --immutable/);
+  assert.match(productionSecuritySmokeWorkflow, /yarn --cwd client install --immutable/);
+  assert.doesNotMatch(
     productionSecuritySmokeWorkflow,
-    /run:\s*corepack enable && yarn install:all:immutable/,
+    /run:\s*[^\n]*yarn install:all(?::immutable)?(?:\s|$)/,
   );
 });
 
