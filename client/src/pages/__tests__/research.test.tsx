@@ -473,9 +473,13 @@ describe('Research page', () => {
     try {
       renderResearch();
 
-      expect(screen.getByPlaceholderText('Type a topic, professor, lab, or technique')).toBeTruthy();
       expect(
-        screen.queryByPlaceholderText('Type a topic, professor, lab, technique, or research question'),
+        screen.getByPlaceholderText('Type a topic, professor, lab, or technique'),
+      ).toBeTruthy();
+      expect(
+        screen.queryByPlaceholderText(
+          'Type a topic, professor, lab, technique, or research question',
+        ),
       ).toBeNull();
     } finally {
       vi.unstubAllGlobals();
