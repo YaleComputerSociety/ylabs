@@ -61,9 +61,7 @@ export const getRateLimitKey = (req: Request): string => {
   }
 
   const anonymousId = normalizedAnonymousRateLimitId(req.session?.rateLimitId);
-  return anonymousId
-    ? `anonymous:${anonymousId}`
-    : `ip:${ipKeyGenerator(rateLimitClientIp(req))}`;
+  return anonymousId ? `anonymous:${anonymousId}` : `ip:${ipKeyGenerator(rateLimitClientIp(req))}`;
 };
 
 export const getPeerIpKey = (req: Request): string =>
