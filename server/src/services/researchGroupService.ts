@@ -85,6 +85,7 @@ import {
   type PublicUndergraduateLogistics,
 } from './undergraduateLogisticsService';
 import { QUERY_TOPIC_ALIASES, STUDENT_QUERY_ALIASES } from './searchTopicAliases';
+import { maxReachableResearchSearchPage } from './researchSearchPagination';
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
@@ -285,6 +286,10 @@ export interface ResearchGroupSearchOptions {
   includeNonPublic?: boolean;
   lowQualityFirst?: boolean;
   qualityFilters?: ResearchGroupQualityFilter[];
+  // Facets describe the whole result set rather than the page, and computing
+  // them costs an exhaustive count plus one disjunctive query per active filter.
+  // A caller that already holds them can opt out. Defaults to true.
+  includeFacets?: boolean;
 }
 
 export interface ResearchGroupSearchResult {
@@ -297,7 +302,6 @@ export interface ResearchGroupSearchResult {
 }
 
 const MAX_PAGE_SIZE = 100;
-const MAX_PAGE = 1000;
 const MAX_SEARCH_QUERY_LENGTH = 512;
 const MAX_FILTER_VALUES = 50;
 // Hybrid k-NN search always returns the `limit` nearest vectors regardless of how
@@ -534,6 +538,7 @@ const sanitizeResearchGroupSearchOptions = (
     qualityFilters: boundedResearchFilterValues(
       options.qualityFilters as string[] | undefined,
     ).filter(isResearchGroupQualityFilter),
+    includeFacets: options.includeFacets !== false,
   };
 };
 
@@ -890,6 +895,17 @@ const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
   { filterKey: 'eligibleStudentLevels', meiliField: 'undergraduateEligibleStudentLevels' },
 ];
 
+const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
+  'schools',
+  'departments',
+  'researchAreas',
+  'entityType',
+  'undergraduateCurrentAvailability',
+  'undergraduateCompensationModel',
+  'undergraduateEligibleStudentLevels',
+  'hasDocumentedWayIn',
+];
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -905,8 +921,11 @@ export async function searchResearchGroupsViaMeili(
 ): Promise<ResearchGroupSearchResult> {
   const safeFilters = sanitizeResearchGroupSearchFilters(filters || {});
   const safeOptions = sanitizeResearchGroupSearchOptions(options);
-  const safePage = Math.min(MAX_PAGE, Math.max(1, Math.floor(page) || 1));
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
+  const safePage = Math.min(
+    maxReachableResearchSearchPage(safePageSize),
+    Math.max(1, Math.floor(page) || 1),
+  );
   const offset = (safePage - 1) * safePageSize;
 
   const visibilityScopedFilters = applyVisibilityScopeToFilters(
@@ -1012,16 +1031,7 @@ export async function searchResearchGroupsViaMeili(
     filter: filterString,
     limit: safePageSize,
     offset,
-    facets: [
-      'schools',
-      'departments',
-      'researchAreas',
-      'entityType',
-      'undergraduateCurrentAvailability',
-      'undergraduateCompensationModel',
-      'undergraduateEligibleStudentLevels',
-      'hasDocumentedWayIn',
-    ],
+    ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
   };
   if (sortConfig.length > 0) {
     searchParams.sort = sortConfig;
@@ -1188,16 +1198,7 @@ export async function searchResearchGroupsViaMeili(
         page: 1,
         hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
         attributesToRetrieve: ['id'],
-        facets: [
-          'schools',
-          'departments',
-          'researchAreas',
-          'entityType',
-          'undergraduateCurrentAvailability',
-          'undergraduateCompensationModel',
-          'undergraduateEligibleStudentLevels',
-          'hasDocumentedWayIn',
-        ],
+        ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
       });
       if (typeof exhaustiveCountResult?.totalHits === 'number') {
         searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
@@ -1258,6 +1259,7 @@ export async function searchResearchGroupsViaMeili(
   const disjunctiveRawFacetDistribution = await (async (): Promise<
     Record<string, Record<string, number>> | undefined
   > => {
+    if (!safeOptions.includeFacets) return undefined;
     if (!rawFacetDistribution) return rawFacetDistribution;
     const activeFacets = DISJUNCTIVE_RESEARCH_FACETS.filter(
       ({ filterKey }) => (safeFilters[filterKey]?.length ?? 0) > 0,
@@ -1526,8 +1528,11 @@ const searchResearchGroupsViaMongoFallback = async (
   sort: ResearchGroupSearchSort,
   options: ResearchGroupSearchOptions,
 ): Promise<ResearchGroupSearchResult> => {
-  const safePage = Math.min(MAX_PAGE, Math.max(1, Math.floor(page) || 1));
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
+  const safePage = Math.min(
+    maxReachableResearchSearchPage(safePageSize),
+    Math.max(1, Math.floor(page) || 1),
+  );
   const offset = (safePage - 1) * safePageSize;
   const trimmedQuery = boundedResearchSearchQuery(query);
   const candidates = await ResearchEntity.find(
@@ -1582,35 +1587,40 @@ const searchResearchGroupsViaMongoFallback = async (
     );
     return booleanFacetCounts(omittedVisible, 'hasDocumentedWayIn');
   };
-  const [
-    schoolFacetCounts,
-    departmentFacetCounts,
-    researchAreaFacetCounts,
-    entityTypeFacetCounts,
-    currentAvailabilityFacetCounts,
-    compensationFacetCounts,
-    eligibleStudentLevelsFacetCounts,
-    documentedWayInCounts,
-  ] = await Promise.all([
-    disjunctiveMongoFacetCounts('school', 'schools'),
-    disjunctiveMongoFacetCounts('departments', 'departments'),
-    disjunctiveMongoFacetCounts('researchAreas', 'researchAreas'),
-    disjunctiveMongoFacetCounts('entityType', 'entityType'),
-    disjunctiveMongoFacetCounts('currentAvailability', 'undergraduateCurrentAvailability'),
-    disjunctiveMongoFacetCounts('compensation', 'undergraduateCompensationModel'),
-    disjunctiveMongoFacetCounts('eligibleStudentLevels', 'undergraduateEligibleStudentLevels'),
-    documentedWayInFacetCounts(),
-  ]);
-  const facetDistribution = {
-    school: schoolFacetCounts,
-    departments: departmentFacetCounts,
-    researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {},
-    entityType: entityTypeFacetCounts,
-    undergraduateCurrentAvailability: currentAvailabilityFacetCounts,
-    undergraduateCompensationModel: compensationFacetCounts,
-    undergraduateEligibleStudentLevels: eligibleStudentLevelsFacetCounts,
-    hasDocumentedWayIn: documentedWayInCounts,
-  };
+  const facetDistribution = await (async (): Promise<
+    Record<string, Record<string, number>> | undefined
+  > => {
+    if (options.includeFacets === false) return undefined;
+    const [
+      schoolFacetCounts,
+      departmentFacetCounts,
+      researchAreaFacetCounts,
+      entityTypeFacetCounts,
+      currentAvailabilityFacetCounts,
+      compensationFacetCounts,
+      eligibleStudentLevelsFacetCounts,
+      documentedWayInCounts,
+    ] = await Promise.all([
+      disjunctiveMongoFacetCounts('school', 'schools'),
+      disjunctiveMongoFacetCounts('departments', 'departments'),
+      disjunctiveMongoFacetCounts('researchAreas', 'researchAreas'),
+      disjunctiveMongoFacetCounts('entityType', 'entityType'),
+      disjunctiveMongoFacetCounts('currentAvailability', 'undergraduateCurrentAvailability'),
+      disjunctiveMongoFacetCounts('compensation', 'undergraduateCompensationModel'),
+      disjunctiveMongoFacetCounts('eligibleStudentLevels', 'undergraduateEligibleStudentLevels'),
+      documentedWayInFacetCounts(),
+    ]);
+    return {
+      school: schoolFacetCounts,
+      departments: departmentFacetCounts,
+      researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {},
+      entityType: entityTypeFacetCounts,
+      undergraduateCurrentAvailability: currentAvailabilityFacetCounts,
+      undergraduateCompensationModel: compensationFacetCounts,
+      undergraduateEligibleStudentLevels: eligibleStudentLevelsFacetCounts,
+      hasDocumentedWayIn: documentedWayInCounts,
+    };
+  })();
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
     visibleCandidates,
     trimmedQuery,

@@ -22,27 +22,12 @@ import {
 } from '../models/studentVisibility';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
+import {
+  RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
+  maxReachableResearchSearchPage,
+} from '../services/researchSearchPagination';
 
 const MAX_PAGE_SIZE = 100;
-const MAX_PAGE = 1000;
-
-/**
- * Reachable pagination depth is capped by RECORDS rather than by page number,
- * because the two caps interact: `MAX_PAGE_SIZE` 100 with `MAX_PAGE` 1000 made
- * 100,000 records addressable against a served corpus of roughly 2,700, so a
- * client could walk an offset two orders of magnitude past the data.
- *
- * A page cap alone cannot fix that without breaking browsing, because the client
- * default page size is 24 and the research page scrolls infinitely: a "nothing
- * pages past 10" rule would wall a student off after 240 records. Capping records
- * keeps every real row reachable at any page size while removing the dead offset
- * space, so the limit is expressed in the unit that actually bounds the data.
- *
- * Set above the live served corpus with headroom for growth rather than tuned to
- * today's exact count, so ordinary corpus expansion does not silently truncate
- * browsing.
- */
-const MAX_REACHABLE_RECORDS = 5000;
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_SEARCH_QUERY_LENGTH = 512;
 const MAX_FILTER_VALUES = 50;
@@ -220,8 +205,19 @@ export const searchResearchGroups = async (request: Request, response: Response)
     // Depth is bounded in records, so the reachable page number falls out of the
     // requested page size rather than being a second independent client-controlled
     // dimension (OWASP API4:2023).
-    const maxReachablePage = Math.max(1, Math.floor(MAX_REACHABLE_RECORDS / pageSize));
-    const page = Math.min(MAX_PAGE, maxReachablePage, Math.max(1, Math.floor(requestedPage) || 1));
+    const page = Math.max(1, Math.floor(requestedPage) || 1);
+    // Past the bound, answer with an empty page instead of clamping to the last
+    // reachable one: a clamped response looks like a full page of new rows to a
+    // client that tracks its own page counter, which appends the same entities
+    // forever. An empty page terminates the walk and dispatches no search work.
+    if (page > maxReachableResearchSearchPage(pageSize)) {
+      return response.json({
+        researchEntities: [],
+        estimatedTotalHits: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
+        page,
+        pageSize,
+      });
+    }
     // Facets describe the whole result set, not the page, and they dominate the
     // payload: a 100-record page measured 568,858 characters with 805 distinct
     // department values in one facet. They change on scrape cadence rather than per
@@ -261,6 +257,10 @@ export const searchResearchGroups = async (request: Request, response: Response)
       includeNonPublic: hasAdminAuthority,
       lowQualityFirst,
       qualityFilters: hasAdminAuthority ? parseQualityFilters(body.qualityFilters) : [],
+      // Skipped in the search layer rather than stripped here, so a page that
+      // needs no facets also skips the facet queries instead of only shrinking
+      // the payload.
+      includeFacets,
     });
     if (includeFacets) return response.json(result);
     // Omitted rather than emptied: an empty object is indistinguishable from "this

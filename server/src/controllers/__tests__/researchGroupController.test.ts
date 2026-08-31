@@ -23,6 +23,7 @@ vi.mock('../../services/adminGrantService', () => ({
 }));
 
 import { getResearchGroupBySlug, searchResearchGroups } from '../researchGroupController';
+import { RESEARCH_SEARCH_MAX_REACHABLE_RECORDS } from '../../services/researchSearchPagination';
 
 describe('researchGroupController', () => {
   beforeEach(() => {
@@ -243,12 +244,6 @@ describe('researchGroupController', () => {
     // against a served corpus of roughly 2,700. Depth is now bounded in records,
     // so the reachable page falls out of the requested page size instead of being
     // a second client-controlled dimension.
-    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
-      researchEntities: [],
-      estimatedTotalHits: 0,
-      page: 50,
-      pageSize: 100,
-    });
     const req = {
       body: {
         q: '',
@@ -264,19 +259,68 @@ describe('researchGroupController', () => {
 
     await searchResearchGroups(req, res);
 
-    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
-      '',
-      expect.any(Object),
-      50,
-      100,
-      expect.any(Object),
-      expect.any(Object),
-    );
+    expect(mocks.searchResearchGroupsViaMeili).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({
       researchEntities: [],
-      estimatedTotalHits: 0,
-      page: 50,
+      estimatedTotalHits: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
+      page: 999_999_999,
       pageSize: 100,
+    });
+  });
+
+  it('ends a paging walk past the depth bound instead of re-serving the last reachable page', async () => {
+    // A clamped response is indistinguishable from a full page of new rows to a
+    // client that advances its own page counter, so it appends the same entities
+    // forever. The response must instead satisfy the client's exhaustion rule:
+    // a short page whose offset has passed the reported total.
+    const pageSize = 24;
+    const lastReachablePage = Math.floor(RESEARCH_SEARCH_MAX_REACHABLE_RECORDS / pageSize);
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: Array.from({ length: pageSize }, (_unused, index) => ({
+        _id: `entity-${index}`,
+      })),
+      estimatedTotalHits: 6000,
+      page: lastReachablePage,
+      pageSize,
+    });
+    const reachableRes = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups(
+      { body: { q: '', page: lastReachablePage, pageSize, filters: {} } } as any,
+      reachableRes,
+    );
+    expect(reachableRes.json.mock.calls[0][0].researchEntities).toHaveLength(pageSize);
+
+    const beyondRes = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups(
+      { body: { q: '', page: lastReachablePage + 1, pageSize, filters: {} } } as any,
+      beyondRes,
+    );
+    const payload = beyondRes.json.mock.calls[0][0];
+    expect(payload.researchEntities).toEqual([]);
+    expect(payload.page).toBe(lastReachablePage + 1);
+    expect(payload.page * payload.pageSize).toBeGreaterThanOrEqual(payload.estimatedTotalHits);
+  });
+
+  it('skips facet computation in the search layer when the page omits facets', async () => {
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 2,
+      pageSize: 24,
+    });
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups({ body: { q: '', page: 2, pageSize: 24, filters: {} } } as any, res);
+    expect(mocks.searchResearchGroupsViaMeili.mock.calls[0][5]).toMatchObject({
+      includeFacets: false,
+    });
+
+    const firstPageRes = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups(
+      { body: { q: '', page: 1, pageSize: 24, filters: {} } } as any,
+      firstPageRes,
+    );
+    expect(mocks.searchResearchGroupsViaMeili.mock.calls[1][5]).toMatchObject({
+      includeFacets: true,
     });
   });
 
@@ -316,6 +360,7 @@ describe('researchGroupController', () => {
         includeNonPublic: false,
         lowQualityFirst: false,
         qualityFilters: [],
+        includeFacets: true,
       },
     );
   });
@@ -354,6 +399,7 @@ describe('researchGroupController', () => {
         includeNonPublic: false,
         lowQualityFirst: false,
         qualityFilters: [],
+        includeFacets: true,
       },
     );
   });
@@ -392,6 +438,7 @@ describe('researchGroupController', () => {
         includeNonPublic: true,
         lowQualityFirst: true,
         qualityFilters: ['missing-lead'],
+        includeFacets: true,
       },
     );
   });

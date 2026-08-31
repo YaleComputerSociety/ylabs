@@ -114,6 +114,7 @@ import {
   invalidateResearchEntitySearchEmbedderCache,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from '../researchEntitySearchIndexService';
+import { RESEARCH_SEARCH_MAX_REACHABLE_RECORDS } from '../researchSearchPagination';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -2148,7 +2149,7 @@ describe('searchResearchGroupsViaMeili', () => {
     );
   });
 
-  it('caps search page before computing Meili offsets', async () => {
+  it('caps search page in records before computing Meili offsets', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
       estimatedTotalHits: 0,
@@ -2156,19 +2157,58 @@ describe('searchResearchGroupsViaMeili', () => {
 
     const result = await searchResearchGroupsViaMeili('', {}, 999_999_999, 500);
 
+    const lastReachablePage = Math.floor(RESEARCH_SEARCH_MAX_REACHABLE_RECORDS / 100);
     expect(mocks.search).toHaveBeenCalledWith(
       '',
       expect.objectContaining({
         limit: 100,
-        offset: 99_900,
+        offset: (lastReachablePage - 1) * 100,
       }),
     );
     expect(result).toMatchObject({
       estimatedTotalHits: 0,
-      page: 1000,
+      page: lastReachablePage,
       pageSize: 100,
       researchEntities: [],
     });
+  });
+
+  it('keeps every record of a corpus at the depth bound reachable at a small page size', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+    });
+
+    const deepestSmallPage = RESEARCH_SEARCH_MAX_REACHABLE_RECORDS / 2;
+    await searchResearchGroupsViaMeili('', {}, deepestSmallPage, 2);
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      '',
+      expect.objectContaining({
+        limit: 2,
+        offset: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS - 2,
+      }),
+    );
+  });
+
+  it('skips facet queries when the caller does not need facets', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+    });
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { school: ['School of Medicine'] },
+      2,
+      24,
+      {},
+      { includeFacets: false },
+    );
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('facets');
+    expect(result.facetDistribution).toBeUndefined();
   });
 
   it('bounds direct Meili research search query and filter inputs before search', async () => {
