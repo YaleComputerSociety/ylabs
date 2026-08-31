@@ -57,8 +57,30 @@ const LINK_LABEL_WORDS = new Set([
   'visit',
   'view',
   'external',
+  'portfolio',
 ]);
 const MAX_LINK_LABEL_WORDS = 4;
+
+const LINK_WRAPPER_PREFIX_RE =
+  /^(?:links?\s+to|visit|go\s+to|see|view|check\s+out|more\s+(?:about|on))\s+(?:the\s+)?/i;
+// A bare ">" is deliberately absent: it is far likelier to be the tail of
+// literal markup ("Smith Lab <span ...>") that must stay rejectable than a link
+// chevron, and stripping it would hide the markup from the HTML guard.
+const LINK_WRAPPER_SUFFIX_RE =
+  /\s*(?:[»›→]+|\((?:external\s+)?link\)|\(opens?\s+in\s+[^)]*\))\s*$/i;
+
+/**
+ * Removes the anchor-text wrapper a CMS puts around a link so the name it wraps
+ * survives: "Link to Boggon Lab" is a label applied to a correct name, not a
+ * name (#2285). Runs before classification and before the label check, so a
+ * wrapper around nothing ("Link to Website") reduces to a bare label and is
+ * rejected on its own merits rather than adopted with the chrome attached.
+ */
+export function stripResearchHomeNameLinkWrapper(value: unknown): string {
+  const name = textValue(value);
+  if (!name) return '';
+  return name.replace(LINK_WRAPPER_SUFFIX_RE, '').replace(LINK_WRAPPER_PREFIX_RE, '').trim();
+}
 
 const NAME_WORD_RE = /[a-z0-9]+/g;
 
@@ -302,7 +324,7 @@ export function classifyHarvestedResearchHomeName(args: {
   personName: unknown;
   websiteUrl?: unknown;
 }): HarvestedNameIdentityVerdict {
-  const name = textValue(args.harvestedName);
+  const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
