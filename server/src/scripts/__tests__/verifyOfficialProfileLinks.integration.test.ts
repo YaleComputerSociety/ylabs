@@ -249,6 +249,31 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
     expect(waits).toEqual([40]);
   });
 
+  it('paces each replacement-candidate probe of a dead link', async () => {
+    await seedResearcher('Dana Example', DEAD_URL);
+    const waits: number[] = [];
+    const { probe, probed } = probeReturning({});
+
+    await runVerifyOfficialProfileLinks({
+      apply: false,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+      paceDelayMs: 40,
+      sleep: async (ms: number) => {
+        waits.push(ms);
+      },
+    });
+
+    expect(probed).toEqual([
+      DEAD_URL,
+      'https://example-dept.yale.edu/profile/ada-example',
+      'https://example-dept.yale.edu/profile/dana-example',
+      'https://example-dept.yale.edu/people/dana-example',
+    ]);
+    expect(waits).toEqual([40, 40, 40]);
+  });
+
   it('adopts an observed off-pattern page a source still publishes', async () => {
     const observedUrl = 'https://example-dept.yale.edu/faculty/ada-example';
     const researcher = await seedResearcher('Ada Example', DEAD_URL);
@@ -266,6 +291,73 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
 
     expect(result).toMatchObject({ repaired: 1, urlsRepaired: 1 });
     expect(await storedOfficialLink(researcher._id)).toMatchObject({ url: observedUrl });
+  });
+
+  it('adopts the nickname page a department publishes for the same person', async () => {
+    const deadUrl = 'https://example-dept.yale.edu/people/philip-example';
+    const nicknameUrl = 'https://example-dept.yale.edu/profile/phil-example';
+    const researcher = await seedResearcher('Philip Example', deadUrl);
+    await seedProfileUrlsObservation('pe123', { departmental: nicknameUrl });
+    const { probe } = probeReturning({
+      [nicknameUrl]: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+    });
+
+    const result = await runVerifyOfficialProfileLinks({
+      apply: true,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+    });
+
+    expect(result).toMatchObject({ repaired: 1, dead: 0, urlsRepaired: 1 });
+    expect(await storedOfficialLink(researcher._id)).toMatchObject({
+      url: nicknameUrl,
+      healthStatus: 'HEALTHY',
+    });
+  });
+
+  it('follows a department that moved the page from /profile/ to /people/', async () => {
+    const deadUrl = 'https://example-dept.yale.edu/profile/dana-l-example';
+    const reverseSectionUrl = 'https://example-dept.yale.edu/people/dana-l-example';
+    const researcher = await seedResearcher('Dana Example', deadUrl);
+    const { probe } = probeReturning({
+      [reverseSectionUrl]: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+    });
+
+    const result = await runVerifyOfficialProfileLinks({
+      apply: true,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+    });
+
+    expect(result).toMatchObject({ repaired: 1, dead: 0, urlsRepaired: 1 });
+    expect(await storedOfficialLink(researcher._id)).toMatchObject({
+      url: reverseSectionUrl,
+      healthStatus: 'HEALTHY',
+    });
+  });
+
+  it('recovers a page named after the person when the stored slug never named them', async () => {
+    const deadUrl = 'https://example-dept.yale.edu/ada-home';
+    const namedUrl = 'https://example-dept.yale.edu/profile/ada-example';
+    const researcher = await seedResearcher('Ada Example', deadUrl);
+    const { probe } = probeReturning({
+      [namedUrl]: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+    });
+
+    const result = await runVerifyOfficialProfileLinks({
+      apply: true,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+    });
+
+    expect(result).toMatchObject({ repaired: 1, dead: 0, urlsRepaired: 1 });
+    expect(await storedOfficialLink(researcher._id)).toMatchObject({
+      url: namedUrl,
+      healthStatus: 'HEALTHY',
+    });
   });
 
   it('ignores a superseded or rollback-retired observation as a replacement source', async () => {

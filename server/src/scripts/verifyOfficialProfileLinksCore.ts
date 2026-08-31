@@ -1,7 +1,7 @@
 import type { ResearcherProfileLinkHealthStatus } from '../models/researcher';
 import type { SourceLinkHealth } from '../services/sourceLinkHealth';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
-import { personProfileNameTokensFromUrl } from '../scrapers/utils/personProfileEntityMatch';
+import { personPageNameTokensFromUrl } from '../scrapers/utils/personProfileEntityMatch';
 
 export type OfficialProfileLinkVerdict = 'healthy' | 'repaired' | 'dead' | 'inconclusive';
 
@@ -99,30 +99,133 @@ const personNameTokens = (displayName: unknown): string[] =>
         .filter(Boolean)
     : [];
 
+const GIVEN_NAME_SHORT_FORM_GROUPS: readonly (readonly string[])[] = [
+  ['phil', 'philip', 'phillip'],
+  ['chris', 'christopher', 'christina', 'christine', 'christian'],
+  ['mike', 'michael'],
+  ['nick', 'nicholas'],
+  ['matt', 'matthew'],
+  ['greg', 'gregory'],
+  ['jeff', 'jeffrey', 'jeffery'],
+  ['steve', 'stephen', 'steven'],
+  ['tony', 'anthony'],
+  ['tom', 'thomas'],
+  ['tim', 'timothy'],
+  ['dan', 'daniel'],
+  ['ben', 'benjamin'],
+  ['sam', 'samuel', 'samantha'],
+  ['jim', 'james'],
+  ['jack', 'john'],
+  ['bill', 'william'],
+  ['bob', 'robert'],
+  ['rob', 'robert'],
+  ['rick', 'richard'],
+  ['ken', 'kenneth'],
+  ['andy', 'andrew'],
+  ['joe', 'joseph'],
+  ['pete', 'peter'],
+  ['ron', 'ronald'],
+  ['don', 'donald'],
+  ['fred', 'frederick'],
+  ['hank', 'henry'],
+  ['chuck', 'charles'],
+  ['charlie', 'charles'],
+  ['larry', 'lawrence'],
+  ['terry', 'terence'],
+  ['gabe', 'gabriel'],
+  ['liz', 'elizabeth'],
+  ['beth', 'elizabeth'],
+  ['betsy', 'elizabeth'],
+  ['kate', 'katherine', 'kathryn'],
+  ['kathy', 'katherine', 'kathryn'],
+  ['cathy', 'catherine'],
+  ['sue', 'susan'],
+  ['meg', 'margaret'],
+  ['maggie', 'margaret'],
+  ['peggy', 'margaret'],
+  ['jen', 'jennifer'],
+  ['jenny', 'jennifer'],
+  ['becky', 'rebecca'],
+  ['deb', 'deborah'],
+  ['debbie', 'deborah'],
+  ['pam', 'pamela'],
+  ['barb', 'barbara'],
+  ['abby', 'abigail'],
+];
+
+const GIVEN_NAME_SHORT_FORM_PAIRS: ReadonlySet<string> = new Set(
+  GIVEN_NAME_SHORT_FORM_GROUPS.flatMap(([shortForm, ...fullForms]) =>
+    fullForms.flatMap((fullForm) => [`${shortForm}:${fullForm}`, `${fullForm}:${shortForm}`]),
+  ),
+);
+
+/**
+ * Whether two given-name tokens are the same name written short and long
+ * (`phil`/`philip`, `chris`/`christopher`). The short forms are enumerated rather
+ * than derived, because every generic rule that admits a short form also admits
+ * two genuinely different names: a prefix rule reads `sara`/`sarah` and
+ * `alex`/`alexandra` as one person, and a first-letter rule lets `a` stand in for
+ * `alison`. Both are how a same-surname colleague gets claimed (#468), and this
+ * lane overwrites a served identity link, so an unlisted short form must lose a
+ * repair rather than win a wrong one.
+ */
+export function givenNameTokensAgree(a: string, b: string): boolean {
+  if (a === b) return true;
+  return GIVEN_NAME_SHORT_FORM_PAIRS.has(`${a}:${b}`);
+}
+
 /**
  * Whether a candidate person-page slug names the same person as a display name.
  * A department can re-slug someone (`douglas-stone` becoming `a-douglas-stone`,
- * `paul-l-tipton` becoming `paul-tipton`), so surname equality plus a whole
- * given-name token appearing on both sides is the tie that survives re-slugging.
+ * `paul-l-tipton` becoming `paul-tipton`) or publish them under a nickname
+ * (`philip-gorski` becoming `phil-gorski`, #2308), so the tie is surname equality
+ * plus a given-name token that agrees whole or as a short form.
  * A first-initial match is deliberately not enough: an initial-led display name
  * ("A Douglas Stone") would otherwise claim any same-surname colleague whose
- * given name starts with that letter ("Alison Stone"), and same-slug people
+ * given name starts with that letter ("Alison Stone"), and same-surname people
  * really do exist across Yale sites (#468).
  */
 export function profileSlugNamesPerson(candidateUrl: unknown, displayName: unknown): boolean {
-  const slugTokens = personProfileNameTokensFromUrl(candidateUrl);
+  const slugTokens = personPageNameTokensFromUrl(candidateUrl);
   const nameTokens = personNameTokens(displayName);
   if (!slugTokens || slugTokens.length === 0 || nameTokens.length < 2) return false;
   if (slugTokens.at(-1) !== nameTokens.at(-1)) return false;
-  return nameTokens.includes(slugTokens[0]) || slugTokens.includes(nameTokens[0]);
+  return (
+    nameTokens.some((token) => givenNameTokensAgree(token, slugTokens[0])) ||
+    slugTokens.some((token) => givenNameTokensAgree(token, nameTokens[0]))
+  );
+}
+
+/**
+ * The person-page slug a department would mint from a display name.
+ */
+export function personNameSlug(displayName: unknown): string {
+  return String(displayName ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 /**
  * Replacement candidates for a dead official link, most trustworthy first: a URL
  * some source was observed publishing for this exact path, then an observed
  * same-host page whose slug names the same person, then the same-host
- * `/profile/<slug>` twin of the dead path. Every candidate is still probed before
- * adoption, so each one is a hypothesis to test rather than a rewrite rule.
+ * `/profile/<slug>` twin of the dead path, its `/people/<slug>` twin, and last a
+ * page named after the person rather than after the dead slug. Every candidate is
+ * still probed before adoption, so each one is a hypothesis to test rather than a
+ * rewrite rule.
+ *
+ * The reverse-section twin follows a department that moved the page the opposite
+ * way to the usual migration (`ysph.yale.edu` moved a professor from
+ * `/profile/<slug>` to `/people/<slug>`), and the name-derived pair recovers a link
+ * whose stored slug never named the person at all
+ * (`politicalscience.yale.edu/ian-home`). Both are constructed rather than
+ * observed, so each must still pass the same person-page check an observed
+ * candidate passes: a display name that leaked a roster label ("Primary Faculty")
+ * or carries no surname would otherwise mint `/people/primary-faculty`, and a
+ * roster page probes live, which would stamp it HEALTHY on the researcher.
  */
 export function officialProfileLinkCandidates(
   deadUrl: string,
@@ -168,11 +271,21 @@ export function officialProfileLinkCandidates(
     }
   };
 
+  const addPersonPage = (value: string) => {
+    if (profileSlugNamesPerson(value, displayName)) add(value);
+  };
+
   for (const observed of observedSameHostUrls) if (sameSlug(observed)) add(observed);
-  for (const observed of observedSameHostUrls) {
-    if (profileSlugNamesPerson(observed, displayName)) add(observed);
+  for (const observed of observedSameHostUrls) addPersonPage(observed);
+  if (deadSlug) {
+    add(`https://${host}/profile/${deadSlug}`);
+    addPersonPage(`https://${host}/people/${deadSlug}`);
   }
-  if (deadSlug) add(`https://${host}/profile/${deadSlug}`);
+  const nameSlug = personNameSlug(displayName);
+  if (nameSlug) {
+    addPersonPage(`https://${host}/profile/${nameSlug}`);
+    addPersonPage(`https://${host}/people/${nameSlug}`);
+  }
   return candidates;
 }
 
