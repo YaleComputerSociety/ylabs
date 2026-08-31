@@ -35,8 +35,19 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install dependencies
-        run: corepack enable && yarn install:all:immutable
+      - name: Enable Corepack
+        run: corepack enable
+
+      # Invoke the immutable installs as yarn builtins, not via the
+      # install:all:immutable script: on a fresh checkout Yarn cannot run
+      # package.json scripts before an install has created its state file
+      # ("Couldn't find the node_modules state file"), so the script form
+      # fails on every CI runner.
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
 
       - name: Run production security smoke
         env:

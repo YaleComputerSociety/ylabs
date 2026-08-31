@@ -230,7 +230,7 @@ export const buildSecurityHeaderChecks = (prefix, headers) => {
     },
     {
       name: `${prefix}.referrerPolicy`,
-      status: referrerPolicy.toLowerCase() === 'strict-origin-when-cross-origin' ? 'pass' : 'fail',
+      status: referrerPolicy.toLowerCase() === 'no-referrer' ? 'pass' : 'fail',
       header: 'referrer-policy',
     },
     {
