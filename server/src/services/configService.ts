@@ -44,6 +44,7 @@ export interface ConfigData {
   deployment: {
     provider: 'render' | 'unknown';
   };
+  features: Record<string, boolean>;
   timestamp: string;
 }
 
@@ -54,6 +55,17 @@ type DeploymentEnvKey = 'RENDER';
 type DeploymentEnv = Partial<Record<DeploymentEnvKey, string | undefined>> & {
   [key: string]: string | undefined;
 };
+
+export const RELEASE_FEATURE_FLAGS: readonly string[] = [];
+
+const featureFlagEnvKey = (flag: string): string =>
+  `FEATURE_${flag.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()}`;
+
+export const buildFeatureFlags = (
+  env: DeploymentEnv = process.env,
+  flags: readonly string[] = RELEASE_FEATURE_FLAGS,
+): Record<string, boolean> =>
+  Object.fromEntries(flags.map((flag) => [flag, env[featureFlagEnvKey(flag)] === 'true']));
 
 export const buildDeploymentFingerprint = (
   env: DeploymentEnv = process.env,
@@ -169,6 +181,7 @@ export const getConfig = async (
       categories: Object.values(DepartmentCategory),
     },
     deployment: buildDeploymentFingerprint(env),
+    features: buildFeatureFlags(env),
     timestamp: new Date().toISOString(),
   };
 

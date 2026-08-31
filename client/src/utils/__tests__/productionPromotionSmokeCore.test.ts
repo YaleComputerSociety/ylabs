@@ -207,13 +207,23 @@ describe('production promotion smoke core', () => {
       'permissions-policy': 'camera=(), microphone=(), geolocation=()',
       'x-frame-options': 'DENY',
       'x-content-type-options': 'nosniff',
-      'referrer-policy': 'strict-origin-when-cross-origin',
+      'referrer-policy': 'no-referrer',
       'cross-origin-opener-policy': 'same-origin',
       'strict-transport-security': 'max-age=31536000; includeSubDomains',
     });
     expect(
       buildSecurityHeaderChecks('api.config.headers', goodHeaders).map((check) => check.status),
     ).toEqual(['pass', 'pass', 'pass', 'pass', 'pass', 'pass', 'pass']);
+
+    expect(
+      buildSecurityHeaderChecks(
+        'api.config.headers',
+        new Headers({
+          ...Object.fromEntries(goodHeaders),
+          'referrer-policy': 'strict-origin-when-cross-origin',
+        }),
+      ).find((check) => check.name === 'api.config.headers.referrerPolicy'),
+    ).toEqual(expect.objectContaining({ status: 'fail' }));
 
     const missingHeaders = new Headers({
       'x-frame-options': 'DENY',
