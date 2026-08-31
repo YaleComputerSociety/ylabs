@@ -15,6 +15,10 @@ const productionSecuritySmokeWorkflow = fs.readFileSync(
   new URL('../.github/workflows/production-security-smoke.yml', import.meta.url),
   'utf8',
 );
+const releaseHoldWorkflow = fs.readFileSync(
+  new URL('../.github/workflows/release-hold.yml', import.meta.url),
+  'utf8',
+);
 const yarnrc = fs.readFileSync(new URL('../.yarnrc.yml', import.meta.url), 'utf8');
 
 test('TypeScript source files do not contain nested import declarations', () => {
@@ -323,9 +327,7 @@ test('rendered fetch process boundary constrains env-selected command and bridge
 });
 
 test('service-layer search and materialization sync logs sanitize caught errors', () => {
-  const files = [
-    '../server/src/services/meiliSyncService.ts',
-  ];
+  const files = ['../server/src/services/meiliSyncService.ts'];
 
   for (const file of files) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -612,6 +614,7 @@ test('GitHub workflows run with read-only repository token permissions', () => {
     ['ci', ciWorkflow],
     ['keep-alive', keepAliveWorkflow],
     ['production-security-smoke', productionSecuritySmokeWorkflow],
+    ['release-hold', releaseHoldWorkflow],
   ]) {
     assert.match(
       workflow,
@@ -662,7 +665,12 @@ test('production security smoke workflow checks live hardening headers and curre
   assert.match(productionSecuritySmokeWorkflow, /SMOKE_APP_BASE:/);
   assert.match(
     productionSecuritySmokeWorkflow,
-    /SMOKE_EXPECT_COMMIT:\s*\$\{\{\s*inputs\.expect_commit \|\| github\.sha\s*\}\}/,
+    /SMOKE_EXPECT_COMMIT:\s*\$\{\{\s*inputs\.expect_commit\s*\}\}/,
+  );
+  assert.doesNotMatch(productionSecuritySmokeWorkflow, /github\.sha/);
+  assert.match(
+    productionSecuritySmokeWorkflow,
+    /run:\s*corepack enable && yarn install:all:immutable/,
   );
 });
 
@@ -3971,7 +3979,10 @@ test('admin authority requires an active admin grant and never consults userType
     /const hasAuthenticatedPrincipal = \(user: unknown\): user is AuthenticatedUser =>/,
   );
   assert.match(source, /export const isAuthenticated[\s\S]*hasAuthenticatedPrincipal\(req\.user\)/);
-  assert.match(source, /export const isAdmin[\s\S]*hasActiveAdminGrant\(requestNetid\(currentUser\)\)/);
+  assert.match(
+    source,
+    /export const isAdmin[\s\S]*hasActiveAdminGrant\(requestNetid\(currentUser\)\)/,
+  );
   assert.doesNotMatch(source, /allowsLegacyAdminUserType/);
   assert.doesNotMatch(source, /userType/);
   assert.doesNotMatch(source, /hasAdminAuthority/);
@@ -4705,8 +4716,7 @@ test('quality and coverage audit artifacts use safe JSON output paths', () => {
 });
 
 test('publication and scholarly audit artifacts use safe JSON output paths', () => {
-  const files = [
-  ];
+  const files = [];
 
   for (const [name, file] of files) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');

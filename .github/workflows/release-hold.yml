@@ -1,0 +1,30 @@
+name: Release Hold
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review, converted_to_draft]
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  hold:
+    name: release-hold
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block while the hold label is present
+        if: contains(github.event.pull_request.labels.*.name, 'hold')
+        run: |
+          echo "::error::The 'hold' label is set on this promotion. Beta verification is not signed off."
+          exit 1
+
+      - name: Block while the pull request is a draft
+        if: github.event.pull_request.draft
+        run: |
+          echo "::error::This promotion is still a draft. Mark it ready for review once beta verification passes."
+          exit 1
+
+      - name: Report clear
+        run: echo "No release hold in effect."
