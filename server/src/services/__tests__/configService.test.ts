@@ -26,7 +26,13 @@ vi.mock('../../models/researchArea', () => ({
   },
 }));
 
-import { buildDeploymentFingerprint, getConfig, invalidateConfigCache } from '../configService';
+import {
+  RELEASE_FEATURE_FLAGS,
+  buildDeploymentFingerprint,
+  buildFeatureFlags,
+  getConfig,
+  invalidateConfigCache,
+} from '../configService';
 
 const leanChain = (value: unknown) => {
   const chain = {
@@ -109,5 +115,49 @@ describe('configService', () => {
       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     );
     expect(JSON.stringify(config.deployment)).not.toContain('main');
+  });
+
+  it('defaults every declared release feature flag to off', () => {
+    expect(buildFeatureFlags({}, ['newBrowseRanking', 'programsRedesign'])).toEqual({
+      newBrowseRanking: false,
+      programsRedesign: false,
+    });
+  });
+
+  it('enables a release feature flag only for the exact string true', () => {
+    const env = {
+      FEATURE_NEW_BROWSE_RANKING: 'true',
+      FEATURE_PROGRAMS_REDESIGN: 'TRUE',
+      FEATURE_COURSE_TABLE: '1',
+    };
+
+    expect(buildFeatureFlags(env, ['newBrowseRanking', 'programsRedesign', 'courseTable'])).toEqual(
+      {
+        newBrowseRanking: true,
+        programsRedesign: false,
+        courseTable: false,
+      },
+    );
+  });
+
+  it('ignores environment variables that are not declared release feature flags', () => {
+    expect(buildFeatureFlags({ FEATURE_UNDECLARED: 'true' }, ['newBrowseRanking'])).toEqual({
+      newBrowseRanking: false,
+    });
+  });
+
+  it('keeps the public config feature map bounded to the declared registry', async () => {
+    mocks.departmentFind.mockReturnValue(leanChain([]));
+
+    const config = await getConfig(true, {
+      RENDER: 'true',
+      FEATURE_UNDECLARED: 'true',
+      SESSION_SECRET: 'do-not-expose',
+    });
+
+    expect(Object.keys(config.features)).toEqual([...RELEASE_FEATURE_FLAGS]);
+    expect(Object.values(config.features).every((value) => typeof value === 'boolean')).toBe(true);
+    expect(JSON.stringify(config.features)).not.toContain('do-not-expose');
+    expect(JSON.stringify(config.features)).not.toContain('UNDECLARED');
   });
 });
