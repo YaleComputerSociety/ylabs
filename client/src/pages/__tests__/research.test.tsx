@@ -378,7 +378,7 @@ describe('Research page', () => {
     );
     expect(container.textContent).not.toContain('Yale papers');
     expect(
-      screen.getByPlaceholderText('Type a topic, professor, lab, method, or research question'),
+      screen.getByPlaceholderText('Type a topic, professor, lab, technique, or research question'),
     ).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(
       true,
@@ -473,9 +473,9 @@ describe('Research page', () => {
     try {
       renderResearch();
 
-      expect(screen.getByPlaceholderText('Type a topic, professor, lab, or method')).toBeTruthy();
+      expect(screen.getByPlaceholderText('Type a topic, professor, lab, or technique')).toBeTruthy();
       expect(
-        screen.queryByPlaceholderText('Type a topic, professor, lab, method, or research question'),
+        screen.queryByPlaceholderText('Type a topic, professor, lab, technique, or research question'),
       ).toBeNull();
     } finally {
       vi.unstubAllGlobals();
