@@ -14,15 +14,35 @@ There is no GitHub Actions deploy step, so moving a branch is what ships.
 
 ## Promoting beta to main
 
+`main` does not yet share history with `beta`.
+An earlier promotion was squash-merged, which severed the two branches, so the merge base is ancient and every intentional deletion on `beta` reads as a delete-versus-modify conflict.
+`main` currently sits 3 ahead and over 1300 behind, and a direct promotion pull request conflicts on about 485 paths that are not real conflicts.
+
+So the **first** promotion needs a one-time reconciliation, not a plain pull request:
+
+```bash
+git fetch origin
+git worktree add -b sync/beta-to-main /tmp/ylabs-sync origin/beta
+cd /tmp/ylabs-sync && git merge -s ours origin/main
+git diff --stat HEAD origin/beta                # must be empty
+git merge-base --is-ancestor origin/main HEAD   # must succeed
+git push -u origin sync/beta-to-main
+gh pr create --base main --head sync/beta-to-main --draft
+```
+
+`-s ours` keeps `beta`'s tree wholesale while recording `main` as a second parent.
+Before relying on it, confirm `main` holds no unique work: check that any revert pairs net to an empty diff, and that every file present only on `main` also exists somewhere in `beta` history.
+
+Once that has landed, `main` is an ancestor of `beta` and every later promotion is an ordinary pull request:
+
 1. Open a pull request from `beta` into `main`.
 2. Verify the change set on staging.
 3. Mark the pull request ready for review and merge it.
 
 Merge promotions with a **merge commit**.
 Never squash a branch-to-branch promotion.
-Squashing severs `main` from `beta` history, which makes the merge base ancient and turns every intentional deletion on `beta` into a delete-versus-modify conflict.
-This already happened once: `main` drifted to 1304 commits behind and a direct promotion pull request conflicted on 485 paths that were not real conflicts.
-Recovering required a branch based on `beta` that merged `main` with `-s ours` to keep `beta`'s tree while recording `main` as a second parent.
+Squashing drops the second parent, re-severs the histories, and reproduces the phantom conflicts on the next promotion.
+The `protect main (production)` ruleset restricts `main` to merge commits so this cannot happen by accident.
 
 Squashing individual feature pull requests into `beta` is fine and remains the norm.
 The rule applies only to promotions between long-lived branches.
