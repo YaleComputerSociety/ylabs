@@ -48,7 +48,11 @@ import {
   netidFromEmail,
   splitName,
 } from '../utils/scraperHelpers';
-import { classifyUserType, looksLikeNonResearchTitle } from './yaleDirectoryScraper';
+import {
+  classifyUserType,
+  isSubordinateResearchRank,
+  looksLikeNonResearchTitle,
+} from './yaleDirectoryScraper';
 import { normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -494,6 +498,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     let profilesScanned = 0;
     let researchersEnriched = 0;
     let entityCount = 0;
+    let subordinateRankSkipped = 0;
     let labCount = 0;
     let areaCount = 0;
 
@@ -510,6 +515,13 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       const profile = extractProfile(profileHtml, faculty);
       if (!profile) continue;
       if (looksLikeNonResearchTitle(profile.title)) continue;
+      // A trainee works in somebody else's lab, so their profile mints no
+      // research home of their own and cannot inherit their PI's lab name
+      // (#2304, the mint-side cause of the #2285 grafts).
+      if (isSubordinateResearchRank(profile.title)) {
+        subordinateRankSkipped += 1;
+        continue;
+      }
       if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) continue;
 
       researchersEnriched += 1;
@@ -529,7 +541,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
-        `(${labCount} with lab sites, ${areaCount} with research areas) of ${profilesScanned} profiles scanned`,
+        `(${labCount} with lab sites, ${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
+        `${subordinateRankSkipped} skipped as subordinate research ranks`,
     );
 
     return {
@@ -537,7 +550,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       entitiesObserved: researchersEnriched + entityCount,
       notes:
         `YSM faculty directory: ${researchersEnriched} researchers with research content, ` +
-        `${entityCount} research homes (${labCount} labs, ${areaCount} with areas) of ${profilesScanned} profiles scanned`,
+        `${entityCount} research homes (${labCount} labs, ${areaCount} with areas) of ${profilesScanned} profiles scanned, ` +
+        `${subordinateRankSkipped} subordinate ranks skipped`,
     };
   }
 }
