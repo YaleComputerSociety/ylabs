@@ -18,6 +18,7 @@ export const parseSmokeArgs = (argv) => {
     'opportunity-id',
     'cookie',
     'expect-commit',
+    'deployment-token',
   ]);
   const booleanArgs = new Set(['ui']);
 
@@ -60,6 +61,9 @@ export const parseSmokeConfig = (argv, env = process.env) => {
     explicitOpportunityId: args.get('opportunity-id') || env.SMOKE_OPPORTUNITY_ID || '',
     smokeCookie: String(args.get('cookie') || env.SMOKE_COOKIE || '').trim(),
     expectedCommit: String(args.get('expect-commit') || env.SMOKE_EXPECT_COMMIT || '').trim(),
+    deploymentToken: String(
+      args.get('deployment-token') || env.SMOKE_DEPLOYMENT_TOKEN || '',
+    ).trim(),
   };
 };
 
@@ -71,6 +75,7 @@ export const createSmokeReport = (config, now = new Date()) => ({
     writes: false,
     usesDevLogin: false,
     usesSmokeCookie: Boolean(config.smokeCookie),
+    usesDeploymentToken: Boolean(config.deploymentToken),
     uiAuth: 'route-interception-only',
   },
   expected: {
@@ -153,7 +158,7 @@ export const deploymentFingerprintCheck = (configJson, expectedCommit = '') => {
     return {
       status: actualCommit ? 'pass' : 'warn',
       ...result,
-      ...(actualCommit ? {} : { reason: 'Deployment fingerprint is missing from /api/config.' }),
+      ...(actualCommit ? {} : { reason: 'Deployment fingerprint unavailable; pass --deployment-token to read /api/deployment.' }),
     };
   }
 
@@ -161,7 +166,7 @@ export const deploymentFingerprintCheck = (configJson, expectedCommit = '') => {
     return {
       status: 'fail',
       ...result,
-      reason: 'Deployment fingerprint is missing from /api/config.',
+      reason: 'Deployment fingerprint unavailable; pass --deployment-token to read /api/deployment.',
     };
   }
 

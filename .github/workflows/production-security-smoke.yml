@@ -54,6 +54,7 @@ jobs:
           SMOKE_API_BASE: ${{ inputs.api_base || 'https://yalelabs.io/api' }}
           SMOKE_APP_BASE: ${{ inputs.app_base || 'https://yalelabs.io' }}
           SMOKE_EXPECT_COMMIT: ${{ inputs.expect_commit }}
+          SMOKE_DEPLOYMENT_TOKEN: ${{ secrets.DEPLOYMENT_FINGERPRINT_TOKEN }}
         run: |
           set +e
           cmd=(yarn security:smoke:production)
