@@ -99,19 +99,79 @@ const personNameTokens = (displayName: unknown): string[] =>
         .filter(Boolean)
     : [];
 
-const SHORTEST_NICKNAME_TOKEN = 4;
+const GIVEN_NAME_SHORT_FORM_GROUPS: readonly (readonly string[])[] = [
+  ['phil', 'philip', 'phillip'],
+  ['chris', 'christopher', 'christina', 'christine', 'christian'],
+  ['mike', 'michael'],
+  ['nick', 'nicholas'],
+  ['matt', 'matthew'],
+  ['greg', 'gregory'],
+  ['jeff', 'jeffrey', 'jeffery'],
+  ['steve', 'stephen', 'steven'],
+  ['tony', 'anthony'],
+  ['tom', 'thomas'],
+  ['tim', 'timothy'],
+  ['dan', 'daniel'],
+  ['ben', 'benjamin'],
+  ['sam', 'samuel', 'samantha'],
+  ['jim', 'james'],
+  ['jack', 'john'],
+  ['bill', 'william'],
+  ['bob', 'robert'],
+  ['rob', 'robert'],
+  ['rick', 'richard'],
+  ['ken', 'kenneth'],
+  ['andy', 'andrew'],
+  ['joe', 'joseph'],
+  ['pete', 'peter'],
+  ['ron', 'ronald'],
+  ['don', 'donald'],
+  ['fred', 'frederick'],
+  ['hank', 'henry'],
+  ['chuck', 'charles'],
+  ['charlie', 'charles'],
+  ['larry', 'lawrence'],
+  ['terry', 'terence'],
+  ['gabe', 'gabriel'],
+  ['liz', 'elizabeth'],
+  ['beth', 'elizabeth'],
+  ['betsy', 'elizabeth'],
+  ['kate', 'katherine', 'kathryn'],
+  ['kathy', 'katherine', 'kathryn'],
+  ['cathy', 'catherine'],
+  ['sue', 'susan'],
+  ['meg', 'margaret'],
+  ['maggie', 'margaret'],
+  ['peggy', 'margaret'],
+  ['jen', 'jennifer'],
+  ['jenny', 'jennifer'],
+  ['becky', 'rebecca'],
+  ['deb', 'deborah'],
+  ['debbie', 'deborah'],
+  ['pam', 'pamela'],
+  ['barb', 'barbara'],
+  ['abby', 'abigail'],
+];
+
+const GIVEN_NAME_SHORT_FORM_PAIRS: ReadonlySet<string> = new Set(
+  GIVEN_NAME_SHORT_FORM_GROUPS.flatMap(([shortForm, ...fullForms]) =>
+    fullForms.flatMap((fullForm) => [`${shortForm}:${fullForm}`, `${fullForm}:${shortForm}`]),
+  ),
+);
 
 /**
  * Whether two given-name tokens are the same name written short and long
- * (`phil`/`philip`, `chris`/`christopher`). Requiring the shorter side to reach
- * four characters is what keeps an initial out: `a` must never stand in for
- * `alison`, because that is how a same-surname colleague gets claimed.
+ * (`phil`/`philip`, `chris`/`christopher`). The short forms are enumerated rather
+ * than derived, because every generic rule that admits a short form also admits
+ * two genuinely different names: a prefix rule reads `sara`/`sarah` and
+ * `alex`/`alexandra` as one person, and a first-letter rule lets `a` stand in for
+ * `alison`. Both are how a same-surname colleague gets claimed (#468), and this
+ * lane overwrites a served identity link, so an unlisted short form must lose a
+ * repair rather than win a wrong one.
  */
 export function givenNameTokensAgree(a: string, b: string): boolean {
   if (a === b) return true;
-  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
-  if (shorter.length < SHORTEST_NICKNAME_TOKEN) return false;
-  return longer.startsWith(shorter);
+  return GIVEN_NAME_SHORT_FORM_PAIRS.has(`${a}:${b}`);
 }
 
 /**
@@ -143,7 +203,7 @@ export function personNameSlug(displayName: unknown): string {
   return String(displayName ?? '')
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
@@ -152,14 +212,20 @@ export function personNameSlug(displayName: unknown): string {
  * Replacement candidates for a dead official link, most trustworthy first: a URL
  * some source was observed publishing for this exact path, then an observed
  * same-host page whose slug names the same person, then the same-host
- * `/profile/<slug>` twin of the dead path, and last a page named after the person
- * rather than after the dead slug. Every candidate is still probed before
- * adoption, so each one is a hypothesis to test rather than a rewrite rule.
+ * `/profile/<slug>` twin of the dead path, its `/people/<slug>` twin, and last a
+ * page named after the person rather than after the dead slug. Every candidate is
+ * still probed before adoption, so each one is a hypothesis to test rather than a
+ * rewrite rule.
  *
- * The name-derived pair is what recovers a link whose stored slug never named the
- * person (`politicalscience.yale.edu/ian-home`) or whose department moved the page
- * the opposite way to the usual migration (`ysph.yale.edu` moved a professor from
- * `/profile/<slug>` to `/people/<slug>`), which is why both sections are tried.
+ * The reverse-section twin follows a department that moved the page the opposite
+ * way to the usual migration (`ysph.yale.edu` moved a professor from
+ * `/profile/<slug>` to `/people/<slug>`), and the name-derived pair recovers a link
+ * whose stored slug never named the person at all
+ * (`politicalscience.yale.edu/ian-home`). Both are constructed rather than
+ * observed, so each must still pass the same person-page check an observed
+ * candidate passes: a display name that leaked a roster label ("Primary Faculty")
+ * or carries no surname would otherwise mint `/people/primary-faculty`, and a
+ * roster page probes live, which would stamp it HEALTHY on the researcher.
  */
 export function officialProfileLinkCandidates(
   deadUrl: string,
@@ -205,18 +271,20 @@ export function officialProfileLinkCandidates(
     }
   };
 
+  const addPersonPage = (value: string) => {
+    if (profileSlugNamesPerson(value, displayName)) add(value);
+  };
+
   for (const observed of observedSameHostUrls) if (sameSlug(observed)) add(observed);
-  for (const observed of observedSameHostUrls) {
-    if (profileSlugNamesPerson(observed, displayName)) add(observed);
+  for (const observed of observedSameHostUrls) addPersonPage(observed);
+  if (deadSlug) {
+    add(`https://${host}/profile/${deadSlug}`);
+    addPersonPage(`https://${host}/people/${deadSlug}`);
   }
-  if (deadSlug) add(`https://${host}/profile/${deadSlug}`);
   const nameSlug = personNameSlug(displayName);
   if (nameSlug) {
-    // Compared by full path, not by slug: a department can move a person between
-    // sections while keeping the slug (`/profile/haiqun-lin` to `/people/haiqun-lin`),
-    // so the same slug under a different section is a real candidate.
-    add(`https://${host}/profile/${nameSlug}`);
-    add(`https://${host}/people/${nameSlug}`);
+    addPersonPage(`https://${host}/profile/${nameSlug}`);
+    addPersonPage(`https://${host}/people/${nameSlug}`);
   }
   return candidates;
 }

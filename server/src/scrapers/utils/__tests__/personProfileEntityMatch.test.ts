@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isPersonOrGrantShellSlug,
+  personPageNameTokensFromUrl,
   personProfileNameTokensFromUrl,
   personProfileSourceMatchesEntity,
   researchEntityIdentityTokens,
@@ -35,6 +36,40 @@ describe('personProfileNameTokensFromUrl', () => {
     expect(
       personProfileNameTokensFromUrl('https://medicine.yale.edu/people/ladder-faculty'),
     ).toBeNull();
+  });
+});
+
+describe('personPageNameTokensFromUrl', () => {
+  it('reads the wider person-page shapes a Yale site publishes', () => {
+    expect(
+      personPageNameTokensFromUrl('https://example-dept.yale.edu/person/dana-example/'),
+    ).toEqual(['dana', 'example']);
+    expect(
+      personPageNameTokensFromUrl(
+        'https://example-dept.yale.edu/people/full-part-time-lecturers/dana-example',
+      ),
+    ).toEqual(['dana', 'example']);
+  });
+
+  it('reads the nested CMS profile page the repo already treats as canonical', () => {
+    expect(
+      personPageNameTokensFromUrl('https://medicine.yale.edu/lab-example/profile/dana-example'),
+    ).toEqual(['dana', 'example']);
+    expect(
+      personProfileNameTokensFromUrl('https://medicine.yale.edu/lab-example/profile/dana-example'),
+    ).toBeNull();
+  });
+
+  it('still refuses a roster page, a netid slug, and a non-Yale host', () => {
+    expect(
+      personPageNameTokensFromUrl('https://example-dept.yale.edu/people/ladder-faculty'),
+    ).toBeNull();
+    expect(
+      personPageNameTokensFromUrl('https://example-dept.yale.edu/people/programs/our-people'),
+    ).toBeNull();
+    expect(personPageNameTokensFromUrl('https://example-dept.yale.edu/profile/zz000')).toBeNull();
+    expect(personPageNameTokensFromUrl('https://example.com/people/dana-example')).toBeNull();
+    expect(personPageNameTokensFromUrl('https://example-dept.yale.edu/people/')).toBeNull();
   });
 });
 

@@ -249,6 +249,31 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
     expect(waits).toEqual([40]);
   });
 
+  it('paces each replacement-candidate probe of a dead link', async () => {
+    await seedResearcher('Dana Example', DEAD_URL);
+    const waits: number[] = [];
+    const { probe, probed } = probeReturning({});
+
+    await runVerifyOfficialProfileLinks({
+      apply: false,
+      hostConcurrency: 1,
+      limit: 10,
+      probe,
+      paceDelayMs: 40,
+      sleep: async (ms: number) => {
+        waits.push(ms);
+      },
+    });
+
+    expect(probed).toEqual([
+      DEAD_URL,
+      'https://example-dept.yale.edu/profile/ada-example',
+      'https://example-dept.yale.edu/profile/dana-example',
+      'https://example-dept.yale.edu/people/dana-example',
+    ]);
+    expect(waits).toEqual([40, 40, 40]);
+  });
+
   it('adopts an observed off-pattern page a source still publishes', async () => {
     const observedUrl = 'https://example-dept.yale.edu/faculty/ada-example';
     const researcher = await seedResearcher('Ada Example', DEAD_URL);

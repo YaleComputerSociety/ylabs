@@ -274,6 +274,7 @@ export async function runVerifyOfficialProfileLinks(
       const observed = observedIndex.get(target.host) || [];
       const candidates = officialProfileLinkCandidates(target.url, target.displayName, observed);
       for (const candidate of candidates) {
+        if (paceDelayMs > 0) await sleep(paceDelayMs);
         if (isDecisivelyLiveProbe(await probeWithBackoff(candidate))) {
           verdict = 'repaired';
           replacementUrl = candidate;
