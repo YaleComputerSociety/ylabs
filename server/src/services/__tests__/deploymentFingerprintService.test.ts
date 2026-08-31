@@ -34,13 +34,13 @@ describe('deploymentFingerprintService', () => {
       RENDER_GIT_COMMIT: 'aaaaaaa',
       RENDER_SERVICE_ID: 'srv-private-id',
       SESSION_SECRET: 'do-not-expose',
-      MONGODBURL: 'mongodb+srv://user:pw@host/db',
+      MONGODBURL: 'redacted-database-connection-string',
     });
 
     const serialized = JSON.stringify(fingerprint);
     expect(serialized).not.toContain('srv-private-id');
     expect(serialized).not.toContain('do-not-expose');
-    expect(serialized).not.toContain('mongodb');
+    expect(serialized).not.toContain('redacted-database-connection-string');
   });
 
   it('bounds and strips hostile fingerprint values', () => {
