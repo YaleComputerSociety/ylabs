@@ -3,8 +3,11 @@ import { Observation } from '../../models/observation';
 import {
   appendObservations,
   buildObservationFingerprint,
+  collapseLatestWins,
   isRegressiveProseRefresh,
+  isWeakerProseRefresh,
   observationEntityIdentityFilter,
+  prosePreferenceScore,
   retireObservations,
   selfDefeatingCardRestatesFullDescription,
 } from '../observationStore';
@@ -19,6 +22,15 @@ const DEGRADED_DESCRIPTION = 'Our lab studies things.';
 const USEFUL_SHORT_DESCRIPTION =
   'Studies cellular signaling and translational biomarkers to improve immune-related patient care.';
 const DEGRADED_SHORT_DESCRIPTION = 'Our lab studies things.';
+
+const MISSION =
+  'Our Mission Create and communicate high-quality and creative science on the cellular and molecular mechanisms that control tissue biology: development, homeostasis, regeneration, and disease. Our research uses multiple epithelial tissues to explore these scientific interests. To foster personal and scientific growth and excellence.';
+const RESEARCH =
+  'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment. Using multi pronged approaches including mouse genetics, cell culture models, genomics and microscopy, we tackle complex biological processes focusing on the contribution of cell-intrinsic and cell-extrinsic factors that contribute to regenerative processes.';
+const OTHER_RESEARCH =
+  'The lab investigates chromatin regulation of genome stability in multicellular eukaryotes, using histone variants and post-translational modifications to map repair pathways across tissues.';
+const PERSON_VOICED_RESEARCH =
+  "Dr. Sauler's research investigates mechanisms of lung injury and repair, using single-cell genomics of human lung tissue to define the cellular drivers of emphysema.";
 
 describe('buildObservationFingerprint', () => {
   it('makes logistics updates latest-wins within a source but distinct across sources', () => {
@@ -997,6 +1009,12 @@ describe('retireObservations', () => {
 });
 
 describe('observation entity identity (#2177)', () => {
+  // `vi.spyOn` reuses an existing spy on the same method, so leaving this block's
+  // `insertMany` mock installed leaks its recorded calls into later suites.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const base = {
     sourceName: 'lab-microsite-description-llm',
     entityType: 'researchEntity',
@@ -1070,6 +1088,367 @@ describe('observation entity identity (#2177)', () => {
     expect(filter.$or).toEqual([
       { entityKey: 'dept-mcdb-horsley' },
       { entityId: '6a0fa8959fc810ec168cdcfd' },
+    ]);
+  });
+});
+
+describe('isWeakerProseRefresh (#2232)', () => {
+  // The observation log only ever carries an ObservedEntityType, never the
+  // product entityType, so this is the context the real write path supplies.
+  const ctx = { entityType: 'researchEntity' };
+  const refresh = (incomingValue: string, existingValue: string) =>
+    isWeakerProseRefresh({
+      field: 'fullDescription',
+      incomingValue,
+      existingValue,
+      incomingContext: ctx,
+      existingContext: ctx,
+    });
+
+  it('blocks a mission statement from displacing grounded research prose', () => {
+    // Both pass the subtractive quality bar, which is why the pre-existing guard
+    // cannot see this at all - it is the Horsley regression that served from May
+    // to August.
+    expect(fullDescriptionQuality(MISSION, [], 'researchEntity').isUseful).toBe(true);
+    expect(fullDescriptionQuality(RESEARCH, [], 'researchEntity').isUseful).toBe(true);
+    expect(
+      isRegressiveProseRefresh({
+        field: 'fullDescription',
+        incomingValue: MISSION,
+        existingValue: RESEARCH,
+        incomingContext: ctx,
+        existingContext: ctx,
+      }),
+    ).toBe(false);
+
+    expect(refresh(MISSION, RESEARCH)).toBe(true);
+  });
+
+  it('still allows research prose to displace a mission incumbent, so recovery is possible', () => {
+    expect(refresh(RESEARCH, MISSION)).toBe(false);
+  });
+
+  it('allows an equally clean refresh, so the corpus cannot freeze on its first capture', () => {
+    expect(refresh(OTHER_RESEARCH, RESEARCH)).toBe(false);
+    expect(refresh(RESEARCH, RESEARCH)).toBe(false);
+  });
+
+  it('does not fire when there is no incumbent to protect', () => {
+    expect(refresh(MISSION, '')).toBe(false);
+    expect(
+      isWeakerProseRefresh({
+        field: 'fullDescription',
+        incomingValue: MISSION,
+        existingValue: undefined,
+        incomingContext: ctx,
+        existingContext: ctx,
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores fields outside the guarded prose set', () => {
+    expect(
+      isWeakerProseRefresh({
+        field: 'name',
+        incomingValue: MISSION,
+        existingValue: RESEARCH,
+        incomingContext: ctx,
+        existingContext: ctx,
+      }),
+    ).toBe(false);
+  });
+
+  it('scores mission and recruitment prose below research prose', () => {
+    expect(prosePreferenceScore(RESEARCH)).toBeGreaterThan(prosePreferenceScore(MISSION));
+    const recruiting =
+      'Hiring! Our group has open positions for a postdoc and a graduate student. We study quantum many-body systems out of equilibrium using ultracold atomic gases as a platform for these experiments.';
+    expect(prosePreferenceScore(RESEARCH)).toBeGreaterThan(prosePreferenceScore(recruiting));
+  });
+
+  it('lets person-voiced faculty research prose displace a mission incumbent', () => {
+    // A faculty research home reads in the researcher's voice by design, and the
+    // observation log cannot tell one from a lab. Scoring the person-centric term
+    // here would charge this -100 against the mission statement's -20 and freeze
+    // the mission in place - the inverse of the guard's purpose.
+    expect(fullDescriptionQuality(PERSON_VOICED_RESEARCH, [], 'researchEntity').flags).toEqual([]);
+    expect(prosePreferenceScore(PERSON_VOICED_RESEARCH)).toBeGreaterThan(
+      prosePreferenceScore(MISSION),
+    );
+    expect(refresh(PERSON_VOICED_RESEARCH, MISSION)).toBe(false);
+  });
+
+  it('still blocks a mission statement from displacing person-voiced research prose', () => {
+    expect(refresh(MISSION, PERSON_VOICED_RESEARCH)).toBe(true);
+  });
+});
+
+describe('appendObservations weaker-prose write path (#2232)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const append = (value: string, incumbent: string | undefined, field = 'fullDescription') =>
+    appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field,
+          value,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      { loadActiveProse: async (query) => (query.field === field ? incumbent : undefined) },
+    );
+
+  it('drops a useful mission statement that would displace a clean research incumbent', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+
+    const result = await append(MISSION, RESEARCH);
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
+  it('persists research prose over a mission incumbent, so the home can recover', async () => {
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:full' }] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await append(RESEARCH, MISSION);
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    expect(result.inserted).toBe(1);
+  });
+
+  it('persists person-voiced faculty research prose over a mission incumbent', async () => {
+    const insertMany = vi
+      .spyOn(Observation, 'insertMany')
+      .mockResolvedValue([{ _id: 'new-1', observationFingerprint: 'fp:full' }] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await append(PERSON_VOICED_RESEARCH, MISSION);
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    expect(result.inserted).toBe(1);
+  });
+
+  it('does not protect an incumbent that fails the quality bar under the batch context', async () => {
+    // The incumbent is judged with the same researchAreas as the incoming value,
+    // so a research-area echo cannot block a refresh by being evaluated against
+    // an emptier context than the value it is blocking.
+    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-1', observationFingerprint: 'fp:areas' },
+      { _id: 'new-2', observationFingerprint: 'fp:full' },
+    ] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+    const researchAreas = [
+      'cancer biology',
+      'immunology',
+      'genomics',
+      'proteomics',
+      'metabolomics',
+    ];
+    const areaEchoIncumbent =
+      'The lab studies cancer biology, immunology, genomics, proteomics, and metabolomics in human tissue samples.';
+    expect(fullDescriptionQuality(areaEchoIncumbent, undefined, 'researchEntity').isUseful).toBe(
+      true,
+    );
+    expect(
+      fullDescriptionQuality(areaEchoIncumbent, researchAreas, 'researchEntity').isUseful,
+    ).toBe(false);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field: 'researchAreas',
+          value: researchAreas,
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field: 'fullDescription',
+          value: MISSION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      {
+        loadActiveProse: async (query) =>
+          query.field === 'fullDescription' ? areaEchoIncumbent : undefined,
+      },
+    );
+
+    const inserted = insertMany.mock.calls[0][0] as Array<{ field: string }>;
+    expect(inserted.map((doc) => doc.field)).toContain('fullDescription');
+    expect(result.inserted).toBe(2);
+  });
+
+  it('resolves each incumbent lookup once per entity and field across a batch', async () => {
+    vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-1', observationFingerprint: 'fp:full' },
+      { _id: 'new-2', observationFingerprint: 'fp:short' },
+    ] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+    const loadActiveProse = vi.fn(async () => undefined);
+
+    await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field: 'fullDescription',
+          value: RESEARCH,
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field: 'shortDescription',
+          value: USEFUL_SHORT_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      { loadActiveProse },
+    );
+
+    expect(loadActiveProse.mock.calls.map(([query]: any) => query.field).sort()).toEqual([
+      'fullDescription',
+      'shortDescription',
+    ]);
+  });
+
+  it('keeps a card that passes the card quality bar against the full it arrives with', async () => {
+    // `isFullDescriptionRestatementOfShortDescription` is broader than the
+    // `same-as-full`/`copied-first-sentence` flags: it also fires on a token
+    // overlap this pair trips. Widening the self-defeating-card drop to values the
+    // card quality bar accepts would silently change card prose well outside
+    // #2232, so that drop stays scoped to cards that already failed the bar.
+    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-1', observationFingerprint: 'fp:full' },
+      { _id: 'new-2', observationFingerprint: 'fp:short' },
+    ] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+    const fullParaphrase =
+      'Studies cellular signaling and translational biomarkers to improve immune-related patient care across a range of inflammatory diseases.';
+    expect(
+      shortDescriptionQuality(USEFUL_SHORT_DESCRIPTION, fullParaphrase, undefined, {
+        entityType: 'researchEntity',
+      }).isUseful,
+    ).toBe(true);
+    expect(
+      selfDefeatingCardRestatesFullDescription('shortDescription', USEFUL_SHORT_DESCRIPTION, {
+        fullContext: fullParaphrase,
+      }),
+    ).toBe(true);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field: 'fullDescription',
+          value: fullParaphrase,
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'horsley-lab',
+          field: 'shortDescription',
+          value: USEFUL_SHORT_DESCRIPTION,
+        },
+      ],
+      {
+        scrapeRunId: 'run-1',
+        sourceId: 'source-1',
+        sourceName: 'lab-microsite-description-llm',
+        sourceWeight: 0.82,
+        dryRun: false,
+      },
+      { loadActiveProse: async () => undefined },
+    );
+
+    const inserted = insertMany.mock.calls[0][0] as Array<{ field: string }>;
+    expect(inserted.map((doc) => doc.field).sort()).toEqual([
+      'fullDescription',
+      'shortDescription',
+    ]);
+    expect(result.inserted).toBe(2);
+  });
+});
+
+describe('collapseLatestWins weaker-prose collapse (#2232)', () => {
+  const row = (value: string, observedAt: string) => ({
+    field: 'fullDescription',
+    sourceName: 'lab-microsite-description-llm',
+    observedAt: new Date(observedAt),
+    value,
+  });
+
+  it('keeps the research incumbent whichever order the unsorted log delivers rows in', () => {
+    // The materializer reads with `Observation.find(filter).lean()` and no sort,
+    // and the covering index is descending on observedAt, so both orders are
+    // reachable from the same data.
+    const research = row(RESEARCH, '2026-05-01T00:00:00.000Z');
+    const mission = row(MISSION, '2026-08-01T00:00:00.000Z');
+
+    expect(collapseLatestWins([research, mission], 'researchEntity').map((o) => o.value)).toEqual([
+      RESEARCH,
+    ]);
+    expect(collapseLatestWins([mission, research], 'researchEntity').map((o) => o.value)).toEqual([
+      RESEARCH,
+    ]);
+  });
+
+  it('still lets a newer research capture win in either order', () => {
+    const mission = row(MISSION, '2026-05-01T00:00:00.000Z');
+    const research = row(RESEARCH, '2026-08-01T00:00:00.000Z');
+
+    expect(collapseLatestWins([mission, research], 'researchEntity').map((o) => o.value)).toEqual([
+      RESEARCH,
+    ]);
+    expect(collapseLatestWins([research, mission], 'researchEntity').map((o) => o.value)).toEqual([
+      RESEARCH,
+    ]);
+  });
+
+  it('keeps plain newest-wins for a non-prose latest-wins field in either order', () => {
+    const older = {
+      field: 'researchAreas',
+      sourceName: 'lab-microsite-description-llm',
+      observedAt: new Date('2026-05-01T00:00:00.000Z'),
+      value: ['older'],
+    };
+    const newer = {
+      field: 'researchAreas',
+      sourceName: 'lab-microsite-description-llm',
+      observedAt: new Date('2026-08-01T00:00:00.000Z'),
+      value: ['newer'],
+    };
+
+    expect(collapseLatestWins([older, newer], 'researchEntity').map((o) => o.value)).toEqual([
+      ['newer'],
+    ]);
+    expect(collapseLatestWins([newer, older], 'researchEntity').map((o) => o.value)).toEqual([
+      ['newer'],
     ]);
   });
 });
