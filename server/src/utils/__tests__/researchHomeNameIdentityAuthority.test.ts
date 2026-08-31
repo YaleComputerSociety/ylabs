@@ -230,7 +230,10 @@ describe('link-label names and wrappers (#2285)', () => {
 
   it('reduces a wrapper around nothing to a bare label rather than adopting it', () => {
     expect(
-      classifyHarvestedResearchHomeName({ harvestedName: 'Link to Website', personName: 'Ada Lovelace' }),
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'Link to Website',
+        personName: 'Ada Lovelace',
+      }),
     ).toBe('NON_IDENTIFYING_LABEL');
   });
 

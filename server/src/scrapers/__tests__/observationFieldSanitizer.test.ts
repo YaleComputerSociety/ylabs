@@ -184,11 +184,16 @@ describe('sanitizeObservationField', () => {
       });
     });
 
-
     // #2285: a faculty profile's link text became the entity name, so a student
     // searching a professor found a card titled "Lab website".
     it('rejects a link label offered as a research-entity name', () => {
-      for (const label of ['Lab website', 'Portfolio Website', 'Website', 'Lab Site', 'My Research Page']) {
+      for (const label of [
+        'Lab website',
+        'Portfolio Website',
+        'Website',
+        'Lab Site',
+        'My Research Page',
+      ]) {
         expect(sanitizeObservationField('researchEntity', 'name', label)).toEqual({
           value: undefined,
           rejected: true,
@@ -202,7 +207,13 @@ describe('sanitizeObservationField', () => {
         value: 'Boggon Lab',
         rejected: false,
       });
-      expect(sanitizeObservationField('researchEntity', 'displayName', 'Visit the Geha Research Group »')).toEqual({
+      expect(
+        sanitizeObservationField(
+          'researchEntity',
+          'displayName',
+          'Visit the Geha Research Group »',
+        ),
+      ).toEqual({
         value: 'Geha Research Group',
         rejected: false,
       });
@@ -225,8 +236,9 @@ describe('sanitizeObservationField', () => {
     });
 
     it('leaves source URLs, enum kinds, and non-string values alone', () => {
-      expect(sanitizeObservationField('researchEntity', 'sourceUrls', ['https://x.example.edu']))
-        .toEqual({ value: ['https://x.example.edu'], rejected: false });
+      expect(
+        sanitizeObservationField('researchEntity', 'sourceUrls', ['https://x.example.edu']),
+      ).toEqual({ value: ['https://x.example.edu'], rejected: false });
       expect(sanitizeObservationField('researchEntity', 'kind', 'LAB')).toEqual({
         value: 'LAB',
         rejected: false,
