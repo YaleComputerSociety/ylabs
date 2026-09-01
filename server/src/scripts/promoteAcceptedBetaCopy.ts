@@ -397,11 +397,23 @@ async function syncIndexes(betaDb: Db, productionDb: Db, collectionName: string)
 async function copyCollection(betaDb: Db, productionDb: Db, collection: PromotionCollection) {
   const source = betaDb.collection(collection.name);
   const target = productionDb.collection(collection.name);
-  await target.deleteMany({});
 
-  const cursor = source.find(collection.filter || {}, { noCursorTimeout: true });
+  // Order matters, and getting it wrong empties a production collection.
+  //
+  // `noCursorTimeout` is rejected outright by shared Atlas tiers, and the
+  // rejection surfaces when the cursor is first read - which used to be AFTER
+  // `deleteMany`. On 2026-09-01 that emptied Prod's `research_entities` and left
+  // it at 0 rows, recoverable only because Beta still held the corpus.
+  //
+  // So: no `noCursorTimeout`, and prove the cursor is readable BEFORE deleting
+  // anything. Any source-side failure - tier limit, auth, lost topology - then
+  // aborts with the target still intact.
+  const cursor = source.find(collection.filter || {}, { batchSize: BATCH_SIZE });
   let batch: AnyBulkWriteOperation<Document>[] = [];
   try {
+    await cursor.hasNext();
+    await target.deleteMany({});
+
     for await (const doc of cursor) {
       batch.push({ insertOne: { document: doc } });
       if (batch.length >= BATCH_SIZE) {
