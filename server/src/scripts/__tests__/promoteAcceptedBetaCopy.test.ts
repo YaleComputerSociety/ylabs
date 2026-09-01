@@ -309,4 +309,91 @@ describe('promote accepted Beta copy guards', () => {
       /--output must write under/,
     );
   });
+
+  it('blocks apply when a collection would copy nothing over existing production documents', () => {
+    const options = parsePromotionOptions(['--include-observations'], baseEnv);
+
+    const summary = buildPromotionSummary(
+      options,
+      [
+        {
+          name: 'research_entities',
+          category: 'research-discovery',
+          sourceCount: 6440,
+          sourceCopyCount: 6440,
+          targetCount: 3331,
+          excludedCount: 0,
+        },
+        {
+          name: 'observations',
+          category: 'source-audit',
+          sourceCount: 0,
+          sourceCopyCount: 0,
+          targetCount: 653321,
+          excludedCount: 0,
+        },
+      ],
+      [],
+    );
+
+    expect(summary.emptySourceBlockersClear).toBe(false);
+    expect(summary.syntheticReferenceBlockersClear).toBe(true);
+    expect(() => assertPromotionSummaryCanApply(summary)).toThrow(
+      'Collection observations would copy 0 documents over 653321 existing production documents',
+    );
+  });
+
+  it('does not block a collection that is absent from production', () => {
+    const options = parsePromotionOptions([], baseEnv);
+
+    const summary = buildPromotionSummary(
+      options,
+      [
+        {
+          name: 'signals',
+          category: 'research-discovery',
+          sourceCount: 11164,
+          sourceCopyCount: 11164,
+          targetCount: 0,
+          excludedCount: 0,
+        },
+        {
+          name: 'scrape_runs',
+          category: 'source-audit',
+          sourceCount: 0,
+          sourceCopyCount: 0,
+          targetCount: 0,
+          excludedCount: 0,
+        },
+      ],
+      [],
+    );
+
+    expect(summary.emptySourceBlockersClear).toBe(true);
+    expect(() => assertPromotionSummaryCanApply(summary)).not.toThrow();
+  });
+
+  it('measures the accounts guard against the copied count, not the raw count', () => {
+    const options = parsePromotionOptions([], baseEnv);
+
+    const summary = buildPromotionSummary(
+      options,
+      [
+        {
+          name: 'accounts',
+          category: 'research-discovery',
+          sourceCount: 12,
+          sourceCopyCount: 0,
+          targetCount: 4179,
+          excludedCount: 12,
+        },
+      ],
+      [],
+    );
+
+    expect(summary.emptySourceBlockersClear).toBe(false);
+    expect(() => assertPromotionSummaryCanApply(summary)).toThrow(
+      'Collection accounts would copy 0 documents over 4179 existing production documents',
+    );
+  });
 });
