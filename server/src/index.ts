@@ -7,6 +7,7 @@ import { initializeConnections, startMongoKeepAlive } from './db/connections';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
+import { describeFirstContactCeiling } from './middleware/rateLimiters';
 
 dotenv.config();
 initializeErrorTracking();
@@ -19,6 +20,9 @@ const startApp = async () => {
 
     app.listen(port, () => {
       console.log(`Server is ready at: ${port} 🐶`);
+      // Log the effective value so an unset or fat-fingered env var is visible
+      // rather than inferred from behaviour (#2319).
+      console.log(`[rate-limit] ${describeFirstContactCeiling()}`);
 
       startMongoKeepAlive();
 
