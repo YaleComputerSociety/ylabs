@@ -27,6 +27,12 @@ Public research identity, and a first-class findable entity in its own right: a 
 [`server/src/models/researcher.ts`](../server/src/models/researcher.ts) defines `displayName`, an optional `accountId` link to the private login principal, `profileLinks[]` (`kind`: `YALE_OFFICIAL` | `LAB_ABOUT` | `PERSONAL_ACADEMIC` | `GOOGLE_SCHOLAR` | `ORCID`, each with `url`, `verifiedAt`, and `healthStatus`), an optional `identifiers.orcid` and `identifiers.netid` (the netid disambiguation spine), a `profile` display projection (`title`, `primaryDepartment`, `imageUrl`, `websiteUrl`), `status` (`ACTIVE` | `DEPARTED` | `UNKNOWN`), and `archived`.
 `Researcher` rows are created only from Yale-confirmed evidence; an external identifier such as ORCID never creates one by itself.
 
+`identifiers.netid` holds the account's own netid, not whatever a source called a netid (#2325).
+A department roster publishes the friendly email alias (`corey.ohern`) rather than the netid (`co54`), and that alias passes the netid shape test, so `materializeUser` resolves identity by netid first, then by display name, and only then by the observed email.
+The email join runs last on purpose: it is a gap-filler, not an authority.
+On Development it reaches 177 observation keys nothing else reaches, but it also disagrees with the name resolver on 12, and one of those (`patricia.ryan-krause@yale.edu`) points at an account belonging to a different person, so letting the email overrule a name would graft one researcher's evidence onto another's record.
+Roughly 37% of person-observation keys still resolve to no researcher, dominated by the `dept:` and `ysm:` key prefixes and by name-resolver `ambiguous`/`absent`; that remainder is tracked in #2325 and is why out-of-band repair lanes still carry work the sweep cannot.
+
 `profileLinks[].healthStatus` is a probed fact, not a default (#2292).
 `yarn --cwd server researchers:verify-official-profile-links` walks each `YALE_OFFICIAL` link grouped by department host, probes it through the SSRF-guarded `checkSourceLinkHealth`, and records `HEALTHY` or `UNAVAILABLE` with a fresh `verifiedAt`; [research-data-pipeline.md](research-data-pipeline.md) owns its invocation and apply guards.
 Only 404 and 410 settle a link: a 403, 429, 5xx, or transport failure means the department site would not answer us, so the run stamps a fresh `verifiedAt` but writes no health status, leaving the stored verdict alone, because `UNKNOWN` is the absence of a probed fact and writing it would un-retire a page an earlier probe already proved gone.

@@ -2826,6 +2826,13 @@ function normalizedAccountNetid(value: unknown): string | undefined {
   return netid && ACCOUNT_NETID_PATTERN.test(netid) ? netid : undefined;
 }
 
+const ACCOUNT_EMAIL_PATTERN = /^[a-z0-9][a-z0-9._%+-]*@[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/;
+
+function normalizedAccountEmail(value: unknown): string | undefined {
+  const email = textValue(value).trim().toLowerCase();
+  return email && ACCOUNT_EMAIL_PATTERN.test(email) ? email : undefined;
+}
+
 function scholarProfileLink(url: string, verifiedAt: Date): ResearcherProfileLink {
   return { kind: 'GOOGLE_SCHOLAR', purpose: 'SCHOLARLY', url, verifiedAt, healthStatus: 'UNKNOWN' };
 }
@@ -2898,19 +2905,45 @@ async function materializeUserIdentityToResearcher(
       ? (resolvedValue('profileUrls') as Record<string, unknown>)
       : undefined;
 
-  let accountId: mongoose.Types.ObjectId | undefined;
-  if (netid) {
-    const account: any = await Account.findOne({ netid }).lean();
-    if (account?._id) accountId = account._id;
-  }
+  const observedEmail = normalizedAccountEmail(resolvedValue('email'));
 
-  let researcher: any = accountId ? await Researcher.findOne({ accountId }) : null;
+  let account: any = netid ? await Account.findOne({ netid }).lean() : null;
+  let accountNetid = normalizedAccountNetid(account?.netid);
+
+  let researcher: any = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
   if (!researcher && displayName) {
-    const resolution = await resolveResearcherIdForPersonName(displayName, { netid });
+    const resolution = await resolveResearcherIdForPersonName(displayName, {
+      netid: accountNetid ?? netid,
+    });
     if (resolution.status === 'matched' && resolution.researcherId) {
       researcher = await Researcher.findById(resolution.researcherId);
     }
   }
+  /**
+   * A department roster publishes the friendly email alias rather than the netid,
+   * and `corey.ohern` passes the netid shape test, so the netid lookup silently
+   * misses for the 95% of accounts whose email local part differs from their netid
+   * (#2325). Joining on the observed email closes that gap.
+   *
+   * It runs last, and only when nothing else resolved, because the email is not
+   * trustworthy enough to overrule a name: on Development this join disagrees with
+   * the name resolver for 12 keys, and `patricia.ryan-krause@yale.edu` resolves to
+   * an account whose researcher is a different person entirely (Peter James
+   * Krause). Filling a gap gains the 177 keys nothing else reaches; overriding
+   * would have re-pointed one person's evidence onto another's record.
+   */
+  if (!researcher && observedEmail) {
+    const emailAccount: any = await Account.findOne({ email: observedEmail }).lean();
+    const emailResearcher = emailAccount?._id
+      ? await Researcher.findOne({ accountId: emailAccount._id })
+      : null;
+    if (emailResearcher) {
+      researcher = emailResearcher;
+      account = emailAccount;
+      accountNetid = normalizedAccountNetid(emailAccount.netid);
+    }
+  }
+  const accountId: mongoose.Types.ObjectId | undefined = account?._id;
 
   if (!researcher) {
     return skipped('directory-identity-without-research-signal');
@@ -2948,8 +2981,12 @@ async function materializeUserIdentityToResearcher(
     researcher.identifiers = { ...(researcher.identifiers || {}), orcid };
     orcidFieldsWritten += 1;
   }
-  if (netid && researcher.identifiers?.netid !== netid) {
-    researcher.identifiers = { ...(researcher.identifiers || {}), netid };
+  // The account's own netid wins over an observed one: a roster-derived value can be
+  // the email alias (`corey.ohern`) rather than the netid (`co54`), and the netid
+  // spine is only a reliable join while it holds real netids (#2325).
+  const netidToStamp = accountNetid ?? netid;
+  if (netidToStamp && researcher.identifiers?.netid !== netidToStamp) {
+    researcher.identifiers = { ...(researcher.identifiers || {}), netid: netidToStamp };
     fieldsWritten += 1;
   }
 

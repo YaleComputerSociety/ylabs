@@ -327,6 +327,78 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     ]);
   });
 
+  it('joins on the observed email when the roster published an alias instead of the netid', async () => {
+    const account = await Account.create({
+      netid: 'ab12',
+      email: 'alias.person@yale.edu',
+      status: 'ACTIVE',
+    });
+    const researcher = await Researcher.create({
+      displayName: 'Unrelated Stored Name',
+      accountId: account._id,
+    });
+
+    const base = {
+      ...directoryObservationBase('netid:alias.person'),
+      sourceName: 'dept-faculty-roster',
+    };
+    for (const [field, value] of [
+      ['netid', 'alias.person'],
+      ['email', 'alias.person@yale.edu'],
+      ['title', 'Professor of Physics'],
+    ] as const) {
+      await Observation.create({ ...base, field, value });
+    }
+
+    const result = await materializeEntity('user', { entityKey: 'netid:alias.person' }, {});
+
+    expect(result.skipped).toBeUndefined();
+    const enriched = await enrichedResearcher(researcher._id);
+    expect(enriched?.profile?.title).toBe('Professor of Physics');
+    expect(enriched?.identifiers?.netid).toBe('ab12');
+  });
+
+  it('never lets the email join overrule a name match onto another person', async () => {
+    const namedAccount = await Account.create({
+      netid: 'pr45',
+      email: 'pat.ryan-example@yale.edu',
+      status: 'ACTIVE',
+    });
+    const named = await Researcher.create({
+      displayName: 'Pat Ryan-Example',
+      accountId: namedAccount._id,
+    });
+    const otherAccount = await Account.create({
+      netid: 'pe67',
+      email: 'shared.alias@yale.edu',
+      status: 'ACTIVE',
+    });
+    const other = await Researcher.create({
+      displayName: 'Peter Example',
+      accountId: otherAccount._id,
+    });
+
+    const base = {
+      ...directoryObservationBase('netid:shared.alias'),
+      sourceName: 'dept-faculty-roster',
+    };
+    for (const [field, value] of [
+      ['netid', 'shared.alias'],
+      ['email', 'shared.alias@yale.edu'],
+      ['displayName', 'Pat Ryan-Example'],
+      ['title', 'Professor of Physics'],
+    ] as const) {
+      await Observation.create({ ...base, field, value });
+    }
+
+    await materializeEntity('user', { entityKey: 'netid:shared.alias' }, {});
+
+    // The name resolved first, so the person named by the observation is enriched
+    // and the account that merely shares the alias is left alone.
+    expect((await enrichedResearcher(named._id))?.profile?.title).toBe('Professor of Physics');
+    expect((await enrichedResearcher(other._id))?.profile?.title).toBeUndefined();
+  });
+
   it('clamps a directory title beyond the profile bound instead of failing the run', async () => {
     const longTitle =
       'Professor of Physics and Astronomy and Adjunct Professor of Applied Mathematics '.repeat(8);
