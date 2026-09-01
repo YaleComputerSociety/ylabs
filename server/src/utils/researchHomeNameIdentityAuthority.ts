@@ -203,13 +203,27 @@ const STRUCTURAL_URL_SEGMENT_WORDS = new Set([
 // names out ("Computational Biomechanics Laboratory", "Yale NLP Lab"), which is
 // what makes the rule safe to act on.
 const EPONYMOUS_LAB_NAME_RE =
-  /^(?:the\s+)?(?:(?:de|van|von|del|della|di|da|du|la|le|el|al|st)\s+)?([a-z][a-z'’-]*)\s+(?:lab|labs|laborator(?:y|ies)|group)\b/i;
+  /^(?:the\s+)?((?:de|van|von|del|della|di|da|du|la|le|el|al|st)\s+)?([a-z][a-z'’-]*)\s+(?:lab|labs|laborator(?:y|ies)|group)\b/i;
 
 /** The surname an eponymous lab name claims ownership for, if it is one. */
 export function eponymousLabNameSurname(harvestedName: unknown): string {
   const match = EPONYMOUS_LAB_NAME_RE.exec(textValue(harvestedName));
-  const surname = (match?.[1] || '').toLowerCase();
+  const surname = (match?.[2] || '').toLowerCase();
   return surname.length >= 2 ? surname : '';
+}
+
+/**
+ * Both spellings a nobiliary-particle surname can take: "De Camilli Lab" is
+ * `camilli` in prose and `decamilli` in a URL path, so corroborating only the
+ * bare surname silently fails on exactly the names most likely to be a
+ * different person's lab (#2285).
+ */
+export function eponymousLabNameSurnameCandidates(harvestedName: unknown): string[] {
+  const match = EPONYMOUS_LAB_NAME_RE.exec(textValue(harvestedName));
+  const surname = (match?.[2] || '').toLowerCase();
+  if (surname.length < 2) return [];
+  const particle = (match?.[1] || '').trim().toLowerCase();
+  return particle ? [surname, `${particle}${surname}`] : [surname];
 }
 
 /**
@@ -221,8 +235,8 @@ export function eponymousLabNameSurname(harvestedName: unknown): string {
  * segments count and never the host.
  */
 export function corroboratedLabNameEponyms(harvestedName: unknown, websiteUrl: unknown): string[] {
-  const surname = eponymousLabNameSurname(harvestedName);
-  if (!surname) return [];
+  const candidates = eponymousLabNameSurnameCandidates(harvestedName);
+  if (candidates.length === 0) return [];
   const raw = textValue(websiteUrl);
   if (!raw) return [];
   let pathname: string;
@@ -236,7 +250,8 @@ export function corroboratedLabNameEponyms(harvestedName: unknown, websiteUrl: u
       (word) => word.length >= 2 && !STRUCTURAL_URL_SEGMENT_WORDS.has(word) && !/\d/.test(word),
     ),
   );
-  return pathWords.has(surname) ? [surname] : [];
+  const corroborated = candidates.filter((candidate) => pathWords.has(candidate));
+  return corroborated.length > 0 ? [corroborated[0]] : [];
 }
 
 // Tokens a research-entity slug carries from its originating source rather than
