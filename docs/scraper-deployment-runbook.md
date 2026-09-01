@@ -23,10 +23,9 @@ The same check is also available as the `Production Security Smoke` GitHub
 Actions workflow. It fails if the deployed app is stale, if `/api/config` is
 missing CSP or Permissions-Policy, if current API routes are absent, or if
 authenticated/private surfaces no longer enforce the expected boundary.
-Scheduled and manually dispatched workflow runs default the expected deployment
-fingerprint to `github.sha`; override `SMOKE_API_BASE`, `SMOKE_APP_BASE`, or
-`--expect-commit <prefix>` only when intentionally checking a non-default host
-or a known deployment revision.
+Override `SMOKE_API_BASE` or `SMOKE_APP_BASE` only when intentionally checking a
+non-default host. The smoke does not verify which commit is deployed; read that
+from the Render deploy log.
 
 Use this with:
 
@@ -235,7 +234,6 @@ SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode
 SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=all --limit=250 --sample-limit=10
 yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host>
 SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false
-yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false --expect-commit "$(git rev-parse --short HEAD)"
 ```
 
 When `beta:data-quality --include-samples` reports `sourceHealthWarnings`, use each queue item's `nextCommand` to write the latest scraper report for that source. Those commands are read-only and point at `/tmp/ylabs-scraper-reports/<source>-<runId>.json`.
@@ -390,10 +388,9 @@ Reusable read-only helper:
 ```bash
 yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host>
 SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false
-yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false --expect-commit "$(git rev-parse --short HEAD)"
 ```
 
-The helper writes only local artifacts under `tmp/ui-smoke/` by default. It does not call `/api/dev-login` and does not send write-method requests. Public API checks use the configured API base directly, and optional authenticated Programs/Fellowships payload checks use `SMOKE_COOKIE` or `--cookie` without printing the cookie. Do not put credentials in `--api-base` or `--app-base`; the helper rejects credentialed target URLs before network calls and strips credentials from any validation-failure report. Browser UI checks use read-only route interception for `/api/check`, saved-item endpoints, program list fixtures, and the Operator Board payload so student and admin route guards can be checked without creating sessions or analytics events. If Playwright is not installed in the runner, the helper still runs the public API and unauthenticated admin API checks and records the browser limitation in the JSON report. Public `/api/config` includes a narrow deployment fingerprint (`deployment.provider`, `deployment.gitCommit`, and `deployment.gitBranch`) from safe provider metadata; pass `--expect-commit` during promotion smoke so stale or wrong-backend deployments fail before production promotion.
+The helper writes only local artifacts under `tmp/ui-smoke/` by default. It does not call `/api/dev-login` and does not send write-method requests. Public API checks use the configured API base directly, and optional authenticated Programs/Fellowships payload checks use `SMOKE_COOKIE` or `--cookie` without printing the cookie. Do not put credentials in `--api-base` or `--app-base`; the helper rejects credentialed target URLs before network calls and strips credentials from any validation-failure report. Browser UI checks use read-only route interception for `/api/check`, saved-item endpoints, program list fixtures, and the Operator Board payload so student and admin route guards can be checked without creating sessions or analytics events. If Playwright is not installed in the runner, the helper still runs the public API and unauthenticated admin API checks and records the browser limitation in the JSON report. Public `/api/config` exposes only a coarse `deployment.provider`. It deliberately omits the deployed commit and branch, which `scripts/security-preflight.test.mjs` enforces by source literal, so the smoke cannot and does not verify which revision is live. Confirm the deployed commit in the Render deploy log instead.
 
 Current admin UI limitation: the client does not expose `/admin/operator-board` as a page route. The guarded API is `/api/admin/operator-board`, and the Operator Board UI renders inside the admin `/analytics` route. The smoke helper therefore checks unauthenticated access on `/api/admin/operator-board`, student denial on `/analytics`, and admin rendering on `/analytics` through route interception.
 
@@ -444,11 +441,11 @@ The cron command:
 - Refuses disabled `Source` rows unless `--force-disabled` is passed for manual recovery.
 - Runs the scraper with `triggeredBy=cron`, materializes immediately, prints a cron summary plus run report when no output file is requested, and exits nonzero if materialization errors are reported.
 - When the run's materialization reports no errors, runs a corpus-wide inferred-PI lead reclaim before the visibility gate so entities whose PI evidence a prior or partial run recorded but never materialized get a lead attached in the same locked cycle.
-The reclaim is idempotent and best-effort: it skips already-linked and unresolvable entities, and a reclaim failure is logged without failing the primary scrape (it retries next cycle).
-This makes the standalone `data:materialize-inferred-pi-leads --all` backfill a manual recovery tool rather than a recurring necessity.
+  The reclaim is idempotent and best-effort: it skips already-linked and unresolvable entities, and a reclaim failure is logged without failing the primary scrape (it retries next cycle).
+  This makes the standalone `data:materialize-inferred-pi-leads --all` backfill a manual recovery tool rather than a recurring necessity.
 - When the run's materialization reports no errors, runs a single unconditional corpus-wide visibility gate (`{ collection: 'all', mode: 'apply' }`).
-The gate is a handful of batched Mongo reads with no LLM calls, writes only records whose computed tier or reasons actually changed, and syncs only those to Meilisearch, so it converges to a near no-op once the corpus is current.
-Because the re-gate is corpus-wide and unconditional, a gate-logic change self-applies on the next scheduled per-source run with no version bump and no manual `student-visibility:gate` op.
+  The gate is a handful of batched Mongo reads with no LLM calls, writes only records whose computed tier or reasons actually changed, and syncs only those to Meilisearch, so it converges to a near no-op once the corpus is current.
+  Because the re-gate is corpus-wide and unconditional, a gate-logic change self-applies on the next scheduled per-source run with no version bump and no manual `student-visibility:gate` op.
 - Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
 
 Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional inferred-PI lead reclaim result, optional visibility-gate result, and ScrapeRun report.
@@ -689,19 +686,19 @@ Author it under the same guards as the sibling description repairs (`server/src/
 Procedure:
 
 - Check first whether the prior pair is a manufactured duplicate.
-Restoring both fields to their pre-rollback values is **not** automatically safe: the `studentReadyDescription` emit block in `server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts` emits one string as `fullDescription` at 0.55 and, when it is card-length, the same string again as `shortDescription` at 0.55.
-What decides whether such a pair is stable is how its two members are attributed, not the duplication.
-Both of those pushes share one `...base`, so they carry the same `sourceName` and `sourceUrl`, the materializer treats the projected short as self-derived from the full, the guard is not applied, and the row keeps serving its prose.
-Re-attribute the same string across two URLs or two sources, which is what a hand repair does and what a second source writing the card produces, and the short reads as independent evidence, so the guard fires and blanks the full.
+  Restoring both fields to their pre-rollback values is **not** automatically safe: the `studentReadyDescription` emit block in `server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts` emits one string as `fullDescription` at 0.55 and, when it is card-length, the same string again as `shortDescription` at 0.55.
+  What decides whether such a pair is stable is how its two members are attributed, not the duplication.
+  Both of those pushes share one `...base`, so they carry the same `sourceName` and `sourceUrl`, the materializer treats the projected short as self-derived from the full, the guard is not applied, and the row keeps serving its prose.
+  Re-attribute the same string across two URLs or two sources, which is what a hand repair does and what a second source writing the card produces, and the short reads as independent evidence, so the guard fires and blanks the full.
 - When the restored pair would be attributed that way, no data repair holds until the emitting source stops producing the duplicate.
-Fix the source, then repair the rows.
+  Fix the source, then repair the rows.
 - Use `server/src/scripts/descriptionPairRollbackCore.ts` to build the observation filter, so the query cannot be scoped to one field by accident, and so rows stored under `entityId` rather than `entityKey` are matched too.
 - Unset the projected `shortDescription` and `fieldProvenance.shortDescription` on the entity document in the same operation, before re-materializing.
-`shortDescription` is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so the projected card outlives the observation that produced it and the guard keeps refusing every replacement full: the record stays blank however many times it is re-materialized.
-`planDescriptionPairRollback` returns those paths in `entityFieldsToUnset`.
+  `shortDescription` is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so the projected card outlives the observation that produced it and the guard keeps refusing every replacement full: the record stays blank however many times it is re-materialized.
+  `planDescriptionPairRollback` returns those paths in `entityFieldsToUnset`.
 - Verify afterwards on the served record, not on the supersede count.
-`describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and will therefore blank on the next materialize, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
-Pass the whole served document, including `fieldProvenance`.
-It routes the short through the same self-derived exclusion the guard uses, so reading the raw stored short instead would report every re-derived card as a restatement and send an operator back to re-repair a healthy row.
+  `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and will therefore blank on the next materialize, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
+  Pass the whole served document, including `fieldProvenance`.
+  It routes the short through the same self-derived exclusion the guard uses, so reading the raw stored short instead would report every re-derived card as a restatement and send an operator back to re-repair a healthy row.
 - Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.
-This failure cannot be caught by tier checks, by construction.
+  This failure cannot be caught by tier checks, by construction.

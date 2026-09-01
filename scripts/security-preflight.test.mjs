@@ -668,10 +668,6 @@ test('production security smoke workflow checks live hardening headers and curre
   assert.match(productionSecuritySmokeWorkflow, /yarn security:smoke:production/);
   assert.match(productionSecuritySmokeWorkflow, /SMOKE_API_BASE:/);
   assert.match(productionSecuritySmokeWorkflow, /SMOKE_APP_BASE:/);
-  assert.match(
-    productionSecuritySmokeWorkflow,
-    /SMOKE_EXPECT_COMMIT:\s*\$\{\{\s*inputs\.expect_commit\s*\}\}/,
-  );
   assert.doesNotMatch(productionSecuritySmokeWorkflow, /github\.sha/);
   assert.match(productionSecuritySmokeWorkflow, /run:\s*corepack enable/);
   assert.match(productionSecuritySmokeWorkflow, /yarn install --immutable/);
@@ -5295,43 +5291,4 @@ test('source-acquisition report errors sanitize raw exception messages', () => {
   assert.doesNotMatch(source, /Skipping description extraction for \$\{lab\.name\}/);
   assert.match(source, /sanitizeLogValue\(err\)/);
   assert.match(source, /sanitizeLogValue\(error\)/);
-});
-
-test('operator deployment fingerprint stays out of the public config surface', () => {
-  const configSource = fs.readFileSync(
-    new URL('../server/src/services/configService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.doesNotMatch(configSource, /gitCommit/);
-  assert.doesNotMatch(configSource, /RENDER_GIT_COMMIT/);
-  assert.doesNotMatch(configSource, /DEPLOYMENT_FINGERPRINT_TOKEN/);
-});
-
-test('deployment fingerprint route fails closed behind a timing-safe operator token', () => {
-  const serviceSource = fs.readFileSync(
-    new URL('../server/src/services/deploymentFingerprintService.ts', import.meta.url),
-    'utf8',
-  );
-  const routeSource = fs.readFileSync(
-    new URL('../server/src/routes/deployment.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(serviceSource, /import \{ timingSafeEqual \} from 'node:crypto'/);
-  assert.match(serviceSource, /timingSafeEqual\(expectedBuffer, presentedBuffer\)/);
-  assert.match(serviceSource, /if \(!expected\) return false/);
-  assert.match(serviceSource, /expectedBuffer\.length !== presentedBuffer\.length/);
-  assert.doesNotMatch(serviceSource, /expected === presentedValue/);
-  assert.doesNotMatch(serviceSource, /console\.(log|info|warn|error)/);
-
-  assert.match(
-    routeSource,
-    /isAuthorizedFingerprintToken\(req\.get\(DEPLOYMENT_FINGERPRINT_HEADER\)\)/,
-  );
-  assert.match(routeSource, /res\.status\(404\)\.json\(\{ message: 'Not found' \}\)/);
-  assert.match(routeSource, /authLimiter/);
-  assert.match(routeSource, /res\.set\('Cache-Control', 'no-store'\)/);
-  assert.doesNotMatch(routeSource, /res\.status\(401\)/);
-  assert.doesNotMatch(routeSource, /console\.(log|info|warn|error)/);
 });

@@ -7,7 +7,6 @@ import {
   buildSecurityHeaderChecks,
   containsInternalLabels,
   createSmokeReport,
-  deploymentFingerprintCheckFromSmokeConfig,
   parseSmokeConfig,
   shouldSendSmokeOrigin,
   smokeBrowserOrigin,
@@ -19,8 +18,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
 
 const config = parseSmokeConfig(process.argv.slice(2), process.env);
-const { apiBase, appBase, rawOutDir, runUi, explicitOpportunityId, smokeCookie, deploymentToken } =
-  config;
+const { apiBase, appBase, rawOutDir, runUi, explicitOpportunityId, smokeCookie } = config;
 const outDir = path.isAbsolute(rawOutDir) ? rawOutDir : path.resolve(repoRoot, rawOutDir);
 const report = createSmokeReport(config);
 const smokeOrigin = smokeBrowserOrigin(appBase);
@@ -146,22 +144,6 @@ const checkProgramApis = async () => {
   failOnInternalLabels('api.fellowships.search.noInternalVisibilityLabels', fellowshipSearch.json);
 };
 
-const operatorDeploymentPayload = async () => {
-  if (!deploymentToken) return {};
-
-  const response = await fetch(`${apiBase}/deployment`, {
-    headers: { Accept: 'application/json', 'X-Deployment-Token': deploymentToken },
-    redirect: 'manual',
-  });
-  if (response.status !== 200) return {};
-
-  try {
-    return { deployment: await response.json() };
-  } catch {
-    return {};
-  }
-};
-
 const runApiSmoke = async () => {
   const configResponse = await request('/config');
   addCheck('api.config.200', configResponse.response.status === 200 ? 'pass' : 'fail', {
@@ -173,12 +155,6 @@ const runApiSmoke = async () => {
       present: check.present,
     });
   }
-  const deploymentCheck = deploymentFingerprintCheckFromSmokeConfig(
-    config,
-    await operatorDeploymentPayload(),
-  );
-  addCheck('api.deployment.fingerprint', deploymentCheck.status, deploymentCheck);
-
   await discoverResearch();
   await checkOpportunityDetail();
   await checkProgramApis();

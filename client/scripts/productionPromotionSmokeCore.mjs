@@ -10,16 +10,7 @@ export const INTERNAL_LABELS = [
 
 export const parseSmokeArgs = (argv) => {
   const args = new Map();
-  const allowedArgs = new Set([
-    'api-base',
-    'app-base',
-    'ui',
-    'out',
-    'opportunity-id',
-    'cookie',
-    'expect-commit',
-    'deployment-token',
-  ]);
+  const allowedArgs = new Set(['api-base', 'app-base', 'ui', 'out', 'opportunity-id', 'cookie']);
   const booleanArgs = new Set(['ui']);
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -60,10 +51,6 @@ export const parseSmokeConfig = (argv, env = process.env) => {
     runUi: args.get('ui') !== 'false',
     explicitOpportunityId: args.get('opportunity-id') || env.SMOKE_OPPORTUNITY_ID || '',
     smokeCookie: String(args.get('cookie') || env.SMOKE_COOKIE || '').trim(),
-    expectedCommit: String(args.get('expect-commit') || env.SMOKE_EXPECT_COMMIT || '').trim(),
-    deploymentToken: String(
-      args.get('deployment-token') || env.SMOKE_DEPLOYMENT_TOKEN || '',
-    ).trim(),
   };
 };
 
@@ -75,11 +62,7 @@ export const createSmokeReport = (config, now = new Date()) => ({
     writes: false,
     usesDevLogin: false,
     usesSmokeCookie: Boolean(config.smokeCookie),
-    usesDeploymentToken: Boolean(config.deploymentToken),
     uiAuth: 'route-interception-only',
-  },
-  expected: {
-    ...(config.expectedCommit ? { gitCommit: config.expectedCommit } : {}),
   },
   checks: [],
   discovered: {},
@@ -142,50 +125,6 @@ export const smokeBrowserOrigin = (appBase) => {
 export const shouldSendSmokeOrigin = (method = 'GET') => {
   return !['GET', 'HEAD', 'OPTIONS'].includes(String(method).toUpperCase());
 };
-
-export const deploymentFingerprintCheck = (configJson, expectedCommit = '') => {
-  const deployment = configJson?.deployment || {};
-  const actualCommit = String(deployment.gitCommit || '').trim();
-  const expected = String(expectedCommit || '').trim();
-  const result = {
-    expectedCommit: expected,
-    actualCommit,
-    provider: String(deployment.provider || ''),
-    gitBranch: String(deployment.gitBranch || ''),
-  };
-
-  if (!expected) {
-    return {
-      status: actualCommit ? 'pass' : 'warn',
-      ...result,
-      ...(actualCommit ? {} : { reason: 'Deployment fingerprint unavailable; pass --deployment-token to read /api/deployment.' }),
-    };
-  }
-
-  if (!actualCommit) {
-    return {
-      status: 'fail',
-      ...result,
-      reason: 'Deployment fingerprint unavailable; pass --deployment-token to read /api/deployment.',
-    };
-  }
-
-  if (!actualCommit.startsWith(expected)) {
-    return {
-      status: 'fail',
-      ...result,
-      reason: 'Deployed commit does not match the expected commit.',
-    };
-  }
-
-  return {
-    status: 'pass',
-    ...result,
-  };
-};
-
-export const deploymentFingerprintCheckFromSmokeConfig = (smokeConfig, configJson) =>
-  deploymentFingerprintCheck(configJson, smokeConfig?.expectedCommit || '');
 
 const headerValue = (headers, name) => {
   if (!headers) return '';

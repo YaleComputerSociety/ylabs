@@ -9,7 +9,6 @@ import AnalyticsRoutes from './analytics';
 import ResearchAreasRoutes from './researchAreas';
 import ConfigRoutes from './config';
 import AdminRoutes from './admin';
-import DeploymentRoutes from './deployment';
 import ResearchGroupsRoutes from './researchGroups';
 
 const router = Router();
@@ -30,6 +29,5 @@ router.use('/analytics', AnalyticsRoutes);
 router.use('/research-areas', ResearchAreasRoutes);
 router.use('/config', ConfigRoutes);
 router.use('/admin', AdminRoutes);
-router.use('/deployment', DeploymentRoutes);
 
 export default router;
