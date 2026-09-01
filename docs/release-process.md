@@ -86,17 +86,12 @@ If `beta` runs more than a sprint ahead of `main`, that is a signal to promote o
 It verifies live hardening headers and current API routes.
 
 `Post-Promotion Verify` runs on every push to `main`.
-It polls `GET /api/deployment` until production reports the promoted commit, then runs the smoke with `--expect-commit` against it.
-If production never serves the commit inside the deploy window, the run fails, so a promotion that silently failed to deploy is visible rather than assumed good.
+It waits for the Render rollout, then runs the same production smoke, so a promotion that broke production surfaces within minutes instead of waiting for the next scheduled run.
 
-The deployed commit is **not** in the public config payload.
-`GET /api/config` exposes only a coarse `provider`, and `scripts/security-preflight.test.mjs` forbids the commit there by source literal.
-The commit and branch live on `GET /api/deployment`, which answers only to a caller presenting `X-Deployment-Token` matching `DEPLOYMENT_FINGERPRINT_TOKEN`, compared timing-safely.
-Any other caller gets `404`, not `401`, so the route does not advertise itself.
-The route fails closed: with no token configured on the service, every request gets `404`.
-
-Set `DEPLOYMENT_FINGERPRINT_TOKEN` in the Render `ylabs-prod` environment group and as the `DEPLOYMENT_FINGERPRINT_TOKEN` GitHub Actions secret.
-Both must hold the same value, or post-promotion verification fails closed.
+It deliberately does **not** check which commit is live.
+The app does not expose its deployed commit: `GET /api/config` returns only a coarse `provider`, and `scripts/security-preflight.test.mjs` forbids the commit there by source literal.
+Verifying the commit over HTTP would mean adding an authenticated route and a shared secret to both Render and GitHub Actions, and the Render deploy log already records which commit is live.
+So read the deployed commit from the Render dashboard, and treat the smoke as behavioural verification.
 
 ## Rolling back
 
