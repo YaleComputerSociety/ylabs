@@ -85,6 +85,17 @@ describe('studentVisibilityGateService', () => {
     expect(researchEntityGateProjection.split(/\s+/)).not.toContain('description');
   });
 
+  it('loads the recorded-closure marker so a closed lab cannot stay servable', () => {
+    // #2330 made closure expressible through studentVisibilitySuppressionReason
+    // and forces suppressed when hasRecordedClosureEvidence fires, but this
+    // projection omitted the field, so the marker arrived undefined and two
+    // known-closed labs stayed student_ready through a full re-gate. Same shape
+    // as the #1620 yale-status omission below.
+    expect(researchEntityGateProjection.split(/\s+/)).toContain(
+      'studentVisibilitySuppressionReason',
+    );
+  });
+
   it('loads the yale-status signal so a departed lead is not silently rescored as visible', () => {
     // #1620 residual: computeResearchEntityStudentVisibility's inactive_at_yale
     // branch reads entity.activeAtYaleCache, but this projection omitted the

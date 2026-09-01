@@ -174,8 +174,11 @@ const suppressionRepairReasons = new Set([
   'research_infrastructure_only',
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
+// Every field the tier computation reads must be listed here. A field left out
+// arrives undefined and its rule silently cannot fire, which is how a recorded
+// closure (#2330) stayed servable and how yale-status once did (#1620).
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
