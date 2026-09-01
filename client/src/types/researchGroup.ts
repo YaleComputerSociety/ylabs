@@ -170,4 +170,7 @@ export interface ResearchGroupSearchResponse {
   page: number;
   pageSize: number;
   facetDistribution?: Record<string, Record<string, number>>;
+  // Set when the requested page sits past the server's reachable pagination
+  // depth. The search never ran, so the response carries no result-set size.
+  depthLimited?: boolean;
 }

@@ -14,7 +14,9 @@ const page = (overrides: {
   page: number;
   pageSize?: number;
   estimatedTotalHits: number;
+  depthLimited?: boolean;
 }) => ({
+  ...(overrides.depthLimited === undefined ? {} : { depthLimited: overrides.depthLimited }),
   researchEntities: Array.from({ length: overrides.count }, (_unused, index) => ({
     slug: `entity-${index}`,
   })) as never[],
@@ -52,6 +54,16 @@ describe('isResearchEntitySearchExhausted', () => {
   it('treats a genuinely empty result set as exhausted', () => {
     expect(
       isResearchEntitySearchExhausted(page({ count: 0, page: 1, estimatedTotalHits: 0 })),
+    ).toBe(true);
+  });
+
+  it('stops on a depth-limited page even though its total says rows remain', () => {
+    // The server ran no search for a page past its reachable depth, so the page
+    // carries no total of its own and must not be walked past on the stale one.
+    expect(
+      isResearchEntitySearchExhausted(
+        page({ count: 0, page: 209, pageSize: 24, estimatedTotalHits: 6000, depthLimited: true }),
+      ),
     ).toBe(true);
   });
 

@@ -36,7 +36,9 @@ Phase 0 must therefore treat the embedded `users` planning fields as the current
 The public React route in `client/src/App.tsx` renders `Research`.
 `Research` sends `POST /api/research/search` through the shared Axios client with a query, page, page size, filters, and operator-only options when applicable.
 `server/src/routes/researchGroups.ts` dispatches the request to `researchGroupController.searchResearchGroups`.
-The controller caps the page at 1,000, caps page size at 100, bounds query and filter inputs, resolves current admin authority, and enforces public visibility tiers for ordinary viewers.
+The controller caps page size at 100, bounds reachable pagination depth in records rather than by page number, bounds query and filter inputs, resolves current admin authority, and enforces public visibility tiers for ordinary viewers.
+It also sends the result-set facet distribution once per result set rather than on every page.
+See [Search and data](../skills/search-data/SKILL.md) for the depth ceiling and the facet-payload contract.
 `researchGroupService.searchResearchGroupsViaMeili` normalizes the student query and searches the environment-prefixed `researchentities` index.
 Blank browse requests sort by `browseRankScore:desc` and then `lastObservedAt:desc`.
 Non-empty ordinary queries use Meilisearch hybrid search with the `default` embedder, while short aliases such as `ai` and `ml` use keyword-only topic attributes.
