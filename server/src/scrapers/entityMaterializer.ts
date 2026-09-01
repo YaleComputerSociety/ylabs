@@ -76,6 +76,8 @@ import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isSelfReferentialUrl } from '../utils/urlSafety';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
+import { givenNamesEquivalent, surnamesCompatible } from './utils/piNameMatch';
+import { splitName } from './utils/scraperHelpers';
 import {
   isBoilerplatePlatformHostUrl,
   isDirectoryLoaderUrl,
@@ -2833,6 +2835,68 @@ function normalizedAccountEmail(value: unknown): string | undefined {
   return email && ACCOUNT_EMAIL_PATTERN.test(email) ? email : undefined;
 }
 
+const ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT = 10;
+
+function accountIsLive(account: { archived?: boolean; status?: string } | undefined): boolean {
+  return !!account && account.archived !== true && account.status !== 'DISABLED';
+}
+
+/**
+ * `accountSchema.index({ email: 1 })` is not unique and accounts are minted with a
+ * synthetic `${netid}@yale.edu`, so one address can be claimed by several rows (a
+ * student and a staff netid, a recycled `first.last` alias, a departed account next
+ * to its replacement). An arbitrary index-order pick would join person evidence to
+ * whichever row came first, so this fails closed unless exactly one live account
+ * claims the address.
+ */
+async function soleLiveAccountClaimingEmail(email: string): Promise<any | undefined> {
+  const candidates: any[] = await Account.find({ email })
+    .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
+    .lean();
+  const live = candidates.filter(accountIsLive);
+  return live.length === 1 ? live[0] : undefined;
+}
+
+/**
+ * The email join has no name resolver behind it, so it carries its own name check:
+ * the observed name must agree on surname and given name with the researcher the
+ * account already backs. Reuses the same comparators as
+ * `resolveResearcherIdForPersonName` so both lanes agree on what "same person" means.
+ */
+function observedPersonNameAgreesWith(
+  storedDisplayName: unknown,
+  observedDisplayName: string,
+): boolean {
+  const stored = splitName(textValue(storedDisplayName));
+  const observed = splitName(observedDisplayName);
+  if (!stored.last || !observed.last) return false;
+  if (!surnamesCompatible(observed.last, stored.last)) return false;
+  if (!stored.first || !observed.first) return false;
+  return (
+    stored.first.toLowerCase() === observed.first.toLowerCase() ||
+    givenNamesEquivalent(observed.first, stored.first)
+  );
+}
+
+/**
+ * `identifiers.netid` is a join key later runs trust without a name check
+ * (`researcherPersonNameResolver` returns on an `identifiers.netid` hit), so only an
+ * account's own netid may be stamped there. An observed value can be the roster's
+ * email alias (`corey.ohern`) rather than the netid (`co54`), and stamping that would
+ * turn a source's naming habit into a name-bypassing identity claim.
+ */
+async function accountNetidForResearcherLink(
+  linkedAccountId: unknown,
+  knownAccount: any,
+): Promise<string | undefined> {
+  if (!linkedAccountId) return undefined;
+  if (knownAccount?._id && String(knownAccount._id) === String(linkedAccountId)) {
+    return normalizedAccountNetid(knownAccount.netid);
+  }
+  const linked: any = await Account.findById(linkedAccountId).select('netid').lean();
+  return normalizedAccountNetid(linked?.netid);
+}
+
 function scholarProfileLink(url: string, verifiedAt: Date): ResearcherProfileLink {
   return { kind: 'GOOGLE_SCHOLAR', purpose: 'SCHOLARLY', url, verifiedAt, healthStatus: 'UNKNOWN' };
 }
@@ -2908,7 +2972,7 @@ async function materializeUserIdentityToResearcher(
   const observedEmail = normalizedAccountEmail(resolvedValue('email'));
 
   let account: any = netid ? await Account.findOne({ netid }).lean() : null;
-  let accountNetid = normalizedAccountNetid(account?.netid);
+  const accountNetid = normalizedAccountNetid(account?.netid);
 
   let researcher: any = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
   if (!researcher && displayName) {
@@ -2925,22 +2989,27 @@ async function materializeUserIdentityToResearcher(
    * misses for the 95% of accounts whose email local part differs from their netid
    * (#2325). Joining on the observed email closes that gap.
    *
-   * It runs last, and only when nothing else resolved, because the email is not
-   * trustworthy enough to overrule a name: on Development this join disagrees with
-   * the name resolver for 12 keys, and `patricia.ryan-krause@yale.edu` resolves to
-   * an account whose researcher is a different person entirely (Peter James
-   * Krause). Filling a gap gains the 177 keys nothing else reaches; overriding
-   * would have re-pointed one person's evidence onto another's record.
+   * It runs last, only when neither the netid nor the name reached anything, and
+   * only when the email account's own researcher carries a compatible name, because
+   * the email is not trustworthy enough to name a person on its own: on Development
+   * this join disagrees with the name resolver for 12 keys, and
+   * `patricia.ryan-krause@yale.edu` resolves to an account whose researcher is a
+   * different person entirely (Peter James Krause). Filling a gap gains the 177 keys
+   * nothing else reaches; overriding, or joining an address to a name it disagrees
+   * with, would re-point one person's evidence onto another's record.
    */
-  if (!researcher && observedEmail) {
-    const emailAccount: any = await Account.findOne({ email: observedEmail }).lean();
+  let identityJoinedOnEmailAlone = false;
+  if (!researcher && !account && observedEmail) {
+    const emailAccount = await soleLiveAccountClaimingEmail(observedEmail);
     const emailResearcher = emailAccount?._id
       ? await Researcher.findOne({ accountId: emailAccount._id })
       : null;
-    if (emailResearcher) {
+    const emailAccountNamesThisPerson =
+      !displayName || observedPersonNameAgreesWith(emailResearcher?.displayName, displayName);
+    if (emailResearcher && emailAccountNamesThisPerson) {
       researcher = emailResearcher;
       account = emailAccount;
-      accountNetid = normalizedAccountNetid(emailAccount.netid);
+      identityJoinedOnEmailAlone = true;
     }
   }
   const accountId: mongoose.Types.ObjectId | undefined = account?._id;
@@ -2951,7 +3020,9 @@ async function materializeUserIdentityToResearcher(
   const created = false;
 
   let fieldsWritten = 0;
-  if (displayName && researcher.displayName !== displayName) {
+  // An email-only join enriches the profile but never renames the researcher: the
+  // address vouched for the account, not for what the person is called.
+  if (!identityJoinedOnEmailAlone && displayName && researcher.displayName !== displayName) {
     researcher.displayName = displayName;
     fieldsWritten += 1;
   }
@@ -2981,13 +3052,12 @@ async function materializeUserIdentityToResearcher(
     researcher.identifiers = { ...(researcher.identifiers || {}), orcid };
     orcidFieldsWritten += 1;
   }
-  // The account's own netid wins over an observed one: a roster-derived value can be
-  // the email alias (`corey.ohern`) rather than the netid (`co54`), and the netid
-  // spine is only a reliable join while it holds real netids (#2325).
-  const netidToStamp = accountNetid ?? netid;
-  if (netidToStamp && researcher.identifiers?.netid !== netidToStamp) {
+  const priorNetid: string | undefined = researcher.identifiers?.netid;
+  const netidToStamp = await accountNetidForResearcherLink(researcher.accountId, account);
+  let netidFieldsWritten = 0;
+  if (netidToStamp && priorNetid !== netidToStamp) {
     researcher.identifiers = { ...(researcher.identifiers || {}), netid: netidToStamp };
-    fieldsWritten += 1;
+    netidFieldsWritten += 1;
   }
 
   const now = new Date();
@@ -3028,13 +3098,10 @@ async function materializeUserIdentityToResearcher(
     }
   }
 
-  fieldsWritten += orcidFieldsWritten;
+  fieldsWritten += orcidFieldsWritten + netidFieldsWritten;
   let conflicts = 0;
 
-  try {
-    await researcher.save();
-  } catch (error) {
-    if (!isOrcidDuplicateKeyError(error)) throw error;
+  const forgiveOrcidCollision = (): void => {
     researcher.set('identifiers.orcid', priorOrcid);
     researcher.profileLinks = [
       ...(researcher.profileLinks || []).filter(
@@ -3043,6 +3110,7 @@ async function materializeUserIdentityToResearcher(
       ...priorOrcidLinks,
     ];
     fieldsWritten -= orcidFieldsWritten;
+    orcidFieldsWritten = 0;
     conflicts += 1;
     console.warn(
       'Directory identity ORCID already claimed by another researcher; keeping prior identity:',
@@ -3052,7 +3120,42 @@ async function materializeUserIdentityToResearcher(
         collidingOrcid: orcid,
       }),
     );
-    await researcher.save();
+  };
+
+  const forgiveNetidCollision = (): void => {
+    researcher.set('identifiers.netid', priorNetid);
+    fieldsWritten -= netidFieldsWritten;
+    netidFieldsWritten = 0;
+    conflicts += 1;
+    console.warn(
+      'Directory identity netid already claimed by another researcher; keeping prior identity:',
+      sanitizeLogValue({
+        researcherId: materializerDocumentId(researcher._id),
+        entityKey: identifier.entityKey,
+        collidingNetid: netidToStamp,
+      }),
+    );
+  };
+
+  // The unique sparse indexes on `identifiers.orcid` and `identifiers.netid` mean a
+  // value another researcher already claims aborts the whole save, so each colliding
+  // identifier is rolled back and counted as a conflict, letting the rest of the
+  // profile land and making the collision visible instead of failing the key.
+  for (;;) {
+    try {
+      await researcher.save();
+      break;
+    } catch (error) {
+      if (orcidFieldsWritten > 0 && isOrcidDuplicateKeyError(error)) {
+        forgiveOrcidCollision();
+        continue;
+      }
+      if (netidFieldsWritten > 0 && isNetidDuplicateKeyError(error)) {
+        forgiveNetidCollision();
+        continue;
+      }
+      throw error;
+    }
   }
 
   return {
@@ -3459,6 +3562,15 @@ function isOrcidDuplicateKeyError(error: unknown): boolean {
     return true;
   }
   return ((error as { message?: string }).message || '').includes('identifiers.orcid');
+}
+
+function isNetidDuplicateKeyError(error: unknown): boolean {
+  if (!isDuplicateKeyMongoError(error)) return false;
+  const keyPattern = (error as { keyPattern?: Record<string, unknown> }).keyPattern;
+  if (keyPattern && Object.keys(keyPattern).some((key) => key.includes('identifiers.netid'))) {
+    return true;
+  }
+  return ((error as { message?: string }).message || '').includes('identifiers.netid');
 }
 
 function c4ResolveAtMintEntitiesEnabled(): boolean {

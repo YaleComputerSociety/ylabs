@@ -31,6 +31,9 @@ Public research identity, and a first-class findable entity in its own right: a 
 A department roster publishes the friendly email alias (`corey.ohern`) rather than the netid (`co54`), and that alias passes the netid shape test, so `materializeUser` resolves identity by netid first, then by display name, and only then by the observed email.
 The email join runs last on purpose: it is a gap-filler, not an authority.
 On Development it reaches 177 observation keys nothing else reaches, but it also disagrees with the name resolver on 12, and one of those (`patricia.ryan-krause@yale.edu`) points at an account belonging to a different person, so letting the email overrule a name would graft one researcher's evidence onto another's record.
+Three guards keep it a gap-filler: it runs only when neither the netid nor the name reached anything, only when exactly one live (non-archived, non-`DISABLED`) account claims the address, and, when the observation carries a display name, only when that name agrees on surname and given name with the researcher the account already backs.
+A nameless observation still joins, since the roster rows this reaches often publish an address and a title but no name, and an email-only join therefore enriches the profile but never renames the researcher.
+`identifiers.netid` is stamped only from the account the researcher is actually linked to, so an accountless match stamps nothing rather than promoting an alias to a join key.
 Roughly 37% of person-observation keys still resolve to no researcher, dominated by the `dept:` and `ysm:` key prefixes and by name-resolver `ambiguous`/`absent`; that remainder is tracked in #2325 and is why out-of-band repair lanes still carry work the sweep cannot.
 
 `profileLinks[].healthStatus` is a probed fact, not a default (#2292).

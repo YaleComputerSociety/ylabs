@@ -103,8 +103,19 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     return Researcher.create({ displayName, accountId: account._id, ...extra });
   };
 
+  const seedRosterObservations = async (
+    entityKey: string,
+    fields: ReadonlyArray<readonly [string, string]>,
+  ) => {
+    const base = { ...directoryObservationBase(entityKey), sourceName: 'dept-faculty-roster' };
+    for (const [field, value] of fields) {
+      await Observation.create({ ...base, field, value });
+    }
+  };
+
   const enrichedResearcher = async (id: mongoose.Types.ObjectId | unknown) =>
     Researcher.findById(id).lean<{
+      displayName?: string;
       profile?: { title?: string };
       identifiers?: { netid?: string; orcid?: string };
       profileLinks?: Array<{ kind: string; url: string }>;
@@ -370,7 +381,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const otherAccount = await Account.create({
       netid: 'pe67',
-      email: 'shared.alias@yale.edu',
+      email: 'shared.person@yale.edu',
       status: 'ACTIVE',
     });
     const other = await Researcher.create({
@@ -379,24 +390,201 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
 
     const base = {
-      ...directoryObservationBase('netid:shared.alias'),
+      ...directoryObservationBase('netid:shared.person'),
       sourceName: 'dept-faculty-roster',
     };
     for (const [field, value] of [
-      ['netid', 'shared.alias'],
-      ['email', 'shared.alias@yale.edu'],
+      ['netid', 'shared.person'],
+      ['email', 'shared.person@yale.edu'],
       ['displayName', 'Pat Ryan-Example'],
       ['title', 'Professor of Physics'],
     ] as const) {
       await Observation.create({ ...base, field, value });
     }
 
-    await materializeEntity('user', { entityKey: 'netid:shared.alias' }, {});
+    await materializeEntity('user', { entityKey: 'netid:shared.person' }, {});
 
     // The name resolved first, so the person named by the observation is enriched
     // and the account that merely shares the alias is left alone.
     expect((await enrichedResearcher(named._id))?.profile?.title).toBe('Professor of Physics');
     expect((await enrichedResearcher(other._id))?.profile?.title).toBeUndefined();
+  });
+
+  it('leaves the email account alone when the netid already found an account', async () => {
+    await Account.create({ netid: 'ab12', email: 'ab12@yale.edu', status: 'ACTIVE' });
+    const otherAccount = await Account.create({
+      netid: 'cd34',
+      email: 'shared.lab@yale.edu',
+      status: 'ACTIVE',
+    });
+    const other = await Researcher.create({
+      displayName: 'Blake Other',
+      accountId: otherAccount._id,
+    });
+
+    await seedRosterObservations('ab12', [
+      ['netid', 'ab12'],
+      ['email', 'shared.lab@yale.edu'],
+      ['title', 'Professor of Physics'],
+    ]);
+
+    const result = await materializeEntity('user', { entityKey: 'ab12' }, {});
+
+    expect(result.skipped).toBe('directory-identity-without-research-signal');
+    const untouched = await enrichedResearcher(other._id);
+    expect(untouched?.profile?.title).toBeUndefined();
+    expect(untouched?.displayName).toBe('Blake Other');
+  });
+
+  it('fails closed when two live accounts claim the observed email', async () => {
+    const firstAccount = await Account.create({
+      netid: 'ef56',
+      email: 'dana.shared@yale.edu',
+      status: 'ACTIVE',
+    });
+    const first = await Researcher.create({
+      displayName: 'Dana Shared',
+      accountId: firstAccount._id,
+    });
+    const secondAccount = await Account.create({
+      netid: 'gh78',
+      email: 'dana.shared@yale.edu',
+      status: 'ACTIVE',
+    });
+    const second = await Researcher.create({
+      displayName: 'Dana Sharedtwo',
+      accountId: secondAccount._id,
+    });
+
+    await seedRosterObservations('netid:dana.shared', [
+      ['netid', 'dana.shared'],
+      ['email', 'dana.shared@yale.edu'],
+      ['title', 'Professor of Physics'],
+    ]);
+
+    const result = await materializeEntity('user', { entityKey: 'netid:dana.shared' }, {});
+
+    expect(result.skipped).toBe('directory-identity-without-research-signal');
+    expect((await enrichedResearcher(first._id))?.profile?.title).toBeUndefined();
+    expect((await enrichedResearcher(second._id))?.profile?.title).toBeUndefined();
+  });
+
+  it('joins the live account when an archived account shares the observed email', async () => {
+    await Account.create({
+      netid: 'op12',
+      email: 'reused.person@yale.edu',
+      status: 'DISABLED',
+      archived: true,
+    });
+    const liveAccount = await Account.create({
+      netid: 'qr34',
+      email: 'reused.person@yale.edu',
+      status: 'ACTIVE',
+    });
+    const live = await Researcher.create({
+      displayName: 'Robin Reused',
+      accountId: liveAccount._id,
+    });
+
+    await seedRosterObservations('netid:reused.person', [
+      ['netid', 'reused.person'],
+      ['email', 'reused.person@yale.edu'],
+      ['title', 'Professor of Physics'],
+    ]);
+
+    const result = await materializeEntity('user', { entityKey: 'netid:reused.person' }, {});
+
+    expect(result.skipped).toBeUndefined();
+    const enriched = await enrichedResearcher(live._id);
+    expect(enriched?.profile?.title).toBe('Professor of Physics');
+    expect(enriched?.identifiers?.netid).toBe('qr34');
+  });
+
+  it('fails closed when the observed name disagrees with the email account holder', async () => {
+    const chairAccount = await Account.create({
+      netid: 'ij90',
+      email: 'chair.faculty@yale.edu',
+      status: 'ACTIVE',
+    });
+    const priorChair = await Researcher.create({
+      displayName: 'Prior Chairperson',
+      accountId: chairAccount._id,
+    });
+
+    await seedRosterObservations('dept:physics-chair', [
+      ['email', 'chair.faculty@yale.edu'],
+      ['displayName', 'Nadia Newchair'],
+      ['title', 'Chair of Physics'],
+    ]);
+
+    const result = await materializeEntity('user', { entityKey: 'dept:physics-chair' }, {});
+
+    expect(result.skipped).toBe('directory-identity-without-research-signal');
+    const untouched = await enrichedResearcher(priorChair._id);
+    expect(untouched?.displayName).toBe('Prior Chairperson');
+    expect(untouched?.profile?.title).toBeUndefined();
+  });
+
+  it('stamps the account netid rather than the alias when the name resolved the researcher', async () => {
+    const account = await Account.create({
+      netid: 'kl12',
+      email: 'kl12@yale.edu',
+      status: 'ACTIVE',
+    });
+    const researcher = await Researcher.create({
+      displayName: 'Corey Example',
+      accountId: account._id,
+    });
+
+    await seedRosterObservations('netid:corey.example', [
+      ['netid', 'corey.example'],
+      ['displayName', 'Corey Example'],
+      ['title', 'Professor of Physics'],
+    ]);
+
+    await materializeEntity('user', { entityKey: 'netid:corey.example' }, {});
+
+    const enriched = await enrichedResearcher(researcher._id);
+    expect(enriched?.profile?.title).toBe('Professor of Physics');
+    expect(enriched?.identifiers?.netid).toBe('kl12');
+    expect(await Researcher.countDocuments({ 'identifiers.netid': 'corey.example' })).toBe(0);
+  });
+
+  it('stamps no netid on an accountless researcher the name resolver matched', async () => {
+    const shell = await Researcher.create({ displayName: 'Jamie Shell' });
+
+    await seedRosterObservations('netid:jamie.shell', [
+      ['netid', 'jamie.shell'],
+      ['displayName', 'Jamie Shell'],
+      ['title', 'Professor of Physics'],
+    ]);
+
+    await materializeEntity('user', { entityKey: 'netid:jamie.shell' }, {});
+
+    const enriched = await enrichedResearcher(shell._id);
+    expect(enriched?.profile?.title).toBe('Professor of Physics');
+    expect(enriched?.identifiers?.netid).toBeUndefined();
+  });
+
+  it('yields a colliding netid to its existing holder instead of failing the key', async () => {
+    await Researcher.init();
+    const holder = await Researcher.create({
+      displayName: 'Netid Holder',
+      identifiers: { netid: 'mn34' },
+    });
+    const enrichTarget = await attachedResearcher('mn34', 'Target Person');
+
+    await seedDirectoryIdentity('mn34', 'Target', 'Person');
+
+    const result = await materializeEntity('user', { entityKey: 'mn34' }, {});
+
+    expect(result.conflicts).toBe(1);
+
+    const enriched = await enrichedResearcher(enrichTarget._id);
+    expect(enriched?.profile?.title).toBe('Professor of Physics');
+    expect(enriched?.identifiers?.netid).toBeUndefined();
+    expect((await enrichedResearcher(holder._id))?.identifiers?.netid).toBe('mn34');
+    expect(await Researcher.countDocuments({ 'identifiers.netid': 'mn34' })).toBe(1);
   });
 
   it('clamps a directory title beyond the profile bound instead of failing the run', async () => {
