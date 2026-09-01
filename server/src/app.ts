@@ -20,7 +20,12 @@ import { sanitizeMongo } from './middleware/sanitizeMongo';
 import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
-import { globalLimiter, ensureAnonymousRateLimitId } from './middleware/rateLimiters';
+import {
+  ensureAnonymousRateLimitId,
+  firstContactLimiter,
+  globalLimiter,
+  observeFirstContactVolume,
+} from './middleware/rateLimiters';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDistPath = path.join(__dirname, '../../client/dist');
@@ -261,6 +266,14 @@ const app = express()
   .use(passport.initialize())
   .use(passport.session())
   .use('/api', sanitizeMongo)
+  // Mounted AFTER ensureAnonymousRateLimitId so the session cookie is already on
+  // the response when this 429s: the rejection is then retryable by honouring
+  // the cookie just issued, which a browser does automatically and a caller that
+  // discards cookies does not. Mounted BEFORE globalLimiter so a first-contact
+  // flood is rejected without first consuming a per-session budget it minted
+  // itself (#2319).
+  .use('/api', firstContactLimiter)
+  .use('/api', observeFirstContactVolume)
   .use('/api', globalLimiter)
   .use('/api', passportRoutes)
   .use('/api', routes);
