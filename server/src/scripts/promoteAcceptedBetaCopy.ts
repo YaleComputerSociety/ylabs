@@ -98,6 +98,7 @@ export interface PromotionSummary {
   collectionCategories: CollectionCategorySummary[];
   excludedSyntheticUsers: number;
   syntheticReferenceBlockersClear: boolean;
+  emptySourceBlockersClear: boolean;
   applyBlockers: string[];
   blockedSyntheticUserReferences: SyntheticUserReference[];
 }
@@ -235,7 +236,9 @@ export function buildPromotionSummary(
       excludedCount: rows.reduce((sum, row) => sum + row.excludedCount, 0),
     };
   });
-  const applyBlockers = buildApplyBlockers(blockedSyntheticUserReferences);
+  const syntheticReferenceBlockers = buildApplyBlockers(blockedSyntheticUserReferences);
+  const emptySourceBlockers = buildEmptySourceBlockers(plan);
+  const applyBlockers = [...syntheticReferenceBlockers, ...emptySourceBlockers];
 
   return {
     mode: options.mode,
@@ -249,10 +252,26 @@ export function buildPromotionSummary(
     collections: plan,
     collectionCategories,
     excludedSyntheticUsers: plan.find((row) => row.name === 'accounts')?.excludedCount || 0,
-    syntheticReferenceBlockersClear: applyBlockers.length === 0,
+    syntheticReferenceBlockersClear: syntheticReferenceBlockers.length === 0,
+    emptySourceBlockersClear: emptySourceBlockers.length === 0,
     applyBlockers,
     blockedSyntheticUserReferences,
   };
+}
+
+// copyCollection deletes the whole target before inserting, so a collection that
+// is empty on beta would empty production rather than leave it untouched. Compare
+// sourceCopyCount, not sourceCount: accounts copies through SYNTHETIC_USER_FILTER,
+// so its raw count overstates what would actually be written.
+function buildEmptySourceBlockers(plan: CollectionPlan[]): string[] {
+  return plan
+    .filter((row) => row.sourceCopyCount === 0 && row.targetCount > 0)
+    .map(
+      (row) =>
+        `Collection ${row.name} would copy 0 documents over ${row.targetCount} existing production ${
+          row.targetCount === 1 ? 'document' : 'documents'
+        }, which would empty it.`,
+    );
 }
 
 function buildApplyBlockers(blockedSyntheticUserReferences: SyntheticUserReference[]): string[] {
