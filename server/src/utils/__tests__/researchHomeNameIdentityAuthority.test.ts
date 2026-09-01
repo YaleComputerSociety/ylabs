@@ -4,6 +4,7 @@ import {
   classifyHarvestedResearchHomeName,
   stripResearchHomeNameLinkWrapper,
   corroboratedLabNameEponyms,
+  eponymousLabNameSurnameCandidates,
   entityKeyPersonTokens,
   eponymousLabNameSurname,
   isNonIdentifyingLinkLabelName,
@@ -242,5 +243,38 @@ describe('link-label names and wrappers (#2285)', () => {
     expect(stripResearchHomeNameLinkWrapper('Smith Lab <span class="title">')).toBe(
       'Smith Lab <span class="title">',
     );
+  });
+});
+
+describe('nobiliary-particle surnames (#2285)', () => {
+  it('corroborates the URL spelling of a particle surname', () => {
+    expect(eponymousLabNameSurnameCandidates('De Camilli Lab')).toEqual(['camilli', 'decamilli']);
+    expect(
+      corroboratedLabNameEponyms('De Camilli Lab', 'https://medicine.example.edu/lab/decamilli/'),
+    ).toEqual(['decamilli']);
+  });
+
+  it('flags a particle surname claimed on another person row', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'De Camilli Lab',
+        websiteUrl: 'https://medicine.example.edu/lab/decamilli/',
+        identityTokens: ['hongyan', 'hao'],
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves the eponym holder own row alone', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'De Camilli Lab',
+        websiteUrl: 'https://medicine.example.edu/lab/decamilli/',
+        identityTokens: ['pietro', 'decamilli'],
+      }),
+    ).toBe(false);
+  });
+
+  it('does not widen the rule to a topical name whose host echoes it', () => {
+    expect(corroboratedLabNameEponyms('Belief Lab', 'https://belieflab.example.edu/')).toEqual([]);
   });
 });
