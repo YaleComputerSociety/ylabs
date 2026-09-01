@@ -5,10 +5,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildDuplicateEntityNameReviewOutput,
+  buildDuplicateEntityNameReviewSummaryOnlyOutput,
   buildDuplicateEntityNameReviewDecisionTemplate,
   buildDuplicateEntityNameReviewPlans,
   buildDuplicateEntityNameMergeGroups,
   assertDuplicateEntityNameReviewApplyAllowed,
+  assertDuplicateEntityNameReviewSummaryOnlyAllowed,
   normalizeDuplicateEntityNameReviewObjectId,
   parseDuplicateEntityNameReviewArgs,
   readDuplicateEntityNameReviewDecisions,
@@ -81,6 +83,43 @@ describe('duplicate entity name review CLI helpers', () => {
     });
   });
 
+  it('parses summary-only as a literal flag', () => {
+    expect(
+      parseDuplicateEntityNameReviewArgs(['--summary-only', '--environment=development']),
+    ).toEqual({
+      apply: false,
+      summaryOnly: true,
+      environment: 'development',
+      confirmDuplicateEntityNameReview: false,
+      limit: 10000,
+      limitProvided: false,
+      planLimit: 100,
+      maxApply: 10,
+    });
+    expect(() => parseDuplicateEntityNameReviewArgs(['--summary-only=true'])).toThrow(
+      '--summary-only does not accept a value',
+    );
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs(['--summary-only', '--environment=test']),
+    ).toThrow('--environment requires development, beta, or production-copy');
+  });
+
+  it('rejects summary-only write and decision artifact options before connecting', () => {
+    expect(() =>
+      assertDuplicateEntityNameReviewSummaryOnlyAllowed(
+        parseDuplicateEntityNameReviewArgs(['--summary-only', '--apply']),
+      ),
+    ).toThrow(/--summary-only cannot be combined with --apply/);
+    expect(() =>
+      assertDuplicateEntityNameReviewSummaryOnlyAllowed(
+        parseDuplicateEntityNameReviewArgs([
+          '--summary-only',
+          '--decision-template-output=/tmp/decisions.json',
+        ]),
+      ),
+    ).toThrow(/cannot be combined with decision input/);
+  });
+
   it('requires explicit confirmation before duplicate-name review apply', () => {
     expect(
       parseDuplicateEntityNameReviewArgs([
@@ -112,24 +151,24 @@ describe('duplicate entity name review CLI helpers', () => {
     expect(() => parseDuplicateEntityNameReviewArgs(['--output', '--apply'])).toThrow(
       '--output requires a path',
     );
-    expect(() => parseDuplicateEntityNameReviewArgs(['--limit', '--category=same_label_disambiguation'])).toThrow(
-      '--limit requires a number',
-    );
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs(['--limit', '--category=same_label_disambiguation']),
+    ).toThrow('--limit requires a number');
     expect(() => parseDuplicateEntityNameReviewArgs(['--category', '--plan-limit=5'])).toThrow(
       '--category requires a value',
     );
-    expect(() => parseDuplicateEntityNameReviewArgs(['--accepted-decisions', '--allow-empty-decisions'])).toThrow(
-      '--accepted-decisions requires a path',
-    );
-    expect(() => parseDuplicateEntityNameReviewArgs(['--decision-template-output=--apply'])).toThrow(
-      '--decision-template-output requires a path',
-    );
-    expect(() => parseDuplicateEntityNameReviewArgs(['--output=/var/tmp/duplicate-review.json'])).toThrow(
-      /--output must write under/,
-    );
-    expect(() => parseDuplicateEntityNameReviewArgs(['--output=/tmp/duplicate-review.txt'])).toThrow(
-      /--output must point to a \.json report file/,
-    );
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs(['--accepted-decisions', '--allow-empty-decisions']),
+    ).toThrow('--accepted-decisions requires a path');
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs(['--decision-template-output=--apply']),
+    ).toThrow('--decision-template-output requires a path');
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs(['--output=/var/tmp/duplicate-review.json']),
+    ).toThrow(/--output must write under/);
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs(['--output=/tmp/duplicate-review.txt']),
+    ).toThrow(/--output must point to a \.json report file/);
     expect(() =>
       parseDuplicateEntityNameReviewArgs([
         '--accepted-decisions=/var/tmp/duplicate-review-decisions.json',
@@ -316,11 +355,7 @@ describe('duplicate entity name review CLI helpers', () => {
       generatedAt: '2026-05-31T20:00:00.000Z',
       applyBlocked: false,
       applyStatus: DUPLICATE_NAME_APPLY_STATUS,
-      acceptedDecisionValues: [
-        'merge_into_canonical',
-        'mark_distinct_homes',
-        'defer_review',
-      ],
+      acceptedDecisionValues: ['merge_into_canonical', 'mark_distinct_homes', 'defer_review'],
       decisions: [
         {
           planId: 'duplicate-name:shared_website_merge_review:example-lab',
@@ -435,8 +470,7 @@ describe('duplicate entity name review CLI helpers', () => {
     expect(validation).toMatchObject({
       artifactPath: decisionsPath,
       applyBlocked: false,
-      applyStatus:
-        DUPLICATE_NAME_APPLY_STATUS,
+      applyStatus: DUPLICATE_NAME_APPLY_STATUS,
       totalDecisions: 3,
       validDecisionCount: 1,
       invalidDecisionCount: 2,
@@ -458,9 +492,7 @@ describe('duplicate entity name review CLI helpers', () => {
         {
           planId: 'duplicate-name:same_label_disambiguation:miller-lab',
           status: 'invalid',
-          errors: [
-            'merge_into_canonical requires merge_preflight_ready_for_review status.',
-          ],
+          errors: ['merge_into_canonical requires merge_preflight_ready_for_review status.'],
         },
         {
           planId: 'duplicate-name:shared_website_merge_review:missing-lab',
@@ -539,8 +571,7 @@ describe('duplicate entity name review CLI helpers', () => {
       manualDisambiguationRequired: 0,
     });
     expect(planSummary.plans[0]).toMatchObject({
-      planId:
-        'duplicate-name:cross_department_same_person_review:avery-fixture-faculty-research',
+      planId: 'duplicate-name:cross_department_same_person_review:avery-fixture-faculty-research',
       reviewPreflight: {
         status: 'merge_preflight_ready_for_review',
         referenceRewriteRequired: true,
@@ -787,8 +818,7 @@ describe('duplicate entity name review CLI helpers', () => {
             entities: [],
           },
         ],
-        nextAction:
-          'Review category-specific clusters before any merge or archive apply.',
+        nextAction: 'Review category-specific clusters before any merge or archive apply.',
       },
       {
         environment: 'beta',
@@ -812,6 +842,104 @@ describe('duplicate entity name review CLI helpers', () => {
     expect(() =>
       writeDuplicateEntityNameReviewOutput(payload, '/var/tmp/duplicate-review.json'),
     ).toThrow(/--output must write under/);
+  });
+
+  it('builds a fail-closed aggregate-only duplicate-name report', () => {
+    const payload = buildDuplicateEntityNameReviewSummaryOnlyOutput(
+      {
+        generatedAt: '2026-07-28T00:00:00.000Z',
+        mongoTarget: 'mongodb://private.example.test/Development',
+        mode: 'dry-run',
+        applyBlocked: false,
+        applyStatus: DUPLICATE_NAME_APPLY_STATUS,
+        clusterLimit: 500,
+        clusterCount: 1,
+        entityCountInClusters: 2,
+        reviewSummary: {
+          totalClusters: 1,
+          byCategory: [{ category: 'shared_website_merge_review', count: 1 }],
+        },
+        planSummary: {
+          planLimit: 100,
+          plannedClusterCount: 1,
+          plannedEntityCount: 2,
+          planTruncated: false,
+          preflightSummary: {
+            mergePreflightReadyForReview: 1,
+            manualDisambiguationRequired: 0,
+            withReferenceRewrite: 1,
+            totalReferencesImpacted: 3,
+            requiredReviewerDecisions: [{ decision: 'private decision text', count: 1 }],
+          },
+          plans: [
+            {
+              planId: 'private-plan',
+              normalizedName: 'private lab',
+              reviewCategory: 'shared_website_merge_review',
+              entityIds: ['private-entity'],
+              entitySlugs: ['private-lab'],
+              sharedWebsiteUrl: 'https://private.example.test',
+              proposedAction: 'review_for_merge_or_aliasing',
+              reviewPreflight: {
+                status: 'merge_preflight_ready_for_review',
+                referenceRewriteRequired: true,
+                totalReferencesImpacted: 3,
+                blockers: [],
+                requiredReviewerDecisions: [],
+              },
+              applyBlocked: false,
+              applyStatus: DUPLICATE_NAME_APPLY_STATUS,
+            },
+          ],
+        },
+        clusters: [
+          {
+            normalizedName: 'private lab',
+            count: 2,
+            reviewCategory: 'shared_website_merge_review',
+            entities: [
+              {
+                id: 'private-entity',
+                name: 'Private Lab',
+                slug: 'private-lab',
+                websiteUrl: 'https://private.example.test',
+              },
+            ],
+          },
+        ],
+        nextAction: 'Private action',
+      },
+      { environment: 'development', db: 'Development' },
+    );
+    const serialized = JSON.stringify(payload);
+
+    expect(payload).toMatchObject({
+      summaryOnly: true,
+      environment: 'development',
+      db: 'Development',
+      mode: 'dry-run',
+      applyBlocked: true,
+      clusterCount: 1,
+      entityCountInClusters: 2,
+      possibleClusterTruncation: false,
+      countSemantics: 'complete-within-normalized-name-scan',
+      reviewSummary: {
+        byCategory: [{ category: 'shared_website_merge_review', count: 1 }],
+      },
+      planSummary: {
+        plannedClusterCount: 1,
+        plannedEntityCount: 2,
+        preflightSummary: {
+          totalReferencesImpacted: 3,
+        },
+      },
+      appliedCount: 0,
+    });
+    expect(payload).not.toHaveProperty('clusters');
+    expect(payload.planSummary).not.toHaveProperty('plans');
+    expect(serialized).not.toContain('private-entity');
+    expect(serialized).not.toContain('private lab');
+    expect(serialized).not.toContain('private.example');
   });
 
   it('exposes the dry-run command in server package scripts', () => {

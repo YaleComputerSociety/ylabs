@@ -23,10 +23,7 @@ const renderLogin = (from?: string, context: Partial<UserContextValue> = {}) => 
         ...context,
       }}
     >
-      <MemoryRouter
-        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-        initialEntries={[{ pathname: '/login', state: from ? { from } : null }]}
-      >
+      <MemoryRouter initialEntries={[{ pathname: '/login', state: from ? { from } : null }]}>
         <Login />
       </MemoryRouter>
     </UserContext.Provider>,
@@ -62,41 +59,32 @@ describe('Login', () => {
 
     expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
     expect(
-      screen.getByText(/browse research homes, evidence, and source-backed profiles/i),
+      screen.getByText(/save research homes, keep private notes, and reach out/i),
     ).toBeTruthy();
   });
 
-  it('keeps opportunity detail context on the CAS gate', () => {
+  it('falls back to default Yale Research context for the retired opportunities route', () => {
     renderLogin('/opportunities/example-id');
 
+    expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
+    expect(screen.getByText(/open the research discovery workspace/i)).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: /continue to opportunity details/i })).toBeNull();
     expect(
-      screen.getByRole('heading', { name: /continue to opportunity details/i }),
-    ).toBeTruthy();
-    expect(screen.getByText(/review the evidence, deadline, and application next step/i)).toBeTruthy();
+      screen.queryByText(/review the evidence, deadline, and application next step/i),
+    ).toBeNull();
   });
 
-  it('keeps profile context on the CAS gate', () => {
-    renderLogin('/profile/example');
+  it('keeps dashboard context on the CAS gate', () => {
+    renderLogin('/dashboard');
 
-    expect(screen.getByRole('heading', { name: /continue to profile/i })).toBeTruthy();
-    expect(screen.getByText(/view research interests, activity, and yale research context/i)).toBeTruthy();
-  });
-
-  it('keeps account context on the CAS gate', () => {
-    renderLogin('/account');
-
-    expect(screen.getByRole('heading', { name: /continue to your account/i })).toBeTruthy();
-    expect(
-      screen.getByText(/manage saved research plans, profile details, and program planning/i),
-    ).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to your dashboard/i })).toBeTruthy();
+    expect(screen.getByText(/manage saved research plans and program planning/i)).toBeTruthy();
   });
 
   it('keeps about page context on the CAS gate', () => {
     renderLogin('/about');
 
-    expect(
-      screen.getByRole('heading', { name: /continue to about yale research/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to about yale research/i })).toBeTruthy();
     expect(screen.getByText(/learn how yale research is built and supported/i)).toBeTruthy();
   });
 

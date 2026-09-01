@@ -1,0 +1,175 @@
+import { describe, expect, it } from 'vitest';
+import {
+  andConcatenationComponentKeys,
+  isProgramTitleQualifierDrift,
+  normalizedProgramTitleKey,
+  primaryConcatenatedAwardTitle,
+  shareAndConcatenatedTitleComponent,
+} from '../programTitle';
+
+describe('normalizedProgramTitleKey', () => {
+  it('is case-, whitespace-, and punctuation-insensitive', () => {
+    expect(normalizedProgramTitleKey('  STARS  Summer   Research Program ')).toBe(
+      normalizedProgramTitleKey('stars summer research program'),
+    );
+  });
+
+  it('folds curly and straight apostrophes to the same key', () => {
+    expect(normalizedProgramTitleKey("Yale College Dean's Research Fellowship")).toBe(
+      normalizedProgramTitleKey('Yale College Dean’s Research Fellowship'),
+    );
+  });
+
+  it('folds an ampersand to the word "and" so & and and titles collide (#655)', () => {
+    expect(
+      normalizedProgramTitleKey(
+        'First-Year Summer Research Fellowship in the Sciences & Engineering',
+      ),
+    ).toBe(
+      normalizedProgramTitleKey(
+        'First-Year Summer Research Fellowship in the Sciences and Engineering',
+      ),
+    );
+  });
+
+  it('does not collapse genuinely distinct titles', () => {
+    expect(normalizedProgramTitleKey('Wu Tsai Undergraduate Fellowships')).not.toBe(
+      normalizedProgramTitleKey('Undergraduate Fellowships'),
+    );
+    expect(normalizedProgramTitleKey('Mellon Fellowship Berkeley College')).not.toBe(
+      normalizedProgramTitleKey('Mellon Fellowship Branford College'),
+    );
+  });
+
+  it('returns an empty string for blank titles', () => {
+    expect(normalizedProgramTitleKey('')).toBe('');
+    expect(normalizedProgramTitleKey('   ')).toBe('');
+  });
+});
+
+describe('andConcatenationComponentKeys', () => {
+  it('splits a literal all-caps "AND" join into normalized component keys', () => {
+    expect(
+      andConcatenationComponentKeys(
+        'Alpha Research Fellowship for Emerging Scholars AND the Beta Summer Fellowship',
+      ),
+    ).toEqual([
+      normalizedProgramTitleKey('Alpha Research Fellowship for Emerging Scholars'),
+      normalizedProgramTitleKey('the Beta Summer Fellowship'),
+    ]);
+  });
+
+  it('does not split on the lowercase word "and" inside an ordinary title', () => {
+    expect(andConcatenationComponentKeys('Research and Travel Grant')).toEqual([]);
+  });
+
+  it('returns an empty array for titles with no AND join', () => {
+    expect(andConcatenationComponentKeys('Wu Tsai Undergraduate Fellowships')).toEqual([]);
+  });
+});
+
+describe('shareAndConcatenatedTitleComponent', () => {
+  it('recognizes the Tetelman/Bates repro shape: shared trailing component, drifted leading qualifier', () => {
+    const titleA = 'Alpha Research Fellowship for Emerging Scholars AND the Beta Summer Fellowship';
+    const titleB =
+      'Marcus J. Alpha 1962 Research Fellowships for Emerging Scholars AND the Beta Summer Fellowship';
+    expect(shareAndConcatenatedTitleComponent(titleA, titleB)).toBe(true);
+  });
+
+  it('returns false when neither AND-concatenated title shares a component', () => {
+    const titleA = 'Alpha Research Fellowship AND the Beta Summer Fellowship';
+    const titleB = 'Gamma Travel Grant AND the Delta Winter Fellowship';
+    expect(shareAndConcatenatedTitleComponent(titleA, titleB)).toBe(false);
+  });
+
+  it('returns false when either title is not AND-concatenated', () => {
+    expect(
+      shareAndConcatenatedTitleComponent(
+        'Wu Tsai Undergraduate Fellowships',
+        'Undergraduate Fellowships',
+      ),
+    ).toBe(false);
+  });
+
+  it('returns false for identical AND-concatenated titles, which the exact-key lever already handles', () => {
+    const title = 'Alpha Research Fellowship AND the Beta Summer Fellowship';
+    expect(shareAndConcatenatedTitleComponent(title, title)).toBe(false);
+  });
+});
+
+describe('primaryConcatenatedAwardTitle', () => {
+  it('collapses a two-award "AND"-joined heading to its primary award (Tetelman/Bates repro shape)', () => {
+    expect(
+      primaryConcatenatedAwardTitle(
+        'Alpha Fellowship for International Research in the Sciences AND the Beta Summer Fellowship',
+      ),
+    ).toBe('Alpha Fellowship for International Research in the Sciences');
+  });
+
+  it('keeps only the first component when three named awards are joined', () => {
+    expect(
+      primaryConcatenatedAwardTitle('Alpha Grant AND Beta Scholarship AND the Gamma Prize'),
+    ).toBe('Alpha Grant');
+  });
+
+  it('leaves a title untouched when a component is not a named award (the "AND" is part of one name)', () => {
+    expect(primaryConcatenatedAwardTitle('Science AND Engineering Fellowship')).toBe(
+      'Science AND Engineering Fellowship',
+    );
+  });
+
+  it('does not split on the lowercase word "and" inside an ordinary title', () => {
+    expect(primaryConcatenatedAwardTitle('Research and Travel Grant')).toBe(
+      'Research and Travel Grant',
+    );
+  });
+
+  it('returns titles with no AND join unchanged', () => {
+    expect(primaryConcatenatedAwardTitle('Wu Tsai Undergraduate Fellowships')).toBe(
+      'Wu Tsai Undergraduate Fellowships',
+    );
+  });
+
+  it('trims surrounding whitespace and handles empty input', () => {
+    expect(primaryConcatenatedAwardTitle('  Alpha Fellowship  ')).toBe('Alpha Fellowship');
+    expect(primaryConcatenatedAwardTitle('')).toBe('');
+  });
+});
+
+describe('isProgramTitleQualifierDrift', () => {
+  it('recognizes a dropped leading qualifier (Wu Tsai / STARS II repro shape, #609)', () => {
+    expect(
+      isProgramTitleQualifierDrift(
+        'Wu Tsai Undergraduate Fellowships',
+        'Undergraduate Fellowships',
+      ),
+    ).toBe(true);
+    expect(isProgramTitleQualifierDrift('STARS II Academic Year Program', 'STARS II Program')).toBe(
+      true,
+    );
+  });
+
+  it('returns false for two distinct award names that merely share boilerplate words', () => {
+    expect(
+      isProgramTitleQualifierDrift(
+        'Grace Hopper Richter Summer Fellowship',
+        'Grace Hopper Mellon Senior Research Grant',
+      ),
+    ).toBe(false);
+    expect(
+      isProgramTitleQualifierDrift(
+        'Josef Albers Traveling Fellowship Fund',
+        'Michael Coe Summer Fieldwork Fund',
+      ),
+    ).toBe(false);
+  });
+
+  it('requires at least 2 shared tokens so a single generic word never matches', () => {
+    expect(isProgramTitleQualifierDrift('Program', 'Alpha Beta Program')).toBe(false);
+  });
+
+  it('returns false for blank titles', () => {
+    expect(isProgramTitleQualifierDrift('', 'Undergraduate Fellowships')).toBe(false);
+    expect(isProgramTitleQualifierDrift('Undergraduate Fellowships', '')).toBe(false);
+  });
+});

@@ -1,18 +1,18 @@
 # Yale Research
 
-A research-discovery app for Yale students. It helps students find research homes, evidence-backed pathways, posted opportunities when they exist, and the best next step toward a specific Yale research context.
+A research-discovery app for Yale students. It helps students find research homes, source-backed access evidence, and a clear way to reach out to a specific Yale research context.
 
 **Live:** [yalelabs.io](https://yalelabs.io/) · **Repo:** [YaleComputerSociety/ylabs](https://github.com/YaleComputerSociety/ylabs)
 
 ## Tech Stack
 
-| Layer | Tech |
-|-------|------|
-| Client | React 19, TypeScript, Vite, TailwindCSS, MUI |
-| Server | Express 4, TypeScript, Passport.js (Yale CAS) |
-| Database | MongoDB Atlas (Mongoose 8) |
-| Search | Meilisearch (hybrid: keyword + semantic via OpenAI embedder) |
-| Package Manager | Yarn 4 via Corepack |
+| Layer           | Tech                                                                      |
+| --------------- | ------------------------------------------------------------------------- |
+| Client          | React 19, TypeScript, Vite, TailwindCSS, MUI                              |
+| Server          | Express 4, TypeScript, Passport.js (Yale CAS)                             |
+| Database        | MongoDB Atlas (Mongoose 8)                                                |
+| Search          | Meilisearch (keyword plus semantic via OpenAI embedder where appropriate) |
+| Package Manager | Yarn 4 via Corepack                                                       |
 
 ## Quick Start
 
@@ -35,19 +35,19 @@ Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a
 
 ## Product Surfaces
 
-- `/research`: Yale Research, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards are enriched with compact ways-in evidence when it exists.
+- `/research`: Yale Research, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other research homes. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
 - `/programs`: Programs & Fellowships, the structured application and planning surface for open cycles, closing-soon deadlines, likely next cycles, center internships, fellowships, and recurring research programs.
-- `/account`: Dashboard, the private saved-planning workspace for research plans, saved programs, notes, checklist context, and next deadlines.
-- `/research/:slug`: research-home detail pages with the student decision summary, evidence level, recommended next step, people, sources, and ways-in context.
-- `/opportunities/:id`: detail pages for real active or time-bound posted opportunities only.
+- `/dashboard`: the private, read-only saved-planning workspace split into two surfaces: a Dashboard of saved research homes with notes and next steps, and a Program Watch of watched programs with deadlines, accepting status, and eligibility.
+- `/research/:slug`: research-home detail pages with source-backed evidence signals, a constant prompt to reach out and get involved, source-verified current team context when available, sources, and saved research-plan actions.
 
-The old Listings board and public Pathways page are retired. `/listings` redirects to `/research`; the standalone practical-routes URL is gone and should resolve as not found; `/fellowships` redirects to `/programs`. New work should use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` concepts instead of recreating listing-style flows.
+The old Listings board and public Pathways page are retired. `/listings` redirects to `/research`; the standalone practical-routes and posted-opportunity URLs are gone and should resolve as not found; `/fellowships` redirects to `/programs`. New work should use `ResearchEntity`, `Signal`, and `ResearchEntityRelationship` concepts instead of recreating listing-style flows.
 
-Backend compatibility remains narrower than the client surface: `POST /api/pathways/search` still powers Ways In infrastructure for research discovery, and `/api/fellowships` remains available only as a deprecated compatibility API with `/api/programs` as its successor.
+Backend compatibility remains narrower than the client surface: `/api/fellowships` remains available only as a deprecated compatibility API with `/api/programs` as its successor.
 
 ## Release Posture
 
 Beta is live testing and the release gate. Production promotion requires a recent Beta data-quality run, scraper integrity gate, semantic Research search readiness when semantic search is enabled, backup/rollback confirmation, Meilisearch sync, and smoke tests.
+Research search relevance depends on the current `researchentities` index settings, including curated student-topic aliases and short-query typo guards, so rebuild or sync Meilisearch after changing ResearchEntity source data or index settings.
 
 Scrapers run as short-lived CLI or cron jobs outside the web service process. Do not add a separate always-on scraper server unless runtime limits, queueing, or operator-triggered job requirements make cron insufficient.
 
@@ -73,6 +73,7 @@ Use Playwright MCP for exploratory browser passes, then codify durable findings 
 
 See **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** for full setup instructions, architecture details, environment configuration, and contribution guidelines.
 Agents should start with **[AGENTS.md](AGENTS.md)** and the focused skills in **[skills/](skills/)**.
+See **[docs/research-model.md](docs/research-model.md)** for the current model and **[docs/research-model-refactor.md](docs/research-model-refactor.md)** for the accepted target and migration phases.
 See **[docs/scraper-deployment-runbook.md](docs/scraper-deployment-runbook.md)** for scraper rollout and cron posture.
 
 ## Acknowledgements

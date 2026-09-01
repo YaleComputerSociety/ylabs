@@ -1,8 +1,15 @@
 import { Fellowship } from '../types/types';
+import { getFellowshipApplicationStatus } from './fellowshipStatus';
 
 export const CLOSING_SOON_DAYS = 30;
 
-export type FellowshipCycleCategory = 'closingSoon' | 'open' | 'nextCycle' | 'closed';
+export type FellowshipCycleCategory =
+  | 'closingSoon'
+  | 'open'
+  | 'openingSoon'
+  | 'projectedNextCycle'
+  | 'nextCycle'
+  | 'closed';
 
 export interface FellowshipCycleStatus {
   category: FellowshipCycleCategory;
@@ -49,16 +56,37 @@ export function getFellowshipCycleStatus(
   fellowship: Fellowship,
   now: Date = new Date(),
 ): FellowshipCycleStatus {
+  const applicationStatus = getFellowshipApplicationStatus(fellowship, now);
   const deadline = fellowship.deadline ? new Date(fellowship.deadline) : null;
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
-  const isOpen = fellowship.isAcceptingApplications && !deadlinePassed;
+  const isOpen = applicationStatus.isApplicationWindowOpen;
   const sourceBacked = hasSourceUrl(fellowship);
   const likelyRecurring = !isOpen && isLikelyRecurringFellowship(fellowship);
 
+  if (applicationStatus.kind === 'notOpenYet') {
+    return {
+      category: 'openingSoon',
+      label: 'Opens Soon',
+      className: 'bg-blue-50 text-blue-700 border border-blue-100',
+      deadlinePassed,
+      sourceBacked,
+      likelyRecurring: false,
+    };
+  }
+
+  if (applicationStatus.kind === 'projectedNextCycle') {
+    return {
+      category: 'projectedNextCycle',
+      label: 'Next Cycle (Est.)',
+      className: 'bg-sky-50 text-sky-700 border border-sky-100',
+      deadlinePassed: false,
+      sourceBacked,
+      likelyRecurring: true,
+    };
+  }
+
   if (isOpen && deadline) {
-    const daysUntil = Math.ceil(
-      (deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-    );
+    const daysUntil = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     if (daysUntil <= CLOSING_SOON_DAYS && daysUntil > 0) {
       return {
         category: 'closingSoon',
@@ -108,6 +136,14 @@ export function getFellowshipDeadlineSubtitle(
   now: Date = new Date(),
 ): string {
   const status = getFellowshipCycleStatus(fellowship, now);
+  if (status.category === 'openingSoon') {
+    const openDate = new Date(String(fellowship.applicationOpenDate));
+    return `Opens ${openDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  }
+  if (status.category === 'projectedNextCycle' && fellowship.deadline) {
+    const projected = new Date(fellowship.deadline);
+    return `Est. next cycle ~${projected.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (unconfirmed)`;
+  }
   if (!fellowship.deadline) {
     return status.category === 'nextCycle' ? 'Track for next cycle' : 'No deadline';
   }

@@ -62,6 +62,20 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
 const now = new Date('2026-05-14T00:00:00.000Z');
 
 describe('fellowshipCycle', () => {
+  it('classifies a future open date as opening soon even when not currently accepting', () => {
+    const status = getFellowshipCycleStatus(
+      baseFellowship({
+        isAcceptingApplications: false,
+        applicationOpenDate: '2026-06-01T12:00:00.000Z',
+        deadline: '2026-07-01T12:00:00.000Z',
+      }),
+      now,
+    );
+
+    expect(status.category).toBe('openingSoon');
+    expect(status.label).toBe('Opens Soon');
+  });
+
   it('classifies active fellowships as open or closing soon', () => {
     expect(
       getFellowshipCycleStatus(
@@ -96,9 +110,7 @@ describe('fellowshipCycle', () => {
       label: 'Next Cycle Signal',
       likelyRecurring: true,
     });
-    expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe(
-      'Past cycle; track for reopening',
-    );
+    expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe('Past cycle; track for reopening');
   });
 
   it('keeps unsourced inactive fellowships in the plain closed bucket', () => {
@@ -111,5 +123,21 @@ describe('fellowshipCycle', () => {
 
     expect(isLikelyRecurringFellowship(fellowship)).toBe(false);
     expect(getFellowshipCycleStatus(fellowship, now).category).toBe('closed');
+  });
+
+  it('surfaces a server-projected next-cycle deadline distinctly from a real next-cycle signal', () => {
+    const fellowship = baseFellowship({
+      isAcceptingApplications: false,
+      deadline: '2027-02-17T18:00:00.000Z',
+      deadlineProjectedNextCycle: true,
+    });
+
+    const status = getFellowshipCycleStatus(fellowship, now);
+    expect(status.category).toBe('projectedNextCycle');
+    expect(status.label).toBe('Next Cycle (Est.)');
+    expect(status.deadlinePassed).toBe(false);
+    expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe(
+      'Est. next cycle ~Feb 17 (unconfirmed)',
+    );
   });
 });

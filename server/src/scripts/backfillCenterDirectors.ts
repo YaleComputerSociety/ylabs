@@ -6,7 +6,7 @@
  * Investigator" panel renders empty. The `center-director-llm` source now reads
  * each home's official site + leadership pages and emits an entity-level
  * inferred-director observation, which the materializer resolves to a unique
- * Yale User and promotes to a `director` member. New scrape/materialize runs
+ * canonical Researcher and promotes to a `director` member. New scrape/materialize runs
  * pick this up automatically; this script applies it to the already-materialized
  * corpus so historical organizational homes are not left lead-less.
  *
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { materializeInferredDirectorMembership } from '../scrapers/entityMaterializer';
 import {
   CenterDirectorLLMExtractor,
@@ -52,7 +52,9 @@ export interface CenterDirectorsBackfillCliOptions {
   output?: string;
 }
 
-export function parseCenterDirectorsBackfillArgs(argv: string[]): CenterDirectorsBackfillCliOptions {
+export function parseCenterDirectorsBackfillArgs(
+  argv: string[],
+): CenterDirectorsBackfillCliOptions {
   const options: CenterDirectorsBackfillCliOptions = {
     dryRun: true,
     limit: 0,
@@ -152,12 +154,15 @@ export async function findCenterDirectorCandidates(
     { _id: 1, slug: 1, name: 1, websiteUrl: 1 },
   ).lean();
 
-  const withLead = await ResearchGroupMember.distinct('researchEntityId', {
-    researchEntityId: { $in: (docs as any[]).map((doc) => doc._id) },
-    role: { $in: LEAD_ROLES },
-    isCurrentMember: { $ne: false },
-  });
-  const withLeadSet = new Set(withLead.map((id: any) => serializedDocumentId(id) || ''));
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(
+    (docs as any[]).map((doc) => doc._id),
+  );
+  const withLeadSet = new Set<string>();
+  for (const [entityId, entries] of rosterByEntityId) {
+    if (entries.some((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLES.includes(entry.role))) {
+      withLeadSet.add(entityId);
+    }
+  }
 
   const candidates: CandidateCenter[] = [];
   for (const doc of docs as any[]) {
@@ -194,7 +199,12 @@ export interface CenterDirectorsBackfillResult {
 
 /** Map the extractor's ObservationInput[] onto the materializer's shape. */
 function toMaterializerObservations(
-  observations: { field: string; value: unknown; sourceUrl?: string; confidenceOverride?: number }[],
+  observations: {
+    field: string;
+    value: unknown;
+    sourceUrl?: string;
+    confidenceOverride?: number;
+  }[],
   observedAt: Date,
 ): MaterializerObservationLike[] {
   return observations.map((obs) => ({
@@ -237,7 +247,9 @@ export async function runCenterDirectorsBackfill(options: {
 
   for (const candidate of candidates) {
     try {
-      const extraction = await extractor.extractDirectorForCenter(candidate, (msg) => console.log(msg));
+      const extraction = await extractor.extractDirectorForCenter(candidate, (msg) =>
+        console.log(msg),
+      );
       if (!extraction) continue;
       result.directorsExtracted += 1;
 

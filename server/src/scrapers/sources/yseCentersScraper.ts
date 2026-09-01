@@ -5,6 +5,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const PAGE_URL = 'https://environment.yale.edu/research/centers';
@@ -72,7 +73,7 @@ export function inferKind(name: string, url: string): YseEntityKind {
   if (/\binitiatives?\b/.test(haystack)) return 'initiative';
   if (/\bprograms?\b/.test(haystack)) return 'program';
   if (/\b(center|centre)\b/.test(haystack)) return 'center';
-  if (/\b(forum|dialogue)\b/.test(haystack)) return 'group';
+  if (/\b(forum|dialogue)\b/.test(haystack)) return 'initiative';
   return 'center';
 }
 
@@ -149,10 +150,12 @@ export function entityToObservations(entity: RawYseEntity, sourceUrl: string): O
     { ...base, field: 'slug', value: entity.slug },
     { ...base, field: 'name', value: entity.name },
     { ...base, field: 'kind', value: entity.kind },
+    // `kind` is derived from the canonical `entityType` (#2144), so the inferred
+    // org classification has to reach the canonical field to survive.
+    { ...base, field: 'entityType', value: mapResearchGroupKindToEntityType(entity.kind) },
     { ...base, field: 'school', value: 'Yale School of the Environment' },
     { ...base, field: 'websiteUrl', value: entity.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, entity.url] },
-    { ...base, field: 'openness', value: 'open' },
   ];
 }
 
@@ -171,7 +174,8 @@ export function yasspAccessObservations(htmlByUrl: Map<string, string>): Observa
       entityType: 'researchEntity',
       entityKey: 'yse-yale-applied-science-synthesis-program-yassp',
       field: 'undergradEvidenceQuote',
-      value: 'The YASSP research team page lists Nicole Gotthardt as a Former Undergraduate Student Researcher.',
+      value:
+        'The YASSP research team page lists Nicole Gotthardt as a Former Undergraduate Student Researcher.',
       sourceUrl,
       confidenceOverride: 0.72,
     },
@@ -179,7 +183,9 @@ export function yasspAccessObservations(htmlByUrl: Map<string, string>): Observa
       entityType: 'researchEntity',
       entityKey: 'yse-yale-applied-science-synthesis-program-yassp',
       field: 'pastUndergradAdvisees',
-      value: [{ name: 'Nicole Gotthardt', role: 'Former Undergraduate Student Researcher', count: 1 }],
+      value: [
+        { name: 'Nicole Gotthardt', role: 'Former Undergraduate Student Researcher', count: 1 },
+      ],
       sourceUrl,
       confidenceOverride: 0.72,
     },
@@ -277,23 +283,25 @@ export class YseCentersScraper implements IScraper {
     const entities = parseCenters(html);
     ctx.log(`Parsed ${entities.length} entities from index`);
 
-    const limited =
-      limitOption && limitOption > 0
-        ? entities.slice(0, limitOption)
-        : entities;
+    const limited = limitOption && limitOption > 0 ? entities.slice(0, limitOption) : entities;
 
     let totalObs = 0;
     let accessObs = 0;
     for (const entity of limited) {
       const entityObservations = entityToObservations(entity, PAGE_URL);
-      const entityAccessObservations = await accessObservationsForEntity(entity, ctx.options.useCache);
+      const entityAccessObservations = await accessObservationsForEntity(
+        entity,
+        ctx.options.useCache,
+      );
       const observations = [...entityObservations, ...entityAccessObservations];
       await ctx.emit(observations);
       totalObs += observations.length;
       accessObs += entityAccessObservations.length;
     }
 
-    ctx.log(`Emitted ${totalObs} observations across ${limited.length} entities (${accessObs} access observations)`);
+    ctx.log(
+      `Emitted ${totalObs} observations across ${limited.length} entities (${accessObs} access observations)`,
+    );
 
     return {
       observationCount: totalObs,

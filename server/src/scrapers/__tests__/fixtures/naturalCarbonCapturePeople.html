@@ -1,0 +1,170 @@
+<!--
+  Structurally-faithful fixture for the Yale Center for Natural Carbon Capture
+  people page (YaleSites reference-card theme). Each roster section is a
+  `component-wrapper` with its own `component-wrapper__heading` and
+  `card-collection`; faculty sections (Directors, Scientific Leadership Team,
+  Faculty Affiliates) are interleaved with non-faculty sections (Managing
+  Director, Research Scientists, Postdoctoral Associates) so the section-scoping
+  gate can be exercised. The whole people region is wrapped in a heading-less
+  `component-wrapper` to prove the ancestor wrapper is not double-counted.
+  Synthetic/redacted names only - no real Yale identifiers (CI gate).
+-->
+<html>
+  <body>
+    <div class="ys-view">
+      <div class="component-wrapper">
+        <div class="component-wrapper__inner">
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Directors</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://earth.example-university.edu/profile/alpha-director">Alpha Director</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Professor of Earth &amp; Planetary Sciences</div></div>
+                          <div class="reference-card__snippet"><div>Director</div></div>
+                        </div>
+                        <a class="reference-card__image-link" aria-hidden="true" tabindex="-1" href="https://earth.example-university.edu/profile/alpha-director"><img alt="" /></a>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Managing Director</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="/profile/beta-manager">Beta Manager</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Managing Director</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Scientific Leadership Team</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://environment.example-university.edu/directory/faculty/gamma-scientist">Gamma Scientist</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Professor of Ecosystem Ecology</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Faculty Affiliates</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://chem.example-university.edu/profile/delta-affiliate">Delta Affiliate</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Professor of Chemistry</div></div>
+                        </div>
+                      </li>
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://earth.example-university.edu/profile/epsilon-affiliate">Epsilon Affiliate</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Senior Research Scientist</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Research Scientists</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="https://earth.example-university.edu/profile/zeta-researcher">Zeta Researcher</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Associate Research Scientist</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="component-wrapper">
+            <div class="component-wrapper__inner">
+              <h2 class="component-wrapper__heading">Postdoctoral Associates</h2>
+              <section>
+                <div class="card-collection">
+                  <div class="card-collection__inner">
+                    <ul class="card-collection__cards">
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="/profile/eta-postdoc">Eta Postdoc</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Postdoctoral Fellow</div></div>
+                        </div>
+                      </li>
+                      <li class="reference-card">
+                        <div class="reference-card__content">
+                          <h3 class="reference-card__heading">
+                            <a class="reference-card__heading-link" href="/profile/theta-admin">Theta Admin</a>
+                          </h3>
+                          <div class="reference-card__subheading"><div>Senior Administrative Assistant</div></div>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

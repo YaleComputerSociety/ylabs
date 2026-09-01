@@ -51,6 +51,13 @@ function textForProgram(input: ProgramClassificationInput): string {
     .join(' ');
 }
 
+function identityTextForProgram(input: ProgramClassificationInput): string {
+  return [input.title, input.competitionType, input.sourceUrl]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ');
+}
+
 function baseFundingClassification(): ProgramClassification {
   return {
     programCategory: 'FELLOWSHIP',
@@ -59,7 +66,8 @@ function baseFundingClassification(): ProgramClassification {
     studentFacingCategory: 'Funding after mentor',
     requiresMentorBeforeApply: true,
     mentorMatching: false,
-    bestNextStep: 'Identify a research home or mentor, then use this funding record to plan the application.',
+    bestNextStep:
+      'Identify a research home or mentor, then use this funding record to plan the application.',
     prepSteps: ['Research plan', 'Faculty mentor or sponsor', 'Official application'],
   };
 }
@@ -73,7 +81,8 @@ function archiveReviewClassification(): ProgramClassification {
     requiresMentorBeforeApply: false,
     mentorMatching: false,
     undergraduateOnly: false,
-    bestNextStep: 'Review carefully before relying on this record; it may not be an undergraduate option.',
+    bestNextStep:
+      'Review carefully before relying on this record; it may not be an undergraduate option.',
     prepSteps: ['Eligibility check', 'Official source review'],
   };
 }
@@ -97,6 +106,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
   const title = normalizeText(input.title);
   const text = textForProgram(input);
   const lower = text.toLowerCase();
+  const identityLower = identityTextForProgram(input).toLowerCase();
   const titleLower = title.toLowerCase();
   const hasUndergraduateAudience =
     /\bundergraduate|yale college|first[- ]years?|sophomores?|juniors?|seniors?\b/.test(lower);
@@ -125,48 +135,54 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     return archiveReviewClassification();
   }
 
-  if (/\btobin\b/.test(lower) && /\bresearch assistant/i.test(text)) {
+  if (/\btobin\b/.test(identityLower) && /\bresearch assistant/i.test(text)) {
     return structuredProgram({
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'RA_PROGRAM',
       entryMode: 'APPLY_TO_PROJECT',
       studentFacingCategory: 'Project posting',
-      compensationSummary: '$17/hour when source-confirmed',
+      compensationSummary: '$17/hour',
       hoursPerWeek: 10,
       bestNextStep: 'Choose a posted faculty project and apply through the Tobin RA process.',
       prepSteps: ['Project selection', 'Resume or short application', 'Faculty project fit'],
     });
   }
 
-  if (/\bstars\b/.test(lower) && /\bsummer research program\b/.test(lower)) {
+  if (/\bstars\b/.test(identityLower) && /\bsummer research program\b/.test(lower)) {
     return structuredProgram({
       programCategory: 'SUMMER_RESEARCH_PROGRAM',
       programKind: 'STRUCTURED_PROGRAM',
       entryMode: 'SECURE_MENTOR_THEN_APPLY',
       studentFacingCategory: 'Structured summer program',
       requiresMentorBeforeApply: true,
-      compensationSummary: 'Stipend plus housing/board when source-confirmed',
+      compensationSummary: 'Stipend plus housing/board',
       programDates: 'Summer',
       bestNextStep: 'Secure a Yale lab commitment before applying.',
-      prepSteps: ['Yale lab commitment', 'Research proposal', 'Mentor support', 'Official application'],
+      prepSteps: [
+        'Yale lab commitment',
+        'Research proposal',
+        'Mentor support',
+        'Official application',
+      ],
     });
   }
 
-  if (/\bwu tsai\b|\bwti\.yale\.edu\b/.test(lower)) {
+  if (/\bwu tsai\b|\bwti\.yale\.edu\b/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'SUMMER_RESEARCH_PROGRAM',
       programKind: 'MENTOR_MATCHING',
       entryMode: 'DIRECT_FACULTY_MATCHING',
       studentFacingCategory: 'Mentored summer program',
       mentorMatching: true,
-      compensationSummary: 'Summer stipend when source-confirmed',
+      compensationSummary: 'Summer stipend',
       programDates: 'Summer',
-      bestNextStep: 'Apply to the Wu Tsai undergraduate fellowship and identify possible mentors if listed.',
+      bestNextStep:
+        'Apply to the Wu Tsai undergraduate fellowship and identify possible mentors if listed.',
       prepSteps: ['Interest statement', 'Potential mentor fit', 'Official application'],
     });
   }
 
-  if (/\bwomen'?s health research\b|\bwhr\b/.test(lower)) {
+  if (/\bwomen'?s health research\b|\bwhr\b/.test(identityLower)) {
     return structuredProgram({
       programKind: 'MENTOR_MATCHING',
       entryMode: 'DIRECT_FACULTY_MATCHING',
@@ -180,7 +196,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\byale[- ]uc louvain\b|\buc louvain\b/.test(lower)) {
+  if (/\byale[- ]uc louvain\b|\buc louvain\b/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'CENTER_INTERNSHIP',
       programKind: 'CENTER_INTERNSHIP',
@@ -195,57 +211,61 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\bycmd\b|center for molecular discovery|summer undergraduate internships/.test(lower)) {
+  if (
+    /\bycmd\b|center for molecular discovery|summer undergraduate internships/.test(identityLower)
+  ) {
     return structuredProgram({
       programCategory: 'CENTER_INTERNSHIP',
       programKind: 'CENTER_INTERNSHIP',
       entryMode: 'APPLY_TO_PROGRAM',
       studentFacingCategory: 'Center internship',
-      compensationSummary: 'Paid internship when source-confirmed',
+      compensationSummary: 'Paid internship',
       programDates: 'Summer',
       bestNextStep: 'Apply to the center internship and check project fit.',
       prepSteps: ['Official application', 'Project interest', 'Summer availability'],
     });
   }
 
-  if (/computer science research internship|cs research internship/.test(lower)) {
+  if (/computer science research internship|cs research internship/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'MENTOR_MATCHING',
       entryMode: 'DIRECT_FACULTY_MATCHING',
       studentFacingCategory: 'Faculty matching program',
       mentorMatching: true,
-      bestNextStep: 'Apply to the CS research internship so the committee can consider faculty matches.',
+      bestNextStep:
+        'Apply to the CS research internship so the committee can consider faculty matches.',
       prepSteps: ['Research interests', 'Relevant coursework', 'Official application'],
     });
   }
 
-  if (/mellon mays/.test(lower)) {
+  if (/mellon mays/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'STRUCTURED_PROGRAM',
       entryMode: 'APPLY_TO_PROGRAM',
       studentFacingCategory: 'Cohort research program',
       mentorMatching: true,
-      compensationSummary: 'Academic-year and summer research support when source-confirmed',
+      compensationSummary: 'Academic-year and summer research support',
       bestNextStep: 'Review Mellon Mays eligibility and prepare the cohort-program application.',
       prepSteps: ['Faculty mentor fit', 'Research interests', 'Official application'],
     });
   }
 
-  if (/first[- ]year summer research fellowship/.test(lower)) {
+  if (/first[- ]year summer research fellowship/.test(identityLower)) {
     return {
       ...baseFundingClassification(),
       studentFacingCategory: 'Funding after mentor',
       undergraduateOnly: true,
       yaleCollegeOnly: true,
       programDates: 'Summer',
-      bestNextStep: 'Find a Yale faculty mentor and prepare a proposed summer research project before applying.',
+      bestNextStep:
+        'Find a Yale faculty mentor and prepare a proposed summer research project before applying.',
       prepSteps: ['Faculty mentor', 'Project proposal', 'Mentor letter', 'Official application'],
     };
   }
 
-  if (/tetelman|bates/.test(lower)) {
+  if (/tetelman|bates/.test(identityLower)) {
     return {
       ...baseFundingClassification(),
       programKind: 'TRAVEL_RESEARCH_GRANT',
@@ -253,12 +273,13 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       undergraduateOnly: true,
       yaleCollegeOnly: true,
       programDates: 'Summer',
-      bestNextStep: 'Develop an independent research plan and faculty support before applying for travel funding.',
+      bestNextStep:
+        'Develop an independent research plan and faculty support before applying for travel funding.',
       prepSteps: ['Independent research plan', 'Faculty support', 'Budget', 'Official application'],
     };
   }
 
-  if (/dean'?s research fellowship|rosenfeld/.test(lower)) {
+  if (/dean'?s research fellowship|rosenfeld/.test(identityLower)) {
     return {
       ...baseFundingClassification(),
       undergraduateOnly: true,
@@ -269,7 +290,11 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     };
   }
 
-  if (/senior (?:research|essay)|senior project|mellon senior|residential college|richter/.test(lower)) {
+  if (
+    /senior (?:research|essay)|senior project|mellon senior|residential college|richter/.test(
+      identityLower,
+    )
+  ) {
     return {
       ...baseFundingClassification(),
       programKind: 'SENIOR_THESIS_FUNDING',
@@ -279,6 +304,35 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       bestNextStep: 'Use this record after you have a senior project, adviser, or research plan.',
       prepSteps: ['Adviser or sponsor', 'Senior project plan', 'Budget or proposal'],
     };
+  }
+
+  const isReuOrSummerResearchProgram =
+    /research experiences? for undergraduates|\bnsf reu\b|\breu\b/.test(lower) ||
+    /\bsummer (?:undergraduate )?research (?:program|scholars?(?:hip)?)\b/.test(lower);
+  if (isReuOrSummerResearchProgram) {
+    const mentorFirst =
+      /(?:identify|secure|arrange|line up|obtain|find)[^.]{0,80}(?:faculty |research )?(?:mentor|adviser|advisor|sponsor)[^.]{0,80}(?:before|prior to|ahead of)\b/.test(
+        lower,
+      ) ||
+      /must (?:first )?(?:identify|secure|arrange|have|contact)[^.]{0,40}(?:faculty )?(?:mentor|adviser|advisor)\b/.test(
+        lower,
+      );
+    return structuredProgram({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      programKind: mentorFirst ? 'STRUCTURED_PROGRAM' : 'MENTOR_MATCHING',
+      entryMode: mentorFirst ? 'SECURE_MENTOR_THEN_APPLY' : 'DIRECT_FACULTY_MATCHING',
+      studentFacingCategory: 'Summer research program (REU)',
+      requiresMentorBeforeApply: mentorFirst,
+      mentorMatching: !mentorFirst,
+      undergraduateOnly: true,
+      programDates: 'Summer',
+      bestNextStep: mentorFirst
+        ? 'Identify a Yale faculty mentor in the program area, then apply to the summer research program.'
+        : 'Apply to the summer research program; admitted students are matched with a Yale faculty mentor.',
+      prepSteps: mentorFirst
+        ? ['Faculty mentor', 'Research interests', 'Official application']
+        : ['Research interests', 'Official application'],
+    });
   }
 
   const funding = baseFundingClassification();

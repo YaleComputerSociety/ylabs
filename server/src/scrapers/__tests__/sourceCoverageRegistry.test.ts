@@ -5,6 +5,7 @@ import {
   sourceCoverageTiers,
 } from '../../models/sourceCoverageTypes';
 import { getSourceCoverage, sourceCoverageRegistry } from '../sourceCoverageRegistry';
+import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
 
 const prioritySources = [
   'lab-microsite-description-llm',
@@ -14,7 +15,6 @@ const prioritySources = [
   'official-profile-enrichment',
   'official-profile-pi-backfill',
   'yale-research-official',
-  'student-decision-llm',
   'undergrad-fellowships-recipients',
   'yale-college-fellowships-office',
   'ylabs-listing',
@@ -29,6 +29,16 @@ describe('sourceCoverageRegistry', () => {
 
   it('does not expose retired Apify Scholar as active coverage', () => {
     expect(getSourceCoverage('apify-google-scholar')).toBeUndefined();
+  });
+
+  it('does not expose the retired student-decision LLM as active coverage', () => {
+    expect(getSourceCoverage('student-decision-llm')).toBeUndefined();
+  });
+
+  it('does not expose retired bibliography sources as active coverage', () => {
+    for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES) {
+      expect(getSourceCoverage(sourceName), sourceName).toBeUndefined();
+    }
   });
 
   it('uses only supported artifact, evidence, and tier values', () => {
@@ -108,9 +118,10 @@ describe('sourceCoverageRegistry', () => {
     expect(coverage?.tier).toBe('PRIMARY_OFFICIAL');
     expect(coverage?.defaultConfidence).toBe('HIGH');
     expect(coverage?.artifactTypes).toEqual(
-      expect.arrayContaining(['ResearchEntity', 'EntryPathway', 'AccessSignal', 'ContactRoute']),
+      expect.arrayContaining(['Fellowship', 'EntryPathway', 'AccessSignal', 'ContactRoute']),
     );
     expect(coverage?.artifactTypes).not.toContain('PostedOpportunity');
+    expect(coverage?.artifactTypes).not.toContain('ResearchEntity');
     expect(coverage?.evidenceCategories).toEqual(
       expect.arrayContaining([
         'JOIN_INSTRUCTIONS',
@@ -143,5 +154,19 @@ describe('sourceCoverageRegistry', () => {
     expect(coverage?.artifactTypes).not.toContain('EntryPathway');
     expect(coverage?.artifactTypes).not.toContain('PostedOpportunity');
     expect(coverage?.defaultConfidence).toBe('MEDIUM');
+  });
+
+  it('declares claim-specific undergraduate logistics coverage for the microsite source', () => {
+    const coverage = getSourceCoverage('lab-microsite-undergrad-llm');
+    expect(coverage?.artifactTypes).toContain('UndergraduateLogisticsClaim');
+    expect(coverage?.evidenceCategories).toEqual(
+      expect.arrayContaining([
+        'UNDERGRAD_STUDENT_LEVEL',
+        'UNDERGRAD_COMPENSATION',
+        'UNDERGRAD_TIME_COMMITMENT',
+        'UNDERGRAD_MODALITY',
+        'UNDERGRAD_CURRENT_AVAILABILITY',
+      ]),
+    );
   });
 });

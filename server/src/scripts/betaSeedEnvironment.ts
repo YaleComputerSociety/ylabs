@@ -16,7 +16,6 @@ export interface BetaSeedEnvironmentCliOptions {
   confirmBetaSeed: boolean;
   seedSources: boolean;
   runReadiness: boolean;
-  runPathwayRelevance: boolean;
   rebuildMeili: boolean;
   sources: string[];
   artifactDir: string;
@@ -66,7 +65,6 @@ export function parseBetaSeedEnvironmentArgs(argv: string[]): BetaSeedEnvironmen
     confirmBetaSeed: false,
     seedSources: true,
     runReadiness: true,
-    runPathwayRelevance: true,
     rebuildMeili: true,
     sources: [],
     artifactDir: DEFAULT_ARTIFACT_DIR,
@@ -93,10 +91,6 @@ export function parseBetaSeedEnvironmentArgs(argv: string[]): BetaSeedEnvironmen
     }
     if (arg === '--skip-readiness') {
       options.runReadiness = false;
-      continue;
-    }
-    if (arg === '--skip-pathway-relevance') {
-      options.runPathwayRelevance = false;
       continue;
     }
     if (arg === '--skip-meili') {
@@ -277,22 +271,6 @@ export function buildBetaSeedPlan(
 
   if (options.rebuildMeili) {
     steps.push({
-      name: 'rebuild-pathway-meili-index',
-      description: 'Clear and rebuild the Beta Pathways Meilisearch index.',
-      command: 'yarn',
-      args: [
-        'meili:rebuild-pathways',
-        '--clear',
-        '--confirm-meili-rebuild',
-        '--output',
-        path.join(artifactDir, 'meili-pathways-rebuild.json'),
-      ],
-      cwd: SERVER_ROOT,
-      env: betaEnv,
-      writes: true,
-      output: path.join(artifactDir, 'meili-pathways-rebuild.json'),
-    });
-    steps.push({
       name: 'rebuild-research-entity-meili-index',
       description: 'Clear and rebuild the Beta research entity Meilisearch index.',
       command: 'yarn',
@@ -310,46 +288,24 @@ export function buildBetaSeedPlan(
     });
   }
 
-  if (options.runPathwayRelevance) {
-    steps.push({
-      name: 'pathway-relevance-review',
-      description: 'Compare Mongo-backed and Meili-backed pathway search posture.',
-      command: 'yarn',
-      args: [
-        'pathway:relevance-review',
-        '--output',
-        path.join(artifactDir, 'pathway-relevance-review.json'),
-      ],
-      cwd: SERVER_ROOT,
-      env: {
-        SCRAPER_ENV: 'beta',
-        PATHWAY_SEARCH_BACKEND: 'mongo',
-      },
-      writes: false,
-      output: path.join(artifactDir, 'pathway-relevance-review.json'),
-    });
-  }
-
   if (options.runReadiness && options.rebuildMeili) {
     steps.push({
-      name: 'beta-readiness-meili-acceptance',
-      description: 'Run strict Beta readiness with Meili acceptance after rebuild.',
+      name: 'beta-readiness-acceptance',
+      description: 'Run strict Beta readiness after rebuild.',
       command: 'yarn',
       args: [
         'beta:readiness',
         '--confirm-beta-backup',
-        '--accept-pathway-meili',
         '--strict',
         '--output',
-        path.join(artifactDir, 'beta-readiness-meili-acceptance.json'),
+        path.join(artifactDir, 'beta-readiness-acceptance.json'),
       ],
       cwd: SERVER_ROOT,
       env: {
         SCRAPER_ENV: 'beta',
-        PATHWAY_SEARCH_BACKEND: 'meili',
       },
       writes: false,
-      output: path.join(artifactDir, 'beta-readiness-meili-acceptance.json'),
+      output: path.join(artifactDir, 'beta-readiness-acceptance.json'),
     });
   }
 
@@ -415,7 +371,7 @@ async function runPlan(plan: BetaSeedPlan): Promise<BetaSeedRunResult> {
   const results: BetaSeedRunResult['results'] = [];
   for (const step of plan.steps) {
     // Sequential execution avoids DB and Meili contention during launch operations.
-    // eslint-disable-next-line no-await-in-loop
+
     const result = await runStep(step);
     results.push(result);
     if (!result.ok) break;

@@ -17,8 +17,6 @@ describe('launchTrustContract CLI helpers', () => {
         '--source=ysm-atoz-index',
         '--record-id=entity-1',
         '--limit=25',
-        '--include-research-activity',
-        '--include-paper-quality',
         '--strict',
         '--output',
         '/tmp/ylabs-launch-trust-contract.json',
@@ -29,8 +27,6 @@ describe('launchTrustContract CLI helpers', () => {
       sourceName: 'ysm-atoz-index',
       recordIds: ['entity-1'],
       limit: 25,
-      includeResearchActivity: true,
-      includePaperQuality: true,
       strict: true,
       output: '/tmp/ylabs-launch-trust-contract.json',
     });
@@ -55,9 +51,7 @@ describe('launchTrustContract CLI helpers', () => {
     expect(() => parseLaunchTrustContractArgs(['--output=/tmp/launch-trust.txt'])).toThrow(
       /--output must point to a \.json report file/,
     );
-    expect(() => parseLaunchTrustContractArgs(['--source='])).toThrow(
-      /--source requires a value/,
-    );
+    expect(() => parseLaunchTrustContractArgs(['--source='])).toThrow(/--source requires a value/);
     expect(() => parseLaunchTrustContractArgs(['--record-id='])).toThrow(
       /--record-id requires a value/,
     );
@@ -72,8 +66,6 @@ describe('launchTrustContract CLI helpers', () => {
           options: {
             collection: 'all',
             mode: 'student-ready-only',
-            includeResearchActivity: true,
-            includePaperQuality: true,
             strict: true,
             output: '/tmp/ylabs-launch-trust-contract.json',
           },
@@ -91,8 +83,6 @@ describe('launchTrustContract CLI helpers', () => {
       options: {
         collection: 'all',
         mode: 'student-ready-only',
-        includeResearchActivity: true,
-        includePaperQuality: true,
         strict: true,
         output: '/tmp/ylabs-launch-trust-contract.json',
       },

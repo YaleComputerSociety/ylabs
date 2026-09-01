@@ -21,8 +21,14 @@ import * as cheerio from 'cheerio';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   type CenterMember,
@@ -30,7 +36,7 @@ import {
 } from './centersInstitutesScraper';
 
 const SOURCE_KEY = 'center-affiliation-llm';
-const DEFAULT_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const CENTER_AFFILIATION_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
@@ -170,6 +176,7 @@ async function defaultCallLLM(input: {
             'You extract the Yale faculty/people explicitly named on an official research center or institute web page. ' +
             'Only include real personal names that literally appear in the provided page text (directors, affiliated faculty, core members). ' +
             'Never invent names, never include students/staff titles without a name, and never include people who are not on the page. ' +
+            'Copy each name character-for-character exactly as it appears in the page text; never reformat, correct, translate, or complete a name. ' +
             'If the page names no individuals, return an empty list.',
         },
         {
@@ -182,7 +189,7 @@ async function defaultCallLLM(input: {
           ].join('\n\n'),
         },
       ],
-      temperature: 0,
+      ...openAiChatSampling(input.model),
     },
     {
       headers: {
@@ -195,11 +202,15 @@ async function defaultCallLLM(input: {
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   const parsed = JSON.parse(content) as Partial<CenterAffiliationExtraction>;
-  return { affiliatedPeople: Array.isArray(parsed.affiliatedPeople) ? parsed.affiliatedPeople : [] };
+  return {
+    affiliatedPeople: Array.isArray(parsed.affiliatedPeople) ? parsed.affiliatedPeople : [],
+  };
 }
 
 async function defaultCenterFinder(options: { only?: string[] } = {}): Promise<CandidateCenter[]> {
-  const only = Array.from(new Set((options.only || []).map((value) => value.trim()).filter(Boolean)));
+  const only = Array.from(
+    new Set((options.only || []).map((value) => value.trim()).filter(Boolean)),
+  );
   const onlyObjectIds = only
     .map((value) => normalizeCenterAffiliationObjectId(value))
     .filter((value): value is string => Boolean(value))
@@ -256,9 +267,14 @@ export class CenterAffiliationLLMExtractor implements IScraper {
       return { observationCount: 0, entitiesObserved: 0, notes: 'OPENAI_API_KEY missing' };
     }
 
-    const only = Array.from(new Set((ctx.options.only || []).map((v) => String(v).trim()).filter(Boolean)));
+    const only = Array.from(
+      new Set((ctx.options.only || []).map((v) => String(v).trim()).filter(Boolean)),
+    );
     const offset = Math.max(0, Number(ctx.options.offset) || 0);
-    const limit = Math.max(1, Number(ctx.options.limit) || 100);
+    const limit =
+      ctx.options.exhaustive && ctx.options.limit === undefined
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, Number(ctx.options.limit) || 100);
     const candidates = (await this.centerFinder({ only }))
       .filter((c) => c.websiteUrl && c.slug)
       .slice(offset, offset + limit);
@@ -266,24 +282,31 @@ export class CenterAffiliationLLMExtractor implements IScraper {
     let observationCount = 0;
     let entitiesObserved = 0;
 
-    for (const center of candidates) {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+
+    await mapWithConcurrency(candidates, concurrency, async (center) => {
       try {
         let page: { url: string; html: string } | null = null;
         try {
           page = await this.fetchPage(center.websiteUrl as string);
         } catch (error) {
-          ctx.log(`[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`);
-          continue;
+          ctx.log(
+            `[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`,
+          );
+          return;
         }
         const pageText = htmlToText(page?.html || '');
         if (pageText.length < 120) {
           ctx.log(`[${center.slug}] page too small/empty; skipping.`);
-          continue;
+          return;
         }
 
         const extraction = await this.callLLM({
           model: this.model,
-          apiKey: this.apiKey,
+          apiKey: this.apiKey as string,
           centerName: center.name,
           sourceUrl: page?.url || (center.websiteUrl as string),
           pageText,
@@ -294,16 +317,18 @@ export class CenterAffiliationLLMExtractor implements IScraper {
         });
         if (!observations.length) {
           ctx.log(`[${center.slug}] no named faculty extracted.`);
-          continue;
+          return;
         }
         await ctx.emit(observations);
         observationCount += observations.length;
         entitiesObserved += 1;
-        ctx.log(`[${center.slug}] emitted ${observations.length} affiliation relationship observations.`);
+        ctx.log(
+          `[${center.slug}] emitted ${observations.length} affiliation relationship observations.`,
+        );
       } catch (error) {
         ctx.log(`[${center.slug}] affiliation extraction failed: ${sanitizeLogValue(error)}`);
       }
-    }
+    });
 
     return {
       observationCount,

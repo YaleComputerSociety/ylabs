@@ -20,6 +20,11 @@ node_modules/
 #Environment files
 .env
 **/.env
+**/.env.*
+**/*.env
+!**/.env.example
+!**/.env.*.example
+!**/*.env.example
 client/.env.local
 client/.env.development.local
 client/.env.test.local
@@ -53,7 +58,6 @@ client/dist/
 
 #Scraper and enricher tools
 web-scraper/
-yale-faculty-enricher/
 
 #MongoDB local backup
 backup
@@ -66,16 +70,6 @@ client/node_modules/
 **/.yarn/
 .yarn/
 *.yarn
-
-# Graphify shared repo-memory output
-graphify-out/cache/
-graphify-out/cost.json
-graphify-out/manifest.json
-graphify-out/.graphify_root
-graphify-out/.graphify_analysis.json
-graphify-out/.rebuild.lock
-graphify-out/.graphify_labels.json
-graphify-out/memory/
 
 # Local agent and browser-driver support files
 .codex/

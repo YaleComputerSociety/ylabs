@@ -27,9 +27,7 @@ export const visibilityRepairStatuses = [
   'resolved',
 ] as const;
 
-export type VisibilityReleaseQueueCollection =
-  (typeof visibilityReleaseQueueCollections)[number];
-export type VisibilityReleaseQueueStatus = (typeof visibilityReleaseQueueStatuses)[number];
+export type VisibilityReleaseQueueCollection = (typeof visibilityReleaseQueueCollections)[number];
 export type VisibilityRepairStage = (typeof visibilityRepairStages)[number];
 export type VisibilityRepairStatus = (typeof visibilityRepairStatuses)[number];
 

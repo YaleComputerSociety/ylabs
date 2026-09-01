@@ -1,14 +1,17 @@
+import mongoose from 'mongoose';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  buildVisibilityRepairPiMemberUpsert,
+  buildVisibilityRepairPiRoleAssignmentUpsert,
   buildVisibilityRepairPlan,
   buildVisibilityRepairPlans,
   classifyVisibilityRepairStage,
   normalizeVisibilityRepairObjectId,
+  researchEntityLeadMembersFromRoster,
   runVisibilityRepairQueue,
   type VisibilityRepairQueueItemInput,
 } from '../visibilityRepairQueueService';
+import type { ResearchEntityRosterEntry } from '../researchEntityMembershipAccessor';
 
 const queueItem = (
   overrides: Partial<VisibilityRepairQueueItemInput> = {},
@@ -35,12 +38,14 @@ describe('visibilityRepairQueueService', () => {
     ).toBeUndefined();
   });
 
-  it('builds PI member upserts against current PI rows only', () => {
+  it('builds canonical PI role-assignment upserts against current PI rows only', () => {
     const now = new Date('2026-06-05T04:00:00.000Z');
+    const personId = new mongoose.Types.ObjectId();
+    const researchEntityId = new mongoose.Types.ObjectId();
 
-    const upsert = buildVisibilityRepairPiMemberUpsert(
-      'entity-1',
-      'user-1',
+    const upsert = buildVisibilityRepairPiRoleAssignmentUpsert(
+      personId,
+      researchEntityId,
       {
         sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
         sourceName: 'visibility-repair-queue',
@@ -51,31 +56,28 @@ describe('visibilityRepairQueueService', () => {
 
     expect(upsert).toEqual({
       filter: {
-        researchEntityId: 'entity-1',
-        userId: 'user-1',
-        role: 'pi',
-        isCurrentMember: true,
+        personId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': researchEntityId,
+        role: 'PI',
       },
       update: {
-        $set: expect.objectContaining({
-          researchEntityId: 'entity-1',
-          researchGroupId: 'entity-1',
-          userId: 'user-1',
-          role: 'pi',
-          isCurrentMember: true,
+        $set: {
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: researchEntityId },
+          role: 'PI',
+          state: 'CURRENT',
           archived: false,
-          sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
           confidence: 0.95,
-          lastObservedAt: now,
-          'confidenceByField.role': 0.95,
-          'fieldProvenance.role': {
+          reviewStatus: 'UNREVIEWED',
+          rosterProvenance: {
             sourceName: 'visibility-repair-queue',
             sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
             observedAt: now,
-            confidence: 0.95,
           },
-        }),
-        $setOnInsert: { startedAt: now },
+        },
+        $setOnInsert: { startedAt: now, evidenceClaimIds: [] },
+        $unset: { endedAt: '' },
       },
       options: { upsert: true },
     });
@@ -153,8 +155,7 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn(),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        description:
-          'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
+        bio: 'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
         websiteUrl: 'https://medicine.yale.edu/example-lab',
         sourceUrls: ['https://medicine.yale.edu/example-lab'],
       }),
@@ -164,7 +165,10 @@ describe('visibilityRepairQueueService', () => {
       runGate: vi.fn(),
     };
 
-    const report = await runVisibilityRepairQueue({ mode: 'dry-run', collection: 'research' }, deps);
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
 
     expect(report.repaired).toBe(1);
     expect(deps.updateResearchEntity).not.toHaveBeenCalled();
@@ -178,8 +182,7 @@ describe('visibilityRepairQueueService', () => {
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        description:
-          'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
+        bio: 'The lab studies immune mechanisms in cancer and develops translational approaches for therapy.',
         websiteUrl: 'https://medicine.yale.edu/example-lab',
         sourceUrls: ['https://medicine.yale.edu/example-lab'],
       }),
@@ -222,8 +225,10 @@ describe('visibilityRepairQueueService', () => {
         _id: 'entity-1',
         fullDescription:
           'Research fields include machine learning, algorithms, data compression, and automata theory.',
-        shortDescription: 'Studies machine learning, algorithms, data compression, and automata theory.',
-        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
+        shortDescription:
+          'Studies machine learning, algorithms, data compression, and automata theory.',
+        websiteUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         sourceUrls: [
           'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         ],
@@ -260,6 +265,56 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.runGate).toHaveBeenCalledWith('research', ['entity-1'], 'apply');
   });
 
+  it('blocks stale source-description repair when an official lab URL collides', async () => {
+    const officialLabUrl = 'https://medicine.yale.edu/lab/example/';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_card_description'],
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        fullDescription:
+          'Research fields include machine learning, algorithms, data compression, and automata theory.',
+        shortDescription:
+          'Studies machine learning, algorithms, data compression, and automata theory.',
+        websiteUrl: officialLabUrl,
+        sourceUrls: [officialLabUrl],
+      }),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([
+        {
+          role: 'pi',
+          userId: 'user-1',
+        },
+      ]),
+      findConflictingOfficialLabUrls: vi
+        .fn()
+        .mockResolvedValue(['https://medicine.yale.edu/lab/example']),
+      updateResearchEntity: vi.fn(),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
+    };
+
+    const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
+
+    expect(deps.findConflictingOfficialLabUrls).toHaveBeenCalledWith('entity-1', [
+      'https://medicine.yale.edu/lab/example',
+    ]);
+    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report.attempts[0]).toMatchObject({
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: ['missing_card_description', 'official_source_url_collision'],
+      repairSource: 'https://medicine.yale.edu/lab/example',
+    });
+    expect(deps.updateResearchEntity).not.toHaveBeenCalled();
+    expect(deps.runGate).not.toHaveBeenCalled();
+  });
+
   it('derives missing card descriptions from an existing source-backed fullDescription', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
@@ -273,7 +328,8 @@ describe('visibilityRepairQueueService', () => {
         fullDescription:
           'Research fields include machine learning, algorithms, data compression, and automata theory.',
         shortDescription: '',
-        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
+        websiteUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         sourceUrls: [
           'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         ],
@@ -371,7 +427,7 @@ describe('visibilityRepairQueueService', () => {
       findResearchEntityMembers: vi.fn(),
       findActionEvidenceObservationIds: vi.fn(),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
@@ -390,7 +446,7 @@ describe('visibilityRepairQueueService', () => {
     });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
     expect(deps.runGate).not.toHaveBeenCalled();
   });
@@ -442,6 +498,58 @@ describe('visibilityRepairQueueService', () => {
     );
   });
 
+  it('blocks source-description repair when another active entity owns the official lab URL', async () => {
+    const officialLabUrl = 'https://medicine.yale.edu/lab/example/';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_description', 'missing_source_url'],
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        description:
+          'This laboratory studies a sufficiently detailed research topic using source-backed methods and evidence.',
+        sourceUrls: [],
+        fieldProvenance: {
+          undergradAccessEvidence: {
+            sourceName: 'lab-microsite-undergrad-llm',
+            sourceUrl: officialLabUrl,
+          },
+        },
+      }),
+      findConflictingOfficialLabUrls: vi
+        .fn()
+        .mockResolvedValue(['https://medicine.yale.edu/lab/example']),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
+
+    expect(deps.findConflictingOfficialLabUrls).toHaveBeenCalledWith('entity-1', [
+      'https://medicine.yale.edu/lab/example',
+    ]);
+    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report.attempts[0]).toMatchObject({
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: [
+        'missing_description',
+        'missing_source_url',
+        'official_source_url_collision',
+      ],
+      repairSource: 'https://medicine.yale.edu/lab/example',
+    });
+    expect(deps.updateResearchEntity).not.toHaveBeenCalled();
+    expect(deps.runGate).not.toHaveBeenCalled();
+  });
+
   it('does not attach metadata-only field provenance as source URLs', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
@@ -485,7 +593,12 @@ describe('visibilityRepairQueueService', () => {
     const openItems = [
       queueItem({ _id: 'blocked', repairStatus: 'blocked' }),
       queueItem({ _id: 'repaired', recordId: 'entity-3', repairStatus: 'repaired' }),
-      queueItem({ _id: 'attempted', recordId: 'entity-4', repairStatus: 'queued', attemptCount: 1 }),
+      queueItem({
+        _id: 'attempted',
+        recordId: 'entity-4',
+        repairStatus: 'queued',
+        attemptCount: 1,
+      }),
       queueItem({ _id: 'queued', recordId: 'entity-2', repairStatus: 'queued' }),
     ];
     const deps = {
@@ -573,7 +686,10 @@ describe('visibilityRepairQueueService', () => {
       runGate: vi.fn(),
     };
 
-    const report = await runVisibilityRepairQueue({ mode: 'dry-run', collection: 'research' }, deps);
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
 
     expect(report.repaired).toBe(0);
     expect(report.blocked).toBe(1);
@@ -606,7 +722,10 @@ describe('visibilityRepairQueueService', () => {
       runGate: vi.fn(),
     };
 
-    const report = await runVisibilityRepairQueue({ mode: 'dry-run', collection: 'research' }, deps);
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
 
     expect(report.repaired).toBe(0);
     expect(report.blocked).toBe(1);
@@ -668,11 +787,7 @@ describe('visibilityRepairQueueService', () => {
           user: {
             fname: 'Example',
             lname: 'Faculty',
-            researchInterests: [
-              'RNA splicing',
-              'zebrafish development',
-              'single-cell genomics',
-            ],
+            researchInterests: ['RNA splicing', 'zebrafish development', 'single-cell genomics'],
             profileUrls: {
               medicine: 'https://medicine.yale.edu/profile/example-faculty/',
             },
@@ -730,8 +845,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Fiona',
             lname: 'Castellan Moreau',
-            bio:
-              "Fiona Castellan Moreau's research examines migration, borderlands, Latinx literature, and social movements across the Americas. Her work analyzes cultural politics, state power, and community organizing through literary, historical, and media evidence.",
+            bio: "Fiona Castellan Moreau's research examines migration, borderlands, Latinx literature, and social movements across the Americas. Her work analyzes cultural politics, state power, and community organizing through literary, historical, and media evidence.",
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -800,8 +914,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Samuel',
             lname: 'Prescott',
-            bio:
-              'Interests Samuel Prescott teaches expository writing in the English Department. A former trusts and estates lawyer, Samuel also teaches an undergraduate introduction to legal reasoning and writing. Courses Undergraduate: Reading and Writing the Modern Essay; Thinking and Writing about the Law',
+            bio: 'Interests Samuel Prescott teaches expository writing in the English Department. A former trusts and estates lawyer, Samuel also teaches an undergraduate introduction to legal reasoning and writing. Courses Undergraduate: Reading and Writing the Modern Essay; Thinking and Writing about the Law',
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -906,8 +1019,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Jordan',
             lname: 'Oakes',
-            bio:
-              'Jordan Oakes’s writing has been published in the Bellevue Literary Review, the Baltimore Sun, the Boston Phoenix, the Mississippi Review, the New York Times, Off Assignment, Post Road, the Village Voice, and other publications. His books include Difficult Listening and Master Class in Fiction Writing. With a team of visual artists he adapted four of Shakespeare’s tragedies as manga, and his anthology Rap on Rap was acquired by Harvard’s W.E.B. DuBois Institute for African and African American Research.',
+            bio: 'Jordan Oakes’s writing has been published in the Bellevue Literary Review, the Baltimore Sun, the Boston Phoenix, the Mississippi Review, the New York Times, Off Assignment, Post Road, the Village Voice, and other publications. His books include Difficult Listening and Master Class in Fiction Writing. With a team of visual artists he adapted four of Shakespeare’s tragedies as manga, and his anthology Rap on Rap was acquired by Harvard’s W.E.B. DuBois Institute for African and African American Research.',
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -966,8 +1078,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Élise',
             lname: 'Beaumont',
             website,
-            bio:
-              'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
+            bio: 'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1026,8 +1137,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Élise',
             lname: 'Beaumont',
-            bio:
-              'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
+            bio: 'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1043,7 +1153,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -1064,9 +1174,7 @@ describe('visibilityRepairQueueService', () => {
       applied: true,
       status: 'blocked',
       patchSummary: expect.arrayContaining([
-        'created exploratory pathway from entity-level undergraduate evidence',
         'created reach-out-plausible access signal from entity-level evidence',
-        'created public research entity source contact route',
       ]),
       remainingBlockers: expect.arrayContaining(['missing_description']),
       repairSource: profileUrl,
@@ -1101,8 +1209,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Sonya-Claire',
             lname: 'Fontaine',
-            bio:
-              'Sonya-Claire Fontaine is Assistant Professor of Ethnicity, Race, and Migration. She received her PhD in Chicana/o and Central American Studies from University of California Los Angeles. She is an interdisciplinary scholar whose scholarship integrates ethnographic methods, digital humanities, and Latinx geographies in analyzing contemporary urban labor struggles and resistance.',
+            bio: 'Sonya-Claire Fontaine is Assistant Professor of Ethnicity, Race, and Migration. She received her PhD in Chicana/o and Central American Studies from University of California Los Angeles. She is an interdisciplinary scholar whose scholarship integrates ethnographic methods, digital humanities, and Latinx geographies in analyzing contemporary urban labor struggles and resistance.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1160,8 +1267,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Faye',
             lname: 'Hollister',
-            bio:
-              'Faye Hollister is a playwright, actor, and founding member of Split Britches Theater Company. She is the author of numerous plays, including Imagining Madoff and Turquoise.',
+            bio: 'Faye Hollister is a playwright, actor, and founding member of Split Britches Theater Company. She is the author of numerous plays, including Imagining Madoff and Turquoise.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1218,8 +1324,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Grace',
             lname: 'Ellery',
-            bio:
-              'Grace Ellery has performed internationally with New York City Ballet, Mikhail Baryshnikov’s White Oak Dance Project, Twyla Tharp, and Yvonne Rainer. Career highlights include three duets with Baryshnikov.',
+            bio: 'Grace Ellery has performed internationally with New York City Ballet, Mikhail Baryshnikov’s White Oak Dance Project, Twyla Tharp, and Yvonne Rainer. Career highlights include three duets with Baryshnikov.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1276,8 +1381,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'RS',
             lname: 'Kazimierczak',
-            bio:
-              "RS (R. Kazimierczak) received their Ph.D. in historical musicology from Harvard University in 2010. Bringing the history of musical forms and notation into dialogue with medieval literature, iconography, and the history of ideas, RS's publications have focused on French and northern Italian music of the fourteenth and fifteenth centuries.",
+            bio: "RS (R. Kazimierczak) received their Ph.D. in historical musicology from Harvard University in 2010. Bringing the history of musical forms and notation into dialogue with medieval literature, iconography, and the history of ideas, RS's publications have focused on French and northern Italian music of the fourteenth and fifteenth centuries.",
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1335,8 +1439,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Peter',
             lname: 'Walden',
-            bio:
-              "Peter Walden received his Ph.D in ethnomusicology from Wesleyan University. A self-described musical pan-Africanist, Walden's work has typically addressed musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.",
+            bio: "Peter Walden received his Ph.D in ethnomusicology from Wesleyan University. A self-described musical pan-Africanist, Walden's work has typically addressed musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.",
             researchInterests: [
               'Health Systems',
               'Economic Evaluations',
@@ -1517,8 +1620,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Oona',
             lname: 'Delacroix',
-            bio:
-              'Oona Delacroix is Assistant Professor in Ethnicity, Race, and Migration. Her scholarship employs critical Indigenous studies to re-evaluate and re-narrativize stories of the early medieval North Atlantic.',
+            bio: 'Oona Delacroix is Assistant Professor in Ethnicity, Race, and Migration. Her scholarship employs critical Indigenous studies to re-evaluate and re-narrativize stories of the early medieval North Atlantic.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1663,7 +1765,7 @@ describe('visibilityRepairQueueService', () => {
       }),
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -1685,25 +1787,15 @@ describe('visibilityRepairQueueService', () => {
     expect(report.attempts[0]).toMatchObject({
       patchSummary: [
         'attached PI member from exact source/user URL match',
-        'created low-confidence exploratory pathway from official PI profile',
         'created reach-out-plausible access signal from official PI profile',
-        'created public faculty profile contact route',
       ],
       remainingBlockers: [],
     });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        sourceEvidenceIds: ['obs-1'],
-        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Example Faculty',
-        url: 'https://medicine.yale.edu/profile/example-faculty/',
-        sourceEvidenceIds: ['obs-1'],
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -1816,13 +1908,13 @@ describe('visibilityRepairQueueService', () => {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
           blockerReasons: ['missing_lead'],
-          label: 'Fixture Researcher Lab',
+          label: 'Fixture Person Lab',
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Fixture Researcher Lab',
+        name: 'Fixture Person Lab',
         websiteUrl: 'https://physics.yale.edu/fixture-researcher',
       }),
       updateResearchEntity: vi.fn(),
@@ -1889,7 +1981,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -1908,248 +2000,19 @@ describe('visibilityRepairQueueService', () => {
     );
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        evidenceStrength: 'WEAK',
-        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
-    expect(deps.upsertAccessSignal).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        entryPathwayId: 'pathway-1',
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         confidence: 'LOW',
         sourceEvidenceId: 'obs-1',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        entryPathwayId: 'pathway-1',
-        routeType: 'FACULTY_PI',
-        visibility: 'PUBLIC',
-        contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-        url: 'https://medicine.yale.edu/profile/example-faculty/',
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
-  });
-
-  it('reuses an existing exploratory contact pathway for official profile action evidence', async () => {
-    const deps = {
-      findOpenQueueItems: vi.fn().mockResolvedValue([
-        queueItem({
-          blockerReasons: ['missing_action_evidence'],
-        }),
-      ]),
-      updateQueueItem: vi.fn().mockResolvedValue(undefined),
-      findResearchEntity: vi.fn().mockResolvedValue({
-        _id: 'entity-1',
-        fullDescription:
-          'The lab studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        shortDescription:
-          'Studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        websiteUrl: 'https://medicine.yale.edu/profile/example-faculty/',
-        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
-      }),
-      updateResearchEntity: vi.fn(),
-      findResearchEntityMembers: vi.fn().mockResolvedValue([
-        {
-          role: 'pi',
-          userId: 'user-1',
-          user: {
-            _id: 'user-1',
-            firstName: 'Example',
-            lastName: 'Faculty',
-            profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/example-faculty/',
-            },
-          },
-        },
-      ]),
-      findReusableExploratoryContactPathway: vi.fn().mockResolvedValue({
-        pathwayId: 'existing-pathway-1',
-        doc: { _id: 'existing-pathway-1', pathwayType: 'EXPLORATORY_CONTACT' },
-      }),
-      upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'new-pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
-      upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
-      findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
-      findProgram: vi.fn(),
-      updateProgram: vi.fn(),
-      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
-    };
-
-    const report = await runVisibilityRepairQueue(
-      {
-        mode: 'apply',
-        collection: 'research',
-        stage: 'action_evidence',
-        limit: 1,
-      },
-      deps,
-    );
-
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.findReusableExploratoryContactPathway).toHaveBeenCalledWith('entity-1');
-    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        entryPathwayId: 'existing-pathway-1',
-        signalType: 'REACH_OUT_PLAUSIBLE',
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        entryPathwayId: 'existing-pathway-1',
-        routeType: 'FACULTY_PI',
-      }),
-    );
-  });
-
-  it('uses reusable pathway evidence when official profile observation lookup misses', async () => {
-    const deps = {
-      findOpenQueueItems: vi.fn().mockResolvedValue([
-        queueItem({
-          blockerReasons: ['missing_action_evidence'],
-        }),
-      ]),
-      updateQueueItem: vi.fn().mockResolvedValue(undefined),
-      findResearchEntity: vi.fn().mockResolvedValue({
-        _id: 'entity-1',
-        fullDescription:
-          'The lab studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        shortDescription:
-          'Studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        websiteUrl: 'https://medicine.yale.edu/profile/example-faculty/',
-        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
-      }),
-      updateResearchEntity: vi.fn(),
-      findResearchEntityMembers: vi.fn().mockResolvedValue([
-        {
-          role: 'pi',
-          userId: 'user-1',
-          user: {
-            _id: 'user-1',
-            firstName: 'Example',
-            lastName: 'Faculty',
-            profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/example-faculty/',
-            },
-          },
-        },
-      ]),
-      findReusableExploratoryContactPathway: vi.fn().mockResolvedValue({
-        pathwayId: 'existing-pathway-1',
-        doc: {
-          _id: 'existing-pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          sourceEvidenceIds: ['existing-obs-1'],
-        },
-      }),
-      upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
-      upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
-      findActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
-      findProgram: vi.fn(),
-      updateProgram: vi.fn(),
-      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
-    };
-
-    const report = await runVisibilityRepairQueue(
-      {
-        mode: 'apply',
-        collection: 'research',
-        stage: 'action_evidence',
-        limit: 1,
-      },
-      deps,
-    );
-
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entryPathwayId: 'existing-pathway-1',
-        sourceEvidenceIds: ['existing-obs-1'],
-      }),
-    );
-  });
-
-  it('creates an entity-source contact route from reusable pathway evidence without a trusted lead profile', async () => {
-    const deps = {
-      findOpenQueueItems: vi.fn().mockResolvedValue([
-        queueItem({
-          blockerReasons: ['missing_action_evidence'],
-        }),
-      ]),
-      updateQueueItem: vi.fn().mockResolvedValue(undefined),
-      findResearchEntity: vi.fn().mockResolvedValue({
-        _id: 'entity-1',
-        fullDescription:
-          'The lab studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        shortDescription:
-          'Studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        websiteUrl: 'https://example.yale.edu/lab',
-        sourceUrls: ['https://example.yale.edu/lab'],
-      }),
-      updateResearchEntity: vi.fn(),
-      findResearchEntityMembers: vi.fn().mockResolvedValue([
-        {
-          role: 'pi',
-          userId: 'user-1',
-          user: {
-            _id: 'user-1',
-            firstName: 'Example',
-            lastName: 'Faculty',
-          },
-        },
-      ]),
-      findReusableExploratoryContactPathway: vi.fn().mockResolvedValue({
-        pathwayId: 'existing-pathway-1',
-        doc: {
-          _id: 'existing-pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          sourceEvidenceIds: ['existing-obs-1'],
-        },
-      }),
-      upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
-      upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
-      findActionEvidenceObservationIds: vi.fn(),
-      findProgram: vi.fn(),
-      updateProgram: vi.fn(),
-      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
-    };
-
-    const report = await runVisibilityRepairQueue(
-      {
-        mode: 'apply',
-        collection: 'research',
-        stage: 'action_evidence',
-        limit: 1,
-      },
-      deps,
-    );
-
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entryPathwayId: 'existing-pathway-1',
-        routeType: 'UNKNOWN',
-        role: 'Research entity source',
-        url: 'https://example.yale.edu/lab',
-        sourceEvidenceIds: ['existing-obs-1'],
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2220,8 +2083,7 @@ describe('visibilityRepairQueueService', () => {
         _id: 'user-1',
         fname: 'Priya',
         lname: 'Mehta',
-        bio:
-          'Priya Mehta studies pediatric hematology, inherited blood disorders, and clinical outcomes for children with complex diseases.',
+        bio: 'Priya Mehta studies pediatric hematology, inherited blood disorders, and clinical outcomes for children with complex diseases.',
         researchInterests: [
           'Pediatric hematology',
           'Inherited blood disorders',
@@ -2233,7 +2095,7 @@ describe('visibilityRepairQueueService', () => {
       }),
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2267,19 +2129,11 @@ describe('visibilityRepairQueueService', () => {
         sourceName: 'visibility-repair-queue',
       }),
     );
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        sourceUrls: ['https://medicine.yale.edu/profile/priya-mehta/'],
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Priya Mehta',
-        url: 'https://medicine.yale.edu/profile/priya-mehta/',
-        sourceEvidenceIds: ['obs-1'],
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2317,7 +2171,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findActionEvidenceObservationIds: vi.fn(),
       findProgram: vi.fn(),
@@ -2338,7 +2192,7 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 0, blocked: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
   });
 
@@ -2375,7 +2229,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2394,15 +2248,11 @@ describe('visibilityRepairQueueService', () => {
     );
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: ['https://medicine.yale.edu/profile/mei-chen/'],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Mei Chen',
-        url: 'https://medicine.yale.edu/profile/mei-chen/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2439,7 +2289,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2464,10 +2314,10 @@ describe('visibilityRepairQueueService', () => {
         sourceUrl: 'https://medicine.yale.edu/profile/jordan-queue/',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Jordan Queue',
-        url: 'https://medicine.yale.edu/profile/jordan-queue/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2504,7 +2354,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findActionEvidenceObservationIds: vi.fn(),
       findProgram: vi.fn(),
@@ -2562,7 +2412,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2586,14 +2436,11 @@ describe('visibilityRepairQueueService', () => {
         sourceUrl: profileUrl,
       }),
     );
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: [profileUrl],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: profileUrl,
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2634,7 +2481,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2659,11 +2506,10 @@ describe('visibilityRepairQueueService', () => {
         sourceUrl: 'https://medicine.yale.edu/cancer/profile/john-d-roberts/',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'John D Roberts',
-        routeType: 'FACULTY_PI',
-        url: 'https://medicine.yale.edu/cancer/profile/john-d-roberts/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2697,7 +2543,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -2716,7 +2562,7 @@ describe('visibilityRepairQueueService', () => {
 
     expect(report).toMatchObject({ repaired: 0, blocked: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
   });
 
@@ -2744,13 +2590,14 @@ describe('visibilityRepairQueueService', () => {
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([
         {
           id: 'obs-1',
-          excerpt: 'The program places teaching undergraduate, graduate, and professional students at the core of its mission.',
+          excerpt:
+            'The program places teaching undergraduate, graduate, and professional students at the core of its mission.',
           sourceUrl: 'https://jackson.yale.edu/centers-initiatives/',
           sourceName: 'research-entity-cache-backfill',
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -2776,39 +2623,21 @@ describe('visibilityRepairQueueService', () => {
         'https://jackson.yale.edu/centers-initiatives/',
       ],
     });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        evidenceStrength: 'WEAK',
-        sourceEvidenceIds: ['obs-1'],
-        sourceUrls: [
-          'https://jackson.yale.edu/centers-initiatives/',
-          'https://jackson.yale.edu/centers-initiatives/example-program/',
-        ],
-        derivationKey: 'visibility-repair:entity-source-outreach:entity-1',
-      }),
-    );
-    expect(deps.upsertAccessSignal).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        entryPathwayId: 'pathway-1',
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         confidence: 'LOW',
         sourceEvidenceId: 'obs-1',
         sourceName: 'research-entity-cache-backfill',
         sourceUrl: 'https://jackson.yale.edu/centers-initiatives/',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        entryPathwayId: 'pathway-1',
-        routeType: 'UNKNOWN',
-        role: 'Research entity source',
-        url: 'https://jackson.yale.edu/centers-initiatives/example-program/',
-        sourceEvidenceIds: ['obs-1'],
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2842,14 +2671,15 @@ describe('visibilityRepairQueueService', () => {
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([
         {
           id: 'obs-1',
-          excerpt: 'The Blue Center supports teaching at both the undergraduate and graduate levels.',
+          excerpt:
+            'The Blue Center supports teaching at both the undergraduate and graduate levels.',
           sourceUrl: 'https://jackson.yale.edu/centers-initiatives/',
           sourceName: 'research-entity-cache-backfill',
         },
       ]),
       upsertResearchEntityMember: vi.fn(),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -2882,13 +2712,7 @@ describe('visibilityRepairQueueService', () => {
         'https://jackson.yale.edu/centers-initiatives/',
       ],
     });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.updateQueueItem).toHaveBeenCalledWith(
       'queue-1',
       expect.objectContaining({
@@ -2922,7 +2746,7 @@ describe('visibilityRepairQueueService', () => {
       findReusableExploratoryContactPathway: vi.fn().mockResolvedValue(null),
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -2942,7 +2766,7 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 0, blocked: 1 });
     expect(report.attempts[0].remainingBlockers).toContain('missing_source_evidence');
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
   });
 
@@ -2980,7 +2804,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2999,15 +2823,7 @@ describe('visibilityRepairQueueService', () => {
     );
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        sourceUrls: ['https://example.edu/profile/example-faculty/'],
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
   });
 
   it('repairs action evidence from opaque Yale Medicine profile slugs that match PI initials', async () => {
@@ -3044,7 +2860,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -3068,10 +2884,10 @@ describe('visibilityRepairQueueService', () => {
       userId: 'user-1',
       sourceUrl: 'https://medicine.yale.edu/profile/br999/',
     });
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        routeType: 'FACULTY_PI',
-        url: 'https://medicine.yale.edu/profile/br999/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -3090,7 +2906,8 @@ describe('visibilityRepairQueueService', () => {
         name: 'Lee Queue Lab',
         fullDescription:
           'The lab studies statistical methods for biomedical imaging and public health data.',
-        shortDescription: 'Studies statistical methods for biomedical imaging and public health data.',
+        shortDescription:
+          'Studies statistical methods for biomedical imaging and public health data.',
         sourceUrls: ['https://medicine.yale.edu/profile/fixture-rotation-lead/'],
       }),
       updateResearchEntity: vi.fn(),
@@ -3109,7 +2926,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findActionEvidenceObservationIds: vi.fn(),
       findProgram: vi.fn(),
@@ -3166,7 +2983,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([
@@ -3199,18 +3016,11 @@ describe('visibilityRepairQueueService', () => {
       sourceUrl: 'https://cidma.us/',
       sourceUrls: ['https://cidma.us/', 'https://orcid.org/0000-0002-2059-6716'],
     });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: ['https://cidma.us/'],
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        routeType: 'UNKNOWN',
-        role: 'Research entity source',
-        url: 'https://cidma.us/',
-        sourceEvidenceIds: ['obs-1'],
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -3250,7 +3060,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([
@@ -3286,11 +3096,10 @@ describe('visibilityRepairQueueService', () => {
         'https://reporter.nih.gov/project-details/10774311',
       ],
     });
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        routeType: 'UNKNOWN',
-        role: 'Research entity source',
-        url: 'https://medicine.yale.edu/profile/fixture-modeling-lead/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -3336,5 +3145,55 @@ describe('visibilityRepairQueueService', () => {
         studentVisibilitySuppressionReason: expect.stringContaining('archive_review'),
       }),
     );
+  });
+});
+
+const rosterEntry = (
+  overrides: Partial<ResearchEntityRosterEntry> = {},
+): ResearchEntityRosterEntry =>
+  ({
+    role: 'pi',
+    name: 'Roster Person',
+    netid: 'rp123',
+    state: 'CURRENT',
+    ...overrides,
+  }) as unknown as ResearchEntityRosterEntry;
+
+describe('researchEntityLeadMembersFromRoster', () => {
+  it('keeps only current lead-role members', () => {
+    const members = researchEntityLeadMembersFromRoster([
+      rosterEntry({ role: 'pi', name: 'Lead PI' }),
+      rosterEntry({ role: 'co-pi', name: 'Co PI' }),
+      rosterEntry({ role: 'director', name: 'Lead Director' }),
+      rosterEntry({ role: 'co-director', name: 'Co Director' }),
+      rosterEntry({ role: 'postdoc', name: 'Postdoc Person' }),
+      rosterEntry({ role: 'grad-student', name: 'Grad Person' }),
+      rosterEntry({ role: 'pi', name: 'Historical PI', state: 'HISTORICAL' }),
+    ]);
+
+    expect(members.map((member) => member.name)).toEqual([
+      'Lead PI',
+      'Co PI',
+      'Lead Director',
+      'Co Director',
+    ]);
+  });
+
+  it('exposes the roster personId as the stable lead identity', () => {
+    const personId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439011');
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({ role: 'pi', name: 'Lead PI', personId }),
+    ]);
+
+    expect(member.userId).toBe('507f1f77bcf86cd799439011');
+    expect(member.user._id).toBe('507f1f77bcf86cd799439011');
+  });
+
+  it('does not carry lead bio, research interests, or topics onto members', () => {
+    const [member] = researchEntityLeadMembersFromRoster([rosterEntry({ role: 'pi' })]);
+
+    expect(member.user.bio).toBeUndefined();
+    expect(member.user.researchInterests).toBeUndefined();
+    expect(member.user.topics).toBeUndefined();
   });
 });

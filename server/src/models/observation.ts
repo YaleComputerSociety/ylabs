@@ -6,15 +6,18 @@
  */
 import mongoose from 'mongoose';
 
+/**
+ * `user` and `researchGroupMember` name retired models but are live lanes: they
+ * carry the person and roster provenance that materializes into Researcher and
+ * RoleAssignment. Renaming those values is a separate migration over ~471k rows.
+ */
 export type ObservedEntityType =
   | 'user'
   | 'researchEntity'
   | 'researchEntityRelationship'
-  | 'researchGroup'
   | 'researchGroupMember'
-  | 'paper'
-  | 'listing'
-  | 'fellowship';
+  | 'fellowship'
+  | 'departmentRosterHealth';
 
 const observationSchema = new mongoose.Schema(
   {
@@ -25,11 +28,9 @@ const observationSchema = new mongoose.Schema(
         'user',
         'researchEntity',
         'researchEntityRelationship',
-        'researchGroup',
         'researchGroupMember',
-        'paper',
-        'listing',
         'fellowship',
+        'departmentRosterHealth',
       ],
     },
     entityId: {
@@ -89,6 +90,10 @@ const observationSchema = new mongoose.Schema(
     observationFingerprint: {
       type: String,
       required: false,
+    },
+    rollback: {
+      rolledBackAt: { type: Date, required: false },
+      reason: { type: String, maxlength: 500, required: false },
     },
   },
   {

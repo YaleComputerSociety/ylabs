@@ -3,6 +3,7 @@ import { getFellowshipCycleStatus } from './fellowshipCycle';
 
 export type ProgramJourneyCategory =
   | 'applyNow'
+  | 'openingSoon'
   | 'structured'
   | 'fundingAfterMentor'
   | 'nextCycle'
@@ -13,6 +14,26 @@ export interface ProgramJourneyStatus {
   label: string;
   description: string;
 }
+
+export const PROGRAM_JOURNEY_CATEGORIES: ProgramJourneyCategory[] = [
+  'applyNow',
+  'openingSoon',
+  'structured',
+  'fundingAfterMentor',
+  'nextCycle',
+  'archive',
+];
+
+export type ProgramJourneySummary = Record<ProgramJourneyCategory, number>;
+
+export const emptyProgramJourneySummary: ProgramJourneySummary = {
+  applyNow: 0,
+  openingSoon: 0,
+  structured: 0,
+  fundingAfterMentor: 0,
+  nextCycle: 0,
+  archive: 0,
+};
 
 const STRUCTURED_KINDS = new Set([
   'STRUCTURED_PROGRAM',
@@ -41,14 +62,19 @@ export function getProgramJourneyStatus(
     };
   }
 
-  if (
-    fellowship.undergraduateOnly === false ||
-    fellowship.studentFacingCategory === 'Archive / review'
-  ) {
+  if (cycle.category === 'openingSoon' || cycle.category === 'projectedNextCycle') {
+    return {
+      category: 'openingSoon',
+      label: 'Opening Soon',
+      description: 'Upcoming application windows, including projected next-cycle dates.',
+    };
+  }
+
+  if (fellowship.studentFacingCategory === 'Archive / review') {
     return {
       category: 'archive',
       label: 'Archive / Review',
-      description: 'Records that need eligibility review or are not undergraduate-first.',
+      description: 'Records that need eligibility review.',
     };
   }
 
@@ -64,7 +90,8 @@ export function getProgramJourneyStatus(
     return {
       category: 'fundingAfterMentor',
       label: 'Funding After You Have a Mentor',
-      description: 'Funding records that usually require a research plan, adviser, or lab fit first.',
+      description:
+        'Funding records that usually require a research plan, adviser, or lab fit first.',
     };
   }
 
@@ -81,6 +108,17 @@ export function getProgramJourneyStatus(
     label: 'Archive / Review',
     description: 'Retained records that should not be treated as active opportunities.',
   };
+}
+
+export function summarizeProgramJourney(
+  fellowships: Fellowship[],
+  now: Date = new Date(),
+): ProgramJourneySummary {
+  const summary: ProgramJourneySummary = { ...emptyProgramJourneySummary };
+  for (const fellowship of fellowships) {
+    summary[getProgramJourneyStatus(fellowship, now).category] += 1;
+  }
+  return summary;
 }
 
 export function programKindLabel(kind: string): string {
@@ -107,4 +145,14 @@ export function entryModeLabel(mode: string): string {
     UNKNOWN: 'Review source',
   };
   return labels[mode] || mode.replace(/_/g, ' ').toLowerCase();
+}
+
+export function programCategoryLabel(category: string): string {
+  const labels: Record<string, string> = {
+    CENTER_INTERNSHIP: 'Center internship',
+    FELLOWSHIP: 'Fellowship',
+    RECURRING_PROGRAM: 'Recurring program',
+    SUMMER_RESEARCH_PROGRAM: 'Summer research program',
+  };
+  return labels[category] || category.replace(/_/g, ' ').toLowerCase();
 }

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "issue": 204,
+  "environment": "beta",
+  "databaseName": "Beta",
+  "credentialFreeTarget": "<atlas-host>/Beta",
+  "sourceCommit": "<40-character-git-commit>",
+  "providerControls": {
+    "atlasReadOnlyRole": {
+      "control": "atlas-current-user-read-only-role",
+      "verifiedBy": "<atlas-role-reviewer>",
+      "verifiedAt": "<ISO-8601-role-verification>",
+      "evidenceReference": "private-store://<protected-atlas-role-evidence>"
+    },
+    "immutableStorage": {
+      "control": "protected-object-version-immutability",
+      "verifiedBy": "<storage-controls-reviewer>",
+      "verifiedAt": "<ISO-8601-immutability-verification>",
+      "evidenceReference": "private-store://<protected-immutability-evidence>"
+    }
+  },
+  "captureWindow": {
+    "startedAt": "<ISO-8601-start>",
+    "completedAt": "<ISO-8601-completion>",
+    "writePosture": "quiescent"
+  },
+  "recoveryArtifact": {
+    "provider": "mongodb-atlas",
+    "artifactId": "<private-atlas-artifact-id>",
+    "createdAt": "<ISO-8601-created>",
+    "verifiedAt": "<ISO-8601-verified>",
+    "retentionExpiresAt": "<ISO-8601-retention-expiry>",
+    "owner": "<data-operations-owner>",
+    "procedureReference": "private-runbook://<protected-restore-procedure>",
+    "storage": {
+      "artifactReference": "private-store://<protected-recovery-record>",
+      "objectVersion": "<immutable-object-version>",
+      "storageClass": "versioned"
+    }
+  },
+  "inventory": {
+    "generatedAt": "<inventory-generatedAt>",
+    "sha256": "<64-character-inventory-sha256>",
+    "bytes": 1,
+    "sampleLimit": 0,
+    "storage": {
+      "artifactReference": "private-store://<protected-beta-inventory>",
+      "objectVersion": "<immutable-object-version>",
+      "storageClass": "versioned"
+    }
+  },
+  "rollback": {
+    "owner": "<rollback-owner>",
+    "trigger": "<specific-rollback-trigger>",
+    "procedureReference": "private-runbook://<protected-rollback-procedure>",
+    "drillVerifiedAt": "<ISO-8601-drill-verification>"
+  },
+  "review": {
+    "acceptedBy": "<independent-reviewer>",
+    "acceptedAt": "<ISO-8601-acceptance>"
+  }
+}

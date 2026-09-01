@@ -3,8 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_YALE_RESEARCH_DIRECTORY_CONFIGS,
   YaleResearchOfficialScraper,
+  classifyResearchYaleEntity,
   entityToObservations,
   inferResearchYaleKind,
+  isGenericTaxonomyBucketLabel,
+  isMintableResearchYaleEntity,
   parseResearchYaleCenters,
   parseResearchYaleCoreFacilities,
   slugifyResearchYaleEntity,
@@ -36,6 +39,7 @@ const CENTERS_HTML = `
       </h3>
       <ul class="item__types">
         <li class="item__type">Arts, humanities, &amp; social sciences</li>
+        <li class="item__type">Geospatial Analysis</li>
         <li class="item__type">Sciences &amp; engineering</li>
       </ul>
       <p>The center focuses on geospatial science, data, and analysis.</p>
@@ -58,6 +62,23 @@ const CORES_HTML = `
   <article class="card">
     <h2><a href="/cores/aidc">Advanced Instrumentation Development Center (AIDC)</a></h2>
     <p>Our mission stands at the nexus between hardware, computing, and data science.</p>
+  </article>
+</main>
+`;
+
+const CORES_WITH_TEMPLATE_PAGES_HTML = `
+<main>
+  <article class="card">
+    <h2><a href="/cores/acem">Aberration-Corrected Electron Microscopy (ACEM) Core</a></h2>
+    <p>Our core's focus is cutting-edge and high-throughput capability in electron microscopy techniques.</p>
+  </article>
+  <article class="card">
+    <h2><a href="/cores/pages/faq">Cores Pages FAQ</a></h2>
+    <p>Frequently asked questions about using Yale cores.</p>
+  </article>
+  <article class="card">
+    <h2><a href="/cores/shared-resource">Shared Resource</a></h2>
+    <p>Lorem ipsum.</p>
   </article>
 </main>
 `;
@@ -94,7 +115,6 @@ describe('yaleResearchOfficialScraper', () => {
         entityType: 'INSTITUTE',
         description:
           'The institute integrates faculty from across campus to help scholars apply new methods of data science.',
-        researchAreas: ['Sciences & engineering'],
         sourceCategory: 'centers-institutes',
       },
       {
@@ -104,10 +124,19 @@ describe('yaleResearchOfficialScraper', () => {
         kind: 'center',
         entityType: 'CENTER',
         description: 'The center focuses on geospatial science, data, and analysis.',
-        researchAreas: ['Arts, humanities, & social sciences', 'Sciences & engineering'],
+        researchAreas: ['Geospatial Analysis'],
         sourceCategory: 'centers-institutes',
       },
     ]);
+  });
+
+  it('drops top-level taxonomy-bucket chips instead of serving them as a research area (#1580 delta 1 / #1584)', () => {
+    expect(isGenericTaxonomyBucketLabel('Sciences & engineering')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Medical & health sciences')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Arts, humanities, & social sciences')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Research administration & collaboration')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Faculty resources')).toBe(true);
+    expect(isGenericTaxonomyBucketLabel('Genomics')).toBe(false);
   });
 
   it('parses only core/facility rows from the filtered cores directory', () => {
@@ -121,8 +150,8 @@ describe('yaleResearchOfficialScraper', () => {
         name: 'Aberration-Corrected Electron Microscopy (ACEM) Core',
         url: 'https://research.yale.edu/cores/acem',
         slug: 'research-yale-aberration-corrected-electron-microscopy-acem-core',
-        kind: 'center',
-        entityType: 'CENTER',
+        kind: 'core_facility',
+        entityType: 'CORE_FACILITY',
         description:
           "Our core's focus is cutting-edge and high-throughput capability in electron microscopy techniques.",
         sourceCategory: 'core-facility',
@@ -130,9 +159,82 @@ describe('yaleResearchOfficialScraper', () => {
       expect.objectContaining({
         name: 'Advanced Instrumentation Development Center (AIDC)',
         url: 'https://research.yale.edu/cores/aidc',
+        kind: 'core_facility',
+        entityType: 'CORE_FACILITY',
         sourceCategory: 'core-facility',
       }),
     ]);
+  });
+
+  it('classifies cores catalog records as CORE_FACILITY from sourceCategory, not the display name', () => {
+    const entities = parseResearchYaleCoreFacilities(
+      CORES_HTML,
+      'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
+    );
+
+    expect(entities.length).toBeGreaterThan(0);
+    for (const entity of entities) {
+      expect(entity.sourceCategory).toBe('core-facility');
+      expect(entity.entityType).toBe('CORE_FACILITY');
+      expect(entity.kind).toBe('core_facility');
+    }
+
+    expect(classifyResearchYaleEntity('Yale Center for Genome Analysis', 'core-facility')).toEqual({
+      kind: 'core_facility',
+      entityType: 'CORE_FACILITY',
+    });
+    expect(
+      classifyResearchYaleEntity('Yale Center for Genome Analysis', 'centers-institutes'),
+    ).toEqual({
+      kind: 'center',
+      entityType: 'CENTER',
+    });
+  });
+
+  it('does not mint template, FAQ, or placeholder pages as core entities', () => {
+    const entities = parseResearchYaleCoreFacilities(
+      CORES_WITH_TEMPLATE_PAGES_HTML,
+      'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
+    );
+
+    expect(entities.map((entity) => entity.url)).toEqual(['https://research.yale.edu/cores/acem']);
+    expect(entities.map((entity) => entity.name)).not.toEqual(
+      expect.arrayContaining(['Cores Pages FAQ', 'Shared Resource']),
+    );
+  });
+
+  it('classifies mintable vs non-research template entities', () => {
+    const realCore = {
+      name: 'Advanced Instrumentation Development Center (AIDC)',
+      url: 'https://research.yale.edu/cores/aidc',
+      slug: 'research-yale-advanced-instrumentation-development-center-aidc',
+      kind: 'center' as const,
+      entityType: 'CENTER' as const,
+      sourceCategory: 'core-facility' as const,
+    };
+    expect(isMintableResearchYaleEntity(realCore)).toBe(true);
+    expect(
+      isMintableResearchYaleEntity({
+        ...realCore,
+        name: 'Cores Pages FAQ',
+        url: 'https://research.yale.edu/cores/pages/faq',
+      }),
+    ).toBe(false);
+    expect(
+      isMintableResearchYaleEntity({
+        ...realCore,
+        name: 'Shared Resource',
+        url: 'https://research.yale.edu/cores/shared-resource',
+        description: 'Lorem ipsum.',
+      }),
+    ).toBe(false);
+    expect(
+      isMintableResearchYaleEntity({
+        ...realCore,
+        name: 'FAQ',
+        url: 'https://research.yale.edu/faq',
+      }),
+    ).toBe(false);
   });
 
   it('emits discovery-only observations without undergraduate access or contact routes', () => {
@@ -151,7 +253,7 @@ describe('yaleResearchOfficialScraper', () => {
         expect.objectContaining({ field: 'websiteUrl', value: entity.url }),
         expect.objectContaining({
           field: 'sourceUrls',
-          value: ['https://research.yale.edu/cores?f%5B0%5D=result_type%3A1', entity.url],
+          value: [entity.url],
         }),
       ]),
     );
@@ -164,6 +266,27 @@ describe('yaleResearchOfficialScraper', () => {
         'joinPageUrl',
       ]),
     );
+  });
+
+  it('emits fullDescription without a duplicate shortDescription copy', () => {
+    const observations = entityToObservations(
+      {
+        name: 'Yale Institute for Foundations of Data Science',
+        url: 'https://fds.yale.edu/',
+        slug: 'research-yale-yale-institute-for-foundations-of-data-science',
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+        description: 'The institute integrates faculty from across campus to apply data science.',
+        sourceCategory: 'centers-institutes',
+      },
+      'https://research.yale.edu/centers-institutes',
+    );
+
+    const fullDescription = observations.find((o) => o.field === 'fullDescription');
+    expect(fullDescription?.value).toBe(
+      'The institute integrates faculty from across campus to apply data science.',
+    );
+    expect(observations.find((o) => o.field === 'shortDescription')).toBeUndefined();
   });
 
   it('classifies and slugifies official Yale research entities', () => {

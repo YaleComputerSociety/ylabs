@@ -61,7 +61,10 @@ type ResearchAreaAction = InlineCrudAction<ResearchArea, NewDraft, EditDraft>;
 
 const AdminResearchAreas = () => {
   const [state, dispatch] = useReducer(
-    inlineCrudReducer as (state: ResearchAreaState, action: ResearchAreaAction) => ResearchAreaState,
+    inlineCrudReducer as (
+      state: ResearchAreaState,
+      action: ResearchAreaAction,
+    ) => ResearchAreaState,
     createInitialInlineCrudState<ResearchArea, NewDraft, EditDraft>(INITIAL_NEW_DRAFT),
   );
   const { items: areas, isLoading, search, newDraft, editingId, editDraft } = state;
@@ -314,7 +317,7 @@ const AdminResearchAreas = () => {
                           <>
                             <button
                               onClick={() => startEdit(area)}
-                              className="min-h-[44px] text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                              className="min-h-[44px] text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy"
                             >
                               Edit
                             </button>

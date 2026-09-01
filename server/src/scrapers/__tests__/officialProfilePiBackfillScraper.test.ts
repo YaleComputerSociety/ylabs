@@ -6,6 +6,7 @@ import {
   extractOfficialProfileIdentity,
   extractOfficialProfileResearchHomes,
   firstNonDuplicateLeadDirectWebsiteUrl,
+  identityToResearchEntityDepartmentObservations,
   identityToResearchEntityDescriptionObservations,
   identityToResearchEntityPiKeyObservations,
   identityToResearchEntityPiObservations,
@@ -26,7 +27,8 @@ import {
 } from '../sources/officialProfilePiBackfillScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
-import { User } from '../../models/user';
+import { Researcher } from '../../models/researcher';
+import { Account } from '../../models/account';
 
 const profileUrl = 'https://medicine.yale.edu/profile/jules-fixture/';
 const departmentPersonPageUrl =
@@ -50,6 +52,54 @@ const profileHtml = `
           programs for gastrointestinal oncology.
         </section>
         <div class="research-interests">Cancer biology; Translational oncology</div>
+      </main>
+    </body>
+  </html>
+`;
+
+const engineeringProfileUrl =
+  'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture/';
+
+const engineeringProfileHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="${engineeringProfileUrl}" />
+      <meta name="description" content="Assistant Professor of Biomedical Engineering" />
+    </head>
+    <body>
+      <main>
+        <h1>Drew Fixture</h1>
+        <div class="title">Assistant Professor of Biomedical Engineering</div>
+        <a href="mailto:drew.fixture@yale.edu">drew.fixture@yale.edu</a>
+        <div class="department">Biomedical Engineering</div>
+        <section class="biography">
+          Drew Fixture studies cellular signaling and maximum entropy methods for modeling
+          population heterogeneity.
+        </section>
+        <div class="research-interests">Cellular signaling; Maximum entropy methods</div>
+      </main>
+    </body>
+  </html>
+`;
+
+const musicProfileUrl = 'https://music.yale.edu/people/robin-fixture';
+
+const musicProfileHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="${musicProfileUrl}" />
+      <meta name="description" content="Professor of Composition" />
+    </head>
+    <body>
+      <main>
+        <h1>Robin Fixture</h1>
+        <div class="title">Professor of Composition</div>
+        <a href="mailto:robin.fixture@yale.edu">robin.fixture@yale.edu</a>
+        <div class="department">Composition</div>
+        <section class="biography">
+          Robin Fixture is a composer whose works span opera, orchestral music, and chamber music.
+        </section>
+        <div class="research-interests">Composition; Contemporary classical music</div>
       </main>
     </body>
   </html>
@@ -763,6 +813,62 @@ const profileLinkedWaxmanCenterWebsiteHtml = `
   </html>
 `;
 
+const profileLinkedLabWithDescriptionSentenceHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="https://medicine.yale.edu/profile/marlow-fixture/" />
+      <script type="application/ld+json" data-schema="ProfilePage">
+        {
+          "@type": "ProfilePage",
+          "mainEntity": {
+            "@type": "Person",
+            "name": "Marlow Fixture",
+            "email": "marlow.fixture@yale.edu",
+            "jobTitle": "Professor"
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">Marlow Fixture Lab</h3>
+          <p>The Marlow Fixture Lab investigates synthetic signaling pathways in fictional model organisms and related questions.</p>
+          <a href="https://medicine.yale.edu/marlow-fixture-lab/"><span>View Lab Website</span></a>
+        </article>
+      </main>
+    </body>
+  </html>
+`;
+
+const profileLinkedLabWithFirstPersonBlurbHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="https://medicine.yale.edu/profile/quill-fixture/" />
+      <script type="application/ld+json" data-schema="ProfilePage">
+        {
+          "@type": "ProfilePage",
+          "mainEntity": {
+            "@type": "Person",
+            "name": "Quill Fixture",
+            "email": "quill.fixture@yale.edu",
+            "jobTitle": "Professor"
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">Quill Fixture Lab</h3>
+          <p>We study how fictional cells decide when to divide and when to rest.</p>
+          <a href="https://medicine.yale.edu/quill-fixture-lab/"><span>View Lab Website</span></a>
+        </article>
+      </main>
+    </body>
+  </html>
+`;
+
 const profileLinkedDaycareWebsiteHtml = `
   <html>
     <head>
@@ -1445,14 +1551,24 @@ function contextFor(emitted: ObservationInput[]): ScraperContext {
 function visibleBioContextFor(emitted: ObservationInput[]): ScraperContext {
   return {
     ...contextFor(emitted),
-    options: { dryRun: true, useCache: false, release: false, only: ['visible-profile-bio-backfill'] },
+    options: {
+      dryRun: true,
+      useCache: false,
+      release: false,
+      only: ['visible-profile-bio-backfill'],
+    },
   };
 }
 
 function profileDescriptionContextFor(emitted: ObservationInput[]): ScraperContext {
   return {
     ...contextFor(emitted),
-    options: { dryRun: true, useCache: false, release: false, only: ['profile-description-backfill'] },
+    options: {
+      dryRun: true,
+      useCache: false,
+      release: false,
+      only: ['profile-description-backfill'],
+    },
   };
 }
 
@@ -1660,6 +1776,7 @@ describe('officialProfilePiBackfillScraper', () => {
         ],
       }),
     ).toEqual([
+      'https://sites.google.com/site/costasmeghir/home/',
       'https://campuspress.yale.edu/rjohnwilliams/',
       'http://www.yale.edu/pollard_lab/',
       'http://www.yale.edu/errington/',
@@ -1683,6 +1800,136 @@ describe('officialProfilePiBackfillScraper', () => {
       imageUrl: 'https://ysm-res.cloudinary.com/image/upload/example/jules-fixture',
     });
     expect(identity?.researchInterests).toEqual(['Cancer biology', 'Translational oncology']);
+  });
+
+  it('fails closed when a nav-menu container is the only title candidate (#708)', () => {
+    const chromeProfileUrl = 'https://quantuminstitute.yale.edu/people/vic-fixture';
+    const chromeProfileHtml = `
+      <html>
+        <head><link rel="canonical" href="${chromeProfileUrl}" /></head>
+        <body><main>
+          <h1>Vic Fixture</h1>
+          <nav class="site-title">HomeAboutResearchPeopleNewsEventsDirector</nav>
+          <a href="mailto:vic.fixture@yale.edu">vic.fixture@yale.edu</a>
+        </main></body>
+      </html>
+    `;
+
+    const identity = extractOfficialProfileIdentity(chromeProfileHtml, chromeProfileUrl, {
+      name: 'Vic Fixture Lab',
+      slug: 'nsf-pi-vic-fixture',
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('falls through to a real title when a nav-menu container precedes it (#708)', () => {
+    const chromeProfileUrl = 'https://quantuminstitute.yale.edu/people/dana-fixture';
+    const chromeProfileHtml = `
+      <html>
+        <head><link rel="canonical" href="${chromeProfileUrl}" /></head>
+        <body><main>
+          <h1>Dana Fixture</h1>
+          <nav class="site-title">HomeAboutResearchPeopleNewsEventsDirector</nav>
+          <div class="appointment">Professor of Chemistry</div>
+          <a href="mailto:dana.fixture@yale.edu">dana.fixture@yale.edu</a>
+        </main></body>
+      </html>
+    `;
+
+    const identity = extractOfficialProfileIdentity(chromeProfileHtml, chromeProfileUrl, {
+      name: 'Dana Fixture Lab',
+      slug: 'nsf-pi-dana-fixture',
+    });
+
+    expect(identity?.title).toBe('Professor of Chemistry');
+  });
+
+  it('splits a Yale Economics "Fields of Interest" section into label-free topic phrases (#616)', () => {
+    const econProfileUrl = 'https://economics.yale.edu/people/john-fixture';
+    const econProfileHtml = `
+      <html>
+        <head><link rel="canonical" href="${econProfileUrl}" /></head>
+        <body><main>
+          <h1>John Fixture</h1>
+          <div class="title">James Tobin Professor of Economics</div>
+          <a href="mailto:john.fixture@yale.edu">john.fixture@yale.edu</a>
+          <div class="node__field-of-interests">
+            <div class="node__aside-label">Fields of Interest</div>
+            <a href="/people?interest=39">Economic Theory</a>
+            <a href="/people?interest=41">Financial Economics</a>
+            <a href="/people?interest=210">International Finance</a>
+            <a href="/people?interest=46">Macroeconomics</a>
+          </div>
+        </main></body>
+      </html>
+    `;
+
+    const identity = extractOfficialProfileIdentity(econProfileHtml, econProfileUrl, {
+      name: 'John Fixture Faculty Research',
+      slug: 'dept-econ-john-fixture',
+    });
+
+    expect(identity?.researchInterests).toEqual([
+      'Economic Theory',
+      'Financial Economics',
+      'International Finance',
+      'Macroeconomics',
+    ]);
+    expect(identity?.researchInterests).not.toContainEqual(
+      expect.stringMatching(/fields of interest/i),
+    );
+  });
+
+  it('rejects a section heading and paragraph prose lifted into "Fields of Interest" terms (#616)', () => {
+    const econProfileUrl = 'https://economics.yale.edu/people/pat-fixture';
+    const econProfileHtml = `
+      <html>
+        <head><link rel="canonical" href="${econProfileUrl}" /></head>
+        <body><main>
+          <h1>Pat Fixture</h1>
+          <div class="title">Professor of Economics</div>
+          <a href="mailto:pat.fixture@yale.edu">pat.fixture@yale.edu</a>
+          <div class="research-interests">
+            Research Areas: Studies fields of interest across many domains. Work spans a broad
+            range of loosely connected long-running questions and methods and applications.
+          </div>
+        </main></body>
+      </html>
+    `;
+
+    const identity = extractOfficialProfileIdentity(econProfileHtml, econProfileUrl, {
+      name: 'Pat Fixture Faculty Research',
+      slug: 'dept-econ-pat-fixture',
+    });
+
+    expect(identity?.researchInterests ?? []).toEqual([]);
+  });
+
+  it('rejects a same-name profile whose netid-style slug differs from the expected lead netid', () => {
+    const netidProfileUrl = 'https://medicine.yale.edu/profile/jf990/';
+    const netidProfileHtml = profileHtml.replace(profileUrl, netidProfileUrl);
+
+    expect(
+      extractOfficialProfileIdentity(netidProfileHtml, netidProfileUrl, {
+        name: 'Jules Fixture Lab',
+        slug: 'nsf-pi-000000000000000000000000',
+        leadUsers: [{ fname: 'Jules', lname: 'Fixture', netid: 'jxf27' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('accepts a netid-style profile slug that matches the expected lead netid', () => {
+    const netidProfileUrl = 'https://medicine.yale.edu/profile/jxf27/';
+    const netidProfileHtml = profileHtml.replace(profileUrl, netidProfileUrl);
+
+    const identity = extractOfficialProfileIdentity(netidProfileHtml, netidProfileUrl, {
+      name: 'Jules Fixture Lab',
+      slug: 'nsf-pi-000000000000000000000000',
+      leadUsers: [{ fname: 'Jules', lname: 'Fixture', netid: 'jxf27' }],
+    });
+
+    expect(identity).toMatchObject({ displayName: 'Jules Fixture' });
   });
 
   it('accepts canonicalized department person pages when both URLs match the entity person', () => {
@@ -1736,7 +1983,8 @@ describe('officialProfilePiBackfillScraper', () => {
       fetchedUrl: 'http://environment.yale.edu/profile/clark/',
       displayName: 'Sage Fixture',
       email: 'sage.fixture@yale.edu',
-      title: 'Jules F. Cullman 3rd Adjunct Professor Emeritus of Wildlife Ecology and Policy Sciences',
+      title:
+        'Jules F. Cullman 3rd Adjunct Professor Emeritus of Wildlife Ecology and Policy Sciences',
     });
   });
 
@@ -1798,6 +2046,195 @@ describe('officialProfilePiBackfillScraper', () => {
       displayName: 'Jordan Mismatch',
       email: '',
     });
+  });
+
+  it('rejects a same-name different-person profile when known emails disagree (#585)', () => {
+    // The entity's real "Jules Fixture" is a historian whose actual Yale email
+    // differs from the medical "Jules Fixture" this fetched profile belongs
+    // to; the shared name must not paper over the known email conflict.
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@aya.yale.edu' }],
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches when the expected email agrees with the fetched profile', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@yale.edu' }],
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
+  it('rejects a guessed medicine.yale.edu profile for an entity whose own school rules out medicine (#585)', () => {
+    // A humanities "Jules Fixture" with no known lead yet must not inherit a
+    // same-name medical professor's areas/website just because the names
+    // collide - the entity's own department says History, not medicine.
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a guessed medicine.yale.edu profile when the entity has no known non-medical discipline', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
+  it('rejects a guessed medicine.yale.edu profile when the known lead has no recorded email to verify identity and the entity rules out medicine (#585)', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture' }],
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a known lead without a recorded email when the entity has no non-medical discipline', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture' }],
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
+  it('rejects a guessed medicine.yale.edu profile that exposes no email when the known lead has one and the entity rules out medicine (#585)', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(emailLessProfileHtml, profileUrl, entity, {
+      requireEmail: false,
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@yale.edu' }],
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a medicine.yale.edu profile whose email confirms the lead even when the entity discipline rules out medicine', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@yale.edu' }],
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
+  it('still matches a guessed engineering.yale.edu profile when the entity has no known non-engineering discipline', () => {
+    const entity = {
+      name: 'Drew Fixture Lab',
+      slug: 'nih-pi-drew-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(
+      engineeringProfileHtml,
+      engineeringProfileUrl,
+      entity,
+      {
+        requireEmail: false,
+      },
+    );
+
+    expect(identity?.displayName).toBe('Drew Fixture');
+  });
+
+  it('rejects a guessed engineering.yale.edu profile when the known lead has no recorded email to verify identity and the entity rules out engineering (#1290)', () => {
+    const entity = {
+      name: 'Fixture Lab',
+      slug: 'ysm-fixture',
+      school: 'Yale School of Medicine',
+      departments: ['Pathology'],
+    };
+
+    const identity = extractOfficialProfileIdentity(
+      engineeringProfileHtml,
+      engineeringProfileUrl,
+      entity,
+      {
+        expectedPeople: [{ fname: 'Drew', lname: 'Fixture' }],
+      },
+    );
+
+    expect(identity).toBeNull();
+  });
+
+  it('rejects a guessed music.yale.edu profile for an entity whose own school rules out music (#1407/#1413)', () => {
+    // music.yale.edu (and the other arts/professional-school hosts) previously
+    // had no entry in SINGLE_DISCIPLINE_PROFILE_HOST_TEXT, so a same-name
+    // composer collision on a physics entity would have inherited the
+    // composer's research interests unchecked.
+    const entity = {
+      name: 'Robin Fixture Research Area',
+      slug: 'faculty-research-area-robin-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['Physics'],
+    };
+
+    const identity = extractOfficialProfileIdentity(musicProfileHtml, musicProfileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a guessed music.yale.edu profile when the entity has no known non-music discipline', () => {
+    const entity = {
+      name: 'Robin Fixture Research Area',
+      slug: 'faculty-research-area-robin-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(musicProfileHtml, musicProfileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity?.displayName).toBe('Robin Fixture');
   });
 
   it('skips profile chrome headings when extracting the appointment title', () => {
@@ -1891,7 +2328,10 @@ describe('officialProfilePiBackfillScraper', () => {
     const longBio =
       'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology '.repeat(
         11,
-      ) + 'Dr. Fixture also mentors students in clinical trial design and translational oncology. '.repeat(5);
+      ) +
+      'Dr. Fixture also mentors students in clinical trial design and translational oncology. '.repeat(
+        5,
+      );
     const identity = extractOfficialProfileIdentity(
       profileHtml.replace(/Jules Fixture studies[\s\S]*?gastrointestinal oncology\./, longBio),
       profileUrl,
@@ -1924,9 +2364,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bio).toBeUndefined();
-    expect(researchInterests?.value).toEqual(
-      expect.arrayContaining(['Sparse and Compressive Sensing Techniques']),
-    );
+    expect(researchInterests).toBeUndefined();
   });
 
   it('does not derive a user bio from official interests when the profile bio is page chrome', () => {
@@ -1947,9 +2385,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bio).toBeUndefined();
-    expect(researchInterests?.value).toEqual(
-      expect.arrayContaining(['Cloud Computing and Resource Management']),
-    );
+    expect(researchInterests).toBeUndefined();
   });
 
   it('does not emit credential-only education blocks as official profile bios', () => {
@@ -1989,7 +2425,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bio).toBeUndefined();
-    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Sustainable chemical separations']));
+    expect(researchInterests).toBeUndefined();
   });
 
   it('does not derive a user bio from official interests when the profile bio is single-citation text', () => {
@@ -2010,7 +2446,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bio).toBeUndefined();
-    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Sustainable chemical separations']));
+    expect(researchInterests).toBeUndefined();
   });
 
   it('does not emit long appointment-only official profile blocks as bios', () => {
@@ -2050,7 +2486,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bio).toBeUndefined();
-    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Calcium signaling']));
+    expect(researchInterests).toBeUndefined();
   });
 
   it('does not emit Yale Medicine clinical-profile call-to-action text as a bio', () => {
@@ -2132,8 +2568,7 @@ describe('officialProfilePiBackfillScraper', () => {
         email: 'jules.fixture@yale.edu',
         title: 'Assistant Professor of Medicine',
         departments: [],
-        bio:
-          'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. For more on this research, refer to Dr. Fixture complete Google Scholar profile.',
+        bio: 'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. For more on this research, refer to Dr. Fixture complete Google Scholar profile.',
         researchInterests: [],
       },
       { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
@@ -2170,7 +2605,7 @@ describe('officialProfilePiBackfillScraper', () => {
     }
   });
 
-  it('can emit profile bio enrichment without broad user identity fields', () => {
+  it('emits only thin profile enrichment fields, dropping bio and interests', () => {
     const obs = identityToUserObservations(
       {
         canonicalUrl: profileUrl,
@@ -2191,17 +2626,11 @@ describe('officialProfilePiBackfillScraper', () => {
       },
     );
 
-    expect(obs.map((o) => o.field).sort()).toEqual([
-      'bio',
-      'imageUrl',
-      'orcid',
-      'researchInterests',
-      'topics',
-    ]);
+    expect(obs.map((o) => o.field).sort()).toEqual(['imageUrl', 'orcid']);
     expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
   });
 
-  it('strips inline email parentheticals before emitting official profile bios', () => {
+  it('no longer emits a user bio from inline-email profile prose', () => {
     const obs = identityToUserObservations(
       {
         canonicalUrl: 'https://medicine.yale.edu/profile/xylo-fixture/',
@@ -2210,8 +2639,7 @@ describe('officialProfilePiBackfillScraper', () => {
         email: 'xylo.fixture@yale.edu',
         title: 'Assistant Professor of Radiology and Biomedical Imaging',
         departments: [],
-        bio:
-          'Xiaofeng joined Yale in 03/2024 as an Assistant Professor (forward related email to: liuxiaof@broadinstitute.org). His research interests are centered around medical imaging, machine learning, and cancer detection.',
+        bio: 'Xiaofeng joined Yale in 03/2024 as an Assistant Professor (forward related email to: liuxiaof@broadinstitute.org). His research interests are centered around medical imaging, machine learning, and cancer detection.',
         researchInterests: ['medical imaging', 'machine learning', 'cancer detection'],
       },
       {
@@ -2219,15 +2647,10 @@ describe('officialProfilePiBackfillScraper', () => {
         email: 'xylo.fixture@yale.edu',
       },
     );
-    const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
-
-    expect(bio).toContain('Xiaofeng joined Yale');
-    expect(bio).toContain('medical imaging');
-    expect(bio).not.toContain('liuxiaof@broadinstitute.org');
-    expect(bio).not.toContain('forward related email');
+    expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
   });
 
-  it('strips leading email and phone chrome before emitting official profile bios', () => {
+  it('no longer emits a user bio from leading email and phone chrome prose', () => {
     const obs = identityToUserObservations(
       {
         canonicalUrl: 'https://medicine.yale.edu/profile/riley-metabolic/',
@@ -2236,8 +2659,7 @@ describe('officialProfilePiBackfillScraper', () => {
         email: 'riley.metabolic@yale.edu',
         title: 'Professor of Cellular and Molecular Physiology',
         departments: [],
-        bio:
-          'Riley Metabolic, Ph.D. Professor Email: riley.metabolic@yale.eduPhone: 737-1216 Dr. Riley Metabolic is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.',
+        bio: 'Riley Metabolic, Ph.D. Professor Email: riley.metabolic@yale.eduPhone: 737-1216 Dr. Riley Metabolic is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.',
         researchInterests: ['mitochondria', 'metabolic regulation', 'central nervous system'],
       },
       {
@@ -2245,13 +2667,7 @@ describe('officialProfilePiBackfillScraper', () => {
         email: 'riley.metabolic@yale.edu',
       },
     );
-    const bio = String(obs.find((o) => o.field === 'bio')?.value || '');
-
-    expect(bio).toMatch(/^Dr\. Riley Metabolic is/);
-    expect(bio).toContain('metabolic regulation');
-    expect(bio).not.toContain('Email:');
-    expect(bio).not.toContain('737-1216');
-    expect(bio).not.toContain('riley.metabolic@yale.edu');
+    expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
   });
 
   it('does not expand a terse official research-interest fragment into a user bio', () => {
@@ -2272,7 +2688,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bioObservation).toBeUndefined();
-    expect(researchInterests?.value).toEqual(expect.arrayContaining(['String theory']));
+    expect(researchInterests).toBeUndefined();
   });
 
   it('does not expand a clean terse official research topic into a user bio', () => {
@@ -2315,7 +2731,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bio).toBeUndefined();
-    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Development Economics']));
+    expect(researchInterests).toBeUndefined();
   });
 
   it('does not emit short topic fragments as visible profile bios', () => {
@@ -2409,7 +2825,10 @@ describe('officialProfilePiBackfillScraper', () => {
       slug: 'faculty-research-area-jules-fixture',
     });
 
-    const obs = identityToUserObservations(identity!, { netid: 'fixture106', email: 'jules.fixture@yale.edu' });
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
 
     expect(obs.every((o) => o.entityType === 'user')).toBe(true);
     expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
@@ -2423,6 +2842,23 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(obs.find((o) => o.field === 'imageUrl')?.value).toBe(
       'https://ysm-res.cloudinary.com/image/upload/example/jules-fixture',
     );
+  });
+
+  it('emits primaryDepartment from a real department-classed profile element', () => {
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    });
+
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
+
+    expect(obs.find((o) => o.field === 'primaryDepartment')).toEqual(
+      expect.objectContaining({ value: 'Surgery', sourceUrl: profileUrl }),
+    );
+    expect(obs.find((o) => o.field === 'departments')).toBeUndefined();
   });
 
   it('emits research-entity description observations from official profile identity', () => {
@@ -2547,6 +2983,65 @@ describe('officialProfilePiBackfillScraper', () => {
     );
   });
 
+  it('emits a real department for a research entity left with no department by the retired #1316 fallback', () => {
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
+      _id: 'entity-1',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    });
+
+    const obs = identityToResearchEntityDepartmentObservations(identity!, {
+      _id: 'entity-1',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'School of Medicine',
+      departments: ['School of Medicine'],
+    });
+
+    expect(obs).toEqual([
+      expect.objectContaining({
+        entityType: 'researchEntity',
+        entityId: 'entity-1',
+        entityKey: 'faculty-research-area-jules-fixture',
+        field: 'departments',
+        value: ['Surgery'],
+        sourceUrl: profileUrl,
+      }),
+    ]);
+  });
+
+  it('emits a real department for a research entity with no departments at all', () => {
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
+      _id: 'entity-1',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    });
+
+    const obs = identityToResearchEntityDepartmentObservations(identity!, {
+      _id: 'entity-1',
+      slug: 'faculty-research-area-jules-fixture',
+      departments: [],
+    });
+
+    expect(obs.map((o) => o.field)).toEqual(['departments']);
+  });
+
+  it('never overwrites a research entity that already has a real, non-school department', () => {
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
+      _id: 'entity-1',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    });
+
+    const obs = identityToResearchEntityDepartmentObservations(identity!, {
+      _id: 'entity-1',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'School of Medicine',
+      departments: ['Oncology'],
+    });
+
+    expect(obs).toEqual([]);
+  });
+
   it('emits inferred PI observations when official profile identity resolves to an existing user', () => {
     const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
       _id: '64f000000000000000000010',
@@ -2620,7 +3115,10 @@ describe('officialProfilePiBackfillScraper', () => {
       },
     );
 
-    const obs = identityToUserObservations(identity!, { netid: 'fixture106', email: 'jules.fixture@yale.edu' });
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
 
     expect(obs.some((o) => o.field === 'primaryDepartment')).toBe(false);
     expect(obs.some((o) => o.field === 'departments')).toBe(false);
@@ -2784,36 +3282,40 @@ describe('officialProfilePiBackfillScraper', () => {
   });
 
   it('resolves duplicate profile URL candidates when exactly one user matches the profile slug', async () => {
-    vi.spyOn(User, 'find').mockReturnValue({
+    const profileUrl = 'https://medicine.yale.edu/profile/harper-sanchez/';
+    vi.spyOn(Researcher, 'find').mockReturnValue({
       select: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       lean: vi.fn().mockResolvedValue([
         {
-          _id: 'user-harold',
-          netid: 'hs7',
-          email: 'harper.sanchez@yale.edu',
-          fname: 'Harper',
-          lname: 'Sanchez',
-          profileUrls: {
-            medicine: 'https://medicine.yale.edu/profile/harper-sanchez/',
-          },
+          _id: 'res-harold',
+          accountId: 'acc-harold',
+          displayName: 'Harper Sanchez',
+          profile: {},
+          profileLinks: [{ kind: 'YALE_OFFICIAL', url: profileUrl }],
+          identifiers: {},
         },
         {
-          _id: 'user-hayde',
-          netid: 'hs272',
-          email: 'hayden.sanchez@yale.edu',
-          fname: 'Hayde',
-          lname: 'Sanchez',
-          profileUrls: {
-            medicine: 'https://medicine.yale.edu/profile/harper-sanchez/',
-          },
+          _id: 'res-hayde',
+          accountId: 'acc-hayde',
+          displayName: 'Hayde Sanchez',
+          profile: {},
+          profileLinks: [{ kind: 'YALE_OFFICIAL', url: profileUrl }],
+          identifiers: {},
         },
+      ]),
+    } as any);
+    vi.spyOn(Account, 'find').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([
+        { _id: 'acc-harold', netid: 'hs7', email: 'harper.sanchez@yale.edu' },
+        { _id: 'acc-hayde', netid: 'hs272', email: 'hayden.sanchez@yale.edu' },
       ]),
     } as any);
 
     const match = await resolveExistingUserForIdentity({
-      canonicalUrl: 'https://medicine.yale.edu/profile/harper-sanchez/',
-      fetchedUrl: 'https://medicine.yale.edu/profile/harper-sanchez/',
+      canonicalUrl: profileUrl,
+      fetchedUrl: profileUrl,
       displayName: 'Harper Sanchez',
       email: '',
       title: 'Assistant Professor',
@@ -2822,42 +3324,10 @@ describe('officialProfilePiBackfillScraper', () => {
     });
 
     expect(match).toEqual({
-      _id: 'user-harold',
+      _id: 'res-harold',
       netid: 'hs7',
       email: 'harper.sanchez@yale.edu',
     });
-  });
-
-  it('runs targeted bio backfill for already linked visible professor profiles', async () => {
-    const emitted: ObservationInput[] = [];
-    const scraper = new OfficialProfilePiBackfillScraper(
-      vi.fn(async () => profileHtml),
-      vi.fn(async () => [
-        {
-          _id: 'entity-1',
-          name: 'Jules Fixture Research Area',
-          slug: 'faculty-research-area-jules-fixture',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
-        },
-      ]),
-      vi.fn(async () => ({ netid: 'fixture106', email: 'jules.fixture@yale.edu' })),
-      vi.fn(async () => [
-        {
-          _id: 'entity-1',
-          name: 'Jules Fixture Research Area',
-          slug: 'faculty-research-area-jules-fixture',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
-        },
-      ]),
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(emitted.find((o) => o.field === 'bio')?.value).toContain(
-      'studies translational cancer biology',
-    );
-    expect(emitted.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
   });
 
   it('runs queued official profile description backfill for source-description entities', async () => {
@@ -2890,10 +3360,7 @@ describe('officialProfilePiBackfillScraper', () => {
         expect.objectContaining({
           entityType: 'researchEntity',
           field: 'sourceUrls',
-          value: [
-            'https://medicine.yale.edu/cancer/profile/jules-fixture',
-            profileUrl,
-          ],
+          value: ['https://medicine.yale.edu/cancer/profile/jules-fixture', profileUrl],
         }),
         expect.objectContaining({
           entityType: 'researchEntity',
@@ -2941,8 +3408,8 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const result = await scraper.run(profileDescriptionContextFor(emitted));
 
-    expect(result).toMatchObject({ observationCount: 1, entitiesObserved: 1 });
-    expect(emitted.map((o) => o.field)).toEqual(['inferredPiUserId']);
+    expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
+    expect(emitted.map((o) => o.field).sort()).toEqual(['departments', 'inferredPiUserId']);
     expect(emitted.find((o) => o.field === 'fullDescription')).toBeUndefined();
     expect(emitted.find((o) => o.field === 'shortDescription')).toBeUndefined();
   });
@@ -2994,6 +3461,24 @@ describe('officialProfilePiBackfillScraper', () => {
     );
   });
 
+  it('does not apply the default profile candidate cap in exhaustive mode', async () => {
+    const profileDescriptionSelector = vi.fn(async () => []);
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => profileHtml),
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      profileDescriptionSelector,
+    );
+    const ctx = profileDescriptionContextFor([]);
+    ctx.options.exhaustive = true;
+
+    await scraper.run(ctx);
+
+    expect(profileDescriptionSelector).toHaveBeenCalledWith(Number.POSITIVE_INFINITY, []);
+  });
+
   it('generates bounded official profile candidates from Yale lead identity', () => {
     expect(
       generatedOfficialProfileUrlCandidatesForPerson({
@@ -3038,307 +3523,13 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const result = await scraper.run(profileDescriptionContextFor(emitted));
 
-    expect(result).toMatchObject({ observationCount: 3, entitiesObserved: 1 });
+    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
     expect(emitted.map((o) => o.field).sort()).toEqual([
+      'departments',
       'fullDescription',
       'shortDescription',
       'sourceUrls',
     ]);
-  });
-
-  it('uses the known linked netid for visible bio repair when the profile omits email', async () => {
-    const emitted: ObservationInput[] = [];
-    const noEmailProfileHtml = profileHtml.replace(
-      '<a href="mailto:jules.fixture@yale.edu">jules.fixture@yale.edu</a>',
-      '<span>contact unavailable</span>',
-    );
-    const scraper = new OfficialProfilePiBackfillScraper(
-      vi.fn(async () => noEmailProfileHtml),
-      vi.fn(async () => []),
-      vi.fn(async () => null),
-      vi.fn(async () => [
-        {
-          _id: 'user-1',
-          netid: 'fixture106',
-          email: 'jules.fixture@yale.edu',
-          name: 'Jules Fixture',
-          slug: 'jules-fixture',
-          websiteUrl: 'https://medicine.yale.edu/cancer/profile/jules-fixture',
-        },
-      ]),
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(emitted.find((o) => o.field === 'bio')?.value).toContain(
-      'studies translational cancer biology',
-    );
-    expect(emitted.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
-    expect(emitted.some((o) => o.field === 'email')).toBe(false);
-  });
-
-  it('uses official department person pages for already linked visible bio backfill', async () => {
-    const emitted: ObservationInput[] = [];
-    const scraper = new OfficialProfilePiBackfillScraper(
-      vi.fn(async () => departmentPersonPageHtml),
-      vi.fn(async () => []),
-      vi.fn(async () => null),
-      vi.fn(async () => [
-        {
-          _id: 'user-3',
-          netid: 'da3',
-          email: 'drew.fixture@yale.edu',
-          fname: 'Drew',
-          lname: 'Fixture',
-          name: 'Drew Fixture',
-          slug: 'drew-fixture',
-          websiteUrl: departmentPersonPageUrl,
-        },
-      ]),
-      vi.fn(async () => []),
-      vi.fn(async () => []),
-      0,
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(emitted.find((o) => o.field === 'bio')?.value).toContain(
-      'algorithmic approaches to learning',
-    );
-    expect(emitted.find((o) => o.field === 'profileUrls')).toBeUndefined();
-    expect(emitted.find((o) => o.field === 'userType')).toBeUndefined();
-    expect(emitted.find((o) => o.field === 'title')).toBeUndefined();
-  });
-
-  it('uses Yale /faculty/ person pages for already linked visible bio backfill', async () => {
-    const emitted: ObservationInput[] = [];
-    const facultyPageUrl = 'https://economics.yale.edu/faculty/drew-fixture/';
-    const facultyPageHtml = departmentPersonPageHtml.replace(
-      departmentPersonPageUrl,
-      facultyPageUrl,
-    );
-    const htmlFetcher = vi.fn(async () => facultyPageHtml);
-    const scraper = new OfficialProfilePiBackfillScraper(
-      htmlFetcher,
-      vi.fn(async () => []),
-      vi.fn(async () => null),
-      vi.fn(async () => [
-        {
-          _id: 'user-faculty-page',
-          netid: 'da3',
-          email: 'drew.fixture@yale.edu',
-          fname: 'Drew',
-          lname: 'Fixture',
-          name: 'Drew Fixture',
-          slug: 'drew-fixture',
-          websiteUrl: facultyPageUrl,
-        },
-      ]),
-      vi.fn(async () => []),
-      vi.fn(async () => []),
-      0,
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(htmlFetcher).toHaveBeenCalledWith(
-      facultyPageUrl,
-      false,
-      'official-profile-pi-backfill',
-    );
-    expect(emitted.find((o) => o.field === 'bio')?.sourceUrl).toBe(facultyPageUrl);
-  });
-
-  it('canonicalizes migrated Sociology people pages to profile pages for visible bio backfill', async () => {
-    const emitted: ObservationInput[] = [];
-    const oldSociologyUrl = 'https://sociology.yale.edu/people/drew-fixture';
-    const currentSociologyUrl = 'https://sociology.yale.edu/profile/drew-fixture/';
-    const sociologyProfileHtml = departmentPersonPageHtml.replace(
-      new RegExp(departmentPersonPageUrl, 'g'),
-      currentSociologyUrl,
-    );
-    const htmlFetcher = vi.fn(async () => sociologyProfileHtml);
-    const scraper = new OfficialProfilePiBackfillScraper(
-      htmlFetcher,
-      vi.fn(async () => []),
-      vi.fn(async () => null),
-      vi.fn(async () => [
-        {
-          _id: 'user-sociology-page',
-          netid: 'da3',
-          email: 'drew.fixture@yale.edu',
-          fname: 'Drew',
-          lname: 'Fixture',
-          name: 'Drew Fixture',
-          slug: 'drew-fixture',
-          profileUrls: {
-            sociology: oldSociologyUrl,
-          },
-        },
-      ]),
-      vi.fn(async () => []),
-      vi.fn(async () => []),
-      0,
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(htmlFetcher).toHaveBeenCalledWith(
-      currentSociologyUrl,
-      false,
-      'official-profile-pi-backfill',
-    );
-    expect(emitted.find((o) => o.field === 'bio')?.sourceUrl).toBe(currentSociologyUrl);
-  });
-
-  it('uses attached research-home profile URLs for already linked visible bio backfill', async () => {
-    const emitted: ObservationInput[] = [];
-    const homeProfileUrl = 'https://medicine.yale.edu/cancer/profile/sage-aitken/';
-    const canonicalHomeProfileUrl = 'https://medicine.yale.edu/profile/sage-aitken/';
-    const homeProfileHtml = profileHtml
-      .replace(new RegExp(profileUrl, 'g'), homeProfileUrl)
-      .replace(/Jules Fixture/g, 'Sage Aitken')
-      .replace(/Jules Fixture/g, 'Sage Aitken')
-      .replace(/jules\.fixture@yale\.edu/g, 'sage.aitken@yale.edu')
-      .replace(/Professor of Surgery \(Oncology\)/g, 'Assistant Professor of Medicine')
-      .replace(
-        /Sage Aitken studies translational cancer biology and develops clinical research\s+programs for gastrointestinal oncology\./,
-        'Sage Aitken studies cancer outcomes, clinical epidemiology, and interventions that improve care delivery for patients with gastrointestinal malignancies.',
-      );
-    const htmlFetcher = vi.fn(async () => homeProfileHtml);
-    const scraper = new OfficialProfilePiBackfillScraper(
-      htmlFetcher,
-      vi.fn(async () => []),
-      vi.fn(async () => null),
-      vi.fn(async () => [
-        {
-          _id: 'user-home-profile',
-          netid: 'sja44',
-          email: 'sage.aitken@yale.edu',
-          fname: 'Sage',
-          lname: 'Aitken',
-          name: 'Sage Aitken',
-          slug: 'sage-aitken',
-          profileUrls: {
-            orcid: 'https://orcid.org/0000-0002-1897-4140',
-          },
-          leadProfileUrls: [homeProfileUrl],
-        },
-      ]),
-      vi.fn(async () => []),
-      vi.fn(async () => []),
-      0,
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(htmlFetcher).toHaveBeenCalledWith(
-      canonicalHomeProfileUrl,
-      false,
-      'official-profile-pi-backfill',
-    );
-    expect(emitted.find((o) => o.field === 'bio')?.value).toContain(
-      'Sage Aitken studies cancer outcomes',
-    );
-    expect(emitted.find((o) => o.field === 'profileUrls')).toBeUndefined();
-    expect(emitted.find((o) => o.field === 'userType')).toBeUndefined();
-    expect(emitted.find((o) => o.field === 'title')).toBeUndefined();
-  });
-
-  it('uses official profile slugs with multi-token given-name variants for visible bio backfill', async () => {
-    const emitted: ObservationInput[] = [];
-    const variantProfileUrl = 'https://medicine.yale.edu/profile/zeynep-erson/';
-    const variantProfileHtml = `
-      <html>
-        <head>
-          <link rel="canonical" href="${variantProfileUrl}" />
-          <meta property="og:title" content="Zeynep Erson Omay | Yale" />
-        </head>
-        <body>
-          <main>
-            <h1>Zeynep Erson Omay</h1>
-            <div class="title">Assistant Professor of Economics</div>
-            <section class="biography">
-              Dr. Erson Omay studies econometric theory, industrial organization, and market
-              design, with work on matching mechanisms, strategic behavior, and policy-relevant
-              empirical methods.
-            </section>
-          </main>
-        </body>
-      </html>
-    `;
-    const htmlFetcher = vi.fn(async () => variantProfileHtml);
-    const scraper = new OfficialProfilePiBackfillScraper(
-      htmlFetcher,
-      vi.fn(async () => []),
-      vi.fn(async () => null),
-      vi.fn(async () => [
-        {
-          _id: 'user-variant',
-          netid: 'zeo1',
-          email: 'zuri.fixture@yale.edu',
-          fname: 'Zeynep Erson',
-          lname: 'Omay',
-          name: 'Zeynep Erson Omay',
-          slug: 'zeynep-erson-omay',
-          websiteUrl: variantProfileUrl,
-        },
-      ]),
-      vi.fn(async () => []),
-      vi.fn(async () => []),
-      0,
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(htmlFetcher).toHaveBeenCalledWith(
-      variantProfileUrl,
-      false,
-      'official-profile-pi-backfill',
-    );
-    expect(emitted.find((o) => o.field === 'bio')?.value).toContain(
-      'Dr. Erson Omay studies econometric theory',
-    );
-  });
-
-  it('selects weak faculty profile targets directly when no public research home is attached', async () => {
-    vi.spyOn(ResearchEntity, 'find').mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([]),
-    } as any);
-    vi.spyOn(User, 'find').mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      sort: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([
-        {
-          _id: 'user-sky-lee',
-          netid: 'sl3248',
-          email: 'sky.lee@yale.edu',
-          fname: 'Sky',
-          lname: 'Lee',
-          userType: 'faculty',
-          bio: '',
-          profileUrls: {
-            departmental: 'https://politicalscience.yale.edu/people/sky-lee/',
-          },
-        },
-      ]),
-    } as any);
-
-    const targets = await selectVisibleProfileBioTargets(10);
-
-    expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({
-      netid: 'sl3248',
-      leadProfileUrls: ['https://politicalscience.yale.edu/people/sky-lee/'],
-    });
   });
 
   it('rejects fetched given-name variant profile pages when the identity is another person', async () => {
@@ -3427,103 +3618,6 @@ describe('officialProfilePiBackfillScraper', () => {
 
     expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
     expect(htmlFetcher).not.toHaveBeenCalled();
-  });
-
-  it('uses a valid department page instead of a stale same-name Medicine profile URL', async () => {
-    const emitted: ObservationInput[] = [];
-    const staleMedicineUrl = 'https://medicine.yale.edu/profile/different-fixture/';
-    const htmlFetcher = vi.fn(async (url: string) => {
-      if (url === staleMedicineUrl) {
-        return departmentPersonPageHtml
-          .replace(/Drew Fixture/g, 'Different Angluin')
-          .replace(/drew\.fixture@yale\.edu/g, 'different.fixture@yale.edu');
-      }
-      return departmentPersonPageHtml;
-    });
-    const scraper = new OfficialProfilePiBackfillScraper(
-      htmlFetcher,
-      vi.fn(async () => []),
-      vi.fn(async () => null),
-      vi.fn(async () => [
-        {
-          _id: 'user-6',
-          netid: 'da3',
-          email: 'drew.fixture@yale.edu',
-          fname: 'Drew',
-          lname: 'Fixture',
-          name: 'Drew Fixture',
-          slug: 'drew-fixture',
-          profileUrls: {
-            medicine: staleMedicineUrl,
-            departmental: departmentPersonPageUrl,
-          },
-        },
-      ]),
-      vi.fn(async () => []),
-      vi.fn(async () => []),
-      0,
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(htmlFetcher).toHaveBeenCalledWith(
-      departmentPersonPageUrl,
-      false,
-      'official-profile-pi-backfill',
-    );
-    expect(emitted.find((o) => o.field === 'bio')?.sourceUrl).toBe(departmentPersonPageUrl);
-  });
-
-  it('tries the next visible profile URL when the preferred profile fetch fails', async () => {
-    const emitted: ObservationInput[] = [];
-    const staleMedicineUrl = 'https://medicine.yale.edu/profile/drew-fixture/';
-    const htmlFetcher = vi.fn(async (url: string) => {
-      if (url === staleMedicineUrl) {
-        throw new Error('Request failed with status code 404');
-      }
-      return departmentPersonPageHtml;
-    });
-    const scraper = new OfficialProfilePiBackfillScraper(
-      htmlFetcher,
-      vi.fn(async () => []),
-      vi.fn(async () => null),
-      vi.fn(async () => [
-        {
-          _id: 'user-fetch-fallback',
-          netid: 'da3',
-          email: 'drew.fixture@yale.edu',
-          fname: 'Drew',
-          lname: 'Fixture',
-          name: 'Drew Fixture',
-          slug: 'drew-fixture',
-          profileUrls: {
-            medicine: staleMedicineUrl,
-            departmental: departmentPersonPageUrl,
-          },
-        },
-      ]),
-      vi.fn(async () => []),
-      vi.fn(async () => []),
-      0,
-    );
-
-    const result = await scraper.run(visibleBioContextFor(emitted));
-
-    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(htmlFetcher).toHaveBeenNthCalledWith(
-      1,
-      staleMedicineUrl,
-      false,
-      'official-profile-pi-backfill',
-    );
-    expect(htmlFetcher).toHaveBeenNthCalledWith(
-      2,
-      departmentPersonPageUrl,
-      false,
-      'official-profile-pi-backfill',
-    );
-    expect(emitted.find((o) => o.field === 'bio')?.sourceUrl).toBe(departmentPersonPageUrl);
   });
 
   it('throttles repeated profile fetches in large visible bio batches', async () => {
@@ -3658,6 +3752,65 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(emitted).toHaveLength(0);
   });
 
+  it('does not attach an institutional research home to a grant-derived PI shell', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => yalePrefixedLeadershipProfileHtml),
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [
+        {
+          _id: 'entity-1',
+          name: 'Morgan Fixture Lab',
+          slug: 'nih-pi-morgan-fixture',
+          sourceUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+          leadUserProfileUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+          leadUsers: [{ fname: 'Morgan', lname: 'Fixture', email: 'morgan.fixture@yale.edu' }],
+        },
+      ]),
+    );
+
+    const result = await scraper.run(profileResearchHomeContextFor(emitted));
+
+    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('still attaches a lab-classified profile-linked home to a grant-derived PI shell', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => profileLinkedExternalLabWebsiteHtml),
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [
+        {
+          _id: 'entity-1',
+          name: 'Hayden Fixture Lab',
+          slug: 'nih-pi-hayden-fixture',
+          sourceUrls: ['https://medicine.yale.edu/profile/hayden-fixture/'],
+          leadUserProfileUrls: ['https://medicine.yale.edu/profile/hayden-fixture/'],
+          leadUsers: [{ fname: 'Hayden', lname: 'Fixture', email: 'hayden.fixture@yale.edu' }],
+        },
+      ]),
+    );
+
+    const result = await scraper.run(profileResearchHomeContextFor(emitted));
+
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+    expect(emitted.find((o) => o.field === 'entityType')?.value).toBe('LAB');
+    expect(emitted.find((o) => o.field === 'name')?.value).toBe('Hayden Fixture Lab');
+  });
+
   it('does not promote navigation programs when the profile only names an unlinked lab', () => {
     const homes = extractOfficialProfileResearchHomes(
       navigationResearchProgramProfileHtml,
@@ -3738,6 +3891,28 @@ describe('officialProfilePiBackfillScraper', () => {
       kind: 'center',
       entityType: 'CENTER',
     });
+  });
+
+  it('truncates a trailing description sentence from a linked lab website name', () => {
+    const homes = extractOfficialProfileResearchHomes(
+      profileLinkedLabWithDescriptionSentenceHtml,
+      'https://medicine.yale.edu/profile/marlow-fixture/',
+    );
+
+    expect(homes[0]?.name).toBe('Marlow Fixture Lab');
+    expect(homes[0]?.name).not.toMatch(/investigat/i);
+    expect(homes[0]?.name).not.toMatch(/[.]/);
+  });
+
+  it('truncates a first-person research blurb from a linked lab website name', () => {
+    const homes = extractOfficialProfileResearchHomes(
+      profileLinkedLabWithFirstPersonBlurbHtml,
+      'https://medicine.yale.edu/profile/quill-fixture/',
+    );
+
+    expect(homes[0]?.name).toBe('Quill Fixture Lab');
+    expect(homes[0]?.name).not.toMatch(/\bwe\b/i);
+    expect(homes[0]?.name).not.toMatch(/divide/i);
   });
 
   it('does not promote daycare or kindergarten profile cards as research homes', () => {
@@ -4088,7 +4263,8 @@ describe('officialProfilePiBackfillScraper', () => {
         }),
         expect.objectContaining({
           field: 'websiteUrl',
-          value: 'https://medicine.yale.edu/internal-medicine/cardio/research/translational-imaging/',
+          value:
+            'https://medicine.yale.edu/internal-medicine/cardio/research/translational-imaging/',
         }),
         expect.objectContaining({
           field: 'sourceUrls',
@@ -4108,7 +4284,9 @@ describe('officialProfilePiBackfillScraper', () => {
         _id: 'entity-caccone',
         slug: 'caccone-lab-ac3',
         name: 'Caccone Lab',
-        sourceUrls: ['https://eeb.yale.edu/people/faculty-research-scientists-lecturer/adalgisa-caccone/'],
+        sourceUrls: [
+          'https://eeb.yale.edu/people/faculty-research-scientists-lecturer/adalgisa-caccone/',
+        ],
       },
       'http://caccone.yale.edu/',
     );
@@ -4136,6 +4314,140 @@ describe('officialProfilePiBackfillScraper', () => {
       }),
     ]);
     expect(obs.map((item) => item.field)).not.toContain('name');
+  });
+
+  it('drops a lead-direct custom-subdomain website candidate the lead does not own', async () => {
+    const emitted: ObservationInput[] = [];
+    const htmlFetcher = vi.fn(
+      async () =>
+        '<body>News: Dr. Karen Seto awarded a prize. Yale Urban brings together scholars across the university.</body>',
+    );
+    const scraper = new OfficialProfilePiBackfillScraper(
+      htmlFetcher,
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      0,
+      vi.fn(async () => undefined),
+      vi.fn(async () => [
+        {
+          _id: 'entity-seto',
+          slug: 'seto-lab-ks53',
+          name: 'Seto Lab',
+          leadDirectWebsiteUrl: 'http://urban.yale.edu/',
+          leadDirectWebsiteLeadNames: ['Karen Seto'],
+        },
+      ]),
+      vi.fn(async () => []),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        only: ['lead-direct-website-backfill'],
+      },
+    });
+
+    expect(htmlFetcher).toHaveBeenCalledWith(
+      'http://urban.yale.edu/',
+      false,
+      'official-profile-pi-backfill',
+    );
+    expect(emitted).toEqual([]);
+    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
+  });
+
+  it('keeps a lead-direct custom-subdomain website candidate the target page credits to the lead', async () => {
+    const emitted: ObservationInput[] = [];
+    const htmlFetcher = vi.fn(async () => '<main>Director: Adalgisa Caccone</main>');
+    const scraper = new OfficialProfilePiBackfillScraper(
+      htmlFetcher,
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      0,
+      vi.fn(async () => undefined),
+      vi.fn(async () => [
+        {
+          _id: 'entity-caccone',
+          slug: 'caccone-lab-ac3',
+          name: 'Caccone Lab',
+          leadDirectWebsiteUrl: 'http://caccone.yale.edu/',
+          leadDirectWebsiteLeadNames: ['Adalgisa Caccone'],
+        },
+      ]),
+      vi.fn(async () => []),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        only: ['lead-direct-website-backfill'],
+      },
+    });
+
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'websiteUrl', value: 'http://caccone.yale.edu/' }),
+      ]),
+    );
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+  });
+
+  it('skips fetch-based verification for a source-url website candidate on a generic Yale subdomain', async () => {
+    const emitted: ObservationInput[] = [];
+    const htmlFetcher = vi.fn(async () => '');
+    const scraper = new OfficialProfilePiBackfillScraper(
+      htmlFetcher,
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      0,
+      vi.fn(async () => undefined),
+      vi.fn(async () => []),
+      vi.fn(async () => [
+        {
+          _id: 'entity-cancer-center',
+          slug: 'cancer-research-lab',
+          name: 'Cancer Research Lab',
+          sourceUrlWebsiteUrl: 'https://medicine.yale.edu/cancer/lab/',
+          sourceUrlWebsiteLeadNames: [],
+        },
+      ]),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        only: ['source-url-website-backfill'],
+      },
+    });
+
+    expect(htmlFetcher).not.toHaveBeenCalled();
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'websiteUrl',
+          value: 'https://medicine.yale.edu/cancer/lab/',
+        }),
+      ]),
+    );
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
   });
 
   it('emits guarded fallback identity observations when no existing user email bridge exists', async () => {

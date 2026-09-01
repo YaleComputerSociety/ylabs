@@ -1,26 +1,20 @@
 /**
- * Shared types and helpers for browsable research homes, listings, and fellowships.
+ * Shared types and helpers for browsable research homes and fellowships.
  */
-import { Listing, Fellowship } from './types';
+import { Fellowship } from './types';
 import { ResearchGroup, ResearchGroupKind } from './researchGroup';
 import {
   DepartmentNameRecord,
   getDepartmentAbbreviation,
   getUniqueDepartmentLabels,
 } from '../utils/departmentNames';
-import {
-  computeAcceptanceVerdict,
-  verdictBadgeStyles,
-  verdictLabel,
-} from '../utils/undergradAcceptance';
-import {
-  getFellowshipCycleStatus,
-  getFellowshipDeadlineSubtitle,
-} from '../utils/fellowshipCycle';
+import { getFellowshipCycleStatus, getFellowshipDeadlineSubtitle } from '../utils/fellowshipCycle';
+import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../utils/programJourney';
 
 export const DEPT_CAP = 3;
 export const TAG_CAP = 3;
+export const FELLOWSHIP_TAG_CAP = 2;
 export const DESCRIPTION_CLAMP_CLASS = 'line-clamp-3';
 
 export function getOrderedDepartments(
@@ -61,7 +55,6 @@ export function getOrderedDeptAbbrs(
 }
 
 export type BrowsableItem =
-  | { type: 'listing'; data: Listing }
   | { type: 'fellowship'; data: Fellowship }
   | { type: 'researchGroup'; data: ResearchGroup };
 
@@ -90,63 +83,16 @@ export function getResearchGroupDisplayName(group: ResearchGroup): string {
   if (group.kind !== 'individual' && group.kind !== 'solo') {
     return group.name;
   }
-  return group.displayName || group.name.replace(/\s+—\s+Research$/i, '').replace(/\s+Research$/i, '');
-}
-
-const PATHWAY_TYPE_LABELS: Record<string, string> = {
-  POSTED_ROLE: 'Posted opening',
-  STUDENT_JOB: 'Student job',
-  RECURRING_PROGRAM: 'Recurring program',
-  COURSE_CREDIT: 'Course credit',
-  SENIOR_THESIS: 'Senior thesis',
-  FELLOWSHIP_FUNDED_PROJECT: 'Fellowship funded',
-  WORK_STUDY: 'Work-study',
-  VOLUNTEER_OUTREACH: 'Volunteer outreach',
-  CENTER_INTERNSHIP: 'Center internship',
-  FACULTY_SUPERVISION: 'Faculty supervision',
-  EXPLORATORY_CONTACT: 'Exploratory contact',
-};
-
-const FORMALIZATION_ONLY_PATHWAY_TYPES = new Set([
-  'COURSE_CREDIT',
-  'SENIOR_THESIS',
-  'FELLOWSHIP_FUNDED_PROJECT',
-]);
-
-export function getResearchEntityPathwaySummary(group: ResearchGroup): string | null {
-  const summary = group.accessSummary;
-  if (!summary) return null;
-  if (summary.hasActivePostedOpportunity) return 'Posted opening available';
-
-  const labels = Array.from(new Set(summary.entryPathwayTypes || []))
-    .filter((type) => !FORMALIZATION_ONLY_PATHWAY_TYPES.has(type))
-    .map((type) => PATHWAY_TYPE_LABELS[type] || type.replace(/_/g, ' ').toLowerCase())
-    .slice(0, 2);
-
-  if (labels.length === 0) return null;
-  return labels.join(' + ');
-}
-
-export function getResearchEntityBestNextStep(group: ResearchGroup): string | null {
-  const bestNextStep = group.accessSummary?.bestNextStep?.trim();
-  if (!bestNextStep || bestNextStep === 'Check back later') return null;
-  return bestNextStep;
+  return (
+    group.displayName || group.name.replace(/\s+—\s+Research$/i, '').replace(/\s+Research$/i, '')
+  );
 }
 
 export function isItemOpen(item: BrowsableItem): boolean {
-  if (item.type === 'listing') {
-    return item.data.hiringStatus >= 0;
-  }
   if (item.type === 'researchGroup') {
-    const { verdict } = computeAcceptanceVerdict(
-      item.data,
-      item.data.accessSummary?.hasActivePostedOpportunity === true,
-    );
-    return verdict === 'verified-accepting' || verdict === 'likely-accepting';
+    return false;
   }
-  const { isAcceptingApplications, deadline } = item.data;
-  const deadlinePassed = deadline ? new Date(deadline) < new Date() : false;
-  return isAcceptingApplications && !deadlinePassed;
+  return getFellowshipApplicationStatus(item.data).isApplicationWindowOpen;
 }
 
 interface TagInfo {
@@ -155,33 +101,56 @@ interface TagInfo {
   text: string;
 }
 
+const normalizeTagLabel = (label: string) => label.trim().toLowerCase();
+
+function dedupeTags(tags: TagInfo[]): TagInfo[] {
+  const kept: TagInfo[] = [];
+  for (const tag of tags) {
+    const norm = normalizeTagLabel(tag.label);
+    if (!norm) continue;
+    if (kept.some((k) => normalizeTagLabel(k.label) === norm)) continue;
+    kept.push(tag);
+  }
+  return kept;
+}
+
 export function getItemTags(
   item: BrowsableItem,
   getColor: (area: string) => { bg: string; text: string },
 ): TagInfo[] {
-  if (item.type === 'listing') {
-    const areas =
-      item.data.researchAreas?.length > 0 ? item.data.researchAreas : item.data.keywords || [];
-    return areas.map((a) => ({ label: a, ...getColor(a) }));
-  }
   if (item.type === 'researchGroup') {
     const areas = item.data.researchAreas || [];
     return areas.map((a) => ({ label: a, ...getColor(a) }));
   }
-  return [
-    ...(item.data.studentFacingCategory
+  const categoryLabel = item.data.studentFacingCategory;
+  const categoryNorm = categoryLabel ? normalizeTagLabel(categoryLabel) : '';
+  const entryModeChipLabel = item.data.entryMode ? entryModeLabel(item.data.entryMode) : '';
+  const entryModeNorm = normalizeTagLabel(entryModeChipLabel);
+  const entryModeImpliedByCategory =
+    !!entryModeNorm && !!categoryNorm && categoryNorm.includes(entryModeNorm);
+  return dedupeTags([
+    ...(item.data.undergraduateOnly === false
       ? [
           {
-            label: item.data.studentFacingCategory,
+            label: 'Graduate',
+            bg: 'bg-violet-50',
+            text: 'text-violet-700',
+          },
+        ]
+      : []),
+    ...(categoryLabel
+      ? [
+          {
+            label: categoryLabel,
             bg: 'bg-sky-50',
             text: 'text-sky-700',
           },
         ]
       : []),
-    ...(item.data.entryMode
+    ...(entryModeChipLabel && !entryModeImpliedByCategory
       ? [
           {
-            label: entryModeLabel(item.data.entryMode),
+            label: entryModeChipLabel,
             bg: 'bg-emerald-50',
             text: 'text-emerald-700',
           },
@@ -197,17 +166,10 @@ export function getItemTags(
       bg: 'bg-purple-50',
       text: 'text-purple-700',
     })),
-  ];
+  ]);
 }
 
 export function getItemSubtitle(item: BrowsableItem): string {
-  if (item.type === 'listing') {
-    const { ownerFirstName, ownerLastName, departments } = item.data;
-    const name = `${ownerFirstName} ${ownerLastName}`;
-    const dept =
-      departments && departments.length > 0 ? getDepartmentAbbreviation(departments[0]) : null;
-    return dept ? `${name} · ${dept}` : name;
-  }
   if (item.type === 'researchGroup') {
     const kind = getResearchGroupKindLabel(item.data.kind);
     const dept =
@@ -220,7 +182,6 @@ export function getItemSubtitle(item: BrowsableItem): string {
 }
 
 export function getItemSubtitleColor(item: BrowsableItem): string {
-  if (item.type === 'listing') return 'text-gray-500';
   if (item.type === 'researchGroup') return 'text-gray-500';
   const status = getFellowshipCycleStatus(item.data);
   if (status.category === 'nextCycle') return 'text-sky-700 font-medium';
@@ -248,19 +209,4 @@ export function getDaysUntilDeadline(item: BrowsableItem): number | null {
   if (item.type !== 'fellowship' || !item.data.deadline) return null;
   const d = new Date(item.data.deadline);
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-}
-
-export function getResearchGroupStatus(item: BrowsableItem): {
-  label: string;
-  className: string;
-} | null {
-  if (item.type !== 'researchGroup') return null;
-  const { verdict } = computeAcceptanceVerdict(
-    item.data,
-    item.data.accessSummary?.hasActivePostedOpportunity === true,
-  );
-  return {
-    label: verdictLabel(verdict),
-    className: verdictBadgeStyles(verdict),
-  };
 }

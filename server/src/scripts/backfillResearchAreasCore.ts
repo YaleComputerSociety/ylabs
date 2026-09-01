@@ -1,0 +1,197 @@
+import type { ResearchAreaCanonicalizer } from '../scrapers/researchAreaCanonicalization';
+
+export interface ResearchAreaBackfillEntityFacts {
+  id: string;
+  slug?: string;
+  name?: string;
+  kind?: string;
+  departments?: string[];
+  existingResearchAreas?: string[];
+  shortDescription?: string;
+  fullDescription?: string;
+}
+
+export interface ResearchAreaBackfillPlanRow {
+  id: string;
+  slug?: string;
+  name?: string;
+  before: string[];
+  after: string[];
+  added: string[];
+  fromExisting: string[];
+  fromDepartments: string[];
+  fromDescription: string[];
+  unmatchedForReview: string[];
+  droppedLeakage: string[];
+  canonicalizationChanged: boolean;
+  changed: boolean;
+}
+
+export interface ResearchAreaBackfillPlanOptions {
+  onlyEmpty: boolean;
+  maxAreas: number;
+}
+
+const DEFAULT_MAX_AREAS = 6;
+
+function cleanList(raw: string[] | undefined): string[] {
+  return (raw || [])
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+function dedupeInOrder(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+export function planResearchAreaBackfillRow(
+  canonicalizer: ResearchAreaCanonicalizer,
+  facts: ResearchAreaBackfillEntityFacts,
+  options: ResearchAreaBackfillPlanOptions,
+): ResearchAreaBackfillPlanRow {
+  const before = cleanList(facts.existingResearchAreas);
+  const existing = canonicalizer.canonicalizeResearchAreas(before);
+  const hadAreas = before.length > 0;
+  const deriveAllowed = !options.onlyEmpty || !hadAreas;
+
+  const textBlob = [facts.name, facts.shortDescription, facts.fullDescription]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n');
+
+  const departmentList = cleanList(facts.departments);
+  const fromDepartments = deriveAllowed
+    ? dedupeInOrder([
+        ...canonicalizer.matchCanonicalResearchAreas(departmentList),
+        ...canonicalizer.deriveResearchAreasFromText(departmentList.join('\n')),
+      ])
+    : [];
+  const fromDescription = deriveAllowed ? canonicalizer.deriveResearchAreasFromText(textBlob) : [];
+
+  const after: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string): void => {
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) return;
+    if (after.length >= options.maxAreas) return;
+    seen.add(key);
+    after.push(value);
+  };
+  for (const value of existing.values) push(value);
+  for (const value of fromDepartments) push(value);
+  for (const value of fromDescription) push(value);
+
+  const afterKeys = new Set(after.map((value) => value.toLocaleLowerCase()));
+  const existingKeys = new Set(existing.values.map((value) => value.toLocaleLowerCase()));
+  const added = after.filter((value) => !existingKeys.has(value.toLocaleLowerCase()));
+  const addedFromDepartments = fromDepartments.filter(
+    (value) =>
+      afterKeys.has(value.toLocaleLowerCase()) && !existingKeys.has(value.toLocaleLowerCase()),
+  );
+  const addedDepartmentKeys = new Set(
+    addedFromDepartments.map((value) => value.toLocaleLowerCase()),
+  );
+  const addedFromDescription = fromDescription.filter(
+    (value) =>
+      afterKeys.has(value.toLocaleLowerCase()) &&
+      !existingKeys.has(value.toLocaleLowerCase()) &&
+      !addedDepartmentKeys.has(value.toLocaleLowerCase()),
+  );
+
+  return {
+    id: facts.id,
+    slug: facts.slug,
+    name: facts.name,
+    before,
+    after,
+    added,
+    fromExisting: existing.values,
+    fromDepartments: addedFromDepartments,
+    fromDescription: addedFromDescription,
+    unmatchedForReview: existing.unmatched,
+    droppedLeakage: existing.dropped,
+    canonicalizationChanged: !arraysEqual(dedupeInOrder(before), existing.values),
+    changed: !arraysEqual(before, after),
+  };
+}
+
+export interface ResearchAreaBackfillSummary {
+  considered: number;
+  changed: number;
+  filledFromEmpty: number;
+  areasAdded: number;
+  distinctRawAreasBefore: number;
+  distinctCanonicalAreasAfter: number;
+  distinctFallThroughToRaw: number;
+  entitiesWithCanonicalizedAreaChange: number;
+  leakageDroppedOccurrences: number;
+  distinctLeakageDropped: number;
+  reviewQueue: Array<{ value: string; count: number }>;
+}
+
+function normalizeDistinctKey(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+export function summarizeResearchAreaBackfill(
+  rows: ResearchAreaBackfillPlanRow[],
+): ResearchAreaBackfillSummary {
+  const reviewCounts = new Map<string, number>();
+  const distinctRawBefore = new Set<string>();
+  const distinctCanonicalAfter = new Set<string>();
+  const distinctLeakage = new Set<string>();
+  let changed = 0;
+  let filledFromEmpty = 0;
+  let areasAdded = 0;
+  let entitiesWithCanonicalizedAreaChange = 0;
+  let leakageDroppedOccurrences = 0;
+  for (const row of rows) {
+    if (row.changed) changed += 1;
+    if (row.canonicalizationChanged) entitiesWithCanonicalizedAreaChange += 1;
+    if (row.before.length === 0 && row.after.length > 0) filledFromEmpty += 1;
+    areasAdded += row.added.length;
+    for (const value of row.before) distinctRawBefore.add(normalizeDistinctKey(value));
+    for (const value of row.fromExisting) distinctCanonicalAfter.add(normalizeDistinctKey(value));
+    for (const value of row.droppedLeakage) {
+      leakageDroppedOccurrences += 1;
+      distinctLeakage.add(normalizeDistinctKey(value));
+    }
+    for (const value of row.unmatchedForReview) {
+      reviewCounts.set(value, (reviewCounts.get(value) || 0) + 1);
+    }
+  }
+  const reviewQueue = [...reviewCounts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((left, right) => right.count - left.count || left.value.localeCompare(right.value));
+  return {
+    considered: rows.length,
+    changed,
+    filledFromEmpty,
+    areasAdded,
+    distinctRawAreasBefore: distinctRawBefore.size,
+    distinctCanonicalAreasAfter: distinctCanonicalAfter.size,
+    distinctFallThroughToRaw: reviewQueue.length,
+    entitiesWithCanonicalizedAreaChange,
+    leakageDroppedOccurrences,
+    distinctLeakageDropped: distinctLeakage.size,
+    reviewQueue,
+  };
+}
+
+export function normalizeMaxAreas(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) return DEFAULT_MAX_AREAS;
+  return Math.floor(value);
+}

@@ -3,6 +3,7 @@
  */
 import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';
+import { navFocusRingSx } from '../utils/focusRing';
 
 const HomeButton = () => {
   const location = useLocation();
@@ -27,6 +28,7 @@ const HomeButton = () => {
         minHeight: '44px',
         padding: { xs: '6px 10px 6px 0px', sm: '6px 16px 6px 0px' },
         marginLeft: { xs: '-10px', sm: '-16px' },
+        ...navFocusRingSx,
       }}
     >
       <img

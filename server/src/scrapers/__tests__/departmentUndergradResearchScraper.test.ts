@@ -38,11 +38,57 @@ const CHEM_HTML = `
 const MCDB_HTML = `
 <main>
   <h1>Undergraduate Research Opportunities</h1>
-  <h4>Undergraduate Research Associate Program with Yale Pediatric Emergency Medicine</h4>
-  <p>The Yale Section of Pediatric Emergency Medicine is recruiting students to join the Undergraduate Research Associate Program.</p>
-  <p>Students will gain hands-on experience working on clinical research studies in the Yale New Haven Children's Hospital pediatric emergency department.</p>
-  <p>Application link: <a href="https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture">Apply here</a></p>
-  <p>Contact: parker.contact@yale.edu</p>
+  <p>Undergraduate students in Molecular, Cellular and Developmental Biology are encouraged to pursue independent research in a faculty laboratory.</p>
+  <p>Students typically identify a faculty mentor whose research interests align with their own and arrange to join the laboratory for course credit or over the summer.</p>
+</main>
+`;
+
+const TOBIN_HTML = `
+<main>
+  <h1>Tobin Undergraduate Research Assistantships</h1>
+  <p>The Tobin Research Assistantship program places undergraduate students with faculty in the Economics department to support ongoing research projects.</p>
+  <p>Contact: coordinator@yale.edu</p>
+  <p>Application link: <a href="https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_synthetic">Apply here</a></p>
+</main>
+`;
+
+const CLICK_HERE_HTML = `
+<main>
+  <h1>History Undergraduate Research</h1>
+  <p>History majors undertake original research projects under the guidance of a faculty adviser during their senior year.</p>
+  <p>Click here for more information.</p>
+</main>
+`;
+
+const URL_FRAGMENT_HTML = `
+<main>
+  <h1>Neuroscience Undergraduate Research Opportunities</h1>
+  <p>Undergraduate students can join a faculty laboratory and apply through the department at https://forms.gle/AbcSyntheticFormXyz to be matched with a research mentor.</p>
+</main>
+`;
+
+const LEAKED_HEADING_HTML = `
+<main>
+  <h1>History Undergraduate Research</h1>
+  <p>Undergraduate Program</p>
+  <p>History majors make extensive use of library resources and create pioneering original research projects with faculty mentors.</p>
+</main>
+`;
+
+const SUBJECT_LESS_HTML = `
+<main>
+  <h1>Molecular Biophysics and Biochemistry Undergraduate Research</h1>
+  <p>The B.S. is designed for students with a strong interest in research and includes an intensive introduction to modern laboratory procedures.</p>
+  <p>Undergraduates conduct research in faculty laboratories during their junior and senior years under close mentorship.</p>
+</main>
+`;
+
+const CHROME_ONLY_HTML = `
+<main>
+  <h1>Chemistry Undergraduate Research</h1>
+  <p>Home Academics Calendar</p>
+  <p>Click here for more information.</p>
+  <p>Copyright Yale University. Privacy policy.</p>
 </main>
 `;
 
@@ -122,6 +168,107 @@ const LINGUISTICS_HTML = `
 </main>
 `;
 
+const CS_RESEARCH_INTERNSHIP_HTML = `
+<html>
+  <header>
+    <nav>
+      <a href="https://admissions.yale.edu/apply">Apply</a>
+      <a href="https://engineering.yale.edu/">Yale School of Engineering</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Research Internship Program</h1>
+    <h2>Computer Science</h2>
+    <p>The Computer Science Research Internship Program at Yale provides applicants with a unique opportunity to conduct cutting-edge research with leading researchers in the field.</p>
+    <p>We welcome applications from all students that are currently pursuing a bachelor, master or PhD degree in Computer Science or related fields.</p>
+    <p><a href="https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform">Apply Now</a></p>
+    <h2>FAQs</h2>
+    <p>A committee of faculty and staff members review applications regularly and try to match applicants with faculty members.</p>
+  </main>
+</html>
+`;
+
+const SOCIOLOGY_HTML = `
+<main>
+  <h1>Senior Project</h1>
+  <p>The intensive major gives undergraduate students an opportunity to undertake a yearlong program of original research resulting in a contribution to sociological knowledge.</p>
+  <p>Students use research methods such as participant observation, in-depth interviewing, and secondary analysis of existing data under faculty guidance.</p>
+</main>
+`;
+
+const BIOMEDICAL_ENGINEERING_HTML = `
+<main>
+  <h1>Undergraduate Study</h1>
+  <h2>Biomedical Engineering</h2>
+  <p>Biomedical Engineering at Yale has exciting opportunities and advanced facilities for undergraduate student research projects.</p>
+  <p>Undergraduates have the opportunity to engage in practical, impactful research from day one alongside faculty mentors.</p>
+</main>
+`;
+
+const BACHELOR_ONLY_NO_RESEARCH_HTML = `
+<main>
+  <h1>Program Overview</h1>
+  <p>The program welcomes applicants pursuing a bachelor degree who are interested in coursework and professional development.</p>
+</main>
+`;
+
+const RESEARCH_WITHOUT_UNDERGRAD_SIGNAL_HTML = `
+<main>
+  <h1>Faculty Research</h1>
+  <p>Our faculty lead an active portfolio of research projects across the discipline.</p>
+</main>
+`;
+
+const HUMANITIES_SENIOR_ESSAY_HTML = `
+<main>
+  <h1>Senior Essay</h1>
+  <p>Home Academics Calendar.</p>
+  <p>In this department, as in others, the Senior Essay consists of an extended research and writing project undertaken with the guidance of a faculty advisor.</p>
+  <p>Interested juniors submit a prospectus to the director of undergraduate studies before beginning the senior essay.</p>
+</main>
+`;
+
+const QUANT_SENIOR_PROJECT_HTML = `
+<main>
+  <h1>Senior Project</h1>
+  <p>The senior project is an opportunity to apply what you have learned to an independent research project, under the mentorship of a faculty advisor, on a topic of mutual interest.</p>
+  <p>Students in the major complete the project during their final year of undergraduate study.</p>
+</main>
+`;
+
+const ENVIRONMENTAL_STUDIES_HTML = `
+<main>
+  <h1>The EVST Senior Essay</h1>
+  <p>The senior thesis is the culmination of the Environmental Studies major for both BA and BS degree programs, and students produce an original research essay that aligns with their concentration.</p>
+  <p>In the senior colloquium EVST 4960, students receive regular guidance about the senior thesis research and writing process from their colloquium instructors and a primary Yale faculty thesis advisor.</p>
+</main>
+`;
+
+const GLOBAL_AFFAIRS_CAPSTONE_HTML = `
+<main>
+  <h1>Undergraduate Capstone Faculty</h1>
+  <p>In place of a senior thesis, Global Affairs seniors may complete a capstone project, an opportunity unique to the major at Yale.</p>
+  <p>Working in small groups and overseen by a Yale faculty member, students complete a public policy project on behalf of a client such as a government agency, not-for-profit, or NGO.</p>
+</main>
+`;
+
+const HISTORY_OF_ART_SENIOR_ESSAY_HTML = `
+<main>
+  <h1>Senior Essay</h1>
+  <p>Home Undergraduate Senior Essay.</p>
+  <p>Majors in the History of Art complete a senior essay, an original research and writing project developed with the guidance of a faculty advisor over the senior year.</p>
+  <p>Interested students submit a senior essay proposal to the director of undergraduate studies before the research and writing begins.</p>
+</main>
+`;
+
+const FILM_MEDIA_SENIOR_REQUIREMENT_HTML = `
+<main>
+  <h1>The Senior Requirement</h1>
+  <p>For the student writing a senior essay in Film and Media Studies, several options are possible.</p>
+  <p>The student may do independent research on a yearlong senior essay, submitting a brief prospectus to the director of undergraduate studies for approval and consulting regularly with a faculty adviser.</p>
+</main>
+`;
+
 function buildContext(
   scraper: DepartmentUndergradResearchScraper,
   emitted: ObservationInput[],
@@ -144,7 +291,7 @@ describe('departmentUndergradResearchScraper', () => {
   it('parses Physics project rows into source-backed lab access records', () => {
     const records = parsePhysicsUndergradResearchPage(PHYSICS_HTML, {
       key: 'physics',
-      url: 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+      url: 'https://physics.yale.edu/undergrad',
       department: 'Physics',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'physics-project-list',
@@ -182,7 +329,7 @@ describe('departmentUndergradResearchScraper', () => {
       `,
       {
         key: 'physics',
-        url: 'https://physics.yale.edu/academics/undergraduate-studies/undergraduate-research',
+        url: 'https://physics.yale.edu/undergrad',
         department: 'Physics',
         school: 'Yale Faculty of Arts and Sciences',
         parser: 'physics-project-list',
@@ -216,7 +363,6 @@ describe('departmentUndergradResearchScraper', () => {
       {
         entityKey: 'department-undergrad-research-chemistry',
         kind: 'program',
-        entityType: 'PROGRAM',
         name: 'Chemistry Undergraduate Research',
         undergradAccessEvidence: true,
         contactRole: 'Faculty member for undergraduate research',
@@ -225,29 +371,117 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records[0].joinPageUrl).toBeUndefined();
   });
 
-  it('parses structured undergraduate application pages as official application routes', () => {
-    const records = parseStructuredOpportunityPage(MCDB_HTML, {
-      key: 'mcdb-urap',
+  it('keys the MCDB department page on its own department, not a cross-listed foreign program (#598)', () => {
+    const mcdbConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'mcdb',
+    );
+
+    expect(mcdbConfig).toMatchObject({
       url: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
       department: 'Molecular, Cellular and Developmental Biology',
-      school: 'Yale Faculty of Arts and Sciences',
-      parser: 'structured-opportunity',
-      title: 'Pediatric Emergency Medicine Undergraduate Research Associate Program',
+      parser: 'general-guidance',
     });
+
+    const records = parseGeneralDepartmentResearchPage(MCDB_HTML, mcdbConfig!);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      entityKey: 'department-undergrad-research-molecular-cellular-and-developmental-biology',
+      name: 'Molecular, Cellular and Developmental Biology Undergraduate Research',
+      kind: 'program',
+      department: 'Molecular, Cellular and Developmental Biology',
+      websiteUrl: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+    });
+    expect(records[0].entityKey).not.toContain('pediatric');
+    expect(records[0].description).toMatch(
+      /^Supports undergraduate research in Molecular, Cellular and Developmental Biology\./,
+    );
+  });
+
+  it('parses structured undergraduate application pages as official application routes', () => {
+    const tobinConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'economics-tobin-ra',
+    );
+
+    expect(tobinConfig).toMatchObject({
+      department: 'Economics',
+      parser: 'structured-opportunity',
+    });
+
+    const records = parseStructuredOpportunityPage(TOBIN_HTML, tobinConfig!);
 
     expect(records).toMatchObject([
       {
-        entityKey:
-          'department-undergrad-research-pediatric-emergency-medicine-undergraduate-research-associate-program',
+        entityKey: 'department-undergrad-research-tobin-undergraduate-research-assistantships',
         kind: 'program',
-        entityType: 'PROGRAM',
-        contactEmail: 'parker.contact@yale.edu',
-        joinPageUrl: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture',
+        department: 'Economics',
+        joinPageUrl: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_synthetic',
+        contactEmail: 'coordinator@yale.edu',
+        contactRole: 'Program contact for undergraduate research',
       },
     ]);
+    expect(records[0].description).toMatch(/^Supports undergraduate research in Economics\./);
+    expect(records[0].description).not.toContain('coordinator@');
   });
 
-  it('emits observations that the access materializer can derive pathways from', () => {
+  it('drops sourceChrome, URL fragments, subject-less fragments, and leaked headings (#598)', () => {
+    const historyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'history',
+    )!;
+    const neuroscienceConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'neuroscience',
+    )!;
+    const mbbConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'molecular-biophysics-biochemistry',
+    )!;
+
+    const [clickHere] = parseGeneralDepartmentResearchPage(CLICK_HERE_HTML, historyConfig);
+    expect(clickHere.description).toContain('History majors undertake original research projects');
+    expect(clickHere.description).not.toMatch(/click here/i);
+    expect(clickHere.description).not.toMatch(/more information/i);
+
+    const [urlFragment] = parseGeneralDepartmentResearchPage(URL_FRAGMENT_HTML, neuroscienceConfig);
+    expect(urlFragment.description).toContain('matched with a research mentor');
+    expect(urlFragment.description).not.toContain('forms.gle');
+    expect(urlFragment.description).not.toContain('AbcSyntheticFormXyz');
+    expect(urlFragment.description).not.toMatch(/https?:\/\//);
+
+    const [leakedHeading] = parseGeneralDepartmentResearchPage(LEAKED_HEADING_HTML, historyConfig);
+    expect(leakedHeading.description).toContain(
+      'History majors make extensive use of library resources',
+    );
+    expect(leakedHeading.description).not.toContain('Undergraduate Program History majors');
+
+    const [subjectLess] = parseGeneralDepartmentResearchPage(SUBJECT_LESS_HTML, mbbConfig);
+    expect(subjectLess.description).toContain(
+      'Undergraduates conduct research in faculty laboratories',
+    );
+    const subjectLessBody = subjectLess.description
+      .replace('Supports undergraduate research in Molecular Biophysics and Biochemistry.', '')
+      .trim();
+    expect(subjectLessBody).toMatch(/^[A-Z]/);
+    expect(subjectLess.description).not.toMatch(/Biochemistry\.\s+is designed/);
+  });
+
+  it('fails closed to a minimal subject line instead of dumping raw chrome (#598)', () => {
+    const chemistryConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'chemistry',
+    )!;
+
+    const [record] = parseGeneralDepartmentResearchPage(CHROME_ONLY_HTML, chemistryConfig);
+
+    expect(record.description).toBe('Supports undergraduate research in Chemistry.');
+    expect(record.description).not.toContain('Home Academics');
+    expect(record.description).not.toContain('Copyright');
+    expect(record.description).not.toMatch(/click here/i);
+
+    const observations = departmentUndergradResearchRecordsToObservations([record]);
+    expect(observations.map((observation) => observation.field)).not.toContain(
+      'undergradEvidenceQuote',
+    );
+  });
+
+  it('emits fellowship observations for a department program page', () => {
     const [record] = parseGeneralDepartmentResearchPage(CHEM_HTML, {
       key: 'chemistry',
       url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
@@ -258,20 +492,26 @@ describe('departmentUndergradResearchScraper', () => {
     });
     const observations = departmentUndergradResearchRecordsToObservations([record]);
 
+    expect(observations.every((observation) => observation.entityType === 'fellowship')).toBe(true);
     expect(observations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ entityKey: record.entityKey, field: 'acceptingUndergrads', value: true }),
         expect.objectContaining({
           entityKey: record.entityKey,
-          field: 'undergradAccessEvidence',
-          value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
+          field: 'sourceKey',
+          value: record.entityKey,
         }),
-        expect.objectContaining({ entityKey: record.entityKey, field: 'undergradEvidenceQuote' }),
+        expect.objectContaining({
+          entityKey: record.entityKey,
+          field: 'title',
+          value: record.name,
+        }),
+        expect.objectContaining({ entityKey: record.entityKey, field: 'programKind' }),
+        expect.objectContaining({ entityKey: record.entityKey, field: 'applicationLink' }),
       ]),
     );
   });
 
-  it('emits general department guidance as entity/access evidence, not posted-opportunity fields', () => {
+  it('emits general department guidance as a program/fellowship, not posted-opportunity fields', () => {
     const [record] = parseGeneralDepartmentResearchPage(CHEM_HTML, {
       key: 'chemistry',
       url: 'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
@@ -286,14 +526,14 @@ describe('departmentUndergradResearchScraper', () => {
 
     expect(fields).toEqual(
       expect.arrayContaining([
-        'name',
-        'kind',
-        'entityType',
-        'departments',
-        'sourceUrls',
-        'undergradAccessEvidence',
-        'undergradEvidenceQuote',
-        'contactRole',
+        'sourceKey',
+        'sourceName',
+        'title',
+        'summary',
+        'description',
+        'programCategory',
+        'programKind',
+        'applicationLink',
       ]),
     );
     expect(fields).not.toEqual(
@@ -313,7 +553,9 @@ describe('departmentUndergradResearchScraper', () => {
     const astronomyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
       (page) => page.key === 'astronomy',
     );
-    const eebConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === 'eeb');
+    const eebConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'eeb',
+    );
 
     expect(astronomyConfig).toMatchObject({
       url: 'https://astronomy.yale.edu/academics/undergraduate-program/undergraduate-research',
@@ -336,7 +578,6 @@ describe('departmentUndergradResearchScraper', () => {
         entityKey: 'department-undergrad-research-astronomy',
         name: 'Astronomy Undergraduate Research',
         kind: 'program',
-        entityType: 'PROGRAM',
         sourceUrl: astronomyConfig!.url,
         description: expect.stringContaining('direct supervision of a faculty member'),
         undergradAccessEvidence: true,
@@ -345,7 +586,6 @@ describe('departmentUndergradResearchScraper', () => {
         entityKey: 'department-undergrad-research-ecology-and-evolutionary-biology',
         name: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
         kind: 'program',
-        entityType: 'PROGRAM',
         sourceUrl: eebConfig!.url,
         description: expect.stringContaining('carry out research in the laboratory'),
         undergradAccessEvidence: true,
@@ -355,15 +595,17 @@ describe('departmentUndergradResearchScraper', () => {
       expect.arrayContaining([
         expect.objectContaining({
           entityKey: 'department-undergrad-research-astronomy',
-          field: 'fullDescription',
+          entityType: 'fellowship',
+          field: 'description',
           sourceUrl: astronomyConfig!.url,
           value: expect.stringContaining('undergraduate students'),
         }),
         expect.objectContaining({
           entityKey: 'department-undergrad-research-ecology-and-evolutionary-biology',
-          field: 'undergradAccessEvidence',
+          entityType: 'fellowship',
+          field: 'title',
           sourceUrl: eebConfig!.url,
-          value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
+          value: 'Ecology and Evolutionary Biology Undergraduate Research Opportunities',
         }),
       ]),
     );
@@ -391,7 +633,7 @@ describe('departmentUndergradResearchScraper', () => {
       department: 'Anthropology',
     });
     expect(configsByKey.get('earth-planetary-sciences')).toMatchObject({
-      url: 'https://earth.yale.edu/resources',
+      url: 'https://earth.yale.edu/undergraduate-program',
       parser: 'general-guidance',
       department: 'Earth and Planetary Sciences',
     });
@@ -408,8 +650,14 @@ describe('departmentUndergradResearchScraper', () => {
 
     const records = [
       ...parseGeneralDepartmentResearchPage(ANTHROPOLOGY_HTML, configsByKey.get('anthropology')!),
-      ...parseGeneralDepartmentResearchPage(EARTH_HTML, configsByKey.get('earth-planetary-sciences')!),
-      ...parseGeneralDepartmentResearchPage(POLITICAL_SCIENCE_HTML, configsByKey.get('political-science')!),
+      ...parseGeneralDepartmentResearchPage(
+        EARTH_HTML,
+        configsByKey.get('earth-planetary-sciences')!,
+      ),
+      ...parseGeneralDepartmentResearchPage(
+        POLITICAL_SCIENCE_HTML,
+        configsByKey.get('political-science')!,
+      ),
       ...parseGeneralDepartmentResearchPage(HISTORY_HTML, configsByKey.get('history')!),
     ];
 
@@ -424,7 +672,7 @@ describe('departmentUndergradResearchScraper', () => {
         expect.objectContaining({
           entityKey: 'department-undergrad-research-earth-and-planetary-sciences',
           name: 'Earth and Planetary Sciences Research Opportunities',
-          sourceUrl: 'https://earth.yale.edu/resources',
+          sourceUrl: 'https://earth.yale.edu/undergraduate-program',
         }),
         expect.objectContaining({
           entityKey: 'department-undergrad-research-political-science',
@@ -480,22 +728,18 @@ describe('departmentUndergradResearchScraper', () => {
         expect.objectContaining({
           entityKey: 'department-undergrad-research-neuroscience',
           name: 'Neuroscience Undergraduate Research Opportunities',
-          entityType: 'PROGRAM',
           undergradAccessEvidence: true,
           sourceUrl: 'https://neuroscience.yale.edu/research-opportunities',
         }),
         expect.objectContaining({
-          entityKey:
-            'department-undergrad-research-molecular-biophysics-and-biochemistry',
+          entityKey: 'department-undergrad-research-molecular-biophysics-and-biochemistry',
           name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
-          entityType: 'PROGRAM',
           undergradAccessEvidence: true,
           sourceUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
         }),
         expect.objectContaining({
           entityKey: 'department-undergrad-research-linguistics',
           name: 'Linguistics Undergraduate Research Opportunities',
-          entityType: 'PROGRAM',
           undergradAccessEvidence: true,
           sourceUrl:
             'https://ling.yale.edu/academics/undergraduate/research-opportunities/linguistics-research-opportunities-yale',
@@ -508,6 +752,340 @@ describe('departmentUndergradResearchScraper', () => {
     expect(observations.map((observation) => observation.field)).not.toEqual(
       expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline']),
     );
+  });
+
+  it('covers Computer Science research internship as an official application route (#1281)', () => {
+    const csConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'computer-science',
+    );
+
+    expect(csConfig).toMatchObject({
+      url: 'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      department: 'Computer Science',
+      school: 'Yale School of Engineering & Applied Science',
+      parser: 'structured-opportunity',
+    });
+
+    const records = parseStructuredOpportunityPage(CS_RESEARCH_INTERNSHIP_HTML, csConfig!);
+
+    expect(records).toMatchObject([
+      {
+        entityKey: 'department-undergrad-research-computer-science-research-internship-program',
+        name: 'Computer Science Research Internship Program',
+        kind: 'program',
+        department: 'Computer Science',
+        joinPageUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform',
+      },
+    ]);
+    expect(records[0].description).toMatch(
+      /^Supports undergraduate research in Computer Science\./,
+    );
+
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+    expect(observations.map((observation) => observation.field)).not.toEqual(
+      expect.arrayContaining(['postedOpportunityTitle', 'applicationUrl', 'deadline']),
+    );
+  });
+
+  it('accepts bachelor-degree undergraduate signals so CS-style pages are not dropped (#1281)', () => {
+    const csConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'computer-science',
+    )!;
+
+    expect(parseStructuredOpportunityPage(BACHELOR_ONLY_NO_RESEARCH_HTML, csConfig)).toEqual([]);
+    expect(
+      parseGeneralDepartmentResearchPage(RESEARCH_WITHOUT_UNDERGRAD_SIGNAL_HTML, csConfig),
+    ).toEqual([]);
+  });
+
+  it('picks the in-content application form over a global navigation apply link (#1281)', () => {
+    const csConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'computer-science',
+    )!;
+
+    const [record] = parseStructuredOpportunityPage(CS_RESEARCH_INTERNSHIP_HTML, csConfig);
+
+    expect(record.joinPageUrl).toBe(
+      'https://docs.google.com/forms/d/e/1FAIpQLSyntheticCsRip/viewform',
+    );
+    expect(record.joinPageUrl).not.toContain('admissions.yale.edu');
+  });
+
+  it('covers Sociology and Biomedical Engineering undergraduate research pages (#1281)', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+
+    expect(configsByKey.get('sociology')).toMatchObject({
+      url: 'https://sociology.yale.edu/undergraduate-program/senior-project',
+      parser: 'general-guidance',
+      department: 'Sociology',
+    });
+    expect(configsByKey.get('biomedical-engineering')).toMatchObject({
+      url: 'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/undergraduate-study',
+      school: 'Yale School of Engineering & Applied Science',
+      parser: 'general-guidance',
+      department: 'Biomedical Engineering',
+    });
+
+    const records = [
+      ...parseGeneralDepartmentResearchPage(SOCIOLOGY_HTML, configsByKey.get('sociology')!),
+      ...parseGeneralDepartmentResearchPage(
+        BIOMEDICAL_ENGINEERING_HTML,
+        configsByKey.get('biomedical-engineering')!,
+      ),
+    ];
+
+    expect(records).toMatchObject([
+      {
+        entityKey: 'department-undergrad-research-sociology',
+        name: 'Sociology Undergraduate Research',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('yearlong program of original research'),
+      },
+      {
+        entityKey: 'department-undergrad-research-biomedical-engineering',
+        name: 'Biomedical Engineering Undergraduate Research',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('undergraduate student research projects'),
+      },
+    ]);
+
+    const observations = departmentUndergradResearchRecordsToObservations(records);
+    expect(observations.map((observation) => observation.field)).not.toEqual(
+      expect.arrayContaining([
+        'postedOpportunityTitle',
+        'applicationUrl',
+        'deadline',
+        'joinPageUrl',
+      ]),
+    );
+  });
+
+  it('configures Statistics and Data Science and humanities senior-essay departments (#1460)', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+
+    expect(configsByKey.get('statistics-and-data-science')).toMatchObject({
+      url: 'https://statistics.yale.edu/undergraduates/the-major/49104920-senior-essay',
+      parser: 'general-guidance',
+      department: 'Statistics and Data Science',
+    });
+    expect(configsByKey.get('english')).toMatchObject({
+      url: 'https://english.yale.edu/undergraduate/senior-essay',
+      parser: 'general-guidance',
+      department: 'English',
+    });
+    expect(configsByKey.get('comparative-literature')).toMatchObject({
+      parser: 'general-guidance',
+      department: 'Comparative Literature',
+    });
+    expect(configsByKey.get('religious-studies')).toMatchObject({
+      parser: 'general-guidance',
+      department: 'Religious Studies',
+    });
+    expect(configsByKey.get('american-studies')).toMatchObject({
+      parser: 'general-guidance',
+      department: 'American Studies',
+    });
+    expect(configsByKey.get('womens-gender-sexuality-studies')).toMatchObject({
+      parser: 'general-guidance',
+      department: "Women's, Gender, and Sexuality Studies",
+    });
+
+    for (const config of DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES) {
+      expect(new URL(config.url).protocol).toBe('https:');
+    }
+  });
+
+  it('tolerates humanities senior-essay prose and emits source-backed access evidence (#1460)', () => {
+    const englishConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'english',
+    )!;
+
+    const [record] = parseGeneralDepartmentResearchPage(
+      HUMANITIES_SENIOR_ESSAY_HTML,
+      englishConfig,
+    );
+
+    expect(record).toMatchObject({
+      entityKey: 'department-undergrad-research-english',
+      kind: 'program',
+      department: 'English',
+      undergradAccessEvidence: true,
+    });
+    expect(record.description).toMatch(/^Supports undergraduate research in English\./);
+    expect(record.description).toContain('extended research and writing project');
+    expect(record.description).toContain('prospectus to the director of undergraduate studies');
+    expect(record.description).not.toMatch(/Home Academics Calendar/);
+    expect(record.evidenceQuote).toContain('faculty advisor');
+    expect(record.contactEmail).toBeUndefined();
+    expect(record.joinPageUrl).toBeUndefined();
+
+    const fields = departmentUndergradResearchRecordsToObservations([record]).map(
+      (observation) => observation.field,
+    );
+    expect(fields).toEqual(
+      expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
+    );
+    expect(fields).not.toEqual(
+      expect.arrayContaining([
+        'postedOpportunityTitle',
+        'opportunityTitle',
+        'applicationUrl',
+        'deadline',
+        'contactEmail',
+        'joinPageUrl',
+      ]),
+    );
+  });
+
+  it('tolerates a quantitative senior-project pathway without fabricating openings (#1460)', () => {
+    const sdsConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'statistics-and-data-science',
+    )!;
+
+    const [record] = parseGeneralDepartmentResearchPage(QUANT_SENIOR_PROJECT_HTML, sdsConfig);
+
+    expect(record).toMatchObject({
+      entityKey: 'department-undergrad-research-statistics-and-data-science',
+      department: 'Statistics and Data Science',
+      undergradAccessEvidence: true,
+    });
+    expect(record.description).toContain('independent research project');
+    expect(record.evidenceQuote).toContain('senior project');
+
+    const fields = departmentUndergradResearchRecordsToObservations([record]).map(
+      (observation) => observation.field,
+    );
+    expect(fields).toContain('description');
+    expect(fields).not.toEqual(
+      expect.arrayContaining([
+        'postedOpportunityTitle',
+        'applicationUrl',
+        'deadline',
+        'joinPageUrl',
+      ]),
+    );
+  });
+
+  it('still drops research pages that carry neither an undergraduate nor a senior-essay signal (#1460)', () => {
+    const englishConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'english',
+    )!;
+
+    expect(
+      parseGeneralDepartmentResearchPage(RESEARCH_WITHOUT_UNDERGRAD_SIGNAL_HTML, englishConfig),
+    ).toEqual([]);
+  });
+
+  it('covers Environmental Studies, Global Affairs, History of Art, and Film & Media Studies pathway pages (#1647)', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+
+    expect(configsByKey.get('environmental-studies')).toMatchObject({
+      url: 'https://evst.yale.edu/evst-senior-essay',
+      parser: 'general-guidance',
+      department: 'Environmental Studies',
+    });
+    expect(configsByKey.get('global-affairs')).toMatchObject({
+      url: 'https://jackson.yale.edu/faculty-research/undergraduate-capstone-faculty',
+      parser: 'general-guidance',
+      department: 'Global Affairs',
+      school: 'Jackson School of Global Affairs',
+    });
+    expect(configsByKey.get('history-of-art')).toMatchObject({
+      url: 'https://arthistory.yale.edu/undergraduate/senior-essay',
+      parser: 'general-guidance',
+      department: 'History of Art',
+    });
+    expect(configsByKey.get('film-and-media-studies')).toMatchObject({
+      url: 'https://filmstudies.yale.edu/undergraduate/senior-requirement',
+      parser: 'general-guidance',
+      department: 'Film and Media Studies',
+    });
+
+    const records = [
+      ...parseGeneralDepartmentResearchPage(
+        ENVIRONMENTAL_STUDIES_HTML,
+        configsByKey.get('environmental-studies')!,
+      ),
+      ...parseGeneralDepartmentResearchPage(
+        GLOBAL_AFFAIRS_CAPSTONE_HTML,
+        configsByKey.get('global-affairs')!,
+      ),
+      ...parseGeneralDepartmentResearchPage(
+        HISTORY_OF_ART_SENIOR_ESSAY_HTML,
+        configsByKey.get('history-of-art')!,
+      ),
+      ...parseGeneralDepartmentResearchPage(
+        FILM_MEDIA_SENIOR_REQUIREMENT_HTML,
+        configsByKey.get('film-and-media-studies')!,
+      ),
+    ];
+
+    expect(records).toMatchObject([
+      {
+        entityKey: 'department-undergrad-research-environmental-studies',
+        name: 'Environmental Studies Senior Essay Research',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('original research essay'),
+      },
+      {
+        entityKey: 'department-undergrad-research-global-affairs',
+        name: 'Global Affairs Undergraduate Capstone Research',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('capstone project'),
+      },
+      {
+        entityKey: 'department-undergrad-research-history-of-art',
+        name: 'History of Art Senior Essay Research',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('original research and writing project'),
+      },
+      {
+        entityKey: 'department-undergrad-research-film-and-media-studies',
+        name: 'Film and Media Studies Senior Essay Research',
+        undergradAccessEvidence: true,
+        description: expect.stringContaining('independent research'),
+      },
+    ]);
+
+    const capstoneRecord = records.find(
+      (record) => record.entityKey === 'department-undergrad-research-global-affairs',
+    )!;
+    expect(capstoneRecord.evidenceQuote).toContain('capstone project');
+
+    const fields = departmentUndergradResearchRecordsToObservations(records).map(
+      (observation) => observation.field,
+    );
+    expect(fields).toEqual(
+      expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
+    );
+    expect(fields).not.toEqual(
+      expect.arrayContaining([
+        'postedOpportunityTitle',
+        'applicationUrl',
+        'deadline',
+        'joinPageUrl',
+      ]),
+    );
+  });
+
+  it('recognizes an undergraduate capstone project as a senior research pathway (#1647)', () => {
+    const globalAffairsConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'global-affairs',
+    )!;
+
+    const [record] = parseGeneralDepartmentResearchPage(
+      GLOBAL_AFFAIRS_CAPSTONE_HTML,
+      globalAffairsConfig,
+    );
+
+    expect(record.description).toMatch(/^Supports undergraduate research in Global Affairs\./);
+    expect(record.description).toContain('capstone project');
   });
 
   it('runs selected configured pages and honors only filters', async () => {
@@ -543,6 +1121,139 @@ describe('departmentUndergradResearchScraper', () => {
     expect(scraper.name).toBe(DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE);
   });
 
+  it('skips a page whose fetch fails and still processes the remaining pages (#2171)', async () => {
+    const scraper = new DepartmentUndergradResearchScraper({
+      pageConfigs: [
+        {
+          key: 'physics',
+          url: 'https://physics.yale.edu/dead-page',
+          department: 'Physics',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'physics-project-list',
+        },
+        {
+          key: 'chemistry',
+          url: 'https://chem.yale.edu/undergrad',
+          department: 'Chemistry',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'general-guidance',
+          title: 'Chemistry Undergraduate Research',
+        },
+      ],
+      fetchHtml: async (url) => {
+        if (url.includes('physics')) {
+          const error = new Error('Request failed with status code 404') as Error & {
+            response?: { status: number };
+          };
+          error.response = { status: 404 };
+          throw error;
+        }
+        return CHEM_HTML;
+      },
+    });
+    const emitted: ObservationInput[] = [];
+
+    const result = await scraper.run(buildContext(scraper, emitted));
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.observationCount).toBe(emitted.length);
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(new Set(emitted.map((obs) => obs.sourceUrl))).toEqual(
+      new Set(['https://chem.yale.edu/undergrad']),
+    );
+    expect(result.notes).toContain('1 page(s) skipped after fetch/parse failure');
+    expect(result.fetchMetrics?.summary).toMatchObject({ total: 2, succeeded: 1, failed: 1 });
+    expect(result.fetchMetrics?.attempts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: 'https://physics.yale.edu/dead-page',
+          success: false,
+          statusCode: 404,
+        }),
+        expect.objectContaining({ target: 'https://chem.yale.edu/undergrad', success: true }),
+      ]),
+    );
+  });
+
+  it('skips a page whose body cannot be parsed and still processes the remaining pages (#2171)', async () => {
+    const scraper = new DepartmentUndergradResearchScraper({
+      pageConfigs: [
+        {
+          key: 'physics',
+          url: 'https://physics.yale.edu/dead-page',
+          department: 'Physics',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'physics-project-list',
+        },
+        {
+          key: 'chemistry',
+          url: 'https://chem.yale.edu/undergrad',
+          department: 'Chemistry',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'general-guidance',
+          title: 'Chemistry Undergraduate Research',
+        },
+      ],
+      fetchHtml: async (url) => (url.includes('physics') ? (null as unknown as string) : CHEM_HTML),
+    });
+    const emitted: ObservationInput[] = [];
+
+    const result = await scraper.run(buildContext(scraper, emitted));
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(result.observationCount).toBe(emitted.length);
+    expect(new Set(emitted.map((obs) => obs.sourceUrl))).toEqual(
+      new Set(['https://chem.yale.edu/undergrad']),
+    );
+    expect(result.notes).toContain('1 page(s) skipped after fetch/parse failure');
+    expect(result.fetchMetrics?.summary).toMatchObject({
+      total: 2,
+      succeeded: 1,
+      failed: 1,
+      selectorBreakages: 1,
+    });
+    expect(result.fetchMetrics?.attempts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: 'https://physics.yale.edu/dead-page',
+          success: false,
+          selectorBreakage: true,
+        }),
+      ]),
+    );
+  });
+
+  it('fails the run when every attempted page fails so source health stays loud (#2171)', async () => {
+    const scraper = new DepartmentUndergradResearchScraper({
+      pageConfigs: [
+        {
+          key: 'physics',
+          url: 'https://physics.yale.edu/dead-page',
+          department: 'Physics',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'physics-project-list',
+        },
+        {
+          key: 'chemistry',
+          url: 'https://chem.yale.edu/dead-page',
+          department: 'Chemistry',
+          school: 'Yale Faculty of Arts and Sciences',
+          parser: 'general-guidance',
+          title: 'Chemistry Undergraduate Research',
+        },
+      ],
+      fetchHtml: async () => {
+        throw new Error('Request failed with status code 404');
+      },
+    });
+    const emitted: ObservationInput[] = [];
+
+    await expect(scraper.run(buildContext(scraper, emitted))).rejects.toThrow(
+      /Every attempted department undergraduate research page failed \(2\/2\)/,
+    );
+    expect(emitted).toEqual([]);
+  });
+
   it('rejects unsafe runtime bounds before fetching department pages', async () => {
     for (const [option, message] of [
       [{ offset: 9007199254740992 }, /--offset must be a safe non-negative integer/],
@@ -569,5 +1280,16 @@ describe('departmentUndergradResearchScraper', () => {
       expect(fetchHtml).not.toHaveBeenCalled();
       expect(emitted).toEqual([]);
     }
+  });
+
+  it('points every configured page at a student-facing research engagement path so its sourceUrl clears the organizational access-path gate (#1359)', () => {
+    const engagementPath =
+      /(undergrad|research|opportunit|for-students|senior-essay|senior-project)/i;
+    const offenders = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.filter((page) => {
+      const path = new URL(page.url).pathname;
+      return !engagementPath.test(path);
+    }).map((page) => `${page.key} -> ${page.url}`);
+
+    expect(offenders).toEqual([]);
   });
 });

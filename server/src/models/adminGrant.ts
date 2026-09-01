@@ -49,6 +49,18 @@ const adminGrantSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    history: {
+      type: [
+        {
+          action: { type: String, enum: ['granted', 'revoked'], required: true },
+          actorNetid: { type: String, required: true, lowercase: true, trim: true },
+          note: { type: String, required: true },
+          at: { type: Date, required: true },
+          _id: false,
+        },
+      ],
+      default: [],
+    },
   },
   {
     collection: 'admin_grants',

@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import axios from 'axios';
+import mongoose from 'mongoose';
 import {
   NihReporterScraper,
   canonicalPiName,
@@ -16,9 +17,13 @@ import {
   piEntityKey,
   piSlugForResearchGroup,
   groupGrantsByPi,
+  isTraineeFellowshipGrant,
   grantToRecord,
+  grantAbstractToDescription,
+  labDescriptionFromRecentGrants,
   piGrantsToObservations,
   findUserForPi,
+  resolveUserForPi,
   type NihGrant,
 } from '../sources/nihReporterScraper';
 import type { ScraperContext, ObservationInput } from '../types';
@@ -101,6 +106,33 @@ const grantOrphan: NihGrant = {
   fiscal_year: 2025,
 };
 
+// An F31 individual trainee fellowship whose contact PI (the trainee) is fully
+// resolvable — it would mint a "<Fellow> Lab" if not failed closed (#739).
+const grantTrainee: NihGrant = {
+  project_num: '5F31MH333333-02',
+  appl_id: 14000001,
+  core_project_num: 'F31MH333333',
+  project_title: 'Dissertation research on synaptic plasticity',
+  abstract_text: 'The candidate will investigate synaptic plasticity mechanisms.',
+  contact_pi_name: 'TRAINEE, TAYLOR T',
+  principal_investigators: [
+    {
+      profile_id: 3,
+      first_name: 'Taylor',
+      last_name: 'Trainee',
+      is_contact_pi: true,
+    },
+  ],
+  organization: { org_name: 'YALE UNIVERSITY', dept_type: 'NEUROSCIENCES' },
+  fiscal_year: 2025,
+  award_amount: 45000,
+  project_start_date: '2025-07-01T00:00:00',
+  project_end_date: '2027-06-30T00:00:00',
+  agency_ic_admin: { code: 'MH', abbreviation: 'NIMH', name: 'NIMH' },
+  activity_code: 'F31',
+  project_detail_url: 'https://reporter.nih.gov/project-details/14000001',
+};
+
 // ---------------------------------------------------------------------------
 // canonicalPiName + piEntityKey + piSlugForResearchGroup
 // ---------------------------------------------------------------------------
@@ -113,6 +145,20 @@ describe('canonicalPiName', () => {
 
   it('passes through already-natural-order names with title casing for ALL CAPS', () => {
     expect(canonicalPiName('AMY ARNSTEN')).toBe('Amy Arnsten');
+  });
+
+  it('title-cases each run of a hyphenated surname or given name', () => {
+    expect(canonicalPiName('OHNO-MACHADO, RILEY')).toBe('Riley Ohno-Machado');
+    expect(canonicalPiName('CHEUNG, KEI-HOI')).toBe('Kei-Hoi Cheung');
+  });
+
+  it('title-cases each run around an apostrophe', () => {
+    expect(canonicalPiName("D'SOUZA, RILEY")).toBe("Riley D'Souza");
+  });
+
+  it('leaves already-correctly-cased hyphenated/apostrophized names unchanged', () => {
+    expect(canonicalPiName('Ohno-Machado, Riley')).toBe('Riley Ohno-Machado');
+    expect(canonicalPiName("D'Souza, Riley")).toBe("Riley D'Souza");
   });
 
   it('returns empty string on falsy input', () => {
@@ -180,6 +226,31 @@ describe('groupGrantsByPi', () => {
 });
 
 // ---------------------------------------------------------------------------
+// isTraineeFellowshipGrant (#739)
+// ---------------------------------------------------------------------------
+
+describe('isTraineeFellowshipGrant', () => {
+  it('flags NIH individual trainee-fellowship activity codes F30/F31/F32/F33', () => {
+    for (const code of ['F30', 'F31', 'F32', 'F33']) {
+      expect(isTraineeFellowshipGrant({ activity_code: code })).toBe(true);
+    }
+    expect(isTraineeFellowshipGrant(grantTrainee)).toBe(true);
+  });
+
+  it('is case- and whitespace-insensitive on the activity code', () => {
+    expect(isTraineeFellowshipGrant({ activity_code: ' f31 ' })).toBe(true);
+  });
+
+  it('leaves faculty research awards and other fellowship classes unflagged', () => {
+    for (const code of ['R01', 'R35', 'R21', 'K99', 'T32', 'F05', 'P30', undefined]) {
+      expect(isTraineeFellowshipGrant({ activity_code: code })).toBe(false);
+    }
+    expect(isTraineeFellowshipGrant(grantArnsten)).toBe(false);
+    expect(isTraineeFellowshipGrant(grantRoster)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // grantToRecord
 // ---------------------------------------------------------------------------
 
@@ -223,138 +294,262 @@ describe('grantToRecord', () => {
 });
 
 // ---------------------------------------------------------------------------
-// findUserForPi (mocked User model)
+// resolveUserForPi / findUserForPi (name matching delegated to the keystone)
 // ---------------------------------------------------------------------------
 
-function mockUserModel(rows: any[]) {
+function stubResolver(
+  status: 'matched' | 'absent' | 'ambiguous',
+  researcherId?: mongoose.Types.ObjectId,
+  title?: string,
+) {
   return {
-    find: vi.fn(() => ({
-      limit: () => ({
-        lean: async () => rows,
-      }),
-    })) as any,
+    resolveResearcherId: async () => (researcherId ? { status, researcherId } : { status }),
+    loadResearcherProfileTitle: async () => title,
   };
 }
 
-describe('findUserForPi', () => {
-  it('returns null when no candidates match the surname', async () => {
-    const um = mockUserModel([]);
-    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
+describe('resolveUserForPi', () => {
+  it('delegates identity matching to the researcher resolver', async () => {
+    const id = new mongoose.Types.ObjectId();
+    expect(await resolveUserForPi('Amy Arnsten', stubResolver('matched', id))).toEqual({
+      status: 'matched',
+      user: { _id: id.toString(), researchHomeEligible: true },
+    });
+    expect(await resolveUserForPi('Amy Arnsten', stubResolver('absent'))).toEqual({
+      status: 'absent',
+    });
+    expect(await resolveUserForPi('Amy Arnsten', stubResolver('ambiguous'))).toEqual({
+      status: 'ambiguous',
+    });
   });
 
-  it('returns the unique candidate when there is exactly one exact first-name surname match', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
-      _id: 'u1',
-      netid: 'aa1',
+  it('is absent for an empty PI name', async () => {
+    expect(
+      await resolveUserForPi('', stubResolver('matched', new mongoose.Types.ObjectId())),
+    ).toEqual({ status: 'absent' });
+  });
+
+  it('gates a postdoctoral / research-affiliate title out of research-home eligibility', async () => {
+    const id = new mongoose.Types.ObjectId();
+    expect(
+      await resolveUserForPi(
+        'Robin Hutchison',
+        stubResolver('matched', id, 'Postdoctoral Associate in Pharmacology'),
+      ),
+    ).toEqual({ status: 'matched', user: { _id: id.toString(), researchHomeEligible: false } });
+  });
+
+  it('returns the matched researcher via findUserForPi and null otherwise', async () => {
+    const id = new mongoose.Types.ObjectId();
+    expect(await findUserForPi('Amy Arnsten', stubResolver('matched', id))).toEqual({
+      _id: id.toString(),
       researchHomeEligible: true,
     });
-  });
-
-  it('does not match a unique surname candidate when the full first name conflicts', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Frederick', lname: 'Wilson', netid: 'fpw2' },
-    ]);
-    expect(await findUserForPi('Francis Wilson', um)).toBeNull();
-  });
-
-  it('disambiguates by exact first name when surname has multiple hits', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
-      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
-      _id: 'u1',
-      netid: 'aa1',
-      researchHomeEligible: true,
-    });
-  });
-
-  it('falls back to given-name prefix match when exact fname fails', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amylynn', lname: 'Arnsten', netid: 'ax1' },
-      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toEqual({
-      _id: 'u1',
-      netid: 'ax1',
-      researchHomeEligible: true,
-    });
-  });
-
-  it('falls back to first-initial match only when the source first name is an initial', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
-      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
-    ]);
-    expect(await findUserForPi('A Arnsten', um)).toEqual({
-      _id: 'u1',
-      netid: 'ax1',
-      researchHomeEligible: true,
-    });
-  });
-
-  it('does not match full first names to different same-initial candidates', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
-      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
-  });
-
-  it('marks postdoctoral and research-affiliate grant PIs as ineligible research homes', async () => {
-    const postdoc = mockUserModel([
-      {
-        _id: 'u1',
-        fname: 'Robin',
-        lname: 'Hutchison',
-        netid: 'jh1',
-        title: 'Postdoctoral Associate in Pharmacology',
-      },
-    ]);
-    expect(await findUserForPi('Robin Hutchison', postdoc)).toEqual({
-      _id: 'u1',
-      netid: 'jh1',
-      researchHomeEligible: false,
-    });
-
-    const affiliate = mockUserModel([
-      {
-        _id: 'u2',
-        fname: 'Seyedmehdi',
-        lname: 'Payabvash',
-        netid: 'sp1',
-        title: 'Research Affiliates',
-      },
-    ]);
-    expect(await findUserForPi('Seyedmehdi Payabvash', affiliate)).toEqual({
-      _id: 'u2',
-      netid: 'sp1',
-      researchHomeEligible: false,
-    });
-  });
-
-  it('returns null when ambiguity remains after first-initial fallback', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
-      { _id: 'u2', fname: 'Anne', lname: 'Arnsten', netid: 'an1' },
-    ]);
-    expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
-  });
-
-  it('returns null for an empty PI name', async () => {
-    const um = mockUserModel([]);
-    expect(await findUserForPi('', um)).toBeNull();
-    // Should NOT have called find at all.
-    expect(um.find).not.toHaveBeenCalled();
+    expect(await findUserForPi('Nobody Here', stubResolver('absent'))).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
 // piGrantsToObservations
 // ---------------------------------------------------------------------------
+
+describe('grantAbstractToDescription', () => {
+  it('strips a leading PROJECT SUMMARY/ABSTRACT header and keeps lead prose', () => {
+    const out = grantAbstractToDescription(
+      'PROJECT SUMMARY/ABSTRACT\nThe lab investigates malaria transmission dynamics in the Amazon. It develops field-deployable diagnostics.',
+    );
+    expect(out.startsWith('The lab investigates malaria transmission')).toBe(true);
+    expect(out).not.toMatch(/project summary/i);
+  });
+
+  it('strips numbered, parenthetical, and PROPOSAL/OVERALL header variants', () => {
+    expect(
+      grantAbstractToDescription(
+        '7. PROJECT SUMMARY/ABSTRACT Stimulant use disorder is a major burden.',
+      ),
+    ).toBe('Stimulant use disorder is a major burden.');
+    expect(
+      grantAbstractToDescription(
+        '(ABSTRACT) Humoral immunity forms the basis for vaccine protection.',
+      ),
+    ).toBe('Humoral immunity forms the basis for vaccine protection.');
+    expect(
+      grantAbstractToDescription(
+        'Modified Project Summary/Abstract Section Vascular smooth muscle cells adapt to stress.',
+      ),
+    ).toBe('Vascular smooth muscle cells adapt to stress.');
+  });
+
+  it('strips a leading PROGRAM SUMMARY/ABSTRACT header', () => {
+    expect(
+      grantAbstractToDescription(
+        'Program Summary/Abstract In 2020, over 85,000 people died from drug overdoses in the US.',
+      ),
+    ).toBe('In 2020, over 85,000 people died from drug overdoses in the US.');
+  });
+
+  it('returns empty for placeholder or blank abstracts', () => {
+    expect(grantAbstractToDescription('No Abstract')).toBe('');
+    expect(grantAbstractToDescription('   ')).toBe('');
+    expect(grantAbstractToDescription(undefined)).toBe('');
+    expect(grantAbstractToDescription('N/A')).toBe('');
+  });
+
+  it('bounds output to whole sentences within the character budget', () => {
+    const long = `Sentence one is a complete clause about neurons. ${'x'.repeat(500)} tail.`;
+    const out = grantAbstractToDescription(long);
+    expect(out).toBe('Sentence one is a complete clause about neurons.');
+  });
+
+  it('picks the first recent grant that carries a usable abstract', () => {
+    expect(
+      labDescriptionFromRecentGrants([
+        grantToRecord({ ...grantArnsten, abstract_text: 'No Abstract' }),
+        grantToRecord({
+          ...grantArnsten,
+          abstract_text: 'PROJECT SUMMARY The circuit study is underway.',
+        }),
+      ]),
+    ).toBe('The circuit study is underway.');
+  });
+
+  it('drops a leading agency funding-disclaimer sentence before taking the lead prose', () => {
+    const out = grantAbstractToDescription(
+      'PROJECT SUMMARY This award is funded in whole or in part under the American Rescue Plan Act of 2021. Plant-pathogenic microorganisms are ubiquitous in soils.',
+    );
+    expect(out).toBe('Plant-pathogenic microorganisms are ubiquitous in soils.');
+  });
+
+  it('drops a leading disease-burden significance opener and keeps the lab-specific sentence after it', () => {
+    const out = grantAbstractToDescription(
+      'Respiratory syncytial virus (RSV) is a significant source of morbidity and mortality in the pediatric population. This project develops a maternal RSV vaccine to prevent severe infection in infants.',
+    );
+    expect(out).toBe(
+      'This project develops a maternal RSV vaccine to prevent severe infection in infants.',
+    );
+  });
+
+  it('returns empty when the whole abstract is a significance/background opener with nothing else', () => {
+    expect(
+      grantAbstractToDescription(
+        'Adolescents with type 1 diabetes struggle more than any other age group to meet recommended glycemic targets.',
+      ),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription(
+        'Excessive alcohol intake is the third leading cause of preventable death in the US.',
+      ),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription(
+        'The United States is at the forefront of the global obesity epidemic.',
+      ),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription(
+        'Percutaneous coronary intervention (PCI) is the most common cardiac procedure with over 650,000 PCI performed annually in the U.S.',
+      ),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription(
+        'Major surgery is a common event in the lives of community-living older persons, with a 5-year cumulative incidence of 13.8%.',
+      ),
+    ).toBe('');
+    expect(
+      grantAbstractToDescription(
+        'Nearly 2 million persons aged 65 years or older are admitted to an intensive care unit each year.',
+      ),
+    ).toBe('');
+  });
+
+  it('drops multiple consecutive significance/background sentences before the research description', () => {
+    const out = grantAbstractToDescription(
+      'Major surgery is a common event in the lives of community-living older persons. The United States is at the forefront of the global obesity epidemic. This study characterizes recovery trajectories after major abdominal surgery in older adults.',
+    );
+    expect(out).toBe(
+      'This study characterizes recovery trajectories after major abdominal surgery in older adults.',
+    );
+  });
+
+  it('collapses a PDF line-wrap hyphenation artifact without dropping a genuine hyphenated compound', () => {
+    const out = grantAbstractToDescription(
+      'This study examines alcohol- associated liver disease with a 5-year cumulative inci- dence of 13.8%.',
+    );
+    expect(out).toBe(
+      'This study examines alcohol-associated liver disease with a 5-year cumulative inci-dence of 13.8%.',
+    );
+  });
+});
+
+describe('labDescriptionFromRecentGrants (non-research grant guard)', () => {
+  it('skips a training-grant abstract and falls through to a real research grant', () => {
+    const training = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Training in Investigative Infectious Diseases',
+      abstract_text:
+        'PROJECT SUMMARY This is a competing renewal of a postdoctoral training program. The program trains fellows across immunology, virology, and bacterial pathogenesis.',
+    });
+    const research = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Prefrontal cortex circuits in cognitive aging',
+      abstract_text:
+        'PROJECT SUMMARY The lab investigates prefrontal cortex circuit dynamics in aging primates.',
+    });
+    expect(labDescriptionFromRecentGrants([training, research])).toBe(
+      'The lab investigates prefrontal cortex circuit dynamics in aging primates.',
+    );
+  });
+
+  it('skips an NSF GRFP fellowship grant', () => {
+    const grfp = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Graduate Research Fellowship Program (GRFP)',
+      abstract_text:
+        'The National Science Foundation (NSF) Graduate Research Fellowship Program (GRFP) is a highly competitive, federal fellowship program.',
+    });
+    expect(labDescriptionFromRecentGrants([grfp])).toBe('');
+  });
+
+  it('skips an I-Corps commercialization grant', () => {
+    const iCorps = grantToRecord({
+      ...grantArnsten,
+      project_title: 'I-Corps: Translation potential of segmentation software',
+      abstract_text:
+        'The broader impact of this I-Corps project is the development of a novel analytic software tool.',
+    });
+    expect(labDescriptionFromRecentGrants([iCorps])).toBe('');
+  });
+
+  it('skips a conference / travel grant', () => {
+    const travel = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Travel: NSF Student Travel Grant for 2025 Symposium',
+      abstract_text:
+        'This grant supports student participation in the 4th Symposium on Computer Science and Law.',
+    });
+    expect(labDescriptionFromRecentGrants([travel])).toBe('');
+  });
+
+  it('skips a mentored career-development K-award personal statement', () => {
+    const k23 = grantToRecord({
+      ...grantArnsten,
+      project_title: 'The neural correlates of the effects of psilocybin in OCD',
+      abstract_text:
+        'This application for a K23 mentored patient-oriented research career development award will provide the applicant, a clinician-scientist, with training.',
+    });
+    expect(labDescriptionFromRecentGrants([k23])).toBe('');
+  });
+
+  it('skips a "Candidate: I aim to build an independent career" personal statement', () => {
+    const candidate = grantToRecord({
+      ...grantArnsten,
+      project_title: 'Adrenergic Nerves in Idiopathic Pulmonary Fibrosis',
+      abstract_text:
+        'PROJECT SUMMARY Candidate: I aim to build an independent career as an R01-funded physician scientist investigating pulmonary fibrosis.',
+    });
+    expect(labDescriptionFromRecentGrants([candidate])).toBe('');
+  });
+});
 
 describe('piGrantsToObservations', () => {
   it('emits user + research-group observations when no Yale user is matched', () => {
@@ -365,13 +560,16 @@ describe('piGrantsToObservations', () => {
     expect(userObs.every((o) => o.entityKey === 'nih-pi:amy-arnsten')).toBe(true);
     expect(userObs.find((o) => o.field === 'fname')?.value).toBe('Amy');
     expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Arnsten');
-    expect(userObs.find((o) => o.field === 'userType')?.value).toBe('faculty');
 
     const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
     expect(groupObs.every((o) => o.entityKey === 'nih-pi-amy-arnsten')).toBe(true);
     expect(groupObs.find((o) => o.field === 'slug')?.value).toBe('nih-pi-amy-arnsten');
     expect(groupObs.find((o) => o.field === 'name')?.value).toBe('Amy Arnsten Lab');
+    expect(groupObs.find((o) => o.field === 'name')?.confidenceOverride).toBe(0.3);
     expect(groupObs.find((o) => o.field === 'kind')?.value).toBe('lab');
+    const fullDescription = groupObs.find((o) => o.field === 'fullDescription');
+    expect(fullDescription?.value).toBe('We will study PFC circuit dynamics in aging primates.');
+    expect(fullDescription?.confidenceOverride).toBe(0.35);
     expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
 
     const recentGrants = groupObs.find((o) => o.field === 'recentGrants')?.value as any[];
@@ -385,9 +583,7 @@ describe('piGrantsToObservations', () => {
     expect(lastObserved).toBeInstanceOf(Date);
     expect(lastObserved.toISOString().slice(0, 10)).toBe('2025-04-01');
 
-    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
-      'nih-pi:amy-arnsten',
-    );
+    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('nih-pi:amy-arnsten');
     expect(groupObs.find((o) => o.field === 'inferredPiUserId')).toBeUndefined();
   });
 
@@ -402,6 +598,25 @@ describe('piGrantsToObservations', () => {
     expect(piId?.value).toBe('user-abc');
     expect(piId?.confidenceOverride).toBeGreaterThanOrEqual(0.8);
     expect(groupObs.find((o) => o.field === 'inferredPiUserKey')).toBeUndefined();
+  });
+
+  it('enriches one canonical research home without overwriting its identity fields', () => {
+    const obs = piGrantsToObservations(
+      'Riley Roster',
+      [grantRoster],
+      { _id: 'user-abc', netid: 'rrb1' },
+      'dept-mcdb-riley-roster',
+    );
+    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
+    expect(groupObs.every((o) => o.entityKey === 'dept-mcdb-riley-roster')).toBe(true);
+    expect(groupObs.find((o) => o.field === 'slug')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'name')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'kind')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'departments')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'sourceUrls')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'fullDescription')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'recentGrants')).toBeDefined();
+    expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
   });
 
   it('emits no research-home observations for known non-owner grant PIs', () => {
@@ -426,11 +641,10 @@ describe('piGrantsToObservations', () => {
       (o) => o.entityType === 'researchEntity' && o.field === 'recentGrants',
     )?.value as any[];
     expect(recentGrants).toHaveLength(10);
+    expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(20);
     expect(
-      obs.find(
-        (o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount',
-      )?.value,
-    ).toBe(10);
+      obs.find((o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount')?.value,
+    ).toBe(20);
   });
 
   it('returns no observations on empty inputs', () => {
@@ -476,29 +690,28 @@ describe('NihReporterScraper.run', () => {
       // Page 1 returns 2 grants for Arnsten + 1 for Roster; page 2 returns empty.
       if (offset === 0) {
         return {
-          data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantRoster] },
+          data: {
+            meta: { total: 3, offset: 0, limit: 500 },
+            results: [grantArnsten, grantArnsten2, grantRoster],
+          },
         } as any;
       }
       return { data: { meta: { total: 3, offset, limit: 500 }, results: [] } } as any;
     });
 
     // Match Roster but not Arnsten.
-    const userModel = {
-      find: vi.fn((query: any) => ({
-        limit: () => ({
-          lean: async () => {
-            // The query includes a regex on lname; we just check the source string.
-            const src: string = query.lname?.source || '';
-            if (/Roster/i.test(src)) {
-              return [{ _id: 'breaker-id', fname: 'Riley', lname: 'Roster', netid: 'rrb1' }];
-            }
-            return [];
-          },
-        }),
-      })) as any,
-    };
+    const breakerId = new mongoose.Types.ObjectId();
+    const resolveResearcherId = async (name: string) =>
+      /roster/i.test(name)
+        ? { status: 'matched' as const, researcherId: breakerId }
+        : { status: 'absent' as const };
 
-    const scraper = new NihReporterScraper({ userModel });
+    const researchHomeResolver = vi.fn().mockResolvedValue({ status: 'safe-shell' });
+    const scraper = new NihReporterScraper({
+      resolveResearcherId,
+      loadResearcherProfileTitle: async () => undefined,
+      researchHomeResolver,
+    });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
@@ -506,6 +719,7 @@ describe('NihReporterScraper.run', () => {
     expect(result.entitiesObserved).toBe(2); // 2 unique PIs
     expect(result.notes).toContain('matched 1');
     expect(result.notes).toContain('stubbed 1');
+    expect(researchHomeResolver).toHaveBeenCalledWith(breakerId.toString());
 
     // Arnsten unmatched → user obs present
     const arnstenUserObs = emitted.filter(
@@ -529,27 +743,69 @@ describe('NihReporterScraper.run', () => {
     const breakerGroup = emitted.filter(
       (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-riley-roster',
     );
-    expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe('breaker-id');
+    expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe(
+      breakerId.toString(),
+    );
+  });
+
+  it('never mints an entity for an individual trainee-fellowship award (#739)', async () => {
+    vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
+      const offset = (body as any).offset || 0;
+      if (offset === 0) {
+        return {
+          data: {
+            meta: { total: 2, offset: 0, limit: 500 },
+            results: [grantArnsten, grantTrainee],
+          },
+        } as any;
+      }
+      return { data: { meta: { total: 2, offset, limit: 500 }, results: [] } } as any;
+    });
+
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({ status: 'absent' as const }),
+      researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(result.entitiesObserved).toBe(1);
+
+    const traineeGroup = emitted.filter(
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-taylor-trainee',
+    );
+    expect(traineeGroup).toHaveLength(0);
+    const traineeUserObs = emitted.filter(
+      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:taylor-trainee',
+    );
+    expect(traineeUserObs).toHaveLength(0);
+
+    const arnstenGroup = emitted.filter(
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-amy-arnsten',
+    );
+    expect(arnstenGroup.length).toBeGreaterThan(0);
   });
 
   it('honors the limit option (caps PIs processed, not raw grants)', async () => {
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
-      data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantRoster] },
+      data: {
+        meta: { total: 3, offset: 0, limit: 500 },
+        results: [grantArnsten, grantArnsten2, grantRoster],
+      },
     } as any);
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
       data: { meta: { total: 3, offset: 3, limit: 500 }, results: [] },
     } as any);
 
-    const userModel = mockUserModel([]);
-    const scraper = new NihReporterScraper({ userModel });
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({ status: 'absent' as const }),
+    });
     const { ctx, emitted } = makeContext({ limit: 1 });
     const result = await scraper.run(ctx);
 
     // Only one PI should have been emitted observations for.
     const groupKeys = new Set(
-      emitted
-        .filter((o) => o.entityType === 'researchEntity')
-        .map((o) => o.entityKey),
+      emitted.filter((o) => o.entityType === 'researchEntity').map((o) => o.entityKey),
     );
     expect(groupKeys.size).toBe(1);
     expect(result.entitiesObserved).toBe(1);
@@ -559,7 +815,9 @@ describe('NihReporterScraper.run', () => {
     const postSpy = vi.spyOn(axios, 'post').mockResolvedValue({
       data: { meta: { total: 0, offset: 0, limit: 500 }, results: [] },
     } as any);
-    const scraper = new NihReporterScraper({ userModel: mockUserModel([]) });
+    const scraper = new NihReporterScraper({
+      resolveResearcherId: async () => ({ status: 'absent' as const }),
+    });
     const { ctx } = makeContext({ limit: 9007199254740992 });
 
     await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);

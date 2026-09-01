@@ -1,40 +1,16 @@
 /**
- * Core TypeScript interfaces for listings, fellowships, and user profiles.
+ * Core TypeScript interfaces for fellowships and user profiles.
  */
-import type { LabScholarlyLink } from './labDetail';
-
-export type Listing = {
-  id: string;
-  ownerId: string;
-  ownerFirstName: string;
-  ownerLastName: string;
-  ownerEmail: string;
-  ownerTitle?: string;
-  ownerPrimaryDepartment?: string;
-  professorIds: string[];
-  professorNames: string[];
-  title: string;
-  departments: string[];
-  emails: string[];
-  websites: string[];
-  description: string;
-  applicantDescription: string;
-  keywords: string[];
-  researchAreas: string[];
-  established: string;
-  views: number;
-  favorites: number;
-  hiringStatus: number;
-  archived: boolean;
-  updatedAt: string;
-  createdAt: string;
-  confirmed: boolean;
-  audited: boolean;
-};
 
 export type FellowshipLink = {
   label: string;
   url: string;
+};
+
+export type FellowshipSourceLinkHealth = {
+  url: string;
+  healthStatus: string;
+  httpStatusCode?: number;
 };
 
 export type Fellowship = {
@@ -52,6 +28,8 @@ export type Fellowship = {
   programDates: string;
   bestNextStep: string;
   prepSteps: string[];
+  researchFocused?: boolean;
+  applicationMaterials?: string[];
   title: string;
   competitionType: string;
   summary: string;
@@ -66,6 +44,7 @@ export type Fellowship = {
   isAcceptingApplications: boolean;
   applicationOpenDate: string | null;
   deadline: string | null;
+  deadlineProjectedNextCycle?: boolean;
   contactName: string;
   contactEmail: string;
   contactPhone: string;
@@ -77,6 +56,7 @@ export type Fellowship = {
   citizenshipStatus: string[];
   sourceName: string;
   sourceUrl: string;
+  sourceLinkHealth?: FellowshipSourceLinkHealth;
   sourceKey: string;
   sourceFingerprint: string;
   sourceLastVerifiedAt: string | null;
@@ -114,6 +94,7 @@ export type FellowshipFilterOptions = {
   purpose: string[];
   globalRegions: string[];
   citizenshipStatus: string[];
+  subjects?: string[];
 };
 
 export type User = {
@@ -132,41 +113,6 @@ export type Publication = {
   cited_by_count?: number;
   open_access_url?: string;
   source?: string;
-};
-
-export type FacultyProfile = {
-  netid: string;
-  fname: string;
-  lname: string;
-  title?: string;
-  bio?: string;
-  website?: string;
-  primary_department?: string;
-  secondary_departments: string[];
-  departments: string[];
-  image_url?: string;
-  h_index?: number;
-  orcid?: string;
-  openalex_id?: string;
-  profile_urls: Record<string, string>;
-  publications: Publication[];
-  scholarlyLinks?: LabScholarlyLink[];
-  researchEntities?: Array<{
-    _id: string;
-    slug: string;
-    name: string;
-    displayName?: string;
-    shortDescription?: string;
-    description?: string;
-    departments?: string[];
-    researchAreas?: string[];
-    role?: string;
-  }>;
-  research_interests: string[];
-  research_interest_summary?: string;
-  topics: string[];
-  profileVerified: boolean;
-  ownListings: string[];
 };
 
 export type Developer = {

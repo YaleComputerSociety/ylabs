@@ -1,12 +1,168 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BLANK_PUBLIC_DESCRIPTION_REASON,
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
+  enforceStudentReadyDescriptionInvariant,
   hasProfileAreaShellDuplicateRisk,
+  isStudentReadySoftSignalReason,
+  recordHasNoUsablePublicDescription,
+  researchEntityMeetsStudentReadyDefinition,
+  STUDENT_READY_SOFT_SIGNAL_REASONS,
+  type ResearchEntityStudentReadyCorrectness,
 } from '../studentVisibilityTier';
 
+describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)', () => {
+  const correct: ResearchEntityStudentReadyCorrectness = {
+    descriptionCoherent: true,
+    entityContentMatchesCard: true,
+    rightLeadAttached: true,
+    notDuplicate: true,
+  };
+
+  it('is student_ready when every correctness field holds', () => {
+    expect(researchEntityMeetsStudentReadyDefinition(correct)).toBe(true);
+  });
+
+  it.each([
+    ['incoherent/boilerplate description', 'descriptionCoherent'],
+    ['content about a different entity', 'entityContentMatchesCard'],
+    ['wrong or missing lead', 'rightLeadAttached'],
+    ['duplicate/suppressed shell', 'notDuplicate'],
+  ] as const)('is blocked when %s (%s is false)', (_label, field) => {
+    expect(researchEntityMeetsStudentReadyDefinition({ ...correct, [field]: false })).toBe(false);
+  });
+
+  it('classifies the finalized enrichment set as soft, and no hard blocker as soft', () => {
+    expect([...STUDENT_READY_SOFT_SIGNAL_REASONS].sort()).toEqual(
+      [
+        'concrete_next_step',
+        'missing_action_evidence',
+        'missing_alternate_access_path',
+        'missing_application_route',
+        'missing_facet_signal',
+        'missing_official_source',
+        'missing_source_route',
+        'missing_source_url',
+        'source_backed_description',
+      ].sort(),
+    );
+    for (const soft of [
+      'source_backed_description',
+      'concrete_next_step',
+      'missing_action_evidence',
+      'missing_facet_signal',
+      'missing_alternate_access_path',
+      'missing_application_route',
+      'missing_source_route',
+      'missing_source_url',
+      'missing_official_source',
+    ]) {
+      expect(isStudentReadySoftSignalReason(soft)).toBe(true);
+    }
+    for (const hard of [
+      'missing_description',
+      'missing_card_description',
+      'thin_description',
+      'blank_public_description',
+      'missing_lead',
+      'profile_identity_risk',
+      'duplicate_risk',
+      'exact_url_duplicate_risk',
+      'lab_name_org_type_mismatch',
+      'inactive_at_yale',
+      'not_undergraduate_relevant',
+    ]) {
+      expect(isStudentReadySoftSignalReason(hard)).toBe(false);
+    }
+  });
+});
+
 describe('computeResearchEntityStudentVisibility', () => {
+  it('blocks raw descriptions that become empty after lead-aware public sanitization', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'public-empty-fixture',
+        name: 'Correct Person Faculty Research',
+        slug: 'correct-person-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        shortDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling.",
+        fullDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling across complex biological systems.",
+        sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'correct-person',
+          user: { fname: 'Correct', lname: 'Person' },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['missing_description', 'missing_card_description']),
+    );
+  });
+
+  it('does not let a student-ready override bypass the public description invariant', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'overridden-public-empty-fixture',
+        name: 'Correct Person Faculty Research',
+        slug: 'correct-person-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        studentVisibilityOverrideTier: 'student_ready',
+        shortDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling.",
+        fullDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling across complex biological systems.",
+        sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          user: { fname: 'Correct', lname: 'Person' },
+        },
+      ],
+      accessSignalCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['operator_override', 'public_description_invariant_failed']),
+    );
+  });
+
+  it('requires a useful full description for student-ready visibility', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'missing-public-full-description',
+        name: 'Correct Person Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription: 'Studies molecular dynamics, protein folding, and cellular signaling.',
+        fullDescription: '',
+        sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+      },
+      leadMembers: [{ role: 'pi', name: 'Correct Person' }],
+      accessSignalCount: 1,
+    });
+
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.computedTier).not.toBe('student_ready');
+  });
+
   it('blocks student-ready visibility for same-person profile-area shell duplicates', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
@@ -80,7 +236,122 @@ describe('computeResearchEntityStudentVisibility', () => {
     );
   });
 
-  it('does not require a named director for source-backed organizational research homes (centers/institutes)', () => {
+  it.each([
+    'https://anthropology.yale.edu/undergraduate-program/undergraduate-research-in-anthropology',
+    'https://cogsci.yale.edu/research/undergraduate-research-opportunities',
+    'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/undergraduate-study',
+    'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+    'https://mbb.yale.edu/introduction-undergraduate-program',
+    'https://college.yale.edu/life-at-yale/student-faculty-awards/nsf-research-experience-for-undergraduates-reu-computational',
+    'https://economics.yale.edu/undergraduate/tobin-ra/tobin-research-assistantship-application',
+    'https://engineering.yale.edu/academic-study/undergraduate/research',
+  ])(
+    'recognizes a student-research engagement page as an alternate access path: %s',
+    (sourceUrl) => {
+      const result = computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'undergrad-research-engagement',
+          name: 'Department Undergraduate Research',
+          slug: 'department-undergrad-research-example',
+          kind: 'program',
+          entityType: 'PROGRAM',
+          shortDescription:
+            'Supports undergraduate research through department guidance on finding faculty research opportunities.',
+          fullDescription:
+            'Supports undergraduate research. Students interested in research should contact the faculty member directly via email to explore opportunities.',
+          sourceUrls: [sourceUrl],
+        },
+        leadMembers: [],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+        relatedEntityAccessPathCount: 0,
+      });
+
+      expect(result.reasons).not.toContain('missing_alternate_access_path');
+      expect(result.tier).toBe('student_ready');
+    },
+  );
+
+  it.each([
+    'https://psychology.yale.edu/what-directed-research-course',
+    'https://statistics.yale.edu/undergraduates/the-major/49104920-senior-essay',
+    'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/independent-research-opportunities',
+    'https://english.yale.edu/undergraduate/senior-essay',
+  ])(
+    'promotes a for-credit course-based research pathway with a course-credit ways-in: %s',
+    (sourceUrl) => {
+      const result = computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'course-based-research-example',
+          name: 'Example Senior Essay',
+          slug: 'course-based-research-example',
+          kind: 'program',
+          shortDescription:
+            'A for-credit research pathway through directed research, independent study, and senior-essay courses.',
+          fullDescription:
+            'A for-credit, course-based research pathway. Students enroll in the directed-research or senior-essay course and work with a faculty advisor.',
+          websiteUrl: sourceUrl,
+          sourceUrls: [sourceUrl],
+        },
+        leadMembers: [],
+        accessSignalCount: 1,
+        relatedEntityAccessPathCount: 0,
+      });
+
+      expect(result.reasons).not.toContain('missing_alternate_access_path');
+      expect(result.reasons).not.toContain('missing_lead');
+      expect(result.tier).toBe('student_ready');
+    },
+  );
+
+  it('publishes a coherent, source-backed center landing page as student_ready even with no engagement token, recording the soft access-path signal (issue #1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-research-landing',
+        name: 'Yale Center for Geospatial Solutions',
+        slug: 'yse-geospatial-solutions',
+        entityType: 'CENTER',
+        shortDescription:
+          'Advances geospatial research, mapping, and spatial analysis across Yale.',
+        fullDescription:
+          'The Yale Center for Geospatial Solutions advances geospatial research, mapping, and spatial analysis through interdisciplinary collaboration.',
+        websiteUrl: 'https://environment.yale.edu/research/centers/geospatial-solutions',
+        sourceUrls: ['https://environment.yale.edu/research/centers/geospatial-solutions'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+  });
+
+  it('still holds a program whose only source url is a generic resources page', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'program-generic-resources',
+        name: 'Earth and Planetary Sciences Research Opportunities',
+        slug: 'earth-planetary-sciences-research-opportunities',
+        entityType: 'PROGRAM',
+        kind: 'program',
+        shortDescription:
+          'Points undergraduates toward research openings across Earth and Planetary Sciences faculty labs.',
+        fullDescription:
+          'Lists research openings across Earth and Planetary Sciences faculty labs. Students should contact faculty directly to arrange a project.',
+        sourceUrls: ['https://earth.yale.edu/resources'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.reasons).toContain('missing_alternate_access_path');
+  });
+
+  it('does not require a named director for a source-backed organizational research home with a linked related entity', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'center-industrial-ecology',
@@ -96,13 +367,135 @@ describe('computeResearchEntityStudentVisibility', () => {
       leadMembers: [],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
     });
 
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
   });
 
-  it('holds an organizational home that has no action evidence yet as limited_but_safe, not missing_lead', () => {
+  it('does not require a named director for an organizational research home that surfaces a get-involved page', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-get-involved',
+        name: 'Center for Industrial Ecology',
+        slug: 'yse-industrial-ecology-get-involved',
+        entityType: 'CENTER',
+        shortDescription:
+          'Advances the study of industrial ecology, material flows, and sustainable systems at Yale.',
+        fullDescription:
+          'The Center for Industrial Ecology advances research on material and energy flows, life-cycle assessment, and sustainable industrial systems through interdisciplinary collaboration.',
+        websiteUrl: 'https://environment.yale.edu/research/centers/industrial-ecology',
+        sourceUrls: ['https://environment.yale.edu/centers/industrial-ecology/get-involved'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+
+  it('treats a collections initiative as an organizational home needing no named lead (#1360)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'yul-exhibit-prospectsofempire',
+        name: 'Prospects of Empire: Slavery and Ecology in Eighteenth-Century Atlantic Britain',
+        slug: 'yul-exhibit-prospectsofempire',
+        entityType: 'INITIATIVE',
+        shortDescription:
+          'A Yale University Library exhibition on the ecologies and economies of eighteenth-century Atlantic empire.',
+        fullDescription:
+          'Prospects of Empire is a Yale University Library online exhibition drawing on collections across Yale to examine slavery, ecology, and the economies of empire in the eighteenth-century Atlantic world.',
+        websiteUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 0,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('publishes a collections initiative that surfaces a get-involved / people access path (#1360)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'yul-exhibit-with-path',
+        name: 'Prospects of Empire: Slavery and Ecology in Eighteenth-Century Atlantic Britain',
+        slug: 'yul-exhibit-with-path',
+        entityType: 'INITIATIVE',
+        shortDescription:
+          'A Yale University Library exhibition on the ecologies and economies of eighteenth-century Atlantic empire.',
+        fullDescription:
+          'Prospects of Empire is a Yale University Library online exhibition drawing on collections across Yale to examine slavery, ecology, and the economies of empire in the eighteenth-century Atlantic world.',
+        websiteUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
+        sourceUrls: [
+          'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
+          'https://onlineexhibits.library.yale.edu/s/prospectsofempire/page/people',
+        ],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+
+  it('treats a lead-less CORE_FACILITY as lead-exempt: held on the org-access lane, never missing_lead (#1367)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'beinecke-americana',
+        name: 'Americana',
+        slug: 'beinecke-americana',
+        entityType: 'CORE_FACILITY',
+        shortDescription:
+          'Examines the Beinecke Library collection of Americana across the histories, languages, and materials of the Western Hemisphere.',
+        fullDescription:
+          'The Beinecke Library ever-growing collection of Americana inspires research and teaching across diverse places, histories, languages, and materials which showcase the Western Hemisphere.',
+        websiteUrl: 'https://beinecke.library.yale.edu/beinecke/collections/americana',
+      },
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+  });
+
+  it('publishes a lead-less archive/museum home once it surfaces an access path and action evidence (#1367)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'beinecke-americana-ready',
+        name: 'Americana',
+        slug: 'beinecke-americana-ready',
+        entityType: 'CORE_FACILITY',
+        shortDescription:
+          'Examines the Beinecke Library collection of Americana across the histories, languages, and materials of the Western Hemisphere.',
+        fullDescription:
+          'The Beinecke Library ever-growing collection of Americana inspires research and teaching across diverse places, histories, languages, and materials which showcase the Western Hemisphere.',
+        websiteUrl: 'https://beinecke.library.yale.edu/beinecke/collections/americana',
+        sourceUrls: [
+          'https://beinecke.library.yale.edu/beinecke/collections/americana',
+          'https://beinecke.library.yale.edu/beinecke/researchers/opportunities',
+        ],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('publishes an organizational home with a real access path as student_ready even with no action evidence yet (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'center-no-action',
@@ -117,10 +510,166 @@ describe('computeResearchEntityStudentVisibility', () => {
       leadMembers: [],
       accessSignalCount: 0,
       actionablePathwayCount: 0,
+      relatedEntityAccessPathCount: 1,
     });
 
     expect(result.reasons).not.toContain('missing_lead');
-    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+    expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('publishes a coherent organizational home with no engagement path as student_ready, recording the soft access-path signal (issue #1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-dead-end',
+        name: 'Yale Forests',
+        slug: 'yse-yale-forests',
+        entityType: 'CENTER',
+        shortDescription:
+          'Studies forest ecosystems, carbon dynamics, and sustainable land management across Yale-owned forests.',
+        fullDescription:
+          'Yale Forests supports research on forest ecosystems, carbon dynamics, and sustainable land management. Faculty and students conduct field studies across the school-owned forest properties.',
+        websiteUrl: 'https://environment.yale.edu/yale-forests',
+        sourceUrls: ['https://environment.yale.edu/yale-forests'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('publishes a coherent program entity with no engagement path as student_ready, recording the soft access-path signal (issue #1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'program-dead-end',
+        name: 'Example Research Program',
+        slug: 'example-research-program',
+        kind: 'program',
+        entityType: 'PROGRAM',
+        shortDescription:
+          'Coordinates undergraduate participation in faculty-led research across the division.',
+        fullDescription:
+          'The program coordinates undergraduate participation in faculty-led research across the division, connecting students with ongoing projects and mentors.',
+        sourceUrls: ['https://example.yale.edu/research-program'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+    expect(result.reasons).not.toContain('missing_lead');
+  });
+
+  it('records operator_override on a coherent organizational home an operator vouches for', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-dead-end-override',
+        name: 'Yale Forests',
+        slug: 'yse-yale-forests-override',
+        entityType: 'CENTER',
+        shortDescription:
+          'Studies forest ecosystems, carbon dynamics, and sustainable land management across Yale-owned forests.',
+        fullDescription:
+          'Yale Forests supports research on forest ecosystems, carbon dynamics, and sustainable land management. Faculty and students conduct field studies across the school-owned forest properties.',
+        websiteUrl: 'https://environment.yale.edu/yale-forests',
+        sourceUrls: ['https://environment.yale.edu/yale-forests'],
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+    expect(result.reasons).toContain('operator_override');
+  });
+
+  it('treats a lead-less program-like pathway as lead-exempt and promotes it via its directed-research course-credit ways-in, never flooring on missing_lead', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'course-based-research-psychology-directed-research',
+        name: 'Psychology Directed Research Courses',
+        slug: 'course-based-research-psychology-directed-research',
+        kind: 'program',
+        shortDescription:
+          'A for-credit Psychology research pathway through directed research, independent study, and senior-essay or senior-thesis courses.',
+        fullDescription:
+          'A for-credit, course-based research pathway in Psychology. The department offers directed research and senior essay courses for credit under faculty supervision.',
+        websiteUrl: 'https://psychology.yale.edu/what-directed-research-course',
+        sourceUrls: ['https://psychology.yale.edu/what-directed-research-course'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('publishes a lead-less program-like pathway whose only page is an unrecognized landing page as student_ready, recording the soft access-path signal (issue #1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'course-based-research-example-landing',
+        name: 'Example Senior Essay',
+        slug: 'course-based-research-example-landing',
+        kind: 'program',
+        shortDescription:
+          'A for-credit research pathway through directed research, independent study, and senior-essay courses.',
+        fullDescription:
+          'A for-credit, course-based research pathway. Students enroll in the senior essay course for credit under faculty supervision.',
+        websiteUrl: 'https://example.yale.edu/about/overview',
+        sourceUrls: ['https://example.yale.edu/about/overview'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('publishes a lead-less program-like pathway as student_ready once it has a reachable access path, even with no action evidence yet (issue #1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'course-based-research-psychology-directed-research-path',
+        name: 'Psychology Directed Research Courses',
+        slug: 'course-based-research-psychology-directed-research-path',
+        kind: 'program',
+        shortDescription:
+          'A for-credit Psychology research pathway through directed research, independent study, and senior-essay or senior-thesis courses.',
+        fullDescription:
+          'A for-credit, course-based research pathway in Psychology. The department offers directed research and senior essay courses for credit under faculty supervision.',
+        websiteUrl: 'https://psychology.yale.edu/what-directed-research-course',
+        sourceUrls: ['https://psychology.yale.edu/what-directed-research-course'],
+      },
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+    expect(result.tier).toBe('student_ready');
   });
 
   it('suppresses generic directory-only faculty-area shells', () => {
@@ -187,11 +736,80 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toEqual(
-      expect.arrayContaining([
-        'non_owner_grant_shell',
-        'missing_action_evidence',
-      ]),
+      expect.arrayContaining(['non_owner_grant_shell', 'missing_action_evidence']),
     );
+  });
+
+  it('holds a "<Person> Lab"-named entity typed as an org (CENTER/INSTITUTE/PROGRAM) out of student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'nih-pi-lab-org-mismatch',
+        name: 'Michael Nathanson Lab',
+        slug: 'nih-pi-michael-nathanson',
+        kind: 'lab',
+        entityType: 'CENTER',
+        shortDescription: 'The Yale Liver Center supports digestive-disease research.',
+        fullDescription:
+          'The Yale Liver Center is one of 17 Digestive Diseases Research Core Centers, with 43 independent principal investigators and 52 Associate Members from 30 departments.',
+        websiteUrl: 'https://medicine.yale.edu/intmed/digestive/liver/',
+        sourceUrls: ['https://medicine.yale.edu/intmed/digestive/liver/get-involved'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.tier).not.toBe('limited_but_safe');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('lab_name_org_type_mismatch');
+  });
+
+  it('promotes a legitimately named laboratory center whose eponym appears in its own description', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-wright-laboratory-fixture',
+        name: 'Yale Wright Laboratory',
+        slug: 'center-wright-laboratory-fixture',
+        entityType: 'CENTER',
+        shortDescription:
+          'Wright Lab develops experiments to understand the Universe, focusing on nuclear, particle, and astro-physics.',
+        fullDescription:
+          'Wright Lab supports a broad research program in experimental nuclear, particle, and astro-physics, with an emphasis on instrumentation development and quantum sensing.',
+        fieldProvenance: { shortDescription: 'source', fullDescription: 'source' },
+        websiteUrl: 'https://wlab.yale.edu/',
+        sourceUrls: ['https://wlab.yale.edu/', 'https://wlab.yale.edu/opportunities'],
+      },
+      leadMembers: [],
+      accessSignalCount: 2,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('lab_name_org_type_mismatch');
+  });
+
+  it('does not flag a genuinely org-named entity whose type matches its name', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'center-industrial-ecology-no-mismatch',
+        name: 'Center for Industrial Ecology',
+        slug: 'yse-industrial-ecology-no-mismatch',
+        entityType: 'CENTER',
+        shortDescription:
+          'Advances the study of industrial ecology, material flows, and sustainable systems at Yale.',
+        fullDescription:
+          'The Center for Industrial Ecology advances research on material and energy flows, life-cycle assessment, and sustainable industrial systems through interdisciplinary collaboration.',
+        websiteUrl: 'https://environment.yale.edu/research/centers/industrial-ecology',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('lab_name_org_type_mismatch');
   });
 
   it('keeps sparse faculty-area shells with a specific profile source in operator review', () => {
@@ -334,7 +952,125 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('concrete_next_step');
   });
 
-  it('keeps a strong profile without action evidence limited rather than ready', () => {
+  it('publishes a faculty-research-area entity with no department or research area, since missing_facet_signal is a soft signal only (issue #1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        departments: [],
+        researchAreas: [],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_facet_signal');
+  });
+
+  it('reaches student ready once a faculty-research-area entity has a research area, with no department needed', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        departments: [],
+        researchAreas: ['Causal Inference'],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_facet_signal');
+  });
+
+  it('publishes a faculty-research-area entity with a department but no research area, since missing_facet_signal is a soft signal only (issue #1802, formerly #1717)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        departments: ['Internal Medicine'],
+        researchAreas: [],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_facet_signal');
+  });
+
+  it('publishes a lab entity with a department but no research area, since missing_facet_signal is a soft signal only (issue #1802, formerly #1717)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'LAB',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        departments: ['Internal Medicine'],
+        researchAreas: [],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_facet_signal');
+  });
+
+  it('reaches student ready once a lab entity with a department also has a research area (issue #1717)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        entityType: 'LAB',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        departments: ['Internal Medicine'],
+        researchAreas: ['Causal Inference'],
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_facet_signal');
+  });
+
+  it('promotes a good, coherent, source-backed description to student_ready even with unknown access evidence (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         shortDescription:
@@ -350,8 +1086,42 @@ describe('computeResearchEntityStudentVisibility', () => {
       openPostedOpportunityCount: 0,
     });
 
-    expect(result.tier).toBe('limited_but_safe');
+    expect(result.tier).toBe('student_ready');
     expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.reasons).toContain('source_backed_description');
+  });
+
+  it('does not promote a genuinely thin or missing description even with unknown access evidence (issue #1802)', () => {
+    const thin = computeResearchEntityStudentVisibility({
+      entity: {
+        shortDescription: 'Short profile.',
+        fullDescription: 'Short profile.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(thin.tier).not.toBe('student_ready');
+
+    const missing = computeResearchEntityStudentVisibility({
+      entity: {
+        shortDescription: '',
+        fullDescription: '',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(missing.tier).not.toBe('student_ready');
+    expect(missing.reasons).toContain('missing_description');
   });
 
   it('keeps source-backed records in operator review until the student-facing card description is usable', () => {
@@ -359,7 +1129,7 @@ describe('computeResearchEntityStudentVisibility', () => {
       entity: {
         shortDescription: '',
         fullDescription:
-          'The lab studies quantum simulation, ultracold atoms, optical lattices, and topology in many-body physics. Current projects examine how unusual lattice geometries shape quantum behavior.',
+          'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
         sourceUrls: ['https://physics.yale.edu/example-lab'],
         activeAtYaleCache: true,
       },
@@ -425,34 +1195,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.tier).toBe('operator_review');
-    expect(result.reasons).toEqual(
-      expect.arrayContaining(['missing_lead', 'missing_source_url']),
-    );
-  });
-
-  it('keeps records with conflicting PI identity out of public tiers', () => {
-    const result = computeResearchEntityStudentVisibility({
-      entity: {
-        shortDescription:
-          'Studies film and media theory, communication history, cultural technique, and humanities approaches to transmission.',
-        fullDescription:
-          'The research examines film and media theory, communication history, cultural technique, and humanities approaches to transmission, infrastructure, and materiality.',
-        sourceUrls: ['https://filmstudies.yale.edu/people/john-durham-peters'],
-      },
-      leadMembers: [
-        {
-          role: 'pi',
-          userId: 'wrong-user',
-          facultyMemberId: 'correct-faculty',
-          user: { facultyMemberId: 'wrong-faculty' },
-        },
-      ],
-      accessSignalCount: 1,
-      actionablePathwayCount: 1,
-    });
-
-    expect(result.tier).toBe('operator_review');
-    expect(result.reasons).toContain('pi_identity_conflict');
+    expect(result.reasons).toEqual(expect.arrayContaining(['missing_lead', 'missing_source_url']));
   });
 
   it('lets manual suppression override computed readiness', () => {
@@ -495,6 +1238,361 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toContain('research_infrastructure_only');
   });
+
+  it('suppresses an instructional-support center without positive research evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Poorvu Center for Teaching and Learning',
+        entityType: 'CENTER',
+        shortDescription:
+          'Supports teaching and learning across Yale through consultations, programs, and educational resources for instructors and students.',
+        fullDescription:
+          'The Poorvu Center supports teaching and learning across Yale through consultations, programs, workshops, and educational resources for instructors and students.',
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.computedTier).toBe('suppressed');
+    expect(result.reasons).toContain('non_research_entity');
+    expect(result.reasons).toContain('service_or_instructional_support');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+    expect(result.reasons).not.toContain('operator_override');
+  });
+
+  it('suppresses an instructional-support center whose only service language is in the profile synthesis', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Academic Excellence',
+        entityType: 'CENTER',
+        profileSynthesisDescription:
+          'Provides instructional support and faculty development, coordinating course design consultations and teaching support workshops for Yale instructors.',
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.computedTier).toBe('suppressed');
+    expect(result.reasons).toContain('non_research_entity');
+    expect(result.reasons).toContain('service_or_instructional_support');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+  });
+
+  it('keeps a center that conducts research on teaching in research scope', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Research on Teaching and Learning',
+        entityType: 'CENTER',
+        shortDescription:
+          'Conducts empirical research on university teaching and learning through faculty-led research projects and data collection.',
+        fullDescription:
+          'The center conducts empirical research on university teaching and learning. Its investigators lead research projects, collect data, and publish findings about effective instruction.',
+        sourceUrls: ['https://example.yale.edu/teaching-research'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('non_research_entity');
+  });
+
+  it('suppresses an administrative or service center without positive research evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Student Services',
+        entityType: 'CENTER',
+        shortDescription:
+          'Coordinates academic advising, career services, and financial aid support for enrolled students.',
+        fullDescription:
+          'The center manages student affairs, registrar operations, and event planning for the college community.',
+        studentVisibilityOverrideTier: 'student_ready',
+        sourceUrls: ['https://example.yale.edu/student-services'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.computedTier).toBe('suppressed');
+    expect(result.reasons).toContain('non_research_entity');
+    expect(result.reasons).toContain('administrative_or_service_organization');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+    expect(result.reasons).not.toContain('operator_override');
+  });
+
+  it('keeps an administrative-sounding center that conducts research eligible', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Human Resources Research',
+        entityType: 'CENTER',
+        shortDescription:
+          'Conducts empirical research on human resources and organizational behavior.',
+        fullDescription:
+          'The center conducts empirical research on human resources and organizational behavior. Its investigators lead research projects and data collection on workforce outcomes.',
+        sourceUrls: ['https://example.yale.edu/hr-research'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('non_research_entity');
+    expect(result.reasons).not.toContain('administrative_or_service_organization');
+  });
+
+  it('suppresses a person-derived entity whose attached lead profile does not match the entity identity', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-contested',
+        name: 'Jane Doe Lab',
+        slug: 'jane-doe-lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/jane-doe/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jane-doe/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'john-smith',
+          user: {
+            fname: 'John',
+            lname: 'Smith',
+            profileUrls: { official: 'https://medicine.yale.edu/profile/john-smith/' },
+          },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('profile_identity_risk');
+  });
+
+  it('keeps a person-derived entity student-ready when the attached lead profile matches its identity', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-consistent',
+        name: 'Jane Doe Lab',
+        slug: 'jane-doe-lab-consistent',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/jane-doe/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jane-doe/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        researchAreas: ['Causal Inference'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'jane-doe',
+          user: {
+            fname: 'Jane',
+            lname: 'Doe',
+            profileUrls: { official: 'https://medicine.yale.edu/profile/jane-doe/' },
+          },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('profile_identity_risk');
+  });
+
+  it('does not flag profile identity risk for a person-derived entity when no lead profile evidence exists', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-no-lead-profile',
+        name: 'Jane Doe Lab',
+        slug: 'jane-doe-lab-no-profile',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/jane-doe/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jane-doe/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        researchAreas: ['Causal Inference'],
+      },
+      leadMembers: [{ role: 'pi', userId: 'jane-doe', user: { fname: 'Jane', lname: 'Doe' } }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('profile_identity_risk');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('holds a contested person-derived entity for review even under a student-ready override (issue #468)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'nsf-pi-6990e3ff500496cc8ac60925',
+        name: 'Casey Harper Lab',
+        slug: 'nsf-pi-6990e3ff500496cc8ac60925',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/qz990/',
+        sourceUrls: ['https://medicine.yale.edu/profile/qz990/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'ch51', user: { netid: 'ch51', fname: 'Casey', lname: 'Harper' } },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('profile_identity_risk');
+    expect(result.reasons).toContain('operator_override');
+  });
+
+  it('clears the identity hold when the lead full name corroborates despite a variant profile slug', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-variant-slug',
+        name: 'Jane Doe Lab',
+        slug: 'jane-doe-lab-variant',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/jane-doe/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jane-doe/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        researchAreas: ['Causal Inference'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'jane-doe',
+          user: {
+            netid: 'jd88',
+            fname: 'Jane',
+            lname: 'Doe',
+            profileUrls: { official: 'https://chem.yale.edu/profile/jane-e-doe' },
+          },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('profile_identity_risk');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('keeps a surname-only contested lead gated even under a student-ready override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-surname-collision',
+        name: 'John Smith Lab',
+        slug: 'john-smith-lab-collision',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/john-smith/',
+        sourceUrls: ['https://medicine.yale.edu/profile/john-smith/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [{ role: 'pi', userId: 'jane-smith', user: { fname: 'Jane', lname: 'Smith' } }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('profile_identity_risk');
+    expect(result.reasons).toContain('operator_override');
+  });
+
+  it('holds a lead-requiring entity with no attached PI for review even under a student-ready override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-no-lead',
+        name: 'Cognitive Neuroscience Lab',
+        slug: 'cognitive-neuroscience-lab-no-lead',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://example.yale.edu/labs/cognitive-neuroscience',
+        sourceUrls: ['https://example.yale.edu/labs/cognitive-neuroscience'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).toContain('operator_override');
+  });
+
+  it('publishes a coherent organizational home whose sourceUrls are empty (projection gap) as student_ready, recording the soft missing_source_url signal (issue #1802)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'institute-no-linkout',
+        name: 'Yale Quantum Institute',
+        slug: 'center-yale-quantum-institute',
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+        websiteUrl: '',
+        website: '',
+        sourceUrls: [],
+        shortDescription:
+          'Advances quantum science and engineering across Yale, connecting physics, applied physics, and computer science research groups.',
+        fullDescription:
+          'The institute advances quantum science and engineering across Yale. It connects physics, applied physics, electrical engineering, and computer science groups working on superconducting qubits, quantum error correction, and quantum materials.',
+        activeAtYaleCache: true,
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
+    expect(result.reasons).toContain('missing_source_url');
+  });
 });
 
 describe('computeProgramStudentVisibility', () => {
@@ -502,6 +1600,8 @@ describe('computeProgramStudentVisibility', () => {
     const result = computeProgramStudentVisibility({
       title: 'STARS Summer Research Program',
       studentFacingCategory: 'Structured summer program',
+      summary:
+        'A summer research program placing undergraduates in Yale STEM labs with a stipend and faculty mentor.',
       sourceUrl: 'https://science.yalecollege.yale.edu/stars',
       applicationLink: 'https://apply.yale.edu/stars',
       undergraduateOnly: true,
@@ -510,6 +1610,7 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).toContain('official_source');
     expect(result.reasons).toContain('application_route');
+    expect(result.reasons).not.toContain('missing_description');
   });
 
   it('keeps official but ambiguous program records in review', () => {
@@ -569,6 +1670,8 @@ describe('computeProgramStudentVisibility', () => {
       title: 'Senior Research Fellowship',
       studentFacingCategory: 'Senior research funding',
       programKind: 'FELLOWSHIP_FUNDING',
+      summary:
+        'Funds senior undergraduates conducting independent research toward a thesis at Yale.',
       sourceUrl: 'https://yalecollege.yale.edu/funding/senior-research-fellowship',
       applicationLink: 'https://apply.yale.edu/senior-research-fellowship',
       undergraduateOnly: true,
@@ -577,6 +1680,8 @@ describe('computeProgramStudentVisibility', () => {
       title: 'Research Travel Grant',
       studentFacingCategory: 'Research travel funding',
       programKind: 'TRAVEL_RESEARCH_GRANT',
+      summary:
+        'Supports undergraduate travel for research, fieldwork, and archival study away from campus.',
       sourceUrl: 'https://yalecollege.yale.edu/travel-research',
       applicationLink: 'https://apply.yale.edu/travel-research',
       undergraduateOnly: true,
@@ -585,6 +1690,8 @@ describe('computeProgramStudentVisibility', () => {
       title: 'Senior Thesis Funding',
       studentFacingCategory: 'Senior research funding',
       programKind: 'SENIOR_THESIS_FUNDING',
+      summary:
+        'Provides funding for materials and travel supporting a senior thesis research project.',
       sourceUrl: 'https://yalecollege.yale.edu/senior-thesis-funding',
       applicationLink: 'https://apply.yale.edu/senior-thesis',
       undergraduateOnly: true,
@@ -603,6 +1710,8 @@ describe('computeProgramStudentVisibility', () => {
       studentFacingCategory: 'Structured summer program',
       programKind: 'STRUCTURED_PROGRAM',
       entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      summary:
+        'A structured summer program pairing undergraduates with Yale research mentors and a stipend.',
       sourceUrl: 'https://science.yalecollege.yale.edu/stars',
       applicationLink: 'https://apply.yale.edu/stars',
       undergraduateOnly: true,
@@ -613,6 +1722,8 @@ describe('computeProgramStudentVisibility', () => {
       programKind: 'MENTOR_MATCHING',
       entryMode: 'DIRECT_FACULTY_MATCHING',
       mentorMatching: true,
+      summary:
+        'Matches undergraduates with faculty mentors for a funded research experience during the year.',
       sourceUrl: 'https://science.yalecollege.yale.edu/mentor-match',
       applicationLink: 'https://apply.yale.edu/mentor-match',
       undergraduateOnly: true,
@@ -624,7 +1735,24 @@ describe('computeProgramStudentVisibility', () => {
     expect(mentorMatching.reasons).not.toContain('formalization_only');
   });
 
-  it('suppresses graduate-only programs', () => {
+  it('surfaces graduate-only research programs with a source and route as student-ready, labeled graduate', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Graduate Dissertation Research Fellowship',
+      studentFacingCategory: 'Fellowship funding',
+      programKind: 'FELLOWSHIP_FUNDING',
+      summary:
+        'Funds doctoral candidates conducting dissertation research, including fieldwork and archival study.',
+      sourceUrl: 'https://gsas.yale.edu/funding/dissertation-research-fellowship',
+      applicationLink: 'https://apply.yale.edu/dissertation-research-fellowship',
+      undergraduateOnly: false,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('graduate_relevant');
+    expect(result.reasons).not.toContain('not_undergraduate_relevant');
+  });
+
+  it('does not suppress graduate-only programs; archive/review still holds them out', () => {
     const result = computeProgramStudentVisibility({
       title: 'Graduate Dissertation Research Fellowship',
       studentFacingCategory: 'Archive / review',
@@ -633,7 +1761,413 @@ describe('computeProgramStudentVisibility', () => {
       undergraduateOnly: false,
     });
 
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).not.toContain('not_undergraduate_relevant');
+    expect(result.reasons).toContain('graduate_relevant');
+  });
+
+  it('still suppresses catalog and administrative program pages', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Find Funding: Student Grants Database',
+      studentFacingCategory: 'Research travel funding',
+      sourceUrl: 'https://yalecollege.yale.edu/find-funding',
+      applicationLink: 'https://apply.yale.edu/find-funding',
+      undergraduateOnly: true,
+    });
+
     expect(result.tier).toBe('suppressed');
     expect(result.reasons).toContain('not_undergraduate_relevant');
+  });
+
+  it('caps a sourced routed program with no description or summary at limited_but_safe', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Class of 1960 Summer Traveling Fellowship',
+      studentFacingCategory: 'Research travel funding',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/class-of-1960-fellowship',
+      applicationLink: 'https://apply.yale.edu/class-of-1960-fellowship',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('missing_description');
+    expect(result.reasons).not.toContain('thin_description');
+  });
+
+  it('caps a sourced routed program with only a thin description at limited_but_safe', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Research Internship Program',
+      studentFacingCategory: 'Structured summer program',
+      programKind: 'STRUCTURED_PROGRAM',
+      summary: 'Summer research internship.',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/research-internship',
+      applicationLink: 'https://apply.yale.edu/research-internship',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('thin_description');
+    expect(result.reasons).not.toContain('missing_description');
+  });
+
+  it('promotes a sourced routed program to student_ready once a real description is present', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Research Internship Program',
+      studentFacingCategory: 'Structured summer program',
+      programKind: 'STRUCTURED_PROGRAM',
+      description:
+        'A ten-week summer internship placing undergraduates in Yale research labs with a stipend, weekly seminars, and a faculty mentor.',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/research-internship',
+      applicationLink: 'https://apply.yale.edu/research-internship',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_description');
+    expect(result.reasons).not.toContain('thin_description');
+  });
+
+  it('blocks a blank-description program from student_ready even under an operator override (issue #1425)', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Research Internship Program',
+      studentFacingCategory: 'Structured summer program',
+      programKind: 'STRUCTURED_PROGRAM',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/research-internship',
+      applicationLink: 'https://apply.yale.edu/research-internship',
+      undergraduateOnly: true,
+      studentVisibilityOverrideTier: 'student_ready',
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('operator_override');
+    expect(result.reasons).toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('lets an operator override still publish a described program the operator vouches for', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Research Travel Grant',
+      studentFacingCategory: 'Research travel funding',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      description:
+        'Supports undergraduate travel for research, fieldwork, and archival study away from campus over the summer.',
+      sourceUrl: 'https://yalecollege.yale.edu/travel-research',
+      applicationLink: 'https://apply.yale.edu/travel-research',
+      undergraduateOnly: true,
+      studentVisibilityOverrideTier: 'student_ready',
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('does not treat a contact-only summary as a student-facing description', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Robert C. Bates Summer Fellowship',
+      studentFacingCategory: 'Research travel funding',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      summary: 'Contact prose-office@example.edu for details.',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/bates-fellowship',
+      applicationLink: 'https://apply.yale.edu/bates-fellowship',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('holds a lead-requiring lab with no attached PI for review even under a student-ready override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Example Lab',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).toContain('operator_override');
+  });
+
+  it('holds a lead-requiring lab with a weak (unresolved) lead for review even under a limited_but_safe override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Example Lab',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        studentVisibilityOverrideTier: 'limited_but_safe',
+      },
+      leadMembers: [{ role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_lead');
+  });
+
+  it('keeps the organizational-home exemption: a research center with no named lead but a real access path can still be student-ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Research on Teaching and Learning',
+        entityType: 'CENTER',
+        shortDescription:
+          'Conducts empirical research on university teaching and learning through faculty-led research projects and data collection.',
+        fullDescription:
+          'The center conducts empirical research on university teaching and learning. Its investigators lead research projects, collect data, and publish findings about effective instruction.',
+        sourceUrls: ['https://example.yale.edu/teaching-research'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+  });
+
+  it('blocks a blank-description research entity from student_ready even under an operator override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'blank-research-override',
+        name: 'Example Lab',
+        slug: 'example-lab-blank-override',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription: '',
+        fullDescription: '',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [{ userId: 'user-1', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('operator_override');
+  });
+});
+
+describe('enforceStudentReadyDescriptionInvariant', () => {
+  const blankRecord = {
+    fullDescription: '   ',
+    shortDescription: '',
+    description: '',
+    summary: '',
+  };
+  const describedRecord = {
+    fullDescription: 'The lab studies causal inference methods for public health research.',
+  };
+
+  it('downgrades a student_ready result with no usable description to operator_review', () => {
+    const result = enforceStudentReadyDescriptionInvariant(
+      { tier: 'student_ready', computedTier: 'student_ready', reasons: ['operator_override'] },
+      blankRecord,
+    );
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('student_ready');
+    expect(result.reasons).toContain('operator_override');
+    expect(result.reasons).toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('leaves a student_ready result with a usable description unchanged', () => {
+    const input = {
+      tier: 'student_ready' as const,
+      computedTier: 'student_ready' as const,
+      reasons: ['source_backed_description'],
+    };
+    const result = enforceStudentReadyDescriptionInvariant(input, describedRecord);
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('does not touch non-student_ready tiers even when the description is blank', () => {
+    for (const tier of ['limited_but_safe', 'operator_review', 'suppressed'] as const) {
+      const result = enforceStudentReadyDescriptionInvariant(
+        { tier, computedTier: tier, reasons: [] },
+        blankRecord,
+      );
+      expect(result.tier).toBe(tier);
+      expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+    }
+  });
+
+  it('treats a contact-only or boilerplate-only field as no usable description', () => {
+    expect(recordHasNoUsablePublicDescription(blankRecord)).toBe(true);
+    expect(recordHasNoUsablePublicDescription(describedRecord)).toBe(false);
+  });
+
+  it('treats a description that only echoes the record research-area chips as no usable description', () => {
+    const echoOnlyRecord = {
+      researchAreas: ['Marine Ecology', 'Coral Reefs', 'Ocean Chemistry'],
+      fullDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+      shortDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+    };
+
+    expect(recordHasNoUsablePublicDescription(echoOnlyRecord)).toBe(true);
+
+    const result = enforceStudentReadyDescriptionInvariant(
+      {
+        tier: 'student_ready',
+        computedTier: 'student_ready',
+        reasons: ['source_backed_description'],
+      },
+      echoOnlyRecord,
+    );
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+
+  it('keeps a record usable when a real full description sits beside an echo card field', () => {
+    const realFullEchoShortRecord = {
+      researchAreas: ['Marine Ecology', 'Coral Reefs', 'Ocean Chemistry'],
+      fullDescription:
+        'The lab combines field surveys and lab experiments to understand how warming oceans reshape reef community structure.',
+      shortDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+    };
+
+    expect(recordHasNoUsablePublicDescription(realFullEchoShortRecord)).toBe(false);
+
+    const result = enforceStudentReadyDescriptionInvariant(
+      {
+        tier: 'student_ready',
+        computedTier: 'student_ready',
+        reasons: ['source_backed_description'],
+      },
+      realFullEchoShortRecord,
+    );
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain(BLANK_PUBLIC_DESCRIPTION_REASON);
+  });
+});
+
+describe('grant-only entities cannot be published to students (#2280)', () => {
+  const grantOnlyLab = {
+    slug: 'nih-pi-example-lead',
+    name: 'Example Lead Lab',
+    displayName: 'Example Lead Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    websiteUrl: '',
+    sourceUrls: ['https://reporter.nih.gov/project-details/10899610'],
+    researchAreas: ['Epidemiology'],
+    shortDescription: 'Studies transmission dynamics of respiratory viruses in community settings.',
+    fullDescription:
+      'The lab studies transmission dynamics of respiratory viruses in community settings, combining household cohort sampling with statistical modelling to estimate infection risk.',
+  };
+
+  it('suppresses a lab whose every url is a grant record', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: grantOnlyLab,
+      leadMembers: [{ role: 'PI', user: { displayName: 'Example Lead' } }],
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).toContain('grant_only_no_current_yale_source');
+    expect(result.tier).toBe('suppressed');
+  });
+
+  it('leaves an entity with a real official page alone', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        ...grantOnlyLab,
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/10899610',
+          'https://medicine.yale.edu/profile/example-lead/',
+        ],
+      },
+      leadMembers: [{ role: 'PI', user: { displayName: 'Example Lead' } }],
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).not.toContain('grant_only_no_current_yale_source');
+  });
+});
+
+describe('recorded closure suppresses, and its absence does not (#2284)', () => {
+  const openLab = {
+    slug: 'dept-astronomy-example-lab',
+    name: 'Example Lab',
+    displayName: 'Example Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    websiteUrl: 'https://example.yale.edu/labs/example/',
+    sourceUrls: ['https://astronomy.yale.edu/people/faculty'],
+    researchAreas: ['Exoplanets'],
+    shortDescription: 'Studies exoplanet detection and atmospheric characterization.',
+    fullDescription:
+      'The lab studies exoplanet detection and atmospheric characterization, combining radial-velocity surveys with high-resolution spectroscopy of transiting planets.',
+  };
+  const leadMembers = [{ role: 'PI', user: { displayName: 'Example Lead' } }];
+
+  it('FAILS OPEN: no closure evidence must not suppress', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: openLab,
+      leadMembers,
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).not.toContain('permanently_closed');
+    expect(result.tier).not.toBe('suppressed');
+  });
+
+  it('suppresses only on a positively recorded closure marker', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: { ...openLab, studentVisibilitySuppressionReason: 'permanently_closed' },
+      leadMembers,
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).toContain('permanently_closed');
+    expect(result.tier).toBe('suppressed');
+    // computedTier, not just tier: the marker must suppress in the computation
+    // itself rather than only via the post-override guard, so an operator board
+    // reading computedTier sees a closed row as closed.
+    expect(result.computedTier).toBe('suppressed');
+  });
+
+  it('does not treat NOT_CURRENTLY_AVAILABLE as closure', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        ...openLab,
+        undergraduateLogistics: { currentAvailability: 'NOT_CURRENTLY_AVAILABLE' },
+      },
+      leadMembers,
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.reasons).not.toContain('permanently_closed');
+    expect(result.tier).not.toBe('suppressed');
+  });
+
+  it('outranks an operator override to publish', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        ...openLab,
+        studentVisibilitySuppressionReason: 'permanently_closed',
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers,
+      concreteLeadEntityUserIds: new Set<string>(),
+      hasActionEvidence: true,
+    } as never);
+    expect(result.tier).toBe('suppressed');
   });
 });

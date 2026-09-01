@@ -39,10 +39,12 @@ export interface ScraperOptions {
   visibilityGateMode?: 'dry-run' | 'apply';
   allowVisibilityDemotions?: boolean;
   since?: Date;
-  discoverOpenAlexAuthors?: boolean;
-  maxOpenAlexPagesPerAuthor?: number;
   manualRecipientCsvDir?: string;
   ignoreWorkPlanner?: boolean;
+  exhaustive?: boolean;
+  forceLlm?: boolean;
+  sourceConcurrency?: number;
+  logisticsProductionMode?: boolean;
   dbReview?: boolean;
   triggeredBy?: 'cli' | 'cron' | 'admin';
 }
@@ -122,6 +124,25 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     unchanged: number;
     reviewRequired: number;
     missingPreviouslySeen: number;
+    deadlineParsed: number;
+    deadlineMissing: number;
+    sitemapProgramsDiscovered?: number;
+    detailPagesCrawled?: number;
+    detailPagesCapped?: number;
+  };
+  reuPrograms?: {
+    seeded: number;
+    nsfDirectoryDiscovered: number;
+    fetched: number;
+    emitted: number;
+    deadlineParsed: number;
+    deadlineMissing: number;
+  };
+  healthSciencesSummerPrograms?: {
+    seeded: number;
+    directoryDiscovered: number;
+    fetched: number;
+    emitted: number;
     deadlineParsed: number;
     deadlineMissing: number;
   };

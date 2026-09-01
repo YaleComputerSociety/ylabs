@@ -9,9 +9,11 @@ import dns from 'dns/promises';
 import http from 'http';
 import https from 'https';
 import type { LookupFunction } from 'net';
+import { containsAsciiControl } from './asciiControl';
 
 const MAX_SSRF_PUBLIC_HTTP_URL_LENGTH = 2048;
-const UNSAFE_SSRF_PUBLIC_HTTP_URL_RE = /[\u0000-\u001f\u007f\s\\]/;
+const hasUnsafePublicHttpUrlCharacter = (value: string): boolean =>
+  containsAsciiControl(value) || /[\s\\]/.test(value);
 
 export const stripIpv6Brackets = (addr: string): string =>
   addr.replace(/^\[/, '').replace(/\]$/, '');
@@ -19,7 +21,10 @@ export const stripIpv6Brackets = (addr: string): string =>
 const ipv4ToNumber = (addr: string): number | null => {
   if (net.isIP(addr) !== 4) return null;
   const parts = addr.split('.').map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+  if (
+    parts.length !== 4 ||
+    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+  ) {
     return null;
   }
   return parts.reduce((acc, part) => (acc << 8) + part, 0) >>> 0;
@@ -182,7 +187,7 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   if (!trimmed || trimmed.length > MAX_SSRF_PUBLIC_HTTP_URL_LENGTH) {
     throw new SsrfBlockedError('Invalid URL');
   }
-  if (UNSAFE_SSRF_PUBLIC_HTTP_URL_RE.test(trimmed)) {
+  if (hasUnsafePublicHttpUrlCharacter(trimmed)) {
     throw new SsrfBlockedError('Invalid URL');
   }
 

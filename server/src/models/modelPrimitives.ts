@@ -3,13 +3,14 @@
  */
 import mongoose from 'mongoose';
 
-export const recordReviewStatuses = [
-  'unreviewed',
-  'approved',
-  'needs_source',
-  'disputed',
-  'archived_by_review',
+export const suppressionReasons = [
+  'evidence_replaced',
+  'evidence_lost',
+  'duplicate_collapsed',
+  'source_audit',
 ] as const;
+
+export type SuppressionReason = (typeof suppressionReasons)[number];
 
 export const fieldProvenanceSchema = new mongoose.Schema(
   {
@@ -45,19 +46,19 @@ export const fieldProvenanceSchema = new mongoose.Schema(
   { _id: false },
 );
 
-export const recordReviewSchema = new mongoose.Schema(
+/**
+ * Absent `reason` is the resting state: the record is not suppressed. A present
+ * `reason` is a tombstone that stops materializers from resurrecting a record
+ * they would otherwise rewrite, so it must never be defaulted on insert.
+ */
+export const recordSuppressionSchema = new mongoose.Schema(
   {
-    status: {
+    reason: {
       type: String,
-      enum: [...recordReviewStatuses],
-      default: 'unreviewed',
-    },
-    reviewedByUserId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      enum: [...suppressionReasons],
       required: false,
     },
-    reviewedAt: {
+    suppressedAt: {
       type: Date,
       required: false,
     },
@@ -72,67 +73,4 @@ export const recordReviewSchema = new mongoose.Schema(
     },
   },
   { _id: false },
-);
-
-export const opennessSignalSchema = new mongoose.Schema(
-  {
-    signalType: {
-      type: String,
-      enum: [
-        'active-listing',
-        'pi-claim',
-        'indep-study-course',
-        'lab-microsite-llm',
-        'prior-undergrad-member',
-        'student-outcome',
-      ],
-      required: true,
-    },
-    value: {
-      type: Boolean,
-      required: true,
-    },
-    strength: {
-      type: String,
-      enum: ['verified', 'likely', 'weak', 'negative'],
-      required: true,
-    },
-    confidence: {
-      type: Number,
-      min: 0,
-      max: 1,
-      default: 0,
-    },
-    observedAt: {
-      type: Date,
-      required: true,
-      default: () => new Date(),
-    },
-    expiresAt: {
-      type: Date,
-      required: false,
-    },
-    evidenceText: {
-      type: String,
-      default: '',
-    },
-    sourceUrl: {
-      type: String,
-      default: '',
-    },
-    sourceId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Source',
-      required: false,
-    },
-    observationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Observation',
-      required: false,
-    },
-  },
-  {
-    timestamps: true,
-    _id: true,
-  },
 );

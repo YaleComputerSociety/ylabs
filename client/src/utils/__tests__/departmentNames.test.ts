@@ -52,6 +52,18 @@ describe('departmentNames', () => {
     );
   });
 
+  it('keeps hyphenated department names intact instead of dropping the leading word', () => {
+    expect(getDepartmentDisplayLabel('RADIATION-DIAGNOSTIC/ONCOLOGY')).toBe(
+      'RADIATION-DIAGNOSTIC/ONCOLOGY',
+    );
+    expect(getDepartmentDisplayLabel('Radiation-Diagnostic/Oncology')).toBe(
+      'Radiation-Diagnostic/Oncology',
+    );
+    expect(getUniqueDepartmentLabels(['RADIATION-DIAGNOSTIC/ONCOLOGY'])).toEqual([
+      'RADIATION-DIAGNOSTIC/ONCOLOGY',
+    ]);
+  });
+
   it('resolves all known department variants through the Mongo department table', () => {
     expect(
       getUniqueDepartmentLabels(

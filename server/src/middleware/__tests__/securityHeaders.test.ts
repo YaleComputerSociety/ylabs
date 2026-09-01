@@ -1,11 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  CONTENT_SECURITY_POLICY,
-  PERMISSIONS_POLICY,
-  securityHeaders,
-} from '../securityHeaders';
+import { CONTENT_SECURITY_POLICY, PERMISSIONS_POLICY, securityHeaders } from '../securityHeaders';
 
 const originalEnv = { ...process.env };
 
@@ -113,9 +109,7 @@ describe('securityHeaders', () => {
       headers: {},
     });
     const csp = headers.get('Content-Security-Policy') || '';
-    const imageDirective = csp
-      .split('; ')
-      .find((directive) => directive.startsWith('img-src '));
+    const imageDirective = csp.split('; ').find((directive) => directive.startsWith('img-src '));
 
     expect(imageDirective).toBe(
       "img-src 'self' data: blob: https://yale.edu https://*.yale.edu https://ysm-res.cloudinary.com https://yalies.io https://*.yalies.io https://www.google-analytics.com https://stats.g.doubleclick.net",

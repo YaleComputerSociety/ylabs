@@ -1,14 +1,13 @@
 import mongoose from 'mongoose';
 
-export const researchEntityRelationshipTypes = [
-  'AFFILIATED_LAB',
-  'AFFILIATED_RESEARCH_GROUP',
-  'MEMBER_RESEARCH_AREA',
-  'HOSTED_PROGRAM',
-] as const;
-
-export type ResearchEntityRelationshipType =
-  (typeof researchEntityRelationshipTypes)[number];
+/**
+ * Only these two are reachable. `centersInstitutesScraper` hard-codes
+ * MEMBER_RESEARCH_AREA as the sole observed value and
+ * `centerRelationshipTypeForResolvedTarget` can only upgrade it to
+ * AFFILIATED_LAB, so AFFILIATED_RESEARCH_GROUP and HOSTED_PROGRAM were
+ * unreachable with 0 edges in every environment and were dropped (#2213).
+ */
+export const researchEntityRelationshipTypes = ['AFFILIATED_LAB', 'MEMBER_RESEARCH_AREA'] as const;
 
 const researchEntityRelationshipSchema = new mongoose.Schema(
   {
@@ -69,4 +68,3 @@ export const ResearchEntityRelationship =
     researchEntityRelationshipSchema,
     'research_entity_relationships',
   );
-

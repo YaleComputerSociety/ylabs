@@ -2,9 +2,12 @@ import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { EntryPathway } from '../models/entryPathway';
-import { User } from '../models/user';
+import { RoleAssignment } from '../models/roleAssignment';
+import {
+  getResearchEntityRoster,
+  type ResearchEntityRosterEntry,
+} from './researchEntityMembershipAccessor';
+import { Researcher } from '../models/researcher';
 import mongoose from 'mongoose';
 import {
   VisibilityReleaseQueueItem,
@@ -17,11 +20,10 @@ import {
   deriveShortDescriptionFromFullDescription,
 } from '../utils/researchEntityDescriptionQuality';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
-import { upsertAccessSignal, type UpsertAccessSignalInput } from './accessSignalService';
-import { upsertContactRoute, type UpsertContactRouteInput } from './contactRouteService';
-import { upsertEntryPathway, type UpsertEntryPathwayInput } from './entryPathwayService';
+import { upsertSignal, type UpsertSignalInput } from './signalService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { withResearchEntityWriteTransaction } from './researchEntityWriteTransaction';
 
 export type VisibilityRepairMode = 'dry-run' | 'apply';
 
@@ -100,9 +102,12 @@ function toVisibilityRepairObjectId(value: unknown): mongoose.Types.ObjectId | u
 }
 
 interface RepairDeps {
-  findOpenQueueItems: (options: VisibilityRepairQueueOptions) => Promise<VisibilityRepairQueueItemInput[]>;
+  findOpenQueueItems: (
+    options: VisibilityRepairQueueOptions,
+  ) => Promise<VisibilityRepairQueueItemInput[]>;
   updateQueueItem: (id: string, patch: Record<string, unknown>) => Promise<void>;
   findResearchEntity: (id: string) => Promise<Record<string, any> | null>;
+  findConflictingOfficialLabUrls?: (id: string, urls: string[]) => Promise<string[]>;
   findResearchEntityMembers?: (id: string) => Promise<Array<Record<string, any>>>;
   findUserByProfileUrl?: (urls: string[]) => Promise<Record<string, any> | null>;
   findUserByExactWebsiteUrl?: (urls: string[]) => Promise<Record<string, any> | null>;
@@ -111,12 +116,7 @@ interface RepairDeps {
     userId: string,
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
-  upsertEntryPathway?: (input: UpsertEntryPathwayInput) => Promise<{ pathwayId?: string; doc?: any }>;
-  findReusableExploratoryContactPathway?: (
-    researchEntityId: string,
-  ) => Promise<{ pathwayId?: string; derivationKey?: string; doc?: any } | null>;
-  upsertAccessSignal?: (input: UpsertAccessSignalInput) => Promise<{ signalId?: string; doc?: any }>;
-  upsertContactRoute?: (input: UpsertContactRouteInput) => Promise<{ contactRouteId?: string; doc?: any }>;
+  upsertSignal?: (input: UpsertSignalInput) => Promise<{ signalId?: string; doc?: any }>;
   findActionEvidenceObservationIds?: (input: {
     researchEntityId: string;
     userId: string;
@@ -137,41 +137,39 @@ interface RepairDeps {
   ) => Promise<{ counts?: { resolved?: number; promoted?: number } }>;
 }
 
-export function buildVisibilityRepairPiMemberUpsert(
-  researchEntityId: string,
-  userId: string,
+export function buildVisibilityRepairPiRoleAssignmentUpsert(
+  personId: mongoose.Types.ObjectId,
+  researchEntityId: mongoose.Types.ObjectId,
   metadata: { sourceUrl: string; sourceName: string; confidence: number },
   now = new Date(),
 ) {
   return {
     filter: {
-      researchEntityId,
-      userId,
-      role: 'pi',
-      isCurrentMember: true,
+      personId,
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': researchEntityId,
+      role: 'PI',
     },
     update: {
       $set: {
-        researchEntityId,
-        researchGroupId: researchEntityId,
-        userId,
-        role: 'pi',
-        isCurrentMember: true,
+        personId,
+        target: { kind: 'RESEARCH_ENTITY', id: researchEntityId },
+        role: 'PI',
+        state: 'CURRENT',
         archived: false,
-        sourceUrl: metadata.sourceUrl,
         confidence: metadata.confidence,
-        lastObservedAt: now,
-        'confidenceByField.role': metadata.confidence,
-        'fieldProvenance.role': {
+        reviewStatus: 'UNREVIEWED',
+        rosterProvenance: {
           sourceName: metadata.sourceName,
           sourceUrl: metadata.sourceUrl,
           observedAt: now,
-          confidence: metadata.confidence,
         },
       },
       $setOnInsert: {
         startedAt: now,
+        evidenceClaimIds: [],
       },
+      $unset: { endedAt: '' },
     },
     options: { upsert: true },
   };
@@ -191,7 +189,6 @@ const piReasons = new Set([
   'missing_lead',
   'duplicate_name_risk',
   'duplicate_risk',
-  'pi_identity_conflict',
   'profile_identity_risk',
 ]);
 
@@ -254,10 +251,8 @@ const sourceUrlsForLeadMembers = (leadMembers: Array<Record<string, any>> = []):
       [
         member.sourceUrl,
         ...objectValues(member.user?.profileUrls),
-        member.facultyMember?.profileUrl,
         member.user?.website,
         member.user?.websiteUrl,
-        member.facultyMember?.website,
       ].filter((url) => hasHttpUrl(url) && profileUrlMatchesMemberName(url, member)),
     ),
   );
@@ -271,9 +266,15 @@ const sourceUrlsForFieldProvenance = (entity: Record<string, any>): string[] =>
   ).filter(hasHttpUrl);
 
 const isLeadMember = (member: Record<string, any>): boolean =>
-  ['pi', 'principal-investigator', 'principal investigator', 'director', 'lead'].includes(
-    textValue(member.role).toLowerCase(),
-  );
+  [
+    'pi',
+    'co-pi',
+    'principal-investigator',
+    'principal investigator',
+    'director',
+    'co-director',
+    'lead',
+  ].includes(textValue(member.role).toLowerCase());
 
 const cleanResearchInterest = (value: unknown): string => {
   const text = textValue(value)
@@ -300,10 +301,7 @@ const meaningfulInterestTokens = (value: string): string[] =>
 
 const interestCorroboratedByBio = (interest: string, bio: string): boolean => {
   if (!bio) return true;
-  const normalizedBio = bio
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase();
+  const normalizedBio = bio.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   const tokens = meaningfulInterestTokens(interest);
   if (tokens.length === 0) return false;
   return tokens.some((token) => normalizedBio.includes(token));
@@ -312,46 +310,39 @@ const interestCorroboratedByBio = (interest: string, bio: string): boolean => {
 const leadResearchInterestCandidates = (
   leadMembers: Array<Record<string, any>> = [],
 ): Array<{ value: string; shortValue?: string; label: string; sourceUrl?: string }> =>
-  leadMembers
-    .filter(isLeadMember)
-    .flatMap((member) => {
-      const sourceUrl = profileSourceUrlForMember(member, { requirePersonNameMatch: true });
-      if (!sourceUrl) return [];
+  leadMembers.filter(isLeadMember).flatMap((member) => {
+    const sourceUrl = profileSourceUrlForMember(member, { requirePersonNameMatch: true });
+    if (!sourceUrl) return [];
 
-      const profileBio = textValue(member.user?.bio);
-      const interests = uniqueStrings([
-        ...(Array.isArray(member.user?.researchInterests) ? member.user.researchInterests : []),
-        ...(Array.isArray(member.user?.topics) ? member.user.topics : []),
-        ...(Array.isArray(member.facultyMember?.researchInterests)
-          ? member.facultyMember.researchInterests
-          : []),
-      ])
-        .map(cleanResearchInterest)
-        .filter(Boolean)
-        .slice(0, 5);
+    const profileBio = textValue(member.user?.bio);
+    const interests = uniqueStrings([
+      ...(Array.isArray(member.user?.researchInterests) ? member.user.researchInterests : []),
+      ...(Array.isArray(member.user?.topics) ? member.user.topics : []),
+    ])
+      .map(cleanResearchInterest)
+      .filter(Boolean)
+      .slice(0, 5);
 
-      const corroboratedInterests =
-        profileBio.length >= 80
-          ? interests.filter((interest) => interestCorroboratedByBio(interest, profileBio))
-          : interests;
+    const corroboratedInterests =
+      profileBio.length >= 80
+        ? interests.filter((interest) => interestCorroboratedByBio(interest, profileBio))
+        : interests;
 
-      if (corroboratedInterests.length < 3) return [];
+    if (corroboratedInterests.length < 3) return [];
 
-      const lead = corroboratedInterests.slice(0, 3);
-      const formatted =
-        lead.length === 1
-          ? lead[0]
-          : `${lead.slice(0, -1).join(', ')}, and ${lead[lead.length - 1]}`;
+    const lead = corroboratedInterests.slice(0, 3);
+    const formatted =
+      lead.length === 1 ? lead[0] : `${lead.slice(0, -1).join(', ')}, and ${lead[lead.length - 1]}`;
 
-      return [
-        {
-          label: 'lead research interests',
-          value: `Research fields include ${formatted}.`,
-          shortValue: `Studies ${formatted}.`,
-          sourceUrl,
-        },
-      ];
-    });
+    return [
+      {
+        label: 'lead research interests',
+        value: `Research fields include ${formatted}.`,
+        shortValue: `Studies ${formatted}.`,
+        sourceUrl,
+      },
+    ];
+  });
 
 const profileBioSentences = (value: unknown): string[] =>
   textValue(value)
@@ -427,7 +418,12 @@ const profileUserDescriptionCandidates = (
   sourceUrl: string,
 ): Array<{ value: string; shortValue?: string; label: string; sourceUrl?: string }> => {
   const bio = textValue(user.bio);
-  const candidates: Array<{ value: string; shortValue?: string; label: string; sourceUrl?: string }> = [];
+  const candidates: Array<{
+    value: string;
+    shortValue?: string;
+    label: string;
+    sourceUrl?: string;
+  }> = [];
   const researchBioSummary = researchFocusedProfileBioSummary(bio);
   const researchSummaryCandidate = researchBioSummary
     ? {
@@ -444,7 +440,8 @@ const profileUserDescriptionCandidates = (
     : null;
   const preferResearchSummary =
     !!researchSummaryCandidate &&
-    (/\b(?:received|earned|completed)\b.{0,140}\b(?:ph\.?\s*d|doctorate|degree)\b/i.test(bio) ||
+    (/^Creative work\b/i.test(researchBioSummary) ||
+      /\b(?:received|earned|completed)\b.{0,140}\b(?:ph\.?\s*d|doctorate|degree)\b/i.test(bio) ||
       /\bis\s+(?:an?\s+)?(?:assistant|associate|full|adjunct|clinical|visiting)?\s*professor\b/i.test(
         bio,
       ) ||
@@ -485,9 +482,7 @@ const profileUserDescriptionCandidates = (
   if (interests.length >= 3) {
     const lead = interests.slice(0, 3);
     const formatted =
-      lead.length === 1
-        ? lead[0]
-        : `${lead.slice(0, -1).join(', ')}, and ${lead[lead.length - 1]}`;
+      lead.length === 1 ? lead[0] : `${lead.slice(0, -1).join(', ')}, and ${lead[lead.length - 1]}`;
     candidates.push({
       label: 'official profile research interests',
       value: `Research fields include ${formatted}.`,
@@ -502,7 +497,12 @@ const profileUserDescriptionCandidates = (
 const sourceBackedTextCandidates = (
   entity: Record<string, any>,
   leadMembers: Array<Record<string, any>> = [],
-  extraCandidates: Array<{ value: string; shortValue?: string; label: string; sourceUrl?: string }> = [],
+  extraCandidates: Array<{
+    value: string;
+    shortValue?: string;
+    label: string;
+    sourceUrl?: string;
+  }> = [],
 ): Array<{ value: string; shortValue?: string; label: string; sourceUrl?: string }> => {
   const profile = entity.profile && typeof entity.profile === 'object' ? entity.profile : {};
   const entitySourceUrls = uniqueStrings([
@@ -514,8 +514,11 @@ const sourceBackedTextCandidates = (
     entitySourceUrls.find(isDescriptionEligibleSourceUrl) || entitySourceUrls[0] || '';
 
   return [
-    { value: textValue(entity.description), label: 'description', sourceUrl: entitySourceUrl },
-    { value: textValue(entity.fullDescription), label: 'fullDescription', sourceUrl: entitySourceUrl },
+    {
+      value: textValue(entity.fullDescription),
+      label: 'fullDescription',
+      sourceUrl: entitySourceUrl,
+    },
     { value: textValue(profile.overview), label: 'profile overview', sourceUrl: entitySourceUrl },
     { value: textValue(profile.bio), label: 'profile bio', sourceUrl: entitySourceUrl },
     { value: textValue(entity.bio), label: 'bio', sourceUrl: entitySourceUrl },
@@ -586,6 +589,28 @@ const urlVariants = (urls: unknown[]): string[] => {
   return Array.from(variants);
 };
 
+const officialMedicineLabUrlKey = (value: unknown): string => {
+  const urlText = textValue(value);
+  if (!hasHttpUrl(urlText)) return '';
+  try {
+    const url = new URL(urlText);
+    const pathMatch = url.pathname.toLowerCase().match(/^\/lab\/([^/]+)\/?$/);
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname.toLowerCase() !== 'medicine.yale.edu' ||
+      !pathMatch
+    ) {
+      return '';
+    }
+    return `https://medicine.yale.edu/lab/${pathMatch[1]}`;
+  } catch {
+    return '';
+  }
+};
+
+const exactUrlRegex = (url: string): RegExp =>
+  new RegExp(`^${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?$`, 'i');
+
 const officialProfileUrlsForEntity = (entity: Record<string, any>): string[] =>
   urlVariants([
     entity.websiteUrl,
@@ -617,7 +642,9 @@ const isListingOrDirectoryUrl = (value: unknown): boolean => {
   try {
     const url = new URL(urlText);
     const path = url.pathname.replace(/\/+$/, '').toLowerCase();
-    return /\/(?:people|faculty|faculty-directory|directory|members|centers-initiatives)$/.test(path);
+    return /\/(?:people|faculty|faculty-directory|directory|members|centers-initiatives)$/.test(
+      path,
+    );
   } catch {
     return true;
   }
@@ -649,12 +676,10 @@ const userDisplayName = (user: Record<string, any>): string =>
   textValue(`${textValue(user.fname || user.firstName)} ${textValue(user.lname || user.lastName)}`);
 
 const memberDisplayName = (member: Record<string, any>): string =>
-  userDisplayName(member.user || {}) ||
-  textValue(member.facultyMember?.name) ||
-  textValue(member.name);
+  userDisplayName(member.user || {}) || textValue(member.name);
 
 const memberEmailLocalTokens = (member: Record<string, any>): string[] => {
-  const email = textValue(member.user?.email || member.facultyMember?.email || member.email).toLowerCase();
+  const email = textValue(member.user?.email || member.email).toLowerCase();
   if (!/^[^@\s]+@yale\.edu$/i.test(email)) return [];
   const localPart = email.split('@')[0] || '';
   return personNameTokens(localPart).filter((token) => token.length > 1);
@@ -668,7 +693,9 @@ const entityPersonDisplayName = (entity: Record<string, any>): string =>
 const userNameMatchesEntity = (user: Record<string, any>, entity: Record<string, any>): boolean => {
   const userTokens = nameTokens(userDisplayName(user));
   if (userTokens.length < 2) return false;
-  const entityTokens = new Set(nameTokens([entity.name, entity.displayName, entity.slug].join(' ')));
+  const entityTokens = new Set(
+    nameTokens([entity.name, entity.displayName, entity.slug].join(' ')),
+  );
   return entityTokens.has(userTokens[0]) && entityTokens.has(userTokens[userTokens.length - 1]);
 };
 
@@ -738,42 +765,43 @@ const profileSourceUrlForMember = (
       member.user?.website,
       member.user?.websiteUrl,
       ...objectValues(member.user?.profileUrls),
-      member.facultyMember?.website,
-      member.facultyMember?.profileUrl,
       member.sourceUrl,
     ]).filter(
       (url) =>
         hasHttpUrl(url) &&
         (!options.requirePersonNameMatch || profileUrlMatchesMemberName(url, member)),
     );
-    return urls.find(isOfficialYaleProfileUrl) || urls.find(isLikelyPersonProfileUrl) || urls.find(hasHttpUrl) || '';
+    return (
+      urls.find(isOfficialYaleProfileUrl) ||
+      urls.find(isLikelyPersonProfileUrl) ||
+      urls.find(hasHttpUrl) ||
+      ''
+    );
   })();
 
 const profileDescriptionSourceUrlForMember = (member: Record<string, any>): string => {
   const urls = uniqueStrings([
     ...objectValues(member.user?.profileUrls),
-    member.facultyMember?.profileUrl,
     member.user?.website,
     member.user?.websiteUrl,
-    member.facultyMember?.website,
     member.sourceUrl,
   ]).filter((url) => hasHttpUrl(url) && profileUrlMatchesMemberName(url, member));
-  return urls.find(isOfficialYaleProfileUrl) || urls.find(isLikelyPersonProfileUrl) || urls[0] || '';
+  return (
+    urls.find(isOfficialYaleProfileUrl) || urls.find(isLikelyPersonProfileUrl) || urls[0] || ''
+  );
 };
 
 const leadProfileDescriptionCandidates = (
   leadMembers: Array<Record<string, any>> = [],
 ): Array<{ value: string; shortValue?: string; label: string; sourceUrl?: string }> =>
-  leadMembers
-    .filter(isLeadMember)
-    .flatMap((member) => {
-      const sourceUrl = profileDescriptionSourceUrlForMember(member);
-      if (!sourceUrl) return [];
-      return profileUserDescriptionCandidates(member.user || {}, sourceUrl).map((candidate) => ({
-        ...candidate,
-        label: candidate.label.replace(/^official profile /, 'lead profile '),
-      }));
-    });
+  leadMembers.filter(isLeadMember).flatMap((member) => {
+    const sourceUrl = profileDescriptionSourceUrlForMember(member);
+    if (!sourceUrl) return [];
+    return profileUserDescriptionCandidates(member.user || {}, sourceUrl).map((candidate) => ({
+      ...candidate,
+      label: candidate.label.replace(/^official profile /, 'lead profile '),
+    }));
+  });
 
 const idValue = (value: unknown): string => {
   const directId = serializedDocumentId(value);
@@ -788,8 +816,33 @@ const idValue = (value: unknown): string => {
 const leadMemberUserId = (member: Record<string, any>): string =>
   idValue(member.user?._id) || idValue(member.userId);
 
+export const researchEntityLeadMembersFromRoster = (
+  roster: ResearchEntityRosterEntry[],
+): Array<Record<string, any>> =>
+  roster
+    .filter((entry) => entry.state !== 'HISTORICAL')
+    .filter((entry) => isLeadMember({ role: entry.role }))
+    .map((entry) => {
+      const personId = idValue(entry.personId);
+      return {
+        role: entry.role,
+        name: entry.name,
+        userId: personId,
+        user: {
+          _id: personId,
+          displayName: entry.name,
+          netid: entry.netid,
+          title: entry.title,
+          imageUrl: entry.imageUrl,
+          websiteUrl: entry.websiteUrl,
+        },
+      };
+    });
+
 const getActionEvidenceObservationIds = (observations: Array<Record<string, any>>): string[] =>
-  observations.map((observation) => idValue(observation._id)).filter((id): id is string => Boolean(id));
+  observations
+    .map((observation) => idValue(observation._id))
+    .filter((id): id is string => Boolean(id));
 
 const visibilityRepairSourceKey = 'visibility-repair-queue';
 const visibilityRepairConfidence = 0.38;
@@ -842,8 +895,6 @@ function trustedActionLeadForEntity(
       member.user?.website,
       member.user?.websiteUrl,
       ...objectValues(member.user?.profileUrls),
-      member.facultyMember?.website,
-      member.facultyMember?.profileUrl,
       member.sourceUrl,
     ]).filter(
       (url) =>
@@ -852,7 +903,8 @@ function trustedActionLeadForEntity(
         (isOfficialYaleProfileUrl(url) || isLikelyPersonProfileUrl(url)) &&
         profileUrlMatchesEntityPersonName(url, entity),
     );
-    const sourceUrl = urls.find(isOfficialYaleProfileUrl) || urls.find(isLikelyPersonProfileUrl) || urls[0] || '';
+    const sourceUrl =
+      urls.find(isOfficialYaleProfileUrl) || urls.find(isLikelyPersonProfileUrl) || urls[0] || '';
     if (!sourceUrl) continue;
     return {
       userId,
@@ -877,7 +929,11 @@ export function classifyVisibilityRepairStage(reasons: string[] = []): Visibilit
 
 export function repairActionForStage(stage: VisibilityRepairStage, reasons: string[] = []): string {
   if (stage === 'source_description') {
-    if (reasons.includes('missing_source_url')) return 'Attach a trusted official source URL, then re-run visibility gates.';
+    if (reasons.includes('official_source_url_collision')) {
+      return 'Resolve the duplicate official lab URL owner before repairing source-backed descriptions.';
+    }
+    if (reasons.includes('missing_source_url'))
+      return 'Attach a trusted official source URL, then re-run visibility gates.';
     return 'Backfill source-backed description fields from trusted source evidence.';
   }
   if (stage === 'pi_identity') {
@@ -895,7 +951,9 @@ export function repairActionForStage(stage: VisibilityRepairStage, reasons: stri
   return 'Queue for exception handling; no deterministic repair is available yet.';
 }
 
-export function buildVisibilityRepairPlan(item: VisibilityRepairQueueItemInput): VisibilityRepairPlan {
+export function buildVisibilityRepairPlan(
+  item: VisibilityRepairQueueItemInput,
+): VisibilityRepairPlan {
   const blockerReasons = uniqueStrings(item.blockerReasons || []);
   const repairStage = classifyVisibilityRepairStage(blockerReasons);
   const safeToAttempt =
@@ -917,7 +975,9 @@ export function buildVisibilityRepairPlan(item: VisibilityRepairQueueItemInput):
   };
 }
 
-export function buildVisibilityRepairPlans(items: VisibilityRepairQueueItemInput[]): VisibilityRepairPlan[] {
+export function buildVisibilityRepairPlans(
+  items: VisibilityRepairQueueItemInput[],
+): VisibilityRepairPlan[] {
   return items
     .map(buildVisibilityRepairPlan)
     .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label));
@@ -926,7 +986,12 @@ export function buildVisibilityRepairPlans(items: VisibilityRepairQueueItemInput
 function buildResearchSourceDescriptionPatch(
   entity: Record<string, any>,
   leadMembers: Array<Record<string, any>> = [],
-  extraCandidates: Array<{ value: string; shortValue?: string; label: string; sourceUrl?: string }> = [],
+  extraCandidates: Array<{
+    value: string;
+    shortValue?: string;
+    label: string;
+    sourceUrl?: string;
+  }> = [],
 ): {
   patch: Record<string, unknown>;
   summary: string[];
@@ -1043,11 +1108,9 @@ async function findOfficialProfileUserMatch(
 
   const sourceUrl =
     profileUrls.find((url) =>
-      uniqueStrings([
-        user.website,
-        user.websiteUrl,
-        ...objectValues(user.profileUrls),
-      ]).some((candidate) => urlVariants([candidate]).includes(url)),
+      uniqueStrings([user.website, user.websiteUrl, ...objectValues(user.profileUrls)]).some(
+        (candidate) => urlVariants([candidate]).includes(url),
+      ),
     ) || profileUrls[0];
 
   return {
@@ -1083,68 +1146,14 @@ function archivedResearchEntityRepairBlock(
     status: 'blocked',
     patchSummary: [],
     remainingBlockers: uniqueStrings([...plan.blockerReasons, 'archived_research_entity']),
-    repairSource: uniqueStrings([
-      entity.websiteUrl,
-      entity.website,
-      ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-    ]).find(hasHttpUrl) || '',
+    repairSource:
+      uniqueStrings([
+        entity.websiteUrl,
+        entity.website,
+        ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+      ]).find(hasHttpUrl) || '',
   };
 }
-
-async function upsertOrReuseOfficialProfileActionPathway({
-  plan,
-  deps,
-  userId,
-  sourceUrl,
-  evidenceIds,
-  reusablePathway,
-}: {
-  plan: VisibilityRepairPlan;
-  deps: RepairDeps;
-  userId: string;
-  sourceUrl: string;
-  evidenceIds: string[];
-  reusablePathway?: { pathwayId?: string; derivationKey?: string; doc?: any } | null;
-}): Promise<{ pathwayId?: string; reused: boolean }> {
-  const reusable = reusablePathway || (deps.findReusableExploratoryContactPathway
-    ? await deps.findReusableExploratoryContactPathway(plan.recordId)
-    : null);
-  const reusablePathwayId = idValue(reusable?.pathwayId) || idValue(reusable?.doc?._id);
-  const derivationKey = textValue(reusable?.derivationKey) || textValue(reusable?.doc?.derivationKey);
-
-  if (reusablePathwayId && !derivationKey) {
-    return { pathwayId: reusablePathwayId, reused: true };
-  }
-
-  const pathway = await deps.upsertEntryPathway?.({
-    researchEntityId: plan.recordId,
-    pathwayType: 'EXPLORATORY_CONTACT',
-    status: 'PLAUSIBLE',
-    evidenceStrength: 'WEAK',
-    studentFacingLabel: 'Explore this research area through the official faculty profile',
-    explanation:
-      'Official Yale profile evidence identifies a lead faculty member for this research area. No active undergraduate posting is currently attached.',
-    bestNextStep:
-      'Review the official profile and prepare specific outreach that references the research area before contacting the faculty member.',
-    compensation: 'UNKNOWN',
-    sourceEvidenceIds: evidenceIds,
-    sourceUrls: [sourceUrl],
-    confidence: 0.52,
-    derivationKey: derivationKey || `visibility-repair:official-profile-outreach:${userId}`,
-    archived: false,
-    lastObservedAt: new Date(),
-  });
-
-  return {
-    pathwayId: pathway?.pathwayId || idValue(pathway?.doc?._id) || reusablePathwayId,
-    reused: Boolean(reusablePathwayId),
-  };
-}
-
-const sourceEvidenceIdsFromReusablePathway = (
-  reusable: { pathwayId?: string; derivationKey?: string; doc?: any } | null,
-): string[] =>
-  uniqueStrings(Array.isArray(reusable?.doc?.sourceEvidenceIds) ? reusable.doc.sourceEvidenceIds.map(idValue) : []);
 
 async function createOfficialProfileActionEvidenceRepair({
   plan,
@@ -1157,17 +1166,11 @@ async function createOfficialProfileActionEvidenceRepair({
   deps: RepairDeps;
   match: { userId: string; name: string; sourceUrl: string };
 }): Promise<{ repaired: boolean; summary: string[] }> {
-  if (
-    !deps.upsertEntryPathway ||
-    !deps.upsertContactRoute ||
-    !deps.upsertAccessSignal ||
-    !deps.findActionEvidenceObservationIds
-  ) {
+  if (!deps.upsertSignal || !deps.findActionEvidenceObservationIds) {
     return { repaired: false, summary: [] };
   }
 
-  let reusablePathway: { pathwayId?: string; derivationKey?: string; doc?: any } | null = null;
-  let evidenceIds =
+  const evidenceIds =
     mode === 'apply'
       ? await deps.findActionEvidenceObservationIds({
           researchEntityId: plan.recordId,
@@ -1175,26 +1178,12 @@ async function createOfficialProfileActionEvidenceRepair({
           sourceUrl: match.sourceUrl,
         })
       : ['dry-run-official-profile-evidence'];
-  if (evidenceIds.length === 0 && deps.findReusableExploratoryContactPathway) {
-    reusablePathway = await deps.findReusableExploratoryContactPathway(plan.recordId);
-    evidenceIds = sourceEvidenceIdsFromReusablePathway(reusablePathway);
-  }
   if (evidenceIds.length === 0) return { repaired: false, summary: [] };
 
   if (mode === 'apply') {
-    const pathway = await upsertOrReuseOfficialProfileActionPathway({
-      plan,
-      deps,
-      userId: match.userId,
-      sourceUrl: match.sourceUrl,
-      evidenceIds,
-      reusablePathway,
-    });
-
-    await deps.upsertAccessSignal({
+    await deps.upsertSignal({
       researchEntityId: plan.recordId,
-      entryPathwayId: pathway.pathwayId,
-      signalType: 'REACH_OUT_PLAUSIBLE',
+      type: 'REACH_OUT_PLAUSIBLE',
       confidence: 'LOW',
       confidenceScore: 0.52,
       observedAt: new Date(),
@@ -1206,34 +1195,11 @@ async function createOfficialProfileActionEvidenceRepair({
       derivationKey: `visibility-repair:official-profile-outreach:${match.userId}`,
       archived: false,
     });
-
-    await deps.upsertContactRoute({
-      researchEntityId: plan.recordId,
-      entryPathwayId: pathway.pathwayId,
-      routeType: 'FACULTY_PI',
-      priority: 70,
-      visibility: 'PUBLIC',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-      name: match.name || undefined,
-      role: 'Lead faculty profile',
-      url: match.sourceUrl,
-      rationale:
-        'Official Yale profile is the safest public next step when no active posting or application route is attached.',
-      sourceEvidenceIds: evidenceIds,
-      sourceName: 'visibility-repair-queue',
-      sourceUrl: match.sourceUrl,
-      observedAt: new Date(),
-      derivationKey: `visibility-repair:official-profile-contact:${match.userId}`,
-    });
   }
 
   return {
     repaired: true,
-    summary: [
-      'created low-confidence exploratory pathway from official PI profile',
-      'created reach-out-plausible access signal from official PI profile',
-      'created public faculty profile contact route',
-    ],
+    summary: ['created reach-out-plausible access signal from official PI profile'],
   };
 }
 
@@ -1278,12 +1244,7 @@ async function createEntitySourceActionEvidenceRepair({
   entity: Record<string, any>;
   sourceUrl: string;
 }): Promise<{ repaired: boolean; summary: string[]; repairSource: string }> {
-  if (
-    !deps.upsertEntryPathway ||
-    !deps.upsertContactRoute ||
-    !deps.upsertAccessSignal ||
-    !deps.findEntityActionEvidenceObservationIds
-  ) {
+  if (!deps.upsertSignal || !deps.findEntityActionEvidenceObservationIds) {
     return { repaired: false, summary: [], repairSource: sourceUrl };
   }
 
@@ -1295,36 +1256,14 @@ async function createEntitySourceActionEvidenceRepair({
   const evidenceIds = uniqueStrings(observations.map((observation) => observation.id));
   if (evidenceIds.length === 0) return { repaired: false, summary: [], repairSource: sourceUrl };
 
-  const evidenceSourceUrl = observations.find((observation) => hasHttpUrl(observation.sourceUrl))?.sourceUrl || sourceUrl;
-  const sourceUrls = uniqueStrings([evidenceSourceUrl, sourceUrl]).filter(hasHttpUrl);
-  const contactUrl = entityActionEvidenceSourceUrl(entity) || evidenceSourceUrl;
+  const evidenceSourceUrl =
+    observations.find((observation) => hasHttpUrl(observation.sourceUrl))?.sourceUrl || sourceUrl;
   const derivationKey = `visibility-repair:entity-source-outreach:${plan.recordId}`;
 
   if (mode === 'apply') {
-    const pathway = await deps.upsertEntryPathway({
+    await deps.upsertSignal({
       researchEntityId: plan.recordId,
-      pathwayType: 'EXPLORATORY_CONTACT',
-      status: 'PLAUSIBLE',
-      evidenceStrength: 'WEAK',
-      studentFacingLabel: 'Explore this research program through the official source page',
-      explanation:
-        'Source-backed Yale evidence indicates undergraduate or student relevance, but no active posting or specific contact person is currently attached.',
-      bestNextStep:
-        'Review the official source page and look for program contact, events, project guidance, or application instructions before reaching out.',
-      compensation: 'UNKNOWN',
-      sourceEvidenceIds: evidenceIds,
-      sourceUrls,
-      confidence: 0.45,
-      derivationKey,
-      archived: false,
-      lastObservedAt: new Date(),
-    });
-    const pathwayId = pathway?.pathwayId || idValue(pathway?.doc?._id);
-
-    await deps.upsertAccessSignal({
-      researchEntityId: plan.recordId,
-      entryPathwayId: pathwayId,
-      signalType: 'REACH_OUT_PLAUSIBLE',
+      type: 'REACH_OUT_PLAUSIBLE',
       confidence: 'LOW',
       confidenceScore: 0.45,
       observedAt: new Date(),
@@ -1332,39 +1271,19 @@ async function createEntitySourceActionEvidenceRepair({
       excerpt:
         observations.find((observation) => textValue(observation.excerpt))?.excerpt ||
         'Source-backed entity evidence indicates undergraduate or student relevance.',
-      sourceName: observations.find((observation) => textValue(observation.sourceName))?.sourceName || 'visibility-repair-queue',
+      sourceName:
+        observations.find((observation) => textValue(observation.sourceName))?.sourceName ||
+        'visibility-repair-queue',
       sourceUrl: evidenceSourceUrl,
       originalConfidence: 0.45,
       derivationKey,
       archived: false,
     });
-
-    await deps.upsertContactRoute({
-      researchEntityId: plan.recordId,
-      entryPathwayId: pathwayId,
-      routeType: 'UNKNOWN',
-      priority: 80,
-      visibility: 'PUBLIC',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-      role: 'Research entity source',
-      url: contactUrl,
-      rationale:
-        'The official research entity page is the safest public next step when no active posting, application route, or trusted person owner is attached.',
-      sourceEvidenceIds: evidenceIds,
-      sourceName: 'visibility-repair-queue',
-      sourceUrl: evidenceSourceUrl,
-      observedAt: new Date(),
-      derivationKey: `visibility-repair:entity-source-contact:${plan.recordId}`,
-    });
   }
 
   return {
     repaired: true,
-    summary: [
-      'created exploratory pathway from entity-level undergraduate evidence',
-      'created reach-out-plausible access signal from entity-level evidence',
-      'created public research entity source contact route',
-    ],
+    summary: ['created reach-out-plausible access signal from entity-level evidence'],
     repairSource: evidenceSourceUrl,
   };
 }
@@ -1393,20 +1312,18 @@ async function attemptResearchActionEvidenceRepair(
     : [];
   const quality = buildResearchEntityQualitySummary({ entity, leadMembers });
   const actionLead = trustedActionLeadForEntity(leadMembers, entity);
-  const actionEvidenceSourceUrl = uniqueStrings([
-    actionLead?.sourceUrl,
-    entityActionEvidenceSourceUrl(entity),
-  ]).find(hasHttpUrl) || '';
+  const actionEvidenceSourceUrl =
+    uniqueStrings([actionLead?.sourceUrl, entityActionEvidenceSourceUrl(entity)]).find(
+      hasHttpUrl,
+    ) || '';
   const canRepair =
     quality.descriptionState === 'source_backed' &&
     quality.cardState === 'complete' &&
     quality.leadState === 'lead_attached' &&
     !quality.repairFlags.includes('missing_source_url') &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
     actionLead &&
     Boolean(actionEvidenceSourceUrl);
-  let reusablePathway: { pathwayId?: string; derivationKey?: string; doc?: any } | null = null;
-  let evidenceIds =
+  const evidenceIds =
     canRepair && deps.findActionEvidenceObservationIds
       ? await deps.findActionEvidenceObservationIds({
           researchEntityId: plan.recordId,
@@ -1414,51 +1331,29 @@ async function attemptResearchActionEvidenceRepair(
           sourceUrl: actionEvidenceSourceUrl || '',
         })
       : [];
-  if (canRepair && evidenceIds.length === 0 && deps.findReusableExploratoryContactPathway) {
-    reusablePathway = await deps.findReusableExploratoryContactPathway(plan.recordId);
-    evidenceIds = sourceEvidenceIdsFromReusablePathway(reusablePathway);
-  }
-  if (!canRepair && deps.findReusableExploratoryContactPathway) {
-    reusablePathway = await deps.findReusableExploratoryContactPathway(plan.recordId);
-    evidenceIds = sourceEvidenceIdsFromReusablePathway(reusablePathway);
-  }
-  const canRepairFromReusableActionEvidence =
-    !canRepair &&
-    quality.descriptionState === 'source_backed' &&
-    quality.cardState === 'complete' &&
-    quality.leadState === 'lead_attached' &&
-    !quality.repairFlags.includes('missing_source_url') &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
-    Boolean(actionEvidenceSourceUrl) &&
-    Boolean(reusablePathway) &&
-    evidenceIds.length > 0;
-  const usingReusablePathwayEvidence = Boolean(reusablePathway) && evidenceIds.length > 0;
   const canRepairFromEntitySourceEvidence =
     !canRepair &&
-    !canRepairFromReusableActionEvidence &&
     quality.descriptionState === 'source_backed' &&
     quality.cardState === 'complete' &&
     !quality.repairFlags.includes('missing_source_url') &&
     !quality.repairFlags.includes('duplicate_risk') &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
     Boolean(actionEvidenceSourceUrl);
 
-  if (
-    !deps.upsertEntryPathway ||
-    !deps.upsertContactRoute ||
-    !deps.upsertAccessSignal
-  ) {
+  if (!deps.upsertSignal) {
     return {
-        plan,
-        applied: false,
-        status: 'blocked',
-        patchSummary: [],
-        remainingBlockers: [...plan.blockerReasons, ...(evidenceIds.length === 0 ? ['missing_source_evidence'] : [])],
-        repairSource: actionEvidenceSourceUrl || actionLead?.sourceUrl || '',
+      plan,
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: [
+        ...plan.blockerReasons,
+        ...(evidenceIds.length === 0 ? ['missing_source_evidence'] : []),
+      ],
+      repairSource: actionEvidenceSourceUrl || actionLead?.sourceUrl || '',
     };
   }
 
-  if ((!canRepair && !canRepairFromReusableActionEvidence) || evidenceIds.length === 0) {
+  if (!canRepair || evidenceIds.length === 0) {
     if (canRepairFromEntitySourceEvidence) {
       const entitySourceRepair = await createEntitySourceActionEvidenceRepair({
         plan,
@@ -1480,67 +1375,36 @@ async function attemptResearchActionEvidenceRepair(
     }
 
     return {
-        plan,
-        applied: false,
-        status: 'blocked',
-        patchSummary: [],
-        remainingBlockers: [...plan.blockerReasons, ...(evidenceIds.length === 0 ? ['missing_source_evidence'] : [])],
-        repairSource: actionEvidenceSourceUrl || actionLead?.sourceUrl || '',
+      plan,
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: [
+        ...plan.blockerReasons,
+        ...(evidenceIds.length === 0 ? ['missing_source_evidence'] : []),
+      ],
+      repairSource: actionEvidenceSourceUrl || actionLead?.sourceUrl || '',
     };
   }
 
-  const repairSourceUrl = actionEvidenceSourceUrl || actionLead?.sourceUrl || '';
+  const hasTrustedActionLead = Boolean(actionLead);
 
   if (mode === 'apply') {
-    const pathway = await upsertOrReuseOfficialProfileActionPathway({
-      plan,
-      deps,
-      userId: actionLead?.userId || plan.recordId,
-      sourceUrl: repairSourceUrl,
-      evidenceIds,
-      reusablePathway,
-    });
-    const hasTrustedActionLead = Boolean(actionLead);
-
-    if (!usingReusablePathwayEvidence) {
-      await deps.upsertAccessSignal({
-        researchEntityId: plan.recordId,
-        entryPathwayId: pathway.pathwayId,
-        signalType: 'REACH_OUT_PLAUSIBLE',
-        confidence: 'LOW',
-        confidenceScore: 0.52,
-        observedAt: new Date(),
-        sourceEvidenceId: evidenceIds[0],
-        excerpt: hasTrustedActionLead
-          ? 'Official Yale profile identifies the lead faculty member for this research area.'
-          : 'Source-backed pathway evidence supports exploratory contact through the research entity source.',
-        sourceName: 'visibility-repair-queue',
-        sourceUrl: actionEvidenceSourceUrl,
-        originalConfidence: 0.52,
-        derivationKey: `visibility-repair:official-profile-outreach:${actionLead?.userId || plan.recordId}`,
-        archived: false,
-      });
-    }
-
-    await deps.upsertContactRoute({
+    await deps.upsertSignal({
       researchEntityId: plan.recordId,
-      entryPathwayId: pathway.pathwayId,
-      routeType: hasTrustedActionLead ? 'FACULTY_PI' : 'UNKNOWN',
-      priority: 70,
-      visibility: 'PUBLIC',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-      name: actionLead?.name || undefined,
-      role: hasTrustedActionLead ? 'Lead faculty profile' : 'Research entity source',
-      url: actionEvidenceSourceUrl,
-      rationale:
-        hasTrustedActionLead
-          ? 'Official Yale profile is the safest public next step when no active posting or application route is attached.'
-          : 'The source-backed research entity page is the safest public next step when no active posting or application route is attached.',
-      sourceEvidenceIds: evidenceIds,
+      type: 'REACH_OUT_PLAUSIBLE',
+      confidence: 'LOW',
+      confidenceScore: 0.52,
+      observedAt: new Date(),
+      sourceEvidenceId: evidenceIds[0],
+      excerpt: hasTrustedActionLead
+        ? 'Official Yale profile identifies the lead faculty member for this research area.'
+        : 'Source-backed evidence supports exploratory contact through the research entity source.',
       sourceName: 'visibility-repair-queue',
       sourceUrl: actionEvidenceSourceUrl,
-      observedAt: new Date(),
-      derivationKey: `visibility-repair:official-profile-contact:${actionLead?.userId || plan.recordId}`,
+      originalConfidence: 0.52,
+      derivationKey: `visibility-repair:official-profile-outreach:${actionLead?.userId || plan.recordId}`,
+      archived: false,
     });
   }
 
@@ -1548,17 +1412,7 @@ async function attemptResearchActionEvidenceRepair(
     plan,
     applied: true,
     status: 'repaired',
-    patchSummary: usingReusablePathwayEvidence
-      ? [
-          'reused existing exploratory pathway evidence',
-          'kept existing reach-out-plausible access signal from reusable pathway evidence',
-          'created public research entity source contact route',
-        ]
-      : [
-          'created low-confidence exploratory pathway from official PI profile',
-          'created reach-out-plausible access signal from official PI profile',
-          'created public faculty profile contact route',
-        ],
+    patchSummary: ['created reach-out-plausible access signal from official PI profile'],
     remainingBlockers: [],
     repairSource: actionEvidenceSourceUrl || actionLead?.sourceUrl || '',
   };
@@ -1614,13 +1468,15 @@ async function attemptResearchRepair(
 
     const profileUrls = officialProfileUrlsForEntity(entity);
     let sourceUrl = profileUrls[0] || '';
-    let user = profileUrls.length > 0 && deps.findUserByProfileUrl
-      ? await deps.findUserByProfileUrl(profileUrls)
-      : null;
+    let user =
+      profileUrls.length > 0 && deps.findUserByProfileUrl
+        ? await deps.findUserByProfileUrl(profileUrls)
+        : null;
 
     if (!user && deps.findUserByExactWebsiteUrl) {
       const ownWebsiteUrls = ownWebsiteUrlsForEntity(entity);
-      user = ownWebsiteUrls.length > 0 ? await deps.findUserByExactWebsiteUrl(ownWebsiteUrls) : null;
+      user =
+        ownWebsiteUrls.length > 0 ? await deps.findUserByExactWebsiteUrl(ownWebsiteUrls) : null;
       if (user && !userNameMatchesEntity(user, entity)) user = null;
       if (user) sourceUrl = ownWebsiteUrls[0];
     }
@@ -1739,8 +1595,43 @@ async function attemptResearchRepair(
   const nonSourceDescriptionBlockers = plan.blockerReasons.filter(
     (reason) => !sourceDescriptionReasons.has(reason),
   );
+  const profileMatch = await findOfficialProfileUserMatch(entity, deps);
+  const prospectiveLeadMembers = profileMatch
+    ? [...leadMembers, officialProfileLeadMember(profileMatch)]
+    : leadMembers;
+  const profileDescriptionCandidates = profileMatch
+    ? profileUserDescriptionCandidates(profileMatch.user, profileMatch.sourceUrl)
+    : [];
+  const { patch, summary, repairSource } = buildResearchSourceDescriptionPatch(
+    entity,
+    prospectiveLeadMembers,
+    profileDescriptionCandidates,
+  );
+  const repairSourceUrls = uniqueStrings([
+    ...(Array.isArray(patch.sourceUrls) ? patch.sourceUrls : []),
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    entity.websiteUrl,
+    entity.website,
+    ...sourceUrlsForFieldProvenance(entity),
+    ...sourceUrlsForLeadMembers(prospectiveLeadMembers),
+    ...profileDescriptionCandidates.map((candidate) => candidate.sourceUrl),
+  ]);
+  const officialLabUrls = uniqueStrings(repairSourceUrls.map(officialMedicineLabUrlKey));
+  const conflictingOfficialLabUrls =
+    officialLabUrls.length > 0 && deps.findConflictingOfficialLabUrls
+      ? await deps.findConflictingOfficialLabUrls(plan.recordId, officialLabUrls)
+      : [];
+  if (conflictingOfficialLabUrls.length > 0) {
+    return {
+      plan,
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: uniqueStrings([...plan.blockerReasons, 'official_source_url_collision']),
+      repairSource: conflictingOfficialLabUrls[0],
+    };
+  }
   if (
-    plan.repairStage === 'source_description' &&
     staleSourceDescriptionBlockers.length > 0 &&
     nonSourceDescriptionBlockers.length === 0 &&
     textValue(entity.fullDescription) &&
@@ -1757,18 +1648,6 @@ async function attemptResearchRepair(
       repairSource: entityActionEvidenceSourceUrl(entity),
     };
   }
-  const profileMatch = await findOfficialProfileUserMatch(entity, deps);
-  const prospectiveLeadMembers = profileMatch
-    ? [...leadMembers, officialProfileLeadMember(profileMatch)]
-    : leadMembers;
-  const profileDescriptionCandidates = profileMatch
-    ? profileUserDescriptionCandidates(profileMatch.user, profileMatch.sourceUrl)
-    : [];
-  const { patch, summary, repairSource } = buildResearchSourceDescriptionPatch(
-    entity,
-    prospectiveLeadMembers,
-    profileDescriptionCandidates,
-  );
   const patchSummary = [...summary];
   let leadRepaired = false;
 
@@ -1856,9 +1735,7 @@ async function attemptResearchRepair(
       return !postPatchQuality.full.isUseful;
     }
     if (reason === 'missing_card_description') return !postPatchQuality.short.isUseful;
-    if (
-      sourceDescriptionReasons.has(reason)
-    ) {
+    if (sourceDescriptionReasons.has(reason)) {
       return !patchedDescription;
     }
     return true;
@@ -1987,9 +1864,7 @@ const defaultRepairDeps: RepairDeps = {
     if (options.stage) filter.repairStage = options.stage;
     if (options.recordIds?.length) filter.recordId = { $in: options.recordIds };
     if (options.queueItemIds?.length) {
-      const ids = options.queueItemIds
-        .map((id) => toVisibilityRepairObjectId(id))
-        .filter(Boolean);
+      const ids = options.queueItemIds.map((id) => toVisibilityRepairObjectId(id)).filter(Boolean);
       filter._id = { $in: ids };
     }
     filter.repairStatus = options.retryBlocked ? { $in: ['queued', 'blocked'] } : 'queued';
@@ -2003,101 +1878,81 @@ const defaultRepairDeps: RepairDeps = {
   async updateQueueItem(id, patch) {
     const safeId = toVisibilityRepairObjectId(id);
     if (!safeId) return;
-    await VisibilityReleaseQueueItem.updateOne({ _id: safeId }, { $set: patch, $inc: { attemptCount: 1 } });
+    await VisibilityReleaseQueueItem.updateOne(
+      { _id: safeId },
+      { $set: patch, $inc: { attemptCount: 1 } },
+    );
   },
   async findResearchEntity(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);
     return safeId ? ResearchEntity.findById(safeId).lean() : null;
   },
+  async findConflictingOfficialLabUrls(id, urls) {
+    const safeId = toVisibilityRepairObjectId(id);
+    if (!safeId) return [];
+    const conflicts: string[] = [];
+    for (const url of uniqueStrings(urls.map(officialMedicineLabUrlKey))) {
+      const exactUrl = exactUrlRegex(url);
+      const owner = await ResearchEntity.exists({
+        _id: { $ne: safeId },
+        archived: { $ne: true },
+        $or: [{ websiteUrl: exactUrl }, { website: exactUrl }, { sourceUrls: exactUrl }],
+      });
+      if (owner) conflicts.push(url);
+    }
+    return conflicts;
+  },
   async findUserByProfileUrl(urls) {
     const variants = urlVariants(urls);
     if (variants.length === 0) return null;
-    const matches = await User.aggregate([
+    const matches = await Researcher.find(
       {
-        $addFields: {
-          profileUrlValues: {
-            $map: {
-              input: { $objectToArray: { $ifNull: ['$profileUrls', {}] } },
-              as: 'profileUrl',
-              in: '$$profileUrl.v',
-            },
-          },
-        },
+        archived: { $ne: true },
+        $or: [
+          { 'profileLinks.url': { $in: variants } },
+          { 'profile.websiteUrl': { $in: variants } },
+        ],
       },
-      {
-        $match: {
-          $or: [
-            { website: { $in: variants } },
-            { websiteUrl: { $in: variants } },
-            { profileUrlValues: { $in: variants } },
-          ],
-        },
-      },
-      { $limit: 2 },
-    ]);
+      { displayName: 1 },
+    )
+      .limit(2)
+      .lean();
     return matches.length === 1 ? matches[0] : null;
   },
   async findUserByExactWebsiteUrl(urls) {
     const variants = urlVariants(urls);
     if (variants.length === 0) return null;
-    const matches = await User.aggregate([
+    const matches = await Researcher.find(
       {
-        $addFields: {
-          profileUrlValues: {
-            $map: {
-              input: { $objectToArray: { $ifNull: ['$profileUrls', {}] } },
-              as: 'profileUrl',
-              in: '$$profileUrl.v',
-            },
-          },
-        },
+        archived: { $ne: true },
+        $or: [
+          { 'profileLinks.url': { $in: variants } },
+          { 'profile.websiteUrl': { $in: variants } },
+        ],
       },
-      {
-        $match: {
-          $or: [
-            { website: { $in: variants } },
-            { websiteUrl: { $in: variants } },
-            { profileUrlValues: { $in: variants } },
-          ],
-        },
-      },
-      { $limit: 2 },
-    ]);
+      { displayName: 1 },
+    )
+      .limit(2)
+      .lean();
     return matches.length === 1 ? matches[0] : null;
   },
   async upsertResearchEntityMember(researchEntityId, userId, metadata) {
-    const { filter, update, options } = buildVisibilityRepairPiMemberUpsert(
-      researchEntityId,
-      userId,
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
+    const personObjectId = toVisibilityRepairObjectId(userId);
+    const researcher = personObjectId
+      ? await Researcher.findById(personObjectId).select('_id').lean()
+      : null;
+    const personId = (researcher as any)?._id;
+    if (!entityObjectId || !personId) return;
+    const { filter, update, options } = buildVisibilityRepairPiRoleAssignmentUpsert(
+      personId,
+      entityObjectId,
       metadata,
     );
-    await ResearchGroupMember.updateOne(filter, update, options);
+    await RoleAssignment.updateOne(filter, update, options);
   },
-  async upsertEntryPathway(input) {
-    return upsertEntryPathway(input);
-  },
-  async findReusableExploratoryContactPathway(researchEntityId) {
-    const storedResearchEntityId = toVisibilityRepairObjectId(researchEntityId);
-    if (!storedResearchEntityId) return null;
-    const pathway = await EntryPathway.findOne({
-      researchEntityId: storedResearchEntityId,
-      pathwayType: 'EXPLORATORY_CONTACT',
-      archived: { $ne: true },
-    })
-      .sort({ confidence: -1, updatedAt: -1 })
-      .lean();
-    if (!pathway?._id) return null;
-    return {
-      pathwayId: idValue(pathway._id),
-      derivationKey: textValue((pathway as Record<string, any>).derivationKey),
-      doc: pathway,
-    };
-  },
-  async upsertAccessSignal(input) {
-    return upsertAccessSignal(input);
-  },
-  async upsertContactRoute(input) {
-    return upsertContactRoute(input);
+  async upsertSignal(input) {
+    return upsertSignal(input);
   },
   async findActionEvidenceObservationIds({ researchEntityId, userId, sourceUrl }) {
     const variants = urlVariants([sourceUrl]).filter(hasHttpUrl);
@@ -2187,7 +2042,10 @@ const defaultRepairDeps: RepairDeps = {
     const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
     if (!entityObjectId) return [];
 
-    const variants = urlVariants([sourceUrl, ...(Array.isArray(sourceUrls) ? sourceUrls : [])]).filter(hasHttpUrl);
+    const variants = urlVariants([
+      sourceUrl,
+      ...(Array.isArray(sourceUrls) ? sourceUrls : []),
+    ]).filter(hasHttpUrl);
     const sourceUrlFilter = variants.length > 0 ? { sourceUrl: { $in: variants } } : {};
     const observations = await Observation.find({
       entityType: { $in: ['researchEntity', 'researchGroup'] },
@@ -2213,26 +2071,15 @@ const defaultRepairDeps: RepairDeps = {
   async findResearchEntityMembers(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return [];
-    return ResearchGroupMember.find({
-      researchEntityId: safeId,
-      archived: { $ne: true },
-      role: { $in: ['pi', 'principal-investigator', 'principal investigator', 'director', 'lead'] },
-    })
-      .populate('userId')
-      .populate('facultyMemberId')
-      .lean()
-      .then((rows: any[]) =>
-        rows.map((row) => ({
-          ...row,
-          user: row.userId,
-          facultyMember: row.facultyMemberId,
-        })),
-      );
+    const roster = await getResearchEntityRoster(safeId);
+    return researchEntityLeadMembersFromRoster(roster);
   },
   async updateResearchEntity(id, patch) {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return;
-    await ResearchEntity.updateOne({ _id: safeId }, { $set: patch });
+    await withResearchEntityWriteTransaction((session) =>
+      ResearchEntity.updateOne({ _id: safeId }, { $set: patch }, { session }).then(() => undefined),
+    );
   },
   async findProgram(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);

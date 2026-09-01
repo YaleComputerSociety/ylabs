@@ -1,6 +1,20 @@
-const SPREADSHEET_FORMULA_PREFIX = /^[\s\u0000-\u001f]*[=+\-@]/;
+import { isAsciiControlCode } from './asciiControl';
+
+const startsWithSpreadsheetFormula = (value: string): boolean => {
+  const prefixIndex = Array.from(value).findIndex((character) => {
+    const code = character.charCodeAt(0);
+    return !isAsciiControlCode(code) && !/\s/.test(character);
+  });
+  const firstContentCharacter = prefixIndex === -1 ? '' : Array.from(value)[prefixIndex];
+  return (
+    firstContentCharacter === '=' ||
+    firstContentCharacter === '+' ||
+    firstContentCharacter === '-' ||
+    firstContentCharacter === '@'
+  );
+};
 
 export function safeSpreadsheetCell(value: unknown): string {
   const text = String(value ?? '');
-  return SPREADSHEET_FORMULA_PREFIX.test(text) ? `'${text}` : text;
+  return startsWithSpreadsheetFormula(text) ? `'${text}` : text;
 }

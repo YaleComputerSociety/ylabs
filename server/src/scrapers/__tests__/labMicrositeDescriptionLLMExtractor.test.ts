@@ -3,10 +3,15 @@ import {
   LabMicrositeDescriptionLLMExtractor,
   candidateDescriptionLabsFromDocs,
   descriptionExtractionToObservations,
+  groundDescriptionExtraction,
+  discoverResearchSubPageUrls,
   normalizeDescriptionLlmObjectId,
+  researchSubPageCrawlUrls,
+  selectBestDescriptionPageProse,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
+import { SOURCE_CONTENT_HASH_FIELD } from '../contentHashGate';
 
 function makeContext(): { ctx: ScraperContext; emitted: ObservationInput[]; logs: string[] } {
   const emitted: ObservationInput[] = [];
@@ -59,10 +64,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         },
         {
           _id: 'entity-a',
-          slug: 'first-lab',
-          displayName: 'First Lab',
-          website: 'https://medicine.yale.edu/profile/first-person/',
-          sourceUrls: ['https://medicine.yale.edu/research/first-lab/'],
+          slug: 'ashford-lab',
+          displayName: 'Ashford Lab',
+          website: 'https://medicine.yale.edu/profile/jane-ashford/',
+          sourceUrls: ['https://medicine.yale.edu/research/ashford-lab/'],
         },
       ],
       { queueOrder: ['entity-a', 'entity-b'] },
@@ -71,11 +76,11 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(candidates).toEqual([
       expect.objectContaining({
         _id: 'entity-a',
-        name: 'First Lab',
-        websiteUrl: 'https://medicine.yale.edu/research/first-lab/',
+        name: 'Ashford Lab',
+        websiteUrl: 'https://medicine.yale.edu/research/ashford-lab/',
         sourceUrls: [
-          'https://medicine.yale.edu/research/first-lab/',
-          'https://medicine.yale.edu/profile/first-person/',
+          'https://medicine.yale.edu/research/ashford-lab/',
+          'https://medicine.yale.edu/profile/jane-ashford/',
         ],
       }),
       expect.objectContaining({
@@ -185,6 +190,28 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     );
   });
 
+  it('processes candidates beyond the default cap in exhaustive mode', async () => {
+    const { ctx } = makeContext();
+    ctx.options.limit = undefined;
+    ctx.options.exhaustive = true;
+    const candidates = Array.from({ length: 101 }, (_, index) => ({
+      _id: String(index),
+      slug: `lab-${index}`,
+      name: `Lab ${index}`,
+      websiteUrl: `https://example.yale.edu/lab-${index}`,
+    }));
+    const fetchPage = vi.fn(async (url: string) => ({ url, html: '<main>Empty</main>' }));
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: vi.fn(async () => candidates),
+      fetchPage,
+    });
+
+    await scraper.run(ctx);
+
+    expect(fetchPage).toHaveBeenCalledTimes(101);
+  });
+
   it('falls back to the next trusted source URL when the preferred website is unreachable', async () => {
     const { ctx, emitted, logs } = makeContext();
     ctx.options.only = ['dept-statistics-john-lafferty'];
@@ -223,7 +250,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const result = await scraper.run(ctx);
 
-    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
+    expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenNthCalledWith(1, 'https://statml.yale.edu/');
     expect(fetchPage).toHaveBeenNthCalledWith(
       2,
@@ -239,6 +266,42 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         }),
       ]),
     );
+  });
+
+  it('emits only word-grounded methods and drops fabricated ones', async () => {
+    const { ctx, emitted } = makeContext();
+    ctx.options.only = ['ysm-flow-lab'];
+    ctx.options.limit = 1;
+    const pageProse =
+      'The Flow Lab studies immune signaling and inflammation in cortical circuits, using flow cytometry and live-cell imaging to quantify single-cell responses across experimental conditions.';
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://medicine.yale.edu/lab/flow/',
+      html: `<main><h1>Flow Lab</h1><p>${pageProse}</p></main>`,
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-flow',
+          slug: 'ysm-flow-lab',
+          name: 'Flow Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/flow/',
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: pageProse,
+        shortDescription: '',
+        topics: [],
+        methods: ['flow cytometry', 'live-cell imaging', 'mass spectrometry'],
+      } satisfies DescriptionExtraction),
+      callCardLLM: vi.fn().mockResolvedValue(''),
+    });
+
+    await scraper.run(ctx);
+
+    const methodsObservation = emitted.find((obs) => obs.field === 'methods');
+    expect(methodsObservation?.value).toEqual(['flow cytometry', 'live-cell imaging']);
   });
 
   it('rejects unsafe runtime bounds before fetching lab pages', async () => {
@@ -375,6 +438,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
   it('emits source-backed full and short description observations without access claims', async () => {
     const { ctx, emitted } = makeContext();
+    const callLLM = vi.fn();
     const scraper = new LabMicrositeDescriptionLLMExtractor({
       apiKey: 'test-key',
       labFinder: async () => [
@@ -390,19 +454,15 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         url: 'https://medicine.yale.edu/lab/example/',
         html: '<main><h1>Example Lab</h1><p>The Example Lab studies immune mechanisms, tumor biology, translational biomarkers, and computational methods for understanding treatment response.</p></main>',
       }),
-      callLLM: vi.fn().mockResolvedValue({
-        fullDescription:
-          'The Example Lab studies immune mechanisms, tumor biology, translational biomarkers, and computational methods for understanding treatment response.',
-        shortDescription:
-          'Studies immune mechanisms, tumor biology, translational biomarkers, and computational treatment response methods.',
-        topics: ['tumor biology'],
-        methods: ['computational methods'],
-      } satisfies DescriptionExtraction),
+      callLLM,
     });
 
     const result = await scraper.run(ctx);
 
-    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
+    expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
+    // The description still comes verbatim from the embedded prose even though the
+    // LLM is now also consulted for methods on the deterministic path.
+    expect(callLLM).toHaveBeenCalledTimes(1);
     expect(emitted).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -410,14 +470,70 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
           entityId: 'entity-1',
           field: 'fullDescription',
           sourceUrl: 'https://medicine.yale.edu/lab/example/',
+          value:
+            'The Example Lab studies immune mechanisms, tumor biology, translational biomarkers, and computational methods for understanding treatment response.',
         }),
         expect.objectContaining({ field: 'shortDescription' }),
-        expect.objectContaining({ field: 'researchAreas', value: ['tumor biology'] }),
-        expect.objectContaining({ field: 'methods', value: ['computational methods'] }),
       ]),
     );
     expect(emitted.map((obs) => obs.field)).not.toContain('acceptingUndergrads');
     expect(emitted.map((obs) => obs.field)).not.toContain('joinPageUrl');
+  });
+
+  it('blanks LLM description fields that are not grounded verbatim in the page text', () => {
+    const pageText =
+      'The Ground Lab studies neural circuits underlying decision making using electrophysiology and computational modeling.';
+    const grounded = groundDescriptionExtraction(
+      {
+        fullDescription:
+          'The Ground Lab studies neural circuits underlying decision making using electrophysiology and computational modeling.',
+        shortDescription: 'This lab pioneers world-changing breakthroughs in every field.',
+        topics: [],
+        methods: [],
+      },
+      pageText,
+    );
+    expect(grounded.fullDescription).toContain('neural circuits underlying decision making');
+    expect(grounded.shortDescription).toBe('');
+  });
+
+  it('emits nothing when deterministic extraction fails and the LLM output is ungrounded', async () => {
+    const { ctx, emitted } = makeContext();
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription: 'This lab studies quantum gravity and interstellar travel.',
+      shortDescription: 'Pioneering quantum gravity.',
+      topics: [],
+      methods: [],
+    } satisfies DescriptionExtraction);
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'hallucination-1',
+          slug: 'weather-lab',
+          name: 'Weather Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/weather/',
+        },
+      ],
+      fetchPage: vi.fn().mockResolvedValue({
+        url: 'https://medicine.yale.edu/lab/weather/',
+        html: '<main><div>Random community bulletin about the weekly farmers market schedule and parking information for visitors and their families.</div></main>',
+      }),
+      callLLM,
+    });
+
+    const result = await scraper.run(ctx);
+
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        field: 'sourceContentHash',
+        entityId: 'hallucination-1',
+        entityKey: 'weather-lab',
+        sourceUrl: 'https://medicine.yale.edu/lab/weather/',
+      }),
+    ]);
   });
 
   it('normalizes known acronym splits in emitted descriptions', () => {
@@ -439,6 +555,26 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(observations.find((obs) => obs.field === 'shortDescription')?.value).not.toContain(
       'Car DS',
     );
+  });
+
+  it('preserves the description when the model returns non-array topics or methods', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The Rivera Lab investigates comparative historical sociology and the formation of early modern states.',
+        shortDescription: 'The Rivera Lab studies comparative historical sociology.',
+        topics: 'sociology, political theory',
+        methods: null,
+      } as unknown as DescriptionExtraction,
+      { entityKey: 'rivera-lab', sourceUrl: 'https://www.rivera-lab.org/' },
+    );
+
+    expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toContain(
+      'Rivera Lab',
+    );
+    expect(observations.find((obs) => obs.field === 'shortDescription')?.value).toBeDefined();
+    expect(observations.find((obs) => obs.field === 'researchAreas')).toBeUndefined();
+    expect(observations.find((obs) => obs.field === 'methods')).toBeUndefined();
   });
 
   it('drops thin descriptions and rejected hosts', () => {
@@ -473,6 +609,109 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         },
       ),
     ).toEqual([]);
+  });
+
+  it('drops a careers/job-seekers landing page as a description source (#1678)', () => {
+    expect(
+      descriptionExtractionToObservations(
+        {
+          fullDescription:
+            'A great place to work, with competitive benefits, flexible scheduling, and opportunities for growth across our health system.',
+          shortDescription: 'A great place to work with competitive benefits.',
+          topics: [],
+          methods: [],
+        },
+        {
+          entityId: 'entity-1',
+          entityKey: 'careers-lab',
+          sourceUrl:
+            'https://instituteofliving.org/health-professionals/for-job-seekers/hartford-healthcare-careers',
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it('fails closed on a multi-person bio directory dump instead of grafting it onto one entity (#1678)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'See where Climate Fellows go next. About Jaser Abu Mousa is a Senior Fellow at the Middle East Institute studying regional policy. About Simidele Adeagbo is a four-time Olympian advocating for youth sport.',
+        shortDescription: 'About Jaser Abu Mousa is a Senior Fellow.',
+        topics: ['Climate policy'],
+        methods: [],
+      },
+      {
+        entityId: 'entity-ilc',
+        entityKey: 'center-international-leadership',
+        sourceUrl: 'https://jackson.yale.edu/international-leadership-center',
+      },
+    );
+
+    expect(observations).toEqual([]);
+  });
+
+  it('fails closed on a CV/bio opener instead of serving it as a research description (#1841)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'I am a professor in the philosophy department at Yale. I completed my PhD in philosophy at MIT in 2005.',
+        shortDescription: 'I am a professor in the philosophy department at Yale.',
+        topics: [],
+        methods: [],
+      },
+      {
+        entityId: 'entity-dlgreco',
+        entityKey: 'dlgreco',
+        sourceUrl: 'https://sites.google.com/site/dlgreco/',
+      },
+    );
+
+    expect(observations).toEqual([]);
+  });
+
+  it('fails closed on a bibliography citation instead of serving it as a research description (#1841)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The Political Economy of Democratic Transitions, Cambridge Studies in Comparative Politics, Cambridge University Press, 2020.',
+        shortDescription:
+          'The Political Economy of Democratic Transitions, Cambridge Studies in Comparative Politics, Cambridge University Press, 2020.',
+        topics: [],
+        methods: [],
+      },
+      {
+        entityId: 'entity-mattingly',
+        entityKey: 'mattingly',
+        sourceUrl: 'https://campuspress.yale.edu/mattingly/',
+      },
+    );
+
+    expect(observations).toEqual([]);
+  });
+
+  it('rejects a page section heading as a research topic (#1678)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The Tipton research program investigates atomic-scale imaging methods and their application to materials science problems facing the field today.',
+        shortDescription: 'Investigates atomic-scale imaging methods for materials science.',
+        topics: [
+          'Atomic-scale imaging',
+          'Selected Presentations and Articles for a General Audience',
+          'In the News',
+        ],
+        methods: [],
+      },
+      {
+        entityId: 'entity-tipton',
+        entityKey: 'tipton-faculty-research',
+        sourceUrl: 'https://physics.yale.edu/people/paul-tipton',
+      },
+    );
+
+    expect(observations.find((obs) => obs.field === 'researchAreas')?.value).toEqual([
+      'Atomic-scale imaging',
+    ]);
   });
 
   it('derives a card-safe short description when LLM short copy is first-person', () => {
@@ -522,5 +761,641 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         sourceUrl: 'https://medicine.yale.edu/profile/gray-metabolism-fixture/',
       })[0],
     ).toEqual(expect.objectContaining({ confidenceOverride: 0.55 }));
+  });
+
+  it('emits the real lab name from a non-profile microsite above the PI-derived fallback confidence', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The Example Computing Lab studies energy-efficient hardware, compiler co-design, and low-power machine-learning systems for edge devices.',
+        shortDescription:
+          'Studies energy-efficient hardware, compiler co-design, and low-power machine learning.',
+        topics: [],
+        methods: [],
+        name: 'The Example Computing Lab (ECL)',
+      },
+      {
+        entityId: 'entity-ecl',
+        entityKey: 'nsf-pi-example',
+        sourceUrl: 'https://example-computing.example.org/',
+      },
+    );
+
+    const nameObservation = observations.find((obs) => obs.field === 'name');
+    const displayNameObservation = observations.find((obs) => obs.field === 'displayName');
+    expect(nameObservation).toMatchObject({
+      value: 'The Example Computing Lab (ECL)',
+      confidenceOverride: 0.95,
+    });
+    expect(displayNameObservation).toMatchObject({
+      value: 'The Example Computing Lab (ECL)',
+      confidenceOverride: 0.95,
+    });
+    expect(nameObservation?.confidenceOverride).toBeGreaterThan(0.9);
+  });
+
+  it('strips a description sentence glued onto the extracted lab name (#797)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'We study how immune cells, lipids, and metabolic networks end inflammation and restore tissue health.',
+        shortDescription: 'Studies how immune cells and metabolic networks resolve inflammation.',
+        topics: [],
+        methods: [],
+        name: 'Sample Fixture Lab We study how immune cells, lipids, and metabolic networks end inflammation and restore tissue health.',
+      },
+      {
+        entityId: 'entity-fixture',
+        entityKey: 'nih-pi-sample-fixture',
+        sourceUrl: 'https://sample-fixture-lab.example.org/',
+      },
+    );
+
+    const nameObservation = observations.find((obs) => obs.field === 'name');
+    const displayNameObservation = observations.find((obs) => obs.field === 'displayName');
+    expect(nameObservation?.value).toBe('Sample Fixture Lab');
+    expect(displayNameObservation?.value).toBe('Sample Fixture Lab');
+    expect(nameObservation?.value).not.toMatch(/\bwe study\b/i);
+  });
+
+  it('does not emit a lab name from a profile page or when no proper name is extracted', () => {
+    const profileObservations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The center supports research in metabolic disease, diabetes, mitochondrial biology, insulin resistance, and translational medicine.',
+        shortDescription: 'Studies metabolic disease, diabetes, and insulin resistance.',
+        topics: [],
+        methods: [],
+        name: 'Some Person',
+      },
+      {
+        entityId: 'entity-1',
+        entityKey: 'metabolism',
+        sourceUrl: 'https://medicine.yale.edu/profile/fixture-lead/',
+      },
+    );
+    expect(profileObservations.map((obs) => obs.field)).not.toContain('name');
+    expect(profileObservations.map((obs) => obs.field)).not.toContain('displayName');
+
+    const noNameObservations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The lab studies immune mechanisms, tumor biology, translational biomarkers, and computational methods for understanding treatment response.',
+        shortDescription: 'Studies immune mechanisms and tumor biology.',
+        topics: [],
+        methods: [],
+        name: '   ',
+      },
+      { entityId: 'entity-1', entityKey: 'lab', sourceUrl: 'https://example-lab.example.org/' },
+    );
+    expect(noNameObservations.map((obs) => obs.field)).not.toContain('name');
+  });
+
+  it('does not emit a governance-body org title as a lab name (shared council landing page)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The council convenes area-studies faculty across the university to support scholarship on the modern Middle East, its languages, politics, and history.',
+        shortDescription: 'Convenes area-studies faculty on the modern Middle East.',
+        topics: [],
+        methods: [],
+        name: 'Council on Middle East Studies',
+      },
+      {
+        entityId: 'entity-baden',
+        entityKey: 'baden-lab-jbaden',
+        sourceUrl: 'https://macmillan.yale.edu/middleeast',
+      },
+    );
+
+    expect(observations.map((obs) => obs.field)).not.toContain('name');
+    expect(observations.map((obs) => obs.field)).not.toContain('displayName');
+
+    for (const governanceName of [
+      'Committee on International Relations',
+      'Office of the Provost',
+      'Consortium for Data Science',
+      'Board of Governors',
+    ]) {
+      const rejected = descriptionExtractionToObservations(
+        {
+          fullDescription:
+            'This body coordinates faculty and administrative work across multiple departments and schools within the university.',
+          shortDescription: 'Coordinates faculty and administrative work across schools.',
+          topics: [],
+          methods: [],
+          name: governanceName,
+        },
+        {
+          entityId: 'entity-governance',
+          entityKey: 'governance',
+          sourceUrl: 'https://example.org/body',
+        },
+      );
+      expect(rejected.map((obs) => obs.field)).not.toContain('name');
+    }
+  });
+
+  it('synthesizes a grounded card at ingestion when the derivation yields none (#557)', async () => {
+    const { ctx, emitted } = makeContext();
+    const fullDescription =
+      'Our lab is broadly interested in the biology of aging and the ways that metabolism shapes lifespan across species. Over the past decade we have built a range of experimental systems, from yeast to zebrafish, and we continue to expand these tools while training the next generation of scientists.';
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://example.yale.edu/aging-lab/',
+      html: `<main><p>${fullDescription}</p></main>`,
+    });
+    const callCardLLM = vi
+      .fn()
+      .mockResolvedValue(
+        'Studies the biology of aging and how metabolism shapes lifespan across species.',
+      );
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'aging-1',
+          slug: 'aging-lab',
+          name: 'Aging Lab',
+          websiteUrl: 'https://example.yale.edu/aging-lab/',
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription,
+        shortDescription: '',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction),
+      callCardLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(callCardLLM).toHaveBeenCalledOnce();
+    const cardObservation = emitted.find((obs) => obs.field === 'shortDescription');
+    expect(cardObservation?.value).toBe(
+      'Studies the biology of aging and how metabolism shapes lifespan across species.',
+    );
+    expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
+  });
+
+  it('does not synthesize a card when the extraction already carries a usable one (#557)', async () => {
+    const { ctx, emitted } = makeContext();
+    const fullDescription =
+      'The target lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.';
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://example.yale.edu/target-lab/',
+      html: `<main><p>${fullDescription}</p></main>`,
+    });
+    const callCardLLM = vi.fn();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'target-3',
+          slug: 'target-lab',
+          name: 'Target Lab',
+          websiteUrl: 'https://example.yale.edu/target-lab/',
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription,
+        shortDescription:
+          'Studies cellular signaling, immune response, translational biomarkers, and computational modeling.',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction),
+      callCardLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(callCardLLM).not.toHaveBeenCalled();
+    expect(emitted.some((obs) => obs.field === 'shortDescription')).toBe(true);
+  });
+
+  it('drops a different-professor people page from an entity candidate URL list', () => {
+    const candidates = candidateDescriptionLabsFromDocs([
+      {
+        _id: 'entity-brown',
+        slug: 'dept-physics-charles-brown',
+        name: 'Charles Brown Lab',
+        websiteUrl: 'https://brownlab.yale.edu/',
+        sourceUrls: ['https://physics.yale.edu/people/keith-baker', 'https://brownlab.yale.edu/'],
+      },
+    ]);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].sourceUrls).toEqual(['https://brownlab.yale.edu/']);
+    expect(candidates[0].sourceUrls).not.toContain('https://physics.yale.edu/people/keith-baker');
+  });
+
+  it('drops an exact full-name homonym page at a contradicting Yale school', () => {
+    const candidates = candidateDescriptionLabsFromDocs([
+      {
+        _id: 'entity-nih-avery',
+        slug: 'nih-pi-jordan-avery',
+        name: 'Jordan Avery Lab',
+        school: 'School of Medicine',
+        departments: ['Internal Medicine'],
+        websiteUrl: 'https://faculty.som.yale.edu/jordanavery/',
+        sourceUrls: ['https://faculty.som.yale.edu/jordanavery/'],
+      },
+    ]);
+
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('keeps the entity when its own name-shaped people page corroborates it', () => {
+    const candidates = candidateDescriptionLabsFromDocs([
+      {
+        _id: 'entity-baker',
+        slug: 'baker-lab-okb2',
+        name: 'Baker Lab',
+        websiteUrl: 'https://physics.yale.edu/people/keith-baker',
+        sourceUrls: ['https://physics.yale.edu/people/keith-baker'],
+      },
+    ]);
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        _id: 'entity-baker',
+        websiteUrl: 'https://physics.yale.edu/people/keith-baker',
+      }),
+    ]);
+  });
+
+  it('never fetches or attributes a different-professor page keyed onto an entity', async () => {
+    const { ctx, emitted } = makeContext();
+    ctx.options.only = ['dept-physics-charles-brown'];
+    ctx.options.limit = 1;
+    const fetchPage = vi.fn(async (url: string) => ({
+      url,
+      html: '<main><p>The Brown Research Group studies many-body quantum physics, quasicrystals, cavity quantum electrodynamics, and Rydberg atoms using atomic physics.</p></main>',
+    }));
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-brown',
+          slug: 'dept-physics-charles-brown',
+          name: 'Charles Brown Lab',
+          websiteUrl: 'https://brownlab.yale.edu/',
+          sourceUrls: ['https://brownlab.yale.edu/', 'https://physics.yale.edu/people/keith-baker'],
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription:
+          'The Brown Research Group studies many-body quantum physics, quasicrystals, cavity quantum electrodynamics, and Rydberg atoms using atomic physics.',
+        shortDescription:
+          'Studies many-body quantum physics, quasicrystals, cavity QED, and Rydberg atoms.',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction),
+    });
+
+    await scraper.run(ctx);
+
+    for (const call of fetchPage.mock.calls) {
+      expect(call[0]).not.toContain('keith-baker');
+    }
+    expect(
+      emitted.every((obs) => obs.sourceUrl !== 'https://physics.yale.edu/people/keith-baker'),
+    ).toBe(true);
+  });
+
+  it('skips emission when a source redirects to a different professor page', async () => {
+    const { ctx, emitted, logs } = makeContext();
+    ctx.options.only = ['dept-physics-charles-brown'];
+    ctx.options.limit = 1;
+    const fetchPage = vi.fn(async () => ({
+      url: 'https://physics.yale.edu/people/keith-baker',
+      html: '<main><p>Professor Baker studies experimental particle physics at the Large Hadron Collider in the ATLAS collaboration and beyond the Standard Model.</p></main>',
+    }));
+    const callLLM = vi.fn();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-brown',
+          slug: 'dept-physics-charles-brown',
+          name: 'Charles Brown Lab',
+          websiteUrl: 'https://brownlab.yale.edu/',
+          sourceUrls: ['https://brownlab.yale.edu/'],
+        },
+      ],
+      fetchPage,
+      callLLM,
+    });
+
+    const result = await scraper.run(ctx);
+
+    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(emitted).toHaveLength(0);
+    expect(logs.some((line) => /names a different person/.test(line))).toBe(true);
+  });
+  it('discovers a site’s own research page from home-page anchors (#2176)', () => {
+    const html =
+      '<nav><a href="/">Home</a><a href="/research_page/">Research</a>' +
+      '<a href="/team_page/">Team</a><a href="https://elsewhere.example/research">Research</a>' +
+      '<a href="/">Research</a></nav>';
+
+    expect(discoverResearchSubPageUrls(html, 'https://examplelab.org/')).toEqual([
+      'https://examplelab.org/research_page/',
+    ]);
+  });
+
+  it('crawls only links the site publishes, never blind origin probes (#2176)', () => {
+    const linked = researchSubPageCrawlUrls(
+      '<a href="/research_page/">Our Research</a>',
+      'https://examplelab.org/',
+    );
+    expect(linked).toEqual(['https://examplelab.org/research_page/']);
+
+    // No research anchor means no crawl at all, so a home with nothing to find
+    // costs no extra requests.
+    expect(researchSubPageCrawlUrls('<a href="/team">Team</a>', 'https://examplelab.org/')).toEqual(
+      [],
+    );
+  });
+
+  it('prefers research prose over a mission statement regardless of which page it sits on (#2176)', () => {
+    const mission = {
+      url: 'https://examplelab.org/research',
+      fullDescription:
+        'Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology. To foster personal and scientific growth and excellence.',
+      shortDescription: '',
+    };
+    const research = {
+      url: 'https://examplelab.org/',
+      fullDescription:
+        'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics, cell culture models, genomics, and microscopy.',
+      shortDescription: '',
+    };
+
+    expect(selectBestDescriptionPageProse([mission, research], 'organization')).toBe(research);
+    expect(selectBestDescriptionPageProse([research, mission], 'organization')).toBe(research);
+  });
+
+  it('reads the research subpage when the home page carries only a mission blurb (#2176)', async () => {
+    const { ctx, emitted } = makeContext();
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html:
+            '<main><h1>Laboratory of Tissue Biology</h1>' +
+            '<p>Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease.</p>' +
+            '<a href="/research_page/">Our Research</a></main>',
+        };
+      }
+      if (url === 'https://examplelab.org/research_page/') {
+        return {
+          url: 'https://examplelab.org/research_page/',
+          html: '<main><h1>Research</h1><p>We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics, cell culture models, genomics, and microscopy to dissect regeneration.</p></main>',
+        };
+      }
+      throw new Error('not found');
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'example-lab',
+          name: 'Example Lab',
+          websiteUrl: 'https://examplelab.org/',
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: '',
+        shortDescription: '',
+        topics: [],
+        methods: [],
+      }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full?.value).toContain('dynamic interactions between non-epithelial cells');
+    expect(full?.value).not.toContain('Our Mission');
+    expect(full?.sourceUrl).toBe('https://examplelab.org/research_page/');
+    expect(fetchPage).toHaveBeenCalledWith('https://examplelab.org/research_page/');
+  });
+  it('keeps the primary page prose when a crawled research page merely ties it (#2176)', async () => {
+    const { ctx, emitted } = makeContext();
+    const HOME_PROSE =
+      'The Hat Lab studies quantum information using superconducting microwave circuits, building multi-qubit modules and the amplifiers that read them out with minimal added noise.';
+    const CRAWLED_PROSE =
+      'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html: `<main><h1>Hat Lab</h1><div>${HOME_PROSE}</div><a href="/research">Research</a></main>`,
+        };
+      }
+      return {
+        url: 'https://examplelab.org/research',
+        html: `<main><p>${CRAWLED_PROSE}</p></main>`,
+      };
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'hat-lab',
+          name: 'Hat Lab',
+          websiteUrl: 'https://examplelab.org/',
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: HOME_PROSE,
+        shortDescription: '',
+        topics: [],
+        methods: [],
+      }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full?.value).toBe(HOME_PROSE);
+    expect(full?.sourceUrl).toBe('https://examplelab.org/');
+  });
+
+  it('emits nothing when a linked research page cannot be read (#2176)', async () => {
+    const { ctx, emitted, logs } = makeContext();
+    const STORED_RESEARCH_PROSE =
+      'We are studying the dynamic interactions between non-epithelial cells in tissues that interface with the environment, using mouse genetics and microscopy to dissect regeneration.';
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription: '',
+      shortDescription: '',
+      topics: [],
+      methods: [],
+    });
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html:
+            '<main><h1>Laboratory of Tissue Biology</h1>' +
+            '<p>Our Mission Create and communicate high-quality and creative science on the mechanisms that control tissue biology: development, homeostasis, regeneration, and disease.</p>' +
+            '<a href="/research_page/">Our Research</a></main>',
+        };
+      }
+      throw new Error('socket hang up');
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'example-lab',
+          name: 'Example Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: STORED_RESEARCH_PROSE,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(logs.some((line) => /linked research page could not be read/.test(line))).toBe(true);
+  });
+  it('leaves a stored description worth keeping alone when the primary page yields nothing (#2180)', async () => {
+    const { ctx, emitted } = makeContext();
+    const STORED =
+      'The Michael Hatridge Lab focuses on quantum information research, particularly using superconducting microwave circuits as a platform to entangle larger quantum systems.';
+    const CRAWLED =
+      'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        // A JS shell: no prose for either the deterministic or the LLM path.
+        return {
+          url: 'https://examplelab.org/',
+          html: '<main><a href="/research">Research</a></main>',
+        };
+      }
+      return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'hat-lab',
+          name: 'Hat Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: STORED,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi
+        .fn()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full).toBeUndefined();
+    // The suppression is decided by the stored description, which the content
+    // hash does not cover, so this run must not memoize it - otherwise clearing
+    // the stored description later never gets reconsidered (#2180).
+    expect(emitted.some((obs) => obs.field === SOURCE_CONTENT_HASH_FIELD)).toBe(false);
+  });
+
+  it('replaces a stored description that would not survive selection with crawled research prose (#2180)', async () => {
+    const { ctx, emitted } = makeContext();
+    const STORED_CAPTION =
+      'The aluminum housing for a 6-qubit, 2 module processor design set on the still stage of one of our new dilution refrigerators for ambience. From top left, the input lines run to the mixing chamber plate.';
+    const CRAWLED =
+      'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html: '<main><a href="/research">Research</a></main>',
+        };
+      }
+      return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'hat-lab',
+          name: 'Hat Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: STORED_CAPTION,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi
+        .fn()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full?.value).toBe(CRAWLED);
+    expect(full?.sourceUrl).toBe('https://examplelab.org/research');
+  });
+
+  it('still fills an empty description from a crawled page when the primary page yields nothing (#2180)', async () => {
+    const { ctx, emitted } = makeContext();
+    const CRAWLED =
+      'We investigate parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === 'https://examplelab.org/') {
+        return {
+          url: 'https://examplelab.org/',
+          html: '<main><a href="/research">Research</a></main>',
+        };
+      }
+      return { url: 'https://examplelab.org/research', html: `<main><p>${CRAWLED}</p></main>` };
+    });
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'hat-lab',
+          name: 'Hat Lab',
+          websiteUrl: 'https://examplelab.org/',
+          fullDescription: '',
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage,
+      callLLM: vi
+        .fn()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] }),
+    });
+
+    await scraper.run(ctx);
+
+    const full = emitted.find((obs) => obs.field === 'fullDescription');
+    expect(full?.value).toBe(CRAWLED);
+    expect(full?.sourceUrl).toBe('https://examplelab.org/research');
   });
 });

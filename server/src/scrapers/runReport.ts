@@ -69,6 +69,7 @@ export interface ReportPostMaterializationMetrics {
   accessSignals?: number;
   contactRoutes?: number;
   postedOpportunities?: number;
+  undergraduateLogisticsClaims?: number;
   guardedContactRoutes?: number;
   staleEvidenceSkipped?: number;
   conflicts?: number;
@@ -80,6 +81,7 @@ export interface ReportPostMaterializationSummary {
   accessSignals: number;
   contactRoutes: number;
   postedOpportunities: number;
+  undergraduateLogisticsClaims: number;
   guardedContactRoutes: number;
   staleEvidenceSkipped: number;
   conflicts: number;
@@ -113,6 +115,7 @@ export interface SourceEvidenceGapReviewRow {
     accessSignals: number;
     contactRoutes: number;
     postedOpportunities: number;
+    undergraduateLogisticsClaims: number;
   };
   missingExpectedArtifactTypes: string[];
   totalAccessArtifacts: number;
@@ -285,11 +288,7 @@ const IDENTITY_OR_ROUTING_CONFLICT_FIELDS = new Set([
   'title',
   'userType',
 ]);
-const CONTENT_CONFLICT_FIELDS = new Set([
-  'description',
-  'fullDescription',
-  'shortDescription',
-]);
+const CONTENT_CONFLICT_FIELDS = new Set(['description', 'fullDescription', 'shortDescription']);
 const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
   'undergradAccessEvidence',
   'undergradEvidenceQuote',
@@ -303,10 +302,7 @@ const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
   'joinPageUrl',
   'applicationUrl',
 ]);
-const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set([
-  'recentGrants',
-  'recentGrantCount',
-]);
+const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set(['recentGrants', 'recentGrantCount']);
 
 function stringifyId(value: unknown): string | undefined {
   return serializedDocumentId(value);
@@ -369,7 +365,10 @@ function observedAtForResolver(value: Date | string | undefined): Date {
   return new Date(0);
 }
 
-function topEntries(map: Record<string, number>, limit: number): Array<{ field: string; count: number }> {
+function topEntries(
+  map: Record<string, number>,
+  limit: number,
+): Array<{ field: string; count: number }> {
   return Object.entries(map)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
@@ -517,7 +516,9 @@ export function buildMaterializationConflictReview(
     const reviewQueue = reviewQueueForConflictCategory(reviewCategory);
     increment(categoryCountMap, reviewCategory);
     if (isActionableConflictCategory(reviewCategory)) actionableConflictCount++;
-    const sourceNames = Array.from(new Set(group.observations.map(sourceNameForObservation))).sort();
+    const sourceNames = Array.from(
+      new Set(group.observations.map(sourceNameForObservation)),
+    ).sort();
     const sourceConflictScope = sourceNames.length > 1 ? 'cross_source' : 'single_source';
     if (sourceConflictScope === 'cross_source') crossSourceConflictCount++;
     else sameSourceConflictCount++;
@@ -535,9 +536,7 @@ export function buildMaterializationConflictReview(
       sourceNames,
       resolvedConfidence: resolved.confidence,
       contributingSources: resolved.contributingSources.slice().sort(),
-      conflictingValuePreviews: (resolved.conflictingValues || [])
-        .slice(0, 3)
-        .map(previewValue),
+      conflictingValuePreviews: (resolved.conflictingValues || []).slice(0, 3).map(previewValue),
     });
   }
 
@@ -587,7 +586,9 @@ function uniqueTargetCount(
   return targets.size + untargetedCount;
 }
 
-function buildCoverageFetchSummary(fetchMetrics?: ScraperFetchMetrics): ScrapeRunReport['coverage']['fetch'] {
+function buildCoverageFetchSummary(
+  fetchMetrics?: ScraperFetchMetrics,
+): ScrapeRunReport['coverage']['fetch'] {
   const summary = fetchMetrics?.summary;
   const byMode: ScrapeRunReport['coverage']['fetch']['byMode'] = {};
   for (const [mode, metrics] of Object.entries(summary?.byMode || {})) {
@@ -639,6 +640,7 @@ const ACCESS_ARTIFACT_TYPES = [
   'AccessSignal',
   'ContactRoute',
   'PostedOpportunity',
+  'UndergraduateLogisticsClaim',
 ] as const;
 
 function metricForArtifact(
@@ -654,6 +656,8 @@ function metricForArtifact(
       return metrics.contactRoutes;
     case 'PostedOpportunity':
       return metrics.postedOpportunities;
+    case 'UndergraduateLogisticsClaim':
+      return metrics.undergraduateLogisticsClaims;
     default:
       return 0;
   }
@@ -662,6 +666,7 @@ function metricForArtifact(
 function buildPostMaterializationSummary(
   metrics: ReportPostMaterializationMetrics | undefined,
   sourceCoverage?: ScrapeRunReport['coverage']['source'],
+  excludedExpectedArtifactTypes: readonly string[] = [],
 ): ReportPostMaterializationSummary | undefined {
   if (!metrics) return undefined;
 
@@ -670,13 +675,16 @@ function buildPostMaterializationSummary(
     accessSignals: metrics.accessSignals || 0,
     contactRoutes: metrics.contactRoutes || 0,
     postedOpportunities: metrics.postedOpportunities || 0,
+    undergraduateLogisticsClaims: metrics.undergraduateLogisticsClaims || 0,
     guardedContactRoutes: metrics.guardedContactRoutes || 0,
     staleEvidenceSkipped: metrics.staleEvidenceSkipped || 0,
     conflicts: metrics.conflicts || 0,
     errors: metrics.errors || 0,
   };
-  const expectedArtifactTypes = (sourceCoverage?.artifactTypes.values || []).filter((artifactType) =>
-    (ACCESS_ARTIFACT_TYPES as readonly string[]).includes(artifactType),
+  const expectedArtifactTypes = (sourceCoverage?.artifactTypes.values || []).filter(
+    (artifactType) =>
+      (ACCESS_ARTIFACT_TYPES as readonly string[]).includes(artifactType) &&
+      !excludedExpectedArtifactTypes.includes(artifactType),
   );
   const missingExpectedArtifactTypes = expectedArtifactTypes.filter(
     (artifactType) => metricForArtifact(normalized, artifactType) === 0,
@@ -688,10 +696,24 @@ function buildPostMaterializationSummary(
       normalized.entryPathways +
       normalized.accessSignals +
       normalized.contactRoutes +
-      normalized.postedOpportunities,
+      normalized.postedOpportunities +
+      normalized.undergraduateLogisticsClaims,
     expectedArtifactTypes,
     missingExpectedArtifactTypes,
   };
+}
+
+function logisticsAcquisitionEnabledForRun(run: ReportScrapeRun): boolean {
+  if (run.sourceName !== 'lab-microsite-undergrad-llm' || !Array.isArray(run.options?.only)) {
+    return false;
+  }
+  const allowlist = new Set(
+    run.options.only
+      .filter((slug): slug is string => typeof slug === 'string')
+      .map((slug) => slug.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return allowlist.size > 0 && allowlist.size <= 25;
 }
 
 export function buildSourceEvidenceGapReview(
@@ -715,6 +737,7 @@ export function buildSourceEvidenceGapReview(
         accessSignals: summary?.accessSignals || 0,
         contactRoutes: summary?.contactRoutes || 0,
         postedOpportunities: summary?.postedOpportunities || 0,
+        undergraduateLogisticsClaims: summary?.undergraduateLogisticsClaims || 0,
       },
       missingExpectedArtifactTypes,
       totalAccessArtifacts,
@@ -808,6 +831,9 @@ export function buildScrapeRunReport(
   const postMaterialization = buildPostMaterializationSummary(
     run.postMaterializationMetrics,
     coverageSource,
+    run.sourceName === 'lab-microsite-undergrad-llm' && !logisticsAcquisitionEnabledForRun(run)
+      ? ['UndergraduateLogisticsClaim']
+      : [],
   );
   const workPlanner = run.metrics?.workPlanner;
   const workPlannerSkippedAll =
@@ -833,9 +859,9 @@ export function buildScrapeRunReport(
       ? run.entitiesObserved
       : undefined;
   const reportedObservationCount =
-    observations.length > 0 ? observations.length : dryRunObservationCount ?? observations.length;
+    observations.length > 0 ? observations.length : (dryRunObservationCount ?? observations.length);
   const reportedEntitiesObserved =
-    observations.length > 0 ? entities.size : dryRunEntitiesObserved ?? entities.size;
+    observations.length > 0 ? entities.size : (dryRunEntitiesObserved ?? entities.size);
   const dryRunPreview =
     run.options?.dryRun === true && dryRunObservationCount !== undefined
       ? {
@@ -850,8 +876,10 @@ export function buildScrapeRunReport(
       : undefined;
 
   const warnings: string[] = [];
-  if (run.status === 'failure') warnings.push('Run failed; do not materialize without inspecting errors.');
-  if (run.status === 'partial') warnings.push('Run completed partially; inspect source-level logs/errors.');
+  if (run.status === 'failure')
+    warnings.push('Run failed; do not materialize without inspecting errors.');
+  if (run.status === 'partial')
+    warnings.push('Run completed partially; inspect source-level logs/errors.');
   if (run.invalidated) warnings.push('Run has been invalidated.');
   if (reportedObservationCount === 0 && !workPlannerSkippedAll) {
     warnings.push('Run produced zero observations.');
@@ -860,7 +888,9 @@ export function buildScrapeRunReport(
     warnings.push(`${missingEntityIdentifierCount} observation(s) lack entityId/entityKey.`);
   }
   if (conflictCandidates.length > 0) {
-    warnings.push(`${conflictCandidates.length} entity-field conflict candidate(s) found within this run.`);
+    warnings.push(
+      `${conflictCandidates.length} entity-field conflict candidate(s) found within this run.`,
+    );
   }
   if (lowConfidenceCount > 0) {
     warnings.push(`${lowConfidenceCount} low-confidence observation(s) found.`);
@@ -1029,7 +1059,9 @@ async function getMaterializationConflictReviewOptions(
     superseded: false,
     $or: clauses,
   })
-    .select('entityType entityId entityKey field value sourceName confidence sourceUrl observedAt superseded observationFingerprint')
+    .select(
+      'entityType entityId entityKey field value sourceName confidence sourceUrl observedAt superseded observationFingerprint',
+    )
     .lean();
 
   return {
@@ -1046,13 +1078,17 @@ export async function getScrapeRunReport(scrapeRunId: string): Promise<ScrapeRun
   const run = await ScrapeRun.findById(scrapeRunObjectId).lean();
   if (!run) throw new Error(`ScrapeRun not found: ${scrapeRunId}`);
 
-  const sourceClauses: Array<Record<string, unknown>> = [{ name: (run as ReportScrapeRun).sourceName }];
+  const sourceClauses: Array<Record<string, unknown>> = [
+    { name: (run as ReportScrapeRun).sourceName },
+  ];
   const sourceId = (run as ReportScrapeRun).sourceId;
   if (sourceId) sourceClauses.unshift({ _id: sourceId });
 
   const [observations, source] = await Promise.all([
     Observation.find({ scrapeRunId: scrapeRunObjectId })
-      .select('entityType entityId entityKey field value sourceName confidence sourceUrl observedAt superseded observationFingerprint')
+      .select(
+        'entityType entityId entityKey field value sourceName confidence sourceUrl observedAt superseded observationFingerprint',
+      )
       .lean(),
     Source.findOne({
       $or: sourceClauses,

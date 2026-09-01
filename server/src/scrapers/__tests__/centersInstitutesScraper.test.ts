@@ -14,20 +14,34 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
   assertPublicHttpUrl: vi.fn(async (rawUrl: string) => new URL(rawUrl)),
 }));
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   CentersInstitutesScraper,
+  DEFAULT_CENTER_CONFIGS,
   nodeTeaserPersonExtractor,
   wuTsaiExtractor,
   yaleCancerCenterExtractor,
+  yighAffiliatedFacultyExtractor,
+  childStudyCenterExtractor,
   viewsFieldNameExtractor,
   ispsExtractor,
   ycgaExtractor,
+  directoryListingCardExtractor,
+  referenceCardPeopleExtractor,
+  naturalCarbonCaptureExtractor,
+  customCardLabsExtractor,
+  contentSpotlightFacultyExtractor,
+  fdsUsersGridExtractor,
   jacksonCentersExtractor,
+  jacksonProfileItemExtractor,
+  deriveChildEngagementCandidates,
   jsRenderedStub,
   centerToGroupObservations,
   memberToObservations,
   centerMemberRelationshipObservations,
   childCenterToObservations,
+  childCenterEntityKey,
   type CenterConfig,
   type CenterMember,
   type ExtractorResult,
@@ -96,6 +110,39 @@ const CANCER_HTML = `
     <a href="/cancer/profile/sarah-bell/" class="hyperlink">Bell, Sarah</a>
   </div>
   <a href="/cancer/about/contact" class="hyperlink">Contact Us</a>
+</body></html>
+`;
+
+/** Yale Institute for Global Health affiliated-faculty directory, grouped by section. */
+const YIGH_HTML = `
+<html><body>
+  <div class="categorized-list-item"><h3 class="categorized-list-item__title">Medicine</h3>
+    <ul class="link-items-list">
+      <li class="link-items-list__item"><div><a href="/yigh/profile/adebowale-adeniran/" class="hyperlink">Adeniran, Adebowale</a></div></li>
+      <li class="link-items-list__item"><div><a href="/yigh/profile/frederick-altice/" class="hyperlink">Altice, Frederick (Rick) L.</a></div></li>
+      <li class="link-items-list__item"><div><a href="/yigh/profile/adebowale-adeniran/" class="hyperlink">Adeniran, Adebowale</a></div></li>
+    </ul>
+  </div>
+  <div class="categorized-list-item"><h3 class="categorized-list-item__title">Nursing</h3>
+    <ul class="link-items-list">
+      <li class="link-items-list__item"><div><a href="/yigh/profile/sarah-bell/" class="hyperlink">Bell, Sarah</a></div></li>
+    </ul>
+  </div>
+  <a href="/yigh/about/contact" class="hyperlink">Contact Us</a>
+</body></html>
+`;
+
+/** Yale Child Study Center faculty A-Z, same medicine.yale.edu link-items-list theme. */
+const CHILD_STUDY_HTML = `
+<html><body>
+  <div class="categorized-list-item__inner-list">
+    <ul class="link-items-list">
+      <li class="link-items-list__item"><div><a href="/childstudy/profile/benedicte-aarestrup/" tabindex="0" class="hyperlink">Aarestrup, Benedicte</a></div></li>
+      <li class="link-items-list__item"><div><a href="/childstudy/profile/HAA2/" class="hyperlink">Allen, Henry</a></div></li>
+      <li class="link-items-list__item"><div><a href="/childstudy/profile/benedicte-aarestrup/" class="hyperlink">Aarestrup, Benedicte</a></div></li>
+    </ul>
+  </div>
+  <a href="/childstudy/about/contact" class="hyperlink">Contact Us</a>
 </body></html>
 `;
 
@@ -182,35 +229,19 @@ const YCGA_HTML = `
 </body></html>
 `;
 
-/** Jackson School centers index meta-listing. */
+/** Jackson School centers index meta-listing (Drupal child-menu block). */
 const JACKSON_HTML = `
 <html><body>
-  <div class="jordan_item">
-    <div class="cta_box">
-      <a href="https://jackson.yale.edu/centers-initiatives/blue-center/"><img/></a>
-      <div class="cta_box_content">
-        <h3 class="cta_title">Blue Center for Global Strategic Assessment</h3>
-        <div class="content">Supports interdisciplinary research on statecraft.</div>
-      </div>
-    </div>
-  </div>
-  <div class="jordan_item">
-    <div class="cta_box">
-      <a href="https://jackson.yale.edu/environment/"><img/></a>
-      <div class="cta_box_content">
-        <h3 class="cta_title">Deitz Family Initiative on Environment and Global Affairs</h3>
-        <div class="content">Supports environmental change studies.</div>
-      </div>
-    </div>
-  </div>
-  <div class="jordan_item">
-    <div class="cta_box">
-      <a href="https://jackson.yale.edu/centers-initiatives/schmidt-program/"><img/></a>
-      <div class="cta_box_content">
-        <h3 class="cta_title">Schmidt Program on AI and National Power</h3>
-        <div class="content">AI research program.</div>
-      </div>
-    </div>
+  <nav><ul class="menu">
+    <li class="menu-item"><a href="/faculty-research">Faculty &amp; Research</a></li>
+    <li class="menu-item"><a href="/blue-center">Blue Center for Global Strategic Assessment</a></li>
+  </ul></nav>
+  <div class="child-menu__wrapper">
+    <ul class="menu">
+      <li class="menu-item"><a href="/blue-center">Blue Center for Global Strategic Assessment</a></li>
+      <li class="menu-item"><a href="/deitz">Deitz Family Initiative on Environment &amp; Global Affairs</a></li>
+      <li class="menu-item"><a href="/schmidt-program-artificial-intelligence">Schmidt Program on Artificial Intelligence</a></li>
+    </ul>
   </div>
 </body></html>
 `;
@@ -277,6 +308,138 @@ describe('yaleCancerCenterExtractor', () => {
   });
 });
 
+describe('yighAffiliatedFacultyExtractor', () => {
+  it('flips Last, First names across sections, dedupes by href, and ignores non-profile links', () => {
+    const out = yighAffiliatedFacultyExtractor(YIGH_HTML, {
+      pageUrl: 'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
+    });
+    expect(out.members).toHaveLength(3);
+    expect(out.members[0]).toMatchObject({
+      name: 'Adebowale Adeniran',
+      profileUrl: 'https://medicine.yale.edu/yigh/profile/adebowale-adeniran/',
+      role: 'affiliated',
+    });
+    expect(out.members[1].name).toBe('Frederick (Rick) L. Altice');
+    expect(out.members[2].name).toBe('Sarah Bell');
+    expect(out.members.filter((m) => m.name === 'Adebowale Adeniran')).toHaveLength(1);
+  });
+
+  it('is wired into the default center configs', () => {
+    const yigh = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'yigh');
+    expect(yigh).toBeDefined();
+    expect(yigh?.url).toBe(
+      'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
+    );
+    expect(yigh?.extractor).toBe(yighAffiliatedFacultyExtractor);
+    expect(yigh?.paginated).toBeFalsy();
+  });
+});
+
+describe('childStudyCenterExtractor', () => {
+  it('flips Last, First names, dedupes by href, and ignores non-profile links', () => {
+    const out = childStudyCenterExtractor(CHILD_STUDY_HTML, {
+      pageUrl: 'https://medicine.yale.edu/childstudy/faculty/',
+    });
+    expect(out.members).toHaveLength(2);
+    expect(out.members[0]).toMatchObject({
+      name: 'Benedicte Aarestrup',
+      profileUrl: 'https://medicine.yale.edu/childstudy/profile/benedicte-aarestrup/',
+      role: 'core-faculty',
+    });
+    expect(out.members[1].name).toBe('Henry Allen');
+    // dedupe by href; the /childstudy/about/contact nav link is ignored
+    expect(out.members.filter((m) => m.name === 'Benedicte Aarestrup')).toHaveLength(1);
+  });
+
+  it('is wired into the default center configs with a homeUrl identity override', () => {
+    const ycsc = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'child-study-center');
+    expect(ycsc).toBeDefined();
+    expect(ycsc?.url).toBe('https://medicine.yale.edu/childstudy/faculty/');
+    expect(ycsc?.homeUrl).toBe('https://medicine.yale.edu/childstudy/');
+    expect(ycsc?.schoolName).toBe('Yale School of Medicine');
+    expect(ycsc?.kind).toBe('center');
+    expect(ycsc?.extractor).toBe(childStudyCenterExtractor);
+    expect(ycsc?.paginated).toBeFalsy();
+    expect(ycsc?.entityKey).toBeUndefined();
+  });
+
+  it('emits the /childstudy/ landing page (not the roster subpage) as the entity website', () => {
+    const ycsc = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'child-study-center')!;
+    const { observations } = centerToGroupObservations(
+      ycsc,
+      [{ name: 'Benedicte Aarestrup', role: 'core-faculty' }],
+      ycsc.url,
+    );
+    const website = observations.find((o) => o.field === 'websiteUrl');
+    expect(website?.value).toBe('https://medicine.yale.edu/childstudy/');
+    const sourceUrls = observations.find((o) => o.field === 'sourceUrls');
+    expect(sourceUrls?.value).toEqual([
+      'https://medicine.yale.edu/childstudy/faculty/',
+      'https://medicine.yale.edu/childstudy/',
+    ]);
+  });
+});
+
+describe('MacMillan constituent councils', () => {
+  const councilKeys = DEFAULT_CENTER_CONFIGS.filter((c) => c.centerKey.startsWith('macmillan-'));
+
+  it('wires every council as a distinct entity under its own /{council} home, not folded into macmillan', () => {
+    expect(councilKeys.length).toBeGreaterThanOrEqual(16);
+    for (const council of councilKeys) {
+      expect(council.centerKey).not.toBe('macmillan');
+      expect(council.extractor).toBe(nodeTeaserPersonExtractor);
+      expect(council.paginated).toBe(true);
+      expect(council.url).toMatch(/^https:\/\/macmillan\.yale\.edu\/.+/);
+      expect(council.homeUrl).toMatch(/^https:\/\/macmillan\.yale\.edu\/[^/]+$/);
+      expect(council.url).not.toBe(council.homeUrl);
+      expect(['center', 'program', 'initiative']).toContain(council.kind);
+    }
+  });
+
+  it('emits each council as its own center-<key> entity with the council landing page as the website', () => {
+    const middleEast = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'macmillan-middle-east')!;
+    const { entityKey, observations } = centerToGroupObservations(
+      middleEast,
+      [{ name: 'Jane Doe', role: 'core-faculty' }],
+      middleEast.url,
+    );
+    expect(entityKey).toBe('center-macmillan-middle-east');
+    expect(observations.find((o) => o.field === 'name')!.value).toBe(
+      'Council on Middle East Studies',
+    );
+    expect(observations.find((o) => o.field === 'kind')!.value).toBe('center');
+    expect(observations.find((o) => o.field === 'entityType')!.value).toBe('CENTER');
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
+      'https://macmillan.yale.edu/middleeast',
+    );
+    expect(observations.find((o) => o.field === 'sourceUrls')!.value).toEqual([
+      'https://macmillan.yale.edu/middleeast/people',
+      'https://macmillan.yale.edu/middleeast',
+    ]);
+  });
+
+  it('observes the canonical entityType for every configured center kind', () => {
+    const entityTypeForKind = (kind: CenterConfig['kind']) =>
+      centerToGroupObservations(
+        {
+          centerKey: 'synthetic',
+          centerName: 'Synthetic Center',
+          schoolName: '',
+          kind,
+          url: 'https://example.yale.edu/people',
+          extractor: () => ({ members: [] }),
+        },
+        [],
+        'https://example.yale.edu/people',
+      ).observations.find((o) => o.field === 'entityType')!.value;
+
+    expect(entityTypeForKind('center')).toBe('CENTER');
+    expect(entityTypeForKind('institute')).toBe('INSTITUTE');
+    expect(entityTypeForKind('initiative')).toBe('INITIATIVE');
+    expect(entityTypeForKind('program')).toBe('INITIATIVE');
+  });
+});
+
 describe('viewsFieldNameExtractor', () => {
   it('pairs name with title from the surrounding row and skips known meta-pages', () => {
     const out = viewsFieldNameExtractor(VIEWS_FIELD_HTML, {
@@ -325,7 +488,7 @@ describe('ycgaExtractor', () => {
 });
 
 describe('jacksonCentersExtractor', () => {
-  it('emits child centers (no members) and infers kind from name', () => {
+  it('emits child centers from the child-menu block (no members), scoped away from site nav', () => {
     const out = jacksonCentersExtractor(JACKSON_HTML, {
       pageUrl: 'https://jackson.yale.edu/centers-initiatives/',
     });
@@ -333,9 +496,10 @@ describe('jacksonCentersExtractor', () => {
     expect(out.childCenters).toHaveLength(3);
     expect(out.childCenters![0]).toMatchObject({
       name: 'Blue Center for Global Strategic Assessment',
-      url: 'https://jackson.yale.edu/centers-initiatives/blue-center/',
+      url: 'https://jackson.yale.edu/blue-center',
       kind: 'center',
     });
+    expect(out.childCenters!.map((c) => c.name)).not.toContain('Faculty & Research');
     expect(out.childCenters![1].kind).toBe('initiative');
     expect(out.childCenters![2].kind).toBe('program');
   });
@@ -344,6 +508,242 @@ describe('jacksonCentersExtractor', () => {
 describe('jsRenderedStub', () => {
   it('throws to signal the page needs a headless browser', () => {
     expect(() => jsRenderedStub('<html></html>', { pageUrl: 'x' })).toThrow(/JS-rendered|gated/);
+  });
+});
+
+const QBIO_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'qbioMembers.html'), 'utf8');
+const DISSC_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'disscFaculty.html'), 'utf8');
+const FDS_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'fdsPeople.html'), 'utf8');
+const YCNCC_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures', 'naturalCarbonCapturePeople.html'),
+  'utf8',
+);
+const WC_NANOBIOLOGY_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures', 'westCampusNanobiologyLabs.html'),
+  'utf8',
+);
+const WC_CANCER_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures', 'westCampusCancerBiologyLabs.html'),
+  'utf8',
+);
+const MSI_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures', 'microbialSciencesFaculty.html'),
+  'utf8',
+);
+
+describe('directoryListingCardExtractor', () => {
+  it('extracts QBio members from the saved live-HTML fixture, keeping each member profile link', () => {
+    const out = directoryListingCardExtractor(QBIO_FIXTURE, {
+      pageUrl: 'https://qbio.yale.edu/members',
+    });
+    expect(out.members.length).toBe(6);
+    const berro = out.members.find((m) => m.name === 'Julien Berro');
+    expect(berro).toMatchObject({
+      title: 'Associate Professor of Molecular Biophysics & Biochemistry, and of Cell Biology',
+      profileUrl: 'https://campuspress.yale.edu/berrolab/',
+      role: 'core-faculty',
+    });
+    const dalBello = out.members.find((m) => m.name === 'Martina Dal Bello');
+    expect(dalBello?.profileUrl).toBe('https://www.dalbellolab.com/');
+  });
+
+  it('infers the director role from the snippet, not just the academic subheading', () => {
+    const out = directoryListingCardExtractor(QBIO_FIXTURE, {
+      pageUrl: 'https://qbio.yale.edu/members',
+    });
+    const clark = out.members.find((m) => m.name === 'Damon Clark');
+    expect(clark?.role).toBe('director');
+    expect(clark?.title).toContain('Professor of Molecular, Cellular');
+  });
+});
+
+describe('referenceCardPeopleExtractor', () => {
+  it('extracts DISSC people from the saved live-HTML fixture and classifies faculty directors', () => {
+    const out = referenceCardPeopleExtractor(DISSC_FIXTURE, {
+      pageUrl: 'https://dissc.yale.edu/about/dissc-faculty-and-staff',
+    });
+    expect(out.members.length).toBeGreaterThanOrEqual(6);
+    const borzekowski = out.members.find((m) => m.name === 'Ron Borzekowski');
+    expect(borzekowski).toMatchObject({
+      title: 'Executive Director',
+      profileUrl: 'https://dissc.yale.edu/profile/ron-borzekowski',
+      role: 'director',
+    });
+    expect(out.members.some((m) => m.role === 'director' && m.title === 'Faculty Director')).toBe(
+      true,
+    );
+  });
+
+  it('reads only the heading link, never the aria-hidden image link, so members are not doubled', () => {
+    const out = referenceCardPeopleExtractor(DISSC_FIXTURE, {
+      pageUrl: 'https://dissc.yale.edu/about/dissc-faculty-and-staff',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('fdsUsersGridExtractor', () => {
+  it('extracts FDS members across both ACF grids from the fixture, deduping and skipping empty headings', () => {
+    const out = fdsUsersGridExtractor(FDS_FIXTURE, { pageUrl: 'https://fds.yale.edu/people/' });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual([
+      'Alex Sample',
+      'Bailey Example',
+      'Casey Placeholder',
+      'Dana Testcase',
+      'Erin Synthetic',
+    ]);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('cites each member own fds profile page and never the roster root', () => {
+    const out = fdsUsersGridExtractor(FDS_FIXTURE, { pageUrl: 'https://fds.yale.edu/people/' });
+    for (const member of out.members) {
+      expect(member.profileUrl).toMatch(/^https:\/\/fds\.yale\.edu\/people\/[^/]+\/$/);
+      expect(member.profileUrl).not.toBe('https://fds.yale.edu/people/');
+    }
+    const casey = out.members.find((m) => m.name === 'Casey Placeholder');
+    expect(casey).toMatchObject({
+      profileUrl: 'https://fds.yale.edu/people/cc0003/',
+      role: 'co-director',
+    });
+    expect(casey?.title).toContain('Associate Professor of Statistics and Data Science');
+  });
+
+  it('classifies leadership titles from the job-title line', () => {
+    const out = fdsUsersGridExtractor(FDS_FIXTURE, { pageUrl: 'https://fds.yale.edu/people/' });
+    expect(out.members.find((m) => m.name === 'Alex Sample')?.role).toBe('director');
+    expect(out.members.find((m) => m.name === 'Bailey Example')?.role).toBe('director');
+    expect(out.members.find((m) => m.name === 'Dana Testcase')?.role).toBe('core-faculty');
+  });
+});
+
+describe('naturalCarbonCaptureExtractor', () => {
+  it('keeps only cards under a faculty/leadership section heading', () => {
+    const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
+      pageUrl: 'https://naturalcarboncapture.yale.edu/people',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual([
+      'Alpha Director',
+      'Gamma Scientist',
+      'Delta Affiliate',
+      'Epsilon Affiliate',
+    ]);
+    expect(out.members.find((m) => m.name === 'Alpha Director')?.role).toBe('director');
+  });
+
+  it('drops staff and trainee sections (managing director, research scientists, postdocs, admin)', () => {
+    const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
+      pageUrl: 'https://naturalcarboncapture.yale.edu/people',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).not.toContain('Beta Manager');
+    expect(names).not.toContain('Zeta Researcher');
+    expect(names).not.toContain('Eta Postdoc');
+    expect(names).not.toContain('Theta Admin');
+  });
+
+  it('keeps a faculty affiliate whose title is a research-scientist role (section, not title, gates)', () => {
+    const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
+      pageUrl: 'https://naturalcarboncapture.yale.edu/people',
+    });
+    const epsilon = out.members.find((m) => m.name === 'Epsilon Affiliate');
+    expect(epsilon).toMatchObject({ title: 'Senior Research Scientist', role: 'core-faculty' });
+  });
+
+  it('absolutizes hrefs, keeps absolute profile links, and does not double-count image links', () => {
+    const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
+      pageUrl: 'https://naturalcarboncapture.yale.edu/people',
+    });
+    expect(out.members.find((m) => m.name === 'Alpha Director')?.profileUrl).toBe(
+      'https://earth.example-university.edu/profile/alpha-director',
+    );
+    const names = out.members.map((m) => m.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const member of out.members) {
+      expect(member.profileUrl).not.toBe('https://naturalcarboncapture.yale.edu/people');
+    }
+  });
+});
+
+describe('directoryListingCardExtractor on a West Campus institute member-labs subpage', () => {
+  it('keeps each member-lab card and drops nav/footer links', () => {
+    const out = directoryListingCardExtractor(WC_NANOBIOLOGY_FIXTURE, {
+      pageUrl:
+        'https://westcampus.yale.edu/institutes/yale-nanobiology-institute/yale-nanobiology-institute-research-labs',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual(['James Rothman, PhD', 'Julien Berro, PhD', 'Sathish Ramakrishnan, PhD']);
+    const rothman = out.members.find((m) => m.name === 'James Rothman, PhD');
+    expect(rothman).toMatchObject({
+      profileUrl: 'https://medicine.yale.edu/lab/rothman/',
+      role: 'director',
+    });
+    // nav sibling-institute links and footer links are not member cards
+    expect(names).not.toContain('Yale Microbial Sciences Institute');
+    expect(names).not.toContain('Accessibility at Yale');
+  });
+
+  it('cites each member lab home, never the institutes index root', () => {
+    const out = directoryListingCardExtractor(WC_NANOBIOLOGY_FIXTURE, {
+      pageUrl:
+        'https://westcampus.yale.edu/institutes/yale-nanobiology-institute/yale-nanobiology-institute-research-labs',
+    });
+    for (const member of out.members) {
+      expect(member.profileUrl).not.toMatch(/westcampus\.yale\.edu\/institutes\/?$/);
+    }
+    const sathish = out.members.find((m) => m.name === 'Sathish Ramakrishnan, PhD');
+    expect(sathish?.profileUrl).toBe(
+      'https://westcampus.yale.edu/profile/sathish-ramakrishnan-phd',
+    );
+  });
+});
+
+describe('customCardLabsExtractor', () => {
+  it('keeps only lab cards under the "Meet the labs" collection and absolutizes hrefs', () => {
+    const out = customCardLabsExtractor(WC_CANCER_FIXTURE, {
+      pageUrl: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual(['Alarcón Lab', 'Muzumdar Lab', 'Schlessinger Lab']);
+    expect(out.members.find((m) => m.name === 'Alarcón Lab')?.profileUrl).toBe(
+      'https://westcampus.yale.edu/alarcon-lab',
+    );
+    expect(out.members.find((m) => m.name === 'Schlessinger Lab')?.profileUrl).toBe(
+      'https://medicine.yale.edu/lab/schlessinger/',
+    );
+  });
+
+  it('drops sibling non-lab custom-card collections (news, events)', () => {
+    const out = customCardLabsExtractor(WC_CANCER_FIXTURE, {
+      pageUrl: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
+    });
+    expect(out.members.map((m) => m.name)).not.toContain('Institute Symposium 2025');
+  });
+});
+
+describe('contentSpotlightFacultyExtractor', () => {
+  it('reads the PI (first CTA) per spotlight block and ignores non-faculty blocks', () => {
+    const out = contentSpotlightFacultyExtractor(MSI_FIXTURE, {
+      pageUrl: 'https://microbialsciences.yale.edu/faculty-research',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual(['Andrew Goodman', 'Martina Dal Bello', 'Stavroula Hatzios']);
+    expect(out.members.find((m) => m.name === 'Andrew Goodman')?.profileUrl).toBe(
+      'https://medicine.yale.edu/profile/andrew-goodman',
+    );
+    // the lab (second CTA) and quick-links block are not emitted as members
+    expect(names).not.toContain('Goodman Lab');
+    expect(names).not.toContain('Lab Members');
+  });
+
+  it('does not misclassify faculty as directors from the research blurb', () => {
+    const out = contentSpotlightFacultyExtractor(MSI_FIXTURE, {
+      pageUrl: 'https://microbialsciences.yale.edu/faculty-research',
+    });
+    expect(out.members.every((m) => m.role === 'core-faculty')).toBe(true);
   });
 });
 
@@ -362,10 +762,7 @@ describe('centerToGroupObservations', () => {
       url: 'https://wti.yale.edu/humans/faculty',
       extractor: wuTsaiExtractor,
     };
-    const members: CenterMember[] = [
-      { name: 'Ian Abraham' },
-      { name: 'Amy Arnsten' },
-    ];
+    const members: CenterMember[] = [{ name: 'Ian Abraham' }, { name: 'Amy Arnsten' }];
     const { observations, entityKey } = centerToGroupObservations(
       config,
       members,
@@ -374,16 +771,9 @@ describe('centerToGroupObservations', () => {
     expect(entityKey).toBe('center-wu-tsai');
     const fields = observations.map((o) => o.field);
     expect(fields).toEqual(
-      expect.arrayContaining([
-        'slug',
-        'name',
-        'kind',
-        'websiteUrl',
-        'sourceUrls',
-        'openness',
-        'departments',
-      ]),
+      expect.arrayContaining(['slug', 'name', 'kind', 'websiteUrl', 'sourceUrls', 'departments']),
     );
+    expect(observations.find((o) => o.field === 'openness')).toBeUndefined();
     expect(observations.find((o) => o.field === 'kind')!.value).toBe('institute');
     // affiliatedNames is a dead field — never emitted (member rows carry roster identity).
     expect(observations.find((o) => o.field === 'affiliatedNames')).toBeUndefined();
@@ -406,6 +796,34 @@ describe('centerToGroupObservations', () => {
     expect(fields).toContain('school');
     expect(fields).not.toContain('departments');
     expect(fields).not.toContain('affiliatedNames');
+  });
+});
+
+describe('centerToGroupObservations homeUrl override', () => {
+  const config: CenterConfig = {
+    centerKey: 'wc-nanobiology',
+    centerName: 'Yale Nanobiology Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://westcampus.yale.edu/institutes/yale-nanobiology-institute/yale-nanobiology-institute-research-labs',
+    homeUrl: 'https://westcampus.yale.edu/institutes/yale-nanobiology-institute',
+    extractor: directoryListingCardExtractor,
+  };
+
+  it('emits the landing page as websiteUrl and cites both the roster crawl and the landing page', () => {
+    const { observations } = centerToGroupObservations(config, [], config.url);
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(config.homeUrl);
+    expect(observations.find((o) => o.field === 'sourceUrls')!.value).toEqual([
+      config.url,
+      config.homeUrl,
+    ]);
+  });
+
+  it('falls back to the crawl url for websiteUrl when no homeUrl is set', () => {
+    const plain: CenterConfig = { ...config, homeUrl: undefined };
+    const { observations } = centerToGroupObservations(plain, [], plain.url);
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(plain.url);
+    expect(observations.find((o) => o.field === 'sourceUrls')!.value).toEqual([plain.url]);
   });
 });
 
@@ -444,6 +862,69 @@ describe('memberToObservations', () => {
   });
 });
 
+describe('entityKey override', () => {
+  const config: CenterConfig = {
+    centerKey: 'natural-carbon-capture',
+    centerName: 'Yale Center for Natural Carbon Capture',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://naturalcarboncapture.yale.edu/people',
+    extractor: naturalCarbonCaptureExtractor,
+    entityKey: 'yse-natural-carbon-capture',
+  };
+
+  it('keys the group, members, and relationships to the overridden entity, not center-<key>', () => {
+    const { entityKey, observations } = centerToGroupObservations(
+      config,
+      [],
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(entityKey).toBe('yse-natural-carbon-capture');
+    expect(observations.every((o) => o.entityKey === 'yse-natural-carbon-capture')).toBe(true);
+    expect(observations.find((o) => o.field === 'slug')!.value).toBe('yse-natural-carbon-capture');
+    // Enrichment mode must not overwrite the target's canonical website with the
+    // /people crawl entry point.
+    expect(observations.find((o) => o.field === 'websiteUrl')).toBeUndefined();
+    expect(observations.find((o) => o.field === 'sourceUrls')!.value).toEqual([
+      'https://naturalcarboncapture.yale.edu/people',
+    ]);
+
+    const memberObs = memberToObservations(
+      { name: 'Alpha Director', role: 'director' },
+      config,
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(
+      memberObs.every((o) => o.entityKey === 'yse-natural-carbon-capture:alpha-director'),
+    ).toBe(true);
+    expect(memberObs.find((o) => o.field === 'researchGroupKey')!.value).toBe(
+      'yse-natural-carbon-capture',
+    );
+
+    const relObs = centerMemberRelationshipObservations(
+      { name: 'Alpha Director' },
+      config,
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(relObs.find((o) => o.field === 'sourceEntityKey')!.value).toBe(
+      'yse-natural-carbon-capture',
+    );
+  });
+
+  it('emits the config url as websiteUrl only when no override is set', () => {
+    const plain: CenterConfig = { ...config, entityKey: undefined };
+    const { entityKey, observations } = centerToGroupObservations(
+      plain,
+      [],
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(entityKey).toBe('center-natural-carbon-capture');
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+  });
+});
+
 describe('centerMemberRelationshipObservations', () => {
   const wuTsaiConfig: CenterConfig = {
     centerKey: 'wu-tsai',
@@ -463,9 +944,7 @@ describe('centerMemberRelationshipObservations', () => {
     expect(obs.every((o) => o.entityType === 'researchEntityRelationship')).toBe(true);
     expect(
       obs.every(
-        (o) =>
-          o.entityKey ===
-          'center-wu-tsai:faculty-research-area-jane-doe:MEMBER_RESEARCH_AREA',
+        (o) => o.entityKey === 'center-wu-tsai:faculty-research-area-jane-doe:MEMBER_RESEARCH_AREA',
       ),
     ).toBe(true);
     expect(obs.find((o) => o.field === 'sourceEntityKey')!.value).toBe('center-wu-tsai');
@@ -522,10 +1001,11 @@ describe('childCenterToObservations', () => {
     );
     const fields = obs.map((o) => o.field);
     expect(fields).toEqual(
-      expect.arrayContaining(['slug', 'name', 'kind', 'websiteUrl', 'school', 'description']),
+      expect.arrayContaining(['slug', 'name', 'kind', 'websiteUrl', 'school', 'fullDescription']),
     );
     expect(obs[0].entityKey).toBe('center-jackson-centers-schmidt-program-on-ai');
     expect(obs.find((o) => o.field === 'kind')!.value).toBe('program');
+    expect(obs.find((o) => o.field === 'openness')).toBeUndefined();
   });
 });
 
@@ -594,9 +1074,7 @@ describe('CentersInstitutesScraper.run', () => {
       },
     ];
     const axios = (await import('axios')).default;
-    const getSpy = vi
-      .spyOn(axios, 'get')
-      .mockResolvedValue({ data: '<html></html>' } as any);
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
 
     const scraper = new CentersInstitutesScraper(configs);
     const { ctx, emitted } = makeContext();
@@ -614,9 +1092,7 @@ describe('CentersInstitutesScraper.run', () => {
 
     // Cowles is no longer allowlisted-out: its members now emit relationship obs too.
     const relationshipObs = emitted.filter((o) => o.entityType === 'researchEntityRelationship');
-    expect(
-      relationshipObs.some((o) => o.entityKey?.startsWith('center-cowles:')),
-    ).toBe(true);
+    expect(relationshipObs.some((o) => o.entityKey?.startsWith('center-cowles:'))).toBe(true);
 
     const memberObs = emitted.filter((o) => o.entityType === 'researchGroupMember');
     const janeObs = memberObs.filter((o) => o.entityKey === 'center-cowles:jane-doe');
@@ -656,9 +1132,7 @@ describe('CentersInstitutesScraper.run', () => {
       },
     ];
     const axios = (await import('axios')).default;
-    const getSpy = vi
-      .spyOn(axios, 'get')
-      .mockResolvedValue({ data: '<html></html>' } as any);
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
 
     const scraper = new CentersInstitutesScraper(configs);
     const { ctx } = makeContext({ only: ['wu-tsai'] });
@@ -672,14 +1146,33 @@ describe('CentersInstitutesScraper.run', () => {
   it('caps centers processed at the limit option', async () => {
     const ext = vi.fn((): ExtractorResult => ({ members: [{ name: 'x' }] }));
     const configs: CenterConfig[] = [
-      { centerKey: 'a', centerName: 'A', schoolName: '', kind: 'center', url: 'https://x/a', extractor: ext },
-      { centerKey: 'b', centerName: 'B', schoolName: '', kind: 'center', url: 'https://x/b', extractor: ext },
-      { centerKey: 'c', centerName: 'C', schoolName: '', kind: 'center', url: 'https://x/c', extractor: ext },
+      {
+        centerKey: 'a',
+        centerName: 'A',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://x/a',
+        extractor: ext,
+      },
+      {
+        centerKey: 'b',
+        centerName: 'B',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://x/b',
+        extractor: ext,
+      },
+      {
+        centerKey: 'c',
+        centerName: 'C',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://x/c',
+        extractor: ext,
+      },
     ];
     const axios = (await import('axios')).default;
-    const getSpy = vi
-      .spyOn(axios, 'get')
-      .mockResolvedValue({ data: '<html></html>' } as any);
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
     const scraper = new CentersInstitutesScraper(configs);
     const { ctx } = makeContext({ limit: 2 });
     await scraper.run(ctx);
@@ -690,12 +1183,17 @@ describe('CentersInstitutesScraper.run', () => {
   it('rejects unsafe runtime limits before fetching center pages', async () => {
     const ext = vi.fn((): ExtractorResult => ({ members: [{ name: 'x' }] }));
     const configs: CenterConfig[] = [
-      { centerKey: 'a', centerName: 'A', schoolName: '', kind: 'center', url: 'https://x/a', extractor: ext },
+      {
+        centerKey: 'a',
+        centerName: 'A',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://x/a',
+        extractor: ext,
+      },
     ];
     const axios = (await import('axios')).default;
-    const getSpy = vi
-      .spyOn(axios, 'get')
-      .mockResolvedValue({ data: '<html></html>' } as any);
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
     const scraper = new CentersInstitutesScraper(configs);
     const { ctx } = makeContext({ limit: 9007199254740992 });
 
@@ -707,9 +1205,7 @@ describe('CentersInstitutesScraper.run', () => {
 
   it('records fetch failure status and emits no observations for that center', async () => {
     const failing = vi.fn();
-    const working = vi.fn(
-      (): ExtractorResult => ({ members: [{ name: 'Working Person' }] }),
-    );
+    const working = vi.fn((): ExtractorResult => ({ members: [{ name: 'Working Person' }] }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'broken',
@@ -785,6 +1281,99 @@ describe('CentersInstitutesScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('renders JS-rendered configs with an injected fetcher and parses with renderedExtractor', async () => {
+    const staticExt = vi.fn((): ExtractorResult => {
+      throw new Error('should not use the static extractor for rendered pages');
+    });
+    const renderedExt = vi.fn(
+      (): ExtractorResult => ({
+        members: [
+          {
+            name: 'Ada Lovelace',
+            profileUrl: 'https://gated.invalid/people/ada/',
+            role: 'director',
+          },
+        ],
+      }),
+    );
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'gated',
+        centerName: 'Gated Institute',
+        schoolName: '',
+        kind: 'institute',
+        url: 'https://gated.invalid/people',
+        extractor: staticExt,
+        renderedExtractor: renderedExt,
+        renderWaitSelector: '.grid__user',
+        jsRenderedSkip: true,
+      },
+    ];
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      html: '<html><body>hydrated cards</body></html>',
+      url: 'https://gated.invalid/people#rendered',
+      fetchMode: 'scrapling',
+    });
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get');
+
+    const scraper = new CentersInstitutesScraper(configs, renderedFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedFetcher).toHaveBeenCalledWith({
+      url: 'https://gated.invalid/people',
+      waitSelector: '.grid__user',
+      timeoutMs: 30000,
+    });
+    expect(renderedExt).toHaveBeenCalledWith('<html><body>hydrated cards</body></html>', {
+      pageUrl: 'https://gated.invalid/people#rendered',
+    });
+    expect(staticExt).not.toHaveBeenCalled();
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(result.notes).toContain('gated=1');
+
+    const memberObs = emitted.filter((o) => o.entityType === 'researchGroupMember');
+    expect(memberObs.some((o) => o.entityKey === 'center-gated:ada-lovelace')).toBe(true);
+    const adaSource = memberObs.find((o) => o.entityKey === 'center-gated:ada-lovelace');
+    expect(adaSource?.sourceUrl).toBe('https://gated.invalid/people#rendered');
+
+    getSpy.mockRestore();
+  });
+
+  it('skips JS-rendered configs when no rendered fetcher is available', async () => {
+    const staticExt = vi.fn();
+    const renderedExt = vi.fn();
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'gated',
+        centerName: 'Gated Institute',
+        schoolName: '',
+        kind: 'institute',
+        url: 'https://gated.invalid/people',
+        extractor: staticExt,
+        renderedExtractor: renderedExt,
+        jsRenderedSkip: true,
+      },
+    ];
+
+    const scraper = new CentersInstitutesScraper(configs, null);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(staticExt).not.toHaveBeenCalled();
+    expect(renderedExt).not.toHaveBeenCalled();
+    expect(result.notes).toContain('gated=js-rendered-skip');
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('wires FDS to enrich the yale-research-official umbrella entity, not a duplicate center-fds', () => {
+    const fds = DEFAULT_CENTER_CONFIGS.find((c) => c.centerKey === 'fds');
+    expect(fds).toBeDefined();
+    expect(fds?.entityKey).toBe('research-yale-yale-institute-for-foundations-of-data-science');
+    expect(fds?.jsRenderedSkip).toBeFalsy();
+  });
+
   it('emits child-center ResearchGroup observations from a meta-index extractor', async () => {
     const metaExt = vi.fn(
       (): ExtractorResult => ({
@@ -830,5 +1419,278 @@ describe('CentersInstitutesScraper.run', () => {
     expect(groupKeys.has('center-jackson-centers-blue-center')).toBe(true);
 
     getSpy.mockRestore();
+  });
+
+  it('stops paginating a repeat-page roster after the first page that adds no new members', async () => {
+    const repeatExt = vi.fn(
+      (): ExtractorResult => ({
+        members: [
+          { name: 'Jane Doe', role: 'core-faculty' },
+          { name: 'Bob Smith', role: 'core-faculty' },
+        ],
+      }),
+    );
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'repeat-council',
+        centerName: 'Repeat Council',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://example.invalid/repeat/people',
+        paginated: true,
+        extractor: repeatExt,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new CentersInstitutesScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    // Page 0 yields the members; page 1 repeats them (no new) and terminates.
+    expect(repeatExt).toHaveBeenCalledTimes(2);
+    const memberKeys = emitted
+      .filter((o) => o.entityType === 'researchGroupMember' && o.field === 'role')
+      .map((o) => o.entityKey);
+    expect(memberKeys.sort()).toEqual([
+      'center-repeat-council:bob-smith',
+      'center-repeat-council:jane-doe',
+    ]);
+
+    getSpy.mockRestore();
+  });
+
+  it('gathers all members across genuinely distinct pages before the empty page', async () => {
+    const pages: ExtractorResult[] = [
+      { members: [{ name: 'Alpha One' }, { name: 'Beta Two' }] },
+      { members: [{ name: 'Gamma Three' }] },
+      { members: [] },
+    ];
+    let call = 0;
+    const pagedExt = vi.fn((): ExtractorResult => pages[Math.min(call++, pages.length - 1)]);
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'paged-council',
+        centerName: 'Paged Council',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://example.invalid/paged/people',
+        paginated: true,
+        extractor: pagedExt,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new CentersInstitutesScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const memberKeys = emitted
+      .filter((o) => o.entityType === 'researchGroupMember' && o.field === 'role')
+      .map((o) => o.entityKey)
+      .sort();
+    expect(memberKeys).toEqual([
+      'center-paged-council:alpha-one',
+      'center-paged-council:beta-two',
+      'center-paged-council:gamma-three',
+    ]);
+
+    getSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Jackson child-center engagement crawl
+// ---------------------------------------------------------------------------
+
+/** Jackson person-card theme, shared by every center homepage and /people page. */
+const JACKSON_PEOPLE_HTML = `
+<html><body>
+  <nav><a href="/directory">Directory</a><a href="/about/leadership">Leadership</a></nav>
+  <ul class="profiles">
+    <li>
+      <article class="profile profile--component profile__item">
+        <div class="profile__content">
+          <h3><a href="/directory/pat-fixture">Pat Fixture</a></h3>
+          <ul class="profile-positions list--semicolon-separate"><li>Executive Director, Blue Center</li></ul>
+        </div>
+      </article>
+    </li>
+    <li>
+      <article class="profile profile--component profile__item">
+        <div class="profile__content">
+          <h3><a href="/directory/jamie-fellow">Jamie Fellow</a></h3>
+          <ul class="profile-positions"><li>Senior Fellow</li></ul>
+        </div>
+      </article>
+    </li>
+  </ul>
+  <footer><a href="/directory/site-admin">Site Admin</a></footer>
+</body></html>
+`;
+
+/** Blue Center homepage: links its people page under its own /blue-center/ prefix. */
+const BLUE_CENTER_HOME_HTML = `
+<html><body>
+  <nav>
+    <a href="/faculty-research">Faculty & Research</a>
+    <a href="/about/leadership">Leadership</a>
+    <a href="/directory">Directory</a>
+    <a href="/blue-center/blue-center-people">People</a>
+    <a href="/blue-center/events">Events</a>
+  </nav>
+</body></html>
+`;
+
+describe('jacksonProfileItemExtractor', () => {
+  it('reads profile__item cards and ignores nav/footer directory links', () => {
+    const out = jacksonProfileItemExtractor(JACKSON_PEOPLE_HTML, {
+      pageUrl: 'https://jackson.yale.edu/blue-center/people',
+    });
+    expect(out.members).toHaveLength(2);
+    expect(out.members[0]).toMatchObject({
+      name: 'Pat Fixture',
+      profileUrl: 'https://jackson.yale.edu/directory/pat-fixture',
+      role: 'director',
+    });
+    expect(out.members[0].title).toContain('Executive Director');
+    expect(out.members.map((m) => m.name)).not.toContain('Site Admin');
+  });
+});
+
+describe('deriveChildEngagementCandidates', () => {
+  it('derives a gate-passing /people alias from a prefix-scoped people link', () => {
+    const candidates = deriveChildEngagementCandidates(
+      BLUE_CENTER_HOME_HTML,
+      'https://jackson.yale.edu/blue-center',
+    );
+    expect(candidates).toContain('https://jackson.yale.edu/blue-center/people');
+  });
+
+  it('excludes school-wide, off-prefix, and homepage-self links', () => {
+    const candidates = deriveChildEngagementCandidates(
+      BLUE_CENTER_HOME_HTML,
+      'https://jackson.yale.edu/blue-center',
+    );
+    expect(candidates).not.toContain('https://jackson.yale.edu/about/leadership');
+    expect(candidates.some((u) => u.includes('/events'))).toBe(false);
+    expect(candidates).not.toContain('https://jackson.yale.edu/blue-center');
+  });
+
+  it('ranks a people-tier link ahead of a programs-tier link', () => {
+    const html = `
+      <a href="/johnson-center/fellowships">Fellowships</a>
+      <a href="/johnson-center/our-people">Our People</a>
+    `;
+    const candidates = deriveChildEngagementCandidates(
+      html,
+      'https://jackson.yale.edu/johnson-center',
+    );
+    expect(candidates[0]).toBe('https://jackson.yale.edu/johnson-center/people');
+    expect(candidates).toContain('https://jackson.yale.edu/johnson-center/fellowships');
+  });
+
+  it('yields no candidate when only a programs page exists', () => {
+    const html = `<a href="/johnson-center/fellowships">Fellowships</a>`;
+    expect(
+      deriveChildEngagementCandidates(html, 'https://jackson.yale.edu/johnson-center'),
+    ).toEqual(['https://jackson.yale.edu/johnson-center/fellowships']);
+  });
+
+  it('returns nothing for a child with only school-wide links (genuine dead end)', () => {
+    const html = `<a href="/about/leadership">Leadership</a><a href="/directory">Directory</a>`;
+    expect(
+      deriveChildEngagementCandidates(html, 'https://jackson.yale.edu/leitner-program'),
+    ).toEqual([]);
+  });
+});
+
+describe('CentersInstitutesScraper.run child crawl', () => {
+  const jacksonConfig: CenterConfig = {
+    centerKey: 'jackson-centers',
+    centerName: 'Jackson centers index',
+    schoolName: 'Jackson School of Global Affairs',
+    kind: 'center',
+    url: 'https://jackson.yale.edu/centers-initiatives/',
+    extractor: (): ExtractorResult => ({
+      members: [],
+      childCenters: [
+        { name: 'Blue Center', url: 'https://jackson.yale.edu/blue-center', kind: 'center' },
+        {
+          name: 'Leitner Program',
+          url: 'https://jackson.yale.edu/leitner-program',
+          kind: 'program',
+        },
+      ],
+    }),
+    crawlChildCenters: true,
+  };
+
+  it('discovers a child engagement subpage and roster, and leaves dead ends untouched', async () => {
+    const pages: Record<string, string> = {
+      'https://jackson.yale.edu/centers-initiatives/': '<html></html>',
+      'https://jackson.yale.edu/blue-center': BLUE_CENTER_HOME_HTML,
+      'https://jackson.yale.edu/blue-center/people': JACKSON_PEOPLE_HTML,
+      'https://jackson.yale.edu/leitner-program':
+        '<html><body><a href="/directory">Directory</a></body></html>',
+    };
+    const fetcher = vi.fn(async (url: string) => {
+      if (url in pages) return pages[url];
+      throw new Error(`404 ${url}`);
+    });
+
+    const scraper = new CentersInstitutesScraper([jacksonConfig], null, fetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const blueGroup = emitted.filter(
+      (o) =>
+        o.entityType === 'researchEntity' && o.entityKey === 'center-jackson-centers-blue-center',
+    );
+    const blueSourceUrls = blueGroup.find((o) => o.field === 'sourceUrls')!.value as string[];
+    expect(blueSourceUrls).toContain('https://jackson.yale.edu/blue-center/people');
+
+    const blueMemberKeys = emitted
+      .filter((o) => o.entityType === 'researchGroupMember' && o.field === 'role')
+      .map((o) => o.entityKey);
+    expect(blueMemberKeys).toContain('center-jackson-centers-blue-center:pat-fixture');
+    expect(blueMemberKeys).toContain('center-jackson-centers-blue-center:jamie-fellow');
+
+    const leitnerGroup = emitted.filter(
+      (o) =>
+        o.entityType === 'researchEntity' &&
+        o.entityKey === 'center-jackson-centers-leitner-program',
+    );
+    const leitnerSourceUrls = leitnerGroup.find((o) => o.field === 'sourceUrls')!.value as string[];
+    expect(leitnerSourceUrls).toEqual([
+      'https://jackson.yale.edu/centers-initiatives/',
+      'https://jackson.yale.edu/leitner-program',
+    ]);
+    expect(
+      emitted.some(
+        (o) =>
+          o.entityType === 'researchGroupMember' &&
+          o.entityKey?.startsWith('center-jackson-centers-leitner-program:'),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not crawl children when crawlChildCenters is unset', async () => {
+    const fetcher = vi.fn(async () => '<html></html>');
+    const scraper = new CentersInstitutesScraper(
+      [{ ...jacksonConfig, crawlChildCenters: false }],
+      null,
+      fetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(
+      childCenterEntityKey(jacksonConfig, { name: 'Blue Center', url: 'x', kind: 'center' }),
+    ).toBe('center-jackson-centers-blue-center');
+    expect(emitted.some((o) => o.entityType === 'researchGroupMember')).toBe(false);
   });
 });

@@ -6,9 +6,6 @@ import {
   readProgram,
   searchPrograms,
   getProgramFilterOptions as readProgramFilterOptions,
-  addProgramView,
-  addProgramFavorite,
-  removeProgramFavorite,
 } from '../services/programService';
 import { isStudentVisibilityTier, type StudentVisibilityTier } from '../models/studentVisibility';
 import { publicProgramForReader } from './programPayload';
@@ -73,7 +70,9 @@ const MAX_PROGRAM_SEARCH_PAGINATION_PARAM_LENGTH = 16;
 const POSITIVE_INTEGER_PARAM_RE = /^[1-9]\d*$/;
 
 const publicProgramSortField = (value: unknown, includeOperatorFields = false): string => {
-  const allowedFields = includeOperatorFields ? OPERATOR_PROGRAM_SORT_FIELDS : PUBLIC_PROGRAM_SORT_FIELDS;
+  const allowedFields = includeOperatorFields
+    ? OPERATOR_PROGRAM_SORT_FIELDS
+    : PUBLIC_PROGRAM_SORT_FIELDS;
   return typeof value === 'string' && allowedFields.has(value)
     ? value
     : DEFAULT_PUBLIC_PROGRAM_SORT_FIELD;
@@ -94,7 +93,8 @@ const numericSearchParam = (value: unknown): number | undefined => {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
 
-const publicProgramSortOrder = (value: unknown): 1 | -1 => (numericSearchParam(value) === 1 ? 1 : -1);
+const publicProgramSortOrder = (value: unknown): 1 | -1 =>
+  numericSearchParam(value) === 1 ? 1 : -1;
 const publicProgramPage = (value: unknown): number =>
   Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(numericSearchParam(value) || 1)));
 const publicProgramPageSize = (value: unknown): number =>
@@ -117,6 +117,7 @@ export const searchProgramsController = async (request: Request, response: Respo
       programKind,
       entryMode,
       studentFacingCategory,
+      subjects,
       studentVisibilityTier,
       includeOperatorReview,
       includeSuppressed,
@@ -141,6 +142,7 @@ export const searchProgramsController = async (request: Request, response: Respo
       programKind: parseFilter(programKind),
       entryMode: parseFilter(entryMode),
       studentFacingCategory: parseFilter(studentFacingCategory),
+      subjects: parseFilter(subjects),
       includeNonPublic: hasAdminAuthority,
       studentVisibilityTier: hasAdminAuthority
         ? parseStudentVisibilityFilter(studentVisibilityTier)
@@ -174,8 +176,7 @@ export const getProgramById = async (request: Request, response: Response) => {
     const program = await readProgram(request.params.id, {
       includeNonPublic: hasAdminAuthority,
     });
-    const publicProgram =
-      hasAdminAuthority ? program : publicProgramForReader(program);
+    const publicProgram = hasAdminAuthority ? program : publicProgramForReader(program);
     response.status(200).json({ program: publicProgram, fellowship: publicProgram });
   } catch (error: any) {
     sendProgramError(response, error, 'Failed to fetch program');
@@ -186,37 +187,7 @@ export const getProgramFilterOptions = async (_request: Request, response: Respo
   try {
     const options = await readProgramFilterOptions();
     response.status(200).json(options);
-  } catch (error: any) {
+  } catch {
     response.status(500).json({ error: 'Failed to fetch program filters' });
-  }
-};
-
-export const addViewToProgram = async (request: Request, response: Response) => {
-  try {
-    const program = await addProgramView(request.params.id);
-    const publicProgram = publicProgramForReader(program);
-    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
-  } catch (error: any) {
-    sendProgramError(response, error, 'Failed to update program view count');
-  }
-};
-
-export const addFavoriteToProgram = async (request: Request, response: Response) => {
-  try {
-    const program = await addProgramFavorite(request.params.id);
-    const publicProgram = publicProgramForReader(program);
-    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
-  } catch (error: any) {
-    sendProgramError(response, error, 'Failed to favorite program');
-  }
-};
-
-export const removeFavoriteFromProgram = async (request: Request, response: Response) => {
-  try {
-    const program = await removeProgramFavorite(request.params.id);
-    const publicProgram = publicProgramForReader(program);
-    response.status(200).json({ program: publicProgram, fellowship: publicProgram });
-  } catch (error: any) {
-    sendProgramError(response, error, 'Failed to remove program favorite');
   }
 };

@@ -1,50 +1,54 @@
 /**
- * Derives first-class access/pathway/contact records from append-only
- * Observations. This runs beside the legacy entity materializer: it should not
- * replace scalar ResearchGroup compatibility fields yet.
+ * Derives first-class, source-attributed access Signals from append-only
+ * Observations. Contact routes and entry pathways are no longer modeled: the
+ * contact action is derived at read time from official links, and browse runs
+ * on the research-entity index rather than a separate pathway index.
  */
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
+import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
-import type {
-  AccessSignalConfidence,
-  AccessSignalType,
-  CompensationType,
-  ContactPolicy,
-  ContactRouteType,
-  ContactRouteVisibility,
-  EntryPathwayStatus,
-  EntryPathwayType,
-  EvidenceStrength,
-} from '../models/researchAccessTypes';
+import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
+import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
 import {
-  upsertAccessSignal,
-  type UpsertAccessSignalInput,
-} from '../services/accessSignalService';
-import {
-  upsertContactRoute,
-  type UpsertContactRouteInput,
-} from '../services/contactRouteService';
-import {
-  upsertEntryPathway,
-  type UpsertEntryPathwayInput,
-} from '../services/entryPathwayService';
+  IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
+  ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
+} from '../services/accessAcceptanceLevel';
 import {
   validateAccessArtifactBundle,
   type AccessArtifactCandidate,
 } from '../services/claimValidation/accessClaims';
+import {
+  isExplicitUndergradUnavailabilityPhrase,
+  isPlausibleUndergradEvidenceQuote,
+} from './undergradEvidenceQuoteValidation';
 
-const ENTITY_DISCOVERY_ONLY_SOURCES = new Set([
-  'ysm-atoz-index',
-  'yse-centers-index',
-]);
+export { isExplicitUndergradUnavailabilityPhrase };
 
-const PATHWAY_SPECIFIC_ACCEPTING_SOURCES = new Set([
-  'undergrad-fellowships-recipients',
-]);
+/**
+ * Every access-signal type the materializer has a live emission path for. This
+ * is the producer contract: the read/serve layer must never derive a status
+ * from a signal type absent here, or that status becomes permanently
+ * unreachable (see #1303, POSTED_OPENING). Guarded by accessMaterializer tests.
+ */
+export const MATERIALIZED_ACCESS_SIGNAL_TYPES: readonly AccessSignalType[] = [
+  'CREDIT_FORMALIZATION_POSSIBLE',
+  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+  'CURRENT_UNDERGRADS',
+  'REACH_OUT_PLAUSIBLE',
+  'NOT_CURRENTLY_AVAILABLE',
+  'APPLICATION_FORM_EXISTS',
+  'CONTACT_INSTRUCTIONS_EXIST',
+  'PAST_UNDERGRADS',
+  'FELLOWSHIP_COMPATIBLE',
+  'POSTED_OPENING',
+];
+
+const ENTITY_DISCOVERY_ONLY_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
+
+const PATHWAY_SPECIFIC_ACCEPTING_SOURCES = new Set(['undergrad-fellowships-recipients']);
 const ACCESS_MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeAccessMaterializerObjectId(value: unknown): string | undefined {
@@ -73,51 +77,30 @@ export interface AccessObservation {
   observedAt: Date;
 }
 
-export interface DerivedEntryPathway extends UpsertEntryPathwayInput {
-  derivationKey: string;
-}
-
-export interface DerivedAccessSignal extends UpsertAccessSignalInput {
-  derivationKey: string;
-}
-
-export interface DerivedContactRoute extends UpsertContactRouteInput {
+export interface DerivedAccessSignal extends UpsertSignalInput {
   derivationKey: string;
 }
 
 export interface DerivedAccessArtifacts {
-  entryPathways: DerivedEntryPathway[];
   accessSignals: DerivedAccessSignal[];
-  contactRoutes: DerivedContactRoute[];
 }
 
 export interface AccessMaterializationResult {
   researchEntityId?: string;
-  entryPathways: number;
   accessSignals: number;
-  contactRoutes: number;
-  guardedContactRoutes: number;
   staleEvidenceSkipped: number;
   errors: number;
   skipped?: string;
 }
 
+export interface AccessArtifactDerivationResult {
+  researchEntityId?: string;
+  artifacts: DerivedAccessArtifacts;
+  skipped?: string;
+}
+
 function observationId(obs: AccessObservation): string | undefined {
   return serializedDocumentId(obs._id);
-}
-
-function observationIds(observations: AccessObservation[]): string[] {
-  return observations.map(observationId).filter((id): id is string => !!id);
-}
-
-function sourceUrls(observations: AccessObservation[]): string[] {
-  return Array.from(
-    new Set(
-      observations
-        .map((obs) => (obs.sourceUrl || '').trim())
-        .filter((url) => url.length > 0),
-    ),
-  );
 }
 
 function maxConfidence(observations: AccessObservation[]): number {
@@ -139,20 +122,12 @@ function confidenceLabel(score: number): AccessSignalConfidence {
   return 'LOW';
 }
 
-function evidenceStrength(score: number): EvidenceStrength {
-  if (score >= 0.85) return 'DIRECT';
-  if (score >= 0.7) return 'STRONG';
-  if (score >= 0.45) return 'MODERATE';
-  return 'WEAK';
-}
-
 function firstString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
 function publicExcerpt(value: unknown): string | undefined {
-  const text = firstString(value);
-  return text ? redactDirectContactInfo(text) : undefined;
+  return sanitizeEvidenceExcerpt(firstString(value)) || undefined;
 }
 
 function firstUrlValue(value: unknown): string {
@@ -170,6 +145,62 @@ function undergradAccessVerdict(value: unknown): 'yes' | 'no' | 'unclear' {
   if (!value || typeof value !== 'object') return 'unclear';
   const verdict = (value as { openToUndergrads?: unknown }).openToUndergrads;
   return verdict === 'yes' || verdict === 'no' ? verdict : 'unclear';
+}
+
+function undergradAccessEvidenceQuote(value: unknown): string {
+  if (!value || typeof value !== 'object') return '';
+  return firstString((value as { evidenceQuote?: unknown }).evidenceQuote);
+}
+
+export interface ParsedPostedOpening {
+  title: string;
+  applyUrl: string;
+  deadline: Date;
+  evidenceQuote?: string;
+}
+
+function toHttpUrl(value: unknown): string {
+  return firstUrlValue(value);
+}
+
+function toFutureAwareDeadline(value: unknown): Date | undefined {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value : undefined;
+  }
+  const text = firstString(value);
+  if (!text) return undefined;
+  const parsed = new Date(text);
+  return Number.isFinite(parsed.getTime()) ? parsed : undefined;
+}
+
+/**
+ * Parse a producer-emitted `postedOpening` observation value into a validated
+ * posting, or return null. A posting is only honored when it carries all four
+ * evidence-first requirements (#1568): a title, an apply route (http(s) URL), a
+ * resolvable hiring home (the observation is keyed to a research entity, so
+ * that requirement is satisfied by the caller), and an application deadline.
+ * Undated or apply-routeless postings fail closed so a scraped page can never
+ * manufacture a top-tier "Apply" signal (the #1332 failure mode).
+ */
+export function parsePostedOpening(value: unknown): ParsedPostedOpening | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const title = firstString(record.title);
+  const applyUrl = toHttpUrl(record.applyUrl);
+  const deadline = toFutureAwareDeadline(record.deadline);
+  if (!title || !applyUrl || !deadline) return null;
+  const evidenceQuote = firstString(record.evidenceQuote) || undefined;
+  return { title, applyUrl, deadline, evidenceQuote };
+}
+
+function postedOpeningDerivationKey(applyUrl: string): string {
+  return `signal:POSTED_OPENING:${applyUrl}`;
+}
+
+function postedOpeningExcerpt(posting: ParsedPostedOpening): string {
+  const deadlineLabel = posting.deadline.toISOString().slice(0, 10);
+  const base = `${posting.title}. Apply by ${deadlineLabel}.`;
+  return posting.evidenceQuote ? `${base} ${posting.evidenceQuote}` : base;
 }
 
 function isPositiveBoolean(obs: AccessObservation): boolean {
@@ -222,93 +253,31 @@ function contactSignalExcerpt(input: {
   return 'Official contact listed.';
 }
 
-function makePathway(input: {
-  researchEntityId: string;
-  derivationKey: string;
-  pathwayType: EntryPathwayType;
-  status: EntryPathwayStatus;
-  score: number;
-  studentFacingLabel: string;
-  explanation?: string;
-  bestNextStep?: string;
-  compensation?: CompensationType;
-  observations: AccessObservation[];
-}): DerivedEntryPathway {
-  return {
-    researchEntityId: input.researchEntityId,
-    derivationKey: input.derivationKey,
-    pathwayType: input.pathwayType,
-    status: input.status,
-    evidenceStrength: evidenceStrength(input.score),
-    studentFacingLabel: input.studentFacingLabel,
-    explanation: input.explanation,
-    bestNextStep: input.bestNextStep,
-    compensation: input.compensation || 'UNKNOWN',
-    confidence: input.score,
-    sourceEvidenceIds: observationIds(input.observations),
-    sourceUrls: sourceUrls(input.observations),
-    lastMaterializedAt: new Date(),
-  };
-}
-
 function makeSignal(input: {
   researchEntityId: string;
   derivationKey: string;
-  signalType: AccessSignalType;
+  type: AccessSignalType;
   score: number;
   observations: AccessObservation[];
-  entryPathwayId?: string;
   excerpt?: string;
+  sourceUrl?: string;
+  expiresAt?: Date;
 }): DerivedAccessSignal {
   const obs = bestObservation(input.observations);
   const sourceEvidenceId = obs ? observationId(obs) : undefined;
   return {
     researchEntityId: input.researchEntityId,
     derivationKey: input.derivationKey,
-    signalType: input.signalType,
+    type: input.type,
     confidence: confidenceLabel(input.score),
     confidenceScore: input.score,
     sourceEvidenceId: sourceEvidenceId || '',
     observedAt: latestObservedAt(input.observations),
-    entryPathwayId: input.entryPathwayId,
+    expiresAt: input.expiresAt,
     excerpt: input.excerpt,
     sourceName: obs?.sourceName,
-    sourceUrl: obs?.sourceUrl,
+    sourceUrl: input.sourceUrl || obs?.sourceUrl,
     originalConfidence: obs?.confidence,
-  };
-}
-
-function officialApplicationPathwayType(
-  observations: AccessObservation[],
-): { pathwayType: EntryPathwayType; status: EntryPathwayStatus; label: string; explanation: string; bestNextStep: string } {
-  const sourceText = observations
-    .map((obs) => `${obs.sourceName || ''} ${obs.sourceUrl || ''}`)
-    .join(' ')
-    .toLowerCase();
-  if (sourceText.includes('department-undergrad-research')) {
-    return {
-      pathwayType: 'RECURRING_PROGRAM',
-      status: 'RECURRING',
-      label: 'Department research application',
-      explanation: 'An official department page describes an undergraduate research application or matching route.',
-      bestNextStep: 'Use the official application route and follow the department instructions.',
-    };
-  }
-  if (sourceText.includes('internship')) {
-    return {
-      pathwayType: 'CENTER_INTERNSHIP',
-      status: 'RECURRING',
-      label: 'Official internship route',
-      explanation: 'An official source describes an internship or application route for students.',
-      bestNextStep: 'Use the official application route and check timing or eligibility on the source page.',
-    };
-  }
-  return {
-    pathwayType: 'VOLUNTEER_OUTREACH',
-    status: 'PLAUSIBLE',
-    label: 'Official application route',
-    explanation: 'An official join, opportunities, or application page was found for undergraduate access.',
-    bestNextStep: 'Use the official route before trying direct outreach.',
   };
 }
 
@@ -319,42 +288,18 @@ function uniqueByDerivationKey<T extends { derivationKey: string }>(items: T[]):
 function accessArtifactCandidatesFromDerived(
   artifacts: DerivedAccessArtifacts,
 ): AccessArtifactCandidate[] {
-  return [
-    ...artifacts.entryPathways.map((pathway): AccessArtifactCandidate => ({
-      artifactType: 'EntryPathway',
-      researchEntityId: pathway.researchEntityId,
-      derivationKey: pathway.derivationKey,
-      pathwayType: pathway.pathwayType,
-      sourceEvidenceIds: pathway.sourceEvidenceIds,
-      sourceUrls: pathway.sourceUrls,
-    })),
-    ...artifacts.accessSignals.map((signal): AccessArtifactCandidate => ({
+  return artifacts.accessSignals.map(
+    (signal): AccessArtifactCandidate => ({
       artifactType: 'AccessSignal',
       researchEntityId: signal.researchEntityId,
-      entryPathwayId: signal.entryPathwayId,
       derivationKey: signal.derivationKey,
-      signalType: signal.signalType,
+      signalType: signal.type,
       sourceEvidenceIds: [signal.sourceEvidenceId].filter((id): id is string => Boolean(id)),
       sourceUrls: [signal.sourceUrl].filter((url): url is string => Boolean(url)),
       sourceName: signal.sourceName,
       sourceUrl: signal.sourceUrl,
-    })),
-    ...artifacts.contactRoutes.map((route): AccessArtifactCandidate => ({
-      artifactType: 'ContactRoute',
-      researchEntityId: route.researchEntityId,
-      entryPathwayId: route.entryPathwayId,
-      derivationKey: route.derivationKey,
-      routeType: route.routeType,
-      url: route.url,
-      sourceEvidenceIds: [
-        ...(route.sourceEvidenceIds || []),
-        route.sourceEvidenceId,
-      ].filter((id): id is string => Boolean(id)),
-      sourceUrls: [route.sourceUrl].filter((url): url is string => Boolean(url)),
-      sourceName: route.sourceName,
-      sourceUrl: route.sourceUrl,
-    })),
-  ];
+    }),
+  );
 }
 
 function filterArtifactsByValidatedClaims(
@@ -362,17 +307,13 @@ function filterArtifactsByValidatedClaims(
 ): DerivedAccessArtifacts {
   const validation = validateAccessArtifactBundle(accessArtifactCandidatesFromDerived(artifacts));
   const acceptedKeys = new Set(
-    validation.accepted.map((result) => `${result.claim.artifactType}:${result.claim.derivationKey}`),
+    validation.accepted.map(
+      (result) => `${result.claim.artifactType}:${result.claim.derivationKey}`,
+    ),
   );
   return {
-    entryPathways: artifacts.entryPathways.filter((pathway) =>
-      acceptedKeys.has(`EntryPathway:${pathway.derivationKey}`),
-    ),
     accessSignals: artifacts.accessSignals.filter((signal) =>
       acceptedKeys.has(`AccessSignal:${signal.derivationKey}`),
-    ),
-    contactRoutes: artifacts.contactRoutes.filter((route) =>
-      acceptedKeys.has(`ContactRoute:${route.derivationKey}`),
     ),
   };
 }
@@ -388,9 +329,7 @@ export function deriveAccessArtifactsFromObservations(
     }
   }
 
-  const entryPathways: DerivedEntryPathway[] = [];
   const accessSignals: DerivedAccessSignal[] = [];
-  const contactRoutes: DerivedContactRoute[] = [];
 
   const independentStudyObservations = [
     ...(byField.get('offersIndependentStudy') || []).filter(isPositiveBoolean),
@@ -410,10 +349,12 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:CREDIT_FORMALIZATION_POSSIBLE',
-        signalType: 'CREDIT_FORMALIZATION_POSSIBLE',
+        type: 'CREDIT_FORMALIZATION_POSSIBLE',
         score,
         observations: independentStudyObservations,
-        excerpt: courses.map((course) => [course.code, course.title].filter(Boolean).join(' ')).join('; '),
+        excerpt: courses
+          .map((course) => [course.code, course.title].filter(Boolean).join(' '))
+          .join('; '),
       }),
     );
 
@@ -422,7 +363,7 @@ export function deriveAccessArtifactsFromObservations(
         makeSignal({
           researchEntityId,
           derivationKey: 'signal:FACULTY_SUPERVISES_STUDENT_PROJECTS:SENIOR_THESIS',
-          signalType: 'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+          type: 'FACULTY_SUPERVISES_STUDENT_PROJECTS',
           score,
           observations: independentStudyObservations,
           excerpt: seniorProjectCourses
@@ -438,25 +379,11 @@ export function deriveAccessArtifactsFromObservations(
   );
   if (currentUndergradObservations.length > 0) {
     const score = maxConfidence(currentUndergradObservations);
-    entryPathways.push(
-      makePathway({
-        researchEntityId,
-        derivationKey: 'pathway:EXPLORATORY_CONTACT:CURRENT_UNDERGRADS',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        score,
-        studentFacingLabel: 'Exploratory outreach',
-        explanation: 'Current undergraduate members are listed, but no active posting was found.',
-        bestNextStep: 'Plan a specific outreach note that references the group’s work.',
-        compensation: 'UNKNOWN',
-        observations: currentUndergradObservations,
-      }),
-    );
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:CURRENT_UNDERGRADS',
-        signalType: 'CURRENT_UNDERGRADS',
+        type: 'CURRENT_UNDERGRADS',
         score,
         observations: currentUndergradObservations,
         excerpt: `${undergradCount(bestObservation(currentUndergradObservations)?.value)} current undergraduate(s) listed`,
@@ -481,33 +408,27 @@ export function deriveAccessArtifactsFromObservations(
     ...acceptingObservations.filter(isPositiveBoolean),
     ...positiveAccessEvidence,
   ];
-  if (positiveAccepting.length > 0) {
+  const plausibleUndergradEvidenceQuote = (byField.get('undergradEvidenceQuote') || []).filter(
+    (obs) => typeof obs.value !== 'string' || isPlausibleUndergradEvidenceQuote(obs.value),
+  );
+  const undergradAccessQuote =
+    publicExcerpt(bestObservation(byField.get('undergradRoleEvidenceQuote') || [])?.value) ||
+    publicExcerpt(bestObservation(plausibleUndergradEvidenceQuote)?.value);
+  const independentPositiveSources = new Set(
+    positiveAccepting.map((obs) => obs.sourceName).filter(Boolean),
+  );
+  const hasCorroboratedUndergradAccess =
+    positiveAccessEvidence.length > 0 || independentPositiveSources.size >= 2;
+  if (positiveAccepting.length > 0 && hasCorroboratedUndergradAccess) {
     const score = maxConfidence(positiveAccepting);
-    const quote =
-      publicExcerpt(bestObservation(byField.get('undergradRoleEvidenceQuote') || [])?.value) ||
-      publicExcerpt(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value);
-    entryPathways.push(
-      makePathway({
-        researchEntityId,
-        derivationKey: 'pathway:EXPLORATORY_CONTACT:ACCEPTING_SIGNAL',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        score,
-        studentFacingLabel: 'Exploratory outreach',
-        explanation: 'Source evidence suggests undergraduates may be able to participate.',
-        bestNextStep: 'Use the evidence to plan targeted outreach rather than treating this as an open posting.',
-        compensation: 'UNKNOWN',
-        observations: positiveAccepting,
-      }),
-    );
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         score,
         observations: positiveAccepting,
-        excerpt: quote || undefined,
+        excerpt: undergradAccessQuote || undefined,
       }),
     );
   }
@@ -516,19 +437,21 @@ export function deriveAccessArtifactsFromObservations(
     ...acceptingObservations.filter(isNegativeBoolean),
     ...negativeAccessEvidence,
   ];
-  if (negativeAccepting.length > 0) {
+  const negativeUnavailabilityQuote = [
+    firstString(bestObservation(byField.get('undergradConstraintQuote') || [])?.value),
+    firstString(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value),
+    ...negativeAccessEvidence.map((obs) => undergradAccessEvidenceQuote(obs.value)),
+  ].find(isExplicitUndergradUnavailabilityPhrase);
+  if (negativeAccepting.length > 0 && negativeUnavailabilityQuote) {
     const score = maxConfidence(negativeAccepting);
-    const quote =
-      publicExcerpt(bestObservation(byField.get('undergradConstraintQuote') || [])?.value) ||
-      publicExcerpt(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:NOT_CURRENTLY_AVAILABLE',
-        signalType: 'NOT_CURRENTLY_AVAILABLE',
+        type: 'NOT_CURRENTLY_AVAILABLE',
         score,
         observations: negativeAccepting,
-        excerpt: quote || undefined,
+        excerpt: publicExcerpt(negativeUnavailabilityQuote) || undefined,
       }),
     );
   }
@@ -536,63 +459,35 @@ export function deriveAccessArtifactsFromObservations(
   const joinPageObservations = (byField.get('joinPageUrl') || []).filter((obs) =>
     firstUrlValue(obs.value),
   );
-  if (joinPageObservations.length > 0) {
+  if (joinPageObservations.length > 0 && positiveAccessEvidence.length > 0) {
     const score = maxConfidence(joinPageObservations);
-    const bestJoinPage = bestObservation(joinPageObservations);
-    const joinUrl = firstUrlValue(bestJoinPage?.value);
-    if (positiveAccepting.length > 0) {
-      const applicationObservations = [...joinPageObservations, ...positiveAccepting];
-      const classification = officialApplicationPathwayType(applicationObservations);
-      entryPathways.push(
-        makePathway({
-          researchEntityId,
-          derivationKey: 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE',
-          pathwayType: classification.pathwayType,
-          status: classification.status,
-          score: maxConfidence(applicationObservations),
-          studentFacingLabel: classification.label,
-          explanation: classification.explanation,
-          bestNextStep: classification.bestNextStep,
-          compensation: 'UNKNOWN',
-          observations: applicationObservations,
-        }),
-      );
-    }
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE',
-        signalType: 'APPLICATION_FORM_EXISTS',
+        type: 'APPLICATION_FORM_EXISTS',
         score,
         observations: joinPageObservations,
         excerpt: 'A join, opportunities, or application page was found.',
       }),
     );
-    contactRoutes.push({
-      researchEntityId,
-      derivationKey: `route:OFFICIAL_APPLICATION:${joinUrl}`.toLowerCase(),
-      routeType: 'OFFICIAL_APPLICATION',
-      priority: 0,
-      visibility: 'PUBLIC',
-      contactPolicy: 'APPLICATION_ONLY',
-      url: joinUrl,
-      rationale: 'Derived from a public join or opportunities page.',
-      sourceEvidenceIds: observationIds(joinPageObservations),
-      sourceEvidenceId: bestJoinPage ? observationId(bestJoinPage) : undefined,
-      observedAt: latestObservedAt(joinPageObservations),
-      sourceName: bestJoinPage?.sourceName,
-      sourceUrl: bestJoinPage?.sourceUrl,
-    });
   }
 
+  // A microsite that explicitly states it does not take undergraduates still
+  // usually lists generic contact instructions (e.g. "email the PI") aimed at
+  // prospective postdocs/graduate students. Those instructions must not be
+  // minted into undergraduate action evidence: an explicit negative verdict
+  // vetoes the credit, matching the join-page path's positive-evidence guard
+  // above so an "open to undergrads: no" lab is never surfaced as reach-out.
   const contactInstructionObservations = byField.get('contactInstructionsQuote') || [];
-  if (contactInstructionObservations.length > 0) {
+  const hasExplicitUndergradExclusion = negativeAccessEvidence.length > 0;
+  if (contactInstructionObservations.length > 0 && !hasExplicitUndergradExclusion) {
     const score = maxConfidence(contactInstructionObservations);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE',
-        signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+        type: 'CONTACT_INSTRUCTIONS_EXIST',
         score,
         observations: contactInstructionObservations,
         excerpt: publicExcerpt(bestObservation(contactInstructionObservations)?.value),
@@ -605,34 +500,45 @@ export function deriveAccessArtifactsFromObservations(
   );
   if (pastAdviseeObservations.length > 0) {
     const score = maxConfidence(pastAdviseeObservations);
-    entryPathways.push(
-      makePathway({
-        researchEntityId,
-        derivationKey: 'pathway:EXPLORATORY_CONTACT:PAST_UNDERGRADS',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        score,
-        studentFacingLabel: 'Exploratory outreach',
-        explanation: 'Past undergraduate fellowship or advisee evidence suggests students have found mentored projects here.',
-        bestNextStep: 'Plan outreach and ask how student projects are usually formalized.',
-        compensation: 'UNKNOWN',
-        observations: pastAdviseeObservations,
-      }),
-    );
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:PAST_UNDERGRADS',
-        signalType: 'PAST_UNDERGRADS',
+        type: 'PAST_UNDERGRADS',
         score,
         observations: pastAdviseeObservations,
       }),
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:FELLOWSHIP_COMPATIBLE',
-        signalType: 'FELLOWSHIP_COMPATIBLE',
+        type: 'FELLOWSHIP_COMPATIBLE',
         score,
         observations: pastAdviseeObservations,
+      }),
+    );
+  }
+
+  const postedOpeningObservations = (byField.get('postedOpening') || []).filter(
+    (obs) => parsePostedOpening(obs.value) !== null,
+  );
+  const seenPostingKeys = new Set<string>();
+  for (const postingObs of postedOpeningObservations) {
+    const posting = parsePostedOpening(postingObs.value);
+    if (!posting) continue;
+    const derivationKey = postedOpeningDerivationKey(posting.applyUrl);
+    if (seenPostingKeys.has(derivationKey)) continue;
+    seenPostingKeys.add(derivationKey);
+    const score = Math.max(Number(postingObs.confidence) || 0, 0.75);
+    accessSignals.push(
+      makeSignal({
+        researchEntityId,
+        derivationKey,
+        type: 'POSTED_OPENING',
+        score,
+        observations: [postingObs],
+        excerpt: postedOpeningExcerpt(posting),
+        sourceUrl: posting.applyUrl,
+        expiresAt: posting.deadline,
       }),
     );
   }
@@ -647,61 +553,20 @@ export function deriveAccessArtifactsFromObservations(
   const contactRole = firstString(bestObservation(byField.get('contactRole') || [])?.value);
   if (contactObservations.length > 0 && (contactEmail || contactName || contactRole)) {
     const score = maxConfidence(contactObservations);
-    const role = contactRole.toLowerCase();
-    const routeType: ContactRouteType = role.includes('lab manager')
-      ? 'LAB_MANAGER'
-      : role.includes('program manager')
-        ? 'PROGRAM_MANAGER'
-        : role.includes('instructor')
-          ? 'COURSE_INSTRUCTOR'
-          : role.includes('pi') || role.includes('professor')
-            ? 'FACULTY_PI'
-          : 'UNKNOWN';
-    const visibility: ContactRouteVisibility = contactEmail ? 'AUTHENTICATED' : 'PUBLIC';
-    const contactPolicy: ContactPolicy =
-      routeType === 'UNKNOWN'
-        ? 'UNKNOWN'
-        : routeType === 'COURSE_INSTRUCTOR'
-          ? 'OFFICIAL_ROUTE_PREFERRED'
-          : 'DIRECT_CONTACT_OK';
-
-    const bestContactObservation = bestObservation(contactObservations);
     accessSignals.push(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:CONTACT_FIELDS',
-        signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+        type: 'CONTACT_INSTRUCTIONS_EXIST',
         score,
         observations: contactObservations,
         excerpt: contactSignalExcerpt({ contactName, contactRole, contactEmail }),
       }),
     );
-    contactRoutes.push({
-      researchEntityId,
-      derivationKey: `route:${contactEmail || contactName || contactRole}`.toLowerCase(),
-      routeType,
-      priority: routeType === 'LAB_MANAGER' || routeType === 'PROGRAM_MANAGER' ? 10 : 50,
-      visibility,
-      contactPolicy,
-      name: contactName || undefined,
-      email: contactEmail || undefined,
-      role: contactRole || undefined,
-      rationale:
-        routeType === 'COURSE_INSTRUCTOR'
-          ? 'Derived from explicit course instructor evidence.'
-          : 'Derived from research entity contact fields.',
-      sourceEvidenceIds: observationIds(contactObservations),
-      sourceEvidenceId: bestContactObservation ? observationId(bestContactObservation) : undefined,
-      observedAt: latestObservedAt(contactObservations),
-      sourceName: bestContactObservation?.sourceName,
-      sourceUrl: bestContactObservation?.sourceUrl,
-    });
   }
 
   return filterArtifactsByValidatedClaims({
-    entryPathways: uniqueByDerivationKey(entryPathways),
     accessSignals: uniqueByDerivationKey(accessSignals),
-    contactRoutes: uniqueByDerivationKey(contactRoutes),
   });
 }
 
@@ -709,25 +574,25 @@ export function deriveAccessArtifactsFromObservations(
  * Research-home entity types where an identified faculty lead plus an official
  * (non-grant) source page is itself a legitimate, evidence-based "ways in":
  * the student can plan specific outreach to a named faculty mentor whose
- * documented work matches their interest. This is the same EXPLORATORY_CONTACT
- * framing the observation pipeline already produces for current-undergrad /
- * accepting / past-advisee evidence — extended to the common case where the
- * only evidence is the faculty member's own official research page.
+ * documented work matches their interest. Organizational homes here fall back
+ * to the lead-optional center-level ways-in when no single director is named.
  *
- * Excluded by design: programs/fellowships (own program logic), core
- * facilities, and any entity the visibility gate has flagged as a duplicate.
+ * Must be a superset of ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES: any type granted a
+ * lead-exempt organizational ways-in must also be eligible here, or that class
+ * (e.g. CORE_FACILITY, #1361) can never derive its organizational signal and is
+ * left a permanent missing_action_evidence dead-end. Guarded by a subset test.
+ *
+ * Excluded by design: programs/fellowships (own program logic) and any entity
+ * the visibility gate has flagged as a duplicate.
  */
-const IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES = new Set([
+export const IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES = new Set([
   'LAB',
   'CENTER',
   'INSTITUTE',
   'FACULTY_RESEARCH_AREA',
   'FACULTY_PROJECT',
-  'DIGITAL_HUMANITIES_PROJECT',
-  'COLLECTIONS_INITIATIVE',
-  'ARCHIVE_OR_MUSEUM_PROJECT',
   'INITIATIVE',
-  'GROUP',
+  'CORE_FACILITY',
   'INDIVIDUAL_RESEARCH',
 ]);
 
@@ -735,17 +600,20 @@ const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']
 
 /**
  * Organizational research homes (centers, institutes, initiatives, core
- * facilities) are institutionally contactable via their official page — so they
- * get a center-level ways-in even when no single named director is published.
+ * facilities, and the humanities/collections project homes - digital-humanities
+ * projects, collections initiatives, archive/museum projects) are
+ * institutionally contactable via their official page - so they get a
+ * center-level ways-in even when no single named director is published.
  */
-const ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES = new Set([
+export const ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES = new Set([
   'CENTER',
   'INSTITUTE',
   'INITIATIVE',
   'CORE_FACILITY',
 ]);
 
-const GRANT_OR_DIRECTORY_ONLY_HOST = /(reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|api\.nsf\.gov|orcid\.org)$/i;
+const GRANT_OR_DIRECTORY_ONLY_HOST =
+  /(reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|api\.nsf\.gov|orcid\.org)$/i;
 
 function isGrantOrOrcidOnlyUrl(value: string): boolean {
   try {
@@ -761,7 +629,11 @@ export function officialNonGrantSourceUrl(entity: {
   website?: unknown;
   sourceUrls?: unknown;
 }): string {
-  const urls = [entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])]
+  const urls = [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ]
     .map(firstString)
     .filter((url) => /^https?:\/\//i.test(url));
   return urls.find((url) => !isGrantOrOrcidOnlyUrl(url)) || '';
@@ -781,101 +653,45 @@ export interface IdentifiedLeadWaysInInput {
 }
 
 /**
- * Pure derivation of the identified-faculty-lead ways-in bundle. Returns empty
+ * Pure derivation of the identified-faculty-lead ways-in signal. Returns empty
  * artifacts when the entity is not an eligible research home, is flagged as a
  * duplicate, or has no supporting source evidence (so the claim gate keeps it).
  */
 export function deriveIdentifiedLeadWaysIn(
   input: IdentifiedLeadWaysInInput,
 ): DerivedAccessArtifacts {
-  const empty: DerivedAccessArtifacts = { entryPathways: [], accessSignals: [], contactRoutes: [] };
+  const empty: DerivedAccessArtifacts = { accessSignals: [] };
   const entityType = firstString(input.entity.entityType).toUpperCase();
   if (!IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES.has(entityType)) return empty;
   const reasons = Array.isArray(input.entity.studentVisibilityReasons)
     ? input.entity.studentVisibilityReasons.map((r) => firstString(r))
     : [];
-  if (reasons.includes('duplicate_risk') || reasons.includes('exact_url_duplicate_risk')) return empty;
-  if (!/^https?:\/\//i.test(input.officialUrl) || isGrantOrOrcidOnlyUrl(input.officialUrl)) return empty;
+  if (reasons.includes('duplicate_risk') || reasons.includes('exact_url_duplicate_risk'))
+    return empty;
+  if (!/^https?:\/\//i.test(input.officialUrl) || isGrantOrOrcidOnlyUrl(input.officialUrl))
+    return empty;
   if (input.supportingObservations.length === 0) return empty;
 
   const score = Math.min(0.4, maxConfidence(input.supportingObservations) || 0.4);
   const leadName = firstString(input.leadName);
-  const homeName = firstString(input.entity.displayName) || firstString(input.entity.name) || 'this research home';
-  // Organizational homes with no named lead get a center-level ways-in; faculty
-  // homes (or any entity with a named lead) get the identified-lead ways-in.
   const organizational = !leadName && ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES.has(entityType);
 
-  const evidenceObs = input.supportingObservations;
-  const entryPathways: DerivedEntryPathway[] = [
-    makePathway({
-      researchEntityId: input.researchEntityId,
-      derivationKey: organizational
-        ? 'pathway:EXPLORATORY_CONTACT:ORGANIZATIONAL_HOME'
-        : 'pathway:EXPLORATORY_CONTACT:IDENTIFIED_FACULTY_LEAD',
-      pathwayType: 'EXPLORATORY_CONTACT',
-      status: 'PLAUSIBLE',
-      score,
-      studentFacingLabel: organizational ? 'Explore this center' : 'Exploratory outreach',
-      explanation: organizational
-        ? `An official page describes ${homeName}; explore its programs and affiliated people to find a way in.`
-        : `An official research page identifies ${leadName} leading ${homeName}; no active posting was found.`,
-      bestNextStep: organizational
-        ? `Explore ${homeName}'s official page and reach out through its listed programs, staff, or affiliated faculty.`
-        : `Plan a specific outreach note referencing ${leadName}'s documented research before assuming an opening.`,
-      compensation: 'UNKNOWN',
-      observations: evidenceObs,
-    }),
-  ];
   const accessSignals: DerivedAccessSignal[] = [
     makeSignal({
       researchEntityId: input.researchEntityId,
       derivationKey: organizational
-        ? 'signal:REACH_OUT_PLAUSIBLE:ORGANIZATIONAL_HOME'
-        : 'signal:REACH_OUT_PLAUSIBLE:IDENTIFIED_FACULTY_LEAD',
-      signalType: 'REACH_OUT_PLAUSIBLE',
+        ? ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY
+        : IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
+      type: 'REACH_OUT_PLAUSIBLE',
       score,
-      observations: evidenceObs,
+      observations: input.supportingObservations,
       excerpt: organizational
         ? 'Official center/institute page found; explore its programs and affiliated people for a way in.'
         : 'Identified faculty lead with an official research page; outreach is plausible but no posting was found.',
     }),
   ];
-  const contactRoutes: DerivedContactRoute[] = [
-    organizational
-      ? {
-          researchEntityId: input.researchEntityId,
-          derivationKey: `route:department_contact:organizational:${input.officialUrl}`.toLowerCase(),
-          routeType: 'DEPARTMENT_CONTACT',
-          priority: 70,
-          visibility: 'PUBLIC',
-          contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-          url: input.officialUrl,
-          rationale: 'Derived from the official center or institute page.',
-          sourceEvidenceIds: observationIds(evidenceObs),
-          sourceEvidenceId: evidenceObs[0] ? observationId(evidenceObs[0]) : undefined,
-          observedAt: latestObservedAt(evidenceObs),
-          sourceName: evidenceObs[0]?.sourceName,
-          sourceUrl: evidenceObs[0]?.sourceUrl || input.officialUrl,
-        }
-      : {
-          researchEntityId: input.researchEntityId,
-          derivationKey: `route:faculty_pi:identified:${input.officialUrl}`.toLowerCase(),
-          routeType: 'FACULTY_PI',
-          priority: 60,
-          visibility: 'PUBLIC',
-          contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-          name: leadName || undefined,
-          url: input.officialUrl,
-          rationale: 'Derived from an official research page that identifies the faculty lead.',
-          sourceEvidenceIds: observationIds(evidenceObs),
-          sourceEvidenceId: evidenceObs[0] ? observationId(evidenceObs[0]) : undefined,
-          observedAt: latestObservedAt(evidenceObs),
-          sourceName: evidenceObs[0]?.sourceName,
-          sourceUrl: evidenceObs[0]?.sourceUrl || input.officialUrl,
-        },
-  ];
 
-  return filterArtifactsByValidatedClaims({ entryPathways, accessSignals, contactRoutes });
+  return filterArtifactsByValidatedClaims({ accessSignals });
 }
 
 /**
@@ -886,7 +702,7 @@ export function deriveIdentifiedLeadWaysIn(
 async function deriveIdentifiedLeadWaysInForEntity(
   researchEntityId: string,
 ): Promise<DerivedAccessArtifacts> {
-  const empty: DerivedAccessArtifacts = { entryPathways: [], accessSignals: [], contactRoutes: [] };
+  const empty: DerivedAccessArtifacts = { accessSignals: [] };
   const researchEntityObjectId = toAccessMaterializerObjectId(researchEntityId);
   if (!researchEntityObjectId) return empty;
   const entity: any = await ResearchEntity.findById(researchEntityObjectId, {
@@ -901,58 +717,32 @@ async function deriveIdentifiedLeadWaysInForEntity(
   }).lean();
   if (!entity) return empty;
 
-  const lead: any = await ResearchGroupMember.findOne({
-    researchEntityId: researchEntityObjectId,
-    role: { $in: Array.from(IDENTIFIED_LEAD_ROLES) },
-    isCurrentMember: { $ne: false },
-    $or: [
-      { userId: { $exists: true, $ne: null } },
-      { facultyMemberId: { $exists: true, $ne: null } },
-    ],
-  })
-    .select('userId facultyMemberId name role')
-    .lean();
+  const roster = await getResearchEntityRoster(researchEntityObjectId);
+  const lead = roster.find(
+    (entry) =>
+      entry.state !== 'HISTORICAL' &&
+      IDENTIFIED_LEAD_ROLES.has(entry.role) &&
+      firstString(entry.name).length > 0,
+  );
   const entityTypeUpper = firstString(entity.entityType).toUpperCase();
   const isOrganizational = ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES.has(entityTypeUpper);
-  // A named lead is required for faculty/lab homes; organizational homes
-  // (centers/institutes/initiatives) get a center-level ways-in without one.
   if (!lead && !isOrganizational) return empty;
 
-  let leadName = firstString(lead?.name);
-  let leadProfileUrl = '';
-  if (lead?.userId) {
-    const user: any = await mongoose.connection
-      .collection('users')
-      .findOne({ _id: lead.userId }, { projection: { fname: 1, lname: 1, profileUrls: 1 } });
-    if (user) {
-      if (!leadName) leadName = [user.fname, user.lname].map(firstString).filter(Boolean).join(' ');
-      // profileUrls is stored as a source-keyed object; pick a non-grant Yale URL.
-      const candidateUrls = user.profileUrls
-        ? Array.isArray(user.profileUrls)
-          ? user.profileUrls
-          : Object.values(user.profileUrls)
-        : [];
-      leadProfileUrl =
-        candidateUrls
-          .map(firstString)
-          .find(
-            (u: string) => /^https?:\/\//i.test(u) && /yale\.edu/i.test(u) && !isGrantOrOrcidOnlyUrl(u),
-          ) || '';
-    }
-  }
+  const leadName = firstString(lead?.name);
+  const candidateLeadUrls = lead
+    ? [lead.websiteUrl, ...(lead.profileLinks || []).map((link) => link.url)]
+    : [];
+  const leadProfileUrl =
+    candidateLeadUrls
+      .map(firstString)
+      .find(
+        (u: string) => /^https?:\/\//i.test(u) && /yale\.edu/i.test(u) && !isGrantOrOrcidOnlyUrl(u),
+      ) || '';
 
-  // Prefer the entity's own official page; otherwise (e.g. grant-shell-named
-  // faculty labs whose only entity URL is an NIH/NSF link) point the faculty
-  // ways-in at the lead's own official Yale profile.
   const officialUrl = officialNonGrantSourceUrl(entity) || leadProfileUrl;
   if (!officialUrl) return empty;
 
-  // Find a supporting source observation (needed so the claim gate keeps the
-  // artifacts). Observations may be keyed by entityId OR by entityKey (slug),
-  // so match either.
-  const identityMatch: Record<string, any>[] = [
-    { entityId: researchEntityObjectId },
-  ];
+  const identityMatch: Record<string, any>[] = [{ entityId: researchEntityObjectId }];
   if (entity.slug) identityMatch.push({ entityKey: entity.slug });
   const identityObs: any = await Observation.findOne({
     entityType: { $in: ['researchEntity', 'researchGroup'] },
@@ -993,60 +783,28 @@ async function resolveResearchEntityId(identifier: {
   const researchEntityId = normalizeAccessMaterializerObjectId(identifier.researchEntityId);
   if (researchEntityId) return researchEntityId;
   if (!identifier.entityKey) return null;
-  const group: any = await ResearchEntity.findOne({ slug: identifier.entityKey }, { _id: 1 }).lean();
+  const group: any = await ResearchEntity.findOne(
+    { slug: identifier.entityKey },
+    { _id: 1 },
+  ).lean();
   return normalizeAccessMaterializerObjectId(group?._id) || null;
 }
 
-function pathwayDerivationKeyForSignal(signal: DerivedAccessSignal): string | undefined {
-  switch (signal.signalType) {
-    case 'APPLICATION_FORM_EXISTS':
-      return 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE';
-    case 'CURRENT_UNDERGRADS':
-      return 'pathway:EXPLORATORY_CONTACT:CURRENT_UNDERGRADS';
-    case 'REACH_OUT_PLAUSIBLE':
-      return 'pathway:EXPLORATORY_CONTACT:ACCEPTING_SIGNAL';
-    case 'PAST_UNDERGRADS':
-    case 'FELLOWSHIP_COMPATIBLE':
-      return 'pathway:EXPLORATORY_CONTACT:PAST_UNDERGRADS';
-    default:
-      return undefined;
-  }
-}
-
-function pathwayDerivationKeyForRoute(route: DerivedContactRoute): string | undefined {
-  if (route.routeType === 'OFFICIAL_APPLICATION') {
-    return 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE';
-  }
-  return undefined;
-}
-
-export async function materializeAccessForResearchGroup(
+export async function deriveAccessArtifactsForResearchGroup(
   identifier: { researchEntityId?: string; entityKey?: string },
   inputObservations?: AccessObservation[],
-): Promise<AccessMaterializationResult> {
+): Promise<AccessArtifactDerivationResult> {
   const researchEntityId = await resolveResearchEntityId(identifier);
   if (!researchEntityId) {
     return {
-      researchEntityId: undefined,
-      entryPathways: 0,
-      accessSignals: 0,
-      contactRoutes: 0,
-      guardedContactRoutes: 0,
-      staleEvidenceSkipped: 0,
-      errors: 0,
+      artifacts: { accessSignals: [] },
       skipped: 'research-entity-not-found',
     };
   }
   const researchEntityObjectId = toAccessMaterializerObjectId(researchEntityId);
   if (!researchEntityObjectId) {
     return {
-      researchEntityId: undefined,
-      entryPathways: 0,
-      accessSignals: 0,
-      contactRoutes: 0,
-      guardedContactRoutes: 0,
-      staleEvidenceSkipped: 0,
-      errors: 0,
+      artifacts: { accessSignals: [] },
       skipped: 'research-entity-not-found',
     };
   }
@@ -1064,70 +822,49 @@ export async function materializeAccessForResearchGroup(
 
   const artifacts = deriveAccessArtifactsFromObservations(researchEntityId, observations);
 
-  // Fallback ways-in: when observations yielded no *source-backed* entry pathway
-  // (the visibility gate only counts pathways carrying an http(s) source URL as
-  // action evidence), a research home with an identified faculty lead and an
-  // official source page is still a legitimate, evidence-based exploratory
-  // contact route. This removes the dominant `missing_action_evidence` blocker
-  // for real faculty research homes — including those left with only empty-URL
-  // legacy pathways — without manufacturing undergrad-access claims.
-  const hasQualifyingPathway = artifacts.entryPathways.some((pathway) =>
-    (pathway.sourceUrls || []).some((url) => /^https?:\/\//i.test(String(url || ''))),
+  // Fallback ways-in: when observations yielded no source-backed access signal
+  // (a signal carrying an http(s) source URL as action evidence), a research
+  // home with an identified faculty lead and an official source page is still a
+  // legitimate, evidence-based exploratory contact. This removes the dominant
+  // `missing_action_evidence` blocker for real faculty research homes without
+  // manufacturing undergrad-access claims.
+  const hasQualifyingSignal = artifacts.accessSignals.some((signal) =>
+    /^https?:\/\//i.test(String(signal.sourceUrl || '')),
   );
-  if (!hasQualifyingPathway) {
+  if (!hasQualifyingSignal) {
     const leadWaysIn = await deriveIdentifiedLeadWaysInForEntity(researchEntityId);
-    const existingPathwayKeys = new Set(artifacts.entryPathways.map((p) => p.derivationKey));
     const existingSignalKeys = new Set(artifacts.accessSignals.map((s) => s.derivationKey));
-    const existingRouteKeys = new Set(artifacts.contactRoutes.map((r) => r.derivationKey));
-    artifacts.entryPathways.push(
-      ...leadWaysIn.entryPathways.filter((p) => !existingPathwayKeys.has(p.derivationKey)),
-    );
     artifacts.accessSignals.push(
       ...leadWaysIn.accessSignals.filter((s) => !existingSignalKeys.has(s.derivationKey)),
     );
-    artifacts.contactRoutes.push(
-      ...leadWaysIn.contactRoutes.filter((r) => !existingRouteKeys.has(r.derivationKey)),
-    );
   }
 
-  const guardedContactRoutes = artifacts.contactRoutes.filter(
-    (route) => route.visibility !== 'PUBLIC' || route.contactPolicy === 'NO_DIRECT_CONTACT',
-  ).length;
+  return { researchEntityId, artifacts };
+}
 
-  const pathwayIdByKey = new Map<string, string>();
-  for (const pathway of artifacts.entryPathways) {
-    const result = await upsertEntryPathway(pathway);
-    if (result.pathwayId) {
-      pathwayIdByKey.set(pathway.derivationKey, result.pathwayId);
-    }
+export async function materializeAccessForResearchGroup(
+  identifier: { researchEntityId?: string; entityKey?: string },
+  inputObservations?: AccessObservation[],
+): Promise<AccessMaterializationResult> {
+  const derivation = await deriveAccessArtifactsForResearchGroup(identifier, inputObservations);
+  if (!derivation.researchEntityId) {
+    return {
+      researchEntityId: undefined,
+      accessSignals: 0,
+      staleEvidenceSkipped: 0,
+      errors: 0,
+      skipped: derivation.skipped || 'research-entity-not-found',
+    };
   }
+  const { researchEntityId, artifacts } = derivation;
 
   for (const signal of artifacts.accessSignals) {
-    const linkedPathwayKey = pathwayDerivationKeyForSignal(signal);
-    await upsertAccessSignal({
-      ...signal,
-      entryPathwayId:
-        signal.entryPathwayId ||
-        (linkedPathwayKey ? pathwayIdByKey.get(linkedPathwayKey) : undefined),
-    });
-  }
-
-  for (const route of artifacts.contactRoutes) {
-    const linkedPathwayKey = pathwayDerivationKeyForRoute(route);
-    await upsertContactRoute({
-      ...route,
-      entryPathwayId:
-        route.entryPathwayId ||
-        (linkedPathwayKey ? pathwayIdByKey.get(linkedPathwayKey) : undefined),
-    });
+    await upsertSignal(signal);
   }
 
   return {
     researchEntityId,
-    entryPathways: artifacts.entryPathways.length,
     accessSignals: artifacts.accessSignals.length,
-    contactRoutes: artifacts.contactRoutes.length,
-    guardedContactRoutes,
     staleEvidenceSkipped: 0,
     errors: 0,
   };

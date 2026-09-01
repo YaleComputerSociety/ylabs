@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from './../utils/ssrfGuard';
+import { defaultHostConcurrencyLimiter } from './utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type {
   ScraperFetchAttemptMetrics,
@@ -18,10 +19,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MIN_RENDERED_FETCH_TIMEOUT_MS = 1_000;
 const MAX_RENDERED_FETCH_TIMEOUT_MS = 30_000;
-const DEFAULT_BRIDGE_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  'scraplingBridge.py',
-);
+const DEFAULT_BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'scraplingBridge.py');
 const SCRAPER_DIR = dirname(fileURLToPath(import.meta.url));
 const PYTHON_COMMAND_RE = /^python(?:3(?:\.\d{1,2})?)?$/;
 const RENDERED_FETCH_MODES = new Set(['dynamic', 'stealthy']);
@@ -39,7 +37,11 @@ const normalizeRenderedPythonCommand = (value: string): string => {
 
 const normalizeRenderedFetchBridgePath = (value: string): string => {
   const rawPath = value.trim();
-  const bridgePath = rawPath ? (isAbsolute(rawPath) ? resolve(rawPath) : resolve(SCRAPER_DIR, rawPath)) : DEFAULT_BRIDGE_PATH;
+  const bridgePath = rawPath
+    ? isAbsolute(rawPath)
+      ? resolve(rawPath)
+      : resolve(SCRAPER_DIR, rawPath)
+    : DEFAULT_BRIDGE_PATH;
   const scraperRoot = resolve(SCRAPER_DIR);
   if (bridgePath !== DEFAULT_BRIDGE_PATH && !bridgePath.startsWith(`${scraperRoot}/`)) {
     throw new Error('Invalid rendered fetch bridge path');
@@ -59,7 +61,9 @@ const normalizeRenderedFetchMode = (value: unknown): 'dynamic' | 'stealthy' => {
 const normalizeRenderedFetchSelector = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const selector = value.trim();
-  return selector.length > 0 && selector.length <= MAX_RENDERED_FETCH_SELECTOR_LENGTH ? selector : undefined;
+  return selector.length > 0 && selector.length <= MAX_RENDERED_FETCH_SELECTOR_LENGTH
+    ? selector
+    : undefined;
 };
 
 export interface RenderedFetchMetricOverrides {
@@ -100,10 +104,7 @@ export interface ScraplingRenderedFetcherOptions {
 const isHttpRedirectStatus = (statusCode: number | undefined): boolean =>
   typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400;
 
-const defaultRenderedSeedRedirectCheck = (
-  url: URL,
-  timeoutMs: number,
-): Promise<boolean> =>
+const defaultRenderedSeedRedirectCheck = (url: URL, timeoutMs: number): Promise<boolean> =>
   new Promise((resolvePromise, reject) => {
     const client = url.protocol === 'https:' ? https : http;
     const agents = ssrfSafeAgents();
@@ -214,8 +215,6 @@ export function buildFetchAttemptMetrics<TFetchMode extends string = ScraperFetc
   };
 }
 
-export const buildFetchMetric = buildFetchAttemptMetrics;
-
 export function fetchAttemptsToMetrics<TFetchMode extends string = ScraperFetchMode>(
   attempts: ScraperFetchMetric<TFetchMode>[],
 ): ScraperMetrics<TFetchMode> & ScraperFetchMetrics<TFetchMode> {
@@ -260,8 +259,7 @@ export function fetchAttemptsToMetrics<TFetchMode extends string = ScraperFetchM
       blocked: attempts.filter((attempt) => attempt.blocked).length,
       selectorBreakages: attempts.filter((attempt) => attempt.selectorBreakage).length,
       averageLatencyMs: average(attempts.map((attempt) => attempt.latencyMs)),
-      averageMemoryDeltaBytes:
-        memoryDeltas.length > 0 ? average(memoryDeltas) : undefined,
+      averageMemoryDeltaBytes: memoryDeltas.length > 0 ? average(memoryDeltas) : undefined,
       byMode,
     },
   };
@@ -272,9 +270,8 @@ export const summarizeFetchMetrics = fetchAttemptsToMetrics;
 function boundedRenderedFetchTimeout(value: unknown, fallback: number): number {
   const parsed = Number(value);
   const fallbackParsed = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackParsed) && fallbackParsed > 0
-    ? fallbackParsed
-    : DEFAULT_TIMEOUT_MS;
+  const safeFallback =
+    Number.isFinite(fallbackParsed) && fallbackParsed > 0 ? fallbackParsed : DEFAULT_TIMEOUT_MS;
   const candidate = Number.isFinite(parsed) && parsed > 0 ? parsed : safeFallback;
   return Math.min(
     Math.max(Math.floor(candidate), MIN_RENDERED_FETCH_TIMEOUT_MS),
@@ -294,13 +291,11 @@ export function createScraplingRenderedFetcher(
   const bridgePath = normalizeRenderedFetchBridgePath(
     options.bridgePath || process.env.SCRAPLING_BRIDGE_PATH || DEFAULT_BRIDGE_PATH,
   );
-  const defaultMode =
-    options.mode || normalizeRenderedFetchMode(process.env.SCRAPLING_FETCH_MODE);
-  const defaultTimeoutMs =
-    boundedRenderedFetchTimeout(
-      options.timeoutMs || numberFromEnv(process.env.SCRAPLING_TIMEOUT_MS),
-      DEFAULT_TIMEOUT_MS,
-    );
+  const defaultMode = options.mode || normalizeRenderedFetchMode(process.env.SCRAPLING_FETCH_MODE);
+  const defaultTimeoutMs = boundedRenderedFetchTimeout(
+    options.timeoutMs || numberFromEnv(process.env.SCRAPLING_TIMEOUT_MS),
+    DEFAULT_TIMEOUT_MS,
+  );
   const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
 
   return async (request) => {
@@ -312,94 +307,99 @@ export function createScraplingRenderedFetcher(
     const seedUrl = await assertPublicHttpUrl(request.url);
     const safeRequestUrl = seedUrl.toString();
     const timeoutMs = boundedRenderedFetchTimeout(request.timeoutMs, defaultTimeoutMs);
+    const releaseHostSlot = await defaultHostConcurrencyLimiter.acquire(seedUrl.hostname);
     try {
-      if (await seedRedirectCheck(seedUrl, timeoutMs)) {
+      try {
+        if (await seedRedirectCheck(seedUrl, timeoutMs)) {
+          return {
+            url: seedUrl.toString(),
+            html: '',
+            blocked: true,
+            blockedReason: 'redirected-before-render',
+            fetchMode: 'scrapling',
+          };
+        }
+      } catch {
         return {
           url: seedUrl.toString(),
           html: '',
           blocked: true,
-          blockedReason: 'redirected-before-render',
+          blockedReason: 'rendered-seed-preflight-failed',
           fetchMode: 'scrapling',
         };
       }
-    } catch {
-      return {
-        url: seedUrl.toString(),
-        html: '',
-        blocked: true,
-        blockedReason: 'rendered-seed-preflight-failed',
-        fetchMode: 'scrapling',
-      };
-    }
 
-    const args = [
-      bridgePath,
-      '--url',
-      safeRequestUrl,
-      '--mode',
-      normalizeRenderedFetchMode(request.mode || defaultMode),
-      '--timeout-ms',
-      String(timeoutMs),
-    ];
-    const waitSelector = normalizeRenderedFetchSelector(request.waitSelector);
-    if (waitSelector) args.push('--wait-selector', waitSelector);
+      const args = [
+        bridgePath,
+        '--url',
+        safeRequestUrl,
+        '--mode',
+        normalizeRenderedFetchMode(request.mode || defaultMode),
+        '--timeout-ms',
+        String(timeoutMs),
+      ];
+      const waitSelector = normalizeRenderedFetchSelector(request.waitSelector);
+      if (waitSelector) args.push('--wait-selector', waitSelector);
 
-    try {
-      const { stdout } = await execFileAsync(pythonCommand, args, {
-        timeout: timeoutMs + 5_000,
-        maxBuffer: 10 * 1024 * 1024,
-        shell: false,
-      });
-      const parsed = JSON.parse(stdout) as {
-        url?: string;
-        html?: string;
-        statusCode?: number;
-        blocked?: boolean;
-        blockedReason?: string;
-      };
-      const renderedUrl = parsed.url || safeRequestUrl;
-      let finalUrl: URL;
       try {
-        finalUrl = await assertPublicHttpUrl(renderedUrl);
-      } catch (error) {
-        if (error instanceof SsrfBlockedError) {
+        const { stdout } = await execFileAsync(pythonCommand, args, {
+          timeout: timeoutMs + 5_000,
+          maxBuffer: 10 * 1024 * 1024,
+          shell: false,
+        });
+        const parsed = JSON.parse(stdout) as {
+          url?: string;
+          html?: string;
+          statusCode?: number;
+          blocked?: boolean;
+          blockedReason?: string;
+        };
+        const renderedUrl = parsed.url || safeRequestUrl;
+        let finalUrl: URL;
+        try {
+          finalUrl = await assertPublicHttpUrl(renderedUrl);
+        } catch (error) {
+          if (error instanceof SsrfBlockedError) {
+            return {
+              url: seedUrl.toString(),
+              html: '',
+              statusCode: parsed.statusCode,
+              blocked: true,
+              blockedReason: 'rendered-final-url-blocked',
+              fetchMode: 'scrapling',
+            };
+          }
+          throw error;
+        }
+        if (finalUrl.origin !== seedUrl.origin) {
           return {
             url: seedUrl.toString(),
             html: '',
             statusCode: parsed.statusCode,
             blocked: true,
-            blockedReason: 'rendered-final-url-blocked',
+            blockedReason: 'redirected-cross-origin',
             fetchMode: 'scrapling',
           };
         }
-        throw error;
-      }
-      if (finalUrl.origin !== seedUrl.origin) {
         return {
-          url: seedUrl.toString(),
-          html: '',
+          url: finalUrl.toString(),
+          html: parsed.html || '',
           statusCode: parsed.statusCode,
-          blocked: true,
-          blockedReason: 'redirected-cross-origin',
+          blocked: parsed.blocked,
+          blockedReason: parsed.blockedReason,
+          fetchMode: 'scrapling',
+        };
+      } catch (err: any) {
+        return {
+          url: request.url,
+          html: '',
+          blocked: false,
+          blockedReason: sanitizeLogValue(err),
           fetchMode: 'scrapling',
         };
       }
-      return {
-        url: finalUrl.toString(),
-        html: parsed.html || '',
-        statusCode: parsed.statusCode,
-        blocked: parsed.blocked,
-        blockedReason: parsed.blockedReason,
-        fetchMode: 'scrapling',
-      };
-    } catch (err: any) {
-      return {
-        url: request.url,
-        html: '',
-        blocked: false,
-        blockedReason: sanitizeLogValue(err),
-        fetchMode: 'scrapling',
-      };
+    } finally {
+      releaseHostSlot();
     }
   };
 }

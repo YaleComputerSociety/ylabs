@@ -5,34 +5,25 @@
  * Meilisearch, Mongo, or Express.
  */
 
-export type AcceptanceLevelInput = 'verified' | 'verified-or-likely' | 'all';
+export type CurrentAvailabilityFilterInput = 'OPEN' | 'ROLLING';
+
+export type CompensationFilterInput = 'PAID_OR_STIPEND' | 'COURSE_CREDIT';
+
+export type EligibleStudentLevelFilterInput = 'FIRST_YEAR' | 'SOPHOMORE' | 'JUNIOR' | 'SENIOR';
 
 export interface ResearchGroupFilterInput {
   kind?: string[];
+  entityType?: string[];
   school?: string[];
   departments?: string[];
   researchAreas?: string[];
-  openness?: string[];
-  acceptingUndergrads?: boolean;
-  /**
-   * Trust gradient filter:
-   *   - 'verified' → `acceptingUndergrads = true AND acceptanceConfidence >= 0.7`
-   *   - 'verified-or-likely' → ANY of:
-   *       acceptingUndergrads = true,
-   *       offersIndependentStudy = true,
-   *       (we approximate "current undergrads listed" via
-   *        currentUndergradCount > 0 — Meili does not expose array length so
-   *        the past-advisees check uses pastUndergradAdviseesCount instead.
-   *        For now we conservatively OR over the booleans + the explicit
-   *        currentUndergradCount field; lab-microsite agreements still surface
-   *        through acceptingUndergrads = true.)
-   *   - 'all' or undefined → no filter
-   */
-  acceptanceLevel?: AcceptanceLevelInput;
+  hostsUndergrads?: boolean;
+  hasDocumentedWayIn?: boolean;
+  currentAvailability?: CurrentAvailabilityFilterInput[];
+  compensation?: CompensationFilterInput[];
+  eligibleStudentLevels?: EligibleStudentLevelFilterInput[];
   studentVisibilityTier?: string[];
 }
-
-const VERIFIED_CONFIDENCE_FLOOR = 0.7;
 
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -47,29 +38,10 @@ const orEqualsClause = (field: string, values: unknown[]): string | null => {
   return `(${inner})`;
 };
 
-/**
- * Build the ANDed clause(s) representing an `acceptanceLevel` choice. Returns
- * an array because the OR group for 'verified-or-likely' is one clause that
- * gets AND-ed with the rest.
- */
-const acceptanceLevelClauses = (level: AcceptanceLevelInput | undefined): string[] => {
-  if (!level || level === 'all') return [];
-  if (level === 'verified') {
-    return [
-      `(acceptingUndergrads = true AND acceptanceConfidence >= ${VERIFIED_CONFIDENCE_FLOOR})`,
-    ];
-  }
-  if (level === 'verified-or-likely') {
-    // Any positive signal qualifies. We can't easily express "array length > 0"
-    // for `pastUndergradAdvisees`, so we rely on the denormalized scalar
-    // signals: the boolean acceptingUndergrads (set by lab pages or PIs),
-    // the boolean offersIndependentStudy, and the scalar currentUndergradCount.
-    return [
-      '(acceptingUndergrads = true OR offersIndependentStudy = true OR currentUndergradCount > 0)',
-    ];
-  }
-  return [];
-};
+export interface BuildResearchGroupFilterStringOptions {
+  /** Omit this field's own clause, so its facet distribution can be computed disjunctively. */
+  excludeField?: keyof ResearchGroupFilterInput;
+}
 
 /**
  * Build the Meilisearch filter string for a ResearchGroup search request.
@@ -77,38 +49,65 @@ const acceptanceLevelClauses = (level: AcceptanceLevelInput | undefined): string
  * Always pins `archived = false`. Each provided multi-value filter behaves as
  * an OR within the field, and all fields are AND-ed together.
  */
-export function buildResearchGroupFilterString(filters: ResearchGroupFilterInput = {}): string {
+export function buildResearchGroupFilterString(
+  filters: ResearchGroupFilterInput = {},
+  options: BuildResearchGroupFilterStringOptions = {},
+): string {
+  const effectiveFilters: ResearchGroupFilterInput = options.excludeField
+    ? { ...filters, [options.excludeField]: undefined }
+    : filters;
   const parts: string[] = ['archived = false'];
 
-  const kindClause = filters.kind ? orEqualsClause('kind', filters.kind) : null;
+  const kindClause = effectiveFilters.kind ? orEqualsClause('kind', effectiveFilters.kind) : null;
   if (kindClause) parts.push(kindClause);
 
-  const schoolClause = filters.school ? orEqualsClause('school', filters.school) : null;
+  const entityTypeClause = effectiveFilters.entityType
+    ? orEqualsClause('entityType', effectiveFilters.entityType)
+    : null;
+  if (entityTypeClause) parts.push(entityTypeClause);
+
+  // Filter on the multi-valued `schools` field so a cross-school lab matches
+  // under every school it belongs to. The request field stays `school`.
+  const schoolClause = effectiveFilters.school
+    ? orEqualsClause('schools', effectiveFilters.school)
+    : null;
   if (schoolClause) parts.push(schoolClause);
 
-  const departmentsClause = filters.departments
-    ? orEqualsClause('departments', filters.departments)
+  const departmentsClause = effectiveFilters.departments
+    ? orEqualsClause('departments', effectiveFilters.departments)
     : null;
   if (departmentsClause) parts.push(departmentsClause);
 
-  const researchAreasClause = filters.researchAreas
-    ? orEqualsClause('researchAreas', filters.researchAreas)
+  const researchAreasClause = effectiveFilters.researchAreas
+    ? orEqualsClause('researchAreas', effectiveFilters.researchAreas)
     : null;
   if (researchAreasClause) parts.push(researchAreasClause);
 
-  const opennessClause = filters.openness ? orEqualsClause('openness', filters.openness) : null;
-  if (opennessClause) parts.push(opennessClause);
-
-  if (typeof filters.acceptingUndergrads === 'boolean') {
-    parts.push(`acceptingUndergrads = ${filters.acceptingUndergrads}`);
+  if (effectiveFilters.hostsUndergrads === true) {
+    parts.push('hasUndergradHostingEvidence = true');
   }
 
-  for (const clause of acceptanceLevelClauses(filters.acceptanceLevel)) {
-    parts.push(clause);
+  if (effectiveFilters.hasDocumentedWayIn === true) {
+    parts.push('hasDocumentedWayIn = true');
   }
 
-  const studentVisibilityClause = filters.studentVisibilityTier
-    ? orEqualsClause('studentVisibilityTier', filters.studentVisibilityTier)
+  const currentAvailabilityClause = effectiveFilters.currentAvailability
+    ? orEqualsClause('undergraduateCurrentAvailability', effectiveFilters.currentAvailability)
+    : null;
+  if (currentAvailabilityClause) parts.push(currentAvailabilityClause);
+
+  const compensationClause = effectiveFilters.compensation
+    ? orEqualsClause('undergraduateCompensationModel', effectiveFilters.compensation)
+    : null;
+  if (compensationClause) parts.push(compensationClause);
+
+  const eligibleStudentLevelsClause = effectiveFilters.eligibleStudentLevels
+    ? orEqualsClause('undergraduateEligibleStudentLevels', effectiveFilters.eligibleStudentLevels)
+    : null;
+  if (eligibleStudentLevelsClause) parts.push(eligibleStudentLevelsClause);
+
+  const studentVisibilityClause = effectiveFilters.studentVisibilityTier
+    ? orEqualsClause('studentVisibilityTier', effectiveFilters.studentVisibilityTier)
     : null;
   if (studentVisibilityClause) parts.push(studentVisibilityClause);
 

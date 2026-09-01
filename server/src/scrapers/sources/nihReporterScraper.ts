@@ -15,28 +15,39 @@
  *   - Paginate through Yale grants (offset/limit, max 500 per request).
  *   - Group grants by contact PI name.
  *   - For each PI:
- *       - Try to resolve to a User by (lname exact + fname exact), then
- *         (lname exact + first initial). If unmatched, emit a User observation
- *         keyed by `nih-pi:<normalized>` so the materializer can stub a User.
- *       - Compute a deterministic ResearchGroup slug `nih-pi-<normalized>`.
- *       - Emit ResearchGroup observations: name, kind, school (for YSM only),
- *         recentGrants (full array of up to 10 most-recent grants), recentGrantCount,
- *         fundingAgencies=['NIH'], lastObservedAt = max(start_date), sourceUrls.
+ *       - Resolve an unambiguous canonical Researcher by exact or conservative prefix name matching.
+ *       - Enrich the PI's one eligible official research home when present, fail closed
+ *         on ambiguous or ineligible identity/home evidence, or use a synthetic shell
+ *         only when no research-home membership exists.
+ *       - Emit grant evidence without replacing identity fields on an official home.
  *
  * Honors:
  *   - ctx.options.useCache — caches each (offset/limit/fiscal_year) page payload.
  *   - ctx.options.limit — caps the *number of PIs processed*, not raw grants.
  */
 import axios from 'axios';
-import { User } from '../../models/user';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
-import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import {
+  resolveCanonicalResearchHomeForResearcher,
+  type CanonicalResearchHomeResolution,
+} from '../canonicalResearchHomeResolver';
+import { slugify, splitName } from '../utils/scraperHelpers';
+import { Researcher } from '../../models/researcher';
+import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
+// "<PI> Lab" is only a placeholder when no real name is known; keep it well below
+// any real-name source (microsite, official profile) so those always win (issue #456).
+const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
+// A funded-project abstract describes the lead's actual research, but it is grant
+// prose, not an authored lab page. Keep it below the 0.5 default so any real
+// lab-page/microsite description wins on confidence resolution (issue #1418).
+const GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE = 0.35;
+const GRANT_DESCRIPTION_MAX_CHARS = 420;
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
 const RECENT_GRANTS_PER_PI = 10;
@@ -49,6 +60,12 @@ const YALE_ORG_NAMES = ['YALE UNIVERSITY'];
 // Cap how many pages we'll ever request defensively. 30 pages * 500 = 15k records,
 // well above Yale's typical ~3.5k for a 3-year window.
 const MAX_PAGES = 30;
+
+// NIH individual trainee-fellowship activity codes (F30/F31/F32/F33): the
+// contact PI on these awards is the trainee (grad student / postdoc), not a
+// faculty lab lead, so they must not mint a standalone research-home entity
+// (#739).
+const TRAINEE_FELLOWSHIP_ACTIVITY_CODES = new Set(['F30', 'F31', 'F32', 'F33']);
 
 // ---------------------------------------------------------------------------
 // API response shapes (only the fields we use)
@@ -141,20 +158,17 @@ export function canonicalPiName(raw: string | undefined | null): string {
     const first_t = titleCaseToken(firstChunk);
     return [first_t, last_t].filter(Boolean).join(' ');
   }
-  return trimmed
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(titleCaseToken)
-    .join(' ');
+  return trimmed.split(/\s+/).filter(Boolean).map(titleCaseToken).join(' ');
 }
 
 function titleCaseToken(token: string): string {
   if (!token) return '';
-  if (/^[A-Z]+$/.test(token)) {
-    // ALL-CAPS token like "TABACHNIKOVA" -> "Tabachnikova"
-    return token.charAt(0) + token.slice(1).toLowerCase();
-  }
-  return token;
+  // Title-case each letter run around a hyphen/apostrophe separately, e.g.
+  // "OHNO-MACHADO" -> "Ohno-Machado", "D'SOUZA" -> "D'Souza".
+  return token
+    .split(/([-'‘’])/)
+    .map((part) => (/^[A-Z]+$/.test(part) ? part.charAt(0) + part.slice(1).toLowerCase() : part))
+    .join('');
 }
 
 /**
@@ -170,6 +184,18 @@ export function piEntityKey(canonicalName: string): string {
 export function piSlugForResearchGroup(canonicalName: string): string {
   const slug = slugify(canonicalName);
   return slug ? `nih-pi-${slug}` : '';
+}
+
+/**
+ * True when a grant is an NIH individual trainee-fellowship award (F30/F31/F32/
+ * F33), whose contact PI is the trainee rather than a faculty lab lead. These
+ * awards fail closed at ingestion: dropping them before grouping means no
+ * "<Fellow> Lab" entity is ever minted, while a faculty PI's normal awards
+ * (R01, R35, ...) still group and mint unaffected (#739).
+ */
+export function isTraineeFellowshipGrant(grant: NihGrant): boolean {
+  const code = (grant.activity_code || '').trim().toUpperCase();
+  return TRAINEE_FELLOWSHIP_ACTIVITY_CODES.has(code);
 }
 
 /**
@@ -223,7 +249,9 @@ export function grantToRecord(grant: NihGrant): RecentGrantRecord {
   const dollarAmount = typeof grant.award_amount === 'number' ? grant.award_amount : 0;
   const url =
     grant.project_detail_url ||
-    (grant.appl_id ? `https://reporter.nih.gov/project-details/${grant.appl_id}` : REPORTER_ENDPOINT);
+    (grant.appl_id
+      ? `https://reporter.nih.gov/project-details/${grant.appl_id}`
+      : REPORTER_ENDPOINT);
   return {
     id,
     agency,
@@ -235,6 +263,148 @@ export function grantToRecord(grant: NihGrant): RecentGrantRecord {
     url,
     role: 'pi',
   };
+}
+
+const GRANT_ABSTRACT_HEADER_WORD = '(?:overall|proposal|project|research|program)';
+const GRANT_ABSTRACT_HEADER_KIND = '(?:summary|narrative|abstract)';
+const GRANT_ABSTRACT_LEADING_NOISE = /^[\s\d.)(/:;#*-]+/;
+const GRANT_ABSTRACT_HEADER = new RegExp(
+  `^\\s*(?:modified\\s+)?(?:${GRANT_ABSTRACT_HEADER_WORD}\\s*)?${GRANT_ABSTRACT_HEADER_KIND}` +
+    `(?:\\s*[/&]\\s*${GRANT_ABSTRACT_HEADER_KIND})*\\s*(?:section)?\\s*[:.)-]*\\s*`,
+  'i',
+);
+const GRANT_ABSTRACT_INLINE_MARKER =
+  /^(?:.{0,130}?\b(?:abstract|project\s+summary)\b\s*[:.)-]+\s*)/i;
+const GRANT_ABSTRACT_UNAVAILABLE =
+  /^\s*(?:no\s+abstract|abstract\s+not\s+available|n\/?a)\s*\.?\s*$/i;
+// A leading agency funding-disclaimer sentence ("This award is funded in whole
+// or in part under the American Rescue Plan Act ...") is administrative
+// boilerplate, not research, so drop it before taking the lead sentences
+// (issue #1418 follow-up).
+const GRANT_ABSTRACT_FUNDING_DISCLAIMER =
+  /^(?:this (?:award|project|research) (?:is|was) funded\b[^.]*\.\s+|funds? (?:are|is) provided\b[^.]*\.\s+)/i;
+
+const normalizeAbstractWhitespace = (value: string): string => value.replace(/\s+/g, ' ').trim();
+
+const SENTENCE_SPLIT = /(?<=[.!?])\s+/;
+
+function splitIntoSentences(text: string): string[] {
+  return text.split(SENTENCE_SPLIT).filter(Boolean);
+}
+
+function stripGrantAbstractHeaders(value: string): string {
+  let out = value;
+  for (let i = 0; i < 4; i += 1) {
+    const before = out;
+    out = out.replace(GRANT_ABSTRACT_LEADING_NOISE, '').replace(GRANT_ABSTRACT_HEADER, '');
+    if (out === before) break;
+  }
+  return out;
+}
+
+function firstSentencesWithinBudget(text: string, maxChars: number): string {
+  const sentences = splitIntoSentences(text);
+  let acc = '';
+  for (const sentence of sentences) {
+    if (!acc) {
+      acc = sentence;
+      continue;
+    }
+    if (`${acc} ${sentence}`.length > maxChars) break;
+    acc = `${acc} ${sentence}`;
+  }
+  if (acc.length > maxChars + 160) acc = acc.slice(0, maxChars);
+  return acc.trim();
+}
+
+// A grant abstract conventionally opens with disease-burden/background framing
+// before reaching what the lab actually does. That framing is content-free for a
+// student deciding whether to reach out, and can even name a different disease
+// than the entity's own topic chips, so it must never survive as the served
+// description (issue #1739).
+const SIGNIFICANCE_OPENER_PATTERNS: RegExp[] = [
+  /\b(?:is|are|remains?)\s+(?:the\s+|an?\s+)?(?:\w+\s+){0,2}(?:leading|major|significant|common|most\s+common)\s+(?:cause|source)\s+of\b/i,
+  /\bis\s+at\s+the\s+forefront\s+of\b/i,
+  /^(?:nearly|over|more\s+than|approximately)\s+[\d,.]+\s*(?:million\s+|thousand\s+)?(?:persons?|people|individuals?|children|adults|patients)\b/i,
+  /\bstruggle[sd]?\s+more\s+than\s+any\s+other\b/i,
+  /\bis\s+an?\s+common\s+event\s+in\s+the\s+lives\s+of\b/i,
+  /\bis\s+the\s+most\s+common\b.*\b(?:annually|per\s+year|each\s+year)\b/i,
+];
+
+function isGrantSignificanceOpener(sentence: string): boolean {
+  return SIGNIFICANCE_OPENER_PATTERNS.some((pattern) => pattern.test(sentence));
+}
+
+function stripLeadingSignificanceSentences(text: string): string {
+  const sentences = splitIntoSentences(text);
+  let start = 0;
+  while (start < sentences.length && isGrantSignificanceOpener(sentences[start])) {
+    start += 1;
+  }
+  return sentences.slice(start).join(' ');
+}
+
+const PDF_HYPHENATION_ARTIFACT = /([a-z])-\s+([a-z])/g;
+
+function stripPdfHyphenationArtifacts(text: string): string {
+  return text.replace(PDF_HYPHENATION_ARTIFACT, '$1-$2');
+}
+
+/**
+ * Derive a source-backed lab description from a funded-project abstract. Strips
+ * RePORTER boilerplate headers ("PROJECT SUMMARY/ABSTRACT", "OVERALL:",
+ * numbering), PDF-extraction hyphenation artifacts, and leading disease-burden/
+ * significance framing, then returns sentence-bounded lead prose. Returns '' when
+ * the abstract is empty, a "No Abstract" placeholder, or nothing but significance
+ * framing, so the scraper emits nothing rather than junk (issues #1418, #1739).
+ */
+export function grantAbstractToDescription(abstract: string | undefined | null): string {
+  const normalized = stripPdfHyphenationArtifacts(
+    normalizeAbstractWhitespace(String(abstract || '')),
+  );
+  if (!normalized || GRANT_ABSTRACT_UNAVAILABLE.test(normalized)) return '';
+  const withoutInlineMarker = normalized.replace(GRANT_ABSTRACT_INLINE_MARKER, '');
+  const withoutHeaders = stripGrantAbstractHeaders(withoutInlineMarker);
+  const withoutFundingDisclaimer = withoutHeaders.replace(GRANT_ABSTRACT_FUNDING_DISCLAIMER, '');
+  const withoutSignificanceOpener = stripLeadingSignificanceSentences(withoutFundingDisclaimer);
+  if (!withoutSignificanceOpener) return '';
+  return normalizeAbstractWhitespace(
+    firstSentencesWithinBudget(withoutSignificanceOpener, GRANT_DESCRIPTION_MAX_CHARS),
+  );
+}
+
+// Training, fellowship, career-development, commercialization, and conference/
+// travel grants describe a program, a trainee's career plan, or a meeting rather
+// than the lab's science, so their abstract is not a usable lab description
+// (issue #1418 follow-up). Detected by grant title, since RePORTER titles name
+// the mechanism explicitly.
+const NON_RESEARCH_GRANT_TITLE =
+  /\b(?:graduate research fellowship|grfp|i-?corps|training (?:program|grant)|training in|research training|(?:pre|post)doctoral training|annual meeting|student travel|travel grant|conference grant|symposium|workshop|fellowship)\b/i;
+// A mentored career-development award's abstract is a first-person career
+// statement ("Candidate: I aim to build an independent career ..."), not a lab
+// description, even when the project science is real.
+const CAREER_DEVELOPMENT_ABSTRACT_LEAD =
+  /^(?:candidate\b|.{0,80}?\bi (?:aim|seek|plan|propose) to (?:build|establish|pursue|develop) (?:an? )?(?:independent )?(?:research )?career\b|.{0,140}?\b(?:mentored )?(?:patient-oriented )?(?:research )?career[ -]development award\b|.{0,120}?\bthis (?:application|proposal) (?:is )?for an? (?:mentored )?k\d\d\b)/i;
+
+function grantAbstractDescribesLabResearch(record: RecentGrantRecord): boolean {
+  if (NON_RESEARCH_GRANT_TITLE.test(String(record.title || ''))) return false;
+  const normalized = normalizeAbstractWhitespace(String(record.abstract || ''));
+  return !CAREER_DEVELOPMENT_ABSTRACT_LEAD.test(normalized);
+}
+
+/**
+ * Pick the newest research grant with a usable abstract and reduce it to a
+ * description, skipping training/fellowship/career-development/commercialization/
+ * conference grants whose abstract does not describe the lab's science
+ * (issue #1418 follow-up).
+ */
+export function labDescriptionFromRecentGrants(records: RecentGrantRecord[]): string {
+  for (const record of records) {
+    if (!grantAbstractDescribesLabResearch(record)) continue;
+    const description = grantAbstractToDescription(record.abstract);
+    if (description) return description;
+  }
+  return '';
 }
 
 function parseDate(s: string | undefined): Date | undefined {
@@ -255,54 +425,49 @@ function parseDate(s: string | undefined): Date | undefined {
  */
 export async function findUserForPi(
   canonicalName: string,
-  userModel: { find: typeof User.find } = User,
+  deps?: NihPiResolverDeps,
 ): Promise<{ _id: string; netid?: string; researchHomeEligible?: boolean } | null> {
-  if (!canonicalName) return null;
-  const { first, last } = splitName(canonicalName);
-  if (!last) return null;
-  const lnameRe = new RegExp(`^${escapeRegex(last)}$`, 'i');
-  const candidates: any[] = await userModel
-    .find(
-      {
-        lname: lnameRe,
-        userType: { $in: ['professor', 'faculty', 'admin'] },
-      },
-      { _id: 1, fname: 1, lname: 1, netid: 1, primaryDepartment: 1, title: 1 },
-    )
-    .limit(10)
-    .lean();
-  if (!first) return null;
-  // Exact first name match wins.
-  const exact = candidates.filter(
-    (c) => (c.fname || '').toLowerCase() === first.toLowerCase(),
-  );
-  if (exact.length === 1) {
-    return userPiMatchResult(exact[0]);
-  }
-
-  // Fall back to a given-name prefix. Only use a bare first initial when the
-  // source itself only provided an initial; otherwise same-initial matches are
-  // too broad for grant identity linkage.
-  const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
-  const isInitialOnly = firstToken.length === 1;
-  const prefix = (isInitialOnly ? firstToken : first).toLowerCase();
-  const byPrefix = candidates.filter((c) => (c.fname || '').toLowerCase().startsWith(prefix));
-  if (byPrefix.length === 1) {
-    return userPiMatchResult(byPrefix[0]);
-  }
-  // Ambiguous — refuse to guess.
-  return null;
+  const result = await resolveUserForPi(canonicalName, deps);
+  return result.status === 'matched' ? result.user : null;
 }
 
-function userPiMatchResult(candidate: any): {
-  _id: string;
-  netid?: string;
-  researchHomeEligible?: boolean;
-} {
+export type NihPiUserResolution =
+  | { status: 'matched'; user: { _id: string; netid?: string; researchHomeEligible?: boolean } }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
+
+export interface NihPiResolverDeps {
+  resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+  loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
+}
+
+async function defaultLoadResearcherProfileTitle(
+  researcherId: string,
+): Promise<string | undefined> {
+  const researcher: any = await Researcher.findById(researcherId).select('profile').lean();
+  const title = researcher?.profile?.title;
+  return typeof title === 'string' ? title : undefined;
+}
+
+export async function resolveUserForPi(
+  canonicalName: string,
+  deps: NihPiResolverDeps = {},
+): Promise<NihPiUserResolution> {
+  if (!canonicalName) return { status: 'absent' };
+  const resolveResearcherId = deps.resolveResearcherId ?? resolveResearcherIdForPersonName;
+  const loadResearcherProfileTitle =
+    deps.loadResearcherProfileTitle ?? defaultLoadResearcherProfileTitle;
+  const resolution = await resolveResearcherId(canonicalName);
+  if (resolution.status === 'ambiguous') return { status: 'ambiguous' };
+  if (resolution.status !== 'matched' || !resolution.researcherId) return { status: 'absent' };
+  const researcherId = resolution.researcherId.toString();
+  const title = await loadResearcherProfileTitle(researcherId);
   return {
-    _id: serializedDocumentId(candidate._id) || '',
-    netid: candidate.netid,
-    researchHomeEligible: researchHomeEligibleUserTitle(candidate.title),
+    status: 'matched',
+    user: {
+      _id: researcherId,
+      researchHomeEligible: researchHomeEligibleUserTitle(title),
+    },
   };
 }
 
@@ -315,18 +480,14 @@ function researchHomeEligibleUserTitle(title: unknown): boolean {
   return true;
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /**
  * Build the observation list for one PI's grants.
  *
  * Emits:
- *   - User observation keyed by `nih-pi:<slug>` when no Yale User matched, so
+ *   - `user` observation keyed by `nih-pi:<slug>` when no researcher matched, so
  *     downstream materialization can create a stub.
- *   - ResearchGroup observations keyed by either the matched User's PI slug
- *     (legible `nih-pi-<slug>`) or the same slug used by the User stub.
+ *   - ResearchGroup observations keyed by either the matched researcher's PI slug
+ *     (legible `nih-pi-<slug>`) or the same slug used by the researcher stub.
  *   - All recentGrants observations are emitted as a single full array — the
  *     resolver picks the highest-confidence value per field rather than trying
  *     to merge multiple partial arrays.
@@ -335,12 +496,13 @@ export function piGrantsToObservations(
   canonicalName: string,
   grants: NihGrant[],
   matchedUser: { _id: string; netid?: string; researchHomeEligible?: boolean } | null,
+  canonicalResearchHomeSlug?: string | null,
 ): ObservationInput[] {
   const out: ObservationInput[] = [];
   if (!canonicalName || grants.length === 0) return out;
   if (matchedUser?.researchHomeEligible === false) return out;
 
-  const slug = piSlugForResearchGroup(canonicalName);
+  const slug = canonicalResearchHomeSlug || piSlugForResearchGroup(canonicalName);
   if (!slug) return out;
 
   // Sort grants by start date (desc), keep top N for the recentGrants array.
@@ -355,9 +517,7 @@ export function piGrantsToObservations(
     .filter((t): t is number => typeof t === 'number')
     .reduce((max, t) => (t > max ? t : max), 0);
 
-  const sourceUrls = sorted
-    .map((g) => g.project_detail_url)
-    .filter((u): u is string => !!u);
+  const sourceUrls = sorted.map((g) => g.project_detail_url).filter((u): u is string => !!u);
 
   // Determine school/department hint from organization.dept_type when present.
   // We only use it as a soft signal; the resolver will dedupe against other sources.
@@ -367,9 +527,9 @@ export function piGrantsToObservations(
     if (dt) deptTypes.add(dt);
   }
 
-  // 1. User observation — only emit when no existing user was matched. The
-  //    materializer treats `nih-pi:<slug>` as a synthetic key and creates a
-  //    stub User row (lname = surname, fname = first name, userType=unknown).
+  // 1. `user` observation — only emit when no existing researcher was matched.
+  //    The materializer treats `nih-pi:<slug>` as a synthetic key and creates a
+  //    stub Researcher from the surname and first name.
   const piEntityKeyValue = piEntityKey(canonicalName);
   if (!matchedUser && piEntityKeyValue) {
     const { first, last } = splitName(canonicalName);
@@ -380,7 +540,6 @@ export function piGrantsToObservations(
     };
     if (first) out.push({ ...userBase, field: 'fname', value: first });
     if (last) out.push({ ...userBase, field: 'lname', value: last });
-    out.push({ ...userBase, field: 'userType', value: 'faculty' });
     out.push({ ...userBase, field: 'dataSources', value: ['nih-reporter'] });
   }
 
@@ -391,17 +550,37 @@ export function piGrantsToObservations(
     sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
   };
   const piDisplayName = canonicalName;
-  out.push({ ...groupBase, field: 'slug', value: slug });
-  out.push({ ...groupBase, field: 'name', value: `${piDisplayName} Lab` });
-  out.push({ ...groupBase, field: 'kind', value: 'lab' });
+  if (!canonicalResearchHomeSlug) {
+    out.push({ ...groupBase, field: 'slug', value: slug });
+    out.push({
+      ...groupBase,
+      field: 'name',
+      value: `${piDisplayName} Lab`,
+      confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
+    });
+    out.push({ ...groupBase, field: 'kind', value: 'lab' });
+    const grantDescription = labDescriptionFromRecentGrants(recentRecords);
+    if (grantDescription) {
+      out.push({
+        ...groupBase,
+        field: 'fullDescription',
+        value: grantDescription,
+        confidenceOverride: GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE,
+      });
+    }
+  }
   out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });
-  out.push({ ...groupBase, field: 'recentGrantCount', value: recentRecords.length });
+  out.push({ ...groupBase, field: 'recentGrantCount', value: sorted.length });
   out.push({ ...groupBase, field: 'fundingAgencies', value: ['NIH'] });
   if (lastObservedAt > 0) {
     out.push({ ...groupBase, field: 'lastObservedAt', value: new Date(lastObservedAt) });
   }
-  if (sourceUrls.length > 0) {
-    out.push({ ...groupBase, field: 'sourceUrls', value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI) });
+  if (sourceUrls.length > 0 && !canonicalResearchHomeSlug) {
+    out.push({
+      ...groupBase,
+      field: 'sourceUrls',
+      value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI),
+    });
   }
   if (matchedUser) {
     out.push({
@@ -419,7 +598,7 @@ export function piGrantsToObservations(
       confidenceOverride: 0.6,
     });
   }
-  if (deptTypes.size > 0) {
+  if (deptTypes.size > 0 && !canonicalResearchHomeSlug) {
     out.push({
       ...groupBase,
       field: 'departments',
@@ -479,9 +658,7 @@ async function fetchPage({
     results: (res.data?.results as NihGrant[]) || [],
   };
   if (useCache) await setCached('nih-reporter', cacheKey, payload);
-  ctx.log(
-    `fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`,
-  );
+  ctx.log(`fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`);
   return payload;
 }
 
@@ -492,8 +669,9 @@ async function fetchPage({
 export interface NihReporterScraperOptions {
   /** Override fiscal years (defaults to current FY plus the two prior FYs). */
   fiscalYears?: number[];
-  /** Inject a custom User model (used by tests to mock the DB). */
-  userModel?: { find: typeof User.find };
+  resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+  loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
+  researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 export class NihReporterScraper implements IScraper {
@@ -504,7 +682,8 @@ export class NihReporterScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
-    const userModel = this.opts.userModel || User;
+    const researchHomeResolver =
+      this.opts.researchHomeResolver || resolveCanonicalResearchHomeForResearcher;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -538,30 +717,61 @@ export class NihReporterScraper implements IScraper {
     }
     ctx.log(`fetched ${allGrants.length}/${total} grants across ${pages} page(s)`);
 
-    // 2. Group by PI.
-    const groups = groupGrantsByPi(allGrants);
+    // 2. Drop individual trainee-fellowship awards (F30/F31/F32/F33) so a
+    //    trainee is never minted as a "<Fellow> Lab" research home (#739).
+    const fundableGrants = allGrants.filter((grant) => !isTraineeFellowshipGrant(grant));
+    const excludedTraineeFellowships = allGrants.length - fundableGrants.length;
+    if (excludedTraineeFellowships > 0) {
+      ctx.log(
+        `excluded ${excludedTraineeFellowships} individual trainee-fellowship award(s) (F30/F31/F32/F33)`,
+      );
+    }
+
+    // 3. Group by PI.
+    const groups = groupGrantsByPi(fundableGrants);
     ctx.log(`grouped into ${groups.size} unique contact PIs`);
 
-    // 3. Honor --limit (caps PIs processed, NOT raw grants).
+    // 4. Honor --limit (caps PIs processed, NOT raw grants).
     const piLimit = limitOption ?? Infinity;
     const piEntries = Array.from(groups.entries()).slice(0, piLimit);
 
-    // 4. Resolve each PI to a User (or stub) and emit observations.
+    // 5. Resolve each PI to a User (or stub) and emit observations.
     let totalObs = 0;
     let matched = 0;
     let unmatched = 0;
     let processed = 0;
     for (const [piName, grants] of piEntries) {
-      let matchedUser: { _id: string; netid?: string } | null = null;
+      let userResolution: NihPiUserResolution = { status: 'ambiguous' };
       try {
-        matchedUser = await findUserForPi(piName, userModel);
+        userResolution = await resolveUserForPi(piName, {
+          resolveResearcherId: this.opts.resolveResearcherId,
+          loadResearcherProfileTitle: this.opts.loadResearcherProfileTitle,
+        });
       } catch (err: any) {
         ctx.log(`user-lookup error for PI candidate: ${sanitizeLogValue(err)}`);
       }
-      if (matchedUser) matched++;
-      else unmatched++;
+      const matchedUser = userResolution.status === 'matched' ? userResolution.user : null;
+      if (userResolution.status === 'matched') matched++;
+      else if (userResolution.status === 'absent') unmatched++;
+      else continue;
 
-      const observations = piGrantsToObservations(piName, grants, matchedUser);
+      const researchHomeResolution = matchedUser
+        ? await researchHomeResolver(matchedUser._id)
+        : { status: 'safe-shell' as const };
+      if (
+        researchHomeResolution.status === 'ambiguous' ||
+        researchHomeResolution.status === 'ineligible'
+      ) {
+        continue;
+      }
+      const canonicalResearchHomeSlug =
+        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
+      const observations = piGrantsToObservations(
+        piName,
+        grants,
+        matchedUser,
+        canonicalResearchHomeSlug,
+      );
       if (observations.length > 0) {
         await ctx.emit(observations);
         totalObs += observations.length;

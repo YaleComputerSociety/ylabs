@@ -5,8 +5,12 @@
 import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
+import {
+  createResearchAnalyticsInteractionId,
+  trackResearchEvent,
+} from '../utils/researchAnalytics';
 
-type FavoritesKind = 'listings' | 'programs' | 'researchPlans';
+type FavoritesKind = 'researchPlans' | 'watchedPrograms';
 
 interface Endpoints {
   load: string;
@@ -18,37 +22,36 @@ interface Endpoints {
 }
 
 const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
-  listings: {
-    load: '/users/favListingsIds',
-    responseKey: 'favListingsIds',
-    collectionPath: '/users/favListings',
-    payloadKey: 'favListings',
+  researchPlans: {
+    load: '/users/savedResearchEntityIds',
+    responseKey: 'savedResearchEntityIds',
+    collectionPath: '/users/savedResearchEntities',
+    payloadKey: 'savedResearchEntities',
     warnOnLoadError: false,
     warnOnMutationError: true,
   },
-  programs: {
-    load: '/users/savedProgramIds',
-    responseKey: 'savedProgramIds',
-    collectionPath: '/users/savedPrograms',
-    payloadKey: 'savedPrograms',
+  watchedPrograms: {
+    load: '/users/watchedProgramIds',
+    responseKey: 'watchedProgramIds',
+    collectionPath: '/users/watchedPrograms',
+    payloadKey: 'watchedPrograms',
     warnOnLoadError: false,
-    warnOnMutationError: false,
-  },
-  researchPlans: {
-    load: '/users/savedResearchPlanIds',
-    responseKey: 'savedResearchPlanIds',
-    collectionPath: '/users/savedResearchPlans',
-    payloadKey: 'savedResearchPlans',
-    warnOnLoadError: false,
-    warnOnMutationError: false,
+    warnOnMutationError: true,
   },
 };
 
-export const useFavorites = (kind: FavoritesKind) => {
+export const useFavorites = (
+  kind: FavoritesKind,
+  { enabled = true }: { enabled?: boolean } = {},
+) => {
   const config = ENDPOINTS[kind];
   const [favIds, setFavIds] = useState<string[]>([]);
 
   const reload = useCallback(async () => {
+    if (!enabled) {
+      setFavIds([]);
+      return;
+    }
     try {
       const res = await axios.get(config.load, { withCredentials: true });
       setFavIds(res.data[config.responseKey] || []);
@@ -59,35 +62,72 @@ export const useFavorites = (kind: FavoritesKind) => {
         swal({ text: `Could not load your favorite ${kind}`, icon: 'warning' });
       }
     }
-  }, [kind, config.load, config.responseKey, config.warnOnLoadError]);
+  }, [enabled, kind, config.load, config.responseKey, config.warnOnLoadError]);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
-  const setFavorite = useCallback(async (id: string, favorite: boolean) => {
-    const previous = favIds;
-    setFavIds((prev) => (favorite ? [id, ...prev.filter((x) => x !== id)] : prev.filter((x) => x !== id)));
-    try {
-      if (favorite) {
-        await axios.put(config.collectionPath, { withCredentials: true, data: { [config.payloadKey]: [id] } });
-      } else {
-        await axios.delete(config.collectionPath, { withCredentials: true, data: { [config.payloadKey]: [id] } });
+  const setFavorite = useCallback(
+    async (id: string, favorite: boolean) => {
+      const previous = favIds;
+      setFavIds((prev) =>
+        favorite ? [id, ...prev.filter((x) => x !== id)] : prev.filter((x) => x !== id),
+      );
+      try {
+        if (favorite) {
+          await axios.put(config.collectionPath, {
+            withCredentials: true,
+            data: { [config.payloadKey]: [id] },
+          });
+        } else {
+          await axios.delete(config.collectionPath, {
+            withCredentials: true,
+            data: { [config.payloadKey]: [id] },
+          });
+        }
+        if (kind === 'researchPlans') {
+          void trackResearchEvent({
+            eventType: 'research_save',
+            entityType: 'research_entity',
+            entityId: id,
+            payload: { operation: favorite ? 'save' : 'remove', surface: 'profile' },
+            dedupeKey: createResearchAnalyticsInteractionId('save'),
+          });
+        }
+        if (kind === 'watchedPrograms') {
+          void trackResearchEvent({
+            eventType: 'research_save',
+            entityType: 'fellowship',
+            entityId: id,
+            payload: { operation: favorite ? 'save' : 'remove', surface: 'saved_plans' },
+            dedupeKey: createResearchAnalyticsInteractionId('save'),
+          });
+        }
+        return true;
+      } catch {
+        console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
+        setFavIds(previous);
+        if (config.warnOnMutationError) {
+          swal({
+            text: `Unable to ${favorite ? 'favorite' : 'unfavorite'} ${kind.slice(0, -1)}`,
+            icon: 'warning',
+          });
+        }
+        await reload();
+        return false;
       }
-    } catch {
-      console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
-      setFavIds(previous);
-      if (config.warnOnMutationError) {
-        swal({ text: `Unable to ${favorite ? 'favorite' : 'unfavorite'} ${kind.slice(0, -1)}`, icon: 'warning' });
-      }
-      reload();
-    }
-  }, [favIds, kind, config.collectionPath, config.payloadKey, config.warnOnMutationError, reload]);
+    },
+    [favIds, kind, config.collectionPath, config.payloadKey, config.warnOnMutationError, reload],
+  );
 
-  const toggleFavorite = useCallback((id: string, e?: MouseEvent) => {
-    e?.stopPropagation();
-    setFavorite(id, !favIds.includes(id));
-  }, [favIds, setFavorite]);
+  const toggleFavorite = useCallback(
+    (id: string, e?: MouseEvent) => {
+      e?.stopPropagation();
+      setFavorite(id, !favIds.includes(id));
+    },
+    [favIds, setFavorite],
+  );
 
   return { favIds, setFavorite, toggleFavorite, reloadFavorites: reload };
 };

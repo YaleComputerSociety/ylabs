@@ -3,6 +3,33 @@
  */
 import mongoose from 'mongoose';
 import { studentVisibilityFields } from './studentVisibility';
+import { sourceLinkHealthStatuses } from '../services/sourceLinkHealth';
+
+const fellowshipSourceLinkHealthSchema = new mongoose.Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+    },
+    healthStatus: {
+      type: String,
+      enum: [...sourceLinkHealthStatuses],
+      default: 'UNKNOWN',
+      required: true,
+    },
+    httpStatusCode: {
+      type: Number,
+      min: 100,
+      max: 599,
+      required: false,
+    },
+    checkedAt: {
+      type: Date,
+      required: false,
+    },
+  },
+  { _id: false },
+);
 
 export const programCategories = [
   'FELLOWSHIP',
@@ -91,6 +118,14 @@ const fellowshipSchema = new mongoose.Schema(
       default: '',
     },
     prepSteps: {
+      type: [String],
+      default: [],
+    },
+    researchFocused: {
+      type: Boolean,
+      default: false,
+    },
+    applicationMaterials: {
       type: [String],
       default: [],
     },
@@ -198,6 +233,10 @@ const fellowshipSchema = new mongoose.Schema(
     sourceUrl: {
       type: String,
       default: '',
+    },
+    sourceLinkHealth: {
+      type: fellowshipSourceLinkHealthSchema,
+      required: false,
     },
     sourceKey: {
       type: String,

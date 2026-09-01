@@ -4,6 +4,7 @@ import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -32,23 +33,19 @@ const SYNTHETIC_USER_FILTER: Document = { $nor: SYNTHETIC_USER_MATCHES };
 
 const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
-  { name: 'research_entity_members', category: 'research-discovery' },
-  { name: 'entry_pathways', category: 'research-discovery' },
-  { name: 'access_signals', category: 'research-discovery' },
-  { name: 'contact_routes', category: 'research-discovery' },
-  { name: 'posted_opportunities', category: 'research-discovery' },
-  { name: 'papers', category: 'research-discovery' },
-  { name: 'paper_authors', category: 'research-discovery' },
-  { name: 'research_scholarly_links', category: 'research-discovery' },
-  { name: 'research_scholarly_attributions', category: 'research-discovery' },
-  { name: 'grants', category: 'research-discovery' },
+  { name: 'research_entity_relationships', category: 'research-discovery' },
+  { name: 'research_entity_redirects', category: 'research-discovery' },
+  { name: 'accounts', category: 'research-discovery', filter: SYNTHETIC_USER_FILTER },
+  { name: 'researchers', category: 'research-discovery' },
+  { name: 'role_assignments', category: 'research-discovery' },
+  { name: 'signals', category: 'research-discovery' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },
-  { name: 'users', category: 'base-support', filter: SYNTHETIC_USER_FILTER },
-  { name: 'listings', category: 'base-support' },
   { name: 'departments', category: 'base-support' },
+  { name: 'org_units', category: 'base-support' },
   { name: 'research_areas', category: 'base-support' },
+  { name: 'taxonomy_terms', category: 'base-support' },
   { name: 'fellowships', category: 'base-support' },
 ];
 
@@ -101,24 +98,15 @@ export interface PromotionSummary {
   collectionCategories: CollectionCategorySummary[];
   excludedSyntheticUsers: number;
   syntheticReferenceBlockersClear: boolean;
+  emptySourceBlockersClear: boolean;
   applyBlockers: string[];
   blockedSyntheticUserReferences: SyntheticUserReference[];
 }
 
-const USER_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
-  { collection: 'research_entity_members', field: 'userId' },
-  { collection: 'research_entities', field: 'claimedByUserId' },
-  { collection: 'research_entities', field: 'studentVisibilityReviewedByUserId' },
-  { collection: 'entry_pathways', field: 'review.reviewedByUserId' },
-  { collection: 'access_signals', field: 'review.reviewedByUserId' },
-  { collection: 'contact_routes', field: 'personId' },
-  { collection: 'contact_routes', field: 'review.reviewedByUserId' },
-  { collection: 'posted_opportunities', field: 'review.reviewedByUserId' },
-  { collection: 'paper_authors', field: 'userId' },
-  { collection: 'research_scholarly_links', field: 'userId' },
-  { collection: 'research_scholarly_attributions', field: 'targetUserId' },
-  { collection: 'listings', field: 'createdByUserId' },
-  { collection: 'fellowships', field: 'studentVisibilityReviewedByUserId' },
+const ACCOUNT_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
+  { collection: 'researchers', field: 'accountId' },
+  { collection: 'research_entities', field: 'studentVisibilityReviewedByAccountId' },
+  { collection: 'fellowships', field: 'studentVisibilityReviewedByAccountId' },
 ];
 
 const COLLECTION_CATEGORY_ORDER: PromotionCollectionCategory[] = [
@@ -134,7 +122,7 @@ export function parsePromotionOptions(
   let mode: Mode = 'dry-run';
   let datasetVersion = env.PROMOTION_DATASET_VERSION || '';
   let restorePoint = env.ATLAS_RESTORE_POINT || '';
-  let includeObservations = true;
+  let includeObservations = false;
   let output: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -150,6 +138,10 @@ export function parsePromotionOptions(
     }
     if (arg === '--skip-observations') {
       includeObservations = false;
+      continue;
+    }
+    if (arg === '--include-observations') {
+      includeObservations = true;
       continue;
     }
     if (arg.startsWith('--dataset-version=')) {
@@ -222,9 +214,7 @@ export function assertSafeOptions(options: PromotionOptions) {
       throw new Error('Apply mode requires --restore-point or ATLAS_RESTORE_POINT');
     }
     if (!options.confirmLane || !options.confirmProd) {
-      throw new Error(
-        'Apply mode requires CONFIRM_LANE_A_COPY=true and CONFIRM_PROD_SCRAPE=true',
-      );
+      throw new Error('Apply mode requires CONFIRM_LANE_A_COPY=true and CONFIRM_PROD_SCRAPE=true');
     }
   }
 }
@@ -246,7 +236,9 @@ export function buildPromotionSummary(
       excludedCount: rows.reduce((sum, row) => sum + row.excludedCount, 0),
     };
   });
-  const applyBlockers = buildApplyBlockers(blockedSyntheticUserReferences);
+  const syntheticReferenceBlockers = buildApplyBlockers(blockedSyntheticUserReferences);
+  const emptySourceBlockers = buildEmptySourceBlockers(plan);
+  const applyBlockers = [...syntheticReferenceBlockers, ...emptySourceBlockers];
 
   return {
     mode: options.mode,
@@ -259,11 +251,27 @@ export function buildPromotionSummary(
     includesObservations: options.includeObservations,
     collections: plan,
     collectionCategories,
-    excludedSyntheticUsers: plan.find((row) => row.name === 'users')?.excludedCount || 0,
-    syntheticReferenceBlockersClear: applyBlockers.length === 0,
+    excludedSyntheticUsers: plan.find((row) => row.name === 'accounts')?.excludedCount || 0,
+    syntheticReferenceBlockersClear: syntheticReferenceBlockers.length === 0,
+    emptySourceBlockersClear: emptySourceBlockers.length === 0,
     applyBlockers,
     blockedSyntheticUserReferences,
   };
+}
+
+// copyCollection deletes the whole target before inserting, so a collection that
+// is empty on beta would empty production rather than leave it untouched. Compare
+// sourceCopyCount, not sourceCount: accounts copies through SYNTHETIC_USER_FILTER,
+// so its raw count overstates what would actually be written.
+function buildEmptySourceBlockers(plan: CollectionPlan[]): string[] {
+  return plan
+    .filter((row) => row.sourceCopyCount === 0 && row.targetCount > 0)
+    .map(
+      (row) =>
+        `Collection ${row.name} would copy 0 documents over ${row.targetCount} existing production ${
+          row.targetCount === 1 ? 'document' : 'documents'
+        }, which would empty it.`,
+    );
 }
 
 function buildApplyBlockers(blockedSyntheticUserReferences: SyntheticUserReference[]): string[] {
@@ -271,7 +279,8 @@ function buildApplyBlockers(blockedSyntheticUserReferences: SyntheticUserReferen
 
   const totalReferences = blockedSyntheticUserReferences.reduce((sum, row) => sum + row.count, 0);
   const referenceWord = totalReferences === 1 ? 'link' : 'links';
-  const fieldWord = blockedSyntheticUserReferences.length === 1 ? 'collection field' : 'collection fields';
+  const fieldWord =
+    blockedSyntheticUserReferences.length === 1 ? 'collection field' : 'collection fields';
 
   return [
     `Copied records reference ${totalReferences} excluded synthetic-user ${referenceWord} across ${blockedSyntheticUserReferences.length} ${fieldWord}.`,
@@ -292,9 +301,11 @@ export function writePromotionOutput(report: unknown, output?: string): void {
 }
 
 function promotionCollectionsForOptions(options: PromotionOptions): PromotionCollection[] {
-  return COPY_COLLECTIONS.filter(
+  const collections = COPY_COLLECTIONS.filter(
     (collection) => options.includeObservations || collection.name !== 'observations',
   );
+  assertNoNeverCopyCollections(collections.map((collection) => collection.name));
+  return collections;
 }
 
 export function promotionCollectionNamesForOptions(options: PromotionOptions): string[] {
@@ -346,17 +357,21 @@ async function buildPlan(
 
 async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
   const excludedUsers = await betaDb
-    .collection('users')
+    .collection('accounts')
     .find(SYNTHETIC_USER_MATCH, { projection: { _id: 1 } })
     .toArray();
   const excludedIds = excludedUsers.map((user) => user._id);
   if (excludedIds.length === 0) return [];
 
   const rows = await Promise.all(
-    USER_REFERENCE_FIELDS.map(async ({ collection, field }) => {
-      const exists = await betaDb.listCollections({ name: collection }, { nameOnly: true }).hasNext();
+    ACCOUNT_REFERENCE_FIELDS.map(async ({ collection, field }) => {
+      const exists = await betaDb
+        .listCollections({ name: collection }, { nameOnly: true })
+        .hasNext();
       if (!exists) return { collection, field, count: 0 };
-      const count = await betaDb.collection(collection).countDocuments({ [field]: { $in: excludedIds } });
+      const count = await betaDb
+        .collection(collection)
+        .countDocuments({ [field]: { $in: excludedIds } });
       return { collection, field, count };
     }),
   );

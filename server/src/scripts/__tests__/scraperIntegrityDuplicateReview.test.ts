@@ -26,9 +26,9 @@ describe('scraperIntegrityDuplicateReview CLI helpers', () => {
   });
 
   it('rejects malformed paired CLI values before running duplicate review', () => {
-    expect(() =>
-      parseScraperIntegrityDuplicateReviewArgs(['--output', '--type=all']),
-    ).toThrow('--output requires a value');
+    expect(() => parseScraperIntegrityDuplicateReviewArgs(['--output', '--type=all'])).toThrow(
+      '--output requires a value',
+    );
     expect(() =>
       parseScraperIntegrityDuplicateReviewArgs([
         '--output',
@@ -59,13 +59,6 @@ describe('scraperIntegrityDuplicateReview CLI helpers', () => {
     expect(
       buildScraperIntegrityDuplicateReviewReport(
         {
-          duplicateResearchPaperGroups: [
-            {
-              identityField: 'doi',
-              identityValue: '10.1234/example',
-              paperIds: ['paper-a', 'paper-b'],
-            },
-          ],
           duplicateAccessSignalGroups: [
             {
               researchEntityId: 'entity-1',
@@ -100,17 +93,9 @@ describe('scraperIntegrityDuplicateReview CLI helpers', () => {
       mode: 'dry-run',
       applyBlocked: true,
       counts: {
-        duplicateResearchPapers: 1,
         duplicateAccessSignals: 1,
       },
       groups: {
-        duplicateResearchPapers: [
-          {
-            identityField: 'doi',
-            identityValue: '10.1234/example',
-            paperIds: ['paper-a', 'paper-b'],
-          },
-        ],
         duplicateAccessSignals: [
           {
             researchEntityId: 'entity-1',
@@ -131,7 +116,6 @@ describe('scraperIntegrityDuplicateReview CLI helpers', () => {
       mode: 'dry-run' as const,
       applyBlocked: true,
       counts: {
-        duplicateResearchPapers: 0,
         duplicateAccessSignals: 0,
       },
     };

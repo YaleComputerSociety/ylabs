@@ -38,15 +38,23 @@ jobs:
           yarn --cwd server install --immutable
           yarn --cwd client install --immutable
 
+      - name: Check formatting
+        run: yarn format:check
+
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
 
       - name: Run server tests
         run: yarn --cwd server test
 
+      - name: Run model inventory operator tests
+        run: yarn model-refactor:inventory:test-operator-tools
+
+      - name: Run data profile safety tests
+        run: yarn test:data-profiles
+
       - name: Run client tests
         run: yarn --cwd client test:ci
-
 
       - name: Run deploy security preflight
         run: yarn security:preflight

@@ -7,6 +7,7 @@ import axios from '../utils/axios';
 import UserContext from '../contexts/UserContext';
 import { User } from '../types/types';
 import { createInitialUserState, userReducer } from '../reducers/userReducer';
+import { setResearchAnalyticsEnabled } from '../utils/researchAnalytics';
 
 const UserContextProvider = ({ children }: PropsWithChildren) => {
   const [state, dispatch] = useReducer(userReducer, undefined, createInitialUserState);
@@ -17,6 +18,7 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
     axios
       .get<{ auth: boolean; user?: User }>('/check', { withCredentials: true })
       .then(({ data }) => {
+        setResearchAnalyticsEnabled(data.auth === true);
         if (data.auth) {
           dispatch({
             type: 'FETCH_SUCCESS',
@@ -31,6 +33,7 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
       })
       .catch(() => {
         console.error('Auth check failed.');
+        setResearchAnalyticsEnabled(false);
         dispatch({
           type: 'FETCH_FAILURE',
           error: 'Unable to reach Yale Labs right now. Please try again in a moment.',

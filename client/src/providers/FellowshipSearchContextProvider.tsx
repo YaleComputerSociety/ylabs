@@ -13,6 +13,7 @@ import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
 import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
+import { summarizeProgramJourney, emptyProgramJourneySummary } from '../utils/programJourney';
 import {
   fellowshipSearchReducer,
   createInitialFellowshipSearchState,
@@ -28,7 +29,7 @@ const FELLOWSHIP_SORTABLE_KEYS = ['default', 'deadline', 'title'];
 const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({
   children,
 }) => {
-  const pageSize = 500;
+  const pageSize = 100;
   const sortableKeys = FELLOWSHIP_SORTABLE_KEYS;
 
   const location = useLocation();
@@ -37,7 +38,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const { user } = useContext(UserContext);
   const authReady = !authLoading && isAuthenticated;
-  const isAdmin = user?.userType === 'admin';
+  const isAdmin = user?.isAdmin ?? false;
 
   const [state, dispatch] = useReducer(fellowshipSearchReducer, undefined, () =>
     createInitialFellowshipSearchState({ sortBy: sortableKeys[0] }),
@@ -52,6 +53,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
+    selectedSubjects,
     selectedRegions,
     selectedCitizenship,
     selectedStudentVisibilityTier,
@@ -62,6 +64,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     isLoading,
     searchExhausted,
     total,
+    journeySummary,
     page,
     filterOptions,
     quickFilter,
@@ -104,6 +107,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     dispatch({ type: 'SET_SELECTED_PURPOSE', payload: value });
   }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
+  const setSelectedSubjects = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_SUBJECTS', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
+
   const setSelectedRegions = useCallback((value: React.SetStateAction<string[]>) => {
     dispatch({ type: 'SET_SELECTED_REGIONS', payload: value });
   }, []) as React.Dispatch<React.SetStateAction<string[]>>;
@@ -119,12 +126,15 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     [],
   ) as React.Dispatch<React.SetStateAction<StudentVisibilityTier[]>>;
 
-  const setSortBy = useCallback((value: string) => {
-    dispatch({
-      type: 'SET_SORT_BY',
-      payload: sortableKeys.includes(value) ? value : sortableKeys[0],
-    });
-  }, []);
+  const setSortBy = useCallback(
+    (value: string) => {
+      dispatch({
+        type: 'SET_SORT_BY',
+        payload: sortableKeys.includes(value) ? value : sortableKeys[0],
+      });
+    },
+    [sortableKeys],
+  );
 
   const setSortOrder = useCallback((value: number) => {
     dispatch({ type: 'SET_SORT_ORDER', payload: value });
@@ -155,6 +165,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
+    selectedSubjects,
     selectedRegions,
     selectedCitizenship,
     selectedStudentVisibilityTier,
@@ -170,6 +181,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
+    selectedSubjects,
     selectedRegions,
     selectedCitizenship,
     selectedStudentVisibilityTier,
@@ -202,6 +214,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             purpose: response.data.purpose || [],
             globalRegions: response.data.globalRegions || [],
             citizenshipStatus: response.data.citizenshipStatus || [],
+            subjects: response.data.subjects || [],
           },
         });
         dispatch({ type: 'MARK_FILTER_OPTIONS_LOADED' });
@@ -212,12 +225,12 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       });
   }, [isActive, authReady]);
 
-  const handleSearch = useCallback(
-    (searchPage: number) => {
+  const buildSearchUrl = useCallback(
+    (searchPage: number, searchPageSize: number) => {
       const f = filtersRef.current;
       const formattedQuery = f.queryString.trim();
 
-      let url = `/programs/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
+      let url = `/programs/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${searchPageSize}`;
 
       if (f.sortBy !== 'default') {
         url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
@@ -244,6 +257,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       if (f.selectedPurpose.length > 0) {
         url += `&purpose=${encodeURIComponent(f.selectedPurpose.join(','))}`;
       }
+      if (f.selectedSubjects.length > 0) {
+        url += `&subjects=${encodeURIComponent(f.selectedSubjects.join(','))}`;
+      }
       if (f.selectedRegions.length > 0) {
         url += `&globalRegions=${encodeURIComponent(f.selectedRegions.join(','))}`;
       }
@@ -259,6 +275,65 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           url += '&includeSuppressed=true';
         }
       }
+
+      return url;
+    },
+    [isAdmin],
+  );
+
+  const loadRequestIdRef = useRef(0);
+
+  const loadAllPrograms = useCallback(() => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+
+    dispatch({ type: 'SEARCH_REQUEST' });
+    dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: { ...emptyProgramJourneySummary } });
+
+    const accumulate = async () => {
+      const collected: Fellowship[] = [];
+      let currentPage = 1;
+      let reportedTotal = Infinity;
+
+      while (collected.length < reportedTotal) {
+        const response = await axios.get(buildSearchUrl(currentPage, pageSize));
+        const pageResults: Fellowship[] = (response.data.results || []).map((elem: any) =>
+          createFellowship(elem),
+        );
+        collected.push(...pageResults);
+        reportedTotal =
+          typeof response.data.total === 'number' ? response.data.total : collected.length;
+        if (pageResults.length < pageSize || collected.length >= reportedTotal) break;
+        currentPage += 1;
+      }
+
+      return { collected, reportedTotal };
+    };
+
+    accumulate()
+      .then(({ collected, reportedTotal }) => {
+        if (loadRequestIdRef.current !== requestId) return;
+        dispatch({
+          type: 'SEARCH_SUCCESS',
+          payload: {
+            fellowships: collected,
+            total: Number.isFinite(reportedTotal) ? reportedTotal : collected.length,
+            pageSize,
+            append: false,
+          },
+        });
+        dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: summarizeProgramJourney(collected) });
+      })
+      .catch(() => {
+        if (loadRequestIdRef.current !== requestId) return;
+        console.error('Error loading programs.');
+        dispatch({ type: 'SEARCH_FAILURE' });
+      });
+  }, [buildSearchUrl, pageSize]);
+
+  const handleSearch = useCallback(
+    (searchPage: number) => {
+      const url = buildSearchUrl(searchPage, pageSize);
 
       dispatch({ type: 'SEARCH_REQUEST' });
 
@@ -290,23 +365,26 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           dispatch({ type: 'SEARCH_FAILURE' });
         });
     },
-    [isAdmin, pageSize],
+    [buildSearchUrl, pageSize],
   );
 
-  const refreshFellowships = useCallback(() => {
+  const runFirstPageSearch = useCallback(() => {
     dispatch({ type: 'SET_PAGE', payload: 1 });
-    handleSearch(1);
-  }, [handleSearch]);
+    loadAllPrograms();
+  }, [loadAllPrograms]);
+
+  const refreshFellowships = useCallback(() => {
+    runFirstPageSearch();
+  }, [runFirstPageSearch]);
 
   useEffect(() => {
     if (!isActive) return;
     if (!authReady) return;
     if (filterOptionsLoaded && !initialSearchDone) {
-      dispatch({ type: 'SET_PAGE', payload: 1 });
-      handleSearch(1);
+      runFirstPageSearch();
       dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
     }
-  }, [filterOptionsLoaded, initialSearchDone, handleSearch, isActive, authReady]);
+  }, [filterOptionsLoaded, initialSearchDone, runFirstPageSearch, isActive, authReady]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -314,8 +392,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
     const debounceTimeout = setTimeout(() => {
       if (queryStringLoaded) {
-        dispatch({ type: 'SET_PAGE', payload: 1 });
-        handleSearch(1);
+        runFirstPageSearch();
       }
       dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
     }, 500);
@@ -323,15 +400,14 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, filterOptionsLoaded, isActive]);
+  }, [queryString, queryStringLoaded, filterOptionsLoaded, isActive, runFirstPageSearch]);
 
   useEffect(() => {
     if (!isActive) return;
     if (!filterOptionsLoaded) return;
 
     if (filtersLoaded) {
-      dispatch({ type: 'SET_PAGE', payload: 1 });
-      handleSearch(1);
+      runFirstPageSearch();
     }
     dispatch({ type: 'MARK_FILTERS_LOADED' });
   }, [
@@ -342,6 +418,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedStudentFacingCategory,
     selectedTermOfAward,
     selectedPurpose,
+    selectedSubjects,
     selectedRegions,
     selectedCitizenship,
     selectedStudentVisibilityTier,
@@ -349,6 +426,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     sortOrder,
     filterOptionsLoaded,
     isActive,
+    filtersLoaded,
+    runFirstPageSearch,
   ]);
 
   useEffect(() => {
@@ -356,7 +435,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     if (page > 1 && filterOptionsLoaded) {
       handleSearch(page);
     }
-  }, [page, filterOptionsLoaded, isActive]);
+  }, [page, filterOptionsLoaded, isActive, handleSearch]);
 
   return (
     <FellowshipSearchContext.Provider
@@ -377,6 +456,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         setSelectedTermOfAward,
         selectedPurpose,
         setSelectedPurpose,
+        selectedSubjects,
+        setSelectedSubjects,
         selectedRegions,
         setSelectedRegions,
         selectedCitizenship,
@@ -396,6 +477,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         setPage,
         pageSize,
         total,
+        journeySummary,
         filterOptions,
         sortableKeys,
         refreshFellowships,

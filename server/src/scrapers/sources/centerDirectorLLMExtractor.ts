@@ -4,8 +4,8 @@
  * Organizational research homes (CENTER / INSTITUTE / INITIATIVE / CORE_FACILITY)
  * have no single PI, so the membership rosters scraped by
  * `centersInstitutesScraper` tag everyone `core-faculty` and the public
- * "Principal Investigator" panel renders empty. The actual leader — the
- * center's Director / Executive Director / Faculty Director — is named on a
+ * research detail leadership display renders empty. The actual leader - the
+ * center's Director / Executive Director / Faculty Director - is named on a
  * separate leadership/about page that the roster scrape never reads.
  *
  * This source closes that gap. For each organizational home with an official
@@ -21,7 +21,7 @@
  * Conservatism is load-bearing, mirroring `centerAffiliationLLMExtractor`: the
  * LLM output is an observation, not a conclusion. The materializer
  * (`materializeInferredDirectorMembership`) resolves the named director to a
- * unique Yale User and only then promotes them to a `director` member — an
+ * unique canonical Researcher and only then promotes them to a `director` member — an
  * unresolved or hallucinated name never mints a lead. We intentionally extract
  * only the single top director; co-directors and multi-leader rosters are out
  * of scope for this source.
@@ -32,13 +32,20 @@ import * as cheerio from 'cheerio';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { normalizeName, splitName } from '../utils/scraperHelpers';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 
 const SOURCE_KEY = 'center-director-llm';
-const DEFAULT_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5-mini';
 const MAX_PROMPT_CHARS = 30_000;
 const MAX_LEADERSHIP_PAGES = 3;
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
@@ -240,7 +247,7 @@ async function defaultCallLLM(input: {
           content:
             'You identify the single top leader of a Yale research center or institute from its official web page. ' +
             'Return the person whose title is Director, Executive Director, Faculty Director, or equivalent head of the center. ' +
-            'Only return a real personal name that literally appears in the provided page text. ' +
+            'Only return a real personal name that literally appears in the provided page text, copied character-for-character exactly as written; never reformat, correct, translate, or complete a name. ' +
             'Never invent a name. If no individual is clearly named as the center\'s director, return {"director":null}. ' +
             'Prefer the overall Director over associate/deputy/co-directors when both appear.',
         },
@@ -254,7 +261,7 @@ async function defaultCallLLM(input: {
           ].join('\n\n'),
         },
       ],
-      temperature: 0,
+      ...openAiChatSampling(input.model),
     },
     {
       headers: {
@@ -268,15 +275,20 @@ async function defaultCallLLM(input: {
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   const parsed = JSON.parse(content) as Partial<CenterDirectorExtraction>;
   const director = parsed.director && typeof parsed.director === 'object' ? parsed.director : null;
-  return { director: director && textValue((director as CenterDirector).name) ? (director as CenterDirector) : null };
+  return {
+    director:
+      director && textValue((director as CenterDirector).name)
+        ? (director as CenterDirector)
+        : null,
+  };
 }
 
 async function defaultCenterFinder(
   options: { only?: string[]; missingLeadOnly?: boolean } = {},
 ): Promise<CandidateCenter[]> {
-  // Local import to keep the model graph lazy and avoid a hard cycle.
-  const { ResearchGroupMember } = await import('../../models/researchGroupMember');
-  const only = Array.from(new Set((options.only || []).map((value) => value.trim()).filter(Boolean)));
+  const only = Array.from(
+    new Set((options.only || []).map((value) => value.trim()).filter(Boolean)),
+  );
   const onlyObjectIds = only
     .map((value) => normalizeCenterDirectorObjectId(value))
     .filter((value): value is string => Boolean(value))
@@ -310,10 +322,12 @@ async function defaultCenterFinder(
   }));
 
   if (options.missingLeadOnly) {
-    const withLead = await ResearchGroupMember.distinct('researchEntityId', {
-      researchEntityId: { $in: (docs as any[]).map((doc) => doc._id) },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-      isCurrentMember: { $ne: false },
+    const withLead = await RoleAssignment.distinct('target.id', {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': { $in: (docs as any[]).map((doc) => doc._id) },
+      role: { $in: ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] },
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
     });
     const withLeadSet = new Set(withLead.map((id: any) => String(id)));
     candidates = candidates.filter((c) => !c._id || !withLeadSet.has(c._id));
@@ -348,7 +362,11 @@ export class CenterDirectorLLMExtractor implements IScraper {
   async extractDirectorForCenter(
     center: CandidateCenter,
     log: (msg: string) => void = () => {},
-  ): Promise<{ observations: ObservationInput[]; director: CenterDirector; sourceUrl: string } | null> {
+  ): Promise<{
+    observations: ObservationInput[];
+    director: CenterDirector;
+    sourceUrl: string;
+  } | null> {
     if (!this.apiKey || !center.websiteUrl || !center.slug) return null;
     let landing: { url: string; html: string } | null = null;
     try {
@@ -366,7 +384,9 @@ export class CenterDirectorLLMExtractor implements IScraper {
         try {
           page = await this.fetchPage(url);
         } catch (error) {
-          log(`[${center.slug}] leadership fetch failed for discovered center URL: ${sanitizeLogValue(error)}`);
+          log(
+            `[${center.slug}] leadership fetch failed for discovered center URL: ${sanitizeLogValue(error)}`,
+          );
           continue;
         }
       }
@@ -408,7 +428,10 @@ export class CenterDirectorLLMExtractor implements IScraper {
       new Set((ctx.options.only || []).map((v) => String(v).trim()).filter(Boolean)),
     );
     const offset = Math.max(0, Number(ctx.options.offset) || 0);
-    const limit = Math.max(1, Number(ctx.options.limit) || 100);
+    const limit =
+      ctx.options.exhaustive && ctx.options.limit === undefined
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, Number(ctx.options.limit) || 100);
     const candidates = (await this.centerFinder({ only, missingLeadOnly: true }))
       .filter((c) => c.websiteUrl && c.slug)
       .slice(offset, offset + limit);
@@ -416,12 +439,16 @@ export class CenterDirectorLLMExtractor implements IScraper {
     let observationCount = 0;
     let entitiesObserved = 0;
 
-    for (const center of candidates) {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+    await mapWithConcurrency(candidates, concurrency, async (center) => {
       try {
         const result = await this.extractDirectorForCenter(center, ctx.log);
         if (!result) {
           ctx.log(`[${center.slug}] no director named on leadership pages.`);
-          continue;
+          return;
         }
         await ctx.emit(result.observations);
         observationCount += result.observations.length;
@@ -430,7 +457,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
       } catch (error) {
         ctx.log(`[${center.slug}] director extraction failed: ${sanitizeLogValue(error)}`);
       }
-    }
+    });
 
     return {
       observationCount,

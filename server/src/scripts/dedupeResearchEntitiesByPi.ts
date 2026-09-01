@@ -4,13 +4,27 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment } from '../models/roleAssignment';
 import {
   buildFundingResearchEntityDedupePlan,
   buildOfficialLabUrlResearchEntityDedupePlan,
+  buildMultiPersonEntityQuarantine,
+  buildOrgNameResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
+  buildSameNameDifferentPersonQuarantine,
+  buildSharedPersonIdResearchEntityDedupePlan,
+  buildSpecificProfileLabUrlResearchEntityDedupePlan,
+  buildWebsiteUrlResearchEntityDedupePlan,
+  normalizeWebsiteUrlIdentityKey,
+  specificProfileLabUrlIdentityKey,
+  ORG_NAME_DEDUPE_ENTITY_TYPES,
+  isLowTrustAreaShellSlug,
+  type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
+  type OrgNameDedupeEntity,
   type ResearchEntityPiDedupeRow,
+  type SameNameDifferentPersonQuarantine,
+  type WebsiteUrlDedupeRow,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
 } from './researchEntityPiDedupeCore';
@@ -20,7 +34,24 @@ import {
   type ArchivedEntityArtifactType,
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { isSweepStageOptedIn } from './sweepStageFlags';
+import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
+import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
+import { recordResearchEntityMergeRedirects } from '../services/researchEntityMergeRedirectService';
+import {
+  repairMergeSurvivorVisibility,
+  type MergeSurvivorVisibilityRepair,
+} from '../services/researchEntityMergeSurvivorVisibilityService';
+import { computeResearchEntityStudentVisibility } from '../services/studentVisibilityTier';
+import {
+  getResearchEntityRosterByEntityId,
+  type ResearchEntityRosterEntry,
+} from '../services/researchEntityMembershipAccessor';
+import { buildGateLeadRow } from './retireForeignLeadGraftsCore';
+import {
+  fullDescriptionQuality,
+  shortDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -41,6 +72,13 @@ export interface ResearchEntityDedupeMergeGroup {
   mergedDepartments: string[];
   mergedResearchAreas: string[];
   mergedSourceUrls: string[];
+  canonicalName?: string;
+  canonicalWebsiteUrl?: string;
+  canonicalFullDescription?: string;
+  canonicalShortDescription?: string;
+  mergedRecentGrants?: unknown[];
+  mergedRecentGrantCount?: number;
+  mergedFundingAgencies?: string[];
 }
 
 export type ResearchEntityPiDedupeDecisionValue =
@@ -55,7 +93,11 @@ export interface ResearchEntityPiDedupeArgs {
   fundingOnly: boolean;
   fullPlan: boolean;
   officialLabUrlOnly: boolean;
+  profileLabUrlOnly: boolean;
+  orgNameOnly: boolean;
+  websiteUrlOnly: boolean;
   reviewedProfileAreaOnly: boolean;
+  sharedPersonId: boolean;
   limit: number;
   limitProvided: boolean;
   maxApply: number;
@@ -112,6 +154,8 @@ export interface ResearchEntityPiDedupeDecisionTemplate {
     duplicateSlugs: string[];
     mergedDepartments: string[];
     mergedResearchAreas: string[];
+    canonicalName?: string;
+    canonicalWebsiteUrl?: string;
     dedupeCategory?: string;
     decision: '';
     reviewedBy: '';
@@ -127,7 +171,11 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     fundingOnly: false,
     fullPlan: false,
     officialLabUrlOnly: false,
+    profileLabUrlOnly: false,
+    orgNameOnly: false,
+    websiteUrlOnly: false,
     reviewedProfileAreaOnly: false,
+    sharedPersonId: false,
     limit: 10000,
     limitProvided: false,
     maxApply: 10,
@@ -168,8 +216,24 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
       args.officialLabUrlOnly = true;
       continue;
     }
+    if (arg === '--profile-lab-url-only') {
+      args.profileLabUrlOnly = true;
+      continue;
+    }
+    if (arg === '--org-name-only') {
+      args.orgNameOnly = true;
+      continue;
+    }
+    if (arg === '--website-url-only') {
+      args.websiteUrlOnly = true;
+      continue;
+    }
     if (arg === '--reviewed-profile-area-only') {
       args.reviewedProfileAreaOnly = true;
+      continue;
+    }
+    if (arg === '--shared-person-id') {
+      args.sharedPersonId = true;
       continue;
     }
     if (arg === '--allow-empty-decisions') {
@@ -289,8 +353,7 @@ export function assertResearchEntityPiDedupeApplyAllowed(args: {
 }): void {
   if (!args.apply) return;
   const plannedRepairs =
-    Math.max(0, args.plannedDuplicateEntities) +
-    Math.max(0, args.plannedDuplicateCurrentMembers);
+    Math.max(0, args.plannedDuplicateEntities) + Math.max(0, args.plannedDuplicateCurrentMembers);
   if (plannedRepairs > args.maxApply) {
     throw new Error(`Apply would modify ${plannedRepairs} rows, above --max-apply.`);
   }
@@ -382,6 +445,8 @@ export function buildResearchEntityPiDedupeDecisionTemplate(
       duplicateSlugs: plan.duplicateSlugs,
       mergedDepartments: plan.mergedDepartments,
       mergedResearchAreas: plan.mergedResearchAreas,
+      canonicalName: plan.canonicalName,
+      canonicalWebsiteUrl: plan.canonicalWebsiteUrl,
       dedupeCategory: plan.dedupeCategory,
       decision: '',
       reviewedBy: '',
@@ -412,7 +477,9 @@ export function readResearchEntityPiDedupeDecisions(
       'Accepted decisions artifact must be a JSON array or an object with a decisions array.',
     );
   }
-  return decisions.map((decision, index) => normalizeResearchEntityPiDedupeDecision(decision, index));
+  return decisions.map((decision, index) =>
+    normalizeResearchEntityPiDedupeDecision(decision, index),
+  );
 }
 
 function normalizeResearchEntityPiDedupeDecision(
@@ -482,8 +549,9 @@ export function validateResearchEntityPiDedupeDecisions(
       (sum, count) => sum + Math.max(0, count - 1),
       0,
     ),
-    unreviewedPlanCount: plans.filter((plan) => !validPlanIds.has(researchEntityPiDedupePlanId(plan)))
-      .length,
+    unreviewedPlanCount: plans.filter(
+      (plan) => !validPlanIds.has(researchEntityPiDedupePlanId(plan)),
+    ).length,
     decisionsByType: Array.from(decisionsByType.entries()).map(([decision, count]) => ({
       decision,
       count,
@@ -501,7 +569,9 @@ export function selectResearchEntityPiDedupePlansForAcceptedMergeApply(
   }
   const planById = new Map(plans.map((plan) => [researchEntityPiDedupePlanId(plan), plan]));
   return validation.decisions
-    .filter((decision) => decision.status === 'valid' && decision.decision === 'merge_into_canonical')
+    .filter(
+      (decision) => decision.status === 'valid' && decision.decision === 'merge_into_canonical',
+    )
     .map((decision) => planById.get(decision.planId))
     .filter((plan): plan is ResearchEntityPiDedupePlanGroup => Boolean(plan));
 }
@@ -521,7 +591,9 @@ function validateResearchEntityPiDedupeDecision(
   if ((planIdCounts.get(decision.planId) || 0) > 1) {
     errors.push('Only one accepted decision is allowed per planId.');
   }
-  if (!['merge_into_canonical', 'mark_distinct_homes', 'defer_review'].includes(decision.decision)) {
+  if (
+    !['merge_into_canonical', 'mark_distinct_homes', 'defer_review'].includes(decision.decision)
+  ) {
     errors.push(
       'decision must be one of merge_into_canonical, mark_distinct_homes, or defer_review.',
     );
@@ -615,7 +687,9 @@ export function buildResearchEntityDedupeReferenceFilter(args: {
   };
 }
 
-function isReviewedProfileAreaGroup(group: ReturnType<typeof buildResearchEntityPiDedupePlan>[number]) {
+function isReviewedProfileAreaGroup(
+  group: ReturnType<typeof buildResearchEntityPiDedupePlan>[number],
+) {
   if (group.dedupeCategory === 'profile_area_shell_with_concrete_home') return true;
   const canonicalSlug = String(group.canonicalSlug || '');
   return (
@@ -623,6 +697,8 @@ function isReviewedProfileAreaGroup(group: ReturnType<typeof buildResearchEntity
     !canonicalSlug.startsWith('faculty-research-area-') &&
     !canonicalSlug.startsWith('nih-pi-') &&
     !canonicalSlug.startsWith('nsf-pi-') &&
+    !canonicalSlug.startsWith('federal-pi-') &&
+    !canonicalSlug.startsWith('doe-pi-') &&
     group.duplicateSlugs.every((slug) => String(slug || '').startsWith('faculty-research-area-'))
   );
 }
@@ -635,9 +711,11 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
     duplicateSlugs: string[];
     mergedDepartments?: string[];
     mergedResearchAreas?: string[];
+    canonicalName?: string;
+    canonicalWebsiteUrl?: string;
   }>,
 ) {
-  const fundingSlugPattern = /^(nih|nsf)-pi-/;
+  const fundingSlugPattern = /^(nih|nsf|federal)-pi-/;
   const uniqueCount = (values: unknown[] | undefined) =>
     new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean)).size;
   const reviewedProfileAreaGroups = groups.filter((group) =>
@@ -648,13 +726,20 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
       fundingSlugPattern.test(String(slug || '')),
     ),
   ).length;
-  const crossDepartmentGroups = groups.filter((group) => uniqueCount(group.mergedDepartments) > 1)
-    .length;
+  const crossDepartmentGroups = groups.filter(
+    (group) => uniqueCount(group.mergedDepartments) > 1,
+  ).length;
   const groupsWithMergedResearchAreas = groups.filter(
     (group) => uniqueCount(group.mergedResearchAreas) > 0,
   ).length;
   const highResearchAreaMergeGroups = groups.filter(
     (group) => uniqueCount(group.mergedResearchAreas) >= 6,
+  ).length;
+  const groupsCarryingCanonicalName = groups.filter((group) =>
+    Boolean(String(group.canonicalName || '').trim()),
+  ).length;
+  const groupsCarryingCanonicalWebsite = groups.filter((group) =>
+    Boolean(String(group.canonicalWebsiteUrl || '').trim()),
   ).length;
 
   return {
@@ -668,6 +753,8 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
     crossDepartmentGroups,
     groupsWithMergedResearchAreas,
     highResearchAreaMergeGroups,
+    groupsCarryingCanonicalName,
+    groupsCarryingCanonicalWebsite,
     recommendedNarrowCommands: [
       betaCommand(
         'yarn --cwd server research-entity:dedupe-by-pi --reviewed-profile-area-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-reviewed-profile-area.json',
@@ -685,12 +772,7 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
 const ARTIFACT_SPECS: Array<{
   artifactType: ArchivedEntityArtifactType;
   collection: string;
-}> = [
-  { artifactType: 'EntryPathway', collection: 'entry_pathways' },
-  { artifactType: 'AccessSignal', collection: 'access_signals' },
-  { artifactType: 'ContactRoute', collection: 'contact_routes' },
-  { artifactType: 'PostedOpportunity', collection: 'posted_opportunities' },
-];
+}> = [{ artifactType: 'AccessSignal', collection: 'signals' }];
 
 const SCALAR_REFERENCE_SPECS: Array<{
   collection: string;
@@ -700,10 +782,7 @@ const SCALAR_REFERENCE_SPECS: Array<{
 }> = [
   { collection: 'research_entities', field: 'canonicalGroupId' },
   { collection: 'research_scholarly_links', field: 'researchEntityId', archiveOnConflict: true },
-  { collection: 'entry_pathways', field: 'researchEntityId', archiveOnConflict: true },
-  { collection: 'access_signals', field: 'researchEntityId', archiveOnConflict: true },
-  { collection: 'contact_routes', field: 'researchEntityId', archiveOnConflict: true },
-  { collection: 'posted_opportunities', field: 'researchEntityId', archiveOnConflict: true },
+  { collection: 'signals', field: 'researchEntityId', archiveOnConflict: true },
   {
     collection: 'research_entity_relationships',
     field: 'sourceResearchEntityId',
@@ -716,6 +795,12 @@ const SCALAR_REFERENCE_SPECS: Array<{
   },
   { collection: 'observations', field: 'entityId', filter: { entityType: 'researchEntity' } },
   { collection: 'observations', field: 'entityId', filter: { entityType: 'researchGroup' } },
+  {
+    collection: 'research_plans',
+    field: 'target.id',
+    filter: { 'target.kind': 'RESEARCH_ENTITY' },
+    archiveOnConflict: true,
+  },
 ];
 
 const ARRAY_REFERENCE_SPECS: Array<{
@@ -750,20 +835,35 @@ function isFullPersonLabName(normalizedName: string): boolean {
   return /\s+lab$/i.test(normalizedName) && tokens.length >= 2;
 }
 
-async function loadSamePiCandidateRows(limit: number, options: { includeRetiredMembers: boolean }) {
-  const memberMatch: Record<string, unknown> = {
-    role: 'pi',
-    researchEntityId: { $exists: true, $ne: null },
-    userId: { $exists: true, $ne: null },
+export async function loadSamePiCandidateRows(
+  limit: number,
+  options: {
+    includeRetiredMembers: boolean;
+    personIds?: Array<string | mongoose.Types.ObjectId>;
+  },
+) {
+  const assignmentMatch: Record<string, unknown> = {
+    'target.kind': 'RESEARCH_ENTITY',
+    role: 'PI',
+    'target.id': { $exists: true, $ne: null },
+    personId: { $exists: true, $ne: null },
+    archived: { $ne: true },
   };
-  if (!options.includeRetiredMembers) memberMatch.isCurrentMember = { $ne: false };
+  if (!options.includeRetiredMembers) assignmentMatch.state = { $ne: 'HISTORICAL' };
+  if (options.personIds) {
+    const scopedPersonIds = options.personIds
+      .map((personId) => normalizeResearchEntityPiDedupeObjectId(personId))
+      .filter((personId): personId is mongoose.Types.ObjectId => Boolean(personId));
+    if (scopedPersonIds.length === 0) return [];
+    assignmentMatch.personId = { $in: scopedPersonIds };
+  }
 
-  const rows = await ResearchGroupMember.aggregate([
-    { $match: memberMatch },
+  const rows = await RoleAssignment.aggregate([
+    { $match: assignmentMatch },
     {
       $lookup: {
         from: 'research_entities',
-        localField: 'researchEntityId',
+        localField: 'target.id',
         foreignField: '_id',
         as: 'entity',
       },
@@ -772,18 +872,17 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
     { $match: { 'entity.archived': { $ne: true } } },
     {
       $lookup: {
-        from: 'users',
-        localField: 'userId',
+        from: 'researchers',
+        localField: 'personId',
         foreignField: '_id',
-        as: 'user',
+        as: 'person',
       },
     },
-    { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$person', preserveNullAndEmptyArrays: true } },
     {
       $project: {
-        userId: { $toString: '$userId' },
-        piFirstName: '$user.fname',
-        piLastName: '$user.lname',
+        personId: { $toString: '$personId' },
+        piDisplayName: '$person.displayName',
         entity: {
           id: { $toString: '$entity._id' },
           slug: '$entity.slug',
@@ -796,14 +895,16 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
           sourceUrls: '$entity.sourceUrls',
           departments: '$entity.departments',
           researchAreas: '$entity.researchAreas',
+          recentGrants: '$entity.recentGrants',
+          recentGrantCount: '$entity.recentGrantCount',
+          fundingAgencies: '$entity.fundingAgencies',
         },
       },
     },
     {
       $group: {
-        _id: { userId: '$userId' },
-        piFirstName: { $first: '$piFirstName' },
-        piLastName: { $first: '$piLastName' },
+        _id: { userId: '$personId' },
+        piDisplayName: { $first: '$piDisplayName' },
         entities: { $addToSet: '$entity' },
       },
     },
@@ -812,8 +913,13 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
 
   return Promise.all(
     rows.map(async (row: any) => {
-      const firstName = String(row.piFirstName || '').trim();
-      const lastName = String(row.piLastName || '').trim();
+      const displayNameParts = String(row.piDisplayName || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      const lastName =
+        displayNameParts.length > 0 ? displayNameParts[displayNameParts.length - 1] : '';
+      const firstName = displayNameParts.slice(0, -1).join(' ');
       const entityIds = new Set((row.entities || []).map((entity: { id?: string }) => entity.id));
       const exactPersonNames = profileAreaNamesForPi(firstName, lastName);
       const profileAreaEntities =
@@ -823,7 +929,7 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
               name: { $in: exactPersonNames },
             })
               .select(
-                '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas',
+                '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies',
               )
               .lean()
           : [];
@@ -831,10 +937,13 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
       return {
         userId: row._id.userId,
         normalizedName: `same-pi:${row._id.userId}`,
-        piFirstName: row.piFirstName,
-        piLastName: row.piLastName,
+        piFirstName: firstName,
+        piLastName: lastName,
         entities: [
-          ...(row.entities || []),
+          ...(row.entities || []).map((entity: { id?: string }) => ({
+            ...entity,
+            piRoleCorroborated: true,
+          })),
           ...profileAreaEntities
             .map((entity: any) => ({
               id: serializedDocumentId(entity._id) || '',
@@ -848,6 +957,9 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
               sourceUrls: entity.sourceUrls,
               departments: entity.departments,
               researchAreas: entity.researchAreas,
+              recentGrants: entity.recentGrants,
+              recentGrantCount: entity.recentGrantCount,
+              fundingAgencies: entity.fundingAgencies,
             }))
             .filter((entity) => {
               if (entityIds.has(entity.id)) return false;
@@ -878,6 +990,9 @@ async function loadSinglePiNameCandidateRows(limit: number) {
           sourceUrls: '$sourceUrls',
           departments: '$departments',
           researchAreas: '$researchAreas',
+          recentGrants: '$recentGrants',
+          recentGrantCount: '$recentGrantCount',
+          fundingAgencies: '$fundingAgencies',
         },
       },
     },
@@ -891,18 +1006,20 @@ async function loadSinglePiNameCandidateRows(limit: number) {
     { $match: { 'entities.1': { $exists: true } } },
     {
       $lookup: {
-        from: 'research_entity_members',
+        from: 'role_assignments',
         let: { entityIds: '$entityIds' },
         pipeline: [
           {
             $match: {
-              $expr: { $in: ['$researchEntityId', '$$entityIds'] },
-              role: 'pi',
-              isCurrentMember: { $ne: false },
-              userId: { $exists: true, $ne: null },
+              $expr: { $in: ['$target.id', '$$entityIds'] },
+              'target.kind': 'RESEARCH_ENTITY',
+              role: 'PI',
+              state: { $ne: 'HISTORICAL' },
+              archived: { $ne: true },
+              personId: { $exists: true, $ne: null },
             },
           },
-          { $group: { _id: '$userId' } },
+          { $group: { _id: '$personId' } },
         ],
         as: 'piUsers',
       },
@@ -1013,29 +1130,224 @@ async function loadOfficialLabUrlCandidateRows(limit: number) {
   );
 }
 
-async function loadDuplicateCurrentMemberRows(limit: number) {
-  return ResearchGroupMember.aggregate([
+async function loadSpecificProfileLabUrlCandidateRows(
+  limit: number,
+): Promise<OfficialLabUrlDedupeRow[]> {
+  const rows = await ResearchEntity.aggregate([
+    { $match: { archived: { $ne: true } } },
+    {
+      $project: {
+        entity: {
+          id: { $toString: '$_id' },
+          slug: '$slug',
+          name: '$name',
+          kind: '$kind',
+          entityType: '$entityType',
+          websiteUrl: '$websiteUrl',
+          fullDescription: '$fullDescription',
+          shortDescription: '$shortDescription',
+          sourceUrls: '$sourceUrls',
+          departments: '$departments',
+          researchAreas: '$researchAreas',
+        },
+        urls: {
+          $setUnion: [
+            { $cond: [{ $ne: [{ $type: '$websiteUrl' }, 'missing'] }, ['$websiteUrl'], []] },
+            { $cond: [{ $ne: [{ $type: '$website' }, 'missing'] }, ['$website'], []] },
+            { $ifNull: ['$sourceUrls', []] },
+          ],
+        },
+      },
+    },
+    { $unwind: '$urls' },
+    { $project: { url: '$urls', entity: 1 } },
     {
       $match: {
-        isCurrentMember: { $ne: false },
-        researchEntityId: { $exists: true, $ne: null },
-        userId: { $exists: true, $ne: null },
+        url: {
+          $regex: '^https?://([a-z0-9-]+\\.)*yale\\.edu/(lab|profile)/[^/]+/?$',
+          $options: 'i',
+        },
+      },
+    },
+    {
+      $group: {
+        _id: '$url',
+        entities: { $addToSet: '$entity' },
+      },
+    },
+  ]).allowDiskUse(true);
+
+  const byKey = new Map<string, OfficialLabUrlDedupeRow>();
+  for (const row of rows as Array<{
+    _id: string;
+    entities: ResearchEntityPiDedupeRow['entities'];
+  }>) {
+    const key = specificProfileLabUrlIdentityKey(row._id);
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (existing) {
+      const seen = new Set(existing.entities.map((entity) => entity.id));
+      for (const entity of row.entities) {
+        if (!seen.has(entity.id)) existing.entities.push(entity);
+      }
+    } else {
+      byKey.set(key, { url: row._id, entities: [...row.entities] });
+    }
+  }
+
+  return Array.from(byKey.values())
+    .filter((row) => row.entities.length > 1)
+    .sort((a, b) => a.url.localeCompare(b.url))
+    .slice(0, limit);
+}
+
+async function loadOrgNameCandidateRows(limit: number): Promise<OrgNameDedupeEntity[]> {
+  return ResearchEntity.aggregate([
+    {
+      $match: {
+        archived: { $ne: true },
+        entityType: { $in: [...ORG_NAME_DEDUPE_ENTITY_TYPES] },
+        name: { $exists: true, $ne: '' },
+      },
+    },
+    {
+      $lookup: {
+        from: 'role_assignments',
+        let: { entityId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$target.id', '$$entityId'] },
+              'target.kind': 'RESEARCH_ENTITY',
+              state: { $ne: 'HISTORICAL' },
+              archived: { $ne: true },
+              personId: { $exists: true, $ne: null },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              memberCount: { $sum: 1 },
+              piCount: { $sum: { $cond: [{ $eq: ['$role', 'PI'] }, 1, 0] } },
+            },
+          },
+        ],
+        as: 'membership',
+      },
+    },
+    {
+      $project: {
+        id: { $toString: '$_id' },
+        slug: '$slug',
+        name: '$name',
+        displayName: '$displayName',
+        entityType: '$entityType',
+        websiteUrl: '$websiteUrl',
+        fullDescription: '$fullDescription',
+        shortDescription: '$shortDescription',
+        sourceUrls: '$sourceUrls',
+        departments: '$departments',
+        researchAreas: '$researchAreas',
+        memberCount: { $ifNull: [{ $arrayElemAt: ['$membership.memberCount', 0] }, 0] },
+        hasAttachedPi: {
+          $gt: [{ $ifNull: [{ $arrayElemAt: ['$membership.piCount', 0] }, 0] }, 0],
+        },
+      },
+    },
+    { $sort: { id: 1 } },
+    { $limit: limit },
+  ]).then((rows) => rows as OrgNameDedupeEntity[]);
+}
+
+async function loadWebsiteUrlCandidateRows(limit: number): Promise<WebsiteUrlDedupeRow[]> {
+  const entities = await ResearchEntity.aggregate([
+    {
+      $match: {
+        archived: { $ne: true },
+        websiteUrl: { $exists: true, $nin: ['', null] },
+      },
+    },
+    {
+      $lookup: {
+        from: 'role_assignments',
+        let: { entityId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$target.id', '$$entityId'] },
+              'target.kind': 'RESEARCH_ENTITY',
+              role: 'PI',
+              state: { $ne: 'HISTORICAL' },
+              archived: { $ne: true },
+              personId: { $exists: true, $ne: null },
+            },
+          },
+          { $limit: 1 },
+        ],
+        as: 'piMembership',
+      },
+    },
+    {
+      $project: {
+        id: { $toString: '$_id' },
+        slug: '$slug',
+        name: '$name',
+        kind: '$kind',
+        entityType: '$entityType',
+        websiteUrl: '$websiteUrl',
+        fullDescription: '$fullDescription',
+        shortDescription: '$shortDescription',
+        sourceUrls: '$sourceUrls',
+        departments: '$departments',
+        researchAreas: '$researchAreas',
+        recentGrants: '$recentGrants',
+        recentGrantCount: '$recentGrantCount',
+        fundingAgencies: '$fundingAgencies',
+        piRoleCorroborated: { $gt: [{ $size: '$piMembership' }, 0] },
+      },
+    },
+    { $sort: { id: 1 } },
+  ]);
+
+  const byKey = new Map<string, WebsiteUrlDedupeRow>();
+  for (const entity of entities as ResearchEntityPiDedupeRow['entities']) {
+    const key = normalizeWebsiteUrlIdentityKey(entity.websiteUrl);
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (existing) existing.entities.push(entity);
+    else byKey.set(key, { websiteUrl: entity.websiteUrl || '', entities: [entity] });
+  }
+
+  return Array.from(byKey.values())
+    .filter((row) => row.entities.length > 1)
+    .slice(0, limit);
+}
+
+async function loadDuplicateCurrentMemberRows(limit: number) {
+  return RoleAssignment.aggregate([
+    {
+      $match: {
+        'target.kind': 'RESEARCH_ENTITY',
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+        'target.id': { $exists: true, $ne: null },
+        personId: { $exists: true, $ne: null },
       },
     },
     {
       $group: {
         _id: {
-          researchEntityId: '$researchEntityId',
-          userId: '$userId',
+          researchEntityId: '$target.id',
+          userId: '$personId',
           role: '$role',
         },
         members: {
           $push: {
             id: { $toString: '$_id' },
             confidence: '$confidence',
-            lastObservedAt: '$lastObservedAt',
+            lastObservedAt: '$rosterProvenance.observedAt',
             updatedAt: '$updatedAt',
-            sourceUrl: '$sourceUrl',
+            sourceUrl: '$rosterProvenance.sourceUrl',
           },
         },
       },
@@ -1129,7 +1441,7 @@ async function loadArtifactsForDeleteMode(args: {
         researchEntityId: stringId(row.researchEntityId),
         canonicalResearchEntityId: stringId(args.canonicalId),
         derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.signalType),
+        signalType: stringId(row.type),
         entryPathwayId: stringId(row.entryPathwayId),
       });
     }
@@ -1140,7 +1452,7 @@ async function loadArtifactsForDeleteMode(args: {
         researchEntityId: stringId(row.researchEntityId),
         canonicalResearchEntityId: stringId(row.researchEntityId),
         derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.signalType),
+        signalType: stringId(row.type),
         entryPathwayId: stringId(row.entryPathwayId),
       });
     }
@@ -1288,26 +1600,6 @@ async function applyDeleteModeArtifactPlan(args: {
       counts.artifactMerged += result.modifiedCount || 0;
     }
 
-    if (item.artifactType === 'EntryPathway') {
-      const [signals, routes, opportunities] = await Promise.all(
-        [
-          { collection: 'access_signals', field: 'entryPathwayId' },
-          { collection: 'contact_routes', field: 'entryPathwayId' },
-          { collection: 'posted_opportunities', field: 'entryPathwayId' },
-        ].map(async (child) => {
-          if (!(await collectionExists(child.collection))) return { modifiedCount: 0 };
-          return db.collection(child.collection).updateMany(
-            { [child.field]: objectId(item.duplicateId), archived: { $ne: true } },
-            { $set: { [child.field]: objectId(item.canonicalId), lastMaterializedAt: args.now } },
-          );
-        }),
-      );
-      counts.artifactChildrenRelinked +=
-        (signals.modifiedCount || 0) +
-        (routes.modifiedCount || 0) +
-        (opportunities.modifiedCount || 0);
-    }
-
     const outcome = await archiveOrDeleteDuplicateDocument({
       collectionName: spec.collection,
       id: item.duplicateId,
@@ -1350,8 +1642,7 @@ async function relinkScalarReferences(args: {
           { $set: { [spec.field]: args.canonicalId } },
         );
         counts[`${spec.collection}.${spec.field}.relinked`] =
-          (counts[`${spec.collection}.${spec.field}.relinked`] || 0) +
-          (result.modifiedCount || 0);
+          (counts[`${spec.collection}.${spec.field}.relinked`] || 0) + (result.modifiedCount || 0);
       } catch (error: any) {
         if (error?.code !== 11000) throw error;
         const action = chooseResearchEntityPiDedupeConflictAction({
@@ -1375,9 +1666,9 @@ async function relinkScalarReferences(args: {
                 relinkValue: args.canonicalId,
                 allowDeleteOnConflict: false,
               })
-            : await collection.deleteOne({ _id: row._id }).then((result) =>
-                result.deletedCount > 0 ? 'deleted' : 'skipped',
-              );
+            : await collection
+                .deleteOne({ _id: row._id })
+                .then((result) => (result.deletedCount > 0 ? 'deleted' : 'skipped'));
         counts[`${spec.collection}.${spec.field}.conflict.${outcome}`] =
           (counts[`${spec.collection}.${spec.field}.conflict.${outcome}`] || 0) + 1;
       }
@@ -1397,9 +1688,9 @@ async function relinkArrayReferences(args: {
 
   for (const spec of ARRAY_REFERENCE_SPECS) {
     if (!(await collectionExists(spec.collection))) continue;
-    const result = await db.collection(spec.collection).updateMany(
-      { [spec.field]: { $in: args.duplicateIds } },
-      [
+    const result = await db
+      .collection(spec.collection)
+      .updateMany({ [spec.field]: { $in: args.duplicateIds } }, [
         {
           $set: {
             [spec.field]: {
@@ -1418,8 +1709,7 @@ async function relinkArrayReferences(args: {
             },
           },
         },
-      ],
-    );
+      ]);
     counts[`${spec.collection}.${spec.field}.relinked`] = result.modifiedCount || 0;
   }
 
@@ -1470,30 +1760,325 @@ async function countRemainingDuplicateReferences(
   return counts;
 }
 
+export const SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV =
+  'SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES';
+export const DEFAULT_URL_IDENTITY_MERGE_MAX = 500;
+
+export function isUrlIdentityDedupeStageEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isSweepStageOptedIn(env[SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV]);
+}
+
+const STUDENT_VISIBILITY_TIER_RANK: Record<string, number> = {
+  student_ready: 3,
+  limited_but_safe: 2,
+  operator_review: 1,
+  suppressed: 0,
+};
+const STUDENT_VISIBILITY_RANK_TIER = [
+  'suppressed',
+  'operator_review',
+  'limited_but_safe',
+  'student_ready',
+];
+const mergeTierRank = (tier: unknown): number =>
+  STUDENT_VISIBILITY_TIER_RANK[String(tier ?? '')] ?? STUDENT_VISIBILITY_TIER_RANK.operator_review;
+
+const MERGE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+
+function renderLeadMembersFromRoster(
+  entries: ResearchEntityRosterEntry[],
+  researchEntityId: mongoose.Types.ObjectId,
+): Array<Record<string, any>> {
+  return entries
+    .filter(
+      (entry) =>
+        entry &&
+        entry.state !== 'HISTORICAL' &&
+        MERGE_LEAD_ROLES.has(String(entry.role ?? '').toLowerCase()),
+    )
+    .map((entry) => ({
+      ...buildGateLeadRow(entry),
+      researchEntityId,
+      userId: entry.personId,
+    }));
+}
+
+function pickBestUsefulText(values: string[], isUseful: (value: string) => boolean): string {
+  const cleaned = values.map((value) => (value || '').trim()).filter(Boolean);
+  const useful = cleaned.filter(isUseful);
+  const pool = useful.length > 0 ? useful : cleaned;
+  return pool.sort((a, b) => b.length - a.length)[0] || '';
+}
+
+/**
+ * Picks the descriptions a merge survivor should end up with: the longest
+ * quality-passing `fullDescription` and `shortDescription` across every twin,
+ * read from the live documents rather than from a plan-time projection.
+ *
+ * This is deliberately lane-agnostic. The plan builders each compute their own
+ * `canonicalFullDescription` carry from an aggregate projection, and not every
+ * lane computes one, so a merge that relied on the plan could leave the richer
+ * paragraph stranded on the archived twin (#2208).
+ */
+function bestMergeDescriptions(
+  docs: Array<Record<string, any>>,
+  unionAreas: string[],
+): { fullDescription: string; shortDescription: string } {
+  const fullDescription = pickBestUsefulText(
+    docs.map((doc) => String(doc.fullDescription || '')),
+    (value) => fullDescriptionQuality(value).isUseful,
+  );
+  const shortDescription = pickBestUsefulText(
+    docs.map((doc) => String(doc.shortDescription || '')),
+    (value) => shortDescriptionQuality(value, fullDescription, unionAreas, {}).isUseful,
+  );
+  return { fullDescription, shortDescription };
+}
+
+/**
+ * Lane-agnostic description hydration for the merge apply path. `neverDemote`
+ * already hydrates as part of its simulate-then-verify resolution; every other
+ * lane previously fell back to whatever the plan carried, which is how the
+ * richer paragraph was stranded in #2208.
+ */
+async function hydrateMergeDescriptions(
+  canonicalId: mongoose.Types.ObjectId,
+  duplicateIds: mongoose.Types.ObjectId[],
+): Promise<{ fullDescription: string; shortDescription: string }> {
+  const allDocs = await ResearchEntity.find({ _id: { $in: [canonicalId, ...duplicateIds] } })
+    .select('_id slug fullDescription shortDescription researchAreas')
+    .lean<Array<Record<string, any>>>();
+  // Mirror the plan builders' `trustedAreaShellEntities` guard: an area or
+  // funding shell's generated blurb must never be promoted onto a real research
+  // home. Fall back to the full set when every twin is a shell, matching the
+  // plan's own fallback.
+  const trusted = allDocs.filter((doc) => !isLowTrustAreaShellSlug(doc.slug));
+  const docs = trusted.length > 0 ? trusted : allDocs;
+  const unionAreas = Array.from(
+    new Set(
+      docs
+        .flatMap((doc) => (Array.isArray(doc.researchAreas) ? doc.researchAreas : []))
+        .map((value) => String(value))
+        .filter(Boolean),
+    ),
+  );
+  return bestMergeDescriptions(docs, unionAreas);
+}
+
+export interface NonDemotingMergeResolution {
+  defer: boolean;
+  canonicalId: mongoose.Types.ObjectId;
+  duplicateIds: mongoose.Types.ObjectId[];
+  hydratedFullDescription: string;
+  hydratedShortDescription: string;
+  bestInputTier: string;
+  simulatedTier: string;
+}
+
+/**
+ * A merge keeps one survivor and archives the rest, so keeping a survivor that
+ * is less student-visible than one of its twins silently drops a lab from
+ * student view (the #2060 regression). This resolves the survivor by
+ * hydrate-then-verify: hydrate a candidate canonical with the best card + the
+ * union of leads/areas/urls across all twins, simulate the served tier with the
+ * pure `computeResearchEntityStudentVisibility` gate, and accept the candidate
+ * only when it does not demote below the best input twin. The preferred
+ * (identity-consistent) canonical is tried first; if it would demote, higher-tier
+ * twins are tried; if none holds the tier the merge is deferred rather than
+ * demoting.
+ */
+export async function resolveNonDemotingMerge(
+  preferredCanonicalId: mongoose.Types.ObjectId,
+  duplicateIds: mongoose.Types.ObjectId[],
+): Promise<NonDemotingMergeResolution> {
+  const allIds = [preferredCanonicalId, ...duplicateIds];
+  const docs = await ResearchEntity.find({ _id: { $in: allIds } }).lean<
+    Array<Record<string, any>>
+  >();
+  const docById = new Map(docs.map((doc) => [String(doc._id), doc]));
+  const bestInputRank = Math.max(
+    ...allIds.map((id) => mergeTierRank(docById.get(String(id))?.studentVisibilityTier)),
+  );
+  const unionStrings = (field: string): string[] =>
+    Array.from(
+      new Set(
+        docs
+          .flatMap((doc) => (Array.isArray(doc[field]) ? doc[field] : []))
+          .map((value) => String(value))
+          .filter(Boolean),
+      ),
+    );
+  const unionAreas = unionStrings('researchAreas');
+  const unionSourceUrls = unionStrings('sourceUrls');
+  const unionDepartments = unionStrings('departments');
+  const { fullDescription: bestFull, shortDescription: bestShort } = bestMergeDescriptions(
+    docs,
+    unionAreas,
+  );
+
+  const rosterMap = await getResearchEntityRosterByEntityId(allIds);
+  const allLeads = allIds.flatMap((id) =>
+    renderLeadMembersFromRoster(rosterMap.get(String(id)) || [], id),
+  );
+
+  const candidateOrder = [
+    preferredCanonicalId,
+    ...duplicateIds
+      .slice()
+      .sort(
+        (a, b) =>
+          mergeTierRank(docById.get(String(b))?.studentVisibilityTier) -
+          mergeTierRank(docById.get(String(a))?.studentVisibilityTier),
+      ),
+  ];
+
+  for (const candidateId of candidateOrder) {
+    const doc = docById.get(String(candidateId));
+    if (!doc) continue;
+    const hypothetical = {
+      ...doc,
+      fullDescription: bestFull || doc.fullDescription,
+      shortDescription: bestShort || doc.shortDescription,
+      researchAreas: unionAreas,
+      sourceUrls: unionSourceUrls,
+      departments: unionDepartments,
+    };
+    const leadMembers = allLeads.map((lead) => ({ ...lead, researchEntityId: candidateId }));
+    const simulated = computeResearchEntityStudentVisibility({
+      entity: hypothetical,
+      leadMembers,
+      duplicateRisk: false,
+      exactUrlDuplicateRisk: false,
+    });
+    if (mergeTierRank(simulated.tier) >= bestInputRank) {
+      return {
+        defer: false,
+        canonicalId: candidateId,
+        duplicateIds: allIds.filter((id) => !id.equals(candidateId)),
+        hydratedFullDescription: bestFull,
+        hydratedShortDescription: bestShort,
+        bestInputTier: STUDENT_VISIBILITY_RANK_TIER[bestInputRank],
+        simulatedTier: simulated.tier,
+      };
+    }
+  }
+
+  return {
+    defer: true,
+    canonicalId: preferredCanonicalId,
+    duplicateIds,
+    hydratedFullDescription: bestFull,
+    hydratedShortDescription: bestShort,
+    bestInputTier: STUDENT_VISIBILITY_RANK_TIER[bestInputRank],
+    simulatedTier: STUDENT_VISIBILITY_RANK_TIER[0],
+  };
+}
+
 export async function applyResearchEntityDedupeMergeGroup(
   group: ResearchEntityDedupeMergeGroup,
-  options: { deleteDuplicates: boolean; relinkReferences?: boolean },
+  options: {
+    deleteDuplicates: boolean;
+    relinkReferences?: boolean;
+    redirectReason?: string;
+    neverDemote?: boolean;
+  },
 ) {
-  const canonicalId = objectId(group.canonicalEntityId);
-  const duplicateIds = group.duplicateEntityIds
+  const requestedCanonicalId = objectId(group.canonicalEntityId);
+  const requestedDuplicateIds = group.duplicateEntityIds
     .map((id) => objectId(id))
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-  if (!canonicalId || duplicateIds.length !== group.duplicateEntityIds.length || duplicateIds.length === 0) {
-    return {
-      canonicalEntityId: group.canonicalEntityId,
-      duplicateEntityIds: group.duplicateEntityIds,
-      canonicalUpdated: 0,
-      archivedEntities: 0,
-      deletedEntities: 0,
-      retiredConflictingMembers: 0,
-      relinkedMembers: 0,
-      artifactRelink: {},
-      scalarRelink: {},
-      arrayRelink: {},
-      remainingReferencesBeforeDelete: {},
-    };
+  const zeroedResult = () => ({
+    canonicalEntityId: group.canonicalEntityId,
+    duplicateEntityIds: group.duplicateEntityIds,
+    canonicalUpdated: 0,
+    archivedEntities: 0,
+    deletedEntities: 0,
+    retiredConflictingMembers: 0,
+    relinkedMembers: 0,
+    artifactRelink: {},
+    scalarRelink: {},
+    arrayRelink: {},
+    remainingReferencesBeforeDelete: {},
+    removedFromSearchIndex: 0,
+    survivorVisibility: { regated: false } as MergeSurvivorVisibilityRepair,
+    survivorIndexResynced: false,
+  });
+  if (
+    !requestedCanonicalId ||
+    requestedDuplicateIds.length !== group.duplicateEntityIds.length ||
+    requestedDuplicateIds.length === 0
+  ) {
+    return zeroedResult();
   }
   const now = new Date();
+
+  let canonicalId = requestedCanonicalId;
+  let duplicateIds = requestedDuplicateIds;
+  let hydratedFullDescription: string | undefined;
+  let hydratedShortDescription: string | undefined;
+  if (options.neverDemote) {
+    const resolution = await resolveNonDemotingMerge(requestedCanonicalId, requestedDuplicateIds);
+    if (resolution.defer) {
+      return {
+        ...zeroedResult(),
+        deferredAsWouldDemote: true,
+        bestInputTier: resolution.bestInputTier,
+      };
+    }
+    canonicalId = resolution.canonicalId;
+    duplicateIds = resolution.duplicateIds;
+    hydratedFullDescription = resolution.hydratedFullDescription;
+    hydratedShortDescription = resolution.hydratedShortDescription;
+  } else {
+    // Fill-only: when the plan builder carried a description we keep it
+    // authoritative, but a lane that carried nothing must not leave the richer
+    // paragraph stranded on the archived twin (#2208).
+    const needsFull = !String(group.canonicalFullDescription || '').trim();
+    const needsShort = !String(group.canonicalShortDescription || '').trim();
+    if (needsFull || needsShort) {
+      const hydrated = await hydrateMergeDescriptions(canonicalId, duplicateIds);
+      if (needsFull) hydratedFullDescription = hydrated.fullDescription;
+      if (needsShort) hydratedShortDescription = hydrated.shortDescription;
+    }
+  }
+
+  const duplicateSlugDocs = await ResearchEntity.find({ _id: { $in: duplicateIds } })
+    .select('_id slug')
+    .lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
+  const duplicateSlugById = new Map(duplicateSlugDocs.map((doc) => [String(doc._id), doc.slug]));
+  await recordResearchEntityMergeRedirects({
+    canonicalEntityId: canonicalId,
+    mergedShells: duplicateIds.map((id) => ({
+      entityId: id,
+      slug: duplicateSlugById.get(String(id)),
+    })),
+    reason: options.redirectReason,
+    mergedAt: now,
+  });
+
+  const canonicalIdentitySet: Record<string, unknown> = { lastObservedAt: new Date() };
+  const carriedName = String(group.canonicalName || '').trim();
+  const carriedWebsiteUrl = String(group.canonicalWebsiteUrl || '').trim();
+  if (carriedName) {
+    canonicalIdentitySet.name = carriedName;
+    canonicalIdentitySet.displayName = carriedName;
+  }
+  if (carriedWebsiteUrl) canonicalIdentitySet.websiteUrl = carriedWebsiteUrl;
+  const carriedFullDescription =
+    (hydratedFullDescription || '').trim() || String(group.canonicalFullDescription || '').trim();
+  const carriedShortDescription =
+    (hydratedShortDescription || '').trim() || String(group.canonicalShortDescription || '').trim();
+  if (carriedFullDescription) canonicalIdentitySet.fullDescription = carriedFullDescription;
+  if (carriedShortDescription) canonicalIdentitySet.shortDescription = carriedShortDescription;
+  if (group.mergedRecentGrants && group.mergedRecentGrants.length > 0) {
+    canonicalIdentitySet.recentGrants = group.mergedRecentGrants;
+  }
+  if (typeof group.mergedRecentGrantCount === 'number' && group.mergedRecentGrantCount > 0) {
+    canonicalIdentitySet.recentGrantCount = group.mergedRecentGrantCount;
+  }
+  if (group.mergedFundingAgencies && group.mergedFundingAgencies.length > 0) {
+    canonicalIdentitySet.fundingAgencies = group.mergedFundingAgencies;
+  }
 
   const canonicalUpdate = await ResearchEntity.updateOne(
     { _id: canonicalId, archived: { $ne: true } },
@@ -1503,7 +2088,7 @@ export async function applyResearchEntityDedupeMergeGroup(
         researchAreas: { $each: group.mergedResearchAreas },
         sourceUrls: { $each: group.mergedSourceUrls },
       },
-      $set: { lastObservedAt: new Date() },
+      $set: canonicalIdentitySet,
     },
   );
 
@@ -1520,43 +2105,52 @@ export async function applyResearchEntityDedupeMergeGroup(
         },
       );
 
-  const duplicateMembers = await ResearchGroupMember.find({
-    researchEntityId: { $in: duplicateIds },
+  const duplicateMembers = await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: duplicateIds },
   })
-    .select('_id userId role')
+    .select('_id personId role')
     .lean();
   const canonicalMemberKeys = new Set(
     (
-      await ResearchGroupMember.find({
-        researchEntityId: canonicalId,
-        userId: { $in: duplicateMembers.map((member) => member.userId).filter(Boolean) },
+      await RoleAssignment.find({
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': canonicalId,
+        personId: { $in: duplicateMembers.map((member) => member.personId).filter(Boolean) },
       })
-        .select('userId role')
+        .select('personId role')
         .lean()
-    ).map((member) => `${String(member.userId)}:${member.role || ''}`),
+    ).map((member) => `${String(member.personId)}:${member.role || ''}`),
   );
   const conflictingMemberIds = duplicateMembers
-    .filter((member) => canonicalMemberKeys.has(`${String(member.userId)}:${member.role || ''}`))
+    .filter((member) => canonicalMemberKeys.has(`${String(member.personId)}:${member.role || ''}`))
     .map((member) => member._id);
 
   const retiredConflictingMembers =
     conflictingMemberIds.length > 0
-      ? await ResearchGroupMember.updateMany(
-          { _id: { $in: conflictingMemberIds }, isCurrentMember: { $ne: false } },
+      ? await RoleAssignment.updateMany(
+          {
+            _id: { $in: conflictingMemberIds },
+            state: { $ne: 'HISTORICAL' },
+            archived: { $ne: true },
+          },
           {
             $set: {
-              isCurrentMember: false,
-              leftAt: now,
+              state: 'HISTORICAL',
               endedAt: now,
-              lastObservedAt: now,
+              archived: true,
             },
           },
         )
       : { modifiedCount: 0 };
 
-  const members = await ResearchGroupMember.updateMany(
-    { researchEntityId: { $in: duplicateIds }, _id: { $nin: conflictingMemberIds } },
-    { $set: { researchEntityId: canonicalId, researchGroupId: canonicalId } },
+  const members = await RoleAssignment.updateMany(
+    {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': { $in: duplicateIds },
+      _id: { $nin: conflictingMemberIds },
+    },
+    { $set: { 'target.id': canonicalId } },
   );
 
   const shouldRelinkReferences = options.deleteDuplicates || options.relinkReferences;
@@ -1587,9 +2181,30 @@ export async function applyResearchEntityDedupeMergeGroup(
       ? await ResearchEntity.deleteMany({ _id: { $in: duplicateIds } })
       : { deletedCount: 0 };
 
+  // Every duplicate leaving the live ResearchEntity set (whether archived just
+  // now, deleted just now, or already archived by a prior dedupe pass) must
+  // never leave a "ghost" doc searchable in Meilisearch. Skip cleanup only
+  // when deleteDuplicates left the duplicates untouched due to remaining refs.
+  const idsToRemoveFromIndex =
+    options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : duplicateIds.map(String);
+  await Promise.all(idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)));
+
+  const survivorVisibility = await repairMergeSurvivorVisibility(canonicalId);
+
+  // A merge relinks roster members and lead assignments onto the survivor, so its
+  // Meilisearch document is stale even when its tier does not move. The visibility
+  // repair syncs the index only when it actually re-gates, and it deliberately
+  // short-circuits for an already-servable survivor - which is the common case
+  // when a duplicate is folded into a healthy canonical entity. Browse reads the
+  // index, so without this the most visible survivors keep pre-merge lead names
+  // (issue #2239).
+  const survivorIndexResynced = survivorVisibility.regated
+    ? false
+    : await resyncMergeSurvivorSearchDocument(canonicalId);
+
   return {
-    canonicalEntityId: group.canonicalEntityId,
-    duplicateEntityIds: group.duplicateEntityIds,
+    canonicalEntityId: String(canonicalId),
+    duplicateEntityIds: duplicateIds.map(String),
     canonicalUpdated: canonicalUpdate.modifiedCount || 0,
     archivedEntities: archived.modifiedCount || 0,
     deletedEntities: deleted.deletedCount || 0,
@@ -1599,7 +2214,19 @@ export async function applyResearchEntityDedupeMergeGroup(
     scalarRelink,
     arrayRelink,
     remainingReferencesBeforeDelete,
+    removedFromSearchIndex: idsToRemoveFromIndex.length,
+    survivorVisibility,
+    survivorIndexResynced,
   };
+}
+
+async function resyncMergeSurvivorSearchDocument(
+  survivorId: mongoose.Types.ObjectId | string,
+): Promise<boolean> {
+  const survivor = await ResearchEntity.findById(survivorId).lean();
+  if (!survivor || (survivor as { archived?: boolean }).archived === true) return false;
+  await syncEntities('researchEntity', [survivor]);
+  return true;
 }
 
 async function retireDuplicateCurrentMembers(
@@ -1627,14 +2254,13 @@ async function retireDuplicateCurrentMembers(
         };
       }
 
-      const retired = await ResearchGroupMember.updateMany(
-        { _id: { $in: memberIds }, isCurrentMember: { $ne: false } },
+      const retired = await RoleAssignment.updateMany(
+        { _id: { $in: memberIds }, state: { $ne: 'HISTORICAL' }, archived: { $ne: true } },
         {
           $set: {
-            isCurrentMember: false,
-            leftAt: now,
+            state: 'HISTORICAL',
             endedAt: now,
-            lastObservedAt: now,
+            archived: true,
           },
         },
       );
@@ -1660,10 +2286,14 @@ async function main() {
     fundingOnly,
     fullPlan,
     officialLabUrlOnly,
+    profileLabUrlOnly,
+    orgNameOnly,
+    websiteUrlOnly,
     limit,
     maxApply,
     slug,
     reviewedProfileAreaOnly,
+    sharedPersonId,
     acceptedDecisions,
     allowEmptyDecisions,
     decisionTemplateOutput,
@@ -1682,22 +2312,56 @@ async function main() {
   });
   await mongoose.connect(process.env.MONGODBURL);
 
+  const usesNonPiLane = officialLabUrlOnly || profileLabUrlOnly || orgNameOnly || websiteUrlOnly;
   const officialLabUrlRows: OfficialLabUrlDedupeRow[] = officialLabUrlOnly
     ? await loadOfficialLabUrlCandidateRows(limit)
     : [];
-  const piRows: ResearchEntityPiDedupeRow[] = officialLabUrlOnly
+  const profileLabUrlRows: OfficialLabUrlDedupeRow[] = profileLabUrlOnly
+    ? await loadSpecificProfileLabUrlCandidateRows(limit)
+    : [];
+  const orgNameRows: OrgNameDedupeEntity[] = orgNameOnly
+    ? await loadOrgNameCandidateRows(limit)
+    : [];
+  const websiteUrlRows: WebsiteUrlDedupeRow[] = websiteUrlOnly
+    ? await loadWebsiteUrlCandidateRows(limit)
+    : [];
+  const piRows: ResearchEntityPiDedupeRow[] = usesNonPiLane
     ? []
-    : await loadCandidateRows(limit, {
-        includeNameOnly: !deleteDuplicates,
-        includeRetiredPiLinks: deleteDuplicates,
-      });
-  const rows = officialLabUrlOnly ? officialLabUrlRows : piRows;
+    : sharedPersonId
+      ? await loadSamePiCandidateRows(limit, { includeRetiredMembers: true })
+      : await loadCandidateRows(limit, {
+          includeNameOnly: !deleteDuplicates,
+          includeRetiredPiLinks: deleteDuplicates,
+        });
+  const rows = officialLabUrlOnly
+    ? officialLabUrlRows
+    : profileLabUrlOnly
+      ? profileLabUrlRows
+      : orgNameOnly
+        ? orgNameRows
+        : websiteUrlOnly
+          ? websiteUrlRows
+          : piRows;
+  const sameNameDifferentPersonQuarantine: SameNameDifferentPersonQuarantine[] = sharedPersonId
+    ? buildSameNameDifferentPersonQuarantine(piRows)
+    : [];
+  const multiPersonEntityQuarantine: MultiPersonEntityQuarantine[] = sharedPersonId
+    ? buildMultiPersonEntityQuarantine(piRows)
+    : [];
   const allPlan = dedupePlannedGroups(
     officialLabUrlOnly
       ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
-      : fundingOnly
-        ? buildFundingResearchEntityDedupePlan(piRows)
-        : buildResearchEntityPiDedupePlan(piRows),
+      : profileLabUrlOnly
+        ? buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows)
+        : orgNameOnly
+          ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
+          : websiteUrlOnly
+            ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
+            : sharedPersonId
+              ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+              : fundingOnly
+                ? buildFundingResearchEntityDedupePlan(piRows)
+                : buildResearchEntityPiDedupePlan(piRows),
   );
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
@@ -1716,10 +2380,17 @@ async function main() {
     : undefined;
   const plan =
     apply && reviewDecisionValidation
-      ? selectResearchEntityPiDedupePlansForAcceptedMergeApply(candidatePlan, reviewDecisionValidation)
+      ? selectResearchEntityPiDedupePlansForAcceptedMergeApply(
+          candidatePlan,
+          reviewDecisionValidation,
+        )
       : candidatePlan;
   const duplicateCurrentMembers =
-    acceptedDecisions || !shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })
+    acceptedDecisions ||
+    orgNameOnly ||
+    websiteUrlOnly ||
+    profileLabUrlOnly ||
+    !shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })
       ? []
       : await loadDuplicateCurrentMemberRows(limit);
   const plannedDuplicateEntities = plan.reduce(
@@ -1741,6 +2412,7 @@ async function main() {
         applyResearchEntityDedupeMergeGroup(group, {
           deleteDuplicates,
           relinkReferences: shouldRelinkReferencesForResearchEntityPiDedupeRun({ apply }),
+          neverDemote: profileLabUrlOnly,
         }),
       )
     : [];
@@ -1750,10 +2422,12 @@ async function main() {
 
   // Anti-stale safety net: merging duplicates and retiring members changes the
   // canonical survivor's lead/evidence, which would otherwise leave a stale
-  // student-visibility tier until the next full gate run. Recompute the tier for
-  // the affected canonical entities immediately so reads never serve a stale
-  // tier after a dedupe.
+  // student-visibility tier and stale member names in the search index until the
+  // next full gate run. Recompute the tier and force a canonical Meili re-sync for
+  // the affected canonical entities immediately so reads never serve a stale tier
+  // or stale member/lead names after a dedupe.
   let visibilityRecomputed = 0;
+  let canonicalEntitiesResynced = 0;
   if (apply) {
     const canonicalIds = Array.from(
       new Set(
@@ -1762,14 +2436,9 @@ async function main() {
           .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
       ),
     );
-    if (canonicalIds.length > 0) {
-      const gateResult = await runStudentVisibilityGate({
-        collection: 'research',
-        mode: 'apply',
-        recordIds: canonicalIds,
-      });
-      visibilityRecomputed = gateResult.counts.scanned;
-    }
+    const repair = await recomputeVisibilityAndResyncCanonicals(canonicalIds);
+    visibilityRecomputed = repair.visibilityRecomputed;
+    canonicalEntitiesResynced = repair.canonicalEntitiesResynced;
   }
 
   writeResearchEntityPiDedupeDecisionTemplate(
@@ -1782,6 +2451,10 @@ async function main() {
     duplicateDisposition: deleteDuplicates ? 'delete' : 'archive',
     fundingOnly,
     officialLabUrlOnly,
+    profileLabUrlOnly,
+    orgNameOnly,
+    websiteUrlOnly,
+    sharedPersonId,
     candidateGroups: rows.length,
     filteredBySlug: slug || null,
     reviewedProfileAreaOnly,
@@ -1791,6 +2464,10 @@ async function main() {
     plannedDuplicateEntities,
     duplicateCurrentMemberGroups: duplicateCurrentMembers.length,
     plannedDuplicateCurrentMembers,
+    sameNameDifferentPersonQuarantine,
+    quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
+    multiPersonEntityQuarantine,
+    quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
     plan: fullPlan ? plan : plan.slice(0, 25),
     currentMemberPlan: duplicateCurrentMembers.slice(0, 25),
@@ -1798,6 +2475,7 @@ async function main() {
     applied,
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
+    canonicalEntitiesResynced,
   };
 
   const outputReport = buildResearchEntityPiDedupeOutput(report, {

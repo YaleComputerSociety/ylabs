@@ -1,0 +1,53 @@
+<!-- Live-HTML fixture captured from the Yale Cancer Biology Institute landing page
+     (westcampus.yale.edu/institutes/yale-cancer-biology-institute), whose "Meet the labs"
+     custom-card-collection is its member-lab roster. Representative cards plus a sibling
+     non-lab custom-card-collection (News) that must be dropped by the section gate; image
+     markup elided. Verifies customCardLabsExtractor keeps only lab cards, each linking to
+     the lab's own home, and absolutizes root-relative hrefs. -->
+<html><body>
+  <div class="custom-card-collection">
+    <div class="custom-card-collection__inner">
+      <h2 class="custom-card-collection__heading">Meet the labs of the Yale Cancer Biology Institute</h2>
+      <ul class="custom-card-collection__cards">
+        <li class="custom-card" data-with-image="true">
+          <div class="custom-card__content">
+            <h2 class="custom-card__heading">
+              <a data-link-type="internal" class="custom-card__heading-link" href="/alarcon-lab">Alarcón Lab</a>
+            </h2>
+            <div class="custom-card__snippet"><p>Uncovering the roles of RNA modifications in physiology and disease.</p></div>
+          </div>
+        </li>
+        <li class="custom-card" data-with-image="true">
+          <div class="custom-card__content">
+            <h2 class="custom-card__heading">
+              <a data-link-type="internal" class="custom-card__heading-link" href="/mandar-muzumdar-lab">Muzumdar Lab</a>
+            </h2>
+            <div class="custom-card__snippet"><p>Studying the systemic regulation of cancer.</p></div>
+          </div>
+        </li>
+        <li class="custom-card" data-with-image="true">
+          <div class="custom-card__content">
+            <h2 class="custom-card__heading">
+              <a data-link-type="external" class="custom-card__heading-link" href="https://medicine.yale.edu/lab/schlessinger/">Schlessinger Lab</a>
+            </h2>
+            <div class="custom-card__snippet"><p>Signal transduction by receptor tyrosine kinases.</p></div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+  <div class="custom-card-collection">
+    <div class="custom-card-collection__inner">
+      <h2 class="custom-card-collection__heading">Latest News</h2>
+      <ul class="custom-card-collection__cards">
+        <li class="custom-card">
+          <div class="custom-card__content">
+            <h2 class="custom-card__heading">
+              <a class="custom-card__heading-link" href="/news/institute-symposium-2025">Institute Symposium 2025</a>
+            </h2>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</body></html>

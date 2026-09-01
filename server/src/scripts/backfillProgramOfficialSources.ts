@@ -90,8 +90,7 @@ export function parseArgs(argv: string[]): CliOptions {
       options.input = resolveProgramOfficialSourceInputPath(arg.slice('--input='.length));
     } else if (arg.startsWith('--output=')) {
       options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
-    }
-    else throw new Error(`Unknown argument: ${arg}`);
+    } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.apply && !options.confirm) {
     throw new Error('--confirm-program-official-source-backfill is required when --apply is set.');
@@ -106,7 +105,8 @@ function loadEntries(input: string): BackfillEntry[] {
   const safeInput = resolveProgramOfficialSourceInputPath(input);
   const parsed = JSON.parse(fs.readFileSync(safeInput, 'utf8'));
   const entries: BackfillEntry[] = Array.isArray(parsed) ? parsed : parsed.entries;
-  if (!Array.isArray(entries)) throw new Error('Change-set must be an array or { entries: [...] }.');
+  if (!Array.isArray(entries))
+    throw new Error('Change-set must be an array or { entries: [...] }.');
   return entries;
 }
 
@@ -120,7 +120,8 @@ async function main() {
   const entries = loadEntries(options.input);
   await initializeConnections();
 
-  const plannedUpdates: Array<{ recordId: string; sourceUrl: string; applicationLink: string }> = [];
+  const plannedUpdates: Array<{ recordId: string; sourceUrl: string; applicationLink: string }> =
+    [];
   const report: Array<Record<string, unknown>> = [];
 
   for (const entry of entries) {
@@ -132,7 +133,13 @@ async function main() {
     const currentTier = program.studentVisibilityTier;
 
     if (entry.action === 'hold') {
-      report.push({ recordId: entry.recordId, title: entry.title, action: 'hold', currentTier, note: entry.note });
+      report.push({
+        recordId: entry.recordId,
+        title: entry.title,
+        action: 'hold',
+        currentTier,
+        note: entry.note,
+      });
       continue;
     }
 

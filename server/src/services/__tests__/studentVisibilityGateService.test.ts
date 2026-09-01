@@ -14,18 +14,24 @@ vi.mock('../../models/visibilityReleaseQueueItem', async (importOriginal) => ({
 }));
 
 import {
+  buildStudentVisibilityGateApplyOps,
+  evaluateStudentVisibilityGateLeadResolution,
   isProfileAreaDuplicateCounterpart,
   isBlockingVisibilityReason,
   isStudentVisibilityGatePlanMateriallyChanged,
-  listVisibilityReleaseQueue,
   normalizeStudentVisibilityGateObjectId,
+  reachOutPlausibleSignalCreditsActionEvidence,
   researchEntityGateProjection,
   runStudentVisibilityGateForPlans,
   selectExactUrlDuplicateRiskEntityIds,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
+import { computeResearchEntityStudentVisibility } from '../studentVisibilityTier';
+import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../accessAcceptanceLevel';
 
-const safePlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
+const safePlan = (
+  overrides: Partial<StudentVisibilityGatePlan> = {},
+): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'entity-safe',
   label: 'Safe Lab',
@@ -38,7 +44,9 @@ const safePlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVi
   ...overrides,
 });
 
-const heldPlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
+const heldPlan = (
+  overrides: Partial<StudentVisibilityGatePlan> = {},
+): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'entity-held',
   label: 'Held Lab',
@@ -64,58 +72,27 @@ describe('studentVisibilityGateService', () => {
     ).toBeUndefined();
   });
 
-  it('loads manual visibility overrides when planning research entity gates', () => {
-    expect(researchEntityGateProjection.split(/\s+/)).toContain('studentVisibilityOverrideTier');
+  it('loads public description and override fields when planning research entity gates', () => {
+    expect(researchEntityGateProjection.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        'shortDescription',
+        'fullDescription',
+        'profileSynthesisDescription',
+        'descriptionSource',
+        'studentVisibilityOverrideTier',
+      ]),
+    );
+    expect(researchEntityGateProjection.split(/\s+/)).not.toContain('description');
   });
 
-  it('caps release queue page before building Mongo skip and limit values', async () => {
-    const chain = {
-      sort: vi.fn().mockReturnThis(),
-      skip: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([]),
-    };
-    mocks.queueFind.mockReturnValue(chain);
-    mocks.queueCountDocuments.mockResolvedValue(0);
-
-    const result = await listVisibilityReleaseQueue({
-      page: 999_999_999,
-      pageSize: 500,
-    });
-
-    expect(chain.skip).toHaveBeenCalledWith(99_900);
-    expect(chain.limit).toHaveBeenCalledWith(100);
-    expect(result).toMatchObject({
-      page: 1000,
-      pageSize: 100,
-      totalPages: 0,
-    });
-  });
-
-  it('bounds release queue filters before building Mongo queries', async () => {
-    const chain = {
-      sort: vi.fn().mockReturnThis(),
-      skip: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([]),
-    };
-    mocks.queueFind.mockReturnValue(chain);
-    mocks.queueCountDocuments.mockResolvedValue(0);
-
-    await listVisibilityReleaseQueue({
-      status: '$where',
-      reason: 'x'.repeat(121),
-      sourceName: '  ysm-atoz-index  ',
-    });
-
-    expect(mocks.queueFind).toHaveBeenCalledWith({
-      status: 'open',
-      sourceNames: 'ysm-atoz-index',
-    });
-    expect(mocks.queueCountDocuments).toHaveBeenCalledWith({
-      status: 'open',
-      sourceNames: 'ysm-atoz-index',
-    });
+  it('loads the yale-status signal so a departed lead is not silently rescored as visible', () => {
+    // #1620 residual: computeResearchEntityStudentVisibility's inactive_at_yale
+    // branch reads entity.activeAtYaleCache, but this projection omitted the
+    // field, so every gate-rescored entity saw activeAtYaleCache===undefined
+    // and a departed/emeritus PI's row could flip back to student_ready.
+    expect(researchEntityGateProjection.split(/\s+/)).toEqual(
+      expect.arrayContaining(['activeAtYaleCache', 'yaleStatusCache']),
+    );
   });
 
   it('does not treat center directorships as profile-area duplicate counterparts', () => {
@@ -187,6 +164,53 @@ describe('studentVisibilityGateService', () => {
         websiteUrl: 'https://wti.yale.edu/humans/faculty/',
       },
     ]);
+
+    expect([...ids]).toEqual([]);
+  });
+
+  it('does not treat a shared institutional /about landing page as exact duplicate evidence', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds(
+      [
+        {
+          _id: 'safdar-lab',
+          slug: 'ysm-safdar',
+          name: 'Safdar Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'suppressed',
+          websiteUrl: 'https://medicine.yale.edu/lab/safdar/',
+          sourceUrls: ['https://medicine.yale.edu/lab/safdar/', 'https://medicine.yale.edu/about/'],
+        },
+        {
+          _id: 'flavell-lab',
+          slug: 'ysm-flavell',
+          name: 'Flavell Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'suppressed',
+          websiteUrl: 'https://medicine.yale.edu/lab/flavell/',
+          sourceUrls: [
+            'https://medicine.yale.edu/lab/flavell/',
+            'https://medicine.yale.edu/about/',
+          ],
+        },
+        {
+          _id: 'kang-lab',
+          slug: 'ysm-kang',
+          name: 'Kang Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'student_ready',
+          websiteUrl: 'https://medicine.yale.edu/lab/kang/',
+          sourceUrls: ['https://medicine.yale.edu/lab/kang/', 'https://medicine.yale.edu/about/'],
+        },
+      ],
+      [
+        { researchEntityId: 'safdar-lab', userId: 'user-safdar' },
+        { researchEntityId: 'flavell-lab', userId: 'user-flavell' },
+        { researchEntityId: 'kang-lab', userId: 'user-kang' },
+      ],
+    );
 
     expect([...ids]).toEqual([]);
   });
@@ -308,19 +332,89 @@ describe('studentVisibilityGateService', () => {
     expect([...ids]).toEqual(['christensen-shell']);
   });
 
+  it('does not collide unrelated faculty whose sites are wrapped as distinct Outlook safelinks', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds([
+      {
+        _id: 'roster-research',
+        slug: 'dept-one-morgan-roster',
+        name: 'Morgan Roster Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl:
+          'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.morganroster.com%2F&data=05%7C01%7C&sdata=abc&reserved=0',
+        sourceUrls: ['https://example.yale.edu/people/faculty'],
+      },
+      {
+        _id: 'lovelace-research',
+        slug: 'dept-two-ada-lovelace',
+        name: 'Ada Lovelace Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl:
+          'https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fadalovelacelab.org%2F&data=05%7C02%7C&sdata=xyz&reserved=0',
+        sourceUrls: ['https://example.yale.edu/people/faculty'],
+      },
+    ]);
+
+    expect([...ids]).toEqual([]);
+  });
+
+  it('still detects duplicates when both entities wrap the same site in a safelinks wrapper', () => {
+    const ids = selectExactUrlDuplicateRiskEntityIds(
+      [
+        {
+          _id: 'roster-canonical',
+          slug: 'morgan-roster-lab',
+          name: 'Morgan Roster Lab',
+          entityType: 'LAB',
+          kind: 'lab',
+          studentVisibilityTier: 'student_ready',
+          fullDescription:
+            'The lab studies developmental neurobiology, synaptic plasticity, and circuit formation across model organisms at Yale.',
+          shortDescription: 'Studies developmental neurobiology and synaptic plasticity.',
+          sourceUrls: ['http://www.morganroster.com/'],
+        },
+        {
+          _id: 'roster-shell',
+          slug: 'dept-morgan-roster',
+          name: 'Morgan Roster Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl:
+            'https://nam12.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.morganroster.com%2F&data=05%7C01%7C&reserved=0',
+          sourceUrls: ['https://example.yale.edu/people/faculty'],
+        },
+      ],
+      [{ researchEntityId: 'roster-canonical', userId: 'user-roster' }],
+    );
+
+    expect([...ids]).toEqual(['roster-shell']);
+  });
+
   it('classifies missing-data reasons as blockers and evidence reasons as signals', () => {
     expect(isBlockingVisibilityReason('missing_description')).toBe(true);
     expect(isBlockingVisibilityReason('thin_description')).toBe(true);
     expect(isBlockingVisibilityReason('content_page_risk')).toBe(true);
-    expect(isBlockingVisibilityReason('pi_identity_conflict')).toBe(true);
     expect(isBlockingVisibilityReason('exact_url_duplicate_risk')).toBe(true);
     expect(isBlockingVisibilityReason('generic_directory_shell')).toBe(true);
     expect(isBlockingVisibilityReason('profile_biography_shell')).toBe(true);
     expect(isBlockingVisibilityReason('non_owner_grant_shell')).toBe(true);
     expect(isBlockingVisibilityReason('research_infrastructure_only')).toBe(true);
+    expect(isBlockingVisibilityReason('non_research_entity')).toBe(true);
     expect(isBlockingVisibilityReason('formalization_only')).toBe(true);
+    expect(isBlockingVisibilityReason('missing_lead')).toBe(true);
+    expect(isBlockingVisibilityReason('missing_card_description')).toBe(true);
+    expect(isBlockingVisibilityReason('lab_name_org_type_mismatch')).toBe(true);
+    expect(isBlockingVisibilityReason('inactive_at_yale')).toBe(true);
     expect(isBlockingVisibilityReason('source_backed_description')).toBe(false);
     expect(isBlockingVisibilityReason('concrete_next_step')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_action_evidence')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_facet_signal')).toBe(false);
+    // Finalized #1802 soft reclassification: reach-out is the universal next
+    // step, so these enrichment/reachability signals never block (missing_source_url
+    // is a projection gap, not a source-less entity).
+    expect(isBlockingVisibilityReason('missing_alternate_access_path')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_application_route')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_source_route')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_source_url')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_official_source')).toBe(false);
   });
 
   it('treats visibility reason and computed tier drift as material changes', () => {
@@ -433,11 +527,11 @@ describe('studentVisibilityGateService', () => {
       expect.objectContaining({
         collection: 'research',
         recordId: 'entity-held',
-        blockerReasons: ['missing_description', 'missing_action_evidence'],
-        evidenceSignals: ['concrete_next_step'],
+        blockerReasons: ['missing_description'],
+        evidenceSignals: ['missing_action_evidence', 'concrete_next_step'],
         repairStage: 'source_description',
         repairStatus: 'queued',
-        remainingBlockers: ['missing_description', 'missing_action_evidence'],
+        remainingBlockers: ['missing_description'],
         status: 'open',
       }),
     );
@@ -524,5 +618,326 @@ describe('studentVisibilityGateService', () => {
       }),
     );
     expect(deps.resolveArchivedResearchQueueItems).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('buildStudentVisibilityGateApplyOps', () => {
+  const now = new Date('2026-08-23T00:00:00.000Z');
+  const alreadyPublicPlan = (overrides: Partial<StudentVisibilityGatePlan> = {}) =>
+    safePlan({
+      currentTier: 'student_ready',
+      currentComputedTier: 'student_ready',
+      currentReasons: ['source_backed_description', 'concrete_next_step'],
+      ...overrides,
+    });
+
+  it('resolves an orphaned open queue item for an already-public entity that did not materially change', () => {
+    const plan = alreadyPublicPlan();
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps, queueOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-safe']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+    expect(queueOps).toHaveLength(1);
+    expect(queueOps[0].updateMany.filter).toMatchObject({
+      collection: 'research',
+      recordId: 'entity-safe',
+      status: 'open',
+    });
+    expect(queueOps[0].updateMany.update.$set).toMatchObject({
+      status: 'resolved',
+      resolvedByTier: 'student_ready',
+    });
+  });
+
+  it('emits no queue op for an already-public entity with no open queue item', () => {
+    const { researchOps, queueOps } = buildStudentVisibilityGateApplyOps(
+      [alreadyPublicPlan()],
+      new Set(),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+    expect(queueOps).toHaveLength(0);
+  });
+
+  it('writes the entity doc and resolves the queue when a public plan materially changes', () => {
+    const { researchOps, queueOps } = buildStudentVisibilityGateApplyOps(
+      [safePlan()],
+      new Set(['research:entity-safe']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(1);
+    expect(researchOps[0].updateOne.update.$set).toMatchObject({
+      studentVisibilityTier: 'student_ready',
+    });
+    expect(queueOps[0].updateMany.update.$set.status).toBe('resolved');
+  });
+
+  it('leaves an in-sync held queue item untouched when it did not materially change', () => {
+    const plan = heldPlan({
+      currentTier: 'operator_review',
+      currentComputedTier: 'operator_review',
+      currentReasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
+    });
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps, queueOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-held']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+    expect(queueOps).toHaveLength(0);
+  });
+
+  it('creates a missing held queue item even when the plan did not materially change', () => {
+    const plan = heldPlan({
+      currentTier: 'operator_review',
+      currentComputedTier: 'operator_review',
+      currentReasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
+    });
+
+    const { queueOps } = buildStudentVisibilityGateApplyOps([plan], new Set(), now);
+
+    expect(queueOps).toHaveLength(1);
+    expect(queueOps[0].updateOne.upsert).toBe(true);
+    expect(queueOps[0].updateOne.update.$set).toMatchObject({
+      status: 'open',
+      recordId: 'entity-held',
+      blockerReasons: ['missing_description'],
+    });
+  });
+
+  it('leaves an unchanged entity unwritten so the sweep converges', () => {
+    const plan = heldPlan({
+      currentTier: 'operator_review',
+      currentComputedTier: 'operator_review',
+      currentReasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
+    });
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-held']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+  });
+
+  it('suppresses an orphaned open queue item for a suppressed entity', () => {
+    const plan = safePlan({
+      currentTier: 'suppressed',
+      currentComputedTier: 'suppressed',
+      computedTier: 'suppressed',
+      tier: 'suppressed',
+      reasons: ['generic_directory_shell'],
+      currentReasons: ['generic_directory_shell'],
+    });
+
+    const { queueOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-safe']),
+      now,
+    );
+
+    expect(queueOps).toHaveLength(1);
+    expect(queueOps[0].updateMany.update.$set.status).toBe('suppressed');
+  });
+});
+
+describe('evaluateStudentVisibilityGateLeadResolution', () => {
+  it('flags an empty-roster gate run where research plans resolve no leads', () => {
+    const plans = Array.from({ length: 30 }, (_, index) =>
+      safePlan({
+        recordId: `entity-${index}`,
+        tier: 'operator_review',
+        computedTier: 'operator_review',
+        reasons: ['missing_lead'],
+        hasResolvedLead: false,
+      }),
+    );
+
+    const result = evaluateStudentVisibilityGateLeadResolution(plans);
+
+    expect(result.resolvedLeadEntityCount).toBe(0);
+    expect(result.zeroLeadEntityCount).toBe(30);
+    expect(result.safe).toBe(false);
+    expect(result.blocker).toContain('resolve zero leads');
+  });
+
+  it('stays safe when most research plans resolve a lead and ignores programs', () => {
+    const plans = [
+      ...Array.from({ length: 30 }, (_, index) =>
+        safePlan({ recordId: `lead-${index}`, hasResolvedLead: true }),
+      ),
+      safePlan({
+        recordId: 'missing',
+        tier: 'operator_review',
+        reasons: ['missing_lead'],
+        hasResolvedLead: false,
+      }),
+      safePlan({ collection: 'programs', recordId: 'program', reasons: ['missing_lead'] }),
+    ];
+
+    const result = evaluateStudentVisibilityGateLeadResolution(plans);
+
+    expect(result.resolvedLeadEntityCount).toBe(30);
+    expect(result.zeroLeadEntityCount).toBe(1);
+    expect(result.safe).toBe(true);
+  });
+});
+
+describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
+  const officialPageEntity = {
+    websiteUrl: 'https://chemistry.yale.edu/profile/ab123',
+    sourceUrls: [],
+  };
+  const validReachOutSignal = {
+    type: 'REACH_OUT_PLAUSIBLE',
+    archived: false,
+    source: { url: '', evidenceIds: ['64f000000000000000000abc'], name: 'dept-faculty-roster' },
+  };
+
+  it('counts a validly-persisted REACH_OUT_PLAUSIBLE that has no http source.url', () => {
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: validReachOutSignal,
+        entity: officialPageEntity,
+      }),
+    ).toBe(true);
+  });
+
+  it('credits action evidence via a REACH_OUT_PLAUSIBLE signal, recorded as a soft signal that never gates student_ready (issue #1802)', () => {
+    const entity = {
+      entityType: 'LAB',
+      name: 'Doe Lab',
+      websiteUrl: 'https://chemistry.yale.edu/profile/ab123',
+      fullDescription:
+        'The Doe Lab studies catalytic reaction mechanisms with an official source-backed research description that is long enough to pass the source-backed description quality bar for this gate.',
+      shortDescription: 'Catalysis research in the Doe Lab at Yale.',
+      descriptionSource: 'official-scrape',
+    };
+    const leadMembers = [
+      { role: 'pi', userId: '64f000000000000000000010', user: { fname: 'Jane', lname: 'Doe' } },
+    ];
+
+    const withoutSignal = computeResearchEntityStudentVisibility({
+      entity,
+      leadMembers,
+      accessSignalCount: 0,
+    });
+    expect(withoutSignal.reasons).toContain('missing_action_evidence');
+
+    const credited = reachOutPlausibleSignalCreditsActionEvidence({
+      signal: validReachOutSignal,
+      entity,
+    })
+      ? 1
+      : 0;
+    const withSignal = computeResearchEntityStudentVisibility({
+      entity,
+      leadMembers,
+      accessSignalCount: credited,
+    });
+    expect(credited).toBe(1);
+    expect(withSignal.reasons).not.toContain('missing_action_evidence');
+    expect(withSignal.reasons).toContain('concrete_next_step');
+    // Crediting evidence never changes the tier by itself (issue #1802):
+    // both computations land on the same tier here regardless of the signal.
+    expect(withSignal.tier).toBe(withoutSignal.tier);
+  });
+
+  it('keeps weaker or unbacked signals blocked (fail-safe)', () => {
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: { ...validReachOutSignal, type: 'NOT_CURRENTLY_AVAILABLE' },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: { ...validReachOutSignal, source: { url: '', evidenceIds: [], name: '' } },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: { ...validReachOutSignal, archived: true },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: validReachOutSignal,
+        entity: { websiteUrl: 'https://reporter.nih.gov/project-details/1', sourceUrls: [] },
+      }),
+    ).toBe(false);
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: validReachOutSignal,
+        entity: { websiteUrl: '', sourceUrls: [] },
+      }),
+    ).toBe(false);
+  });
+
+  it('does not double-count a REACH_OUT_PLAUSIBLE that already carries an http source.url', () => {
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: {
+          ...validReachOutSignal,
+          source: {
+            ...validReachOutSignal.source,
+            url: 'https://chemistry.yale.edu/profile/ab123',
+          },
+        },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not credit an identified-lead-fallback derivation as action evidence (#1359)', () => {
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: {
+          ...validReachOutSignal,
+          derivationKey: ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
+        },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('gate apply convergence without a version stamp', () => {
+  it('re-gates a materially-changed entity and never writes a version stamp', () => {
+    const plan = safePlan({
+      currentTier: 'operator_review',
+      currentComputedTier: 'operator_review',
+      currentReasons: ['missing_action_evidence'],
+      computedTier: 'student_ready',
+      tier: 'student_ready',
+      reasons: ['source_backed_description', 'concrete_next_step'],
+    });
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(true);
+
+    const { researchOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-safe']),
+      new Date('2026-08-26T00:00:00.000Z'),
+    );
+
+    expect(researchOps).toHaveLength(1);
+    expect(researchOps[0].updateOne.update.$set).not.toHaveProperty('studentVisibilityVersion');
+    expect(researchOps[0].updateOne.update.$set).toMatchObject({
+      studentVisibilityTier: 'student_ready',
+    });
   });
 });

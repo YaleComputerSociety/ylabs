@@ -16,12 +16,16 @@ describe('buildEntityWorkPlan', () => {
     expect(workPlannerSourcePolicies.map((policy) => policy.sourceName)).toEqual([
       'lab-microsite-description-llm',
       'lab-microsite-undergrad-llm',
-      'student-decision-llm',
-      'openalex',
-      'orcid',
-      'europe-pmc',
-      'pubmed',
-      'crossref',
+      'research-area-source-extractor',
+      'ysm-mesh-keyword',
+    ]);
+    expect(getWorkPlannerSourcePolicy('research-area-source-extractor')).toMatchObject({
+      entityType: 'researchEntity',
+      paid: false,
+      defaultRecurringCadence: 'monthly',
+    });
+    expect(getWorkPlannerSourcePolicy('research-area-source-extractor')?.targetFields).toEqual([
+      'researchAreas',
     ]);
     expect(getWorkPlannerSourcePolicy('lab-microsite-undergrad-llm')).toMatchObject({
       entityType: 'researchEntity',
@@ -42,15 +46,11 @@ describe('buildEntityWorkPlan', () => {
     expect(getWorkPlannerSourcePolicy('lab-microsite-undergrad-llm')?.targetFields).toEqual([
       'lastObservedAt',
     ]);
-    expect(getWorkPlannerSourcePolicy('student-decision-llm')).toMatchObject({
-      entityType: 'researchEntity',
-      paid: true,
-      defaultRecurringCadence: 'manual',
-    });
-    expect(getWorkPlannerSourcePolicy('student-decision-llm')?.targetFields).toEqual([
-      'studentDecisionExplanation',
-    ]);
+    expect(getWorkPlannerSourcePolicy('student-decision-llm')).toBeUndefined();
     expect(getWorkPlannerSourcePolicy('unknown-source')).toBeUndefined();
+    for (const sourceName of ['openalex', 'orcid', 'europe-pmc', 'pubmed', 'crossref']) {
+      expect(getWorkPlannerSourcePolicy(sourceName), sourceName).toBeUndefined();
+    }
   });
 
   it('plans missing fields for fetch', () => {
@@ -99,8 +99,8 @@ describe('buildEntityWorkPlan', () => {
 
   it('fetches stale fields and ignores superseded observations', () => {
     const plan = buildEntityWorkPlan({
-      entityType: 'paper',
-      entityKey: 'W1',
+      entityType: 'fellowship',
+      entityKey: 'F1',
       sourceName: 'openalex',
       targetFields: ['citedByCount'],
       observations: [
@@ -152,40 +152,49 @@ describe('buildEntityWorkPlan', () => {
   it('records shared work planner metrics for fetch and skip decisions', () => {
     const metrics = createWorkPlannerMetrics();
 
-    recordWorkPlannerDecision(metrics, buildEntityWorkPlan({
-      entityType: 'researchEntity',
-      entityKey: 'smith-lab',
-      sourceName: 'lab-microsite-undergrad-llm',
-      targetFields: ['joinPageUrl'],
-      observations: [],
-      freshnessWindowMs: 7 * DAY,
-      now: NOW,
-    }));
-    recordWorkPlannerDecision(metrics, buildEntityWorkPlan({
-      entityType: 'researchEntity',
-      entityKey: 'jones-lab',
-      sourceName: 'lab-microsite-undergrad-llm',
-      targetFields: ['joinPageUrl'],
-      observations: [
-        {
-          sourceName: 'lab-microsite-undergrad-llm',
-          field: 'joinPageUrl',
-          observedAt: new Date('2026-05-02T12:00:00Z'),
-        },
-      ],
-      freshnessWindowMs: 7 * DAY,
-      now: NOW,
-    }));
-    recordWorkPlannerDecision(metrics, buildEntityWorkPlan({
-      entityType: 'researchEntity',
-      entityKey: 'locked-lab',
-      sourceName: 'lab-microsite-undergrad-llm',
-      targetFields: ['joinPageUrl'],
-      manuallyLockedFields: ['joinPageUrl'],
-      observations: [],
-      freshnessWindowMs: 7 * DAY,
-      now: NOW,
-    }));
+    recordWorkPlannerDecision(
+      metrics,
+      buildEntityWorkPlan({
+        entityType: 'researchEntity',
+        entityKey: 'smith-lab',
+        sourceName: 'lab-microsite-undergrad-llm',
+        targetFields: ['joinPageUrl'],
+        observations: [],
+        freshnessWindowMs: 7 * DAY,
+        now: NOW,
+      }),
+    );
+    recordWorkPlannerDecision(
+      metrics,
+      buildEntityWorkPlan({
+        entityType: 'researchEntity',
+        entityKey: 'jones-lab',
+        sourceName: 'lab-microsite-undergrad-llm',
+        targetFields: ['joinPageUrl'],
+        observations: [
+          {
+            sourceName: 'lab-microsite-undergrad-llm',
+            field: 'joinPageUrl',
+            observedAt: new Date('2026-05-02T12:00:00Z'),
+          },
+        ],
+        freshnessWindowMs: 7 * DAY,
+        now: NOW,
+      }),
+    );
+    recordWorkPlannerDecision(
+      metrics,
+      buildEntityWorkPlan({
+        entityType: 'researchEntity',
+        entityKey: 'locked-lab',
+        sourceName: 'lab-microsite-undergrad-llm',
+        targetFields: ['joinPageUrl'],
+        manuallyLockedFields: ['joinPageUrl'],
+        observations: [],
+        freshnessWindowMs: 7 * DAY,
+        now: NOW,
+      }),
+    );
     recordWorkPlannerNoIdentifier(metrics);
 
     expect(metrics).toEqual({

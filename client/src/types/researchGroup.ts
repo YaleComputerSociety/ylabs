@@ -22,37 +22,13 @@ export type ResearchEntityType =
   | 'INSTITUTE'
   | 'FACULTY_RESEARCH_AREA'
   | 'FACULTY_PROJECT'
-  | 'DIGITAL_HUMANITIES_PROJECT'
-  | 'COLLECTIONS_INITIATIVE'
-  | 'RA_PROGRAM'
-  | 'FELLOWSHIP_PROGRAM'
-  | 'COURSE_SEQUENCE'
-  | 'ARCHIVE_OR_MUSEUM_PROJECT'
-  | 'PROGRAM'
   | 'INITIATIVE'
-  | 'GROUP'
-  | 'INDIVIDUAL_RESEARCH';
+  | 'CORE_FACILITY';
 
-export type ResearchGroupOpenness = 'open' | 'inquire' | 'closed' | 'unknown';
-
-export interface AccessSummary {
-  status:
-    | 'posted-opening'
-    | 'evidence-backed'
-    | 'reach-out-plausible'
-    | 'not-currently-available'
-    | 'unknown';
-  confidence: number;
-  evidence: Array<{
-    signalType: string;
-    confidence: string;
-    excerpt?: string;
-    sourceUrl?: string;
-  }>;
-  signalTypes: string[];
-  entryPathwayTypes: string[];
-  hasActivePostedOpportunity: boolean;
-  bestNextStep: string;
+export interface ResearchPlanningContext {
+  category: 'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';
+  label: string;
+  url: string;
 }
 
 export type StudentDecisionRecommendedAction =
@@ -103,6 +79,12 @@ export interface RecentGrant {
   role?: 'pi' | 'copi';
 }
 
+export interface ResearchEntitySourceLinkHealth {
+  url: string;
+  healthStatus?: string;
+  httpStatusCode?: number;
+}
+
 export interface ResearchGroup {
   _id: string;
   // Meilisearch hits return `id` rather than `_id`. The search endpoint also
@@ -113,28 +95,26 @@ export interface ResearchGroup {
   displayName?: string;
   kind: ResearchGroupKind;
   entityType?: ResearchEntityType;
-  description: string;
   shortDescription?: string;
   fullDescription?: string;
   profileSynthesisDescription?: string;
+  // Present only on trimmed list/related responses that omit fullDescription;
+  // callers must use it directly rather than re-deriving from raw fields.
+  cardDescription?: { text: string; state: 'complete' | 'sparse'; label: string };
   descriptionSource?: 'ENTITY_SOURCE' | 'PI_PROFILE_SYNTHESIS' | 'NONE';
   websiteUrl: string;
   location: string;
   departments: string[];
   researchAreas: string[];
+  methods?: string[];
+  keywords?: string[];
   profileResearchAreas?: string[];
   researchAreaSource?: 'PI_PROFILE_FALLBACK';
   school: string;
-  openness: ResearchGroupOpenness;
-  /**
-   * The scraper subsystem now writes undefined/null when it cannot determine
-   * acceptance — only an explicit boolean carries meaning. Treat absence as
-   * "unknown" rather than coercing to a default.
-   */
-  acceptingUndergrads?: boolean;
+  schools?: string[];
   /** Number of undergrads currently named on the lab roster, when known. */
   currentUndergradCount?: number;
-  /** Verbatim quote from the source page that supports acceptingUndergrads. */
+  /** Verbatim quote from the source page supporting undergraduate access. */
   undergradEvidenceQuote?: string;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
@@ -144,13 +124,6 @@ export interface ResearchGroup {
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
-  recentPaperCount?: number;
-  /**
-   * Denormalized 0–1 confidence score for `acceptingUndergrads`. Materializer
-   * mirrors `confidenceByField['acceptingUndergrads']` here so Meili can filter
-   * on it (Meili can't filter into nested mixed objects).
-   */
-  acceptanceConfidence?: number;
   typicalUndergradRoles: string[];
   prerequisiteCourses: string[];
   creditOptions: string[];
@@ -160,6 +133,7 @@ export interface ResearchGroup {
   contactName?: string;
   contactRole?: string;
   sourceUrls: string[];
+  sourceLinkHealth?: ResearchEntitySourceLinkHealth[];
   confidenceByField?: Record<string, number>;
   /**
    * Names of fields the PI / admin has manually set; the materializer never
@@ -175,9 +149,11 @@ export interface ResearchGroup {
    * has any non-archived Listings. Optional because the search endpoint does
    * not include it.
    */
-  hasActiveListing?: boolean;
-  accessSummary?: AccessSummary;
+  planningContext?: ResearchPlanningContext;
   studentDecisionExplanation?: StudentDecisionExplanation;
+  leadIdentityStatus?: 'verified' | 'under_review';
+  leadProfessorPublicKey?: string;
+  studentVisibilityTier?: 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 }
 
 /**
@@ -193,4 +169,8 @@ export interface ResearchGroupSearchResponse {
   estimatedTotalHits: number;
   page: number;
   pageSize: number;
+  facetDistribution?: Record<string, Record<string, number>>;
+  // Set when the requested page sits past the server's reachable pagination
+  // depth. The search never ran, so the response carries no result-set size.
+  depthLimited?: boolean;
 }

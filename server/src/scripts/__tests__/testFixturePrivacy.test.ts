@@ -48,6 +48,7 @@ const SYNTHETIC_YALE_TOKENS = new Set([
   'catalyst',
   'collab',
   'contact',
+  'coordinator',
   'curie',
   'dana',
   'deb',
@@ -149,9 +150,7 @@ const testFiles = () =>
 
 const localPartIsSynthetic = (localPart: string) => {
   if (!SYNTHETIC_YALE_LOCAL_PART.test(localPart)) return false;
-  const tokens = localPart
-    .split(/[._%+-]/)
-    .filter(Boolean);
+  const tokens = localPart.split(/[._%+-]/).filter(Boolean);
   return tokens.some((token) => SYNTHETIC_YALE_TOKENS.has(token) || /^[a-z]*\d+$/.test(token));
 };
 

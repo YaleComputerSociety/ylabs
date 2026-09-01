@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPublicHttpUrl, publicHttpUrl } from '../urlSafety';
+import { isPublicHttpUrl, isSelfReferentialUrl, publicHttpUrl } from '../urlSafety';
 
 describe('urlSafety', () => {
   it('rejects credentialed HTTP URLs as non-public', () => {
@@ -19,5 +19,15 @@ describe('urlSafety', () => {
 
     expect(isPublicHttpUrl(oversized)).toBe(false);
     expect(publicHttpUrl(oversized)).toBeUndefined();
+  });
+
+  it('recognizes Yale Research self-referential URLs so they cannot become a source', () => {
+    expect(isSelfReferentialUrl('https://yalelabs.io/api/research')).toBe(true);
+    expect(isSelfReferentialUrl('https://www.yalelabs.io/research/some-lab')).toBe(true);
+    expect(isSelfReferentialUrl('https://ylabs-gr4v.onrender.com/api/research')).toBe(true);
+    expect(isSelfReferentialUrl('https://yalelabs.onrender.com/')).toBe(true);
+    expect(isSelfReferentialUrl('https://medicine.yale.edu/lab/qin-yan/')).toBe(false);
+    expect(isSelfReferentialUrl('not a url')).toBe(false);
+    expect(isSelfReferentialUrl(undefined)).toBe(false);
   });
 });

@@ -8,11 +8,7 @@ export type PathwayBestNextStepCategory =
   | 'save-for-later'
   | 'check-back-later';
 
-export type PathwaySortBy =
-  | 'relevance'
-  | 'confidence'
-  | 'lastObservedAt'
-  | 'deadline';
+export type PathwaySortBy = 'relevance' | 'confidence' | 'lastObservedAt' | 'deadline';
 
 export type PathwayActionability = 'ACTION_READY' | 'REFERENCE_ONLY';
 
@@ -24,7 +20,6 @@ export interface PathwaySearchFilters {
   entityType?: string[];
   departments?: string[];
   researchAreas?: string[];
-  hasActivePostedOpportunity?: boolean;
   bestNextStepCategory?: PathwayBestNextStepCategory[];
 }
 
@@ -42,16 +37,6 @@ export interface PathwayResearchEntitySummary {
   researchAreas: string[];
   school?: string;
   websiteUrl?: string;
-}
-
-export interface PathwayPostedOpportunitySummary {
-  _id: string;
-  title: string;
-  deadline?: string;
-  applicationUrl?: string;
-  status: 'OPEN' | 'ROLLING';
-  term?: string;
-  provenance?: 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
 }
 
 export interface PathwayEvidenceSummary {
@@ -86,7 +71,6 @@ export interface PathwaySearchHit {
   sourceUrls: string[];
   lastObservedAt?: string;
   researchEntity: PathwayResearchEntitySummary;
-  activePostedOpportunity?: PathwayPostedOpportunitySummary;
   evidence: PathwayEvidenceSummary[];
   contactRoute?: PathwayContactRouteSummary;
   actionability?: PathwayActionability;

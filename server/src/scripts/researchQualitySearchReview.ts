@@ -4,13 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
-import { PostedOpportunity } from '../models/postedOpportunity';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { searchPathwaysViaMeili } from '../services/pathwaySearchIndexService';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { searchResearchGroupsViaMeili } from '../services/researchGroupService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -187,7 +184,6 @@ function buildLexicalReasons(hit: Record<string, unknown>, query: string): strin
   const fields: Array<[string, unknown]> = [
     ['name', hit.name],
     ['displayName', hit.displayName],
-    ['description', hit.description],
     ['shortDescription', hit.shortDescription],
     ['fullDescription', hit.fullDescription],
     ['researchAreas', hit.researchAreas],
@@ -203,7 +199,9 @@ function buildLexicalReasons(hit: Record<string, unknown>, query: string): strin
     .map(([field]) => `${field} matched "${query}"`);
 }
 
-function selectedQueries(options: ResearchQualitySearchReviewCliOptions): ResearchQualityGoldenQuery[] {
+function selectedQueries(
+  options: ResearchQualitySearchReviewCliOptions,
+): ResearchQualityGoldenQuery[] {
   if (options.queryNames.length === 0) return DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES;
   const requested = new Set(options.queryNames.map((name) => name.toLowerCase()));
   return DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES.filter(
@@ -241,29 +239,6 @@ async function collectSearchCandidates(
         error: errorMessage(error),
       });
     }
-
-    try {
-      const pathways = await searchPathwaysViaMeili({
-        q: query.q,
-        filters: query.filters as any,
-        page: 1,
-        pageSize: options.topK,
-      });
-      for (const hit of pathways.hits) {
-        const id = stringId(hit.researchEntity?._id);
-        if (!id) continue;
-        collection.entityIds.add(id);
-        addMapSet(collection.matchedQueriesByEntityId, id, query.name);
-        const label = hit.studentFacingLabel || hit.explanation || hit.bestNextStep;
-        if (label) addMapSet(collection.reasonsByEntityId, id, `pathway matched "${query.q}"`);
-      }
-    } catch (error) {
-      collection.searchErrors.push({
-        query: query.name,
-        surface: 'pathways',
-        error: errorMessage(error),
-      });
-    }
   }
 
   return collection;
@@ -284,19 +259,9 @@ export function normalizeResearchQualitySearchReviewObjectId(
 }
 
 function uniqueStrings(values: unknown[]): string[] {
-  return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort();
-}
-
-async function aggregateCountMap(
-  model: mongoose.Model<any>,
-  entityIds: mongoose.Types.ObjectId[],
-  extraMatch: Record<string, unknown> = {},
-): Promise<Map<string, number>> {
-  const rows = await model.aggregate<{ _id: unknown; count: number }>([
-    { $match: { researchEntityId: { $in: entityIds }, ...extraMatch } },
-    { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-  ]);
-  return countMap(rows);
+  return Array.from(
+    new Set(values.map((value) => String(value || '').trim()).filter(Boolean)),
+  ).sort();
 }
 
 async function aggregateCountAndTypes(
@@ -321,7 +286,9 @@ async function aggregateCountAndTypes(
   };
 }
 
-function duplicateCandidatesFor(entities: EntityRecord[]): Map<string, ResearchQualityDuplicateCandidate[]> {
+function duplicateCandidatesFor(
+  entities: EntityRecord[],
+): Map<string, ResearchQualityDuplicateCandidate[]> {
   const byNormalizedName = new Map<string, EntityRecord[]>();
   for (const entity of entities) {
     const key = normalizeName(entity.displayName || entity.name);
@@ -360,31 +327,28 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
 
   const entities = (await ResearchEntity.find({ _id: { $in: validIds } })
     .select(
-      '_id slug name entityType kind displayName description shortDescription fullDescription sourceUrls websiteUrl researchAreas departments',
+      '_id slug name entityType kind displayName shortDescription fullDescription sourceUrls websiteUrl researchAreas departments',
     )
     .lean()) as unknown as EntityRecord[];
 
-  const [members, pathwayStats, publicContactRouteStats, signalStats, opportunityCounts] =
-    await Promise.all([
-      ResearchGroupMember.find({ researchEntityId: { $in: validIds } })
-        .select('researchEntityId role name')
-        .lean(),
-      aggregateCountAndTypes(EntryPathway, validIds, 'pathwayType', { archived: { $ne: true } }),
-      aggregateCountAndTypes(ContactRoute, validIds, 'routeType', {
-        archived: { $ne: true },
-        visibility: 'PUBLIC',
-      }),
-      aggregateCountAndTypes(AccessSignal, validIds, 'signalType', { archived: { $ne: true } }),
-      aggregateCountMap(PostedOpportunity, validIds, { archived: { $ne: true } }),
-    ]);
+  const [rosterByEntityId, signalStats] = await Promise.all([
+    getResearchEntityRosterByEntityId(validIds),
+    aggregateCountAndTypes(Signal, validIds, 'type', {
+      type: { $in: [...accessSignalTypes] },
+      archived: { $ne: true },
+    }),
+  ]);
 
   const membersByEntityId = new Map<string, MemberRecord[]>();
-  for (const member of members as MemberRecord[]) {
-    const id = stringId(member.researchEntityId);
-    if (!id) continue;
-    const list = membersByEntityId.get(id) || [];
-    list.push(member);
-    membersByEntityId.set(id, list);
+  for (const [entityId, roster] of rosterByEntityId) {
+    membersByEntityId.set(
+      entityId,
+      roster.map((entry) => ({
+        researchEntityId: entry.researchEntityId,
+        role: entry.role,
+        name: entry.name,
+      })),
+    );
   }
 
   const duplicateCandidates = duplicateCandidatesFor(entities);
@@ -398,7 +362,6 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
         entityType: entity.entityType,
         kind: entity.kind,
         displayName: entity.displayName,
-        description: entity.description,
         shortDescription: entity.shortDescription,
         fullDescription: entity.fullDescription,
         sourceUrls: entity.sourceUrls || [],
@@ -411,13 +374,8 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
         researchAreas: entity.researchAreas || [],
         departments: entity.departments || [],
         duplicateCandidates: duplicateCandidates.get(id) || [],
-        pathwayCount: pathwayStats.counts.get(id) || 0,
-        pathwayTypes: pathwayStats.types.get(id) || [],
-        publicContactRouteCount: publicContactRouteStats.counts.get(id) || 0,
-        publicContactRouteTypes: publicContactRouteStats.types.get(id) || [],
         accessSignalCount: signalStats.counts.get(id) || 0,
         accessSignalTypes: signalStats.types.get(id) || [],
-        postedOpportunityCount: opportunityCounts.get(id) || 0,
         topSearchReasons: Array.from(searchCollection.reasonsByEntityId.get(id) || []),
         matchedQueryNames: Array.from(searchCollection.matchedQueriesByEntityId.get(id) || []),
       };
@@ -430,7 +388,6 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
     readOnly: true,
     indexPosture: {
       researchEntities: 'Meilisearch read-only query',
-      pathways: 'Meilisearch read-only query',
     },
     querySet: queries,
     totalCandidates: searchCollection.entityIds.size,

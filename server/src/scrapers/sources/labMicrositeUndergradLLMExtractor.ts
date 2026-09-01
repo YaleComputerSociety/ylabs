@@ -3,7 +3,7 @@
  *
  * For every canonical ResearchEntity with a usable website URL, fetch the lab home
  * page (and a likely "people"/"members"/"join" sub-page if discoverable),
- * strip HTML to plain text, and ask an LLM (gpt-4o-mini via OpenAI's
+ * strip HTML to plain text, and ask an LLM (gpt-5-mini via OpenAI's
  * structured-output API) to extract evidence about undergrad access:
  *
  *   - `undergradAccessEvidence` (Object)    — evidence-shaped access assessment
@@ -18,8 +18,7 @@
  * The scraper is deliberately conservative:
  *   - LLM-derived observations carry a 0.5 confidence override (low-trust)
  *     so manual edits and direct human signals always win.
- *   - Labs whose `acceptingUndergrads` field has been manually locked
- *     (`manuallyLockedFields` includes 'acceptingUndergrads') are skipped.
+ *   - A manual lock on legacy `acceptingUndergrads` suppresses only that observation.
  *   - Per-(websiteUrl, modelVersion) caching is used so reruns don't re-charge
  *     OpenAI for unchanged pages.
  *   - LLM call count is capped by `ctx.options.limit` (default 100). The
@@ -30,10 +29,26 @@
  */
 import axios from 'axios';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { openAiChatSampling } from '../../utils/openAiChatSampling';
+import { quoteExplicitlyDeclinesUndergraduates } from '../undergraduateLogisticsMaterializer';
+import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
+import {
+  deriveShortDescriptionFromFullDescription,
+  fullDescriptionQuality,
+  isFullDescriptionRestatementOfShortDescription,
+  shortDescriptionQuality,
+} from '../../utils/researchEntityDescriptionQuality';
+import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
+import { isRejectedDescriptionSourceUrl } from './labMicrositeDescriptionLLMExtractor';
+import {
+  UNDERGRAD_EXTRACTION_PROMPT,
+  UNDERGRAD_EXTRACTION_LEGACY_PROMPT,
+  UNDERGRAD_EXTRACTION_PROMPT_HASH,
+} from '../prompts';
 import {
   createScraplingRenderedFetcher,
   measureRenderedFetch,
@@ -42,6 +57,12 @@ import {
   type RenderedFetchResult,
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  computeVersionedContentHash,
+  contentHashObservation,
+  contentUnchanged,
+  loadStoredContentHash,
+} from '../contentHashGate';
 import type {
   IScraper,
   ObservationInput,
@@ -58,15 +79,26 @@ import {
   type EntityWorkPlan,
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_PROMPT_CHARS = 50_000;
 const DEFAULT_LIMIT = 100;
-const DEFAULT_MODEL = 'gpt-4o-mini';
+export const DEFAULT_MODEL = 'gpt-5-mini';
+
+// Prompt text lives in server/src/scrapers/prompts/undergradExtraction*.md; the
+// content-hash gate keys on UNDERGRAD_EXTRACTION_PROMPT_HASH (sha256 of both
+// variants), so editing a .md re-extracts affected entities with no manual bump.
 const SOURCE_KEY = 'lab-microsite-undergrad-llm';
 const MAX_CANDIDATE_SUBPAGE_URLS = 8;
 const MAX_SUBPAGES_FETCHED = 3;
+const MAX_STAGING_LOGISTICS_LABS = 25;
+const LOGISTICS_OBSERVATION_PREFIX = 'undergraduateLogistics';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -94,10 +126,25 @@ const SUBPAGE_ANCHOR_RE =
 
 export type OpenToUndergrads = 'yes' | 'no' | 'unclear';
 export type EvidenceSource = 'explicit_text' | 'members_section' | 'none';
+export type ExtractedStudentLevel = 'FIRST_YEAR' | 'SOPHOMORE' | 'JUNIOR' | 'SENIOR';
+export type ExtractedCompensationMode =
+  | 'PAID'
+  | 'STIPEND'
+  | 'COURSE_CREDIT'
+  | 'VOLUNTEER'
+  | 'WORK_STUDY'
+  | 'FELLOWSHIP';
+export type ExtractedModality = 'IN_PERSON' | 'HYBRID' | 'REMOTE';
+export type ExtractedCurrentAvailability =
+  | 'OPEN'
+  | 'ROLLING'
+  | 'NOT_CURRENTLY_AVAILABLE'
+  | 'UNKNOWN';
 
 export interface LLMExtraction {
   openToUndergrads: OpenToUndergrads;
   currentUndergradCount: number;
+  currentUndergradEvidenceQuotes?: string[];
   evidenceQuote: string;
   evidenceSource: EvidenceSource;
   joinPageUrl: string | null;
@@ -107,6 +154,18 @@ export interface LLMExtraction {
   undergradRoleQuote?: string;
   contactInstructionsQuote?: string;
   explicitConstraintQuote?: string;
+  eligibleStudentLevels?: ExtractedStudentLevel[];
+  eligibilityQuote?: string;
+  compensationModes?: ExtractedCompensationMode[];
+  compensationQuote?: string;
+  timeCommitmentMinHours?: number | null;
+  timeCommitmentMaxHours?: number | null;
+  timeCommitmentQuote?: string;
+  modalityModes?: ExtractedModality[];
+  modalityQuote?: string;
+  currentAvailability?: ExtractedCurrentAvailability;
+  currentAvailabilityQuote?: string;
+  availabilityValidThrough?: string | null;
 }
 
 export interface PromptSourcePage {
@@ -124,6 +183,95 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
       properties: {
         openToUndergrads: { type: 'string', enum: ['yes', 'no', 'unclear'] },
         currentUndergradCount: { type: 'integer', minimum: 0 },
+        currentUndergradEvidenceQuotes: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+        evidenceQuote: { type: 'string' },
+        evidenceSource: {
+          type: 'string',
+          enum: ['explicit_text', 'members_section', 'none'],
+        },
+        joinPageUrl: { type: ['string', 'null'] },
+        researchSummary: { type: 'string' },
+        methodsQuote: { type: 'string' },
+        topicsQuote: { type: 'string' },
+        undergradRoleQuote: { type: 'string' },
+        contactInstructionsQuote: { type: 'string' },
+        explicitConstraintQuote: { type: 'string' },
+        eligibleStudentLevels: {
+          type: 'array',
+          items: { type: 'string', enum: ['FIRST_YEAR', 'SOPHOMORE', 'JUNIOR', 'SENIOR'] },
+        },
+        eligibilityQuote: { type: 'string' },
+        compensationModes: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['PAID', 'STIPEND', 'COURSE_CREDIT', 'VOLUNTEER', 'WORK_STUDY', 'FELLOWSHIP'],
+          },
+        },
+        compensationQuote: { type: 'string' },
+        timeCommitmentMinHours: { type: ['number', 'null'], minimum: 0 },
+        timeCommitmentMaxHours: { type: ['number', 'null'], minimum: 0 },
+        timeCommitmentQuote: { type: 'string' },
+        modalityModes: {
+          type: 'array',
+          items: { type: 'string', enum: ['IN_PERSON', 'HYBRID', 'REMOTE'] },
+        },
+        modalityQuote: { type: 'string' },
+        currentAvailability: {
+          type: 'string',
+          enum: ['OPEN', 'ROLLING', 'NOT_CURRENTLY_AVAILABLE', 'UNKNOWN'],
+        },
+        currentAvailabilityQuote: { type: 'string' },
+        availabilityValidThrough: { type: ['string', 'null'] },
+      },
+      required: [
+        'openToUndergrads',
+        'currentUndergradCount',
+        'currentUndergradEvidenceQuotes',
+        'evidenceQuote',
+        'evidenceSource',
+        'joinPageUrl',
+        'researchSummary',
+        'methodsQuote',
+        'topicsQuote',
+        'undergradRoleQuote',
+        'contactInstructionsQuote',
+        'explicitConstraintQuote',
+        'eligibleStudentLevels',
+        'eligibilityQuote',
+        'compensationModes',
+        'compensationQuote',
+        'timeCommitmentMinHours',
+        'timeCommitmentMaxHours',
+        'timeCommitmentQuote',
+        'modalityModes',
+        'modalityQuote',
+        'currentAvailability',
+        'currentAvailabilityQuote',
+        'availabilityValidThrough',
+      ],
+    },
+    strict: true,
+  },
+};
+
+export const LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT = {
+  type: 'json_schema' as const,
+  json_schema: {
+    name: 'lab_undergrad_extraction',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        openToUndergrads: { type: 'string', enum: ['yes', 'no', 'unclear'] },
+        currentUndergradCount: { type: 'integer', minimum: 0 },
+        currentUndergradEvidenceQuotes: {
+          type: 'array',
+          items: { type: 'string' },
+        },
         evidenceQuote: { type: 'string' },
         evidenceSource: {
           type: 'string',
@@ -140,6 +288,7 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
       required: [
         'openToUndergrads',
         'currentUndergradCount',
+        'currentUndergradEvidenceQuotes',
         'evidenceQuote',
         'evidenceSource',
         'joinPageUrl',
@@ -155,23 +304,9 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
   },
 };
 
-export const LAB_UNDERGRAD_SYSTEM_PROMPT = `You are an expert classifier evaluating whether a Yale research lab's website indicates that the lab accepts undergraduate researchers and contains source-backed research description text.
+export const LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_LEGACY_PROMPT;
 
-Your job is to read text scraped from a lab's website (home page plus optionally a "members" or "join" sub-page) and return a JSON object with these fields:
-
-- openToUndergrads: "yes" if there is text that affirmatively states the lab welcomes / hires / mentors undergraduates, OR if the members section lists undergraduate students. "no" if the lab explicitly states they do NOT take undergraduates. "unclear" otherwise. Default to "unclear" — be conservative.
-- currentUndergradCount: integer count of currently-listed undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. Return 0 if no members section exists or no undergrads are listed there.
-- evidenceQuote: a verbatim quote from the page (≤200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
-- evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates"), "members_section" if from a roster listing, "none" if no evidence.
-- joinPageUrl: the URL (absolute) of a "join the lab" or "opportunities" page, if mentioned. Otherwise null.
-- researchSummary: a concise 1-sentence summary of the lab/faculty site research text, only when the site itself describes current research topics, questions, or methods. Otherwise empty string.
-- methodsQuote: a verbatim quote (≤200 characters) naming methods, materials, archives, data, fieldwork, instruments, or approaches that support researchSummary. Otherwise empty string.
-- topicsQuote: a verbatim quote (≤200 characters) naming research topics, questions, populations, organisms, places, periods, systems, or phenomena that support researchSummary. Otherwise empty string.
-- undergradRoleQuote: a verbatim quote that describes undergraduate roles/tasks, if present. Otherwise empty string.
-- contactInstructionsQuote: a verbatim quote with contact/application instructions, if present. Otherwise empty string.
-- explicitConstraintQuote: a verbatim quote with constraints such as "not accepting", eligibility, required courses, or application-only instructions, if present. Otherwise empty string.
-
-Be conservative. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote. Quotes must be verbatim — do not paraphrase.`;
+export const LAB_UNDERGRAD_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_PROMPT;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-testable, no I/O)
@@ -193,9 +328,7 @@ export function htmlToPromptText(html: string): string {
   $('script, style, noscript, svg, iframe').remove();
   const text = $('body').text() || $.root().text() || '';
   const collapsed = text.replace(/\s+/g, ' ').trim();
-  return collapsed.length > MAX_PROMPT_CHARS
-    ? collapsed.slice(0, MAX_PROMPT_CHARS)
-    : collapsed;
+  return collapsed.length > MAX_PROMPT_CHARS ? collapsed.slice(0, MAX_PROMPT_CHARS) : collapsed;
 }
 
 /**
@@ -386,6 +519,11 @@ export function sourceUrlForExtraction(
     extraction.undergradRoleQuote,
     extraction.contactInstructionsQuote,
     extraction.explicitConstraintQuote,
+    extraction.eligibilityQuote,
+    extraction.compensationQuote,
+    extraction.timeCommitmentQuote,
+    extraction.modalityQuote,
+    extraction.currentAvailabilityQuote,
     extraction.methodsQuote,
     extraction.topicsQuote,
   ]
@@ -400,6 +538,81 @@ export function sourceUrlForExtraction(
 }
 
 /**
+ * Recency gate. Lab "people" pages fold alumni / former members / past
+ * undergraduate researchers into one roster with no date scoping (#1209/#1314),
+ * so a stored count silently absorbs entries that are unambiguously historical.
+ * A backing snippet matching any of these markers is not a current researcher.
+ */
+const HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS: RegExp[] = [
+  /\bformer(ly)?\b/i,
+  /\balumn(i|us|ae|a)\b/i,
+  /\bgraduated\b/i,
+  /\bpast\s+(under)?grad/i,
+  /\bprevious(ly)?\b/i,
+  /\bvisiting\s+(under)?grad/i,
+  /\b(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)\d{2}\b/,
+  /\bnow\s+(?!accept|recruit|hir|seek|welcom|tak|open|avail|enroll|offer|host)(?:a\b|an\b|the\b|at\b|with\b|working|serv|senior|director|professor|assistant|associate|principal|chief|head|vp|ceo|cto|president|manager|scientist|research|postdoc|resident|fellow|md\b|phd\b|student|pursuing|completing|attend)/i,
+  /\b(?:associate|analyst|consultant|engineer|scientist|manager|director|officer|founder|president|attorney|physician)\s+at\s+(?!yale\b)/i,
+];
+
+/**
+ * Institution gate. Yale lab rosters also list visiting undergraduates from
+ * other schools (#1314). A Yale lab's default context is Yale, so an unqualified
+ * undergrad is presumed to be a Yale undergrad; we only exclude when the backing
+ * snippet names a clearly non-Yale institution or marks the person as visiting.
+ */
+const NON_YALE_INSTITUTION_PATTERNS: RegExp[] = [
+  /\bvisiting\b/i,
+  /\buniversit(?:y|ies)\b/i,
+  /\bpolytechnic\b/i,
+  /\binstitute\s+of\s+technolog/i,
+  /\bgeorgia\s+tech\b/i,
+  /\bjohns\s+hopkins\b/i,
+  /\bharvey\s+mudd\b/i,
+  /\bemory\b/i,
+  /\b(?:UCLA|USC|MIT|UConn|UCSD|UCSB|UCSC|NYU|UPenn|UMich|Caltech)\b/,
+];
+
+export function isHistoricalUndergradEvidence(quote?: string): boolean {
+  const text = (quote || '').trim();
+  if (!text) return false;
+  return HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function namesNonYaleInstitution(quote?: string): boolean {
+  const text = (quote || '').trim();
+  if (!text) return false;
+  if (/\byale\b/i.test(text)) return false;
+  return NON_YALE_INSTITUTION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isCurrentYaleUndergradEvidence(quote?: string): boolean {
+  return !isHistoricalUndergradEvidence(quote) && !namesNonYaleInstitution(quote);
+}
+
+/**
+ * Fail-closed recency + institution gate for `currentUndergradCount`. The raw
+ * LLM integer is never trusted on its own because the roster it counts mixes
+ * current Yale undergrads with alumni and non-Yale visiting undergrads (#1314).
+ *
+ *   - When the LLM supplies a per-person `currentUndergradEvidenceQuotes` roster
+ *     (the strengthened prompt requires one snippet per counted undergrad), the
+ *     count is derived from the subset of snippets that clear both gates.
+ *   - When no roster is present (legacy cache or an omitted array), fall back to
+ *     the LLM integer but zero it when the single backing `evidenceQuote` shows a
+ *     historical or non-Yale marker, so a contaminated count never survives.
+ */
+export function deriveCurrentUndergradCount(extraction: LLMExtraction): number {
+  const roster = extraction.currentUndergradEvidenceQuotes;
+  if (Array.isArray(roster)) {
+    return roster.filter((quote) => isCurrentYaleUndergradEvidence(quote)).length;
+  }
+  const rawCount = extraction.currentUndergradCount;
+  if (!Number.isInteger(rawCount) || rawCount <= 0) return 0;
+  return isCurrentYaleUndergradEvidence(extraction.evidenceQuote) ? rawCount : 0;
+}
+
+/**
  * Pure: turn an LLMExtraction into the ObservationInput list the materializer
  * will consume. Implements the rules:
  *
@@ -407,9 +620,13 @@ export function sourceUrlForExtraction(
  *     skipped on 'unclear'. Confidence override 0.5 (LLM-based, low-trust).
  *   - acceptingUndergrads: still emitted for legacy compatibility only.
  *   - currentUndergradCount: emitted iff evidenceSource is 'members_section'
- *     AND the count is a non-negative integer. Open prose ("we have many
- *     undergrads") is too unreliable to write a count from. Confidence 0.5.
- *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty.
+ *     AND the recency/institution-gated count (deriveCurrentUndergradCount) is
+ *     a positive integer. Open prose ("we have many undergrads") is too
+ *     unreliable to write a count from, and alumni / non-Yale visiting undergrads
+ *     never count toward it. Confidence 0.5.
+ *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty, plausible,
+ *     and passes the same recency/institution gate as currentUndergradCount, so
+ *     a historical or non-Yale snippet never gets displayed as current evidence.
  *     Confidence 0.5.
  *   - lastObservedAt: always emitted (to refresh the freshness clock).
  */
@@ -422,6 +639,7 @@ export function extractionToObservations(
     sourceUrls?: string[];
     quoteSourceUrl?: string;
     sourceTexts?: string[];
+    sourcePages?: PromptSourcePage[];
   } = {},
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
@@ -432,6 +650,101 @@ export function extractionToObservations(
     sourceUrl,
   };
   const out: ObservationInput[] = [];
+
+  const verifiedDateInQuote = (
+    candidate: string | null | undefined,
+    quote: string,
+  ): string | undefined => {
+    if (!candidate || !/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return undefined;
+    const timestamp = Date.parse(`${candidate}T00:00:00.000Z`);
+    if (!Number.isFinite(timestamp)) return undefined;
+    if (new Date(timestamp).toISOString().slice(0, 10) !== candidate) return undefined;
+    if (quote.includes(candidate)) return candidate;
+
+    const monthNumbers = new Map(
+      [
+        'january',
+        'february',
+        'march',
+        'april',
+        'may',
+        'june',
+        'july',
+        'august',
+        'september',
+        'october',
+        'november',
+        'december',
+      ].flatMap((month, index) => [
+        [month, index + 1] as const,
+        [month.slice(0, 3), index + 1] as const,
+      ]),
+    );
+    const normalizeMatch = (year: string, month: number, day: string): string | undefined => {
+      const normalized = `${year}-${String(month).padStart(2, '0')}-${String(Number(day)).padStart(
+        2,
+        '0',
+      )}`;
+      const parsed = Date.parse(`${normalized}T00:00:00.000Z`);
+      return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === normalized
+        ? normalized
+        : undefined;
+    };
+    const monthName =
+      'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+    const monthFirst = new RegExp(
+      `\\b(${monthName})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,)?\\s+(\\d{4})\\b`,
+      'gi',
+    );
+    const dayFirst = new RegExp(
+      `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${monthName})\\.?(?:,)?\\s+(\\d{4})\\b`,
+      'gi',
+    );
+    for (const match of quote.matchAll(monthFirst)) {
+      const month = monthNumbers.get(match[1].toLowerCase().slice(0, 3));
+      if (month && normalizeMatch(match[3], month, match[2]) === candidate) return candidate;
+    }
+    for (const match of quote.matchAll(dayFirst)) {
+      const month = monthNumbers.get(match[2].toLowerCase().slice(0, 3));
+      if (month && normalizeMatch(match[3], month, match[1]) === candidate) return candidate;
+    }
+    return undefined;
+  };
+
+  const verifiedQuoteSourceUrl = (rawQuote: string | undefined): string | undefined => {
+    const quote = (rawQuote || '').replace(/\s+/g, ' ').trim();
+    if (!quote) return undefined;
+    return sourceContext.sourcePages?.find((page) => page.text.replace(/\s+/g, ' ').includes(quote))
+      ?.url;
+  };
+
+  const pushLogisticsClaim = (
+    field: string,
+    claimType: string,
+    value: Record<string, unknown>,
+    rawQuote: string | undefined,
+    validThrough?: string | null,
+  ) => {
+    const evidenceQuote = (rawQuote || '').replace(/\s+/g, ' ').trim();
+    const evidenceSourceUrl = verifiedQuoteSourceUrl(rawQuote);
+    if (!evidenceQuote || !evidenceSourceUrl) return;
+    const verifiedValidThrough = verifiedDateInQuote(validThrough, evidenceQuote);
+    out.push({
+      ...base,
+      sourceUrl: evidenceSourceUrl,
+      observedAt,
+      field,
+      value: {
+        schemaVersion: 1,
+        claimType,
+        value,
+        evidenceQuote: redactDirectContactInfo(evidenceQuote).slice(0, 500),
+        quoteVerified: true,
+        ...(verifiedValidThrough ? { validThrough: verifiedValidThrough } : {}),
+      },
+      confidenceOverride: 0.5,
+    });
+  };
 
   if (extraction.openToUndergrads === 'yes') {
     out.push({
@@ -474,21 +787,17 @@ export function extractionToObservations(
   }
   // 'unclear' → no observation
 
-  if (
-    extraction.evidenceSource === 'members_section' &&
-    Number.isInteger(extraction.currentUndergradCount) &&
-    extraction.currentUndergradCount >= 0
-  ) {
+  if (extraction.evidenceSource === 'members_section') {
     out.push({
       ...base,
       field: 'currentUndergradCount',
-      value: extraction.currentUndergradCount,
+      value: deriveCurrentUndergradCount(extraction),
       confidenceOverride: 0.5,
     });
   }
 
   const quote = (extraction.evidenceQuote || '').trim();
-  if (quote) {
+  if (quote && isPlausibleUndergradEvidenceQuote(quote) && isCurrentYaleUndergradEvidence(quote)) {
     out.push({
       ...base,
       sourceUrl: quoteSourceUrl,
@@ -508,19 +817,28 @@ export function extractionToObservations(
   }
 
   const researchSummary = cleanResearchSummary(extraction.researchSummary);
-  if (researchSummary && sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)) {
-    out.push({
-      ...base,
-      field: 'shortDescription',
-      value: researchSummary,
-      confidenceOverride: 0.55,
-    });
+  const studentReadyDescription =
+    researchSummary &&
+    !isRejectedDescriptionSourceUrl(quoteSourceUrl) &&
+    sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)
+      ? cleanStudentFacingDescription(researchSummary)
+      : '';
+  if (studentReadyDescription) {
     out.push({
       ...base,
       field: 'fullDescription',
-      value: researchSummary,
+      value: studentReadyDescription,
       confidenceOverride: 0.55,
     });
+    const cardDescription = distinctCardDescription(studentReadyDescription);
+    if (cardDescription) {
+      out.push({
+        ...base,
+        field: 'shortDescription',
+        value: cardDescription,
+        confidenceOverride: 0.55,
+      });
+    }
   }
 
   const undergradRoleQuote = (extraction.undergradRoleQuote || '').trim();
@@ -556,6 +874,75 @@ export function extractionToObservations(
     });
   }
 
+  if ((extraction.eligibleStudentLevels || []).length > 0) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsStudentLevel',
+      'STUDENT_LEVEL',
+      { levels: extraction.eligibleStudentLevels },
+      extraction.eligibilityQuote,
+    );
+  }
+  if ((extraction.compensationModes || []).length > 0) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsCompensation',
+      'COMPENSATION',
+      { modes: extraction.compensationModes },
+      extraction.compensationQuote,
+    );
+  }
+  if (
+    (extraction.timeCommitmentMinHours !== null &&
+      extraction.timeCommitmentMinHours !== undefined) ||
+    (extraction.timeCommitmentMaxHours !== null && extraction.timeCommitmentMaxHours !== undefined)
+  ) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsTimeCommitment',
+      'TIME_COMMITMENT',
+      {
+        ...(extraction.timeCommitmentMinHours !== null &&
+        extraction.timeCommitmentMinHours !== undefined
+          ? { minHours: extraction.timeCommitmentMinHours }
+          : {}),
+        ...(extraction.timeCommitmentMaxHours !== null &&
+        extraction.timeCommitmentMaxHours !== undefined
+          ? { maxHours: extraction.timeCommitmentMaxHours }
+          : {}),
+        period: 'WEEK',
+      },
+      extraction.timeCommitmentQuote,
+    );
+  }
+  if ((extraction.modalityModes || []).length > 0) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsModality',
+      'MODALITY',
+      { modes: extraction.modalityModes },
+      extraction.modalityQuote,
+    );
+  }
+  const explicitNonAcceptanceQuote = [extraction.explicitConstraintQuote, extraction.evidenceQuote]
+    .map((candidate) => (candidate || '').trim())
+    .find((candidate) => candidate && quoteExplicitlyDeclinesUndergraduates(candidate));
+  const derivedAvailability: ExtractedCurrentAvailability | undefined =
+    extraction.currentAvailability && extraction.currentAvailability !== 'UNKNOWN'
+      ? extraction.currentAvailability
+      : explicitNonAcceptanceQuote
+        ? 'NOT_CURRENTLY_AVAILABLE'
+        : undefined;
+  if (derivedAvailability) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsCurrentAvailability',
+      'CURRENT_AVAILABILITY',
+      { status: derivedAvailability },
+      derivedAvailability === extraction.currentAvailability
+        ? extraction.currentAvailabilityQuote
+        : explicitNonAcceptanceQuote,
+      derivedAvailability === extraction.currentAvailability
+        ? extraction.availabilityValidThrough
+        : undefined,
+    );
+  }
+
   out.push({ ...base, field: 'lastObservedAt', value: observedAt });
 
   return out;
@@ -563,6 +950,33 @@ export function extractionToObservations(
 
 function cleanResearchSummary(raw: string | undefined): string {
   return (raw || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+}
+
+/**
+ * Fail-closed student-facing description gate. The LLM `researchSummary` is a
+ * paraphrase, so before it can become a stored fullDescription it must clear the
+ * same hygiene and quality bar the visibility census applies at read time
+ * (page chrome, academic-appointment/PI-bio prose, synthetic/meta notes,
+ * role-only fragments, recruitment boilerplate). Returns clean prose or an empty
+ * string when the summary would only produce a description hold downstream.
+ */
+function cleanStudentFacingDescription(researchSummary: string): string {
+  const cleaned = publicResearchEntityDescriptionText(researchSummary);
+  if (!cleaned || !fullDescriptionQuality(cleaned).isUseful) return '';
+  return cleaned;
+}
+
+// Emitting one value to both description fields is self-defeating: the
+// materializer's restatement guard reacts by clearing fullDescription, so the
+// detail page loses its prose while the surviving card keeps the record looking
+// healthy to the visibility gate. A card line is therefore only emitted when it
+// compresses the full into something genuinely distinct; otherwise no
+// shortDescription observation is written and the card-derivation path owns it.
+function distinctCardDescription(fullDescription: string): string {
+  const derived = deriveShortDescriptionFromFullDescription(fullDescription);
+  if (!derived) return '';
+  if (isFullDescriptionRestatementOfShortDescription(fullDescription, derived)) return '';
+  return shortDescriptionQuality(derived, fullDescription).isUseful ? derived : '';
 }
 
 function sourceSupportsResearchSummary(
@@ -671,24 +1085,39 @@ export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): Can
 
 export function selectLabsToProcess(
   candidates: CandidateLab[],
-  options: { only?: string[]; limit?: number },
+  options: { only?: string[]; limit?: number; exhaustive?: boolean },
 ): CandidateLab[] {
   const onlyFilter =
     options.only && options.only.length > 0
       ? new Set(options.only.map((s) => s.trim().toLowerCase()))
       : null;
-  const limit = options.limit && options.limit > 0 ? options.limit : DEFAULT_LIMIT;
+  const limit =
+    options.limit && options.limit > 0
+      ? options.limit
+      : options.exhaustive
+        ? Number.POSITIVE_INFINITY
+        : DEFAULT_LIMIT;
 
   const out: CandidateLab[] = [];
   for (const lab of candidates) {
     if (!lab.websiteUrl || !/^https?:\/\//i.test(lab.websiteUrl)) continue;
     if (lab.archived) continue;
-    if ((lab.manuallyLockedFields || []).includes('acceptingUndergrads')) continue;
     if (onlyFilter && !onlyFilter.has(lab.slug.toLowerCase())) continue;
     out.push(lab);
     if (out.length >= limit) break;
   }
   return out;
+}
+
+export function logisticsAcquisitionAllowed(options: {
+  only?: string[];
+  logisticsProductionMode?: boolean;
+}): boolean {
+  if (options.logisticsProductionMode) return true;
+  const allowlist = new Set(
+    (options.only || []).map((slug) => slug.trim().toLowerCase()).filter(Boolean),
+  );
+  return allowlist.size > 0 && allowlist.size <= MAX_STAGING_LOGISTICS_LABS;
 }
 
 // ---------------------------------------------------------------------------
@@ -706,28 +1135,14 @@ export interface FetchedPage {
 export type FetchPageFn = (url: string) => Promise<FetchedPage | null>;
 
 export const defaultFetchPage: FetchPageFn = async (url) => {
+  // SSRF guard, per-host rate limiting, and retry-on-403 live in fetchPageWithPolicy;
+  // preserve this path's null-on-failure contract by mapping any final error to null.
   try {
-    // SSRF guard: the URL is a DB-sourced lab websiteUrl. Reject private/metadata hosts before
-    // fetching, and use connect-time-validating agents so redirect hops can't reach internal IPs.
-    const safeUrl = await assertPublicHttpUrl(url);
-    const safeUrlText = safeUrl.toString();
-    const agents = ssrfSafeAgents();
-    const res = await axios.get(safeUrlText, {
-      timeout: FETCH_TIMEOUT_MS,
+    const page = await fetchPageWithPolicy(url, {
       headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,*/*' },
-      maxRedirects: 5,
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-      validateStatus: (s) => s >= 200 && s < 300,
-      responseType: 'text',
-      transitional: { clarifyTimeoutError: true } as any,
+      timeoutMs: FETCH_TIMEOUT_MS,
     });
-    const responseUrl =
-      typeof res.request?.res?.responseUrl === 'string' ? res.request.res.responseUrl : url;
-    return {
-      url: responseUrl,
-      html: typeof res.data === 'string' ? res.data : String(res.data ?? ''),
-    };
+    return { url: page.url, html: page.html };
   } catch {
     return null;
   }
@@ -742,6 +1157,7 @@ export type CallLLMFn = (input: {
   systemPrompt: string;
   userPrompt: string;
   apiKey: string;
+  responseFormat: Record<string, unknown>;
 }) => Promise<LLMExtraction>;
 
 export type WorkPlanLoaderFn = (
@@ -755,6 +1171,7 @@ export const defaultCallLLM: CallLLMFn = async ({
   systemPrompt,
   userPrompt,
   apiKey,
+  responseFormat,
 }) => {
   const res = await axios.post(
     'https://api.openai.com/v1/chat/completions',
@@ -764,8 +1181,8 @@ export const defaultCallLLM: CallLLMFn = async ({
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      response_format: LAB_UNDERGRAD_RESPONSE_FORMAT,
-      temperature: 0,
+      response_format: responseFormat,
+      ...openAiChatSampling(model),
     },
     {
       headers: {
@@ -801,6 +1218,7 @@ export interface LabMicrositeUndergradLLMExtractorDeps {
   labFinder?: () => Promise<CandidateLab[]>;
   model?: string;
   apiKey?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 async function defaultWorkPlanLoader(
@@ -855,6 +1273,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
   private readonly labFinder: () => Promise<CandidateLab[]>;
   private readonly model: string;
   private readonly apiKey: string | undefined;
+  private readonly env: NodeJS.ProcessEnv;
 
   constructor(deps: LabMicrositeUndergradLLMExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage ?? defaultFetchPage;
@@ -864,13 +1283,12 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     this.labFinder = deps.labFinder ?? defaultLabFinder;
     this.model = deps.model ?? DEFAULT_MODEL;
     this.apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY;
+    this.env = deps.env ?? process.env;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     if (!this.apiKey) {
-      ctx.log(
-        'OPENAI_API_KEY missing — cannot run LLM extraction; emitting zero observations.',
-      );
+      ctx.log('OPENAI_API_KEY missing — cannot run LLM extraction; emitting zero observations.');
       return {
         observationCount: 0,
         entitiesObserved: 0,
@@ -889,43 +1307,70 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     const labs = selectLabsToProcess(candidates, {
       only: ctx.options.only,
       limit: limitOption,
+      exhaustive: ctx.options.exhaustive,
+    });
+    const logisticsProductionModeRequested = !!ctx.options.logisticsProductionMode;
+    const logisticsProductionModeConfirmed =
+      logisticsProductionModeRequested && this.env.CONFIRM_LOGISTICS_ACQUISITION === 'true';
+    if (logisticsProductionModeRequested && !logisticsProductionModeConfirmed) {
+      ctx.log(
+        '--logistics-production requires CONFIRM_LOGISTICS_ACQUISITION=true in the environment; falling back to the staging allowlist guard.',
+      );
+    }
+    const emitLogistics = logisticsAcquisitionAllowed({
+      only: ctx.options.only,
+      logisticsProductionMode: logisticsProductionModeConfirmed,
     });
     ctx.log(
-      `Processing ${labs.length} labs (limit=${limitOption ?? DEFAULT_LIMIT}, only=${(ctx.options.only || []).join(',') || 'none'})`,
+      `Processing ${labs.length} labs (limit=${ctx.options.exhaustive && limitOption === undefined ? 'all' : (limitOption ?? DEFAULT_LIMIT)}, only=${(ctx.options.only || []).join(',') || 'none'})`,
     );
+    if (!emitLogistics) {
+      ctx.log(
+        `Undergraduate logistics observations disabled: staging requires an explicit allowlist of at most ${MAX_STAGING_LOGISTICS_LABS} labs, or --logistics-production with CONFIRM_LOGISTICS_ACQUISITION=true.`,
+      );
+    }
 
     let totalObs = 0;
     let processed = 0;
     let succeeded = 0;
     let fetchFailed = 0;
     let llmFailed = 0;
+    let contentUnchangedSkipped = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
-    const workPlannerPolicy = ctx.options.ignoreWorkPlanner
-      ? undefined
-      : getWorkPlannerSourcePolicy(this.name);
+    // Staging curation (a manually-named <=25-lab --only allowlist) always force-fetches so an
+    // operator iterating on a specific lab sees the LLM's latest read. Confirmed production mode
+    // covers the full corpus instead, so it keeps WorkPlanner's freshness skip for LLM cost control
+    // and to make repeated corpus runs resumable without needing an --offset.
+    const stagingLogisticsBypass = emitLogistics && !logisticsProductionModeConfirmed;
+    const workPlannerPolicy =
+      ctx.options.ignoreWorkPlanner || stagingLogisticsBypass
+        ? undefined
+        : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
 
-    for (const lab of labs) {
+    await mapWithConcurrency(labs, concurrency, async (lab) => {
       processed++;
       if (workPlannerPolicy) {
         if (!lab.slug) {
           recordWorkPlannerNoIdentifier(workPlannerMetrics);
           ctx.log('[candidate] skipped by WorkPlanner — missing slug/entity key.');
-          continue;
+          return;
         }
         const plan = await this.workPlanLoader(lab, workPlannerPolicy, ctx);
         recordWorkPlannerDecision(workPlannerMetrics, plan);
         if (!plan.shouldFetch) {
           const reasons = Array.from(new Set(plan.fields.map((field) => field.reason))).join(',');
           ctx.log(`[${lab.slug}] skipped by WorkPlanner — ${reasons || 'fresh'}.`);
-          continue;
+          return;
         }
       }
 
-      const measuredHomePage = await measureRenderedFetch(
-        lab.websiteUrl,
-        'http',
-        () => this.fetchPage(lab.websiteUrl),
+      const measuredHomePage = await measureRenderedFetch(lab.websiteUrl, 'http', () =>
+        this.fetchPage(lab.websiteUrl),
       );
       fetchAttempts.push(measuredHomePage.metric);
       let homePage: FetchedPage | null = measuredHomePage.result;
@@ -952,17 +1397,15 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       }
       if (!homePage) {
         fetchFailed++;
-        continue;
+        return;
       }
       const homeText = htmlToPromptText(homePage.html);
 
       const subPages: PromptSourcePage[] = [];
       for (const candidate of candidateCrawlUrls(homePage.html, homePage.url)) {
         if (subPages.length >= MAX_SUBPAGES_FETCHED) break;
-        const measuredSubPage = await measureRenderedFetch(
-          candidate,
-          'http',
-          () => this.fetchPage(candidate),
+        const measuredSubPage = await measureRenderedFetch(candidate, 'http', () =>
+          this.fetchPage(candidate),
         );
         fetchAttempts.push(measuredSubPage.metric);
         const fetched = measuredSubPage.result;
@@ -972,6 +1415,21 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         subPages.push({ url: fetched.url, text });
       }
       const [primarySubPage, ...additionalSubPages] = subPages;
+
+      const entityRef = { entityType: 'researchEntity' as const, entityKey: lab.slug };
+      const contentHash = computeVersionedContentHash(
+        [homeText, ...subPages.map((page) => page.text)].join('\n'),
+        UNDERGRAD_EXTRACTION_PROMPT_HASH,
+        this.model,
+      );
+      const storedContentHash = ctx.options.forceLlm
+        ? undefined
+        : await loadStoredContentHash(this.name, entityRef);
+      if (contentUnchanged(storedContentHash, contentHash, ctx.options.forceLlm)) {
+        contentUnchangedSkipped += 1;
+        ctx.log(`[${lab.slug}] skipped — content unchanged.`);
+        return;
+      }
 
       const userPrompt = buildLLMPrompt(
         lab.name,
@@ -984,7 +1442,14 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
       // Per-(websiteUrl, model) cache so reruns don't re-charge OpenAI.
       const sourceUrls = [homePage.url, ...subPages.map((page) => page.url)];
-      const cacheKey = `llm:${this.model}:${sourceUrls.join('+')}`;
+      const cacheMode = emitLogistics ? 'logistics-v2' : 'legacy-v1';
+      const cacheKey = `llm:${cacheMode}:${this.model}:${sourceUrls.join('+')}`;
+      const systemPrompt = emitLogistics
+        ? LAB_UNDERGRAD_SYSTEM_PROMPT
+        : LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT;
+      const responseFormat = emitLogistics
+        ? LAB_UNDERGRAD_RESPONSE_FORMAT
+        : LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT;
 
       let extraction: LLMExtraction | null = null;
       if (ctx.options.useCache) {
@@ -1000,16 +1465,15 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         try {
           extraction = await this.callLLM({
             model: this.model,
-            systemPrompt: LAB_UNDERGRAD_SYSTEM_PROMPT,
+            systemPrompt,
             userPrompt,
-            apiKey: this.apiKey,
+            apiKey: this.apiKey as string,
+            responseFormat,
           });
         } catch (err: any) {
-          ctx.log(
-            `[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`,
-          );
+          ctx.log(`[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`);
           llmFailed++;
-          continue;
+          return;
         }
         if (ctx.options.useCache && extraction) {
           try {
@@ -1020,13 +1484,9 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         }
       }
 
-      const observations = extractionToObservations(
+      let observations = extractionToObservations(
         lab.slug,
-        sourceUrlForExtraction(
-          { url: homePage.url, text: homeText },
-          subPages,
-          extraction,
-        ),
+        sourceUrlForExtraction({ url: homePage.url, text: homeText }, subPages, extraction),
         extraction,
         new Date(),
         {
@@ -1037,12 +1497,24 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             extraction,
           ),
           sourceTexts: [homeText, ...subPages.map((page) => page.text)],
+          sourcePages: [{ url: homePage.url, text: homeText }, ...subPages],
         },
       );
+      if ((lab.manuallyLockedFields || []).includes('acceptingUndergrads')) {
+        observations = observations.filter(
+          (observation) => observation.field !== 'acceptingUndergrads',
+        );
+      }
+      if (!emitLogistics) {
+        observations = observations.filter(
+          (observation) => !observation.field.startsWith(LOGISTICS_OBSERVATION_PREFIX),
+        );
+      }
       if (observations.length > 0) {
         await ctx.emit(observations);
         totalObs += observations.length;
       }
+      await ctx.emit([contentHashObservation(entityRef, homePage.url, contentHash)]);
       succeeded++;
 
       if (processed % 25 === 0 || processed === labs.length) {
@@ -1050,7 +1522,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
           `progress: ${processed}/${labs.length} labs | ${succeeded} ok | ${fetchFailed} fetch-failed | ${llmFailed} llm-failed | ${totalObs} obs`,
         );
       }
-    }
+    });
 
     ctx.log(
       `Done. processed=${processed}, succeeded=${succeeded}, fetchFailed=${fetchFailed}, llmFailed=${llmFailed}, observations=${totalObs}`,
@@ -1059,7 +1531,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: succeeded,
-      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
+      notes: `LLM-extracted undergrad signals for ${succeeded}/${processed} labs (${fetchFailed} fetch-failed, ${llmFailed} llm-failed, ${contentUnchangedSkipped} content-unchanged skipped, ${workPlannerMetrics.skippedFresh + workPlannerMetrics.skippedManualLock} workplanner-skipped)`,
       metrics: {
         workPlanner: workPlannerMetrics,
       },

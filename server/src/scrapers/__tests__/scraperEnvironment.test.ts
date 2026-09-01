@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyObservationPruneEnvironmentGuards,
   applyScraperEnvironmentGuards,
+  assertScraperEnvironmentMatchesMongoTarget,
+  resolveMongoDatabaseName,
   resolveScraperEnvironment,
   summarizeMongoUrl,
 } from '../scraperEnvironment';
@@ -14,11 +17,58 @@ describe('resolveScraperEnvironment', () => {
   });
 });
 
+describe('applyObservationPruneEnvironmentGuards', () => {
+  it('keeps production retention disabled even with scraper confirmation', () => {
+    expect(() =>
+      applyObservationPruneEnvironmentGuards({
+        apply: true,
+        env: {
+          SCRAPER_ENV: 'production',
+          CONFIRM_PROD_SCRAPE: 'true',
+        },
+      }),
+    ).toThrow('Production observation pruning is disabled.');
+  });
+});
+
 describe('summarizeMongoUrl', () => {
   it('prints host and db name without credentials', () => {
     expect(
       summarizeMongoUrl('mongodb+srv://user:pass@example.mongodb.net/Development?retryWrites=true'),
     ).toBe('example.mongodb.net/Development');
+  });
+});
+
+describe('resolveMongoDatabaseName', () => {
+  it('returns the explicit database name', () => {
+    expect(
+      resolveMongoDatabaseName('mongodb+srv://user:pass@example.mongodb.net/Beta?retryWrites=true'),
+    ).toBe('Beta');
+  });
+});
+
+describe('assertScraperEnvironmentMatchesMongoTarget', () => {
+  it('blocks a Beta scraper profile pointed at Development', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'beta',
+        mongoUrl: 'mongodb://localhost/Development',
+        env: { SCRAPER_ENV: 'beta' },
+      }),
+    ).toThrow('requires Mongo database "Beta"');
+  });
+
+  it('allows explicit custom database names', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'beta',
+        mongoUrl: 'mongodb://localhost/YLabsStaging',
+        env: {
+          SCRAPER_ENV: 'beta',
+          SCRAPER_BETA_DB_NAME: 'YLabsStaging',
+        },
+      }),
+    ).not.toThrow();
   });
 });
 
@@ -34,7 +84,7 @@ describe('applyScraperEnvironmentGuards', () => {
       command: 'run',
       options: baseOptions,
       autoMaterialize: true,
-      mongoUrl: 'mongodb://localhost/Development',
+      mongoUrl: 'mongodb://localhost/Beta',
       env: { SCRAPER_ENV: 'beta' },
     });
 

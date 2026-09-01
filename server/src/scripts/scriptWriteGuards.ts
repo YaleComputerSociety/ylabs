@@ -1,5 +1,6 @@
 import os from 'os';
 import path from 'path';
+import { createHash } from 'crypto';
 import {
   resolveScraperEnvironment,
   summarizeMongoUrl,
@@ -9,6 +10,33 @@ import {
 export interface ScriptApplyGuardResult {
   environment: ScraperEnvironment;
   dbLabel: string;
+  dbFingerprint: string;
+}
+
+export function mongoTargetFingerprint(mongoUrl: string | undefined): string {
+  if (!mongoUrl) return 'missing';
+  let identity: string;
+  try {
+    const parsed = new URL(mongoUrl);
+    const topologyKeys = ['directConnection', 'loadBalanced', 'replicaSet', 'srvServiceName'];
+    const topology = topologyKeys
+      .flatMap((key) =>
+        parsed.searchParams.getAll(key).map((value) => [key.toLowerCase(), value.toLowerCase()]),
+      )
+      .sort(
+        ([leftKey, leftValue], [rightKey, rightValue]) =>
+          leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue),
+      );
+    identity = JSON.stringify({
+      protocol: parsed.protocol.toLowerCase(),
+      host: parsed.host.toLowerCase(),
+      database: parsed.pathname.replace(/^\//, '').toLowerCase(),
+      topology,
+    });
+  } catch {
+    identity = mongoUrl.split('?')[0].replace(/\/\/.*@/, '//');
+  }
+  return createHash('sha256').update(identity).digest('hex');
 }
 
 export function assertScriptApplyAllowed(args: {
@@ -34,7 +62,7 @@ export function assertScriptApplyAllowed(args: {
     );
   }
 
-  return { environment, dbLabel };
+  return { environment, dbLabel, dbFingerprint: mongoTargetFingerprint(args.mongoUrl) };
 }
 
 const hasPathPrefix = (target: string, root: string): boolean =>
@@ -48,7 +76,7 @@ export function resolveSafeJsonReportOutputPath(
   if (!output || output.startsWith('--')) {
     throw new Error(`${flag} requires a path`);
   }
-  if (/[\u0000-\u001f\u007f]/.test(output)) {
+  if (containsAsciiControl(output)) {
     throw new Error(`${flag} path contains invalid characters`);
   }
 
@@ -65,3 +93,4 @@ export function resolveSafeJsonReportOutputPath(
 
   return resolved;
 }
+import { containsAsciiControl } from '../utils/asciiControl';

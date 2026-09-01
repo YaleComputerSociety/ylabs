@@ -4,8 +4,9 @@
 import express from 'express';
 import passport from 'passport';
 import { Strategy } from 'passport-cas';
-import { validateUser, createUser, updateUser } from './services/userService';
-import { fetchYalie } from './services/yaliesService';
+import { recordAccountLogin, validateAccount } from './services/accountService';
+import type { AccountProfile } from './models/account';
+import { classifyYalieByNetid } from './services/yaliesService';
 import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
@@ -14,12 +15,10 @@ import {
   requiresDeployedRuntimeSecurity,
 } from './utils/environment';
 import { isPrivateOrLocalHostname } from './utils/urlSafety';
-import {
-  allowsLegacyAdminUserType,
-  hasActiveAdminGrant,
-} from './services/adminGrantService';
+import { ensureBootstrapAdminGrant, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
-import { triggerReconnect } from './db/connections';
+import { triggerReconnect, isTopologyLostError, withMongoReconnect } from './db/connections';
+import { authLimiter } from './middleware/rateLimiters';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -32,7 +31,6 @@ const authDebug = (...args: unknown[]) => {
   if (process.env.AUTH_DEBUG === 'true') console.log(...args.map((arg) => sanitizeLogValue(arg)));
 };
 
-const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 const AUTH_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 const MAX_AUTH_REDIRECT_LENGTH = 2048;
 const MAX_AUTH_ORIGIN_HEADER_LENGTH = 2048;
@@ -42,6 +40,7 @@ type AuthenticatedSessionUser = {
   userType?: string;
   userConfirmed?: boolean;
   profileVerified?: boolean;
+  isAdmin?: boolean;
 };
 
 type PassportAuthInfo = {
@@ -86,7 +85,11 @@ function safeRedirectTarget(raw: unknown): string | null {
     const base = unquoteEnvValue(process.env.SERVER_BASE_URL);
     const target = new URL(raw);
     if (target.username || target.password) return null;
-    if (isLocalDevelopmentRuntime() && target.origin === 'http://localhost:3000') {
+    if (
+      isLocalDevelopmentRuntime() &&
+      target.protocol === 'http:' &&
+      isPrivateOrLocalHostname(target.hostname)
+    ) {
       return target.toString();
     }
     if (!base) return null;
@@ -101,7 +104,13 @@ function safeRedirectTarget(raw: unknown): string | null {
 function originFromUrl(value: string | undefined): string {
   if (!value) return '';
   if (value.length > MAX_AUTH_ORIGIN_HEADER_LENGTH) return '';
-  if (/[\u0000-\u0020\u007f\\]/.test(value)) return '';
+  if (
+    Array.from(value).some((character) => {
+      const code = character.charCodeAt(0);
+      return isAsciiControlCode(code) || code === 0x20 || character === '\\';
+    })
+  )
+    return '';
   try {
     const parsed = new URL(value);
     if (parsed.username || parsed.password) return '';
@@ -109,6 +118,20 @@ function originFromUrl(value: string | undefined): string {
   } catch {
     return '';
   }
+}
+
+const LOCAL_DEV_FALLBACK_ORIGIN = 'http://localhost:3000';
+
+function localDevOriginFromRequest(req: express.Request): string {
+  const candidateOrigin = originFromUrl(req.get('referer')) || originFromUrl(req.get('origin'));
+  if (!candidateOrigin) return LOCAL_DEV_FALLBACK_ORIGIN;
+  try {
+    const { protocol, hostname } = new URL(candidateOrigin);
+    if (protocol === 'http:' && isPrivateOrLocalHostname(hostname)) return candidateOrigin;
+  } catch {
+    // fall through to the default below
+  }
+  return LOCAL_DEV_FALLBACK_ORIGIN;
 }
 
 function unquoteEnvValue(value: string | undefined): string {
@@ -213,12 +236,14 @@ function normalizedHeaderValue(value: string | string[] | undefined): string | u
 }
 
 // Every real account in the database is 'undergraduate' or 'graduate' —
-// bare 'student' is never actually assigned (Yalies and the /unknown
-// bootstrap form both only ever produce undergraduate/graduate) — so
-// dev/local-bypass tooling defaults to 'undergraduate' to match reality.
+// bare 'student' is never actually assigned (Yalies classification only
+// produces undergraduate/graduate) — so dev/local-bypass tooling defaults
+// to 'undergraduate' to match reality.
 function normalizeDevUserType(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return ['admin', 'undergraduate', 'graduate', 'professor', 'faculty', 'unknown'].includes(normalized)
+  return ['admin', 'undergraduate', 'graduate', 'professor', 'faculty', 'unknown'].includes(
+    normalized,
+  )
     ? normalized
     : 'undergraduate';
 }
@@ -262,7 +287,18 @@ function publicAuthSessionUser(user: unknown): AuthenticatedSessionUser | null {
     userType: normalizeSessionUserType(source.userType),
     userConfirmed: source.userConfirmed === true,
     profileVerified: source.profileVerified === true,
+    isAdmin: source.isAdmin === true,
   };
+}
+
+function coerceStoredSessionPrincipal(stored: unknown): AuthenticatedSessionUser | null {
+  if (typeof stored === 'string') {
+    const netId = normalizeAuthNetId(stored);
+    return netId
+      ? { netId, userType: 'unknown', userConfirmed: false, profileVerified: false }
+      : null;
+  }
+  return publicAuthSessionUser(stored);
 }
 
 function localAuthBypassUser(
@@ -285,6 +321,27 @@ function localAuthBypassUser(
     userConfirmed: true,
     profileVerified: true,
   };
+}
+
+async function ensureLocalAuthBypassUser(
+  env: NodeJS.ProcessEnv = process.env,
+  headers: express.Request['headers'] = {},
+): Promise<AuthenticatedSessionUser> {
+  if (!isLocalAuthBypassAllowed(env)) {
+    throw new Error('Local auth bypass is disabled for this environment');
+  }
+
+  const bypassUser = localAuthBypassUser(env, headers);
+  await recordAccountLogin({
+    netid: bypassUser.netId,
+    email: `${bypassUser.netId.toLowerCase()}@example.invalid`,
+  });
+  const isAdmin = bypassUser.userType === 'admin';
+  if (isAdmin) {
+    await ensureBootstrapAdminGrant(bypassUser.netId);
+  }
+
+  return { ...bypassUser, isAdmin };
 }
 
 function shouldSkipLocalAuthBypass(path: string): boolean {
@@ -313,28 +370,23 @@ async function ensureDevLoginUser(userType: unknown) {
 
   const normalizedUserType = normalizeDevUserType(userType);
   const profile = DEV_LOGIN_PROFILES[normalizedUserType] ?? DEV_LOGIN_PROFILES.undergraduate;
-  // A real 'unknown' user is unconfirmed/unverified until they complete the
-  // /unknown bootstrap form; every other dev role is pre-confirmed so it can
-  // exercise the rest of the app immediately.
+  // A real 'unknown' user is unconfirmed/unverified because Yalies and the
+  // Directory could not classify them; every other dev role is pre-confirmed
+  // so it can exercise the rest of the app immediately.
   const isBootstrappedType = normalizedUserType !== 'unknown';
   const netId = profile.netId;
-  const userData = {
-    netid: netId,
-    email: `${netId}@example.invalid`,
-    fname: profile.fname,
-    lname: profile.lname,
-    userType: normalizedUserType,
-    userConfirmed: isBootstrappedType,
-    profileVerified: isBootstrappedType,
-  };
-  const existing = await validateUser(netId);
-  const user = existing ? await updateUser(netId, userData) : await createUser(userData);
+  const isAdmin = normalizedUserType === 'admin';
+  await recordAccountLogin({ netid: netId, email: `${netId}@example.invalid` });
+  if (isAdmin) {
+    await ensureBootstrapAdminGrant(netId);
+  }
 
   return {
     netId,
-    userType: user.userType || normalizedUserType,
-    userConfirmed: user.userConfirmed !== false,
-    profileVerified: user.profileVerified || false,
+    userType: normalizedUserType,
+    userConfirmed: isBootstrappedType,
+    profileVerified: isBootstrappedType,
+    isAdmin,
   };
 }
 
@@ -347,124 +399,74 @@ async function buildAuthenticatedSessionUser(
     throw new Error('Invalid authentication principal');
   }
   const persistedUserType = user.userType || 'unknown';
-  const grantBackedAdmin = await hasActiveAdminGrant(netId);
-  const localDevelopmentAdmin =
-    persistedUserType === 'admin' && allowsLegacyAdminUserType(process.env);
-  const userType =
-    grantBackedAdmin || localDevelopmentAdmin
-      ? 'admin'
-      : persistedUserType === 'admin'
-        ? 'unknown'
-        : persistedUserType;
+  const isAdmin = await hasActiveAdminGrant(netId);
+  const userType = persistedUserType === 'admin' ? 'unknown' : persistedUserType;
 
   return {
     netId,
     userType,
     userConfirmed: user.userConfirmed,
     profileVerified: user.profileVerified || false,
+    isAdmin,
   };
 }
 
 /**
- * Build an update object from directory data (only non-empty fields).
+ * Resolve the login principal for a CAS-authenticated netid and ensure the
+ * backing Account exists. Classification is derived at login (Yalies for
+ * undergrad/grad, Yale Directory for faculty) without persisting a legacy
+ * User; only the private Account is written, stamping lastLoginAt.
  */
-function buildDirectoryUpdate(
-  dirPerson: NonNullable<Awaited<ReturnType<typeof fetchFromDirectory>>>,
-) {
-  const update: Record<string, any> = {};
-  if (dirPerson.firstName) update.fname = dirPerson.firstName;
-  if (dirPerson.lastName) update.lname = dirPerson.lastName;
-  if (dirPerson.email) update.email = dirPerson.email;
-  if (dirPerson.department) update.departments = [dirPerson.department];
-  if (dirPerson.title) update.title = dirPerson.title;
-  if (dirPerson.phone) update.phone = dirPerson.phone;
-  if (dirPerson.upi) update.upi = dirPerson.upi;
-  if (dirPerson.unit) update.unit = dirPerson.unit;
-  if (dirPerson.physicalLocation) update.physicalLocation = dirPerson.physicalLocation;
-  if (dirPerson.buildingDesk) update.buildingDesk = dirPerson.buildingDesk;
-  if (dirPerson.mailingAddress) update.mailingAddress = dirPerson.mailingAddress;
-  return update;
-}
-
-/**
- * Shared helper: find or create a user by netid.
- * 1. Check if user already exists in DB (refresh from directory if stale)
- * 2. Try Yalies API (undergrad/grad detection)
- * 3. If Yalies fails, try Yale Directory (faculty detection)
- * 4. Fallback: create a default user
- */
-async function findOrCreateUser(netid: string) {
-  const safeNetid = normalizeAuthNetId(netid);
-  if (!safeNetid) {
+async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedUser> {
+  const netid = normalizeAuthNetId(rawNetid);
+  if (!netid) {
     throw new Error('Invalid authentication principal');
   }
 
-  netid = safeNetid;
-  let user = await validateUser(netid);
-  if (user) {
-    const updatedAt = user.updatedAt ? new Date(user.updatedAt).getTime() : 0;
-    const isStale = Date.now() - updatedAt > STALE_THRESHOLD_MS;
+  let userType = 'unknown';
+  let userConfirmed = false;
+  let email: string | undefined;
+  let profile: AccountProfile | undefined;
 
-    if (isStale) {
-      authDebug(
-        `findOrCreateUser: refreshing stale data (last updated: ${user.updatedAt || 'never'})`,
-      );
-      try {
-        const dirPerson = await fetchFromDirectory(netid, 'netid');
-        if (dirPerson && dirPerson.name) {
-          const dirUpdate = buildDirectoryUpdate(dirPerson);
-          if (user.userType === 'unknown' && isFacultyTitle(dirPerson.title)) {
-            dirUpdate.userType = 'professor';
-            dirUpdate.userConfirmed = true;
-          }
-          user = await updateUser(netid, dirUpdate);
-          authDebug('findOrCreateUser: refreshed directory data');
-        }
-      } catch {
-        authDebug('findOrCreateUser: directory refresh failed, using cached data');
+  const yalie = await classifyYalieByNetid(netid);
+  if (yalie) {
+    userType = yalie.userType;
+    userConfirmed = yalie.userConfirmed;
+    email = yalie.email;
+    profile = {
+      firstName: yalie.fname,
+      lastName: yalie.lname,
+      userType: yalie.userType,
+      college: yalie.college,
+      year: yalie.year != null ? String(yalie.year) : undefined,
+      major: yalie.major,
+    };
+    authDebug(`resolveLoginPrincipalForCas: Yalies success, type=${userType}`);
+  } else {
+    try {
+      const dirPerson = await fetchFromDirectory(netid, 'netid');
+      if (dirPerson && dirPerson.name) {
+        const facultyTitle = isFacultyTitle(dirPerson.title);
+        userType = facultyTitle ? 'professor' : 'unknown';
+        userConfirmed = facultyTitle;
+        email = dirPerson.email || undefined;
+        profile = {
+          firstName: dirPerson.firstName,
+          lastName: dirPerson.lastName,
+          userType,
+          title: dirPerson.title,
+          department: dirPerson.department,
+        };
+        authDebug(`resolveLoginPrincipalForCas: Directory record found, type=${userType}`);
       }
-    } else {
-      authDebug('findOrCreateUser: existing user cache hit');
+    } catch {
+      authDebug('resolveLoginPrincipalForCas: directory lookup failed, using default principal');
     }
-    return user;
   }
 
-  authDebug('findOrCreateUser: trying Yalies API lookup');
-  user = await fetchYalie(netid);
-  if (user) {
-    authDebug(`findOrCreateUser: Yalies success, type=${user.userType}`);
-    return user;
-  }
+  await recordAccountLogin({ netid, email, profile });
 
-  authDebug('findOrCreateUser: Yalies failed, trying Yale Directory');
-  const dirPerson = await fetchFromDirectory(netid, 'netid');
-  if (dirPerson && dirPerson.name) {
-    authDebug('findOrCreateUser: Directory record found');
-
-    const userType = isFacultyTitle(dirPerson.title) ? 'professor' : 'unknown';
-    const dirFields = buildDirectoryUpdate(dirPerson);
-    user = await createUser({
-      netid,
-      fname: dirPerson.firstName || dirPerson.name.split(' ')[0] || 'NA',
-      lname: dirPerson.lastName || dirPerson.name.split(' ').slice(1).join(' ') || 'NA',
-      email: dirPerson.email || `${netid}@yale.edu`,
-      departments: dirPerson.department ? [dirPerson.department] : [],
-      userType,
-      userConfirmed: userType === 'professor',
-      ...dirFields,
-    });
-    authDebug(`findOrCreateUser: Directory user created, type=${userType}`);
-    return user;
-  }
-
-  authDebug('findOrCreateUser: Directory also failed, creating default user');
-  user = await createUser({
-    netid,
-    fname: netid,
-    lname: netid,
-    email: placeholderYaleEmail(netid),
-  });
-  return user;
+  return { netid, userType, userConfirmed, profileVerified: false };
 }
 
 const authConfig = resolveAuthConfig();
@@ -478,8 +480,8 @@ passport.use(
     },
     async function (profile, done) {
       try {
-        const user = await findOrCreateUser(profile.user);
-        done(null, await buildAuthenticatedSessionUser(user, profile.user));
+        const principal = await withMongoReconnect(() => resolveLoginPrincipalForCas(profile.user));
+        done(null, await buildAuthenticatedSessionUser(principal, profile.user));
       } catch (error) {
         console.log('Error in CAS login');
         done(error);
@@ -490,32 +492,43 @@ passport.use(
 
 passport.serializeUser(function (user: any, done) {
   authDebug('Serializing user');
-  const safeNetId = normalizeAuthNetId(user?.netId);
-  if (!safeNetId) {
+  const principal = publicAuthSessionUser(user);
+  if (!principal) {
     done(new Error('Invalid authentication principal'));
     return;
   }
-  done(null, safeNetId);
+  done(null, principal);
 });
 
-// Runs on every authenticated request, so it must stay a plain read:
-// the find-or-create cascade (user creation, Yalies/Directory refresh)
-// belongs at login time only. A missing user doc means the session
-// references someone we no longer know — treat as unauthenticated.
-passport.deserializeUser(async (netId: string, done) => {
+// Runs on every authenticated request, so login-time classification
+// (Yalies/Directory) must not run here; the signed session carries the
+// classified principal and only the dynamic admin grant is re-applied. A
+// missing or archived Account deserializes to unauthenticated.
+passport.deserializeUser(async (stored: unknown, done) => {
   try {
     authDebug('Deserializing user');
-    const safeNetId = normalizeAuthNetId(netId);
-    if (!safeNetId) {
+    const principal = coerceStoredSessionPrincipal(stored);
+    if (!principal) {
       done(null, null);
       return;
     }
-    const user = await validateUser(safeNetId);
-    if (!user) {
+    const account = await withMongoReconnect(() => validateAccount(principal.netId));
+    if (!account || account.archived) {
       done(null, null);
       return;
     }
-    done(null, await buildAuthenticatedSessionUser(user, safeNetId));
+    done(
+      null,
+      await buildAuthenticatedSessionUser(
+        {
+          netid: principal.netId,
+          userType: principal.userType,
+          userConfirmed: principal.userConfirmed,
+          profileVerified: principal.profileVerified,
+        },
+        principal.netId,
+      ),
+    );
   } catch (error) {
     console.log('Deserialize: Error');
     done(error, null);
@@ -536,80 +549,80 @@ const casLogin = function (
   next: express.NextFunction,
 ) {
   setPrivateAuthResponseHeaders(res);
-  passport.authenticate('cas', function (
-    err: Error | null,
-    user: AuthenticatedSessionUser | false | null | undefined,
-    info: PassportAuthInfo = {},
-  ) {
-    if (err) {
-      console.log('Error in authenticate function');
-      console.error('Authentication error details:', sanitizeLogValue(err));
-
-      const errorRedirect = safeRedirectTarget(req.query?.error);
-      if (errorRedirect) {
-        return res.redirect(errorRedirect);
-      }
-
-      // VError 1.x exposes cause as .cause() method, not a property.
-      // Walk the chain via both APIs to catch the wrapped MongoNotConnectedError.
-      const isInfraError = (function checkInfra(e: any): boolean {
-        if (!e) return false;
-        if (e.name === 'MongoNotConnectedError') return true;
-        if (typeof e.message === 'string' && e.message.includes('Client must be connected before running operations')) return true;
-        const cause = typeof e.cause === 'function' ? e.cause() : e.cause;
-        return checkInfra(cause);
-      })(err);
-      if (isInfraError) {
-        triggerReconnect();
-        return res.status(503).json({ error: 'Service temporarily unavailable, please try again' });
-      }
-
-      return res.status(401).json({ error: 'Error in authentication' });
-    }
-
-    if (!user) {
-      console.log('CAS auth but no user');
-      return res.status(401).json({ error: 'CAS auth but no user' });
-    }
-
-    req.logIn(user, async function (err) {
+  passport.authenticate(
+    'cas',
+    function (
+      err: Error | null,
+      user: AuthenticatedSessionUser | false | null | undefined,
+      _info: PassportAuthInfo = {},
+    ) {
       if (err) {
-        console.error('CAS login failed during session creation');
-        return next(err);
+        console.log('Error in authenticate function');
+        console.error('Authentication error details:', sanitizeLogValue(err));
+
+        const errorRedirect = safeRedirectTarget(req.query?.error);
+        if (errorRedirect) {
+          return res.redirect(errorRedirect);
+        }
+
+        if (isTopologyLostError(err)) {
+          void triggerReconnect();
+          return res
+            .status(503)
+            .json({ error: 'Service temporarily unavailable, please try again' });
+        }
+
+        return res.status(401).json({ error: 'Error in authentication' });
       }
 
-      try {
-        await logEvent({
-          eventType: AnalyticsEventType.LOGIN,
-          netid: user.netId,
-          userType: user.userType || 'unknown',
-          metadata: {
-            timestamp: new Date(),
-            loginMethod: 'CAS',
-          },
-        });
-        authDebug('Login event logged to analytics');
-      } catch (analyticsError) {
-        console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
+      if (!user) {
+        console.log('CAS auth but no user');
+        return res.status(401).json({ error: 'CAS auth but no user' });
       }
 
-      const safeTarget = safeRedirectTarget(req.query?.redirect);
-      if (safeTarget) {
-        return res.redirect(safeTarget);
-      }
+      req.logIn(user, async function (err) {
+        if (err) {
+          console.error('CAS login failed during session creation');
+          return next(err);
+        }
 
-      const defaultRedirect =
-        isLocalDevelopmentRuntime() ? 'http://localhost:3000' : '/';
-      return res.redirect(defaultRedirect);
-    });
-  })(req, res, next);
+        try {
+          await logEvent({
+            eventType: AnalyticsEventType.LOGIN,
+            netid: user.netId,
+            userType: user.userType || 'unknown',
+            metadata: {
+              timestamp: new Date(),
+              loginMethod: 'CAS',
+            },
+          });
+          authDebug('Login event logged to analytics');
+        } catch (analyticsError) {
+          console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
+        }
+
+        const safeTarget = safeRedirectTarget(req.query?.redirect);
+        if (safeTarget) {
+          return res.redirect(safeTarget);
+        }
+
+        const defaultRedirect = isLocalDevelopmentRuntime() ? localDevOriginFromRequest(req) : '/';
+        return res.redirect(defaultRedirect);
+      });
+    },
+  )(req, res, next);
 };
 
 const router = express.Router();
 
 router.use(async (req, res, next) => {
   if (!req.user && isLocalAuthBypassAllowed() && !shouldSkipLocalAuthBypass(req.path)) {
-    req.user = localAuthBypassUser(process.env, req.headers) as Express.User;
+    try {
+      req.user = (await ensureLocalAuthBypassUser(process.env, req.headers)) as Express.User;
+    } catch (error) {
+      next(error);
+      return;
+    }
   }
 
   if (req.isAuthenticated() && !req.session!.visitorLogged) {
@@ -646,9 +659,13 @@ router.get('/check', (req, res) => {
   return res.json({ auth: false });
 });
 
-router.get('/cas', casLogin);
+router.get('/cas', authLimiter, casLogin);
 
-const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
+const logoutRouteHandler = async (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+): Promise<void | express.Response> => {
   setPrivateAuthResponseHeaders(res);
 
   if (req.method !== 'GET') {
@@ -664,19 +681,19 @@ const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
 
   if (req.user) {
     const user = req.user as any;
-      try {
-        await logEvent({
+    try {
+      await logEvent({
         eventType: AnalyticsEventType.LOGOUT,
         netid: user.netId,
         userType: user.userType || 'unknown',
         metadata: {
           timestamp: new Date(),
         },
-        });
-        authDebug('Logout event logged to analytics');
-      } catch (analyticsError) {
-        console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
-      }
+      });
+      authDebug('Logout event logged to analytics');
+    } catch (analyticsError) {
+      console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
+    }
   }
 
   const casLogoutUrl = `${authConfig.ssoBaseURL}/logout`;
@@ -684,7 +701,7 @@ const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
   let serviceUrl;
 
   if (isLocalDevelopmentRuntime()) {
-    serviceUrl = 'http://localhost:3000/login';
+    serviceUrl = `${localDevOriginFromRequest(req)}/login`;
   } else {
     serviceUrl = `${authConfig.serverBaseURL}/login`;
   }
@@ -700,7 +717,9 @@ const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
   });
 };
 
-router.get('/logout', logoutRouteHandler);
+router.get('/logout', (req, res, next) => {
+  void logoutRouteHandler(req, res, next).catch(next);
+});
 
 if (isDevLoginAllowed()) {
   router.get('/dev-login', async (req, res) => {
@@ -731,10 +750,14 @@ if (isDevLoginAllowed()) {
           });
           authDebug('Dev login event logged to analytics');
         } catch (analyticsError) {
-          console.error('Error logging dev login analytics event:', sanitizeLogValue(analyticsError));
+          console.error(
+            'Error logging dev login analytics event:',
+            sanitizeLogValue(analyticsError),
+          );
         }
 
-        const redirectUrl = safeRedirectTarget(req.query?.redirect) ?? 'http://localhost:3000';
+        const redirectUrl =
+          safeRedirectTarget(req.query?.redirect) ?? localDevOriginFromRequest(req);
         res.redirect(redirectUrl);
       });
     } catch (error) {
@@ -746,14 +769,18 @@ if (isDevLoginAllowed()) {
 
 export {
   ensureDevLoginUser,
+  ensureLocalAuthBypassUser,
   isDevLoginAllowed,
   isLocalAuthBypassAllowed,
   isLocalDevelopmentRuntime,
   localAuthBypassUser,
+  localDevOriginFromRequest,
   logoutRouteHandler,
   placeholderYaleEmail,
+  safeRedirectTarget,
   shouldSkipLocalAuthBypass,
   validateProductionAuthConfig,
 };
 export { router as passportRoutes };
 export default passport;
+import { isAsciiControlCode } from './utils/asciiControl';

@@ -1,9 +1,37 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchHomeCard from '../ResearchHomeCard';
 import type { ResearchCluster } from '../../../utils/researchDiscoveryAdapters';
+import { sanitizeResearchEntityCopy } from '../../../utils/researchEntityCopy';
+import ConfigContext, {
+  defaultConfigContext,
+  type ResearchAreaConfig,
+} from '../../../contexts/ConfigContext';
+
+const CANONICAL_AREAS: ResearchAreaConfig[] = [
+  { name: 'Systems Neuroscience', field: 'Life Sciences', colorKey: 'blue', isDefault: false },
+];
+const areaByLowerName = new Map(CANONICAL_AREAS.map((area) => [area.name.toLowerCase(), area]));
+const researchAreaConfigValue = {
+  ...defaultConfigContext,
+  researchAreas: CANONICAL_AREAS,
+  getResearchAreaByName: (name: string) => areaByLowerName.get(name.toLowerCase()),
+};
+
+vi.mock('../../../utils/researchEntityCopy', async () => {
+  const actual = await vi.importActual<typeof import('../../../utils/researchEntityCopy')>(
+    '../../../utils/researchEntityCopy',
+  );
+  return {
+    ...actual,
+    sanitizeResearchEntityCopy: vi.fn(actual.sanitizeResearchEntityCopy),
+  };
+});
+
+const renderSpy = vi.mocked(sanitizeResearchEntityCopy);
 
 afterEach(() => {
   cleanup();
@@ -21,13 +49,8 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
   contextState: 'complete',
   contextLabel: 'Research description',
   contextLine: 'Neuroscience · School of Medicine',
-  evidenceStatus: {
-    label: 'Official Yale source found',
-    state: 'official',
-  },
   matchReason: 'Matched systems neuroscience.',
   entityCount: 1,
-  paperCount: 0,
   pathwayCount: 0,
   peopleCount: 0,
   labels: ['Systems neuroscience'],
@@ -44,7 +67,6 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
       departments: ['Neuroscience'],
       researchAreas: ['Systems neuroscience'],
       school: 'School of Medicine',
-      openness: 'unknown',
       typicalUndergradRoles: [],
       prerequisiteCourses: [],
       creditOptions: [],
@@ -56,7 +78,6 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
     },
   ],
   pathways: [],
-  papers: [],
   evidence: [
     {
       claim: 'Matched systems neuroscience.',
@@ -79,7 +100,7 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByRole('heading', { name: 'Example Research Home' })).toBeTruthy();
     expect(container.textContent).toContain('Neuroscience · School of Medicine');
     expect(container.textContent).toContain('Systems Neuroscience');
-    expect(container.textContent).toContain('Official Yale source found');
+    expect(container.textContent).not.toContain('Evidence limited');
     expect(screen.queryByText('Research homes')).toBeNull();
     expect(container.textContent).toContain('Why it might fit');
     expect(container.textContent).toContain('Matched systems neuroscience.');
@@ -150,7 +171,7 @@ describe('ResearchHomeCard', () => {
     expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
     expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Research description'));
     expect(text.indexOf('Research description')).toBeLessThan(
-      text.indexOf('Official Yale source found'),
+      text.indexOf('Studies systems neuroscience'),
     );
   });
 
@@ -165,7 +186,6 @@ describe('ResearchHomeCard', () => {
                 ...researchHome().entities[0],
                 qualitySummary: {
                   descriptionState: 'missing',
-                  cardState: 'sparse',
                   leadState: 'lead_missing',
                   repairFlags: ['duplicate_risk', 'missing_description'],
                   score: 94,
@@ -179,6 +199,33 @@ describe('ResearchHomeCard', () => {
 
     expect(screen.getByText('Duplicate review')).toBeTruthy();
     expect(screen.getByText('Needs description')).toBeTruthy();
+  });
+
+  it('elevates a genuine undergrad-hosting signal to the prominent lead line', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({ wayInBadges: ['Contact route', 'Undergrad evidence'] })}
+        />
+      </MemoryRouter>,
+    );
+
+    const lead = screen.getByText('Has hosted undergraduate researchers');
+    expect(lead.className).toContain('font-semibold');
+    expect(lead.className).not.toContain('yr-pill');
+    expect(screen.getByText('Open to inquiries').className).toContain('yr-pill');
+  });
+
+  it('does not elevate a fallback contact route to the prominent lead line', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome({ wayInBadges: ['Contact route'] })} />
+      </MemoryRouter>,
+    );
+
+    const chip = screen.getByText('Open to inquiries');
+    expect(chip.className).toContain('yr-pill');
+    expect(chip.className).not.toContain('font-semibold');
   });
 
   it('uses responsive topic caps with more-count badges', () => {
@@ -211,6 +258,32 @@ describe('ResearchHomeCard', () => {
     expect(screen.queryByText('Zeta Visualization')).toBeNull();
     expect(screen.getByText('+3 more').className).toContain('sm:hidden');
     expect(screen.getByText('+1 more').className).toContain('sm:inline-flex');
+  });
+
+  it('renders research-area topic chips in blue to match the entity-page "Best fit for" chips', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            labels: [
+              'alpha topic modeling',
+              'beta field methods',
+              'gamma archive analysis',
+              'delta source review',
+            ],
+            metadataTags: ['Fixture Department'],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    const alwaysVisibleChip = screen.getByText('Alpha Topic Modeling');
+    expect(alwaysVisibleChip.className).toContain('yr-pill');
+    expect(alwaysVisibleChip.className).toContain('yr-pill-blue');
+
+    const desktopOnlyChip = screen.getByText('Delta Source Review');
+    expect(desktopOnlyChip.className).toContain('yr-pill');
+    expect(desktopOnlyChip.className).toContain('yr-pill-blue');
   });
 
   it('opens the research profile when the card body is clicked', () => {
@@ -279,89 +352,7 @@ describe('ResearchHomeCard', () => {
     );
 
     const link = screen.getByRole('link', { name: 'Fixture Scholar' });
-    expect(link.getAttribute('href')).toBe(
-      'https://medicine.yale.edu/profile/fixture-scholar/',
-    );
-  });
-
-  it('shows ways-in badges from pathway and access-summary data inline', () => {
-    const { container } = render(
-      <MemoryRouter>
-        <ResearchHomeCard
-          home={researchHome({
-            entityCount: 1,
-            pathwayCount: 1,
-            entities: [
-              {
-                ...researchHome().entities[0],
-                accessSummary: {
-                  status: 'posted-opening',
-                  confidence: 0.9,
-                  evidence: [
-                    {
-                      signalType: 'CURRENT_UNDERGRADS',
-                      confidence: 'HIGH',
-                      excerpt: 'Undergraduates are listed on the lab roster.',
-                    },
-                  ],
-                  signalTypes: ['CURRENT_UNDERGRADS'],
-                  entryPathwayTypes: ['EXPLORATORY_CONTACT'],
-                  hasActivePostedOpportunity: true,
-                  bestNextStep: 'Apply',
-                },
-              },
-            ],
-            pathways: [
-              {
-                _id: 'pathway-1',
-                pathwayType: 'POSTED_ROLE',
-                status: 'ACTIVE',
-                evidenceStrength: 'DIRECT',
-                studentFacingLabel: 'Posted opening',
-                bestNextStepCategory: 'apply',
-                compensation: 'STIPEND',
-                sourceUrls: ['https://program.example.test/opening'],
-                researchEntity: {
-                  _id: 'entity-1',
-                  slug: 'example-research-home',
-                  name: 'Example Research Home',
-                  departments: ['Neuroscience'],
-                  researchAreas: ['Systems neuroscience'],
-                },
-                activePostedOpportunity: {
-                  _id: 'opportunity-1',
-                  title: 'Summer RA role',
-                  status: 'OPEN',
-                  provenance: 'SCRAPER_DERIVED',
-                },
-                contactRoute: {
-                  routeType: 'OFFICIAL_APPLICATION',
-                  label: 'Apply through program page',
-                  url: 'https://program.example.test/opening',
-                },
-                evidence: [
-                  {
-                    signalType: 'POSTED_OPENING',
-                    confidence: 'HIGH',
-                    confidenceScore: 1,
-                    sourceUrl: 'https://program.example.test/opening',
-                  },
-                ],
-              },
-            ],
-          })}
-        />
-      </MemoryRouter>,
-    );
-
-    expect(container.textContent).toContain('Posted route');
-    expect(container.textContent).not.toContain('Open role');
-    expect(container.textContent).not.toContain('Paid/funded');
-    expect(container.textContent).toContain('Contact route');
-    expect(container.textContent).toContain('Undergrad evidence');
-    expect(screen.getByRole('link', { name: 'View posted opportunity' }).getAttribute('href')).toBe(
-      '/opportunities/opportunity-1',
-    );
+    expect(link.getAttribute('href')).toBe('https://medicine.yale.edu/profile/fixture-scholar/');
   });
 
   it('uses compact browse cards to preserve more description before click-through', () => {
@@ -377,7 +368,9 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    const description = screen.getByText(/Studies how synthetic signals move through fixture workflows/);
+    const description = screen.getByText(
+      /Studies how synthetic signals move through fixture workflows/,
+    );
     expect(description.className).toContain('line-clamp-4');
     expect(description.className).not.toContain('line-clamp-2');
     expect(screen.getByRole('link', { name: 'View profile →' })).toBeTruthy();
@@ -391,7 +384,7 @@ describe('ResearchHomeCard', () => {
             entities: [
               ...(researchHome().entities || []),
               {
-                ...(researchHome().entities[0]),
+                ...researchHome().entities[0],
                 _id: 'entity-2',
                 slug: 'related-research-home',
                 name: 'Related Research Home',
@@ -420,10 +413,6 @@ describe('ResearchHomeCard', () => {
               'Review evidence and official source links for research homes connected to Computer Science.',
             contextState: 'sparse',
             contextLabel: 'Summary limited',
-            evidenceStatus: {
-              label: 'Evidence limited',
-              state: 'limited',
-            },
             metadataTags: ['Computer Science'],
             entities: [],
           })}
@@ -432,11 +421,9 @@ describe('ResearchHomeCard', () => {
     );
 
     expect(container.textContent).toContain('Summary limited');
-    expect(container.textContent).toContain('Evidence limited');
+    expect(container.textContent).not.toContain('Evidence limited');
     expect(container.textContent).not.toContain('Source-backed profile context');
-    expect(container.textContent).toContain(
-      'Review evidence and official source links',
-    );
+    expect(container.textContent).toContain('Review evidence and official source links');
     expect(container.textContent).toContain('Computer Science');
   });
 
@@ -501,7 +488,6 @@ describe('ResearchHomeCard', () => {
                 departments: ['Computer Science'],
                 researchAreas: ['Data Science'],
                 school: 'Yale College',
-                openness: 'unknown',
                 typicalUndergradRoles: [],
                 prerequisiteCourses: [],
                 creditOptions: [],
@@ -521,5 +507,63 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('Legacy Entry').getAttribute('title')).toBe(
       'Research profile link is not available yet.',
     );
+  });
+
+  it('renders a canonical research-area label as an inert display pill', () => {
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ConfigContext.Provider value={researchAreaConfigValue}>
+          <ResearchHomeCard home={researchHome()} />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('link', { name: /Systems Neuroscience/ })).toBeNull();
+    expect(screen.getByText('Systems Neuroscience').tagName).toBe('SPAN');
+  });
+
+  it('keeps non-area topic labels as inert display pills', () => {
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ConfigContext.Provider value={researchAreaConfigValue}>
+          <ResearchHomeCard home={researchHome({ labels: ['bespoke method label'] })} />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Bespoke Method Label').tagName).toBe('SPAN');
+  });
+
+  it('does not re-render an unchanged home when its parent re-renders on append', () => {
+    const stableHome = researchHome();
+    const stableSelect = vi.fn();
+
+    const AppendingGrid = () => {
+      const [appendedCount, setAppendedCount] = useState(0);
+      return (
+        <>
+          <button type="button" onClick={() => setAppendedCount((count) => count + 1)}>
+            Append page
+          </button>
+          <output aria-label="Appended pages">{appendedCount}</output>
+          <ResearchHomeCard home={stableHome} onSelect={stableSelect} />
+        </>
+      );
+    };
+
+    render(
+      <MemoryRouter>
+        <AppendingGrid />
+      </MemoryRouter>,
+    );
+
+    const rendersAfterMount = renderSpy.mock.calls.length;
+    expect(rendersAfterMount).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Append page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Append page' }));
+
+    expect(screen.getByLabelText('Appended pages').textContent).toBe('2');
+    expect(renderSpy.mock.calls.length).toBe(rendersAfterMount);
   });
 });

@@ -1,11 +1,9 @@
-import { AccessSignal } from '../models/accessSignal';
-import { EntryPathway } from '../models/entryPathway';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { User } from '../models/user';
+import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import mongoose from 'mongoose';
 import {
   publicStudentVisibilityTiers,
@@ -14,31 +12,40 @@ import {
 import {
   VisibilityReleaseQueueItem,
   type VisibilityReleaseQueueCollection,
-  type VisibilityReleaseQueueStatus,
   type VisibilityRepairStage,
   type VisibilityRepairStatus,
-  visibilityReleaseQueueStatuses,
 } from '../models/visibilityReleaseQueueItem';
 import {
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
   hasProfileAreaShellDuplicateRisk,
-  STUDENT_VISIBILITY_VERSION,
+  isStudentReadyHardBlockerReason,
+  isStudentReadySoftSignalReason,
 } from './studentVisibilityTier';
 import {
   selectSamePiDuplicateRiskEntityIds,
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
 import { nextRepairActionForReasons } from '../scripts/studentVisibilityBackfillReport';
+import { countResearchEntityAlternateAccessPaths } from './researchEntityAlternateAccessPath';
+import {
+  evaluateRosterLeadResolution,
+  type RosterLeadResolutionResult,
+} from './rosterLeadResolutionGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { syncEntities } from './meiliSyncService';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
+import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
+import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
+import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
-const MAX_RELEASE_QUEUE_PAGE = 1000;
-const MAX_RELEASE_QUEUE_FILTER_LENGTH = 120;
 const STUDENT_VISIBILITY_GATE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-const studentVisibilityGateDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
+const STUDENT_VISIBILITY_GATE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
+const studentVisibilityGateDocumentId = (value: unknown): string =>
+  serializedDocumentId(value) || '';
 const studentVisibilityGateEntityIdKey = (entity: any): string =>
   studentVisibilityGateDocumentId(entity?._id) || studentVisibilityGateDocumentId(entity?.id);
 const studentVisibilityGateEntitySortKey = (entity: any): string =>
@@ -66,6 +73,7 @@ export interface StudentVisibilityGatePlan {
   reasons: string[];
   sourceNames: string[];
   nextRepairAction: string;
+  hasResolvedLead?: boolean;
 }
 
 export interface VisibilityQueueUpsert {
@@ -119,15 +127,10 @@ export interface StudentVisibilityGateReport {
 
 const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
 
-const FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES = [
-  'COURSE_CREDIT',
-  'SENIOR_THESIS',
-  'FELLOWSHIP_FUNDED_PROJECT',
-];
-
 const evidenceReasons = new Set([
   'application_route',
   'concrete_next_step',
+  'graduate_relevant',
   'official_source',
   'source_backed_description',
   'undergraduate_relevant',
@@ -141,16 +144,17 @@ const sourceDescriptionRepairReasons = new Set([
   'missing_source_url',
   'missing_official_source',
   'application_source_only',
+  'blank_public_description',
 ]);
 const piRepairReasons = new Set([
   'missing_lead',
   'duplicate_name_risk',
   'duplicate_risk',
-  'pi_identity_conflict',
   'profile_identity_risk',
 ]);
 const actionRepairReasons = new Set([
   'missing_action_evidence',
+  'missing_alternate_access_path',
   'missing_application_route',
   'missing_source_route',
 ]);
@@ -161,14 +165,26 @@ const suppressionRepairReasons = new Set([
   'generic_directory_shell',
   'inactive_at_yale',
   'non_owner_grant_shell',
+  'grant_only_no_current_yale_source',
+  'permanently_closed',
+  'non_research_entity',
   'non_research_program',
   'not_undergraduate_relevant',
   'profile_biography_shell',
   'research_infrastructure_only',
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
+// Every field the tier computation reads must be listed here. A field the
+// computation consults but the projection omits arrives as `undefined`, so the
+// branch depending on it silently never fires and the gate reports a clean
+// result - the same failure #2242 produced when this pattern dropped
+// `researchAreas` from the description audit and invented 275 phantom rows.
+//
+// `studentVisibilitySuppressionReason` was missing, which made BOTH operator
+// suppression markers inert: `research_infrastructure_only` (pre-existing) and
+// `permanently_closed` (#2284). Neither could ever suppress through the gate.
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas fullDescription shortDescription studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
@@ -184,33 +200,19 @@ const repairStageForReasons = (reasons: string[]) => {
   return 'review_exception';
 };
 
+// A repair blocker is exactly a HARD-blocker reason from the canonical
+// student_ready taxonomy (issue #1802). SOFT enrichment signals never gate and
+// are never blockers - including the `missing_*` ones that a blanket
+// `startsWith('missing_')` rule would otherwise sweep in. The single source of
+// truth is STUDENT_READY_HARD_BLOCKER_REASONS / STUDENT_READY_SOFT_SIGNAL_REASONS
+// in studentVisibilityTier.ts. The residual `_only` clause keeps
+// review-exception reasons (formalization_only, application_source_only,
+// profile_fallback_only) blocking without enumerating each here.
 export function isBlockingVisibilityReason(reason: string): boolean {
   if (evidenceReasons.has(reason)) return false;
-  return (
-    reason.startsWith('missing_') ||
-    reason.endsWith('_only') ||
-    [
-      'application_source_only',
-      'archive_review',
-      'content_page_risk',
-      'duplicate_name_risk',
-      'duplicate_risk',
-      'exact_url_duplicate_risk',
-      'formalization_only',
-      'generic_directory_shell',
-      'inactive_at_yale',
-      'non_owner_grant_shell',
-      'non_research_program',
-      'missing_card_description',
-      'not_undergraduate_relevant',
-      'pi_identity_conflict',
-      'profile_biography_shell',
-      'profile_fallback_only',
-      'profile_identity_risk',
-      'research_infrastructure_only',
-      'thin_description',
-    ].includes(reason)
-  );
+  if (isStudentReadySoftSignalReason(reason)) return false;
+  if (isStudentReadyHardBlockerReason(reason)) return true;
+  return reason.endsWith('_only');
 }
 
 const uniqueStrings = (values: unknown[]): string[] =>
@@ -223,7 +225,8 @@ const uniqueStrings = (values: unknown[]): string[] =>
     ),
   );
 
-const sortedStrings = (values: string[]): string[] => [...values].sort((a, b) => a.localeCompare(b));
+const sortedStrings = (values: string[]): string[] =>
+  [...values].sort((a, b) => a.localeCompare(b));
 
 const stringSetsEqual = (left: string[], right: string[]): boolean => {
   if (left.length !== right.length) return false;
@@ -236,10 +239,7 @@ export function isStudentVisibilityGatePlanMateriallyChanged(
   plan: StudentVisibilityGatePlan,
 ): boolean {
   if (plan.currentTier !== plan.tier) return true;
-  if (
-    plan.currentComputedTier !== undefined &&
-    plan.currentComputedTier !== plan.computedTier
-  ) {
+  if (plan.currentComputedTier !== undefined && plan.currentComputedTier !== plan.computedTier) {
     return true;
   }
   if (Array.isArray(plan.currentReasons) && !stringSetsEqual(plan.currentReasons, plan.reasons)) {
@@ -256,6 +256,10 @@ const exactDuplicateUrlRejectedPathPatterns = [
   /(?:employment|research|undergraduate|volunteer)[-/]opportunities/i,
   /\/diversity\//i,
   /(?:awards?\.json|\/services\/)/i,
+  // Institutional "about"/landing pages (and their index subtrees such as the
+  // YSM A-to-Z lab index) are navigation furniture that many unrelated research
+  // homes carry in sourceUrls, so they are never a same-entity duplicate signal.
+  /^\/about(?:\/|$)/i,
 ];
 
 // Hosts that serve generic API/listing endpoints rather than a specific
@@ -263,7 +267,7 @@ const exactDuplicateUrlRejectedPathPatterns = [
 const genericDuplicateSignalHosts = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
 
 function normalizedExactDuplicateUrl(value: unknown): string {
-  const raw = typeof value === 'string' ? value.trim() : '';
+  const raw = unwrapMicrosoftSafeLinksUrl(value);
   if (!/^https?:\/\//i.test(raw)) return '';
   try {
     const url = new URL(raw);
@@ -296,15 +300,26 @@ function isSpecificDuplicateSignalUrl(value: string): boolean {
 }
 
 const entityDuplicateUrls = (entity: any): string[] =>
-  uniqueStrings([entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])])
+  uniqueStrings([
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ])
     .map(normalizedExactDuplicateUrl)
     .filter(isSpecificDuplicateSignalUrl);
 
-function exactDuplicateCanonicalScore(entity: any, leadCountsByEntityId: Map<string, number>): number {
+function exactDuplicateCanonicalScore(
+  entity: any,
+  leadCountsByEntityId: Map<string, number>,
+): number {
   const id = studentVisibilityGateEntityIdKey(entity);
   const textScore =
-    (typeof entity.fullDescription === 'string' && entity.fullDescription.trim().length >= 80 ? 35 : 0) +
-    (typeof entity.shortDescription === 'string' && entity.shortDescription.trim().length >= 40 ? 20 : 0);
+    (typeof entity.fullDescription === 'string' && entity.fullDescription.trim().length >= 80
+      ? 35
+      : 0) +
+    (typeof entity.shortDescription === 'string' && entity.shortDescription.trim().length >= 40
+      ? 20
+      : 0);
   return (
     (PUBLIC_TIERS.has(String(entity.studentVisibilityTier || '')) ? 80 : 0) +
     (isConcreteResearchHomeEntity(entity) ? 35 : 0) +
@@ -340,7 +355,9 @@ export function selectExactUrlDuplicateRiskEntityIds(
         exactDuplicateCanonicalScore(b, leadCountsByEntityId) -
         exactDuplicateCanonicalScore(a, leadCountsByEntityId);
       if (byScore !== 0) return byScore;
-      return studentVisibilityGateEntitySortKey(a).localeCompare(studentVisibilityGateEntitySortKey(b));
+      return studentVisibilityGateEntitySortKey(a).localeCompare(
+        studentVisibilityGateEntitySortKey(b),
+      );
     })[0];
     const canonicalId = studentVisibilityGateEntityIdKey(canonical);
     for (const entity of group) {
@@ -358,14 +375,45 @@ const increment = (counts: Record<string, number>, key: string) => {
 const countByEntityId = (rows: Array<{ _id: unknown; count: number }>) =>
   new Map(rows.map((row) => [studentVisibilityGateDocumentId(row._id), row.count]));
 
-const profileAreaDuplicateCounterpartEntityTypes = new Set([
-  'LAB',
-  'GROUP',
-  'FACULTY_PROJECT',
-  'DIGITAL_HUMANITIES_PROJECT',
-  'COLLECTIONS_INITIATIVE',
-  'ARCHIVE_OR_MUSEUM_PROJECT',
-]);
+const REACH_OUT_PLAUSIBLE_SIGNAL_TYPE = 'REACH_OUT_PLAUSIBLE';
+
+const hasHttpSourceUrl = (value: unknown): boolean =>
+  typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+
+export interface ReachOutPlausibleGateSignal {
+  type?: unknown;
+  archived?: unknown;
+  derivationKey?: unknown;
+  source?: { url?: unknown; evidenceIds?: unknown; name?: unknown } | null;
+}
+
+// A REACH_OUT_PLAUSIBLE signal is a derived exploratory ways-in, so it inherently
+// carries no external http `source.url`; requiring one hides an already-earned
+// signal from the action-evidence gate. It still counts only when it is backed by
+// a supporting source observation and the entity itself carries an official
+// non-grant page, so no weaker or unbacked signal can pass. Signals that already
+// carry an http `source.url` are counted by the primary aggregation and excluded
+// here to avoid double counting.
+export function reachOutPlausibleSignalCreditsActionEvidence(input: {
+  signal: ReachOutPlausibleGateSignal;
+  entity: { websiteUrl?: unknown; website?: unknown; sourceUrls?: unknown };
+}): boolean {
+  const { signal, entity } = input;
+  if (signal.archived === true) return false;
+  if (signal.type !== REACH_OUT_PLAUSIBLE_SIGNAL_TYPE) return false;
+  if (
+    typeof signal.derivationKey === 'string' &&
+    IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS.has(signal.derivationKey)
+  ) {
+    return false;
+  }
+  if (hasHttpSourceUrl(signal.source?.url)) return false;
+  const evidenceIds = Array.isArray(signal.source?.evidenceIds) ? signal.source?.evidenceIds : [];
+  if (evidenceIds.length === 0) return false;
+  return Boolean(officialNonGrantSourceUrl(entity));
+}
+
+const profileAreaDuplicateCounterpartEntityTypes = new Set(['LAB', 'FACULTY_PROJECT']);
 
 const profileAreaDuplicateCounterpartKinds = new Set(['lab', 'group', 'project']);
 
@@ -387,7 +435,9 @@ function buildSamePiVisibilityDedupeRows(args: {
   leadRows: any[];
   extraEntitiesByUserId?: Map<string, any[]>;
 }): ResearchEntityPiDedupeRow[] {
-  const entityById = new Map(args.entities.map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]));
+  const entityById = new Map(
+    args.entities.map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
+  );
   const leadRowsByUserId = new Map<string, any[]>();
   for (const row of args.leadRows) {
     const userId = studentVisibilityGateDocumentId(row.userId);
@@ -399,7 +449,9 @@ function buildSamePiVisibilityDedupeRows(args: {
     .map(([userId, rows]) => {
       const entityIds = new Set<string>();
       const entities = [
-        ...rows.map((row) => entityById.get(studentVisibilityGateDocumentId(row.researchEntityId))).filter(Boolean),
+        ...rows
+          .map((row) => entityById.get(studentVisibilityGateDocumentId(row.researchEntityId)))
+          .filter(Boolean),
         ...(args.extraEntitiesByUserId?.get(userId) || []),
       ]
         .filter((entity: any) => {
@@ -476,9 +528,9 @@ function buildNameOnlyVisibilityDedupeRows(args: {
       const [normalizedName, entities] = entry;
       const piUserIds = new Set<string>();
       for (const entity of entities) {
-        for (const lead of args.leadsByEntityId.get(studentVisibilityGateDocumentId(entity._id)) || []) {
-          const userId =
-            studentVisibilityGateDocumentId(lead.userId);
+        for (const lead of args.leadsByEntityId.get(studentVisibilityGateDocumentId(entity._id)) ||
+          []) {
+          const userId = studentVisibilityGateDocumentId(lead.userId);
           if (lead.role === 'pi' && userId) piUserIds.add(userId);
         }
       }
@@ -577,7 +629,9 @@ async function resolveArchivedResearchQueueItems(now = new Date()): Promise<numb
   })
     .select('_id')
     .lean();
-  const archivedRecordIds = archivedEntities.map((entity) => studentVisibilityGateDocumentId(entity._id));
+  const archivedRecordIds = archivedEntities.map((entity) =>
+    studentVisibilityGateDocumentId(entity._id),
+  );
   if (archivedRecordIds.length === 0) return 0;
 
   const result = await VisibilityReleaseQueueItem.updateMany(
@@ -644,7 +698,6 @@ export async function runStudentVisibilityGateForPlans(
       studentVisibilityComputedTier: plan.computedTier,
       studentVisibilityReasons: plan.reasons,
       studentVisibilityComputedAt: new Date(),
-      studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
     });
 
     if (publicSafe) {
@@ -698,69 +751,87 @@ export async function runStudentVisibilityGateForPlans(
   };
 }
 
-export async function applyStudentVisibilityGatePlans(
+export interface StudentVisibilityGateApplyOps {
+  researchOps: any[];
+  programOps: any[];
+  queueOps: any[];
+}
+
+const openQueueKey = (collection: string, recordId: unknown): string =>
+  `${collection}:${String(recordId)}`;
+
+export function buildStudentVisibilityGateApplyOps(
   plans: StudentVisibilityGatePlan[],
-): Promise<void> {
-  const now = new Date();
+  openQueueKeys: Set<string>,
+  now: Date,
+): StudentVisibilityGateApplyOps {
   const researchOps: any[] = [];
   const programOps: any[] = [];
   const queueOps: any[] = [];
 
-  const changedPlans = plans.filter(isStudentVisibilityGatePlanMateriallyChanged);
+  for (const plan of plans) {
+    const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
+    if (materiallyChanged) {
+      const visibilityUpdate = {
+        studentVisibilityTier: plan.tier,
+        studentVisibilityComputedTier: plan.computedTier,
+        studentVisibilityReasons: plan.reasons,
+        studentVisibilityComputedAt: now,
+      };
+      const recordOp = {
+        updateOne: {
+          filter: { _id: plan.recordId },
+          update: { $set: visibilityUpdate },
+        },
+      };
+      if (plan.collection === 'research') researchOps.push(recordOp);
+      else programOps.push(recordOp);
+    }
 
-  for (const plan of changedPlans) {
-    const visibilityUpdate = {
-      studentVisibilityTier: plan.tier,
-      studentVisibilityComputedTier: plan.computedTier,
-      studentVisibilityReasons: plan.reasons,
-      studentVisibilityComputedAt: now,
-      studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
-    };
-    const recordOp = {
-      updateOne: {
-        filter: { _id: plan.recordId },
-        update: { $set: visibilityUpdate },
-      },
-    };
-    if (plan.collection === 'research') researchOps.push(recordOp);
-    else programOps.push(recordOp);
+    const hasOpenQueueItem = openQueueKeys.has(openQueueKey(plan.collection, plan.recordId));
 
     if (PUBLIC_TIERS.has(plan.tier)) {
-      queueOps.push({
-        updateMany: {
-          filter: { collection: plan.collection, recordId: plan.recordId, status: 'open' },
-          update: {
-            $set: {
-              status: 'resolved',
-              resolvedAt: now,
-              resolvedByTier: plan.tier,
-              lastSeenAt: now,
+      if (hasOpenQueueItem) {
+        queueOps.push({
+          updateMany: {
+            filter: { collection: plan.collection, recordId: plan.recordId, status: 'open' },
+            update: {
+              $set: {
+                status: 'resolved',
+                resolvedAt: now,
+                resolvedByTier: plan.tier,
+                lastSeenAt: now,
+              },
             },
           },
-        },
-      });
+        });
+      }
       continue;
     }
 
     if (plan.tier === 'suppressed') {
-      const blockerReasons = plan.reasons.filter(isBlockingVisibilityReason);
-      queueOps.push({
-        updateMany: {
-          filter: { collection: plan.collection, recordId: plan.recordId, status: 'open' },
-          update: {
-            $set: {
-              status: 'suppressed',
-              resolvedAt: now,
-              resolvedByTier: plan.tier,
-              blockerReasons,
-              remainingBlockers: blockerReasons,
-              lastSeenAt: now,
+      if (hasOpenQueueItem) {
+        const blockerReasons = plan.reasons.filter(isBlockingVisibilityReason);
+        queueOps.push({
+          updateMany: {
+            filter: { collection: plan.collection, recordId: plan.recordId, status: 'open' },
+            update: {
+              $set: {
+                status: 'suppressed',
+                resolvedAt: now,
+                resolvedByTier: plan.tier,
+                blockerReasons,
+                remainingBlockers: blockerReasons,
+                lastSeenAt: now,
+              },
             },
           },
-        },
-      });
+        });
+      }
       continue;
     }
+
+    if (!materiallyChanged && hasOpenQueueItem) continue;
 
     const blockerReasons = plan.reasons.filter(isBlockingVisibilityReason);
     queueOps.push({
@@ -793,14 +864,62 @@ export async function applyStudentVisibilityGatePlans(
     });
   }
 
+  return { researchOps, programOps, queueOps };
+}
+
+async function loadOpenReleaseQueueKeys(plans: StudentVisibilityGatePlan[]): Promise<Set<string>> {
+  const recordIds = Array.from(new Set(plans.map((plan) => plan.recordId)));
+  if (recordIds.length === 0) return new Set();
+  const openItems = await VisibilityReleaseQueueItem.find({
+    status: 'open',
+    recordId: { $in: recordIds },
+  })
+    .select('collection recordId')
+    .lean();
+  return new Set(
+    (openItems as unknown as Array<{ collection: string; recordId: unknown }>).map((item) =>
+      openQueueKey(item.collection, item.recordId),
+    ),
+  );
+}
+
+export async function applyStudentVisibilityGatePlans(
+  plans: StudentVisibilityGatePlan[],
+): Promise<void> {
+  const now = new Date();
+  const openQueueKeys = await loadOpenReleaseQueueKeys(plans);
+  const { researchOps, programOps, queueOps } = buildStudentVisibilityGateApplyOps(
+    plans,
+    openQueueKeys,
+    now,
+  );
+
   await Promise.all([
-    researchOps.length > 0 ? (ResearchEntity as any).bulkWrite(researchOps, { ordered: false }) : undefined,
-    programOps.length > 0 ? (Fellowship as any).bulkWrite(programOps, { ordered: false }) : undefined,
+    researchOps.length > 0
+      ? (ResearchEntity as any).bulkWrite(researchOps, { ordered: false })
+      : undefined,
+    programOps.length > 0
+      ? (Fellowship as any).bulkWrite(programOps, { ordered: false })
+      : undefined,
     queueOps.length > 0
       ? (VisibilityReleaseQueueItem as any).bulkWrite(queueOps, { ordered: false })
       : undefined,
   ]);
   await resolveArchivedResearchQueueItems(now);
+  await syncGatedResearchEntitiesToIndex(researchOps);
+}
+
+const GATE_MEILI_SYNC_CHUNK_SIZE = 500;
+
+async function syncGatedResearchEntitiesToIndex(researchOps: any[]): Promise<void> {
+  const objectIds = researchOps
+    .map((op) => toStudentVisibilityGateObjectId(op?.updateOne?.filter?._id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  for (let start = 0; start < objectIds.length; start += GATE_MEILI_SYNC_CHUNK_SIZE) {
+    const batch = objectIds.slice(start, start + GATE_MEILI_SYNC_CHUNK_SIZE);
+    const docs = await ResearchEntity.find({ _id: { $in: batch } }).lean();
+    if (docs.length > 0) await syncEntities('researchEntity', docs as any);
+  }
 }
 
 async function planResearchEntityGateUpdates(
@@ -810,8 +929,9 @@ async function planResearchEntityGateUpdates(
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
   if (options.sourceName) {
     const [accessEntityIds, observationEntityIds, observationEntityKeys] = await Promise.all([
-      AccessSignal.distinct('researchEntityId', {
-        sourceName: options.sourceName,
+      Signal.distinct('researchEntityId', {
+        type: { $in: accessSignalTypes },
+        'source.name': options.sourceName,
         archived: false,
       }),
       Observation.distinct('entityId', {
@@ -830,7 +950,8 @@ async function planResearchEntityGateUpdates(
     const sourceEntityIds = [...accessEntityIds, ...observationEntityIds];
     const sourceClauses: Record<string, any>[] = [];
     if (sourceEntityIds.length > 0) sourceClauses.push({ _id: { $in: sourceEntityIds } });
-    if (observationEntityKeys.length > 0) sourceClauses.push({ slug: { $in: observationEntityKeys } });
+    if (observationEntityKeys.length > 0)
+      sourceClauses.push({ slug: { $in: observationEntityKeys } });
     if (match._id) {
       match._id = {
         $in: sourceEntityIds.filter((id: any) => {
@@ -861,66 +982,96 @@ async function planResearchEntityGateUpdates(
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
 
-  const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
-    ResearchGroupMember.find({
-      researchEntityId: { $in: entityIds },
-      isCurrentMember: { $ne: false },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-    })
-      .select('researchEntityId userId facultyMemberId name role')
-      .lean(),
-    AccessSignal.aggregate([
+  const [
+    rosterByEntityId,
+    accessRows,
+    reachOutPlausibleWithoutHttpSource,
+    alternateAccessPathCounts,
+  ] = await Promise.all([
+    getResearchEntityRosterByEntityId(entityIds),
+    Signal.aggregate([
       {
         $match: {
           researchEntityId: { $in: entityIds },
+          type: { $in: [...accessSignalTypes] },
           archived: false,
-          sourceUrl: { $regex: '^https?://', $options: 'i' },
+          'source.url': { $regex: '^https?://', $options: 'i' },
+          derivationKey: { $nin: Array.from(IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS) },
         },
       },
       {
         $group: {
           _id: '$researchEntityId',
           count: { $sum: 1 },
-          sourceNames: { $addToSet: '$sourceName' },
+          sourceNames: { $addToSet: '$source.name' },
         },
       },
     ]),
-    EntryPathway.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
-          sourceUrls: { $elemMatch: { $regex: '^https?://', $options: 'i' } },
-        },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
-    PostedOpportunity.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          status: { $in: ['OPEN', 'ROLLING'] },
-        },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
+    Signal.find({
+      researchEntityId: { $in: entityIds },
+      type: REACH_OUT_PLAUSIBLE_SIGNAL_TYPE,
+      archived: false,
+      'source.url': { $not: /^https?:\/\//i },
+    })
+      .select(
+        'researchEntityId type archived derivationKey source.url source.evidenceIds source.name',
+      )
+      .lean(),
+    countResearchEntityAlternateAccessPaths(entityIds),
   ]);
 
-  const leadUserIds = uniqueStrings((leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.userId)));
-  const leadUsers = leadUserIds.length
-    ? await User.find({ _id: { $in: leadUserIds } }).select('facultyMemberId fname lname title').lean()
-    : [];
-  const leadUsersById = new Map((leadUsers as any[]).map((user) => [studentVisibilityGateDocumentId(user._id), user]));
+  const buildGateLeadRows = (roster: typeof rosterByEntityId) =>
+    Array.from(roster.values())
+      .flat()
+      .filter(
+        (entry) =>
+          entry.state !== 'HISTORICAL' && STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(entry.role),
+      )
+      .map((entry) => {
+        const [fname = '', ...rest] = String(entry.name || '')
+          .trim()
+          .split(/\s+/);
+        const lname = rest.join(' ');
+        const officialProfileUrl = officialProfileUrlFromRosterEntry(entry);
+        return {
+          researchEntityId: entry.researchEntityId,
+          role: entry.role,
+          userId: entry.personId,
+          name: entry.name,
+          ...(entry.title ? { title: entry.title } : {}),
+          user: {
+            _id: entry.personId,
+            netid: entry.netid,
+            displayName: entry.name,
+            fname,
+            lname,
+            ...(entry.title ? { title: entry.title } : {}),
+            ...(entry.websiteUrl ? { websiteUrl: entry.websiteUrl } : {}),
+            ...(officialProfileUrl ? { profileUrls: { official: officialProfileUrl } } : {}),
+          },
+        };
+      });
+
+  const leadRows = buildGateLeadRows(rosterByEntityId);
+  const duplicateReferenceRosterByEntityId = needsDuplicateReferenceCorpus
+    ? await getResearchEntityRosterByEntityId(
+        duplicateReferenceEntities.map((entity: any) => entity._id),
+      )
+    : rosterByEntityId;
+  const duplicateReferenceLeadRows = needsDuplicateReferenceCorpus
+    ? buildGateLeadRows(duplicateReferenceRosterByEntityId)
+    : leadRows;
+
   const profileAreaNamesByUserId = new Map<string, string[]>();
-  const profileAreaNames = uniqueStrings(
-    (leadUsers as any[]).flatMap((user) => {
-      const names = profileAreaNamesForVisibilityPi(user.fname, user.lname);
-      profileAreaNamesByUserId.set(studentVisibilityGateDocumentId(user._id), names);
-      return names;
-    }),
-  );
+  for (const row of duplicateReferenceLeadRows) {
+    const userId = studentVisibilityGateDocumentId(row.userId);
+    if (!userId || profileAreaNamesByUserId.has(userId)) continue;
+    profileAreaNamesByUserId.set(
+      userId,
+      profileAreaNamesForVisibilityPi(row.user.fname, row.user.lname),
+    );
+  }
+  const profileAreaNames = uniqueStrings(Array.from(profileAreaNamesByUserId.values()).flat());
   const profileAreaEntities = profileAreaNames.length
     ? await ResearchEntity.find({ archived: { $ne: true }, name: { $in: profileAreaNames } })
         .select('_id slug name kind entityType websiteUrl sourceUrls departments researchAreas')
@@ -933,36 +1084,56 @@ async function planResearchEntityGateUpdates(
     if (matches.length > 0) profileAreaEntitiesByUserId.set(userId, matches);
   }
 
-  const leadsByEntityId = new Map<string, any[]>();
-  for (const row of leadRows as any[]) {
-    const user = row.userId ? leadUsersById.get(studentVisibilityGateDocumentId(row.userId)) : undefined;
-    if (user) row.user = user;
-    const key = studentVisibilityGateDocumentId(row.researchEntityId);
-    leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
-  }
+  const buildLeadsByEntityId = (rows: any[]) => {
+    const map = new Map<string, any[]>();
+    for (const row of rows) {
+      const key = studentVisibilityGateDocumentId(row.researchEntityId);
+      map.set(key, [...(map.get(key) || []), row]);
+    }
+    return map;
+  };
+  const leadsByEntityId = buildLeadsByEntityId(leadRows);
+  const duplicateReferenceLeadsByEntityId = needsDuplicateReferenceCorpus
+    ? buildLeadsByEntityId(duplicateReferenceLeadRows)
+    : leadsByEntityId;
   const accessCounts = countByEntityId(accessRows as any[]);
-  const pathwayCounts = countByEntityId(pathwayRows as any[]);
-  const postedCounts = countByEntityId(postedRows as any[]);
   const sourceNamesByEntityId = new Map(
-    (accessRows as any[]).map((row) => [studentVisibilityGateDocumentId(row._id), uniqueStrings(row.sourceNames || [])]),
+    (accessRows as any[]).map((row) => [
+      studentVisibilityGateDocumentId(row._id),
+      uniqueStrings(row.sourceNames || []),
+    ]),
   );
-  const entityById = new Map((entities as any[]).map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]));
-  const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds(
-    [
-      ...buildSamePiVisibilityDedupeRows({
-        entities: entities as any[],
-        leadRows: leadRows as any[],
-        extraEntitiesByUserId: profileAreaEntitiesByUserId,
-      }),
-      ...buildNameOnlyVisibilityDedupeRows({
-        entities: entities as any[],
-        leadsByEntityId,
-      }),
-    ],
+  const entityById = new Map(
+    (entities as any[]).map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
   );
+
+  for (const signal of reachOutPlausibleWithoutHttpSource as any[]) {
+    const entityId = studentVisibilityGateDocumentId(signal.researchEntityId);
+    const entity = entityById.get(entityId);
+    if (!entity) continue;
+    if (!reachOutPlausibleSignalCreditsActionEvidence({ signal, entity })) continue;
+    accessCounts.set(entityId, (accessCounts.get(entityId) || 0) + 1);
+    const sourceName = typeof signal.source?.name === 'string' ? signal.source.name.trim() : '';
+    sourceNamesByEntityId.set(
+      entityId,
+      uniqueStrings([...(sourceNamesByEntityId.get(entityId) || []), sourceName]),
+    );
+  }
+
+  const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds([
+    ...buildSamePiVisibilityDedupeRows({
+      entities: duplicateReferenceEntities as any[],
+      leadRows: duplicateReferenceLeadRows as any[],
+      extraEntitiesByUserId: profileAreaEntitiesByUserId,
+    }),
+    ...buildNameOnlyVisibilityDedupeRows({
+      entities: duplicateReferenceEntities as any[],
+      leadsByEntityId: duplicateReferenceLeadsByEntityId,
+    }),
+  ]);
   const exactUrlDuplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(
     duplicateReferenceEntities as any[],
-    leadRows as any[],
+    duplicateReferenceLeadRows as any[],
   );
   const concreteLeadEntityUserIds = new Set<string>();
   for (const row of leadRows as any[]) {
@@ -985,14 +1156,16 @@ async function planResearchEntityGateUpdates(
       entity,
       leadMembers,
       accessSignalCount: accessCounts.get(recordId) || 0,
-      actionablePathwayCount: pathwayCounts.get(recordId) || 0,
-      openPostedOpportunityCount: postedCounts.get(recordId) || 0,
-      duplicateRisk: hasProfileAreaShellDuplicateRisk({
-        entity,
-        leadMembers,
-        concreteLeadEntityUserIds,
-      }) || samePiDuplicateRiskEntityIds.has(recordId),
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+      duplicateRisk:
+        hasProfileAreaShellDuplicateRisk({
+          entity,
+          leadMembers,
+          concreteLeadEntityUserIds,
+        }) || samePiDuplicateRiskEntityIds.has(recordId),
       exactUrlDuplicateRisk: exactUrlDuplicateRiskEntityIds.has(recordId),
+      relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
     });
     return {
       collection: 'research' as const,
@@ -1008,6 +1181,7 @@ async function planResearchEntityGateUpdates(
       reasons: result.reasons,
       sourceNames: sourceNamesByEntityId.get(recordId) || [],
       nextRepairAction: nextRepairActionForReasons(result.reasons),
+      hasResolvedLead: leadMembers.length > 0,
     };
   });
 }
@@ -1057,6 +1231,23 @@ export async function planStudentVisibilityGate(
   return [...research, ...programs];
 }
 
+export function evaluateStudentVisibilityGateLeadResolution(
+  plans: StudentVisibilityGatePlan[],
+  options: { maxZeroLeadRatio?: number; minLeadRequiringEntities?: number } = {},
+): RosterLeadResolutionResult {
+  const researchPlans = plans.filter((plan) => plan.collection === 'research');
+  const resolvedLeadEntityCount = researchPlans.filter((plan) => plan.hasResolvedLead).length;
+  const zeroLeadEntityCount = researchPlans.filter((plan) =>
+    plan.reasons.includes('missing_lead'),
+  ).length;
+  return evaluateRosterLeadResolution({
+    resolvedLeadEntityCount,
+    zeroLeadEntityCount,
+    maxZeroLeadRatio: options.maxZeroLeadRatio,
+    minLeadRequiringEntities: options.minLeadRequiringEntities,
+  });
+}
+
 export async function runStudentVisibilityGate(
   options: StudentVisibilityGateOptions,
 ): Promise<StudentVisibilityGateReport> {
@@ -1066,58 +1257,12 @@ export async function runStudentVisibilityGate(
     collection: options.collection,
   });
   report.mode = options.mode;
-  if (options.mode === 'apply') await applyStudentVisibilityGatePlans(plans);
+  if (options.mode === 'apply') {
+    const leadResolution = evaluateStudentVisibilityGateLeadResolution(plans);
+    if (!leadResolution.safe) {
+      throw new Error(`Refusing to apply student visibility gate: ${leadResolution.blocker}`);
+    }
+    await applyStudentVisibilityGatePlans(plans);
+  }
   return report;
 }
-
-export async function listVisibilityReleaseQueue(input: {
-  collection?: VisibilityReleaseQueueCollection;
-  reason?: string;
-  sourceName?: string;
-  status?: string;
-  page?: unknown;
-  pageSize?: unknown;
-}) {
-  const page = Math.min(MAX_RELEASE_QUEUE_PAGE, Math.max(1, Math.floor(Number(input.page) || 1)));
-  const pageSize = Math.min(100, Math.max(1, Math.floor(Number(input.pageSize) || 25)));
-  const filter: Record<string, any> = {};
-  if (input.collection === 'research' || input.collection === 'programs') {
-    filter.collection = input.collection;
-  }
-  filter.status = normalizeReleaseQueueStatus(input.status);
-  const reason = normalizeReleaseQueueFilterValue(input.reason);
-  const sourceName = normalizeReleaseQueueFilterValue(input.sourceName);
-  if (reason) filter.blockerReasons = reason;
-  if (sourceName) filter.sourceNames = sourceName;
-
-  const [items, total] = await Promise.all([
-    VisibilityReleaseQueueItem.find(filter)
-      .sort({ lastSeenAt: -1, _id: 1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .lean(),
-    VisibilityReleaseQueueItem.countDocuments(filter),
-  ]);
-
-  return {
-    items,
-    total,
-    page,
-    pageSize,
-    totalPages: Math.ceil(total / pageSize),
-  };
-}
-
-const normalizeReleaseQueueFilterValue = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > MAX_RELEASE_QUEUE_FILTER_LENGTH) return undefined;
-  return trimmed;
-};
-
-const normalizeReleaseQueueStatus = (value: unknown): VisibilityReleaseQueueStatus => {
-  const status = normalizeReleaseQueueFilterValue(value);
-  return status && (visibilityReleaseQueueStatuses as readonly string[]).includes(status)
-    ? (status as VisibilityReleaseQueueStatus)
-    : 'open';
-};

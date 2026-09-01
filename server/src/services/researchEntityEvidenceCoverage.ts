@@ -1,11 +1,10 @@
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
-import { AccessSignal } from '../models/accessSignal';
-import { ContactRoute } from '../models/contactRoute';
-import { Listing } from '../models/listing';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { getResearchEntityRoster } from './researchEntityMembershipAccessor';
 
 export type EvidenceCoverageTier = 'thin' | 'partial' | 'ready_candidate';
 export type EvidenceClaimState = 'missing' | 'weak' | 'supported';
@@ -15,18 +14,15 @@ export type EvidenceCoverageBlocker =
   | 'wrong_evidence_type_description'
   | 'missing_verified_lead'
   | 'missing_access_evidence'
-  | 'missing_action_route'
-  | 'listing_only_profile';
+  | 'missing_action_route';
 
 export type SuggestedSourceType =
   | 'official-profile-page'
   | 'official-lab-homepage'
-  | 'department-undergrad-research'
-  | 'listing-refresh';
+  | 'department-undergrad-research';
 
 export interface EvidenceCoverageInput {
   entity: Record<string, any>;
-  listings?: Array<Record<string, any>>;
   members?: Array<Record<string, any>>;
   accessSignals?: Array<Record<string, any>>;
   contactRoutes?: Array<Record<string, any>>;
@@ -82,12 +78,11 @@ export interface EvidenceCoverageImpactReport {
 }
 
 export interface EvidenceCoverageImpactDeps {
-  loadResearchEntityContext: (
-    identifier: { entityId?: string; entityKey?: string },
-  ) => Promise<EvidenceCoverageInput | null>;
+  loadResearchEntityContext: (identifier: {
+    entityId?: string;
+    entityKey?: string;
+  }) => Promise<EvidenceCoverageInput | null>;
 }
-
-const LISTING_SOURCE_NAMES = new Set(['ylabs-listing', 'listing', 'legacy-listing']);
 
 const evidenceCoverageDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
@@ -105,29 +100,30 @@ const unique = <T extends string>(values: T[]): T[] => Array.from(new Set(values
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
 
 const rowHasHttpUrl = (row: Record<string, any>): boolean =>
-  [row.url, row.websiteUrl, row.website, row.sourceUrl, ...(Array.isArray(row.websites) ? row.websites : [])].some(
-    hasHttpUrl,
-  );
+  [
+    row.url,
+    row.websiteUrl,
+    row.website,
+    row.sourceUrl,
+    ...(Array.isArray(row.websites) ? row.websites : []),
+  ].some(hasHttpUrl);
 
 const hasEntitySourceUrl = (entity: Record<string, any>): boolean =>
-  [entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])].some(
-    hasHttpUrl,
-  );
-
-const isListingObservation = (observation: Record<string, any>): boolean =>
-  LISTING_SOURCE_NAMES.has(textValue(observation.sourceName));
-
-const nonListingObservations = (observations: Array<Record<string, any>>) =>
-  observations.filter((observation) => !isListingObservation(observation));
+  [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ].some(hasHttpUrl);
 
 const hasUsefulLead = (members: Array<Record<string, any>>): boolean =>
   members.some((member) =>
     Boolean(
+      textValue(member.name) ||
+      textValue(member.netid) ||
+      member.personId ||
       member.userId ||
-        member.facultyMemberId ||
-        member.user?._id ||
-        textValue(member.name) ||
-        textValue(member.user?.netid),
+      member.user?._id ||
+      textValue(member.user?.netid),
     ),
   );
 
@@ -141,7 +137,7 @@ const looksLikePublicationBlurb = (value: unknown): boolean => {
 
 const descriptionObservationSources = (observations: Array<Record<string, any>>) =>
   observations.filter((observation) =>
-    ['description', 'shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(
+    ['shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(
       textValue(observation.field),
     ),
   );
@@ -155,9 +151,9 @@ function descriptionState(
   sourceBacked: boolean;
 } {
   const rejectedFields = descriptionObservationSources(observations)
-    .filter((observation) => looksLikePublicationBlurb(observation.value || entity.description))
+    .filter((observation) => looksLikePublicationBlurb(observation.value))
     .map((observation) => ({
-      field: textValue(observation.field) || 'description',
+      field: textValue(observation.field) || 'fullDescription',
       reason: 'publication_or_book_blurb',
       sourceName: textValue(observation.sourceName) || undefined,
     }));
@@ -173,10 +169,9 @@ function descriptionState(
     website: entity.website,
     websiteUrl: entity.websiteUrl,
   });
-  const usefulDescription = quality.full.isUseful || quality.short.isUseful || textValue(entity.description).length >= 80;
+  const usefulDescription = quality.full.isUseful || quality.short.isUseful;
   const sources = descriptionObservationSources(observations);
-  const hasNonListingDescriptionObservation = sources.some((observation) => !isListingObservation(observation));
-  const sourceBacked = usefulDescription && (hasNonListingDescriptionObservation || (sources.length === 0 && hasEntitySourceUrl(entity)));
+  const sourceBacked = usefulDescription && (sources.length > 0 || hasEntitySourceUrl(entity));
 
   if (sourceBacked) return { state: 'supported', rejectedFields, sourceBacked: true };
   if (usefulDescription) return { state: 'weak', rejectedFields, sourceBacked: false };
@@ -187,18 +182,16 @@ export function assessResearchEntityEvidenceCoverage(
   input: EvidenceCoverageInput,
 ): EvidenceCoverageAssessment {
   const entity = input.entity || {};
-  const listings = input.listings || [];
   const members = input.members || [];
   const accessSignals = input.accessSignals || [];
   const contactRoutes = input.contactRoutes || [];
   const observations = input.observations || [];
-  const nonListingSourceCount = new Set(nonListingObservations(observations).map((row) => textValue(row.sourceName))).size;
-  const listingOnlyProfile = listings.length > 0 && nonListingSourceCount === 0;
   const description = descriptionState(entity, observations);
   const hasLead = hasUsefulLead(members);
   const hasContactRoute = contactRoutes.some(rowHasHttpUrl);
   const hasAccess = accessSignals.length > 0;
-  const hasAction = hasContactRoute || listings.some(rowHasHttpUrl) || accessSignals.some((signal) => textValue(signal.bestNextStep));
+  const hasAction =
+    hasContactRoute || accessSignals.some((signal) => textValue(signal.bestNextStep));
   const blockers: EvidenceCoverageBlocker[] = [];
   const suggestedSourceTypes: SuggestedSourceType[] = [];
 
@@ -216,32 +209,26 @@ export function assessResearchEntityEvidenceCoverage(
   }
   if (!hasAccess) {
     blockers.push('missing_access_evidence');
-    suggestedSourceTypes.push('department-undergrad-research', 'listing-refresh');
+    suggestedSourceTypes.push('department-undergrad-research');
   }
   if (!hasAction) {
     blockers.push('missing_action_route');
-    suggestedSourceTypes.push('department-undergrad-research', 'listing-refresh');
+    suggestedSourceTypes.push('department-undergrad-research');
   }
-  if (listingOnlyProfile) {
-    blockers.push('listing_only_profile');
-    suggestedSourceTypes.push('official-profile-page', 'official-lab-homepage');
-  }
-
   const claimStates = {
-    identity: hasEntitySourceUrl(entity) || listings.length > 0 ? 'supported' : 'weak',
+    identity: hasEntitySourceUrl(entity) ? 'supported' : 'weak',
     description: description.state,
     lead: hasLead || hasContactRoute ? 'supported' : 'missing',
     access: hasAccess ? 'supported' : 'missing',
     action: hasAction ? 'supported' : 'missing',
-    freshness: observations.length > 0 || listings.length > 0 ? 'supported' : 'weak',
+    freshness: observations.length > 0 ? 'supported' : 'weak',
   } satisfies EvidenceCoverageAssessment['claimStates'];
 
   let coverageTier: EvidenceCoverageTier = 'ready_candidate';
   if (
     blockers.includes('missing_source_backed_description') ||
     blockers.includes('wrong_evidence_type_description') ||
-    blockers.includes('missing_verified_lead') ||
-    blockers.includes('listing_only_profile')
+    blockers.includes('missing_verified_lead')
   ) {
     coverageTier = 'thin';
   } else if (blockers.length > 0) {
@@ -297,7 +284,7 @@ function overlayObservation(
   const accessSignals = [...(next.accessSignals || [])];
   const contactRoutes = [...(next.contactRoutes || [])];
 
-  if (['description', 'shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(field)) {
+  if (['shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(field)) {
     entity[field] = value;
   }
   if (field === 'sourceUrls') {
@@ -338,7 +325,6 @@ export function buildEvidenceCoverageImpact(
     (next, observation) => overlayObservation(next, observation),
     {
       entity: { ...(input.before.entity || {}) },
-      listings: [...(input.before.listings || [])],
       members: [...(input.before.members || [])],
       accessSignals: [...(input.before.accessSignals || [])],
       contactRoutes: [...(input.before.contactRoutes || [])],
@@ -382,11 +368,13 @@ async function loadResearchEntityContext({
   if (!entity) return null;
   const id = evidenceCoverageDocumentId((entity as any)._id);
   if (!id) return null;
-  const [listings, members, accessSignals, contactRoutes, observations] = await Promise.all([
-    Listing.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
-    ResearchGroupMember.find({ researchEntityId: id, isCurrentMember: { $ne: false } }).lean(),
-    AccessSignal.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
-    ContactRoute.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
+  const [roster, accessSignals, observations] = await Promise.all([
+    getResearchEntityRoster(id),
+    Signal.find({
+      researchEntityId: id,
+      type: { $in: accessSignalTypes },
+      archived: { $ne: true },
+    }).lean(),
     Observation.find({
       entityType: 'researchEntity',
       superseded: { $ne: true },
@@ -398,7 +386,16 @@ async function loadResearchEntityContext({
       .lean(),
   ]);
 
-  return { entity, listings, members, accessSignals, contactRoutes, observations };
+  const members = roster
+    .filter((entry) => entry.state !== 'HISTORICAL')
+    .map((entry) => ({
+      name: entry.name,
+      role: entry.role,
+      netid: entry.netid,
+      personId: entry.personId,
+    }));
+
+  return { entity, members, accessSignals, contactRoutes: [], observations };
 }
 
 export async function buildEvidenceCoverageImpactReportForObservations(

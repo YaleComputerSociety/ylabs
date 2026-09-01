@@ -4,13 +4,11 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { mkdirSync, writeFileSync } from 'fs';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
-import { Paper } from '../models/paper';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import {
   buildDuplicateAccessSignalGroupsFromRows,
-  buildDuplicateResearchPaperGroupsFromRows,
   type DuplicateAccessSignalGroup,
-  type DuplicateResearchPaperGroup,
 } from '../scrapers/integrityGate';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -19,7 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-export type ScraperIntegrityDuplicateReviewType = 'all' | 'research-papers' | 'access-signals';
+export type ScraperIntegrityDuplicateReviewType = 'all' | 'access-signals';
 
 export interface ScraperIntegrityDuplicateReviewArgs {
   type: ScraperIntegrityDuplicateReviewType;
@@ -37,11 +35,9 @@ export interface ScraperIntegrityDuplicateReviewReport {
   applyBlocker: string;
   limit: number;
   counts: {
-    duplicateResearchPapers: number;
     duplicateAccessSignals: number;
   };
   groups: {
-    duplicateResearchPapers: DuplicateResearchPaperGroup[];
     duplicateAccessSignals: DuplicateAccessSignalGroup[];
   };
   recommendedNextSteps: string[];
@@ -54,7 +50,11 @@ function valueAfterEquals(arg: string, flag: string): string | undefined {
   return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
 }
 
-function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
+function consumeValue(
+  argv: string[],
+  index: number,
+  flag: string,
+): { value: string; nextIndex: number } {
   const arg = argv[index];
   const inline = valueAfterEquals(arg, flag);
   const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
@@ -76,10 +76,10 @@ function parsePositiveInteger(value: string, flag: string): number {
 }
 
 function parseType(value: string): ScraperIntegrityDuplicateReviewType {
-  if (value === 'all' || value === 'research-papers' || value === 'access-signals') {
+  if (value === 'all' || value === 'access-signals') {
     return value;
   }
-  throw new Error('--type must be one of all, research-papers, or access-signals');
+  throw new Error('--type must be one of all or access-signals');
 }
 
 export function parseScraperIntegrityDuplicateReviewArgs(
@@ -119,10 +119,7 @@ export function parseScraperIntegrityDuplicateReviewArgs(
   return options;
 }
 
-export function writeScraperIntegrityDuplicateReviewOutput(
-  value: unknown,
-  output?: string,
-): void {
+export function writeScraperIntegrityDuplicateReviewOutput(value: unknown, output?: string): void {
   if (!output) return;
   const resolvedOutput = resolveSafeJsonReportOutputPath(output);
   mkdirSync(path.dirname(resolvedOutput), { recursive: true });
@@ -131,7 +128,6 @@ export function writeScraperIntegrityDuplicateReviewOutput(
 
 export function buildScraperIntegrityDuplicateReviewReport(
   input: {
-    duplicateResearchPaperGroups?: DuplicateResearchPaperGroup[];
     duplicateAccessSignalGroups?: DuplicateAccessSignalGroup[];
   },
   metadata: {
@@ -142,10 +138,6 @@ export function buildScraperIntegrityDuplicateReviewReport(
     limit: number;
   },
 ): ScraperIntegrityDuplicateReviewReport {
-  const duplicateResearchPaperGroups = (input.duplicateResearchPaperGroups || []).slice(
-    0,
-    metadata.limit,
-  );
   const duplicateAccessSignalGroups = (input.duplicateAccessSignalGroups || []).slice(
     0,
     metadata.limit,
@@ -161,69 +153,16 @@ export function buildScraperIntegrityDuplicateReviewReport(
     applyBlocker: APPLY_BLOCKER,
     limit: metadata.limit,
     counts: {
-      duplicateResearchPapers: duplicateResearchPaperGroups.length,
       duplicateAccessSignals: duplicateAccessSignalGroups.length,
     },
     groups: {
-      duplicateResearchPapers: duplicateResearchPaperGroups,
       duplicateAccessSignals: duplicateAccessSignalGroups,
     },
     recommendedNextSteps: [
       'Use this artifact to review duplicate identity groups before designing a targeted repair.',
-      'Do not archive, merge, or relink papers or access signals without an accepted guarded repair plan.',
+      'Do not archive, merge, or relink access signals without an accepted guarded repair plan.',
     ],
   };
-}
-
-async function loadDuplicateResearchPaperReviewGroups(
-  limit: number,
-): Promise<DuplicateResearchPaperGroup[]> {
-  const fields: DuplicateResearchPaperGroup['identityField'][] = [
-    'openAlexId',
-    'semanticScholarId',
-    'arxivId',
-    'doi',
-  ];
-  const groups: DuplicateResearchPaperGroup[] = [];
-
-  for (const field of fields) {
-    const rows = await Paper.aggregate([
-      {
-        $match: {
-          archived: { $ne: true },
-          [field]: { $exists: true, $nin: [null, ''] },
-        },
-      },
-      {
-        $project: {
-          identityValue: { $toString: `$${field}` },
-          paperId: { $toString: '$_id' },
-        },
-      },
-      { $match: { identityValue: { $nin: ['', 'null', 'undefined'] } } },
-      {
-        $group: {
-          _id: '$identityValue',
-          paperIds: { $addToSet: '$paperId' },
-        },
-      },
-      { $match: { 'paperIds.1': { $exists: true } } },
-      { $limit: Math.max(1, limit - groups.length) },
-    ]);
-
-    groups.push(
-      ...buildDuplicateResearchPaperGroupsFromRows(
-        rows.map((row: any) => ({
-          identityField: field,
-          identityValue: row._id,
-          paperIds: row.paperIds || [],
-        })),
-      ),
-    );
-    if (groups.length >= limit) return groups.slice(0, limit);
-  }
-
-  return groups;
 }
 
 async function loadDuplicateAccessSignalReviewGroups(
@@ -234,23 +173,33 @@ async function loadDuplicateAccessSignalReviewGroups(
     'sourceEvidenceId',
     'observationId',
   ];
+  const identityFieldPath: Record<DuplicateAccessSignalGroup['identityField'], string> = {
+    derivationKey: 'derivationKey',
+    sourceEvidenceId: 'source.evidenceIds',
+    observationId: 'source.evidenceIds',
+  };
   const groups: DuplicateAccessSignalGroup[] = [];
 
   for (const field of fields) {
-    const rows = await AccessSignal.aggregate([
+    const fieldPath = identityFieldPath[field];
+    const identityExpr =
+      field === 'derivationKey'
+        ? { $toString: `$${fieldPath}` }
+        : { $toString: { $arrayElemAt: [`$${fieldPath}`, 0] } };
+    const rows = await Signal.aggregate([
       {
         $match: {
           archived: { $ne: true },
           researchEntityId: { $exists: true, $ne: null },
-          signalType: { $exists: true, $ne: '' },
-          [field]: { $exists: true, $ne: null },
+          type: { $in: [...accessSignalTypes] },
+          [fieldPath]: { $exists: true, $ne: null },
         },
       },
       {
         $project: {
           researchEntityId: { $toString: '$researchEntityId' },
-          signalType: '$signalType',
-          identityValue: { $toString: `$${field}` },
+          signalType: '$type',
+          identityValue: identityExpr,
           signalId: { $toString: '$_id' },
         },
       },
@@ -295,17 +244,9 @@ async function main(): Promise<void> {
   });
 
   await initializeConnections();
-  const [duplicateResearchPaperGroups, duplicateAccessSignalGroups] = await Promise.all([
-    options.type === 'access-signals'
-      ? Promise.resolve([])
-      : loadDuplicateResearchPaperReviewGroups(options.limit),
-    options.type === 'research-papers'
-      ? Promise.resolve([])
-      : loadDuplicateAccessSignalReviewGroups(options.limit),
-  ]);
+  const duplicateAccessSignalGroups = await loadDuplicateAccessSignalReviewGroups(options.limit);
   const report = buildScraperIntegrityDuplicateReviewReport(
     {
-      duplicateResearchPaperGroups,
       duplicateAccessSignalGroups,
     },
     {

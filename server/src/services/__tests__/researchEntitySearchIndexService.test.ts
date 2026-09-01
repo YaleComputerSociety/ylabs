@@ -1,9 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import mongoose from 'mongoose';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import {
+  buildResearchEntitySearchEmbedderConfig,
   buildResearchEntitySearchIndexDocument,
+  buildStudentSearchTerms,
+  fetchResearchEntitySearchMemberNames,
   getResearchEntitySearchIndexSettings,
+  invalidateResearchEntitySearchEmbedderCache,
+  isResearchEntitySearchEmbedderConfigured,
+  RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+  RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+  RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
   rebuildResearchEntitySearchIndex,
 } from '../researchEntitySearchIndexService';
 
@@ -18,19 +31,264 @@ describe('researchEntitySearchIndexService', () => {
       departments: ['Psychology'],
     });
 
-    expect(doc).toEqual({
+    expect(doc).toMatchObject({
       id: 'entity-1',
       name: 'Smith Lab',
       archived: false,
       departments: ['Psychology'],
     });
+    expect(doc).not.toHaveProperty('__v');
+    expect(doc).not.toHaveProperty('embedding');
+  });
+
+  it('blanks a "Studies <chips>" area echo of researchAreas in the indexed description fields (#1466)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-studies-echo',
+      name: 'Echo Lab',
+      archived: false,
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+      fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+    });
+
+    expect(doc?.fullDescription).toBe('');
+    expect(doc?.shortDescription).toBe('');
+  });
+
+  it('keeps a genuine research-focus summary in the indexed description fields', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-genuine-summary',
+      name: 'Genuine Lab',
+      archived: false,
+      researchAreas: ['Mammalian evolutionary morphology', 'Functional morphology'],
+      fullDescription:
+        'The Genuine Lab studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+      shortDescription:
+        'Studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+    });
+
+    expect(doc?.fullDescription).toBe(
+      'The Genuine Lab studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+    );
+    expect(doc?.shortDescription).toBe(
+      'Studies mammalian functional morphology, systematics, and evolution across living and fossil groups.',
+    );
+  });
+
+  it('blanks the synthetic research-home metadata blurb + hedge in the indexed description fields (#1466)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-research-home-hedge',
+      name: 'Synthetic Home Lab',
+      archived: false,
+      fullDescription:
+        'Synthetic Home Lab is a Yale research home. This context is synthesized from indexed Yale metadata and should be checked against official sources before outreach.',
+      shortDescription: 'Research home connected to .',
+    });
+
+    expect(doc?.fullDescription).toBe('');
+    expect(doc?.shortDescription).toBe('');
+  });
+
+  it('strips retired legacy access fields', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-access',
+      name: 'Access Signal Lab',
+      archived: false,
+      openness: 'open',
+      acceptingUndergrads: true,
+      acceptanceConfidence: 0.9,
+      opennessSignals: ['posted-opening'],
+      opennessStatusCache: 'verified-accepting',
+      opennessExplanationCache: 'Has a posted opening.',
+      opennessComputedAt: '2026-01-01T00:00:00.000Z',
+      opennessLastSignalAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(doc).toMatchObject({
+      id: 'entity-access',
+    });
+    expect(doc).not.toHaveProperty('openness');
+    expect(doc).not.toHaveProperty('acceptingUndergrads');
+    expect(doc).not.toHaveProperty('acceptanceConfidence');
+    expect(doc).not.toHaveProperty('opennessSignals');
+    expect(doc).not.toHaveProperty('opennessStatusCache');
+    expect(doc).not.toHaveProperty('opennessExplanationCache');
+    expect(doc).not.toHaveProperty('opennessComputedAt');
+    expect(doc).not.toHaveProperty('opennessLastSignalAt');
+  });
+
+  it('splits bare comma-delimited research-area blobs so facets do not surface jammed lists', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-area-facet',
+      name: 'Milivojevic Lab',
+      archived: false,
+      researchAreas: [
+        'Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes',
+        'Water Supply, Quality, and Scarcity',
+      ],
+    });
+
+    expect(doc?.researchAreas).toEqual([
+      'Anxiety',
+      'Depression',
+      'Psychometrics',
+      'Treatment',
+      'Cognitive Processes',
+      'Water Supply, Quality, and Scarcity',
+    ]);
+  });
+
+  it('includes clean methods in the search document and drops empty methods lists', () => {
+    const withMethods = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-methods',
+      name: 'Methods Lab',
+      archived: false,
+      methods: ['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
+    });
+    expect(withMethods?.methods).toEqual([
+      'CRISPR-Cas9 Gene Editing',
+      'Single-cell RNA sequencing',
+    ]);
+
+    const withoutMethods = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-no-methods',
+      name: 'No Methods Lab',
+      archived: false,
+      methods: [],
+    });
+    expect(withoutMethods).not.toHaveProperty('methods');
+  });
+
+  it('adds curated student topic aliases to searchable index documents', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-ai',
+      name: 'Medical Imaging Group',
+      fullDescription: 'Uses artificial intelligence for diagnostic imaging.',
+      researchAreas: ['Computer Vision'],
+      archived: false,
+    });
+
+    expect(doc).toMatchObject({
+      id: 'entity-ai',
+      studentSearchTerms: expect.arrayContaining([
+        'ai',
+        'artificial intelligence',
+        'machine learning',
+        'computer vision',
+      ]),
+    });
+    expect(buildStudentSearchTerms({ name: 'Ailong Airway Lab' })).toEqual([]);
+  });
+
+  it('surfaces computational-vision labs under the "computer vision" bigram query (#787)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-computational-vision',
+      name: 'Zucker Faculty Research',
+      researchAreas: ['Computational Vision'],
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms).toEqual(
+      expect.arrayContaining(['cv', 'computer vision', 'computational vision']),
+    );
+  });
+
+  it('does not trigger computer-vision aliases from curriculum-vitae phrasing (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-comp-lit',
+      name: 'Comparative Literature Program',
+      departments: ['Comparative Literature'],
+      fullDescription: 'Applicants should email a CV to the program coordinator to apply.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
+  it('does not trigger computer-vision aliases from a citation author-initials pattern (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-neurology',
+      name: 'Neurology Metabolism Lab',
+      departments: ['Neurology'],
+      fullDescription:
+        'Recent publications include Mobbs CV, Yang X. Hypothalamic control of metabolism.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
+  it('still triggers computer-vision aliases when a lab genuinely abbreviates as CV (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-real-cv',
+      name: 'Vision Systems Lab',
+      fullDescription:
+        'Our CV group builds algorithms for object detection and scene understanding.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms).toEqual(
+      expect.arrayContaining(['cv', 'computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
+  it('maps "computer vision" and "computational vision" as bidirectional Meili synonyms (#787)', () => {
+    const { synonyms } = getResearchEntitySearchIndexSettings();
+
+    expect(synonyms['computer vision']).toEqual(expect.arrayContaining(['computational vision']));
+    expect(synonyms['computational vision']).toEqual(expect.arrayContaining(['computer vision']));
+  });
+
+  it('carries cross-domain topical synonyms so biomedical vernacular reaches canonical fields (#1463)', () => {
+    const { synonyms } = getResearchEntitySearchIndexSettings();
+
+    expect(synonyms.cancer).toEqual(expect.arrayContaining(['oncology']));
+    expect(synonyms.oncology).toEqual(expect.arrayContaining(['cancer']));
+    expect(synonyms.immune).toEqual(expect.arrayContaining(['immunology']));
+  });
+
+  it('keeps new cross-domain coverage on the query side and out of free-text enrichment to avoid false positives (#1463)', () => {
+    const oncologyDoc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-oncology',
+      name: 'Tumor Immunology Program',
+      researchAreas: ['Oncology'],
+      archived: false,
+    });
+    expect(oncologyDoc?.studentSearchTerms ?? []).not.toEqual(expect.arrayContaining(['cancer']));
+
+    const mlDoc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-neural-network',
+      name: 'Deep Learning Lab',
+      fullDescription: 'Builds neural network architectures for image recognition.',
+      archived: false,
+    });
+    expect(mlDoc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['neuroscience', 'neurology', 'brain']),
+    );
+  });
+
+  it('does not enrich from metaphor-prone vernacular that stays query-only (#1463)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-metaphor',
+      name: 'Economic Policy Lab',
+      fullDescription: 'Studies the political climate at the heart of modern democracies.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['climate change', 'cardiology']),
+    );
   });
 
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',
       name: 'URL Safety Lab',
-      description: 'Contact pi@example.edu or 203-555-1212 for research roles.',
+      fullDescription: 'Contact pi@example.edu or 203-555-1212 for research roles.',
       shortDescription: 'Email pi@example.edu for details.',
       websiteUrl: 'javascript:alert(document.cookie)',
       website: 'https://safe.example.edu/lab',
@@ -44,7 +302,7 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(doc).toMatchObject({
       id: 'entity-url-safety',
-      description: 'Contact [email redacted] or [phone redacted] for research roles.',
+      fullDescription: '',
       shortDescription: 'Email [email redacted] for details.',
       websiteUrl: 'https://safe.example.edu/lab',
       sourceUrls: ['https://safe.example.edu/source'],
@@ -53,6 +311,46 @@ describe('researchEntitySearchIndexService', () => {
     expect(JSON.stringify(doc)).not.toContain('mailto:');
     expect(JSON.stringify(doc)).not.toContain('pi@example.edu');
     expect(JSON.stringify(doc)).not.toContain('203-555-1212');
+  });
+
+  it('strips endowed-chair honorific titles from searchable description text so a chair-name term does not surface unrelated faculty (#1286)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-townsend-chair',
+      name: 'Nicholas Parrillo Faculty Research',
+      fullDescription:
+        'Nicholas Parrillo is the William K. Townsend Professor of Law at Yale Law School.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription).not.toMatch(/townsend/i);
+    expect(doc?.fullDescription).toBe('Nicholas Parrillo is at Yale Law School.');
+  });
+
+  it('strips a bare "Sterling Professor of X" chair title without eating the surrounding sentence (#1286)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sterling-chair',
+      name: 'Ian Shapiro Faculty Research',
+      shortDescription:
+        'Ian Shapiro is Sterling Professor of Political Science and studies democracy.',
+      archived: false,
+    });
+
+    expect(doc?.shortDescription).not.toMatch(/sterling/i);
+    expect(doc?.shortDescription).toBe('Ian Shapiro is and studies democracy.');
+  });
+
+  it('leaves ordinary description text untouched when no chair-title boilerplate is present (#1286)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-no-chair-title',
+      name: 'Genomics Lab',
+      fullDescription:
+        'The lab studies protein folding and works closely with the chemistry department.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription).toBe(
+      'The lab studies protein folding and works closely with the chemistry department.',
+    );
   });
 
   it('exposes clone-safe settings used by the live Research browse filters', () => {
@@ -69,21 +367,76 @@ describe('researchEntitySearchIndexService', () => {
         'school',
         'departments',
         'researchAreas',
-        'openness',
-        'acceptingUndergrads',
-        'acceptanceConfidence',
-        'offersIndependentStudy',
-        'currentUndergradCount',
+        'hasUndergradHostingEvidence',
+        'studentVisibilityTier',
       ]),
     );
-    expect(getResearchEntitySearchIndexSettings().searchableAttributes).toEqual(
-      expect.arrayContaining(['leadProfessorNames', 'professorNames']),
-    );
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain(
-      'mutated',
+      'acceptingUndergrads',
     );
+    expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('methods');
+    const searchable = getResearchEntitySearchIndexSettings().searchableAttributes;
+    expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
+    expect(searchable).toEqual(expect.arrayContaining(['methods']));
+    expect(searchable).toEqual(expect.arrayContaining(['shortDescription', 'fullDescription']));
+    expect(searchable).not.toContain('keywords');
+    expect(searchable).not.toContain('summary');
+    expect(searchable).not.toContain('description');
+    expect(searchable.indexOf('researchAreas')).toBeLessThan(
+      searchable.indexOf('shortDescription'),
+    );
+    expect(searchable.indexOf('shortDescription')).toBeLessThan(
+      searchable.indexOf('fullDescription'),
+    );
+    expect(getResearchEntitySearchIndexSettings().rankingRules).toEqual([
+      'words',
+      'proximity',
+      'exactness',
+      'typo',
+      'attribute',
+      'sort',
+    ]);
+    const rankingRules = getResearchEntitySearchIndexSettings().rankingRules;
+    expect(rankingRules.indexOf('exactness')).toBeLessThan(rankingRules.indexOf('attribute'));
+    expect(rankingRules.indexOf('typo')).toBeLessThan(rankingRules.indexOf('attribute'));
+    expect(getResearchEntitySearchIndexSettings().typoTolerance).toMatchObject({
+      minWordSizeForTypos: {
+        oneTypo: 5,
+        twoTypos: 9,
+      },
+      disableOnWords: expect.arrayContaining(['ai', 'ml', 'nlp', 'cv']),
+    });
+    expect(getResearchEntitySearchIndexSettings().synonyms).toMatchObject({
+      ai: expect.arrayContaining(['artificial intelligence', 'machine learning']),
+      cv: expect.arrayContaining(['computer vision']),
+    });
+    expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getResearchEntitySearchIndexSettings().sortableAttributes).toEqual(
       expect.arrayContaining(['lastObservedAt', 'name', 'createdAt', 'updatedAt']),
+    );
+  });
+
+  it('raises the pagination ceiling above the Meili default so the full directory is reachable', () => {
+    const settings = getResearchEntitySearchIndexSettings();
+
+    expect(settings.pagination.maxTotalHits).toBe(RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS);
+    expect(settings.pagination.maxTotalHits).toBeGreaterThan(1000);
+
+    settings.pagination.maxTotalHits = 1;
+    expect(getResearchEntitySearchIndexSettings().pagination.maxTotalHits).toBe(
+      RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+    );
+  });
+
+  it('raises the facet-value ceiling above the Meili default so every department stays selectable', () => {
+    const settings = getResearchEntitySearchIndexSettings();
+
+    expect(settings.faceting.maxValuesPerFacet).toBe(RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET);
+    expect(settings.faceting.maxValuesPerFacet).toBeGreaterThan(100);
+
+    settings.faceting.maxValuesPerFacet = 1;
+    expect(getResearchEntitySearchIndexSettings().faceting.maxValuesPerFacet).toBe(
+      RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
     );
   });
 
@@ -127,6 +480,137 @@ describe('researchEntitySearchIndexService', () => {
     expect(calls[2].payload).toMatchObject({
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
+  });
+
+  it('configures the OpenAI text-embedding-3-small embedder for the research index', () => {
+    const config = buildResearchEntitySearchEmbedderConfig('sk-test') as any;
+    expect(config.default).toMatchObject({
+      source: 'openAi',
+      apiKey: 'sk-test',
+      model: 'text-embedding-3-small',
+    });
+    expect(config.default.documentTemplate).toContain('{{doc.professorNames}}');
+    expect(config.default.documentTemplate).toContain('{{doc.researchAreas}}');
+    expect(config.default.documentTemplate).toContain('{{doc.shortDescription}}');
+    expect(RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL).toBe('text-embedding-3-small');
+  });
+
+  it('guards optional fields in the embedder template so documents missing them still index', () => {
+    const template = (buildResearchEntitySearchEmbedderConfig('sk-test') as any).default
+      .documentTemplate as string;
+    for (const field of [
+      'professorNames',
+      'departments',
+      'researchAreas',
+      'methods',
+      'shortDescription',
+      'fullDescription',
+    ]) {
+      expect(template).toContain(`{% if doc.${field} %}`);
+    }
+  });
+
+  it('applies the embedder during rebuild only when OPENAI_API_KEY is present', async () => {
+    const embedderCalls: any[] = [];
+    const fakeIndex = {
+      updateSettings: async () => {},
+      updateEmbedders: async (embedders: unknown) => {
+        embedderCalls.push(embedders);
+      },
+      deleteAllDocuments: async () => {},
+      addDocuments: async () => {},
+    };
+    const fetchPage = async (page: number) =>
+      page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [];
+    const run = () =>
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage,
+        fetchMemberNames: async () => new Map(),
+      });
+
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+    await run();
+    expect(embedderCalls).toHaveLength(1);
+    expect(embedderCalls[0].default.model).toBe('text-embedding-3-small');
+
+    embedderCalls.length = 0;
+    delete process.env.OPENAI_API_KEY;
+    await run();
+    expect(embedderCalls).toHaveLength(0);
+
+    if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
+  it('surfaces a failed updateEmbedders task instead of swallowing it', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => ({ taskUid: 2 }),
+      tasks: {
+        waitForTask: async (taskUid: number) =>
+          taskUid === 2
+            ? {
+                status: 'failed',
+                error: { code: 'invalid_document_fields', message: 'missing field in document' },
+              }
+            : { status: 'succeeded' },
+      },
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+        fetchMemberNames: async () => new Map(),
+      }),
+    ).rejects.toThrow(/updateEmbedders task 2 did not succeed.*invalid_document_fields/s);
+
+    if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
+  it('surfaces a failed updateSettings task instead of swallowing it', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      tasks: {
+        waitForTask: async () => ({ status: 'failed', error: { code: 'index_not_found' } }),
+      },
+    };
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+      }),
+    ).rejects.toThrow(/updateSettings task 1 did not succeed.*index_not_found/s);
+  });
+
+  it('does not wait on a task when the index client has no task-status support', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => ({ taskUid: 2 }),
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+        fetchMemberNames: async () => new Map(),
+      }),
+    ).resolves.toMatchObject({ fetchedDocumentCount: 0 });
+
+    if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    else delete process.env.OPENAI_API_KEY;
   });
 
   it('enriches rebuilt research entity documents with searchable professor names', async () => {
@@ -198,5 +682,171 @@ describe('researchEntitySearchIndexService', () => {
     ).rejects.toThrow('--page-size must be a safe positive integer');
 
     expect(getIndexCalls).toBe(0);
+  });
+});
+
+describe('isResearchEntitySearchEmbedderConfigured', () => {
+  beforeEach(() => {
+    invalidateResearchEntitySearchEmbedderCache();
+  });
+
+  it('returns true when the running index reports the default embedder', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => ({ default: { source: 'openAi' } }),
+    });
+    expect(configured).toBe(true);
+  });
+
+  it('returns false when the running index has no embedders configured', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => ({}),
+    });
+    expect(configured).toBe(false);
+  });
+
+  it('returns false when the index client does not support getEmbedders', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({});
+    expect(configured).toBe(false);
+  });
+
+  it('fails closed to false when checking the embedder throws', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => {
+        throw new Error('meili unreachable');
+      },
+    });
+    expect(configured).toBe(false);
+  });
+
+  it('caches the result until the cache is invalidated', async () => {
+    let calls = 0;
+    const index = {
+      getEmbedders: async () => {
+        calls += 1;
+        return { default: {} };
+      },
+    };
+
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(calls).toBe(1);
+
+    invalidateResearchEntitySearchEmbedderCache();
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(calls).toBe(2);
+  });
+});
+
+describe('fetchResearchEntitySearchMemberNames canonical roster projection', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['accounts', 'researchers', 'role_assignments']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  const seedMember = async (
+    entityId: mongoose.Types.ObjectId,
+    displayName: string,
+    role: string,
+    state = 'CURRENT',
+  ) => {
+    const person = await Researcher.create({
+      displayName,
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role,
+      state,
+      confidence: 0.9,
+    });
+  };
+
+  it('derives professor and lead names from the canonical roster and excludes non-professor and historical rows', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(entityId, 'Lead Professor', 'PI');
+    await seedMember(entityId, 'Core Faculty Member', 'CORE_FACULTY');
+    await seedMember(entityId, 'Lab Staff', 'STAFF');
+    await seedMember(entityId, 'Former Professor', 'PI', 'HISTORICAL');
+
+    const byEntityId = await fetchResearchEntitySearchMemberNames([entityId]);
+    const fields = byEntityId.get(entityId.toString());
+
+    expect(fields?.leadProfessorNames).toEqual(['Lead Professor']);
+    expect(fields?.professorNames).toEqual(['Lead Professor', 'Core Faculty Member']);
+  });
+});
+
+describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  beforeEach(async () => {
+    await ResearchEntity.deleteMany({});
+  });
+
+  const collectIndexedIds = async () => {
+    const indexedIds: string[] = [];
+    const fakeIndex = {
+      updateSettings: async () => {},
+      deleteAllDocuments: async () => {},
+      addDocuments: async (documents: Array<{ id: string }>) => {
+        for (const document of documents) indexedIds.push(document.id);
+      },
+    };
+    await rebuildResearchEntitySearchIndex({
+      pageSize: 50,
+      clearExisting: true,
+      getIndex: async () => fakeIndex as any,
+      fetchMemberNames: async () => new Map(),
+    });
+    return indexedIds;
+  };
+
+  it('excludes dedupe-archived entities from the rebuilt index payload', async () => {
+    const active = await ResearchEntity.create({ slug: 'active-lab', name: 'Active Lab' });
+    const explicitlyLive = await ResearchEntity.create({
+      slug: 'live-lab',
+      name: 'Live Lab',
+      archived: false,
+    });
+    await ResearchEntity.create({
+      slug: 'archived-shell',
+      name: 'Archived Shell',
+      archived: true,
+    });
+
+    const indexedIds = await collectIndexedIds();
+
+    expect(indexedIds).toEqual(
+      expect.arrayContaining([active._id.toString(), explicitlyLive._id.toString()]),
+    );
+    expect(indexedIds).toHaveLength(2);
   });
 });

@@ -20,7 +20,14 @@ const MAX_PAGES_PER_DIRECTORY = 20;
 
 export type YaleResearchDirectoryParser = 'centers-institutes' | 'core-facilities';
 export type YaleResearchSourceCategory = 'centers-institutes' | 'core-facility';
-export type YaleResearchKind = 'center' | 'institute' | 'lab' | 'program' | 'initiative' | 'group';
+export type YaleResearchKind =
+  | 'center'
+  | 'institute'
+  | 'lab'
+  | 'program'
+  | 'initiative'
+  | 'group'
+  | 'core_facility';
 
 export interface YaleResearchOfficialEntity {
   name: string;
@@ -62,7 +69,9 @@ export const DEFAULT_YALE_RESEARCH_DIRECTORY_CONFIGS: YaleResearchDirectoryConfi
 ];
 
 function cleanText(value: string | undefined | null): string {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
@@ -83,19 +92,52 @@ export function slugifyResearchYaleEntity(name: string): string {
   return `research-yale-${slugify(name)}`.slice(0, 100);
 }
 
-export function inferResearchYaleKind(
-  name: string,
-): { kind: YaleResearchKind; entityType: ResearchEntityType } {
+export function inferResearchYaleKind(name: string): {
+  kind: YaleResearchKind;
+  entityType: ResearchEntityType;
+} {
   if (/\b(?:lab|laboratory)\b/i.test(name)) return { kind: 'lab', entityType: 'LAB' };
   if (/\binstitute\b/i.test(name)) return { kind: 'institute', entityType: 'INSTITUTE' };
   if (/\b(?:center|centre|core|facility)\b/i.test(name)) {
     return { kind: 'center', entityType: 'CENTER' };
   }
-  if (/\bprogram\b/i.test(name)) return { kind: 'program', entityType: 'PROGRAM' };
-  if (/\b(?:project|initiative)\b/i.test(name)) {
+  if (/\b(?:program|project|initiative)\b/i.test(name)) {
     return { kind: 'initiative', entityType: 'INITIATIVE' };
   }
-  return { kind: 'group', entityType: 'GROUP' };
+  return { kind: 'initiative', entityType: 'INITIATIVE' };
+}
+
+export function classifyResearchYaleEntity(
+  name: string,
+  sourceCategory: YaleResearchSourceCategory,
+): { kind: YaleResearchKind; entityType: ResearchEntityType } {
+  if (sourceCategory === 'core-facility') {
+    return { kind: 'core_facility', entityType: 'CORE_FACILITY' };
+  }
+  return inferResearchYaleKind(name);
+}
+
+/**
+ * research.yale.edu tags each directory record with its own topic-specific
+ * `.item__type` chips, but also reuses the page's top-level facet buckets
+ * (its own domain-filter categories) as one of those chips. A bucket this
+ * broad describes every entity in the domain, not this one, so it is dropped
+ * rather than served as a researchArea chip (#1580 delta 1 / #1584).
+ */
+export const GENERIC_TAXONOMY_BUCKET_LABEL_LIST = [
+  'Sciences & engineering',
+  'Medical & health sciences',
+  'Arts, humanities, & social sciences',
+  'Research administration & collaboration',
+  'Faculty resources',
+];
+
+const GENERIC_TAXONOMY_BUCKET_LABELS = new Set(
+  GENERIC_TAXONOMY_BUCKET_LABEL_LIST.map((label) => label.toLowerCase()),
+);
+
+export function isGenericTaxonomyBucketLabel(value: string): boolean {
+  return GENERIC_TAXONOMY_BUCKET_LABELS.has(value.trim().toLowerCase());
 }
 
 function entityFromRecord(
@@ -109,14 +151,14 @@ function entityFromRecord(
   const url = absoluteUrl(link.attr('href'), pageUrl);
   if (!name || !url) return null;
 
-  const classification = inferResearchYaleKind(name);
+  const classification = classifyResearchYaleEntity(name, sourceCategory);
   const description = cleanText(record.find('p').first().text()) || undefined;
   const researchAreas = uniqueStrings(
     record
       .find('.item__types .item__type, .item__type')
       .map((_i, el) => cleanText($(el).text()))
       .get(),
-  );
+  ).filter((area) => !isGenericTaxonomyBucketLabel(area));
 
   return {
     name,
@@ -127,6 +169,26 @@ function entityFromRecord(
     ...(researchAreas.length > 0 ? { researchAreas } : {}),
     sourceCategory,
   };
+}
+
+const PLACEHOLDER_DESCRIPTION_RE = /^lorem ipsum\b/i;
+
+const NON_ENTITY_PAGE_NAME_RE =
+  /^(?:faqs?|help|about(?: us)?|contact(?: us)?|search|log ?in|sign ?in|home|news|events?|overview|resources?|shared resources?|pages?|sitemap|privacy|terms|accessibility)$/i;
+
+const NON_ENTITY_URL_PATH_RE =
+  /\/(?:pages?|faqs?|node|taxonomy|user|admin|search|login|sitemap)(?:\/|$)/i;
+
+export function isMintableResearchYaleEntity(entity: YaleResearchOfficialEntity): boolean {
+  const name = cleanText(entity.name);
+  if (!name || NON_ENTITY_PAGE_NAME_RE.test(name)) return false;
+  if (PLACEHOLDER_DESCRIPTION_RE.test(cleanText(entity.description))) return false;
+  try {
+    if (NON_ENTITY_URL_PATH_RE.test(new URL(entity.url).pathname)) return false;
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 function uniqueEntities(entities: YaleResearchOfficialEntity[]): YaleResearchOfficialEntity[] {
@@ -153,7 +215,7 @@ export function parseResearchYaleCenters(
     if (entity) entities.push(entity);
   });
 
-  return uniqueEntities(entities);
+  return uniqueEntities(entities.filter(isMintableResearchYaleEntity));
 }
 
 export function parseResearchYaleCoreFacilities(
@@ -176,7 +238,7 @@ export function parseResearchYaleCoreFacilities(
     if (entity) entities.push(entity);
   });
 
-  return uniqueEntities(entities);
+  return uniqueEntities(entities.filter(isMintableResearchYaleEntity));
 }
 
 export function entityToObservations(
@@ -196,16 +258,12 @@ export function entityToObservations(
     { ...base, field: 'kind', value: entity.kind },
     { ...base, field: 'entityType', value: entity.entityType },
     { ...base, field: 'websiteUrl', value: entity.url },
-    { ...base, field: 'sourceUrls', value: [sourceUrl, entity.url] },
+    { ...base, field: 'sourceUrls', value: [entity.url] },
     { ...base, field: 'sourceCategory', value: entity.sourceCategory },
   ];
 
   if (entity.description) {
-    observations.push(
-      { ...base, field: 'description', value: entity.description },
-      { ...base, field: 'fullDescription', value: entity.description },
-      { ...base, field: 'shortDescription', value: entity.description },
-    );
+    observations.push({ ...base, field: 'fullDescription', value: entity.description });
   }
   if (entity.researchAreas && entity.researchAreas.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: entity.researchAreas });
@@ -307,10 +365,14 @@ export class YaleResearchOfficialScraper implements IScraper {
         }
       }
 
-      summaries.push(`${config.key}=${configEntities} (${pagesFetched} page${pagesFetched === 1 ? '' : 's'})`);
+      summaries.push(
+        `${config.key}=${configEntities} (${pagesFetched} page${pagesFetched === 1 ? '' : 's'})`,
+      );
     }
 
-    ctx.log(`Emitted ${totalObservations} observations across ${totalEntities} research.yale.edu entities`);
+    ctx.log(
+      `Emitted ${totalObservations} observations across ${totalEntities} research.yale.edu entities`,
+    );
 
     return {
       observationCount: totalObservations,

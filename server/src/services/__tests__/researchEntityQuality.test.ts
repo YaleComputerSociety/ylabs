@@ -19,6 +19,7 @@ describe('buildResearchEntityQualitySummary', () => {
     expect(summary.leadState).toBe('lead_missing');
     expect(summary.repairFlags).toEqual([
       'missing_description',
+      'missing_card_description',
       'missing_lead',
       'missing_source_url',
     ]);
@@ -40,27 +41,11 @@ describe('buildResearchEntityQualitySummary', () => {
 
     expect(summary.descriptionState).toBe('profile_synthesis');
     expect(summary.leadState).toBe('lead_attached');
-    expect(summary.repairFlags).toEqual(['profile_fallback_only']);
+    expect(summary.repairFlags).toEqual(['profile_fallback_only', 'missing_card_description']);
     expect(summary.score).toBeLessThan(90);
   });
 
-  it('treats a faculty-member-only lead as attached academic identity', () => {
-    const summary = buildResearchEntityQualitySummary({
-      entity: {
-        fullDescription:
-          'The project studies film, media theory, and communication history using humanities methods, archival sources, and interpretive analysis.',
-        shortDescription:
-          'Studies film, media theory, and communication history using humanities methods and archival sources.',
-        sourceUrls: ['https://filmstudies.yale.edu/people/john-durham-peters'],
-      },
-      leadMembers: [{ role: 'pi', facultyMemberId: 'correct-faculty' }],
-    });
-
-    expect(summary.leadState).toBe('lead_attached');
-    expect(summary.repairFlags).not.toContain('missing_lead');
-  });
-
-  it('flags lead identity conflicts when member user and faculty identities disagree', () => {
+  it('treats a canonical roster lead with a resolved researcher name and no faculty divergence as attached without identity conflict', () => {
     const summary = buildResearchEntityQualitySummary({
       entity: {
         fullDescription:
@@ -72,22 +57,22 @@ describe('buildResearchEntityQualitySummary', () => {
       leadMembers: [
         {
           role: 'pi',
-          userId: 'wrong-user',
-          facultyMemberId: 'correct-faculty',
-          user: { facultyMemberId: 'wrong-faculty' },
+          userId: 'researcher-1',
+          name: 'John Durham Peters',
+          user: { _id: 'researcher-1', netid: 'jdp1', displayName: 'John Durham Peters' },
         },
       ],
     });
 
-    expect(summary.leadState).toBe('lead_conflict');
-    expect(summary.repairFlags).toContain('pi_identity_conflict');
+    expect(summary.leadState).toBe('lead_attached');
+    expect(summary.repairFlags).not.toContain('missing_lead');
   });
 
   it('flags source-backed records with no useful card description for repair', () => {
     const summary = buildResearchEntityQualitySummary({
       entity: {
         fullDescription:
-          'The lab studies quantum simulation, ultracold atoms, optical lattices, and topology in many-body physics. Current projects examine how unusual lattice geometries shape quantum behavior.',
+          'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
         shortDescription: '',
         sourceUrls: ['https://physics.yale.edu/example-lab'],
       },
@@ -106,8 +91,11 @@ describe('buildResearchEntityQualitySummary', () => {
           'The Yale Cardiovascular Research Center houses investigators, undergraduate and graduate students, postdoctoral trainees, and faculty members interested in basic and translational cardiovascular research. Major research themes include developmental biology, signaling, genetics, cardiomyocyte biology, and stem cells.',
         shortDescription:
           'The center focuses on basic and translational cardiovascular research, including developmental biology, signaling, genetics, cardiomyocyte biology, and stem cells.',
-        sourceUrls: ['https://medicine.yale.edu/internal-medicine/cardio/research/basic-translational-research/'],
-        websiteUrl: 'https://medicine.yale.edu/internal-medicine/cardio/research/basic-translational-research/',
+        sourceUrls: [
+          'https://medicine.yale.edu/internal-medicine/cardio/research/basic-translational-research/',
+        ],
+        websiteUrl:
+          'https://medicine.yale.edu/internal-medicine/cardio/research/basic-translational-research/',
       },
       leadMembers: [{ role: 'pi', userId: 'user-1' }],
     });

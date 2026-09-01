@@ -35,7 +35,10 @@ export function slugify(input: string): string {
  */
 export function netidFromEmail(email: string | undefined | null): string | null {
   if (!email) return null;
-  const cleaned = String(email).trim().toLowerCase().replace(/^mailto:/, '');
+  const cleaned = String(email)
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
   const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
   if (!match) return null;
   return match[1].toLowerCase();
@@ -50,14 +53,6 @@ function asciiTokens(input: string): string[] {
     .filter((token) => token && !/^\d+$/.test(token));
 }
 
-function givenNameCompatible(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a.length === 1 && b.startsWith(a)) return true;
-  if (b.length === 1 && a.startsWith(b)) return true;
-  return a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a));
-}
-
 /**
  * Return true only when a Yale email is plausibly owned by the supplied person.
  *
@@ -69,7 +64,10 @@ export function isLikelyPersonSpecificYaleEmail(
   email: string | undefined | null,
   personName: string | undefined | null,
 ): boolean {
-  const cleaned = String(email || '').trim().toLowerCase().replace(/^mailto:/, '');
+  const cleaned = String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
   const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
   if (!match) return false;
 
@@ -126,7 +124,8 @@ export function isLikelyPersonSpecificYaleEmail(
 
 /**
  * Normalize a faculty display name: collapse whitespace, strip trailing
- * credential suffixes (", Ph.D.", ", M.D.", etc.), and remove leading honorifics.
+ * credential suffixes (", Ph.D.", ", M.D.", etc.), remove leading honorifics,
+ * and drop parenthetical nicknames ("Ruby (Hsin-Fang) Tu" -> "Ruby Tu").
  *
  * Returns the cleaned name suitable for slugification or display. Returns an
  * empty string on falsy input.
@@ -136,15 +135,45 @@ export function normalizeName(name: string | undefined | null): string {
   let n = String(name).replace(/\s+/g, ' ').trim();
   // strip leading honorifics
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
-  // strip trailing credential clauses after the last comma
-  // e.g. "Ronald Breaker, Ph.D." -> "Ronald Breaker"
-  n = n.replace(
-    /,\s*(ph\.?\s*d\.?|m\.?\s*d\.?|m\.?\s*p\.?\s*h\.?|j\.?\s*d\.?|sc\.?\s*d\.?|d\.?\s*phil\.?|dphil|ed\.?\s*d\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*b\.?\s*a\.?|esq\.?)\.?\s*$/i,
-    '',
-  );
+  // drop parenthetical nicknames/asides e.g. "Ruby (Hsin-Fang) Tu" -> "Ruby Tu",
+  // then clear any stray unmatched parenthesis left by upstream truncation
+  n = n
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/[()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // strip trailing credential clauses after the last comma, repeating so that
+  // stacked degrees collapse fully e.g. "Avery Sloan, MD, PhD" -> "Avery Sloan"
+  const credentialClause =
+    /,\s*(ph\.?\s*d\.?|m\.?\s*d\.?|m\.?\s*p\.?\s*h\.?|j\.?\s*d\.?|sc\.?\s*d\.?|d\.?\s*phil\.?|dphil|ed\.?\s*d\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*b\.?\s*a\.?|esq\.?)\.?\s*$/i;
+  let stripped = n.replace(credentialClause, '');
+  while (stripped !== n) {
+    n = stripped;
+    stripped = n.replace(credentialClause, '');
+  }
   // strip trailing parenthetical/credential-like trailing tokens
-  n = n.trim().replace(/[,;]+$/, '').trim();
+  n = n
+    .trim()
+    .replace(/[,;]+$/, '')
+    .trim();
   return n;
+}
+
+/**
+ * Ensure a single-letter initial that is immediately followed by a period keeps
+ * a space before the next word, so "X.Liu" and "J.R.R. Example" render as
+ * "X. Liu" and "J. R. R. Example". Whitespace runs are collapsed to single
+ * spaces and the result is trimmed. An already-spaced initial ("X. Liu") is left
+ * unchanged, and multi-word names without initials only have their whitespace
+ * normalized.
+ */
+export function normalizeInitialSpacing(name: string | undefined | null): string {
+  if (!name) return '';
+  return String(name)
+    .replace(/\s+/g, ' ')
+    .replace(/\b([A-Za-z])\.(?=[A-Za-z])/g, '$1. ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**

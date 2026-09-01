@@ -24,54 +24,59 @@ Models are Mongoose schemas with indexes.
 
 ## Stack
 
-| Layer | Technology |
-|-------|------------|
-| Client | React 19, TypeScript 5.3, Vite 6.3, React Router v6, MUI v7, styled-components, TailwindCSS v3 |
-| Server | Express 4, TypeScript 5.3, Passport.js 0.5, Mongoose 8 |
-| Search | Meilisearch 0.57 with hybrid search and OpenAI `text-embedding-3-small` embedder |
-| Database | MongoDB Atlas, single cluster with separate databases per environment |
-| Package Manager | Yarn 4 via Corepack |
-| Tooling | concurrently, nodemon, ts-node, cross-env |
+| Layer           | Technology                                                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| Client          | React 19, TypeScript 5.3, Vite 6.3, React Router v7, MUI v7, TailwindCSS v3                                 |
+| Server          | Express 4, TypeScript 5.3, Passport.js 0.5, Mongoose 8                                                      |
+| Search          | Meilisearch 0.57 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
+| Database        | MongoDB Atlas with separate Development, Beta, and Production databases                                     |
+| Package Manager | Yarn 4 via Corepack                                                                                         |
+| Tooling         | concurrently, nodemon, ts-node, cross-env                                                                   |
 
 ## Repo map
 
-| Path | Purpose |
-|------|---------|
-| `client/` | React frontend, Vite dev server on port 3000. |
-| `server/` | Express backend, default port 4000. |
-| `server/src/routes/` | Express routers aggregated in `routes/index.ts`. |
-| `server/src/controllers/` | Request handlers. |
-| `server/src/services/` | Business logic and external integrations. |
-| `server/src/models/` | Mongoose schemas and indexes. |
-| `server/src/scrapers/` | Evidence-first scraper infrastructure. |
-| `server/src/middleware/` | Auth, validation, security, and error handling middleware. |
-| `server/src/db/` | Multi-mode database connections. |
-| `server/src/utils/` | Shared utilities, errors, environment helpers, Meili client, SSRF guard. |
-| `data-migration/` | Standalone migration scripts. |
-| `docs/` | Durable product, architecture, and workflow documentation. |
-| `skills/` | On-demand agent skills. |
+| Path                      | Purpose                                                                  |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `client/`                 | React frontend, Vite dev server on port 3000.                            |
+| `server/`                 | Express backend, default port 4000.                                      |
+| `server/src/routes/`      | Express routers aggregated in `routes/index.ts`.                         |
+| `server/src/controllers/` | Request handlers.                                                        |
+| `server/src/services/`    | Business logic and external integrations.                                |
+| `server/src/models/`      | Mongoose schemas and indexes.                                            |
+| `server/src/scrapers/`    | Evidence-first scraper infrastructure.                                   |
+| `server/src/middleware/`  | Auth, validation, security, and error handling middleware.               |
+| `server/src/db/`          | Multi-mode database connections.                                         |
+| `server/src/utils/`       | Shared utilities, errors, environment helpers, Meili client, SSRF guard. |
+| `docs/`                   | Durable product, architecture, and workflow documentation.               |
+| `skills/`                 | On-demand agent skills.                                                  |
 
 ## Commands
 
-| Command | Effect |
-|---------|--------|
-| `yarn install:all` | Install deps in root, server, and client. |
-| `yarn dev:client` | Vite dev server on port 3000. |
-| `yarn dev:server` | Express with nodemon on port 4000. |
-| `yarn build` | Corepack enable, install all deps, build server, build client. |
-| `yarn start` | Run both servers in production. |
-| `yarn clean:all` | Remove all `node_modules` directories. |
-| `yarn --cwd client test` | Client Vitest watch mode. |
-| `yarn --cwd client test:ci` | Client Vitest once. |
-| `yarn --cwd server test` | Server Vitest suite. |
-| `yarn --cwd server scrape <cmd>` | Scraper CLI. |
-| `yarn --cwd server gates:refresh` | Regenerate canonical gate scorecards. |
+| Command                                                          | Effect                                                                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `yarn install:all`                                               | Install deps in root, server, and client.                                                    |
+| `yarn dev:client`                                                | Vite dev server on port 3000.                                                                |
+| `yarn dev:server`                                                | Express with nodemon on port 4000.                                                           |
+| `yarn build`                                                     | Corepack enable, install all deps, build server, build client.                               |
+| `yarn start`                                                     | Run both servers in production.                                                              |
+| `yarn clean:all`                                                 | Remove all `node_modules` directories.                                                       |
+| `yarn --cwd client test`                                         | Client Vitest watch mode.                                                                    |
+| `yarn --cwd client test:ci`                                      | Client Vitest once.                                                                          |
+| `yarn --cwd server test`                                         | Server Vitest suite.                                                                         |
+| `yarn --cwd server scrape <cmd>`                                 | Scraper CLI.                                                                                 |
+| `yarn --cwd server gates:refresh`                                | Regenerate canonical gate scorecards.                                                        |
+| `yarn --cwd server model-refactor:inventory --environment <env>` | Run the read-only research-model Phase 0 inventory.                                          |
+| `yarn model-refactor:inventory:beta`                             | Run aggregate-only Beta inventory through the external read-only profile.                    |
+| `yarn model-refactor:inventory:production-copy`                  | Run aggregate-only ProductionCopy inventory through its separate external read-only profile. |
+| `yarn model-refactor:inventory:validate-evidence`                | Validate a private inventory against its versioned recovery manifest.                        |
+| `yarn --cwd server model-refactor:query-cost`                    | Run the bounded Phase 0 MongoDB hot-path audit described in the Phase 0 runbook.             |
+| `yarn --cwd server model-refactor:access-review-projection`      | Dry-run or apply the environment-local admin access-review projection reconciliation.        |
+| `yarn --cwd server model-refactor:identity-plan`                 | Produce the bounded read-only Phase 2 account, person, role, and quarantine plan.            |
 
-Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
-Use `unknown` to reach `/unknown` onboarding locally.
+`?userType=admin` mints a local bootstrap `AdminGrant`, so admin authority comes from a grant rather than `userType`.
 
 ## TypeScript
 
@@ -85,70 +90,73 @@ Client: target ES5, module ESNext, JSX `react-jsx`, strict true, noEmit true.
 All application routes mount under `/api` in `app.ts`.
 Passport auth routes mount separately via `passportRoutes` before the main routes.
 
-| Prefix | File | Auth |
-|--------|------|------|
-| `/research` | `researchGroups.ts` | Varies, with public search and detail. |
-| `/programs` | `programs.ts` | Varies; current Programs and Fellowships surface. |
-| `/opportunities` | `opportunities.ts` | Public. |
-| `/pathways` | `pathways.ts` | Auth required. |
-| `/listings` | `listings.ts` | Auth; legacy API remains mounted and functional. |
-| `/fellowships` | `fellowships.ts` | Auth; legacy, with `/api/programs` as successor. |
-| `/users` | `users.ts` | Auth required. |
-| `/profiles` | `profiles.ts` | Varies. |
-| `/analytics` | `analytics.ts` | Admin. |
-| `/config` | `config.ts` | Public. |
-| `/research-areas` | `researchAreas.ts` | Admin for writes. |
-| `/admin` | `admin.ts` | Admin. |
-| `/seed` | `seed.ts` | Local development runtime only. |
+| Prefix            | File                | Auth                                                |
+| ----------------- | ------------------- | --------------------------------------------------- |
+| `/research`       | `researchGroups.ts` | Varies, with public search and detail.              |
+| `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface.   |
+| `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
+| `/users`          | `users.ts`          | Auth required.                                      |
+| `/profiles`       | `profiles.ts`       | Varies.                                             |
+| `/analytics`      | `analytics.ts`      | Admin.                                              |
+| `/config`         | `config.ts`         | Public.                                             |
+| `/research-areas` | `researchAreas.ts`  | Admin for writes.                                   |
+| `/admin`          | `admin.ts`          | Admin.                                              |
+| `/seed`           | `seed.ts`           | Local development runtime only.                     |
 
 ## Key services
 
-| Service | Responsibility |
-|---------|----------------|
-| `researchEntityDto.ts` / `researchEntityQuality.ts` | Public ResearchEntity DTO shaping and quality scoring. |
-| `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts` | Best-first browse ranking scorer and persist plus Meili resync. |
-| `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts` | Meilisearch index sync and query. |
-| `meiliSyncService.ts` | Syncs collection upserts into Meilisearch indexes. |
-| `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts` | Product-model access layer. |
-| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts` | Operator board, access review, and admin grants. |
-| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts` | Scraper/source health and paper-quality scoring. |
-| `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts` | Student visibility tiering, repair queue, and decision explanations. |
-| `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts` | Fellowship matching, cycle evidence, and program classification. |
-| `listingResearchEntityProfile.ts` | Keeps legacy listings synced to ResearchEntity profiles. |
-| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts` | External integrations. |
+| Service                                                                                                                                     | Responsibility                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `researchEntityDto.ts` / `researchEntityQuality.ts`                                                                                         | Public ResearchEntity DTO shaping and quality scoring.               |
+| `researchEntityMembershipAccessor.ts`                                                                                                       | Canonical roster reads (`getResearchEntityRoster`/`getResearchEntityRosterByEntityId`). |
+| `researcherPersonNameResolver.ts`                                                                                                           | Keystone `resolveResearcherIdForPersonName`: resolves a scraped person name (netid or surname-plus-given-name) to a canonical `Researcher`. |
+| `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts`                                                                        | Best-first browse ranking scorer and persist plus Meili resync.      |
+| `researchEntitySearchIndexService.ts`                                                                                                       | Meilisearch index sync and query.                                    |
+| `meiliSyncService.ts`                                                                                                                       | Syncs ResearchEntity upserts into the Meilisearch index.             |
+| `signalService.ts`                                                                                                                          | Source-backed access read layer.                                     |
+| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                     | Operator board, access review, and admin grants.                     |
+| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
+| `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts`                                          | Student visibility tiering and repair queue.                         |
+| `programClassifier.ts`                                                                                                                      | Program classification.                                              |
+| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                        | External integrations.                                               |
 
 ## Naming conventions
 
-| Element | Convention |
-|---------|------------|
-| Services | camelCase plus `Service`, e.g. `listingService.ts`. |
-| Models | PascalCase exports, e.g. `User`, `Listing`, `Fellowship`. |
-| Controllers | camelCase descriptive names. |
-| Routes | Resource-based files. |
-| DB fields | camelCase. |
-| Enums | PascalCase. |
-| React components | PascalCase. |
-| React hooks | camelCase with `use` prefix. |
-| Contexts | PascalCase plus `Context`. |
+| Element          | Convention                                                |
+| ---------------- | --------------------------------------------------------- |
+| Services         | camelCase plus `Service`, e.g. `fellowshipService.ts`.    |
+| Models           | PascalCase exports, e.g. `Account`, `Researcher`, `Fellowship`. |
+| Controllers      | camelCase descriptive names.                              |
+| Routes           | Resource-based files.                                     |
+| DB fields        | camelCase.                                                |
+| Enums            | PascalCase.                                               |
+| React components | PascalCase.                                               |
+| React hooks      | camelCase with `use` prefix.                              |
+| Contexts         | PascalCase plus `Context`.                                |
 
 ## Environments
 
 Code flows Local -> Beta -> Prod.
 Beta is the staging gate.
 
-| Environment | Hosting | `MEILISEARCH_INDEX_PREFIX` |
-|-------------|---------|----------------------------|
-| Local | localhost | unset |
-| Beta | Render `ylabs-gr4v.onrender.com` | `beta` |
-| Prod | Render `yalelabs.onrender.com` | `prod` |
+| Environment | Hosting                           | `MEILISEARCH_INDEX_PREFIX` |
+| ----------- | --------------------------------- | -------------------------- |
+| Development | Atlas MongoDB + local Meilisearch | unset                      |
+| Beta        | Render `ylabs-gr4v.onrender.com`  | `beta`                     |
+| Prod        | Render `yalelabs.onrender.com`    | `prod`                     |
+
+Yale-network scraper fetches run from the VPN-connected local machine.
+Development runs can fetch and materialize locally.
+Beta operator runs fetch observations into the `Beta` database without local materialization, then the Beta Render service materializes the recorded run ID and updates private Beta Meilisearch.
+Use `docs/data-refresh-runbook.md` for the canonical commands.
 
 ## External integrations
 
-| Service | Purpose | Location |
-|---------|---------|----------|
-| Yale CAS SSO | Authentication | `passport.ts` |
-| Yalies API | Student and graduate data lookup | `yaliesService.ts` |
-| Yale Directory | Faculty data lookup | `directoryService.ts` |
-| CourseTable | Professor course data | `courseTableService.ts` |
-| Meilisearch | Hybrid search | `meiliClient.ts` |
-| OpenAI | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |
+| Service        | Purpose                                                | Location                                       |
+| -------------- | ------------------------------------------------------ | ---------------------------------------------- |
+| Yale CAS SSO   | Authentication                                         | `passport.ts`                                  |
+| Yalies API     | Student and graduate data lookup                       | `yaliesService.ts`                             |
+| Yale Directory | Faculty data lookup                                    | `directoryService.ts`                          |
+| CourseTable    | Professor course data                                  | `courseTableService.ts`                        |
+| Meilisearch    | Hybrid search                                          | `meiliClient.ts`                               |
+| OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |

@@ -7,7 +7,6 @@ import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContex
 import FellowshipSearchContext, {
   defaultFellowshipSearchContext,
 } from '../../contexts/FellowshipSearchContext';
-import SearchContext, { defaultSearchContext } from '../../contexts/SearchContext';
 import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import UserContext from '../../contexts/UserContext';
 
@@ -26,15 +25,6 @@ class ResizeObserverMock {
 globalThis.ResizeObserver = ResizeObserverMock as any;
 
 const renderNavbar = (user: any = { userType: 'student' }) => {
-  const searchContext = {
-    ...defaultSearchContext,
-    selectedListingResearchAreas: [],
-    setSelectedListingResearchAreas: vi.fn(),
-    allListingResearchAreas: [],
-    listingResearchAreasFilterMode: 'union',
-    setListingResearchAreasFilterMode: vi.fn(),
-  } as any;
-
   return render(
     <MemoryRouter initialEntries={['/programs']}>
       <UserContext.Provider
@@ -46,18 +36,38 @@ const renderNavbar = (user: any = { userType: 'student' }) => {
         }}
       >
         <ConfigContext.Provider value={defaultConfigContext}>
-          <SearchContext.Provider value={searchContext}>
-            <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
-              <UIContext.Provider value={defaultUIContext}>
-                <Navbar />
-              </UIContext.Provider>
-            </FellowshipSearchContext.Provider>
-          </SearchContext.Provider>
+          <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+            <UIContext.Provider value={defaultUIContext}>
+              <Navbar />
+            </UIContext.Provider>
+          </FellowshipSearchContext.Provider>
         </ConfigContext.Provider>
       </UserContext.Provider>
     </MemoryRouter>,
   );
 };
+
+const renderGuestNavbar = (initialPath = '/research') =>
+  render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <UserContext.Provider
+        value={{
+          isLoading: false,
+          isAuthenticated: false,
+          user: undefined,
+          checkContext: vi.fn(),
+        }}
+      >
+        <ConfigContext.Provider value={defaultConfigContext}>
+          <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+            <UIContext.Provider value={defaultUIContext}>
+              <Navbar />
+            </UIContext.Provider>
+          </FellowshipSearchContext.Provider>
+        </ConfigContext.Provider>
+      </UserContext.Provider>
+    </MemoryRouter>,
+  );
 
 afterEach(() => {
   cleanup();
@@ -92,7 +102,7 @@ describe('Navbar', () => {
   });
 
   it('shows exactly one desktop analytics dashboard link for admin users', () => {
-    renderNavbar({ userType: 'admin', netId: 'devadmin' });
+    renderNavbar({ userType: 'admin', netId: 'devadmin', isAdmin: true });
 
     const analyticsLinks = screen.getAllByRole('link', { name: 'Analytics' });
     expect(analyticsLinks).toHaveLength(1);
@@ -115,15 +125,28 @@ describe('Navbar', () => {
     expect(screen.queryByRole('menuitem', { name: 'Analytics' })).toBeNull();
   });
 
-  it('gives professor users direct profile actions from the account menu', () => {
+  it('does not surface a faculty public-profile link for professor users', () => {
     renderNavbar({ userType: 'professor', netId: 'prof1' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Open user menu' }));
 
-    expect(screen.getByRole('menuitem', { name: 'Edit Profile' }).getAttribute('href')).toBe('/account');
-    expect(screen.getByRole('menuitem', { name: 'Public Profile' }).getAttribute('href')).toBe(
-      '/profile/prof1',
+    expect(screen.queryByRole('menuitem', { name: 'Public Profile' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Edit Profile' })).toBeNull();
+  });
+
+  it('gives logged-out visitors public research/about nav and a sign-in link', () => {
+    renderGuestNavbar();
+
+    const primaryNav = screen.getByRole('navigation', { name: 'Primary navigation' });
+    expect(
+      within(primaryNav).getByRole('link', { name: 'Yale Research' }).getAttribute('href'),
+    ).toBe('/research');
+    expect(within(primaryNav).getByRole('link', { name: 'About' }).getAttribute('href')).toBe(
+      '/about',
     );
+    expect(within(primaryNav).queryByRole('link', { name: 'Programs & Fellowships' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Sign in' }).getAttribute('href')).toBe('/login');
+    expect(screen.queryByRole('button', { name: 'Open user menu' })).toBeNull();
   });
 
   it('keeps a named close-menu control inside the mobile drawer', () => {

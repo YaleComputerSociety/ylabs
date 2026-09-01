@@ -2,43 +2,277 @@
  * Reads pending Observations for a given entity, resolves field values via the
  * ConfidenceResolver, and writes the resolved values back to the entity collection.
  *
- * For Paper and User entities, also handles upsert when no entityId is yet known
- * (lookup by entityKey, e.g. DOI for Paper or netid for User).
+ * For person identities, materializes a canonical Researcher/Account (lookup by
+ * entityKey, e.g. netid).
  */
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
-import { Paper } from '../models/paper';
-import { PaperAuthor } from '../models/paperAuthor';
-import { User, normalizeUserType } from '../models/user';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
+import {
+  researchGroupKinds,
+  researchEntityTypes,
+  mapEntityTypeToResearchGroupKind,
+  mapResearchGroupKindToEntityType,
+  type ResearchEntityType,
+  type ResearchGroupKind,
+} from '../models/researchAccessTypes';
 import { ScrapeRun } from '../models/scrapeRun';
-import { PostedOpportunity } from '../models/postedOpportunity';
-import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
-import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
+import { Fellowship } from '../models/fellowship';
+import {
+  buildResearchAreasCardSummary,
+  entityDocShortDescriptionForRestatementGuard,
+  fullDescriptionQuality,
+  isFullDescriptionRestatementOfShortDescription,
+  isPoorerThanCardDescription,
+  programCardShortDescriptionQuality,
+  shortDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
+import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import {
+  CARD_SYNTHESIS_MODEL,
+  defaultCardSynthesisLLM,
+  isUngroundedSynthesizedCard,
+  resolveGroundedCardDescription,
+  synthesizeGroundedCardDescription,
+} from '../utils/groundedCardSynthesis';
+import { isProgramTitleQualifierDrift, normalizedProgramTitleKey } from '../utils/programTitle';
+import {
+  collapseDuplicateResearchHomeSuffix,
+  normalizeResearchEntityNameDashes,
+  normalizeResearchEntityNameSmartQuotes,
+  stripResearchHomeNamePersonCredentials,
+  stripTrailingResearchHomeDescription,
+} from '../utils/researchEntityNameNormalization';
 import {
   resolveAllFields,
+  resolveFieldRanked,
   ResolverObservation,
   ResolvedField,
 } from './confidenceResolver';
-import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
+import { collapseLatestWins, c4LosslessIngestEnabled } from './observationStore';
+import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
+import { resolveResearchEntityMergeRedirectCanonical } from '../services/researchEntityMergeRedirectService';
+import {
+  deriveCanonicalKeys,
+  resolveCanonical,
+  type CandidateEntity,
+  type CanonicalKey,
+  type CanonicalResolution,
+} from './resolveCanonical';
+import { recordCanonicalAlias, resolveCanonicalAlias } from '../services/canonicalAliasService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
+import { sanitizeObservationField } from './observationFieldSanitizer';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
-  PAPER_AUTHORSHIP_EVIDENCE_FIELD,
-  PaperAuthorshipEvidence,
-  normalizePaperAuthorshipEvidence,
-} from './paperAuthorshipPolicy';
+  sanitizeResearchEntityDescription,
+  sanitizeStoredCatalogDescription,
+} from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { isSelfReferentialUrl } from '../utils/urlSafety';
+import { normalizePersonNameCasing } from './utils/personNameCasing';
+import {
+  isBoilerplatePlatformHostUrl,
+  isDirectoryLoaderUrl,
+  isFacetedOrSectionIndexUrl,
+  isRecordSpecificApplicationPortalUrl,
+} from '../utils/researchHomeWebsiteUrl';
+import {
+  isLikelyOfficialPersonProfileUrl,
+  normalizeOfficialProfileDestination,
+} from '../services/leadProfileIdentity';
+import {
+  materializeUndergraduateLogisticsForResearchEntity,
+  UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
+} from './undergraduateLogisticsMaterializer';
+import { isPlausibleUndergradEvidenceQuote } from './undergradEvidenceQuoteValidation';
+import {
+  isHistoricalUndergradEvidence,
+  namesNonYaleInstitution,
+} from './sources/labMicrositeUndergradLLMExtractor';
+import { withResearchEntityWriteTransaction } from '../services/researchEntityWriteTransaction';
+import {
+  applyResearchEntityOrgUnitCanonicalization,
+  getOrgUnitCanonicalizer,
+} from './orgUnitCanonicalization';
+import {
+  applyResearchEntityResearchAreaCanonicalization,
+  getResearchAreaCanonicalizer,
+} from './researchAreaCanonicalization';
+import {
+  resolveBackfillWebsiteUrl,
+  type WebsiteUrlBackfillResolution,
+} from '../scripts/backfillResearchEntityWebsiteUrlsCore';
+import {
+  archiveCanonicalRoleAssignmentsForPersons,
+  archiveSupersededCanonicalRoleAssignments,
+  materializeCanonicalMembership,
+  resolveCanonicalResearcherId,
+  type CanonicalMemberIdentity,
+} from './canonicalMembershipMaterializer';
+import {
+  getResearchEntityRoster,
+  type ResearchEntityRosterEntry,
+} from '../services/researchEntityMembershipAccessor';
+import { resolveResearcherIdForPersonName } from '../services/researcherPersonNameResolver';
+import {
+  Researcher,
+  isValidOrcid,
+  researcherDisplayProfileSchema,
+  type ResearcherDisplayProfile,
+  type ResearcherProfileLink,
+} from '../models/researcher';
+import { Account } from '../models/account';
+import {
+  composeOfficialProfileLink,
+  supersedesOfficialProfileUrl,
+} from '../scripts/backfillResearcherOfficialProfileLinksCore';
+import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
+import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
+import { reconcileFacultyRosterDeparturesFromRun } from './facultyRosterDepartureReconciler';
+import {
+  isPersonOrGrantShellSlug,
+  personProfileNameTokensFromUrl,
+  personProfileSourceMatchesEntity,
+  type ResearchEntityIdentity,
+} from './utils/personProfileEntityMatch';
+import {
+  CLEARED_RESEARCH_ENTITY_YALE_STATUS,
+  deriveResearchEntityYaleStatus,
+  hasEvidencelessInactiveYaleStatus,
+  yaleStatusCacheIsWritable,
+} from '../utils/researchEntityYaleStatus';
 
 interface MaterializeOptions {
   dryRun?: boolean;
   syncMeilisearch?: boolean;
+  synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  writeOnlyFields?: string[];
+}
+
+function defaultMaterializerCardSynthesizer(
+  entityName: string,
+): (fullDescription: string) => Promise<string> {
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) return () => Promise.resolve('');
+  return (fullDescription) =>
+    synthesizeGroundedCardDescription({
+      fullDescription,
+      entityName,
+      callLLM: (llmInput) =>
+        defaultCardSynthesisLLM({ ...llmInput, apiKey, model: CARD_SYNTHESIS_MODEL }),
+    });
+}
+
+function restrictMaterializerSetToFields(
+  set: Record<string, unknown>,
+  unset: Record<string, ''>,
+  confidenceByField: Record<string, number>,
+  fields: string[],
+): number {
+  const valueFields = fields.filter((field) => field in set && field !== 'confidenceByField');
+  const keep = new Set<string>();
+  for (const field of valueFields) {
+    keep.add(field);
+    keep.add(`fieldProvenance.${field}`);
+  }
+  for (const key of Object.keys(set)) {
+    if (!keep.has(key)) delete set[key];
+  }
+  for (const field of valueFields) {
+    if (typeof confidenceByField[field] === 'number') {
+      set[`confidenceByField.${field}`] = confidenceByField[field];
+    }
+  }
+  for (const key of Object.keys(unset)) {
+    if (!fields.includes(key)) delete unset[key];
+  }
+  if (valueFields.length > 0) set.lastObservedAt = new Date();
+  return valueFields.length + Object.keys(unset).length;
+}
+
+export interface MaterializedShortDescriptionInput {
+  fullDescription?: unknown;
+  currentShortDescription?: unknown;
+  researchAreas?: unknown;
+  manuallyLocked?: boolean;
+  isProgramLike?: boolean;
+  synthesize: (fullDescription: string) => Promise<string>;
+}
+
+/**
+ * Whether a freshly resolved `shortDescription` observation is fit to write
+ * directly, rather than a truncated or boilerplate scrape artifact. The
+ * generic per-field resolver loop below otherwise writes any winning
+ * observation value verbatim with no quality check at all - quality gating
+ * only ever ran inside the dedicated re-derivation step, and only to decide
+ * whether to *replace* an already-written value, never to validate what got
+ * written in the first place. A live example: a `lab-microsite-description-llm`
+ * observation for the Impulsivity Program was itself truncated mid-sentence
+ * ("...and how these relate to"), and without this check it would have won
+ * the confidence tie and overwritten the served short outright (issue #1595).
+ * Rejecting here just skips the field for this pass - it does not clear an
+ * existing value - so the dedicated re-derivation step below still runs
+ * against whatever shortDescription is already on the entity.
+ *
+ * A candidate can also read as a perfectly fine sentence in isolation while
+ * naming a topic absent from the entity's own fullDescription - a live
+ * example is a named org's org-page microsite blurb that leads with one
+ * narrow featured study (Olin Research Center's "Examines the acute effects
+ * of...smoked marijuana...driving..." next to a fullDescription about general
+ * neuropsychiatric research). `isUngroundedSynthesizedCard` already guards
+ * this exact shape at serve time (`researchEntityDto.ts`); reusing it here
+ * stops the same ungrounded value from winning the write-time confidence tie
+ * over an already-corrected shortDescription in the first place.
+ */
+function resolvedShortDescriptionCandidateIsUsable(
+  candidate: unknown,
+  fullDescription: unknown,
+  isProgramLike: boolean,
+): boolean {
+  if (typeof candidate !== 'string' || !candidate.trim()) return false;
+  if (isUngroundedSynthesizedCard(candidate, fullDescription)) return false;
+  const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
+  return shortQuality(candidate, fullDescription).isUseful;
+}
+
+export async function resolveMaterializedShortDescription(
+  input: MaterializedShortDescriptionInput,
+): Promise<string | null> {
+  if (input.manuallyLocked) return null;
+  const shortQuality = input.isProgramLike
+    ? programCardShortDescriptionQuality
+    : shortDescriptionQuality;
+  const current =
+    typeof input.currentShortDescription === 'string' ? input.currentShortDescription.trim() : '';
+  const isBareResearchAreasFallback =
+    !!current &&
+    current.toLowerCase() === buildResearchAreasCardSummary(input.researchAreas).toLowerCase();
+  if (
+    !isBareResearchAreasFallback &&
+    shortQuality(input.currentShortDescription, input.fullDescription).isUseful
+  ) {
+    return null;
+  }
+  const grounded = await resolveGroundedCardDescription({
+    fullDescription: input.fullDescription,
+    researchAreas: input.researchAreas,
+    isProgramLike: input.isProgramLike,
+    synthesize: input.synthesize,
+  });
+  if (
+    grounded &&
+    grounded.toLowerCase() !== current.toLowerCase() &&
+    shortQuality(grounded, input.fullDescription).isUseful
+  ) {
+    return grounded;
+  }
+  return null;
 }
 
 interface MaterializeResult {
@@ -51,15 +285,12 @@ interface MaterializeResult {
   resolved: Record<string, ResolvedField>;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
   skipped?: string;
+  plannedSet?: Record<string, unknown>;
+  plannedUnset?: Record<string, ''>;
 }
 
-interface ListingPostedOpportunityMetricDeps {
-  observationModel?: Pick<typeof Observation, 'aggregate'>;
-  postedOpportunityModel?: Pick<typeof PostedOpportunity, 'countDocuments'>;
-}
-
-const DISCOVERY_ONLY_ACCESS_FIELD_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
 const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
+// Retained only to fail closed on historical observations after the producer was retired.
 const OFFICIAL_PROFILE_PUBLICATIONS_FIELD = 'officialProfilePublications';
 const PUBLIC_QUOTE_FIELDS = new Set([
   'undergradEvidenceQuote',
@@ -67,7 +298,63 @@ const PUBLIC_QUOTE_FIELDS = new Set([
   'contactInstructionsQuote',
   'undergradConstraintQuote',
 ]);
-const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt']);
+const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
+  'fullDescription',
+  'shortDescription',
+  'description',
+]);
+const FELLOWSHIP_DESCRIPTION_FIELDS = new Set(['description', 'summary']);
+const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt', 'sourceContentHash']);
+const CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS = ['methods', 'inferredPiUserId'];
+
+function materializerValueAtPath(doc: Record<string, unknown> | null, path: string): unknown {
+  if (!doc) return undefined;
+  let current: unknown = doc;
+  for (const segment of path.split('.')) {
+    if (current === null || current === undefined || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function materializerValuesDeepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+// A re-projection over an unchanged observation log recomputes the same field
+// values every run; the only guaranteed-different field is the managed
+// `lastObservedAt` timestamp. Treat the projection as a no-op when every scoped
+// `set` field already equals the stored value (ignoring managed metadata) and
+// every `unset` target is already absent, so the write and its redundant search
+// re-sync can be skipped. Any path we cannot confidently resolve is treated as a
+// change (we never skip a real write).
+export function isMaterializerProjectionNoOp(
+  entityDoc: Record<string, unknown>,
+  set: Record<string, unknown>,
+  unset: Record<string, unknown>,
+): boolean {
+  for (const [path, value] of Object.entries(set)) {
+    if (MATERIALIZER_MANAGED_FIELDS.has(path)) continue;
+    if (!materializerValuesDeepEqual(materializerValueAtPath(entityDoc, path), value)) return false;
+  }
+  for (const path of Object.keys(unset)) {
+    const current = materializerValueAtPath(entityDoc, path);
+    if (current !== undefined && current !== null) return false;
+  }
+  return true;
+}
+
+function isClearableStaleFieldValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
 const MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeMaterializerObjectId(value: unknown): string | undefined {
@@ -96,25 +383,6 @@ export type MaterializerObservationLike = {
   confidence?: number;
 };
 
-type PaperMaterializationObservation = {
-  field: string;
-  value: unknown;
-  sourceName: string;
-  confidence: number;
-  observedAt: Date;
-  sourceUrl?: string;
-};
-
-type PaperMaterializationPatch = {
-  update: {
-    $set: Record<string, unknown>;
-    $addToSet?: Record<string, { $each: unknown[] }>;
-  };
-  fieldsWritten: number;
-  conflicts: number;
-  skipped?: string;
-};
-
 type InferredPiObservation = {
   value?: unknown;
   sourceName?: string;
@@ -123,7 +391,7 @@ type InferredPiObservation = {
   confidence?: number;
 };
 
-type ResearchGroupMemberMaterializationPatch = {
+type RosterMemberMaterializationPatch = {
   filter: Record<string, unknown>;
   update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
   fieldsWritten: number;
@@ -184,8 +452,131 @@ function isOfficialProfileBioChromeObservation(observation: MaterializerObservat
 }
 
 function isResearchEntityObservationType(entityType: ObservedEntityType): boolean {
-  return entityType === 'researchEntity' || entityType === 'researchGroup';
+  return entityType === 'researchEntity';
 }
+
+export const RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE = 'PROGRAM';
+
+export function isRetiredProgramResearchEntityType(value: unknown): boolean {
+  return (
+    typeof value === 'string' && value.trim().toUpperCase() === RETIRED_PROGRAM_RESEARCH_ENTITY_TYPE
+  );
+}
+
+/**
+ * `entityType` keeps a value-bearing fingerprint, so an observation asserting the
+ * retired `PROGRAM` type is never superseded by a later `INITIATIVE` assertion from
+ * the same source and is never pruned. Matching any retained row would therefore
+ * freeze every live entity whose type has since healed, so this mirrors the write
+ * side and asks only what the projection would actually resolve as the winner.
+ */
+export function winningObservedEntityTypeIsRetiredProgram(
+  observations: MaterializerObservationLike[],
+): boolean {
+  const entityTypeObservations: ResolverObservation[] = observations
+    .filter((observation) => observation.field === 'entityType')
+    .map((observation) => ({
+      field: 'entityType',
+      value: observation.value,
+      sourceName: observation.sourceName || '',
+      confidence: typeof observation.confidence === 'number' ? observation.confidence : 0,
+      observedAt: observation.observedAt instanceof Date ? observation.observedAt : new Date(0),
+    }));
+  if (entityTypeObservations.length === 0) return false;
+  const [winner] = resolveFieldRanked('entityType', entityTypeObservations);
+  return isRetiredProgramResearchEntityType(winner?.value);
+}
+
+/**
+ * Heal a retired-`PROGRAM` entityType assertion into a live entity type using the
+ * co-observed `kind` from the same observation set, which already states the
+ * classification (issue #2206).
+ *
+ * Fails closed on purpose. `mapResearchGroupKindToEntityType` defaults an
+ * unrecognized kind to `LAB`, so a row carrying no usable `kind` would otherwise
+ * be silently minted as a lab. Gate on `researchGroupKinds` first and return
+ * undefined instead, leaving the caller to keep skipping.
+ */
+export function healedEntityTypeForRetiredProgramObservations(
+  observations: MaterializerObservationLike[],
+): ResearchEntityType | undefined {
+  const kindObservations: ResolverObservation[] = observations
+    .filter((observation) => observation.field === 'kind')
+    .map((observation) => ({
+      field: 'kind',
+      value: observation.value,
+      sourceName: observation.sourceName || '',
+      confidence: typeof observation.confidence === 'number' ? observation.confidence : 0,
+      observedAt: observation.observedAt instanceof Date ? observation.observedAt : new Date(0),
+    }));
+  if (kindObservations.length === 0) return undefined;
+  const [winner] = resolveFieldRanked('kind', kindObservations);
+  const kind = textValue(winner?.value).toLowerCase();
+  if (!researchGroupKinds.includes(kind as ResearchGroupKind)) return undefined;
+  return mapResearchGroupKindToEntityType(kind);
+}
+
+/**
+ * Rewrite retired-`PROGRAM` entityType observations to the healed type for this
+ * materialization only. The stored observations are left untouched: provenance
+ * still points at the source that classified the row, via its own `kind`.
+ */
+export function withHealedRetiredProgramEntityType<T extends MaterializerObservationLike>(
+  observations: T[],
+  healedEntityType: ResearchEntityType,
+): T[] {
+  return observations.map((observation) =>
+    observation.field === 'entityType' && isRetiredProgramResearchEntityType(observation.value)
+      ? { ...observation, value: healedEntityType }
+      : observation,
+  );
+}
+
+function hasNonEmptyStringArray(...values: unknown[]): boolean {
+  return values.some((value) => Array.isArray(value) && value.length > 0);
+}
+
+const DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES = new Set(['LAB', 'FACULTY_RESEARCH_AREA']);
+
+// LAB/FACULTY_RESEARCH_AREA entities seeded from PI-centric sources (NIH RePORTER,
+// ORCID, official-profile PI backfill) carry a fullDescription but no researchAreas
+// observation, so `set.researchAreas` is never populated and the canonicalizer below
+// returns early - leaving the row with empty chips even when its own description names
+// clear topics. Such a row is then held out of student_ready on the research-area facet
+// gate (missing_facet_signal) despite being otherwise complete (issue #1717 covered only
+// already-student_ready rows). When both are genuinely empty, derive chips from the
+// entity's own name/short/full via the
+// curated canonical phrase index and seed `set` as if an observation had written them, so
+// the normal canonicalization pass still owns dedup and department-duplicate rejection.
+async function applyDescriptionResearchAreaDerivation(
+  set: Record<string, unknown>,
+  entityDoc: Record<string, unknown> | null,
+): Promise<void> {
+  const entityType = set.entityType ?? entityDoc?.entityType;
+  if (typeof entityType !== 'string' || !DESCRIPTION_AREA_DERIVATION_ENTITY_TYPES.has(entityType)) {
+    return;
+  }
+  if (hasNonEmptyStringArray(set.researchAreas, entityDoc?.researchAreas)) return;
+
+  const textBlob = [
+    set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
+    set.shortDescription ?? entityDoc?.shortDescription,
+    set.fullDescription ?? entityDoc?.fullDescription,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n');
+  if (!textBlob) return;
+
+  try {
+    const canonicalizer = await getResearchAreaCanonicalizer();
+    const derived = canonicalizer.deriveResearchAreasFromText(textBlob);
+    if (derived.length > 0) set.researchAreas = derived;
+  } catch {
+    // Canonicalizer load failure is non-fatal: leave researchAreas untouched.
+  }
+}
+
+const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set(['acceptingUndergrads', 'openness']);
 
 export function shouldIgnoreObservationForEntityMaterialization(
   entityType: ObservedEntityType,
@@ -194,206 +585,235 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (observation.field && MATERIALIZER_MANAGED_FIELDS.has(observation.field)) {
     return true;
   }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    observation.field &&
+    UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET.has(observation.field)
+  ) {
+    return true;
+  }
   if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {
     return true;
   }
   if (entityType === 'user' && isOfficialProfileBioChromeObservation(observation)) {
     return true;
   }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    observation.field === 'undergradEvidenceQuote' &&
+    typeof observation.value === 'string' &&
+    (!isPlausibleUndergradEvidenceQuote(observation.value) ||
+      isHistoricalUndergradEvidence(observation.value) ||
+      namesNonYaleInstitution(observation.value))
+  ) {
+    return true;
+  }
   return (
     isResearchEntityObservationType(entityType) &&
-    observation.field === 'acceptingUndergrads' &&
-    !!observation.sourceName &&
-    DISCOVERY_ONLY_ACCESS_FIELD_SOURCES.has(observation.sourceName)
+    !!observation.field &&
+    RETIRED_ACCESS_OBSERVATION_FIELDS.has(observation.field)
   );
 }
 
-type OfficialProfilePublicationValue = {
-  title?: unknown;
-  year?: unknown;
-  venue?: unknown;
-  url?: unknown;
-  sourceUrl?: unknown;
-};
-
-const MIN_SCHOLARLY_LINK_YEAR = 1800;
-const MAX_SCHOLARLY_LINK_FUTURE_YEARS = 1;
-
-function cleanScholarlyText(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-function cleanScholarlyHttpUrl(value: unknown): string {
-  const text = cleanScholarlyText(value);
-  if (!text) return '';
-  try {
-    const parsed = new URL(text);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? text : '';
-  } catch {
-    return '';
-  }
-}
-
-function isPlausibleScholarlyLinkYear(year: number): boolean {
-  return (
-    Number.isInteger(year) &&
-    year >= MIN_SCHOLARLY_LINK_YEAR &&
-    year <= new Date().getUTCFullYear() + MAX_SCHOLARLY_LINK_FUTURE_YEARS
-  );
-}
-
-function normalizeOfficialProfilePublication(
-  value: OfficialProfilePublicationValue,
-  fallbackSourceUrl: string,
-  fallbackObservedAt: Date,
-): {
-  title: string;
-  year?: number;
-  venue?: string;
-  url: string;
-  sourceUrl: string;
-  observedAt: Date;
-} | null {
-  const title = cleanScholarlyText(value.title);
-  if (!title) return null;
-  const sourceUrl = cleanScholarlyHttpUrl(value.sourceUrl) || cleanScholarlyHttpUrl(fallbackSourceUrl);
-  if (!sourceUrl) return null;
-  const url = cleanScholarlyHttpUrl(value.url);
-  if (!url) return null;
-
-  const trimmedYear = typeof value.year === 'string' ? value.year.trim() : '';
-  const yearNumber =
-    typeof value.year === 'number'
-      ? value.year
-      : trimmedYear && /^\d+$/.test(trimmedYear)
-        ? Number(trimmedYear)
-        : undefined;
-  const year =
-    typeof yearNumber === 'number' && isPlausibleScholarlyLinkYear(yearNumber)
-      ? yearNumber
-      : undefined;
-
-  return {
-    title,
-    year,
-    venue: cleanScholarlyText(value.venue) || undefined,
-    url,
-    sourceUrl,
-    observedAt: fallbackObservedAt,
-  };
-}
-
-function officialProfilePublicationUrl(publication: { title: string; url?: string; sourceUrl: string }): string {
-  if (publication.url) return publication.url;
-  return '';
-}
-
-export function buildOfficialProfileScholarlyLinkUpserts(
-  userId: string,
-  observations: MaterializerObservationLike[],
-): any[] {
-  const userObjectId = toMaterializerObjectId(userId);
-  if (!userObjectId) return [];
-  const ops: any[] = [];
-  const seen = new Set<string>();
-
-  for (const observation of observations) {
-    if (observation.field !== OFFICIAL_PROFILE_PUBLICATIONS_FIELD) continue;
-    const values = Array.isArray(observation.value) ? observation.value : [observation.value];
-    const observedAt = observation.observedAt || new Date();
-    const fallbackSourceUrl = observation.sourceUrl || '';
-    const confidence = typeof observation.confidence === 'number' ? observation.confidence : 0.9;
-
-    for (const value of values) {
-      if (!value || typeof value !== 'object') continue;
-      const publication = normalizeOfficialProfilePublication(
-        value as OfficialProfilePublicationValue,
-        fallbackSourceUrl,
-        observedAt,
-      );
-      if (!publication) continue;
-      const key = publication.url.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      ops.push({
-        updateOne: {
-          filter: {
-            userId: userObjectId,
-            url: publication.url,
-          },
-          update: {
-            $set: {
-              userId: userObjectId,
-              title: publication.title,
-              url: officialProfilePublicationUrl(publication),
-              destinationKind: 'OTHER',
-              displaySource: 'Official Yale profile',
-              freeFullTextUrl: '',
-              freeFullTextLabel: '',
-              discoveredVia: 'OFFICIAL_PROFILE',
-              ...(publication.year ? { year: publication.year } : {}),
-              ...(publication.venue ? { venue: publication.venue } : {}),
-              confidence,
-              observedAt: publication.observedAt,
-              sourceUrl: publication.sourceUrl,
-              externalIds: {
-                officialProfileSourceUrl: publication.sourceUrl,
-              },
-              archived: false,
-            },
-          },
-          upsert: true,
-        },
-      });
-    }
-  }
-
-  return ops;
-}
-
-async function materializeOfficialProfileScholarlyLinks(
-  userId: string,
-  observations: MaterializerObservationLike[],
-): Promise<number> {
-  const ops = buildOfficialProfileScholarlyLinkUpserts(userId, observations);
-  if (ops.length === 0) return 0;
-  const result = await ResearchScholarlyLink.bulkWrite(ops, { ordered: false });
-  return result.upsertedCount + result.modifiedCount;
-}
-
-export function shouldClearIgnoredAccessClaimForEntity(
-  entityType: ObservedEntityType,
-  observations: MaterializerObservationLike[],
-  manuallyLockedFields: string[] = [],
-): boolean {
-  if (!isResearchEntityObservationType(entityType)) return false;
-  if (manuallyLockedFields.includes('acceptingUndergrads')) return false;
-
-  const acceptingObservations = observations.filter((obs) => obs.field === 'acceptingUndergrads');
-  if (acceptingObservations.length === 0) return false;
-
-  return acceptingObservations.every((obs) =>
-    shouldIgnoreObservationForEntityMaterialization(entityType, obs),
-  );
-}
-
-function materializedFieldValue(
+/**
+ * The single write-side field transform for the projection: it composes the
+ * ingest-time sanitizer (`sanitizeObservationField`) and the materialize-time
+ * transform (`materializedFieldValue`), which already share the same
+ * descriptionHygiene/titleHygiene/contactRedaction primitives, into one pass.
+ * On an already-ingest-sanitized observation the ingest step is a no-op, so this
+ * is byte-identical to the prior materialize path; it additionally cleans values
+ * that reached the projection without passing through `appendObservations` (for
+ * example manual values). Rejection stays an ingest concern (a rejected value is
+ * cleaned, never dropped, here), so this never removes a field the materializer
+ * would have written.
+ */
+export function sanitizeProjectedField(
   entityType: ObservedEntityType,
   field: string,
   value: unknown,
+  existingValue?: unknown,
+  entityIdentity?: ResearchEntityIdentity,
+): unknown {
+  const ingest = sanitizeObservationField(entityType, field, value);
+  const ingestCleaned = ingest.rejected ? value : ingest.value;
+  return materializedFieldValue(entityType, field, ingestCleaned, existingValue, entityIdentity);
+}
+
+export function materializedFieldValue(
+  entityType: ObservedEntityType,
+  field: string,
+  value: unknown,
+  existingValue?: unknown,
+  entityIdentity?: ResearchEntityIdentity,
 ): unknown {
   if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
-    return sanitizeResearchEntitySourceUrlsForMaterialization(value);
+    return sanitizeResearchEntitySourceUrlsForMaterialization(value, entityIdentity);
   }
-  if (isResearchEntityObservationType(entityType) && PUBLIC_QUOTE_FIELDS.has(field) && typeof value === 'string') {
+  if (isResearchEntityObservationType(entityType) && field === 'kind') {
+    return typeof value === 'string' && researchGroupKinds.includes(value as any)
+      ? value
+      : existingValue;
+  }
+  if (isResearchEntityObservationType(entityType) && field === 'entityType') {
+    return typeof value === 'string' && researchEntityTypes.includes(value as any)
+      ? value
+      : existingValue;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    MATERIALIZED_DESCRIPTION_FIELDS.has(field) &&
+    typeof value === 'string'
+  ) {
+    return sanitizeResearchEntityDescription(value);
+  }
+  if (
+    entityType === 'fellowship' &&
+    FELLOWSHIP_DESCRIPTION_FIELDS.has(field) &&
+    typeof value === 'string'
+  ) {
+    return sanitizeStoredCatalogDescription(value);
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    PUBLIC_QUOTE_FIELDS.has(field) &&
+    typeof value === 'string'
+  ) {
     return redactDirectContactInfo(value);
   }
-  if (entityType === 'user' && field === 'userType') {
-    return normalizeUserType(value);
+  if (
+    isResearchEntityObservationType(entityType) &&
+    (field === 'name' || field === 'displayName') &&
+    typeof value === 'string'
+  ) {
+    return normalizeResearchEntityNameSmartQuotes(
+      normalizeResearchEntityNameDashes(
+        collapseDuplicateResearchHomeSuffix(
+          stripResearchHomeNamePersonCredentials(stripTrailingResearchHomeDescription(value)),
+        ),
+      ),
+    );
+  }
+  if (
+    entityType === 'user' &&
+    (field === 'fname' || field === 'lname') &&
+    typeof value === 'string'
+  ) {
+    return normalizePersonNameCasing(value);
+  }
+  if (isResearchEntityObservationType(entityType) && field === 'rosterEnrichment') {
+    return rosterEnrichmentWithRetainedSuccessfulSnapshot(value, existingValue);
   }
   return value;
+}
+
+const grantIdentity = (value: unknown): string => {
+  const grant = objectRecord(value);
+  const id = textValue(grant.id);
+  return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(grant)}`;
+};
+
+export function aggregateResearchEntityGrantEvidence(observations: MaterializerObservationLike[]): {
+  recentGrants?: unknown[];
+  recentGrantCount?: number;
+  fundingAgencies?: string[];
+} {
+  const latest = new Map<string, MaterializerObservationLike>();
+  for (const observation of observations) {
+    if (
+      observation.field !== 'recentGrants' &&
+      observation.field !== 'recentGrantCount' &&
+      observation.field !== 'fundingAgencies'
+    )
+      continue;
+    const key = `${observation.sourceName || ''}:${observation.field}`;
+    const current = latest.get(key);
+    if (
+      !current ||
+      (observation.observedAt?.getTime() || 0) >= (current.observedAt?.getTime() || 0)
+    ) {
+      latest.set(key, observation);
+    }
+  }
+  const grants = new Map<string, unknown>();
+  const agencies = new Map<string, string>();
+  let hasGrantSnapshot = false;
+  let hasGrantCountSnapshot = false;
+  let hasAgencySnapshot = false;
+  let recentGrantCount = 0;
+  for (const observation of latest.values()) {
+    if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
+      hasGrantSnapshot = true;
+      for (const grant of observation.value) grants.set(grantIdentity(grant), grant);
+    }
+    if (observation.field === 'fundingAgencies' && Array.isArray(observation.value)) {
+      hasAgencySnapshot = true;
+      for (const agency of observation.value) {
+        const normalized = textValue(agency);
+        if (normalized && !agencies.has(normalized.toLowerCase())) {
+          agencies.set(normalized.toLowerCase(), normalized);
+        }
+      }
+    }
+    if (
+      observation.field === 'recentGrantCount' &&
+      typeof observation.value === 'number' &&
+      Number.isFinite(observation.value) &&
+      observation.value >= 0
+    ) {
+      hasGrantCountSnapshot = true;
+      recentGrantCount += Math.floor(observation.value);
+    }
+  }
+  const recentGrants = [...grants.values()]
+    .sort((left, right) => {
+      const leftTime = new Date(objectRecord(left).startDate as any).getTime();
+      const rightTime = new Date(objectRecord(right).startDate as any).getTime();
+      return (
+        (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+      );
+    })
+    .slice(0, 10);
+  return {
+    ...(hasGrantSnapshot ? { recentGrants } : {}),
+    ...(hasGrantCountSnapshot ? { recentGrantCount } : {}),
+    ...(hasAgencySnapshot ? { fundingAgencies: [...agencies.values()] } : {}),
+  };
+}
+
+const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | undefined => {
+  const enrichment = objectRecord(value);
+  if (!['current', 'partial'].includes(textValue(enrichment.state))) return undefined;
+  const memberKeys = Array.isArray(enrichment.memberKeys)
+    ? Array.from(new Set(enrichment.memberKeys.map(textValue).filter(Boolean))).slice(0, 40)
+    : [];
+  const sourceUrl = textValue(enrichment.sourceUrl);
+  const observedAt = enrichment.observedAt;
+  const freshnessExpiresAt = enrichment.freshnessExpiresAt;
+  if (memberKeys.length === 0 || !sourceUrl || !observedAt || !freshnessExpiresAt) return undefined;
+  return {
+    state: enrichment.state,
+    memberKeys,
+    sourceUrl,
+    ...(enrichment.sourcePublishedAt ? { sourcePublishedAt: enrichment.sourcePublishedAt } : {}),
+    observedAt,
+    freshnessExpiresAt,
+  };
+};
+
+export function rosterEnrichmentWithRetainedSuccessfulSnapshot(
+  value: unknown,
+  existingValue?: unknown,
+): unknown {
+  const enrichment = objectRecord(value);
+  const currentSnapshot = successfulRosterSnapshot(enrichment);
+  if (currentSnapshot) return { ...enrichment, lastSuccessfulSnapshot: currentSnapshot };
+  if (textValue(enrichment.state) !== 'failed') return enrichment;
+
+  const existing = objectRecord(existingValue);
+  const retained =
+    successfulRosterSnapshot(existing) ||
+    successfulRosterSnapshot(objectRecord(existing.lastSuccessfulSnapshot));
+  return retained ? { ...enrichment, lastSuccessfulSnapshot: retained } : enrichment;
 }
 
 const RESEARCH_ENTITY_CONTENT_PAGE_SOURCE_PATH_RE =
@@ -410,27 +830,80 @@ export function isResearchEntityContentPageSourceUrl(value: unknown): boolean {
   }
 }
 
-export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknown): unknown {
-  if (!Array.isArray(value)) return value;
-  return value.filter((url) => !isResearchEntityContentPageSourceUrl(url));
+export function sanitizeResearchEntitySourceUrlsForMaterialization(
+  value: unknown,
+  entityIdentity?: ResearchEntityIdentity,
+): unknown {
+  const asArray = Array.isArray(value)
+    ? value
+    : typeof value === 'string' && value.trim()
+      ? [value]
+      : [];
+  const kept = asArray.filter(
+    (url) =>
+      typeof url === 'string' &&
+      url.trim() &&
+      !isResearchEntityContentPageSourceUrl(url) &&
+      !isSelfReferentialUrl(url) &&
+      !isDirectoryLoaderUrl(url) &&
+      !isFacetedOrSectionIndexUrl(url) &&
+      !isBoilerplatePlatformHostUrl(url),
+  );
+  if (!entityIdentity) return kept;
+  const entityForMatch: ResearchEntityIdentity = {
+    ...entityIdentity,
+    sourceUrls: kept as string[],
+  };
+  return kept.filter((url) => personProfileSourceMatchesEntity(url, entityForMatch));
 }
 
-function isInitialOnlyNameValue(value: unknown): boolean {
-  const raw = textValue(value);
-  if (/^[A-Z]{2,}$/.test(raw)) return false;
-  const tokens = identityTokens(value);
-  return tokens.length === 1 && (tokens[0].length === 1 || raw.includes('.'));
+const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
+  'inferredPiUserId',
+  'inferredPiUserKey',
+  'inferredDirectorName',
+]);
+
+export function officialLeadProfileSourceUrl(
+  observations: MaterializerObservationLike[],
+): string | undefined {
+  const winner = observations
+    .filter(
+      (observation) =>
+        typeof observation.field === 'string' &&
+        LEAD_IDENTITY_OBSERVATION_FIELDS.has(observation.field) &&
+        isLikelyOfficialPersonProfileUrl(observation.sourceUrl),
+    )
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  return winner?.sourceUrl ? String(winner.sourceUrl).trim() : undefined;
 }
 
-export function shouldPreserveExistingUserIdentityField(
-  field: string,
-  nextValue: unknown,
-  existingDoc: Record<string, unknown> | null,
-): boolean {
-  if (!existingDoc || (field !== 'fname' && field !== 'firstName')) return false;
-  const existingValue = existingDoc[field] || existingDoc.fname || existingDoc.firstName;
-  if (!textValue(existingValue)) return false;
-  return isInitialOnlyNameValue(nextValue) && !isInitialOnlyNameValue(existingValue);
+// The discovery provenance every materialized entity carries: the highest-
+// confidence `sourceUrl` recorded on the observations that produced it, after
+// the same materialization sanitizer that drops directory/content/self-
+// referential/boilerplate pages. Used to project source-backing onto an
+// entity's `sourceUrls` when it would otherwise expose none, closing the
+// `missing_source_url` projection gap at write time (issue #1802).
+export function bestMaterializationProvenanceSourceUrl(
+  observations: MaterializerObservationLike[],
+): string | undefined {
+  const ranked = observations
+    .filter((observation) => textValue(observation.sourceUrl))
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+    .map((observation) => String(observation.sourceUrl).trim());
+  const sanitized = sanitizeResearchEntitySourceUrlsForMaterialization(ranked);
+  return Array.isArray(sanitized) ? (sanitized[0] as string | undefined) : undefined;
+}
+
+export function deriveResearchEntityWebsiteUrl(
+  set: Record<string, unknown>,
+  entityDoc?: Record<string, unknown> | null,
+): WebsiteUrlBackfillResolution {
+  const merged = (field: string): unknown => (field in set ? set[field] : entityDoc?.[field]);
+  return resolveBackfillWebsiteUrl({
+    websiteUrl: merged('websiteUrl'),
+    website: merged('website'),
+    sourceUrls: merged('sourceUrls'),
+  });
 }
 
 function comparableObservationValue(value: unknown): string {
@@ -446,7 +919,9 @@ function fieldProvenanceForResolvedObservation(
   const resolvedValue = comparableObservationValue(resolved.value);
   const contributingSources = new Set(resolved.contributingSources);
   const match = observations
-    .filter((obs) => obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName))
+    .filter(
+      (obs) => obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName),
+    )
     .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
   if (!match) return null;
 
@@ -459,15 +934,54 @@ function fieldProvenanceForResolvedObservation(
   };
 }
 
+// A named org kind that implies multiple PIs/researchers, as opposed to a
+// single-person 'lab'/'individual'/'solo' entity. Gates the single-PI/grant
+// shell description guard below (issue #1595).
+const MULTI_PI_ORG_KINDS = new Set(['center', 'institute', 'program']);
+
+// Fields whose winning value is rejected when it is sourced entirely from a
+// Yale person-profile page and the entity is a named multi-PI org materialized
+// from a single-PI/grant shell (issue #1595): the org's description or
+// research areas must never resolve to one PI's own bio/study content just
+// because no broader source exists yet. Rejecting drops the field from
+// `resolved` for this pass, so the entity keeps whatever value it already had
+// (or stays unset if it never had one) rather than regressing to a
+// misleadingly narrow scope.
+const SINGLE_PI_SHELL_GATED_FIELDS = ['fullDescription', 'researchAreas'] as const;
+
+/**
+ * Whether every observation backing a resolved field's winning value is a
+ * Yale person-profile page (`/people/<name>` or `/profile/<name>`). A named
+ * multi-PI org whose only evidence for a field is one individual's own profile
+ * page has no organizational source for that field at all - the content is
+ * that person's, not the organization's - regardless of whether the person is
+ * a genuine affiliate.
+ */
+function resolvedFieldSourcedOnlyFromPersonProfilePages(
+  field: string,
+  resolved: ResolvedField,
+  observations: MaterializerObservationLike[],
+): boolean {
+  const resolvedValue = comparableObservationValue(resolved.value);
+  const contributingSources = new Set(resolved.contributingSources);
+  const matches = observations.filter(
+    (obs) =>
+      obs.field === field &&
+      obs.sourceName &&
+      contributingSources.has(obs.sourceName) &&
+      comparableObservationValue(obs.value) === resolvedValue,
+  );
+  if (matches.length === 0) return false;
+  return matches.every((obs) => personProfileNameTokensFromUrl(obs.sourceUrl) !== null);
+}
+
 export function buildInferredPiMemberUpsert(
   researchEntityId: string,
   observation: InferredPiObservation,
-):
-  | {
-      filter: Record<string, unknown>;
-      update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
-    }
-  | null {
+): {
+  filter: Record<string, unknown>;
+  update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
+} | null {
   const userId = String(observation.value || '').trim();
   const safeResearchEntityId = normalizeMaterializerObjectId(researchEntityId);
   const safeUserId = normalizeMaterializerObjectId(userId);
@@ -489,7 +1003,6 @@ export function buildInferredPiMemberUpsert(
     update: {
       $set: {
         researchEntityId: safeResearchEntityId,
-        researchGroupId: safeResearchEntityId,
         userId: safeUserId,
         role: 'pi',
         isCurrentMember: true,
@@ -526,13 +1039,15 @@ const MEMBER_ROLES = new Set([
   'affiliate',
 ]);
 
-/** Roles the public "Principal Investigator" panel renders as the entity lead. */
+/** Roles the public research detail leadership UI renders as entity leads. */
 const LEAD_MEMBER_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 /** Non-lead roster roles a promoted director supersedes within an entity. */
 const SUPERSEDED_BY_DIRECTOR_ROLES = ['core-faculty', 'affiliated', 'affiliate'];
 
 const objectRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 
 function memberNameFromInferredUserName(value: unknown): string {
   const record = objectRecord(value);
@@ -546,70 +1061,72 @@ function normalizeMemberRole(value: unknown): string {
   return MEMBER_ROLES.has(role) ? role : '';
 }
 
-async function findUniqueUserForResearchGroupMember(
+async function findUniqueResearcherForRosterMember(
   resolved: Record<string, ResolvedField>,
 ): Promise<any | null> {
   const profileUrl = textValue(resolved.profileUrl?.value);
-  const inferredName = objectRecord(resolved.inferredUserName?.value);
-  const first = textValue(inferredName.fname || inferredName.first || inferredName.firstName);
-  const last = textValue(inferredName.lname || inferredName.last || inferredName.lastName);
-
-  const filters: Record<string, unknown>[] = [];
-  if (profileUrl) {
-    filters.push({
-      $or: [
-        { 'profileUrls.official': profileUrl },
-        { 'profileUrls.medicine': profileUrl },
-        { 'profileUrls.yale': profileUrl },
-        { 'profileUrls.department': profileUrl },
-        { 'profileUrls.directory': profileUrl },
-        { scholarCandidateProfileUrls: profileUrl },
-        { website: profileUrl },
-      ],
-    });
-  }
-  if (first && last) {
-    filters.push({
-      fname: new RegExp(`^${escapeRegex(first)}$`, 'i'),
-      lname: new RegExp(`^${escapeRegex(last)}$`, 'i'),
-    });
-  }
-
-  for (const filter of filters) {
-    const users = await User.find(filter).select('_id facultyMemberId').limit(2).lean();
-    if (users.length === 1) return users[0];
-  }
-  return null;
+  if (!profileUrl) return null;
+  const researchers = await Researcher.find({
+    archived: { $ne: true },
+    $or: [{ 'profileLinks.url': profileUrl }, { 'profile.websiteUrl': profileUrl }],
+  })
+    .select('_id')
+    .limit(2)
+    .lean();
+  return researchers.length === 1 ? researchers[0] : null;
 }
 
-export function buildResearchGroupMemberUpsert(
+export function buildRosterMemberUpsert(
   researchEntityId: string,
   resolved: Record<string, ProvenanceResolvedField>,
   user: Record<string, unknown> | null = null,
-):
-  | ResearchGroupMemberMaterializationPatch
-  | null {
+): RosterMemberMaterializationPatch | null {
   if (!normalizeMaterializerObjectId(researchEntityId)) return null;
   const role = normalizeMemberRole(resolved.role?.value);
   if (!role) return null;
-  const name = textValue(resolved.name?.value) || memberNameFromInferredUserName(resolved.inferredUserName?.value);
+  if (
+    textValue(resolved.currentStatus?.value) &&
+    textValue(resolved.currentStatus?.value) !== 'current'
+  ) {
+    return null;
+  }
+  if (
+    textValue(resolved.evidenceStatus?.value) &&
+    textValue(resolved.evidenceStatus?.value) !== 'verified'
+  ) {
+    return null;
+  }
+  if (
+    resolved.name?.hasConflict ||
+    resolved.profileUrl?.hasConflict ||
+    resolved.identityKey?.hasConflict ||
+    resolved.membershipKey?.hasConflict ||
+    resolved.role?.hasConflict
+  ) {
+    return null;
+  }
+  const name =
+    textValue(resolved.name?.value) ||
+    memberNameFromInferredUserName(resolved.inferredUserName?.value);
   const userId = idValue(user?._id);
-  const facultyMemberId = idValue(user?.facultyMemberId);
-  if (!name && !userId && !facultyMemberId) return null;
+  const profileUrl = textValue(resolved.profileUrl?.value);
+  const identityKey =
+    textValue(resolved.identityKey?.value) ||
+    (profileUrl ? `official-profile:${profileUrl.toLowerCase()}` : '');
+  const membershipKey =
+    textValue(resolved.membershipKey?.value) || (identityKey ? `${identityKey}|${role}` : '');
+  if ((!name && !userId) || (!userId && !identityKey)) {
+    return null;
+  }
 
   const roleSource = resolved.role;
   const observedAt = roleSource?.observedAt || new Date();
   const confidence = typeof roleSource?.confidence === 'number' ? roleSource.confidence : 0.5;
   const sourceUrl = textValue(roleSource?.sourceUrl);
   const sourceName = textValue(roleSource?.sourceName);
-  const title = textValue(resolved.title?.value);
-  const profileUrl = textValue(resolved.profileUrl?.value);
+  const title = sanitizePersonTitle(textValue(resolved.title?.value)) || '';
 
-  const identityFilter: Record<string, unknown> = userId
-    ? { userId }
-    : facultyMemberId
-    ? { facultyMemberId }
-    : { name };
+  const identityFilter: Record<string, unknown> = userId ? { userId } : { membershipKey };
   const filter = {
     researchEntityId,
     role,
@@ -618,10 +1135,10 @@ export function buildResearchGroupMemberUpsert(
   };
   const set: Record<string, unknown> = {
     researchEntityId,
-    researchGroupId: researchEntityId,
     role,
     isCurrentMember: true,
     sourceUrl,
+    sourceName,
     confidence,
     lastObservedAt: observedAt,
     'confidenceByField.role': confidence,
@@ -634,13 +1151,26 @@ export function buildResearchGroupMemberUpsert(
   };
   if (name) set.name = name;
   if (userId) set.userId = userId;
-  if (facultyMemberId) set.facultyMemberId = facultyMemberId;
+  if (identityKey) set.identityKey = identityKey;
+  if (membershipKey) set.membershipKey = membershipKey;
+  if (textValue(resolved.evidenceStatus?.value)) {
+    set.evidenceStatus = textValue(resolved.evidenceStatus?.value);
+  }
+  if (textValue(resolved.sectionLabel?.value)) {
+    set.sectionLabel = textValue(resolved.sectionLabel?.value);
+  }
+  if (resolved.sourcePublishedAt?.value) {
+    set.sourcePublishedAt = resolved.sourcePublishedAt.value;
+  }
+  if (resolved.freshnessExpiresAt?.value) {
+    set.freshnessExpiresAt = resolved.freshnessExpiresAt.value;
+  }
   if (title) {
     set.title = title;
     set['confidenceByField.title'] = resolved.title?.confidence ?? confidence;
   }
   if (profileUrl) {
-    set.sourceUrl = profileUrl;
+    set.profileUrl = profileUrl;
     set['fieldProvenance.profileUrl'] = {
       sourceName: textValue(resolved.profileUrl?.sourceName) || sourceName,
       sourceUrl: profileUrl,
@@ -663,7 +1193,32 @@ export function buildResearchGroupMemberUpsert(
   };
 }
 
-async function materializeResearchGroupMember(
+interface CanonicalRosterMatch {
+  roster: ResearchEntityRosterEntry[];
+  matches: (entry: ResearchEntityRosterEntry) => boolean;
+}
+
+async function findCanonicalRosterMatch(
+  researchEntityId: string,
+  identity: { researcherId?: unknown; name?: unknown },
+): Promise<CanonicalRosterMatch> {
+  const roster = await getResearchEntityRoster(researchEntityId);
+  const candidateId = normalizeMaterializerObjectId(identity.researcherId);
+  const researcher: any = candidateId
+    ? await Researcher.findById(candidateId).select('_id').lean()
+    : null;
+  const researcherId = researcher?._id ? researcher._id.toString() : undefined;
+  const name = textValue(identity.name).toLowerCase();
+  const matches = (entry: ResearchEntityRosterEntry): boolean => {
+    if (researcherId && entry.personId) {
+      return entry.personId.toString() === researcherId;
+    }
+    return Boolean(name) && textValue(entry.name).toLowerCase() === name;
+  };
+  return { roster, matches };
+}
+
+async function materializeRosterMember(
   identifier: { entityId?: string; entityKey?: string },
   observations: any[],
   options: MaterializeOptions,
@@ -689,7 +1244,10 @@ async function materializeResearchGroupMember(
     };
   }
 
-  const entity: any = await ResearchEntity.findOne({ slug: researchGroupKey, archived: { $ne: true } })
+  const entity: any = await ResearchEntity.findOne({
+    slug: researchGroupKey,
+    archived: { $ne: true },
+  })
     .select('_id')
     .lean();
   if (!entity?._id) {
@@ -705,8 +1263,11 @@ async function materializeResearchGroupMember(
   }
 
   const researchEntityId = normalizeMaterializerObjectId(entity._id) || '';
-  const user = await findUniqueUserForResearchGroupMember(resolved);
-  const patch = buildResearchGroupMemberUpsert(researchEntityId, resolved, user);
+  const researcher = await findUniqueResearcherForRosterMember(resolved);
+  const memberIdentity = researcher?._id
+    ? await canonicalResearcherIdentity(idValue(researcher._id))
+    : undefined;
+  const patch = buildRosterMemberUpsert(researchEntityId, resolved, researcher);
   if (!patch) {
     return {
       entityType: 'researchGroupMember',
@@ -732,46 +1293,59 @@ async function materializeResearchGroupMember(
     };
   }
 
+  const resolvedRole = String(patch.filter.role || '');
+  const { roster, matches } = await findCanonicalRosterMatch(researchEntityId, {
+    researcherId: patch.filter.userId,
+    name: patch.filter.name,
+  });
+
   // Don't add a non-lead roster row for someone who is already a lead (PI /
   // director / co-director) of this entity. The director extractor promotes a
   // roster member to `director` and removes the stale roster row; without this
   // guard the next roster materialization would re-create the duplicate
-  // (the detail-page dedup keys on user+role, so the person would render twice).
-  const resolvedRole = String(patch.filter.role || '');
+  // (the detail-page dedup keys on person+role, so the person would render twice).
   if (!LEAD_MEMBER_ROLES.has(resolvedRole)) {
-    const identity = patch.filter.userId
-      ? { userId: patch.filter.userId }
-      : patch.filter.facultyMemberId
-      ? { facultyMemberId: patch.filter.facultyMemberId }
-      : patch.filter.name
-      ? { name: patch.filter.name }
-      : null;
-    if (identity) {
-      const existingLead = await ResearchGroupMember.findOne({
-        researchEntityId: patch.filter.researchEntityId,
-        role: { $in: Array.from(LEAD_MEMBER_ROLES) },
-        isCurrentMember: { $ne: false },
-        ...identity,
-      })
-        .select('_id')
-        .lean();
-      if (existingLead) {
-        return {
-          entityType: 'researchGroupMember',
-          entityId: materializerDocumentId(entity._id),
-          entityKey: identifier.entityKey,
-          fieldsWritten: 0,
-          conflicts: 0,
-          created: false,
-          resolved,
-          skipped: 'already-lead-member',
-        };
-      }
+    const existingLead = roster.some(
+      (entry) => entry.isCurrentMember && LEAD_MEMBER_ROLES.has(entry.role) && matches(entry),
+    );
+    if (existingLead) {
+      return {
+        entityType: 'researchGroupMember',
+        entityId: materializerDocumentId(entity._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved,
+        skipped: 'already-lead-member',
+      };
     }
   }
 
-  const existing = await ResearchGroupMember.findOne(patch.filter).select('_id').lean();
-  await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+  const existing = roster.some((entry) => entry.role === resolvedRole && matches(entry));
+  const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
+  await materializeCanonicalMembership(
+    researchEntityId,
+    {
+      legacyRole: String(patch.filter.role || ''),
+      displayName: textValue(patchSet.name),
+      evidenceStatus: textValue(resolved.evidenceStatus?.value),
+      isCurrentMember: true,
+      confidence: patchSet.confidence,
+      startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
+      rosterProvenance: canonicalRosterProvenanceFromSet(
+        patchSet,
+        textValue(resolved.evidenceStatus?.value),
+      ),
+    },
+    {
+      netid: memberIdentity?.netid,
+      email: memberIdentity?.email,
+      orcid: memberIdentity?.orcid,
+      displayName: textValue(patchSet.name),
+      hasCanonicalSourceReference: Boolean(patch.filter.userId),
+    },
+  );
   return {
     entityType: 'researchGroupMember',
     entityId: materializerDocumentId(entity._id),
@@ -790,8 +1364,9 @@ function withResolvedFieldProvenance(
   const output: Record<string, ProvenanceResolvedField> = {};
   for (const [field, value] of Object.entries(resolved)) {
     const source =
-      observations.find((observation) => observation.field === field && observation.value === value.value) ||
-      observations.find((observation) => observation.field === field);
+      observations.find(
+        (observation) => observation.field === field && observation.value === value.value,
+      ) || observations.find((observation) => observation.field === field);
     output[field] = {
       ...value,
       ...(source?.sourceName ? { sourceName: source.sourceName } : {}),
@@ -802,7 +1377,7 @@ function withResolvedFieldProvenance(
   return output;
 }
 
-async function materializeInferredPiMembership(
+export async function materializeInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
 ): Promise<void> {
@@ -810,31 +1385,270 @@ async function materializeInferredPiMembership(
   for (const observation of piObservations) {
     const patch = buildInferredPiMemberUpsert(researchEntityId, observation);
     if (!patch) continue;
-    await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+    await materializeCanonicalPiMembership(researchEntityId, patch, idValue(observation.value));
   }
 
   const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
-  const inferredPiDepartments = departmentValuesForInferredPiLookup(observations);
   for (const observation of piKeyObservations) {
-    const filters = userLookupFiltersForInferredPiUserKey(
-      observation.value,
-      inferredPiDepartments,
-    );
-    if (filters.length === 0) continue;
-    const users = await User.find(filters.length === 1 ? filters[0] : { $or: filters })
-      .select('_id')
-      .limit(2)
-      .lean();
-    if (users.length !== 1) continue;
-    const user = users[0];
-    if (!user?._id) continue;
+    const identity = inferredPiUserKeyIdentity(observation.value);
+    if (!identity.netid && !identity.name) continue;
+    const resolution = await resolveResearcherIdForPersonName(identity.name, {
+      netid: identity.netid,
+    });
+    if (resolution.status !== 'matched' || !resolution.researcherId) continue;
+    const researcherId = resolution.researcherId.toString();
     const patch = buildInferredPiMemberUpsert(researchEntityId, {
       ...observation,
-      value: materializerDocumentId(user._id),
+      value: researcherId,
     });
     if (!patch) continue;
-    await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+    await materializeCanonicalPiMembership(researchEntityId, patch, researcherId);
   }
+}
+
+function inferredPiUserKeyIdentity(value: unknown): { netid?: string; name: string } {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  const deptMatch = raw.match(DEPT_USER_KEY_PATTERN);
+  if (deptMatch) {
+    const name = deptMatch[1]
+      .toLowerCase()
+      .split(/[^a-z0-9]+/i)
+      .filter(Boolean)
+      .join(' ');
+    return { name };
+  }
+  const lookupValue = userLookupValueForInferredPiUserKey(value);
+  const netid = lookupValue && !lookupValue.includes('@') ? lookupValue.toLowerCase() : undefined;
+  return { netid, name: '' };
+}
+
+function coerceRosterProvenanceDate(value: unknown): Date | undefined {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : undefined;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+export function canonicalRosterProvenanceFromSet(
+  patchSet: Record<string, unknown>,
+  fallbackEvidenceStatus?: string,
+): RoleAssignmentRosterProvenance {
+  return {
+    sourceName: textValue(patchSet.sourceName) || undefined,
+    sourceUrl: textValue(patchSet.sourceUrl) || undefined,
+    profileUrl: textValue(patchSet.profileUrl) || undefined,
+    sectionLabel: textValue(patchSet.sectionLabel) || undefined,
+    evidenceStatus: textValue(patchSet.evidenceStatus) || fallbackEvidenceStatus || undefined,
+    membershipKey: textValue(patchSet.membershipKey) || undefined,
+    observedAt: coerceRosterProvenanceDate(patchSet.lastObservedAt),
+    freshnessExpiresAt: coerceRosterProvenanceDate(patchSet.freshnessExpiresAt),
+  };
+}
+
+async function canonicalResearcherIdentity(
+  researcherId: string,
+): Promise<{ netid?: string; email?: string; orcid?: string; displayName: string }> {
+  if (!researcherId) return { displayName: '' };
+  const researcher: any = await Researcher.findById(researcherId)
+    .select('displayName accountId identifiers')
+    .lean();
+  if (!researcher) return { displayName: '' };
+  let netid: string | undefined;
+  let email: string | undefined;
+  if (researcher.accountId) {
+    const account: any = await Account.findById(researcher.accountId).select('netid email').lean();
+    netid = textValue(account?.netid) || undefined;
+    email = textValue(account?.email) || undefined;
+  }
+  return {
+    netid,
+    email,
+    orcid: textValue(researcher.identifiers?.orcid) || undefined,
+    displayName: textValue(researcher.displayName),
+  };
+}
+
+async function materializeCanonicalPiMembership(
+  researchEntityId: string,
+  patch: { filter: Record<string, any>; update: any },
+  researcherId: string,
+): Promise<void> {
+  const identity = await canonicalResearcherIdentity(researcherId);
+  const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
+  const displayName = textValue(patchSet.name) || identity.displayName;
+  await materializeCanonicalMembership(
+    researchEntityId,
+    {
+      legacyRole: String(patch.filter.role || ''),
+      displayName,
+      isCurrentMember: true,
+      confidence: patchSet.confidence,
+      startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
+      rosterProvenance: canonicalRosterProvenanceFromSet(patchSet),
+    },
+    {
+      netid: identity.netid,
+      email: identity.email,
+      orcid: identity.orcid,
+      displayName,
+      hasCanonicalSourceReference: Boolean(patch.filter.userId),
+    },
+  );
+}
+
+const SCHOOL_INHERITANCE_LEAD_ROLES = ['PI', 'DIRECTOR'];
+
+export const LEAD_PI_SCHOOL_INHERITANCE_SOURCE = 'lead-pi-school-inheritance';
+
+const LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE = 0.6;
+
+async function resolveSingleLeadResearcherId(
+  researchEntityId: string,
+): Promise<string | undefined> {
+  const objectId = toMaterializerObjectId(researchEntityId);
+  if (!objectId) return undefined;
+  const leads = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': objectId,
+    role: { $in: SCHOOL_INHERITANCE_LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('personId')
+    .lean()) as Array<{ personId?: unknown }>;
+  const distinctPersonIds = new Set(
+    leads
+      .map((assignment) => materializerDocumentId(assignment.personId))
+      .filter((id) => id.length > 0),
+  );
+  return distinctPersonIds.size === 1 ? distinctPersonIds.values().next().value : undefined;
+}
+
+async function leadResearcherDepartment(researcherId: string): Promise<string | undefined> {
+  const researcher = (await Researcher.findById(researcherId)
+    .select('profile accountId')
+    .lean()) as {
+    profile?: { primaryDepartment?: unknown };
+    accountId?: unknown;
+  } | null;
+  if (!researcher) return undefined;
+  const direct = textValue(researcher.profile?.primaryDepartment);
+  if (direct) return direct;
+  if (researcher.accountId) {
+    const account = (await Account.findById(materializerDocumentId(researcher.accountId))
+      .select('department')
+      .lean()) as { department?: unknown } | null;
+    const accountDepartment = textValue(account?.department);
+    if (accountDepartment) return accountDepartment;
+  }
+  return undefined;
+}
+
+export type LeadPiSchoolInheritanceSkip =
+  | 'locked'
+  | 'has-school'
+  | 'multi-pi-kind'
+  | 'no-single-lead'
+  | 'no-department'
+  | 'no-school-derivable';
+
+export interface LeadPiSchoolInheritanceResult {
+  inherited: boolean;
+  school?: string;
+  departments?: string[];
+  skipped?: LeadPiSchoolInheritanceSkip;
+}
+
+export function leadPiSchoolInheritanceGate(input: {
+  manuallyLockedFields?: string[];
+  school?: unknown;
+  schools?: unknown;
+  kind?: unknown;
+}): Extract<LeadPiSchoolInheritanceSkip, 'locked' | 'has-school' | 'multi-pi-kind'> | 'eligible' {
+  const locked = input.manuallyLockedFields ?? [];
+  if (locked.includes('school') || locked.includes('departments')) return 'locked';
+  if (textValue(input.school)) return 'has-school';
+  const existingSchools = Array.isArray(input.schools)
+    ? (input.schools as unknown[]).map((value) => textValue(value)).filter(Boolean)
+    : [];
+  if (existingSchools.length > 0) return 'has-school';
+  if (MULTI_PI_ORG_KINDS.has(textValue(input.kind).toLowerCase())) return 'multi-pi-kind';
+  return 'eligible';
+}
+
+async function leadDepartmentWithParentSchool(
+  rawDepartment: string,
+): Promise<{ department: string; school: string } | undefined> {
+  try {
+    const canonicalizer = await getOrgUnitCanonicalizer();
+    const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
+    if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return undefined;
+    const department = canonical.values[0];
+    const school = canonicalizer.schoolForDepartment(department);
+    return school ? { department, school } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function inheritSchoolFromLeadPi(
+  researchEntityId: string,
+  options: { manuallyLockedFields?: string[]; dryRun?: boolean } = {},
+): Promise<LeadPiSchoolInheritanceResult> {
+  const entity = (await ResearchEntity.findById(researchEntityId)
+    .select('school departments schools kind entityType')
+    .lean()) as {
+    school?: unknown;
+    departments?: unknown;
+    schools?: unknown;
+    kind?: unknown;
+  } | null;
+  if (!entity) return { inherited: false };
+  const gate = leadPiSchoolInheritanceGate({
+    manuallyLockedFields: options.manuallyLockedFields,
+    school: entity.school,
+    schools: entity.schools,
+    kind: entity.kind,
+  });
+  if (gate !== 'eligible') return { inherited: false, skipped: gate };
+
+  const leadResearcherId = await resolveSingleLeadResearcherId(researchEntityId);
+  if (!leadResearcherId) return { inherited: false, skipped: 'no-single-lead' };
+  const rawDepartment = await leadResearcherDepartment(leadResearcherId);
+  if (!rawDepartment) return { inherited: false, skipped: 'no-department' };
+  const leadOrgUnit = await leadDepartmentWithParentSchool(rawDepartment);
+  if (!leadOrgUnit) return { inherited: false, skipped: 'no-school-derivable' };
+
+  const existingDepartments = Array.isArray(entity.departments)
+    ? (entity.departments as unknown[]).map((value) => textValue(value)).filter(Boolean)
+    : [];
+  const set: Record<string, unknown> = {
+    school: leadOrgUnit.school,
+    ...(existingDepartments.length === 0 ? { departments: [leadOrgUnit.department] } : {}),
+  };
+  await applyResearchEntityOrgUnitCanonicalization(set, entity);
+  const derivedSchool = textValue(set.school);
+  if (!derivedSchool) return { inherited: false, skipped: 'no-school-derivable' };
+  const departments = Array.isArray(set.departments)
+    ? (set.departments as string[])
+    : existingDepartments;
+
+  if (options.dryRun) return { inherited: true, school: derivedSchool, departments };
+
+  set['confidenceByField.school'] = LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE;
+  set['fieldProvenance.school'] = {
+    sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+    observedAt: new Date(),
+    confidence: LEAD_PI_SCHOOL_INHERITANCE_CONFIDENCE,
+  };
+  await withResearchEntityWriteTransaction((session) =>
+    ResearchEntity.updateOne({ _id: researchEntityId }, { $set: set }, { session }),
+  );
+  const fresh = await ResearchEntity.findById(researchEntityId).lean();
+  if (fresh) await syncEntity('researchEntity', fresh);
+  return { inherited: true, school: derivedSchool, departments };
 }
 
 export interface InferredDirectorMaterializationResult {
@@ -850,8 +1664,8 @@ export interface InferredDirectorMaterializationResult {
  * Promote a center's named director to a `director` member.
  *
  * Reads the entity-level `inferredDirector*` observations emitted by
- * `center-director-llm`, resolves the name (+ profile URL) to a UNIQUE Yale
- * User, and upserts a lead member row. Resolution is required: an unresolved or
+ * `center-director-llm`, resolves the name (+ profile URL) to a UNIQUE canonical
+ * Researcher, and upserts a lead member row. Resolution is required: an unresolved or
  * ambiguous name is skipped, never written, so a hallucinated leadership name
  * cannot mint a lead. Any pre-existing non-lead roster row for the same person
  * in this entity is removed so they surface once as the lead (the detail-page
@@ -874,7 +1688,6 @@ export async function materializeInferredDirectorMembership(
   if (!nameObs || !nameObs.value) return { ...empty, skipped: 'no-observation' };
 
   const profileUrl = textValue(fieldObs('inferredDirectorProfileUrl')?.value);
-  const title = textValue(fieldObs('inferredDirectorTitle')?.value);
   const roleRaw = textValue(fieldObs('inferredDirectorRole')?.value).toLowerCase();
   const role = roleRaw === 'co-director' ? 'co-director' : 'director';
   const name =
@@ -897,61 +1710,67 @@ export async function materializeInferredDirectorMembership(
       hasConflict: false,
     };
   }
-  const user = await findUniqueUserForResearchGroupMember(lookupFields);
-  if (!user?._id) return { ...empty, skipped: 'unresolved-user' };
+  const researcher = await findUniqueResearcherForRosterMember(lookupFields);
+  if (!researcher?._id) return { ...empty, skipped: 'unresolved-user' };
 
-  const userId = idValue(user._id);
-  const facultyMemberId = idValue(user.facultyMemberId);
+  const researcherId = idValue(researcher._id);
   const roleSource = fieldObs('inferredDirectorRole') || nameObs;
   const observedAt = roleSource.observedAt || new Date();
   const confidence = typeof roleSource.confidence === 'number' ? roleSource.confidence : 0.85;
   const sourceUrl = textValue(roleSource.sourceUrl);
   const sourceName = textValue(roleSource.sourceName);
 
-  const set: Record<string, unknown> = {
-    researchEntityId,
-    researchGroupId: researchEntityId,
-    userId,
-    role,
-    isCurrentMember: true,
-    sourceUrl: profileUrl || sourceUrl,
-    confidence,
-    lastObservedAt: observedAt,
-    'confidenceByField.role': confidence,
-    'fieldProvenance.role': { sourceName, sourceUrl, observedAt, confidence },
-  };
-  if (name) set.name = name;
-  if (facultyMemberId) set.facultyMemberId = facultyMemberId;
-  if (title) {
-    set.title = title;
-    set['confidenceByField.title'] = confidence;
-  }
+  const directorResearcherId = researcherId;
+  const directorEnrichment = await canonicalResearcherIdentity(researcherId);
+  const roster = await getResearchEntityRoster(researchEntityId);
+  const normalizedDirectorName = textValue(name).toLowerCase();
+  const matchesDirector = (entry: ResearchEntityRosterEntry): boolean =>
+    directorResearcherId && entry.personId
+      ? entry.personId.toString() === directorResearcherId.toString()
+      : Boolean(normalizedDirectorName) &&
+        textValue(entry.name).toLowerCase() === normalizedDirectorName;
+  const existing = roster.some(
+    (entry) => entry.isCurrentMember && entry.role === role && matchesDirector(entry),
+  );
+  const supersededCount = roster.filter(
+    (entry) => SUPERSEDED_BY_DIRECTOR_ROLES.includes(entry.role) && matchesDirector(entry),
+  ).length;
 
-  const existing = await ResearchGroupMember.findOne({
+  const directorIdentity: CanonicalMemberIdentity = {
+    netid: directorEnrichment.netid,
+    email: directorEnrichment.email,
+    orcid: directorEnrichment.orcid,
+    displayName: name,
+    hasCanonicalSourceReference: true,
+  };
+  await materializeCanonicalMembership(
     researchEntityId,
-    userId,
-    role,
-    isCurrentMember: true,
-  })
-    .select('_id')
-    .lean();
-  await ResearchGroupMember.updateOne(
-    { researchEntityId, userId, role, isCurrentMember: true },
-    { $set: set, $setOnInsert: { startedAt: observedAt } },
-    { upsert: true },
+    {
+      legacyRole: role,
+      displayName: name,
+      isCurrentMember: true,
+      confidence,
+      startedAt: observedAt,
+      rosterProvenance: {
+        sourceName: sourceName || undefined,
+        sourceUrl: profileUrl || sourceUrl || undefined,
+        profileUrl: profileUrl || undefined,
+        observedAt,
+      },
+    },
+    directorIdentity,
   );
 
-  const removal = await ResearchGroupMember.deleteMany({
-    researchEntityId,
-    userId,
-    role: { $in: SUPERSEDED_BY_DIRECTOR_ROLES },
-  });
+  const supersededPersonId = await resolveCanonicalResearcherId(directorIdentity);
+  if (supersededPersonId) {
+    await archiveSupersededCanonicalRoleAssignments(researchEntityId, supersededPersonId);
+  }
 
   return {
     written: true,
-    promoted: Boolean(existing) || (removal.deletedCount || 0) > 0,
-    removedDuplicates: removal.deletedCount || 0,
-    userId,
+    promoted: existing || supersededCount > 0,
+    removedDuplicates: supersededCount,
+    userId: researcherId,
     role,
   };
 }
@@ -973,6 +1792,26 @@ const idValue = (value: unknown): string => {
   return serializedDocumentId(value) || '';
 };
 
+/**
+ * The legacy `kind` field is a pure function of the canonical `entityType`
+ * (#2144), so it is derived here rather than resolved from `kind` observations.
+ * Mirrors `materializedFieldValue`'s entityType fallback: an unrecognized
+ * observed entityType keeps the stored one, and an entity with no recognizable
+ * entityType at all has no derivable kind yet (kind observations still mint it).
+ */
+function derivedResearchGroupKind(
+  observedEntityType: unknown,
+  storedEntityType: unknown,
+): ResearchGroupKind | undefined {
+  const observed = textValue(observedEntityType);
+  const effective = researchEntityTypes.includes(observed as never)
+    ? observed
+    : textValue(storedEntityType);
+  return researchEntityTypes.includes(effective as never)
+    ? mapEntityTypeToResearchGroupKind(effective)
+    : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // ResearchEntity relationship materialization (umbrella center → faculty).
 //
@@ -988,20 +1827,10 @@ const idValue = (value: unknown): string => {
 interface ResolvedRelationshipMaterializationDeps {
   researchEntityModel?: Pick<typeof ResearchEntity, 'findOne' | 'find' | 'findById'>;
   relationshipModel?: Pick<typeof ResearchEntityRelationship, 'updateOne' | 'updateMany'>;
-  researchGroupMemberModel?: Pick<typeof ResearchGroupMember, 'findOne' | 'create' | 'updateOne'>;
 }
 
 interface ProfileBackedFacultyResearchAreaMemberDeps {
-  userModel?: Pick<typeof User, 'findById'>;
-  researchGroupMemberModel?: Pick<typeof ResearchGroupMember, 'findOne' | 'create' | 'updateOne'>;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function compactPersonName(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  researcherModel?: Pick<typeof Researcher, 'findById'>;
 }
 
 function normalizeResearchEntityName(value: unknown): string {
@@ -1025,34 +1854,76 @@ function piCompatibleResearchEntityNames(firstName: string, lastName: string): S
   const first = firstName.trim();
   const last = lastName.trim();
   return new Set(
-    [`${first} ${last} Lab`, `${first} ${last} Laboratory`, `${last} Lab`, `${last} Laboratory`].map(
-      (value) => normalizeResearchEntityName(value),
-    ),
+    [
+      `${first} ${last} Lab`,
+      `${first} ${last} Laboratory`,
+      `${last} Lab`,
+      `${last} Laboratory`,
+    ].map((value) => normalizeResearchEntityName(value)),
   );
 }
 
-async function findUniqueUserByPersonName(personName: string): Promise<any | null> {
-  const parts = personName.split(/\s+/).filter(Boolean);
-  if (parts.length < 2) return null;
-  const first = parts.slice(0, -1).join(' ');
-  const last = parts[parts.length - 1];
-  const users = await User.find({
-    lname: { $regex: new RegExp(`^\\s*${escapeRegExp(last)}\\s*$`, 'i') },
-  })
-    .select('_id fname lname')
-    .limit(10)
-    .lean();
-  const expectedFullName = compactPersonName(`${first} ${last}`);
-  const matches = users.filter((user: any) => {
-    const candidateFullName = compactPersonName(`${textValue(user.fname)} ${textValue(user.lname)}`);
-    return candidateFullName === expectedFullName;
-  });
-  return matches.length === 1 && matches[0]?._id ? matches[0] : null;
+async function findUniqueResearcherIdByPersonName(personName: string): Promise<string | null> {
+  const resolution = await resolveResearcherIdForPersonName(personName);
+  return resolution.status === 'matched' && resolution.researcherId
+    ? resolution.researcherId.toString()
+    : null;
 }
 
-async function findUniqueUserIdByPersonName(personName: string): Promise<string | null> {
-  const user = await findUniqueUserByPersonName(personName);
-  return user?._id ? materializerDocumentId(user._id) || null : null;
+function isGeneratedResearchEntitySlug(value: unknown): boolean {
+  const slug = textValue(value);
+  return slug.startsWith('faculty-research-area-') || slug.startsWith('dept-');
+}
+
+async function resolveUniquePiLinkedResearchEntityByPersonName(
+  Model: mongoose.Model<any>,
+  personName: string,
+): Promise<any | null> {
+  if (!personName) return null;
+
+  const researcherIdString = await findUniqueResearcherIdByPersonName(personName);
+  const researcherId = toMaterializerObjectId(researcherIdString);
+  if (!researcherId) return null;
+  const assignments = await RoleAssignment.find({
+    personId: researcherId,
+    'target.kind': 'RESEARCH_ENTITY',
+    role: 'PI',
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('target.id')
+    .lean();
+  const candidateIds = Array.from(
+    new Set(
+      assignments
+        .map((assignment: any) => normalizeMaterializerObjectId(assignment?.target?.id))
+        .filter(Boolean),
+    ),
+  );
+  if (candidateIds.length === 0) return null;
+
+  const parts = personName.split(/\s+/).filter(Boolean);
+  const compatibleNames = piCompatibleResearchEntityNames(
+    parts.slice(0, -1).join(' '),
+    parts[parts.length - 1],
+  );
+  const candidates = await Model.find({
+    _id: { $in: candidateIds },
+    archived: { $ne: true },
+  })
+    .select('_id name slug')
+    .lean();
+  const nonGeneratedCandidates = candidates.filter(
+    (candidate: any) => !isGeneratedResearchEntitySlug(candidate.slug),
+  );
+  const compatibleCandidates = nonGeneratedCandidates.filter((candidate: any) =>
+    compatibleNames.has(normalizeResearchEntityName(candidate.name)),
+  );
+  const resolvedCandidates =
+    compatibleCandidates.length > 0 ? compatibleCandidates : nonGeneratedCandidates;
+  if (resolvedCandidates.length !== 1) return null;
+
+  return Model.findById(resolvedCandidates[0]._id).lean();
 }
 
 export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
@@ -1070,45 +1941,93 @@ export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
     personNameFromFacultyResearchArea(observedKey);
   if (!personName) return null;
 
-  const userId = await findUniqueUserIdByPersonName(personName);
-  const userObjectId = toMaterializerObjectId(userId);
-  if (!userObjectId) return null;
+  return resolveUniquePiLinkedResearchEntityByPersonName(Model, personName);
+}
 
-  const memberships = await ResearchGroupMember.find({
-    userId: userObjectId,
-    role: 'pi',
-    isCurrentMember: { $ne: false },
-    researchEntityId: { $exists: true, $ne: null },
-  })
-    .select('researchEntityId')
-    .lean();
-  const candidateIds = Array.from(
-    new Set(memberships.map((member: any) => normalizeMaterializerObjectId(member.researchEntityId)).filter(Boolean)),
-  );
-  if (candidateIds.length === 0) return null;
+function isDeptRosterKey(value: unknown): boolean {
+  return textValue(value).toLowerCase().startsWith('dept-');
+}
 
-  const parts = personName.split(/\s+/).filter(Boolean);
-  const compatibleNames = piCompatibleResearchEntityNames(
-    parts.slice(0, -1).join(' '),
-    parts[parts.length - 1],
-  );
-  const candidates = await Model.find({
-    _id: { $in: candidateIds },
-    archived: { $ne: true },
-  })
-    .select('_id name slug')
-    .lean();
-  const nonGeneratedCandidates = candidates.filter(
-    (candidate: any) => !textValue(candidate.slug).startsWith('faculty-research-area-'),
-  );
-  const compatibleCandidates = nonGeneratedCandidates.filter((candidate: any) =>
-    compatibleNames.has(normalizeResearchEntityName(candidate.name)),
-  );
-  const resolvedCandidates =
-    compatibleCandidates.length > 0 ? compatibleCandidates : nonGeneratedCandidates;
-  if (resolvedCandidates.length !== 1) return null;
+function personNameFromDeptRosterEntityName(value: unknown): string {
+  return textValue(value)
+    .replace(/\s+(lab|laboratory|faculty research)$/i, '')
+    .trim();
+}
 
-  return Model.findById(resolvedCandidates[0]._id).lean();
+function uniqueStringArray(...groups: Array<unknown>): string[] {
+  const values = new Set<string>();
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    for (const value of group) {
+      const text = textValue(value).trim();
+      if (text) values.add(text);
+    }
+  }
+  return Array.from(values);
+}
+
+/**
+ * A department-roster observation mints a `dept-<dept>-<person>` shell per
+ * appointment. Left alone, these never enter the identity-keyed dedupe lane
+ * (#561) because they carry no PI RoleAssignment yet, and never get a
+ * canonicalGroupId tombstone or Meili cleanup (#584) because they never go
+ * through a dedupe merge - the exact gap in #1364. When the shell's inferred
+ * PI already has a real, non-generated research home, fold the shell into it
+ * immediately: merge the additive fields, archive the shell with a
+ * canonicalGroupId tombstone, and remove it from the search index, so no
+ * per-appointment orphan is ever left standing.
+ */
+export async function foldDeptRosterShellIntoCanonicalResearchEntity(
+  shellEntityId: string,
+): Promise<{ folded: boolean; canonicalEntityId?: string }> {
+  const shell = await ResearchEntity.findById(shellEntityId)
+    .select('_id slug name departments schools sourceUrls archived')
+    .lean<{
+      _id: unknown;
+      slug?: string;
+      name?: unknown;
+      departments?: unknown[];
+      schools?: unknown[];
+      sourceUrls?: unknown[];
+      archived?: boolean;
+    }>();
+  if (!shell || shell.archived || !isDeptRosterKey(shell.slug)) return { folded: false };
+
+  const personName = personNameFromDeptRosterEntityName(shell.name);
+  if (!personName) return { folded: false };
+
+  const canonical = await resolveUniquePiLinkedResearchEntityByPersonName(
+    ResearchEntity,
+    personName,
+  );
+  const canonicalId = normalizeMaterializerObjectId(canonical?._id);
+  if (!canonicalId || canonicalId === String(shell._id)) return { folded: false };
+
+  const now = new Date();
+  await ResearchEntity.updateOne(
+    { _id: canonicalId, archived: { $ne: true } },
+    {
+      $addToSet: {
+        departments: { $each: uniqueStringArray(shell.departments) },
+        schools: { $each: uniqueStringArray(shell.schools) },
+        sourceUrls: { $each: uniqueStringArray(shell.sourceUrls) },
+      },
+      $set: { lastObservedAt: now },
+    },
+  );
+  await ResearchEntity.updateOne(
+    { _id: shell._id, archived: { $ne: true } },
+    {
+      $set: {
+        archived: true,
+        canonicalGroupId: canonicalId,
+        lastObservedAt: now,
+      },
+    },
+  );
+  await deleteFromIndex('researchEntity', String(shell._id));
+
+  return { folded: true, canonicalEntityId: canonicalId };
 }
 
 export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
@@ -1137,44 +2056,59 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     return { synced: false, created: false, skipped: 'not-faculty-research-area' };
   }
 
-  const userModel = deps.userModel || User;
+  const researcherModel = deps.researcherModel || Researcher;
   const personName =
     personNameFromFacultyResearchArea(identity.name) ||
     personNameFromFacultyResearchArea(observedKey);
-  const identityUserId = normalizeMaterializerObjectId(identity.userId);
-  let user = identityUserId
-    ? await userModel.findById(identityUserId).select('_id fname lname').lean()
-    : null;
-  if (!user) {
-    user = personName ? await findUniqueUserByPersonName(personName) : null;
+  const providedId = normalizeMaterializerObjectId(identity.userId);
+  let researcherId: string | undefined;
+  if (providedId) {
+    const provided: any = await researcherModel.findById(providedId).select('_id').lean();
+    researcherId = provided?._id ? provided._id.toString() : undefined;
   }
-  if (!user?._id) return { synced: false, created: false, skipped: 'user-not-resolved' };
+  if (!researcherId && personName) {
+    researcherId = (await findUniqueResearcherIdByPersonName(personName)) || undefined;
+  }
+  if (!researcherId) return { synced: false, created: false, skipped: 'user-not-resolved' };
 
-  const memberModel = deps.researchGroupMemberModel || ResearchGroupMember;
-  const userId = normalizeMaterializerObjectId(user._id) || '';
-  if (!userId) return { synced: false, created: false, skipped: 'user-not-resolved' };
-  const memberLookup = { researchEntityId, userId, role: 'pi' };
-  const existing =
-    (await memberModel.findOne({ ...memberLookup, isCurrentMember: { $ne: false } }).lean()) ||
-    (await memberModel.findOne(memberLookup).lean());
-  const set = {
+  const identityUser = await canonicalResearcherIdentity(researcherId);
+  const displayName = identityUser.displayName || personName || '';
+  const observedAt = new Date();
+  const confidence = Number(identity.confidence) || 0.8;
+
+  const normalizedName = displayName.toLowerCase();
+  const roster = await getResearchEntityRoster(researchEntityId);
+  const existing = roster.some(
+    (entry) =>
+      entry.role === 'pi' &&
+      (researcherId && entry.personId
+        ? entry.personId.toString() === researcherId
+        : Boolean(normalizedName) && textValue(entry.name).toLowerCase() === normalizedName),
+  );
+
+  await materializeCanonicalMembership(
     researchEntityId,
-    userId,
-    name: `${textValue(user.fname)} ${textValue(user.lname)}`.trim() || personName,
-    role: 'pi',
-    isCurrentMember: true,
-    sourceUrl: textValue(identity.sourceUrl),
-    confidence: Number(identity.confidence) || 0.8,
-    lastObservedAt: new Date(),
-  };
+    {
+      legacyRole: 'pi',
+      displayName,
+      isCurrentMember: true,
+      confidence,
+      startedAt: observedAt,
+      rosterProvenance: {
+        sourceUrl: textValue(identity.sourceUrl) || undefined,
+        observedAt,
+      },
+    },
+    {
+      netid: identityUser?.netid,
+      email: identityUser?.email,
+      orcid: identityUser?.orcid,
+      displayName,
+      hasCanonicalSourceReference: true,
+    },
+  );
 
-  if (!existing) {
-    await memberModel.create(set);
-    return { synced: true, created: true, researchEntityId, userId };
-  }
-
-  await memberModel.updateOne({ _id: existing._id }, { $set: set });
-  return { synced: true, created: false, researchEntityId, userId };
+  return { synced: true, created: !existing, researchEntityId, userId: researcherId };
 }
 
 function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date {
@@ -1249,13 +2183,16 @@ async function materializeResearchEntityRelationship(
   }
 
   if (!canonicalFacultyResearchAreaTarget && target?._id) {
-    await syncProfileBackedFacultyResearchAreaMemberFromIdentity(normalizeMaterializerObjectId(target._id) || '', {
-      entityKey: targetEntityKey,
-      name: target.name,
-      entityType: 'FACULTY_RESEARCH_AREA',
-      sourceUrl: textValue(resolved.sourceUrl?.value),
-      confidence: Math.max(0, ...observations.map((o) => Number(o.confidence) || 0)),
-    });
+    await syncProfileBackedFacultyResearchAreaMemberFromIdentity(
+      normalizeMaterializerObjectId(target._id) || '',
+      {
+        entityKey: targetEntityKey,
+        name: target.name,
+        entityType: 'FACULTY_RESEARCH_AREA',
+        sourceUrl: textValue(resolved.sourceUrl?.value),
+        confidence: Math.max(0, ...observations.map((o) => Number(o.confidence) || 0)),
+      },
+    );
   }
 
   const sourceResearchEntityId = normalizeMaterializerObjectId(source._id) || '';
@@ -1323,9 +2260,7 @@ async function materializeResearchEntityRelationship(
 
 const RESEARCH_ENTITY_RELATIONSHIP_LABELS: Record<string, string> = {
   AFFILIATED_LAB: 'Affiliated lab',
-  AFFILIATED_RESEARCH_GROUP: 'Related research group',
   MEMBER_RESEARCH_AREA: 'Member',
-  HOSTED_PROGRAM: 'Hosted program',
 };
 
 export function relationshipLabelForType(relationshipType: string): string {
@@ -1360,7 +2295,10 @@ function nameRegexFromSlugParts(parts: string[]): RegExp | null {
   return new RegExp(`^${normalized.map(escapeRegex).join('[\\s-]+')}$`, 'i');
 }
 
-function deptUserNameFilters(value: unknown, departments: string[]): Array<Record<string, unknown>> {
+function deptUserNameFilters(
+  value: unknown,
+  departments: string[],
+): Array<Record<string, unknown>> {
   const raw = typeof value === 'string' ? value.trim() : '';
   const match = raw.match(DEPT_USER_KEY_PATTERN);
   if (!match || departments.length === 0) return [];
@@ -1379,19 +2317,6 @@ function deptUserNameFilters(value: unknown, departments: string[]): Array<Recor
     { fname: firstName, lname: lastName, departments: department },
     { fname: firstName, lname: lastName, primaryDepartment: department },
   ]);
-}
-
-function departmentValuesForInferredPiLookup(
-  observations: MaterializerObservationLike[],
-): string[] {
-  return uniqueStrings(
-    observations.flatMap((observation) => {
-      if (observation.field !== 'departments' && observation.field !== 'primaryDepartment') {
-        return [];
-      }
-      return Array.isArray(observation.value) ? observation.value : [observation.value];
-    }),
-  );
 }
 
 export function userLookupFiltersForInferredPiUserKey(
@@ -1546,7 +2471,14 @@ export function officialProfileObservationMatchesUser(
   if (departmentTokens.length === 0) return false;
 
   const userNameTokens = identityTokens(
-    uniqueStrings([user.fname, user.firstName, user.lname, user.lastName, user.name, user.displayName]).join(' '),
+    uniqueStrings([
+      user.fname,
+      user.firstName,
+      user.lname,
+      user.lastName,
+      user.name,
+      user.displayName,
+    ]).join(' '),
   );
   if (!userNameTokens.includes(nameParts.lastToken)) return false;
   if (!userNameTokens.some((token) => token.charAt(0) === nameParts.firstInitial)) return false;
@@ -1583,23 +2515,13 @@ export function selectOfficialProfileObservationUserMatch(
   return null;
 }
 
-async function findUserDocByOfficialProfileObservations(
-  Model: mongoose.Model<any>,
-  observations: MaterializerObservationLike[],
-  observedKeyValue = '',
-): Promise<any | null> {
-  const profileFallbackFilters = userLookupFiltersForOfficialProfileObservations(observations);
-  if (profileFallbackFilters.length === 0) return null;
-  const candidates = await Model.find({ $or: profileFallbackFilters }).limit(5).lean();
-  return selectOfficialProfileObservationUserMatch(observations, candidates, observedKeyValue);
-}
-
 export function emptyPostMaterializationMetrics(): Required<ReportPostMaterializationMetrics> {
   return {
     entryPathways: 0,
     accessSignals: 0,
     contactRoutes: 0,
     postedOpportunities: 0,
+    undergraduateLogisticsClaims: 0,
     guardedContactRoutes: 0,
     staleEvidenceSkipped: 0,
     conflicts: 0,
@@ -1616,67 +2538,19 @@ export function addPostMaterializationMetrics(
   aggregate.accessSignals += next.accessSignals || 0;
   aggregate.contactRoutes += next.contactRoutes || 0;
   aggregate.postedOpportunities += next.postedOpportunities || 0;
+  aggregate.undergraduateLogisticsClaims += next.undergraduateLogisticsClaims || 0;
   aggregate.guardedContactRoutes += next.guardedContactRoutes || 0;
   aggregate.staleEvidenceSkipped += next.staleEvidenceSkipped || 0;
   aggregate.conflicts += next.conflicts || 0;
   aggregate.errors += next.errors || 0;
 }
 
-function scrapeRunIdForQuery(scrapeRunId: string): string | mongoose.Types.ObjectId {
-  return toMaterializerObjectId(scrapeRunId) || scrapeRunId;
-}
-
-export async function countListingBackedPostedOpportunitiesForRun(
-  scrapeRunId: string,
-  deps: ListingPostedOpportunityMetricDeps = {},
-): Promise<number> {
-  const observationModel = deps.observationModel || Observation;
-  const postedOpportunityModel = deps.postedOpportunityModel || PostedOpportunity;
-  const rows = await observationModel.aggregate([
-    {
-      $match: {
-        scrapeRunId: scrapeRunIdForQuery(scrapeRunId),
-        entityType: 'listing',
-      },
-    },
-    {
-      $project: {
-        listingId: {
-          $ifNull: ['$entityId', '$entityKey'],
-        },
-      },
-    },
-    {
-      $group: {
-        _id: '$listingId',
-      },
-    },
-  ]);
-  const listingIds = rows
-    .map((row: { _id?: unknown }) => row._id)
-    .filter((id): id is string | mongoose.Types.ObjectId => {
-      if (id instanceof mongoose.Types.ObjectId) return true;
-      return Boolean(normalizeMaterializerObjectId(id));
-    })
-    .map((id) => toMaterializerObjectId(id))
-    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-
-  if (listingIds.length === 0) return 0;
-
-  return postedOpportunityModel.countDocuments({
-    listingId: { $in: listingIds },
-  });
-}
-
 function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | null {
   switch (entityType) {
-    case 'paper':
-      return Paper;
-    case 'user':
-      return User;
     case 'researchEntity':
-    case 'researchGroup':
       return ResearchEntity;
+    case 'fellowship':
+      return Fellowship;
     default:
       return null;
   }
@@ -1684,40 +2558,21 @@ function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | n
 
 function uniqueKeyFieldFor(entityType: ObservedEntityType): string | null {
   switch (entityType) {
-    case 'paper':
-      return 'openAlexId';
     case 'user':
       return 'netid';
     case 'researchEntity':
-    case 'researchGroup':
       return 'slug';
+    case 'fellowship':
+      return 'sourceKey';
     default:
       return null;
   }
 }
 
-function isArxivPaperKey(entityKey?: string): boolean {
-  if (!entityKey) return false;
-  return /^(\d{4}\.\d{4,5}|[a-z-]+(\.[A-Z]{2})?\/\d{7})$/i.test(entityKey);
-}
-
-function isDoiPaperKey(entityKey?: string): boolean {
-  if (!entityKey) return false;
-  const normalized = entityKey.trim().replace(/^doi:/i, '');
-  return /^10\.\S+\/\S+$/i.test(normalized);
-}
-
 function uniqueKeyFieldForIdentifier(
   entityType: ObservedEntityType,
-  entityKey?: string,
+  _entityKey?: string,
 ): string | null {
-  if (entityType === 'paper' && isArxivPaperKey(entityKey)) {
-    return 'arxivId';
-  }
-  if (entityType === 'paper' && isDoiPaperKey(entityKey)) {
-    return 'doi';
-  }
-
   return uniqueKeyFieldFor(entityType);
 }
 
@@ -1727,45 +2582,115 @@ export function uniqueKeyValueForIdentifier(
   obs: Array<{ field?: string; value?: unknown }>,
 ): string | undefined {
   if (entityType === 'user') {
-    const observedNetid = obs
-      .find((o) => o.field === 'netid' && typeof o.value === 'string')
+    const observedNetid = obs.find((o) => o.field === 'netid' && typeof o.value === 'string')
       ?.value as string | undefined;
     if (observedNetid?.trim()) return observedNetid.trim();
     return entityKey?.replace(/^netid:/i, '').trim() || undefined;
   }
 
-  if (entityType === 'paper') {
-    const keyField = uniqueKeyFieldForIdentifier(entityType, entityKey);
-    if (keyField === 'doi') {
-      const observedDoi = obs
-        .map((o) => (o.field === 'doi' ? normalizeDoiForMaterialization(o.value) : null))
-        .find((value): value is string => !!value);
-      if (observedDoi) return observedDoi;
-      return normalizeDoiForMaterialization(entityKey?.replace(/^doi:/i, '')) || undefined;
-    }
-  }
-
   return entityKey;
 }
 
-export function normalizeDoiForMaterialization(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value
-    .trim()
-    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')
-    .toLowerCase();
-  return normalized || null;
+/**
+ * Re-scrape dedupe: a fellowship whose title drifted slightly mints a new
+ * sourceKey (title slug) and would otherwise create a duplicate record (#609).
+ * When the exact sourceKey misses, resolve to an existing record whose
+ * normalized title matches, category-agnostic. Candidates are limited to
+ * records owned by the same source scraper or to legacy records with no
+ * sourceName (the pre-scrape imports the catalog scraper should adopt rather
+ * than clone), so two distinct non-empty producers never merge. Prefers a live
+ * record, then the most recently updated one.
+ */
+async function findFellowshipByNormalizedTitle(
+  Model: mongoose.Model<any>,
+  obs: any[],
+): Promise<any | null> {
+  const titleObs = obs.find((o) => o.field === 'title' && typeof o.value === 'string');
+  const sourceNameObs = obs.find((o) => o.field === 'sourceName' && typeof o.value === 'string');
+  const titleKey = normalizedProgramTitleKey(String(titleObs?.value || ''));
+  const sourceName = String(sourceNameObs?.value || '');
+  if (!titleKey || !sourceName) return null;
+
+  const candidates = await Model.find({
+    $or: [{ sourceName }, { sourceName: { $in: ['', null] } }, { sourceName: { $exists: false } }],
+  }).lean();
+  const matches = candidates.filter(
+    (candidate: any) => normalizedProgramTitleKey(String(candidate.title || '')) === titleKey,
+  );
+  if (matches.length === 0) return null;
+
+  matches.sort((a: any, b: any) => {
+    const archivedDelta = Number(Boolean(a.archived)) - Number(Boolean(b.archived));
+    if (archivedDelta !== 0) return archivedDelta;
+    return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+  });
+  return matches[0];
 }
 
-function observedDoiValues(obs: any[]): string[] {
-  return Array.from(
-    new Set(
-      obs
-        .filter((o) => o.field === 'doi')
-        .map((o) => normalizeDoiForMaterialization(o.value))
-        .filter((value): value is string => !!value),
-    ),
+/**
+ * Re-scrape dedupe fallback: a fellowship whose title drifted by more than
+ * punctuation (an inserted/dropped qualifier, e.g. "Wu Tsai Undergraduate
+ * Fellowships" vs "Undergraduate Fellowships") still shares its sourceUrl
+ * with the existing record and slips past findFellowshipByNormalizedTitle
+ * (#609). Only fires when the sourceUrl resolves to exactly one active
+ * record whose title is a qualifier-drift match (isProgramTitleQualifierDrift):
+ * institutional catalog pages (e.g. funding.yale.edu/find-funding/...) are
+ * shared by dozens of genuinely distinct named fellowships, including pairs
+ * that share a page but have unrelated names (a college's "Richter Summer
+ * Fellowship" and "Mellon Senior Research Grant"), so sourceUrl equality
+ * alone is never treated as a dedupe signal.
+ */
+async function findFellowshipBySourceUrl(
+  Model: mongoose.Model<any>,
+  obs: any[],
+): Promise<any | null> {
+  const sourceUrlObs = obs.find((o) => o.field === 'sourceUrl' && typeof o.value === 'string');
+  const sourceNameObs = obs.find((o) => o.field === 'sourceName' && typeof o.value === 'string');
+  const titleObs = obs.find((o) => o.field === 'title' && typeof o.value === 'string');
+  const sourceUrl = String(sourceUrlObs?.value || '').trim();
+  const sourceName = String(sourceNameObs?.value || '');
+  const title = String(titleObs?.value || '');
+  if (!sourceUrl || !sourceName || !title) return null;
+
+  const candidates = await Model.find({
+    sourceUrl,
+    archived: { $ne: true },
+    $or: [{ sourceName }, { sourceName: { $in: ['', null] } }, { sourceName: { $exists: false } }],
+  }).lean();
+  if (candidates.length !== 1) return null;
+  const candidate = candidates[0];
+  return isProgramTitleQualifierDrift(title, String(candidate.title || '')) ? candidate : null;
+}
+
+/**
+ * Cross-source dedupe: a fund enumerated by the Student Grants Database source
+ * cites its record-specific CommunityForce FundDetails URL as both its sourceUrl
+ * and applicationLink. The same fund linked from a public fellowship page carries
+ * that exact URL as its applicationLink. The FundDetails URL is globally unique
+ * per fund, so when the same-source title/sourceUrl fallbacks miss, resolve to
+ * any existing active fellowship whose applicationLink matches - so the two
+ * sources merge into one record rather than duplicating (#1630). Only fires for a
+ * record-specific application-portal URL (a FundDetails page with a query), never
+ * a bare portal root shared by many funds, and only when exactly one active
+ * record matches.
+ */
+async function findFellowshipByRecordSpecificApplicationLink(
+  Model: mongoose.Model<any>,
+  obs: any[],
+): Promise<any | null> {
+  const applicationLinkObs = obs.find(
+    (o) => o.field === 'applicationLink' && typeof o.value === 'string',
   );
+  const applicationLink = String(applicationLinkObs?.value || '').trim();
+  if (!applicationLink || !isRecordSpecificApplicationPortalUrl(applicationLink)) return null;
+
+  const candidates = await Model.find({
+    applicationLink,
+    archived: { $ne: true },
+  })
+    .limit(2)
+    .lean();
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 async function findEntityDocByIdentifier(
@@ -1787,361 +2712,809 @@ async function findEntityDocByIdentifier(
   const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
   if (!keyValue) return null;
 
-  if (entityType === 'user') {
-    const byOfficialProfile = await findUserDocByOfficialProfileObservations(
-      Model,
-      obs,
-      keyValue,
-    );
-    if (byOfficialProfile) return byOfficialProfile;
-  }
-
   const exact = await Model.findOne({ [keyField]: keyValue }).lean();
   if (exact) return exact;
 
-  if (entityType === 'user') {
-    const emailObservation = obs.find(
-      (o) => o.field === 'email' && typeof o.value === 'string',
-    );
-    const observedEmail =
-      typeof emailObservation?.value === 'string'
-        ? emailObservation.value.trim().toLowerCase()
-        : '';
-    if (observedEmail) {
-      const byEmail = await Model.find({ email: observedEmail }).limit(2).lean();
-      if (byEmail.length === 1) return byEmail[0];
-    }
-  }
-
-  if (entityType === 'paper') {
-    const doiValues = observedDoiValues(obs);
-    if (doiValues.length > 0) {
-      const byDoi = await Model.find({ doi: { $in: doiValues } }).limit(2).lean();
-      if (byDoi.length === 1) return byDoi[0];
-    }
+  if (entityType === 'fellowship') {
+    const byTitle = await findFellowshipByNormalizedTitle(Model, obs);
+    if (byTitle) return byTitle;
+    const bySourceUrl = await findFellowshipBySourceUrl(Model, obs);
+    if (bySourceUrl) return bySourceUrl;
+    const byApplicationLink = await findFellowshipByRecordSpecificApplicationLink(Model, obs);
+    if (byApplicationLink) return byApplicationLink;
   }
 
   return null;
 }
 
-function paperIdentityBuckets(
-  groups: Map<string, PaperMaterializationObservation[]>,
-): {
-  openAlexKeys: string[];
-  arxivKeys: string[];
-  doiKeys: string[];
-  doiValues: string[];
-} {
-  const keys = Array.from(groups.keys());
-  const arxivKeys = keys.filter((key) => isArxivPaperKey(key));
-  const doiKeys = keys.filter((key) => isDoiPaperKey(key));
-  const openAlexKeys = keys.filter((key) => !isArxivPaperKey(key) && !isDoiPaperKey(key));
-  const doiValues = Array.from(
-    new Set(
-      Array.from(groups.entries()).flatMap(([entityKey, obs]) => [
-        ...observedDoiValues(obs),
-        ...(isDoiPaperKey(entityKey)
-          ? [normalizeDoiForMaterialization(entityKey.replace(/^doi:/i, ''))].filter(
-              (value): value is string => !!value,
-            )
-          : []),
-      ]),
-    ),
-  );
-  return { openAlexKeys, arxivKeys, doiKeys, doiValues };
-}
-
-function mapExistingPapers(existingPapers: any[]): {
-  byOpenAlexId: Map<string, any>;
-  byArxivId: Map<string, any>;
-  byDoi: Map<string, any[]>;
-} {
-  const byOpenAlexId = new Map<string, any>();
-  const byArxivId = new Map<string, any>();
-  const byDoi = new Map<string, any[]>();
-  for (const paper of existingPapers) {
-    if (paper.openAlexId) byOpenAlexId.set(String(paper.openAlexId), paper);
-    if (paper.arxivId) byArxivId.set(String(paper.arxivId), paper);
-    if (paper.doi) {
-      const doi = String(paper.doi);
-      const list = byDoi.get(doi) || [];
-      list.push(paper);
-      byDoi.set(doi, list);
-    }
-  }
-  return { byOpenAlexId, byArxivId, byDoi };
-}
-
-function findPaperForObservationGroup(
-  entityKey: string,
-  obs: PaperMaterializationObservation[],
-  maps: {
-    byOpenAlexId: Map<string, any>;
-    byArxivId: Map<string, any>;
-    byDoi: Map<string, any[]>;
-  },
-): any | null {
-  const keyValue = uniqueKeyValueForIdentifier('paper', entityKey, obs);
-  const doiCandidates = observedDoiValues(obs);
-  if (isDoiPaperKey(entityKey) && keyValue) doiCandidates.unshift(keyValue);
-  return (
-    maps.byOpenAlexId.get(entityKey) ||
-    maps.byArxivId.get(entityKey) ||
-    (keyValue ? maps.byDoi.get(keyValue)?.[0] : undefined) ||
-    doiCandidates
-      .map((doi) => maps.byDoi.get(doi))
-      .find((papers): papers is any[] => Array.isArray(papers) && papers.length === 1)?.[0] ||
-    null
-  );
-}
-
-const PAPER_SET_FIELDS = new Set([
-  'authors',
-  'facultyMemberIds',
-  'researchEntityIds',
-  'fieldsOfStudy',
-  'publicationTypes',
-  'sources',
-]);
-
-const PAPER_DERIVED_AUTHOR_FIELDS = new Set(['yaleAuthorIds', 'yaleAuthorNetIds']);
-const PAPER_MATERIALIZATION_ONLY_FIELDS = new Set([PAPER_AUTHORSHIP_EVIDENCE_FIELD]);
-
-export function mergeUniqueArrayValues(existing: unknown, next: unknown): unknown[] {
-  const values = [
-    ...(Array.isArray(existing) ? existing : existing === undefined || existing === null ? [] : [existing]),
-    ...(Array.isArray(next) ? next : next === undefined || next === null ? [] : [next]),
-  ];
-  const seen = new Set<string>();
-  const merged: unknown[] = [];
-  for (const value of values) {
-    const key = String(value);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(value);
-  }
-  return merged;
-}
-
-function valuesFromPaperObservations(
-  observations: PaperMaterializationObservation[],
-  field: string,
-): unknown[] {
-  const values = observations
-    .filter((obs) => obs.field === field)
-    .flatMap((obs) => (Array.isArray(obs.value) ? obs.value : [obs.value]))
-    .filter((value) => value !== undefined && value !== null && value !== '');
-  return mergeUniqueArrayValues(undefined, values);
-}
-
-function addUniqueValuesToSet(
-  addToSet: Record<string, { $each: unknown[] }>,
-  field: string,
-  values: unknown[],
-): void {
-  if (values.length === 0) return;
-  const existing = addToSet[field]?.$each || [];
-  const merged = mergeUniqueArrayValues(existing, values);
-  if (merged.length > 0) addToSet[field] = { $each: merged };
-}
-
-function authorshipEvidenceFromPaperObservations(
-  observations: PaperMaterializationObservation[],
-): PaperAuthorshipEvidence[] {
-  return observations
-    .filter((obs) => obs.field === PAPER_AUTHORSHIP_EVIDENCE_FIELD)
-    .map((obs) =>
-      normalizePaperAuthorshipEvidence(obs.value, {
-        sourceName: obs.sourceName,
-        confidence: obs.confidence,
-        sourceUrl: obs.sourceUrl,
-        observedAt: obs.observedAt,
-      }),
-    )
-    .filter((evidence): evidence is PaperAuthorshipEvidence => !!evidence);
-}
-
-function materializedPaperFieldValue(field: string, value: unknown): unknown {
-  if (field === 'doi') return normalizeDoiForMaterialization(value) || undefined;
-  return materializedFieldValue('paper', field, value);
-}
-
-async function materializePaperAuthorEvidenceFromGroups(
-  groups: Map<string, PaperMaterializationObservation[]>,
-): Promise<number> {
-  const evidenceRows = Array.from(groups.entries()).flatMap(([entityKey, obs]) =>
-    authorshipEvidenceFromPaperObservations(obs).map((evidence) => ({
-      entityKey,
-      observations: obs,
-      evidence,
-    })),
-  );
-  if (evidenceRows.length === 0) return 0;
-
-  const { openAlexKeys, arxivKeys, doiKeys, doiValues } = paperIdentityBuckets(groups);
-  const normalizedDoiKeys = doiKeys
-    .map((key) => normalizeDoiForMaterialization(key.replace(/^doi:/i, '')))
-    .filter((value): value is string => !!value);
-  const existingPapers = await Paper.find({
-    $or: [
-      ...(openAlexKeys.length > 0 ? [{ openAlexId: { $in: openAlexKeys } }] : []),
-      ...(arxivKeys.length > 0 ? [{ arxivId: { $in: arxivKeys } }] : []),
-      ...(normalizedDoiKeys.length > 0 ? [{ doi: { $in: normalizedDoiKeys } }] : []),
-      ...(doiValues.length > 0 ? [{ doi: { $in: doiValues } }] : []),
-    ],
-  })
-    .select('_id openAlexId arxivId doi')
-    .lean();
-  const maps = mapExistingPapers(existingPapers as any[]);
-  const ops: any[] = [];
-
-  for (const { entityKey, observations, evidence } of evidenceRows) {
-    const paper = findPaperForObservationGroup(entityKey, observations, maps);
-    if (!paper?._id || !evidence.userId) continue;
-    const userObjectId = toMaterializerObjectId(evidence.userId);
-    if (!userObjectId) continue;
-
-    const observedAt =
-      evidence.observedAt instanceof Date
-        ? evidence.observedAt
-        : evidence.observedAt
-          ? new Date(evidence.observedAt)
-          : new Date();
-    const provenance = {
-      sourceName: evidence.sourceName,
-      sourceUrl: evidence.sourceUrl || '',
-      observedAt: Number.isNaN(observedAt.getTime()) ? new Date() : observedAt,
-      confidence: evidence.confidence,
-    };
-
-    ops.push({
-      updateOne: {
-        filter: {
-          paperId: paper._id,
-          userId: userObjectId,
-        },
-        update: {
-          $set: {
-            paperId: paper._id,
-            userId: userObjectId,
-            displayName: evidence.displayName,
-            externalAuthorIds: {
-              ...(evidence.externalAuthorIds || {}),
-              authorshipSource: evidence.sourceName,
-              authorshipMethod: evidence.method,
-            },
-            confidence: evidence.confidence ?? 0.9,
-            fieldProvenance: {
-              authorship: provenance,
-            },
-            lastObservedAt: provenance.observedAt,
-          },
-        },
-        upsert: true,
-      },
-    });
-  }
-
-  if (ops.length === 0) return 0;
-  const result = await PaperAuthor.bulkWrite(ops, { ordered: false });
-  return result.upsertedCount + result.modifiedCount;
-}
-
-export function buildPaperUpdateFromObservations(
-  entityKey: string,
-  observations: PaperMaterializationObservation[],
-  existingDoc: { manuallyLockedFields?: string[] } | null = null,
-): PaperMaterializationPatch {
-  const manuallyLockedFields = existingDoc?.manuallyLockedFields || [];
-  const resolverObs: ResolverObservation[] = observations.map((obs) => ({
-    field: obs.field,
-    value: obs.value,
-    sourceName: obs.sourceName,
-    confidence: obs.confidence,
-    observedAt: obs.observedAt,
-  }));
-  const resolved = resolveAllFields(resolverObs, { manuallyLockedFields });
-  const keyField = uniqueKeyFieldForIdentifier('paper', entityKey) || 'openAlexId';
-  const keyValue = uniqueKeyValueForIdentifier('paper', entityKey, observations) || entityKey;
-  const set: Record<string, unknown> = {
-    [keyField]: keyValue,
-    lastObservedAt: new Date(),
-  };
-  const addToSet: Record<string, { $each: unknown[] }> = {};
-  let fieldsWritten = 0;
-  let conflicts = 0;
-
-  for (const [field, r] of Object.entries(resolved)) {
-    if (MATERIALIZER_MANAGED_FIELDS.has(field)) continue;
-    if (manuallyLockedFields.includes(field)) continue;
-    if (PAPER_MATERIALIZATION_ONLY_FIELDS.has(field)) continue;
-    if (PAPER_DERIVED_AUTHOR_FIELDS.has(field)) continue;
-
-    if (PAPER_SET_FIELDS.has(field)) {
-      const values = valuesFromPaperObservations(observations, field);
-      addUniqueValuesToSet(addToSet, field, values);
-    } else {
-      const value = materializedPaperFieldValue(field, r.value);
-      if (value !== undefined && value !== null && value !== '') {
-        set[field] = value;
-      }
-    }
-
-    set[`confidenceByField.${field}`] = r.confidence;
-    if (r.hasConflict) conflicts++;
-    fieldsWritten++;
-  }
-
-  const authorshipEvidence = authorshipEvidenceFromPaperObservations(observations);
-  if (!manuallyLockedFields.includes('yaleAuthorIds')) {
-    addUniqueValuesToSet(
-      addToSet,
-      'yaleAuthorIds',
-      authorshipEvidence.map((evidence) => evidence.userId).filter(Boolean),
-    );
-  }
-  if (!manuallyLockedFields.includes('yaleAuthorNetIds')) {
-    addUniqueValuesToSet(
-      addToSet,
-      'yaleAuthorNetIds',
-      authorshipEvidence.map((evidence) => evidence.netid).filter(Boolean),
-    );
-  }
-
-  if (!existingDoc && !set.title) {
-    return {
-      update: { $set: set },
-      fieldsWritten: 0,
-      conflicts: 0,
-      skipped: 'missing-required-fields',
-    };
-  }
-
-  const update: PaperMaterializationPatch['update'] = { $set: set };
-  if (Object.keys(addToSet).length > 0) update.$addToSet = addToSet;
-  return { update, fieldsWritten, conflicts };
-}
-
 /**
  * Some entity schemas have required fields the scraper observation set may not
- * carry — User in particular requires email/fname/lname. Skip create when
- * those aren't present rather than throwing a Mongoose ValidationError that
- * would abort the whole materialization run.
+ * carry. Skip create when those aren't present rather than throwing a Mongoose
+ * ValidationError that would abort the whole materialization run.
  */
 function hasRequiredFieldsForCreate(
   entityType: ObservedEntityType,
   insert: Record<string, unknown>,
 ): boolean {
-  if (entityType === 'user') {
-    return !!(insert.email && insert.fname && insert.lname);
-  }
-  if (entityType === 'paper') {
-    return !!insert.title;
-  }
   if (isResearchEntityObservationType(entityType)) {
     return !!insert.name;
   }
   return true;
+}
+
+/**
+ * Observations may carry entityId, entityKey, or both (observationStore keeps
+ * whichever the scraper resolved). An entityKey-scoped materialize therefore
+ * misses any entityId-only observation for the same entity - including a
+ * later, higher-confidence correction - and can re-graft stale/wrong content
+ * even though the resolver would have picked correctly given the full set
+ * (see #1131, where this silently served the wrong person's content).
+ */
+// Flag-off: read only the single active row per fingerprint. Flag-on: read the
+// full retained log so the projection can decide late, but still exclude
+// rollback-retired rows. `superseded` is overloaded (latest-wins supersession
+// vs. retireObservations permanent removal), so dropping it wholesale would
+// resurface purged data; rollback rows are distinguished by rollback.rolledBackAt.
+export function materializationReadScopeFilter(): Record<string, unknown> {
+  return c4LosslessIngestEnabled()
+    ? { 'rollback.rolledBackAt': { $exists: false } }
+    : { superseded: false };
+}
+
+export async function entityIdAnchoredObservationsExcludedByEntityKeyScope(
+  entityType: ObservedEntityType,
+  entityId: string,
+  entityKeyScopedObservations: MaterializerObservationLike[],
+): Promise<any[]> {
+  const entityIdObjectId = toMaterializerObjectId(entityId);
+  if (!entityIdObjectId) return [];
+  const alreadyIncluded = new Set(
+    entityKeyScopedObservations.map((observation) => String(observation._id)),
+  );
+  const entityIdMatches = await Observation.find({
+    entityType,
+    ...materializationReadScopeFilter(),
+    entityId: entityIdObjectId,
+  }).lean();
+  return entityIdMatches.filter(
+    (observation: any) => !alreadyIncluded.has(String(observation._id)),
+  );
+}
+
+/**
+ * The symmetric case of #1131: an entityId-scoped materialize misses any
+ * entityKey-only observation for the same entity - e.g. a source-backed
+ * fullDescription emitted with entityKey=slug and no entityId - so a later
+ * entityId-scoped run silently blanks a genuine description that the resolver
+ * would have kept given the full set (see #1485). The graft direction #1131
+ * warned about is guarded here by dropping any observation anchored to a
+ * different entity's id under a shared or reassigned key.
+ */
+export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
+  entityType: ObservedEntityType,
+  entityId: string,
+  entityKey: string | undefined,
+  entityIdScopedObservations: MaterializerObservationLike[],
+): Promise<any[]> {
+  if (!entityKey) return [];
+  const entityIdObjectId = toMaterializerObjectId(entityId);
+  const alreadyIncluded = new Set(
+    entityIdScopedObservations.map((observation) => String(observation._id)),
+  );
+  const entityKeyMatches = await Observation.find({
+    entityType,
+    ...materializationReadScopeFilter(),
+    entityKey,
+  }).lean();
+  return entityKeyMatches.filter((observation: any) => {
+    if (alreadyIncluded.has(String(observation._id))) return false;
+    if (
+      observation.entityId &&
+      entityIdObjectId &&
+      String(observation.entityId) !== String(entityIdObjectId)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+const ACCOUNT_NETID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
+
+function normalizedAccountNetid(value: unknown): string | undefined {
+  const netid = textValue(value).trim().toLowerCase();
+  return netid && ACCOUNT_NETID_PATTERN.test(netid) ? netid : undefined;
+}
+
+function scholarProfileLink(url: string, verifiedAt: Date): ResearcherProfileLink {
+  return { kind: 'GOOGLE_SCHOLAR', purpose: 'SCHOLARLY', url, verifiedAt, healthStatus: 'UNKNOWN' };
+}
+
+function orcidProfileLink(orcid: string, verifiedAt: Date): ResearcherProfileLink {
+  return {
+    kind: 'ORCID',
+    purpose: 'SCHOLARLY',
+    url: `https://orcid.org/${orcid}`,
+    verifiedAt,
+    healthStatus: 'UNKNOWN',
+  };
+}
+
+function boundedResearcherProfileText(
+  key: keyof ResearcherDisplayProfile,
+  value: string | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  const bound = researcherDisplayProfileSchema.path(key).options.maxlength;
+  if (typeof bound !== 'number' || value.length <= bound) return value;
+  return value.slice(0, bound).trim() || undefined;
+}
+
+async function materializeUserIdentityToResearcher(
+  identifier: { entityId?: string; entityKey?: string },
+  obs: any[],
+): Promise<MaterializeResult> {
+  const skipped = (reason: string): MaterializeResult => ({
+    entityType: 'user',
+    ...identifier,
+    fieldsWritten: 0,
+    conflicts: 0,
+    created: false,
+    resolved: {},
+    skipped: reason,
+  });
+
+  const materializationObs = obs.filter(
+    (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
+  );
+  const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
+    field: o.field,
+    value: o.value,
+    sourceName: o.sourceName,
+    confidence: o.confidence,
+    observedAt: o.observedAt,
+  }));
+  const resolved = resolveAllFields(resolverObs);
+  const resolvedValue = (field: string): unknown => resolved[field]?.value;
+
+  const netid =
+    normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
+    normalizedAccountNetid(resolvedValue('netid'));
+  const displayName =
+    textValue(resolvedValue('displayName')) ||
+    [textValue(resolvedValue('fname')), textValue(resolvedValue('lname'))]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  const title = textValue(resolvedValue('title')) || undefined;
+  const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;
+  const imageUrl = textValue(resolvedValue('imageUrl')) || undefined;
+  const websiteUrl =
+    textValue(resolvedValue('websiteUrl')) || textValue(resolvedValue('website')) || undefined;
+  const orcidCandidate = textValue(resolvedValue('orcid')).trim().toUpperCase();
+  const orcid = orcidCandidate && isValidOrcid(orcidCandidate) ? orcidCandidate : undefined;
+  const profileUrls =
+    resolvedValue('profileUrls') && typeof resolvedValue('profileUrls') === 'object'
+      ? (resolvedValue('profileUrls') as Record<string, unknown>)
+      : undefined;
+
+  let accountId: mongoose.Types.ObjectId | undefined;
+  if (netid) {
+    const account: any = await Account.findOne({ netid }).lean();
+    if (account?._id) accountId = account._id;
+  }
+
+  let researcher: any = accountId ? await Researcher.findOne({ accountId }) : null;
+  if (!researcher && displayName) {
+    const resolution = await resolveResearcherIdForPersonName(displayName, { netid });
+    if (resolution.status === 'matched' && resolution.researcherId) {
+      researcher = await Researcher.findById(resolution.researcherId);
+    }
+  }
+
+  if (!researcher) {
+    return skipped('directory-identity-without-research-signal');
+  }
+  const created = false;
+
+  let fieldsWritten = 0;
+  if (displayName && researcher.displayName !== displayName) {
+    researcher.displayName = displayName;
+    fieldsWritten += 1;
+  }
+  if (accountId && !researcher.accountId) {
+    researcher.accountId = accountId;
+    fieldsWritten += 1;
+  }
+  researcher.profile = researcher.profile || {};
+  for (const [key, value] of [
+    ['title', title],
+    ['primaryDepartment', primaryDepartment],
+    ['imageUrl', imageUrl],
+    ['websiteUrl', websiteUrl],
+  ] as const) {
+    const bounded = boundedResearcherProfileText(key, value);
+    if (bounded && researcher.profile[key] !== bounded) {
+      researcher.profile[key] = bounded;
+      fieldsWritten += 1;
+    }
+  }
+  const priorOrcid: string | undefined = researcher.identifiers?.orcid;
+  const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(
+    (link: ResearcherProfileLink) => link.kind === 'ORCID',
+  );
+  let orcidFieldsWritten = 0;
+  if (orcid && priorOrcid !== orcid) {
+    researcher.identifiers = { ...(researcher.identifiers || {}), orcid };
+    orcidFieldsWritten += 1;
+  }
+  if (netid && researcher.identifiers?.netid !== netid) {
+    researcher.identifiers = { ...(researcher.identifiers || {}), netid };
+    fieldsWritten += 1;
+  }
+
+  const now = new Date();
+  const existingLinkKinds = new Set(
+    (researcher.profileLinks || []).map((link: ResearcherProfileLink) => link.kind),
+  );
+  const officialLink = profileUrls ? composeOfficialProfileLink({ profileUrls }, now) : undefined;
+  if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {
+    researcher.profileLinks.push(officialLink);
+    fieldsWritten += 1;
+  } else if (officialLink) {
+    const supersedesStoredOfficialLink = (link: ResearcherProfileLink): boolean =>
+      link.kind === 'YALE_OFFICIAL' && supersedesOfficialProfileUrl(link.url, officialLink.url);
+    if ((researcher.profileLinks || []).some(supersedesStoredOfficialLink)) {
+      researcher.profileLinks = (researcher.profileLinks || []).map(
+        (link: ResearcherProfileLink) => (supersedesStoredOfficialLink(link) ? officialLink : link),
+      );
+      fieldsWritten += 1;
+    }
+  }
+  const scholarUrl = profileUrls
+    ? canonicalScholarCitationUrl(profileUrls.googleScholar)
+    : undefined;
+  if (scholarUrl && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
+    researcher.profileLinks.push(scholarProfileLink(scholarUrl, now));
+    fieldsWritten += 1;
+  }
+  if (orcid) {
+    const currentOrcidLink = orcidProfileLink(orcid, now);
+    if (priorOrcidLinks.every((link) => link.url !== currentOrcidLink.url)) {
+      researcher.profileLinks = [
+        ...(researcher.profileLinks || []).filter(
+          (link: ResearcherProfileLink) => link.kind !== 'ORCID',
+        ),
+        currentOrcidLink,
+      ];
+      orcidFieldsWritten += 1;
+    }
+  }
+
+  fieldsWritten += orcidFieldsWritten;
+  let conflicts = 0;
+
+  try {
+    await researcher.save();
+  } catch (error) {
+    if (!isOrcidDuplicateKeyError(error)) throw error;
+    researcher.set('identifiers.orcid', priorOrcid);
+    researcher.profileLinks = [
+      ...(researcher.profileLinks || []).filter(
+        (link: ResearcherProfileLink) => link.kind !== 'ORCID',
+      ),
+      ...priorOrcidLinks,
+    ];
+    fieldsWritten -= orcidFieldsWritten;
+    conflicts += 1;
+    console.warn(
+      'Directory identity ORCID already claimed by another researcher; keeping prior identity:',
+      sanitizeLogValue({
+        researcherId: materializerDocumentId(researcher._id),
+        entityKey: identifier.entityKey,
+        collidingOrcid: orcid,
+      }),
+    );
+    await researcher.save();
+  }
+
+  return {
+    entityType: 'user',
+    entityId: materializerDocumentId(researcher._id),
+    entityKey: identifier.entityKey,
+    fieldsWritten,
+    conflicts,
+    created,
+    resolved,
+  };
+}
+
+export interface ProjectFromLogInput {
+  resolved: Record<string, ResolvedField>;
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  entityDoc: any;
+  materializationObs: any[];
+  resolverObs: ResolverObservation[];
+  fullDescriptionShellGated: boolean;
+  now: Date;
+  synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  writeOnlyFields?: string[];
+  applyDescriptionResearchAreaDerivation?: typeof applyDescriptionResearchAreaDerivation;
+  applyResearchEntityOrgUnitCanonicalization?: typeof applyResearchEntityOrgUnitCanonicalization;
+  applyResearchEntityResearchAreaCanonicalization?: typeof applyResearchEntityResearchAreaCanonicalization;
+}
+
+export interface ProjectFromLogResult {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  conflicts: number;
+  fieldsWritten: number;
+}
+
+export async function projectFromLog(
+  entityType: ObservedEntityType,
+  input: ProjectFromLogInput,
+): Promise<ProjectFromLogResult> {
+  const {
+    resolved,
+    manuallyLockedFields,
+    manualValues,
+    entityDoc,
+    materializationObs,
+    resolverObs,
+    fullDescriptionShellGated,
+  } = input;
+  const set: Record<string, unknown> = {};
+  const unset: Record<string, ''> = {};
+  const confidenceByField: Record<string, number> = {
+    ...(entityDoc?.confidenceByField || {}),
+  };
+  const sourceEntityIdentity: ResearchEntityIdentity | undefined = isResearchEntityObservationType(
+    entityType,
+  )
+    ? {
+        slug: entityDoc?.slug,
+        name: entityDoc?.name,
+        displayName: entityDoc?.displayName,
+        school: entityDoc?.school,
+        schools: entityDoc?.schools,
+        departments: entityDoc?.departments,
+        fullDescription: entityDoc?.fullDescription,
+        recentGrants: entityDoc?.recentGrants,
+      }
+    : undefined;
+  let conflicts = 0;
+  let fieldsWritten = 0;
+  const derivedKind = isResearchEntityObservationType(entityType)
+    ? derivedResearchGroupKind(
+        manuallyLockedFields.includes('entityType') ? undefined : resolved.entityType?.value,
+        entityDoc?.entityType,
+      )
+    : undefined;
+  for (const [field, r] of Object.entries(resolved)) {
+    if (manuallyLockedFields.includes(field)) continue;
+    const nextValue = r.value;
+    if (
+      isResearchEntityObservationType(entityType) &&
+      field === 'shortDescription' &&
+      !resolvedShortDescriptionCandidateIsUsable(
+        nextValue,
+        resolved.fullDescription?.value ?? entityDoc?.fullDescription,
+        isProgramLikeResearchEntity({
+          kind: derivedKind ?? resolved.kind?.value ?? entityDoc?.kind,
+          entityType: resolved.entityType?.value ?? entityDoc?.entityType,
+        }),
+      )
+    ) {
+      continue;
+    }
+    set[field] = sanitizeProjectedField(
+      entityType,
+      field,
+      nextValue,
+      entityDoc?.[field],
+      sourceEntityIdentity,
+    );
+    confidenceByField[field] = r.confidence;
+    if (isResearchEntityObservationType(entityType)) {
+      const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);
+      if (provenance) set[`fieldProvenance.${field}`] = provenance;
+    }
+    if (r.hasConflict) conflicts++;
+    fieldsWritten++;
+  }
+  if (
+    derivedKind &&
+    !manuallyLockedFields.includes('kind') &&
+    (set.kind ?? entityDoc?.kind) !== derivedKind
+  ) {
+    set.kind = derivedKind;
+    fieldsWritten++;
+  }
+  if (isResearchEntityObservationType(entityType)) {
+    if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
+      const currentShortForFullDistinctness = textValue(
+        set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
+      );
+      const cardShortForFullInversion = textValue(
+        set.shortDescription ?? entityDoc?.shortDescription,
+      );
+      const winnerFull = textValue(set.fullDescription);
+      const fullDescriptionIsAcceptable = (candidateText: string): boolean =>
+        !!candidateText &&
+        fullDescriptionQuality(candidateText).isUseful &&
+        !isFullDescriptionRestatementOfShortDescription(
+          candidateText,
+          currentShortForFullDistinctness,
+        );
+      const winnerFullAcceptable = fullDescriptionIsAcceptable(winnerFull);
+      const winnerFullUseful =
+        winnerFullAcceptable && !isPoorerThanCardDescription(winnerFull, cardShortForFullInversion);
+      if (!winnerFullUseful) {
+        const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
+          manuallyLockedFields,
+          manualValues,
+        });
+        let fallback: { materialized: unknown; candidate: ResolvedField } | undefined;
+        let preferred: { materialized: unknown; candidate: ResolvedField } | undefined;
+        for (const candidate of rankedFull) {
+          const materialized = sanitizeProjectedField(
+            entityType,
+            'fullDescription',
+            candidate.value,
+            entityDoc?.fullDescription,
+            sourceEntityIdentity,
+          );
+          const materializedText = textValue(materialized);
+          if (!fullDescriptionIsAcceptable(materializedText)) continue;
+          if (!fallback) fallback = { materialized, candidate };
+          if (!isPoorerThanCardDescription(materializedText, cardShortForFullInversion)) {
+            preferred = { materialized, candidate };
+            break;
+          }
+        }
+        // An already-acceptable winner is only ever replaced by a candidate that
+        // also fixes the inversion: falling back to the ranked runner-up when no
+        // such candidate exists would demote a full the current rules accept.
+        const chosen = preferred ?? (winnerFullAcceptable ? undefined : fallback);
+        if (chosen && chosen.materialized !== set.fullDescription) {
+          set.fullDescription = chosen.materialized;
+          confidenceByField.fullDescription = chosen.candidate.confidence;
+          const provenance = fieldProvenanceForResolvedObservation(
+            'fullDescription',
+            chosen.candidate,
+            materializationObs,
+          );
+          if (provenance) set['fieldProvenance.fullDescription'] = provenance;
+          fieldsWritten++;
+        }
+      }
+      const finalFullText = textValue(set.fullDescription);
+      if (
+        finalFullText &&
+        isFullDescriptionRestatementOfShortDescription(
+          finalFullText,
+          currentShortForFullDistinctness,
+        )
+      ) {
+        set.fullDescription = '';
+        fieldsWritten++;
+      }
+    }
+    const fullDescription =
+      textValue(set.fullDescription) ||
+      sanitizeResearchEntityDescription(textValue(entityDoc?.fullDescription));
+    const entityName = textValue(
+      set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
+    );
+    const isProgramLikeEntity = isProgramLikeResearchEntity({
+      kind: set.kind ?? entityDoc?.kind,
+      entityType: set.entityType ?? entityDoc?.entityType,
+    });
+    const groundedShortDescription = await resolveMaterializedShortDescription({
+      fullDescription,
+      // When the single-PI-shell guard just rejected fullDescription in favor
+      // of the entity's existing org-level value, shortDescription must be
+      // re-derived from that corrected body rather than kept as-is: it may
+      // still be the seed PI's own grant sentence and now contradicts the
+      // fixed full (issue #1595).
+      currentShortDescription: fullDescriptionShellGated
+        ? undefined
+        : (set.shortDescription ?? entityDoc?.shortDescription),
+      researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+      isProgramLike: isProgramLikeEntity,
+      manuallyLocked: manuallyLockedFields.includes('shortDescription'),
+      synthesize: input.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
+    });
+    if (groundedShortDescription) {
+      set.shortDescription = groundedShortDescription;
+      const fullDescriptionConfidence = resolved.fullDescription?.confidence;
+      if (typeof fullDescriptionConfidence === 'number') {
+        confidenceByField.shortDescription = fullDescriptionConfidence;
+      }
+      const provenance = resolved.fullDescription
+        ? fieldProvenanceForResolvedObservation(
+            'fullDescription',
+            resolved.fullDescription,
+            materializationObs,
+          )
+        : undefined;
+      if (provenance) set['fieldProvenance.shortDescription'] = provenance;
+      fieldsWritten++;
+    }
+    if (isProgramLikeEntity && !manuallyLockedFields.includes('fullDescription')) {
+      const finalShortText = textValue(
+        set.shortDescription ?? entityDocShortDescriptionForRestatementGuard(entityDoc),
+      );
+      const finalFullText = textValue(set.fullDescription ?? entityDoc?.fullDescription);
+      if (
+        finalFullText &&
+        finalShortText &&
+        isFullDescriptionRestatementOfShortDescription(finalFullText, finalShortText)
+      ) {
+        set.fullDescription = '';
+        fieldsWritten++;
+      }
+    }
+  }
+  if (isResearchEntityObservationType(entityType)) {
+    const orgUnitProfileUrls = [
+      ...(typeof set.websiteUrl === 'string' && set.websiteUrl
+        ? [set.websiteUrl]
+        : typeof entityDoc?.websiteUrl === 'string' && entityDoc.websiteUrl
+          ? [entityDoc.websiteUrl]
+          : []),
+      ...(Array.isArray(set.sourceUrls)
+        ? set.sourceUrls
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? entityDoc.sourceUrls
+          : []),
+    ].filter((url): url is string => typeof url === 'string');
+    await (input.applyDescriptionResearchAreaDerivation ?? applyDescriptionResearchAreaDerivation)(
+      set,
+      entityDoc,
+    );
+    await (
+      input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization
+    )(set, entityDoc, orgUnitProfileUrls);
+    await (
+      input.applyResearchEntityResearchAreaCanonicalization ??
+      applyResearchEntityResearchAreaCanonicalization
+    )(set, set.departments ?? entityDoc?.departments);
+    if (!manuallyLockedFields.includes('websiteUrl')) {
+      const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
+      if (websiteResolution.action === 'set') {
+        set.websiteUrl = websiteResolution.websiteUrl;
+        fieldsWritten++;
+      } else if (websiteResolution.action === 'clear') {
+        set.websiteUrl = '';
+        fieldsWritten++;
+      }
+    }
+    // The detail-page official-profile CTA reads only entity.sourceUrls, so a
+    // lead's official profile page must land there or the way-in disappears
+    // even though it is a known source (issue #613).
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const leadProfileUrl = officialLeadProfileSourceUrl(materializationObs);
+      if (leadProfileUrl) {
+        const currentSourceUrls = Array.isArray(set.sourceUrls)
+          ? (set.sourceUrls as unknown[])
+          : Array.isArray(entityDoc?.sourceUrls)
+            ? (entityDoc?.sourceUrls as unknown[])
+            : [];
+        const leadDestination = normalizeOfficialProfileDestination(leadProfileUrl);
+        const alreadyPresent = currentSourceUrls.some(
+          (url) =>
+            normalizeOfficialProfileDestination(typeof url === 'string' ? url : '') ===
+            leadDestination,
+        );
+        if (!alreadyPresent) {
+          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
+            ...currentSourceUrls,
+            leadProfileUrl,
+          ]);
+          fieldsWritten++;
+        }
+      }
+    }
+    if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
+      const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
+        if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
+        if (Array.isArray(setValue)) return setValue.length > 0 ? setValue : docValue;
+        return setValue ?? docValue;
+      };
+      const yaleStatusSignal = deriveResearchEntityYaleStatus({
+        sourceUrls: populatedYaleStatusField(set.sourceUrls, entityDoc?.sourceUrls),
+        websiteUrl: populatedYaleStatusField(set.websiteUrl, entityDoc?.websiteUrl),
+        name: populatedYaleStatusField(set.name, entityDoc?.name),
+        displayName: populatedYaleStatusField(set.displayName, entityDoc?.displayName),
+        fullDescription: populatedYaleStatusField(set.fullDescription, entityDoc?.fullDescription),
+        shortDescription: populatedYaleStatusField(
+          set.shortDescription,
+          entityDoc?.shortDescription,
+        ),
+        profileSynthesisDescription: populatedYaleStatusField(
+          set.profileSynthesisDescription,
+          entityDoc?.profileSynthesisDescription,
+        ),
+      });
+      if (yaleStatusSignal) {
+        if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
+        set.yaleStatusCache = yaleStatusSignal.yaleStatusCache;
+        set.activeAtYaleCache = yaleStatusSignal.activeAtYaleCache;
+        set.yaleStatusReasonCache = yaleStatusSignal.reason;
+      } else if (hasEvidencelessInactiveYaleStatus(entityDoc)) {
+        set.yaleStatusCache = CLEARED_RESEARCH_ENTITY_YALE_STATUS.yaleStatusCache;
+        set.activeAtYaleCache = CLEARED_RESEARCH_ENTITY_YALE_STATUS.activeAtYaleCache;
+        set.yaleStatusReasonCache = CLEARED_RESEARCH_ENTITY_YALE_STATUS.yaleStatusReasonCache;
+        fieldsWritten++;
+      }
+    }
+    // Root-cause fix (issue #1802): a discovered entity always carries its
+    // source in observation provenance, yet its own `sourceUrls` can be empty,
+    // so `missing_source_url` fired for source-backed records purely as a
+    // projection gap. When the entity would otherwise expose no reachable http
+    // source, project its best-confidence provenance source url so source-backing
+    // is recognized. Runs AFTER yale-status derivation so an incidental provenance
+    // url never perturbs the explicit-signal status derivation (#1308); scoped to
+    // the empty case so already-sourced entities do not accrue extra shared urls
+    // that could trip exact-url duplicate detection.
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const currentSourceUrls = Array.isArray(set.sourceUrls)
+        ? (set.sourceUrls as unknown[])
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? (entityDoc?.sourceUrls as unknown[])
+          : [];
+      const hasReachableHttpSource = [
+        set.websiteUrl ?? entityDoc?.websiteUrl,
+        (entityDoc as Record<string, unknown> | null | undefined)?.website,
+        ...currentSourceUrls,
+      ].some((value) => /^https?:\/\//i.test(textValue(value)));
+      if (!hasReachableHttpSource) {
+        const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(materializationObs);
+        if (provenanceSourceUrl) {
+          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
+            ...currentSourceUrls,
+            provenanceSourceUrl,
+          ]);
+          fieldsWritten++;
+        }
+      }
+    }
+  }
+  set.confidenceByField = confidenceByField;
+  set.lastObservedAt = input.now;
+
+  if (isResearchEntityObservationType(entityType) && entityDoc) {
+    const fieldsWithLiveObservation = new Set(resolverObs.map((o) => o.field));
+    for (const field of CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS) {
+      if (manuallyLockedFields.includes(field)) continue;
+      if (field in set) continue;
+      if (fieldsWithLiveObservation.has(field)) continue;
+      if (!isClearableStaleFieldValue((entityDoc as Record<string, unknown>)[field])) continue;
+      unset[field] = '';
+      delete confidenceByField[field];
+    }
+  }
+
+  if (input.writeOnlyFields && input.writeOnlyFields.length > 0) {
+    // `kind` is derived from `entityType`, so a field-scoped rematerialization
+    // that writes one without the other would reintroduce the drift (#2144).
+    const scopedFields =
+      input.writeOnlyFields.includes('entityType') && !input.writeOnlyFields.includes('kind')
+        ? [...input.writeOnlyFields, 'kind']
+        : input.writeOnlyFields;
+    fieldsWritten = restrictMaterializerSetToFields(set, unset, confidenceByField, scopedFields);
+  }
+  return { set, unset, confidenceByField, conflicts, fieldsWritten };
+}
+
+function isDuplicateKeyMongoError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { code?: number }).code === 11000);
+}
+
+function isOrcidDuplicateKeyError(error: unknown): boolean {
+  if (!isDuplicateKeyMongoError(error)) return false;
+  const keyPattern = (error as { keyPattern?: Record<string, unknown> }).keyPattern;
+  if (keyPattern && Object.keys(keyPattern).some((key) => key.includes('identifiers.orcid'))) {
+    return true;
+  }
+  return ((error as { message?: string }).message || '').includes('identifiers.orcid');
+}
+
+function c4ResolveAtMintEntitiesEnabled(): boolean {
+  return process.env.C4_RESOLVE_AT_MINT_ENTITIES === 'true';
+}
+
+function resolverTypeForEntity(entityType: ObservedEntityType): 'researchEntity' | 'fellowship' {
+  return entityType === 'fellowship' ? 'fellowship' : 'researchEntity';
+}
+
+function buildEntityResolverSelf(obs: Array<{ field: string; value?: unknown }>): CandidateEntity {
+  const map = new Map<string, string>();
+  for (const o of obs) {
+    const v =
+      typeof o.value === 'string' ? o.value.trim() : o.value == null ? '' : String(o.value).trim();
+    if (v && !map.has(o.field)) map.set(o.field, v);
+  }
+  return { id: '', name: map.get('name') || undefined };
+}
+
+async function findEntityCandidatesByKey(
+  resolverType: 'researchEntity' | 'fellowship',
+  key: CanonicalKey,
+): Promise<CandidateEntity[]> {
+  if (resolverType === 'fellowship') {
+    if (key.ns !== 'source-key') return [];
+    const doc = (await Fellowship.findOne({ sourceKey: key.value }).select('_id title').lean()) as {
+      _id: unknown;
+      title?: string;
+    } | null;
+    return doc ? [{ id: String(doc._id), name: doc.title }] : [];
+  }
+  // Non-normalized keys (website-url, profile-lab-url, org-name) are resolved via
+  // the canonical-alias ledger (resolveAlias), not a live corpus scan: the DB does
+  // not store their normalized form, and the ledger accumulates them on merge/mint.
+  if (key.ns === 'slug') {
+    const doc = (await ResearchEntity.findOne({ slug: key.value, archived: { $ne: true } })
+      .select('_id name studentVisibilityTier')
+      .lean()) as { _id: unknown; name?: string; studentVisibilityTier?: string } | null;
+    return doc ? [{ id: String(doc._id), name: doc.name, tier: doc.studentVisibilityTier }] : [];
+  }
+  return [];
+}
+
+async function resolveCanonicalForEntityMint(
+  entityType: ObservedEntityType,
+  obs: Array<{ field: string; value?: unknown }>,
+): Promise<CanonicalResolution> {
+  const resolverType = resolverTypeForEntity(entityType);
+  const keys = deriveCanonicalKeys(
+    resolverType,
+    obs.map((o) => ({ field: o.field, value: o.value })),
+  );
+  if (keys.length === 0) return { status: 'mint', reservedKeys: [] };
+  // The resolver's wouldDemote guard compares self.tier against a candidate's
+  // stored tier. At mint the would-be entity has no computed tier (it is not yet
+  // projected or gated), so self.tier is intentionally unset: folding new
+  // observations into an existing canonical enriches it and re-gates it rather
+  // than archiving any existing public row, so no live entity is demoted. The
+  // guard stays wired for any caller that does supply a would-be tier.
+  return resolveCanonical(
+    { type: resolverType, keys, self: buildEntityResolverSelf(obs) },
+    {
+      resolveAlias: async (type, ns, value) => {
+        const id = await resolveCanonicalAlias(type, ns, value);
+        return id ? String(id) : null;
+      },
+      findCandidatesByKey: (_type, key) => findEntityCandidatesByKey(resolverType, key),
+    },
+  );
+}
+
+async function reserveEntityCanonicalAliases(
+  entityType: ObservedEntityType,
+  obs: Array<{ field: string; value?: unknown }>,
+  canonicalId: string,
+): Promise<void> {
+  const resolverType = resolverTypeForEntity(entityType);
+  const keys = deriveCanonicalKeys(
+    resolverType,
+    obs.map((o) => ({ field: o.field, value: o.value })),
+  );
+  for (const key of keys) {
+    if (key.strength === 'weak') continue;
+    await recordCanonicalAlias({
+      type: resolverType,
+      aliasNs: key.ns,
+      aliasValue: key.value,
+      canonicalType: resolverType,
+      canonicalId,
+      reason: 'resolve_at_mint',
+    });
+  }
 }
 
 export async function materializeEntity(
@@ -2149,12 +3522,12 @@ export async function materializeEntity(
   identifier: { entityId?: string; entityKey?: string },
   options: MaterializeOptions = {},
 ): Promise<MaterializeResult> {
-  const filter: any = { entityType, superseded: false };
+  const filter: any = { entityType, ...materializationReadScopeFilter() };
   if (identifier.entityId) filter.entityId = identifier.entityId;
   else if (identifier.entityKey) filter.entityKey = identifier.entityKey;
   else throw new Error('materializeEntity requires entityId or entityKey');
 
-  const obs = await Observation.find(filter).lean();
+  let obs = await Observation.find(filter).lean();
   if (obs.length === 0) {
     return {
       entityType,
@@ -2167,11 +3540,15 @@ export async function materializeEntity(
   }
 
   if (entityType === 'researchGroupMember') {
-    return materializeResearchGroupMember(identifier, obs, options);
+    return materializeRosterMember(identifier, obs, options);
   }
 
   if (entityType === 'researchEntityRelationship') {
     return materializeResearchEntityRelationship(identifier, obs, options);
+  }
+
+  if (entityType === 'user') {
+    return materializeUserIdentityToResearcher(identifier, obs);
   }
 
   const Model = entityModelFor(entityType);
@@ -2192,14 +3569,158 @@ export async function materializeEntity(
   entityDoc = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
   if (entityDoc) entityIdString = String(entityDoc._id);
 
+  // A durable merge redirect (issue #1957, PR 3) supersedes the shell-bound
+  // canonicalGroupId tombstone below: it resolves the merged source's stable
+  // identifiers (slug and original id) straight to the live canonical entity and
+  // materializes the observations INTO it, whether or not the shell row still
+  // exists. This keeps a re-scrape from re-minting the shell even after the shell
+  // has been deleted (PR 4), while the tombstone guard still covers pre-redirect
+  // merges whose shells are only archived.
+  if (isResearchEntityObservationType(entityType)) {
+    const redirectCanonical = await resolveResearchEntityMergeRedirectCanonical({
+      slug: identifier.entityKey || textValue(entityDoc?.slug) || undefined,
+      entityId: identifier.entityId || (entityDoc?._id ? String(entityDoc._id) : undefined),
+    });
+    if (redirectCanonical) {
+      entityDoc = redirectCanonical;
+      entityIdString = String(redirectCanonical._id);
+    }
+  }
+
+  // A research entity archived into a canonical survivor by the eponymous FRA->lab
+  // merge (issue #1957) carries a canonicalGroupId tombstone and was removed from
+  // Meilisearch. findEntityDocByIdentifier resolves by slug without an archived
+  // filter, so a later sweep re-scraping its source would otherwise write to and
+  // re-sync the merged shell - resurrecting it and undoing the merge. Treat it as a
+  // no-op so a second sweep pass neither re-activates nor re-indexes the shell.
+  if (
+    isResearchEntityObservationType(entityType) &&
+    entityDoc &&
+    entityDoc.archived === true &&
+    entityDoc.canonicalGroupId
+  ) {
+    return {
+      entityType,
+      entityId: materializerDocumentId(entityDoc._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      skipped: 'merged-into-canonical',
+    };
+  }
+
+  // An existing row stored as the retired PROGRAM type stays frozen: it is legacy
+  // data awaiting its own archive lane, not something to re-type in place.
+  if (
+    isResearchEntityObservationType(entityType) &&
+    isRetiredProgramResearchEntityType(entityDoc?.entityType)
+  ) {
+    return {
+      entityType,
+      entityId: entityDoc ? materializerDocumentId(entityDoc._id) : undefined,
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      skipped: 'program-entity-type-retired',
+    };
+  }
+
+  // A row that does not exist yet, whose winning observed entityType is the
+  // retired PROGRAM, used to be dropped entirely (issue #2206): 27 entityKeys
+  // carrying complete observation sets produced no entity at all, 22 of them
+  // department undergraduate research pathways. Those observations are never
+  // superseded, so a sweep reproduced the gap on every run. Heal the type from the
+  // same source's co-observed `kind` and mint, and only skip when no usable kind
+  // resolves, so an unclassifiable row still fails closed instead of defaulting to
+  // LAB.
+  if (
+    isResearchEntityObservationType(entityType) &&
+    !entityDoc &&
+    winningObservedEntityTypeIsRetiredProgram(obs)
+  ) {
+    const healedEntityType = healedEntityTypeForRetiredProgramObservations(obs);
+    if (!healedEntityType) {
+      return {
+        entityType,
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'program-entity-type-retired',
+      };
+    }
+    obs = withHealedRetiredProgramEntityType(obs, healedEntityType);
+  }
+
+  // C4 resolve-at-mint for research entities and fellowships (env-flagged, separate
+  // from the users flag). Same contract as the user path: an existing canonical is
+  // adopted before minting a duplicate; blocked skips; ambiguous/mint fall through.
+  let entityMintResolution: CanonicalResolution | undefined;
+  if (
+    c4ResolveAtMintEntitiesEnabled() &&
+    (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
+    !entityDoc
+  ) {
+    const resolution = await resolveCanonicalForEntityMint(entityType, obs);
+    entityMintResolution = resolution;
+    if (resolution.status === 'blocked') {
+      return {
+        entityType,
+        ...identifier,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'resolver-blocked',
+      };
+    }
+    if (resolution.status === 'existing') {
+      const canonicalDoc = await Model.findById(resolution.canonicalId);
+      if (canonicalDoc) {
+        entityDoc = canonicalDoc;
+        entityIdString = String(canonicalDoc._id);
+      }
+    }
+    // 'ambiguous' | 'mint' fall through to the existing create branch unchanged.
+  }
+
+  if (!identifier.entityId && entityIdString) {
+    const excludedObs = await entityIdAnchoredObservationsExcludedByEntityKeyScope(
+      entityType,
+      entityIdString,
+      obs,
+    );
+    if (excludedObs.length > 0) obs = [...obs, ...excludedObs];
+  }
+
+  if (identifier.entityId && entityIdString) {
+    const entityKeyForScope =
+      identifier.entityKey ||
+      (isResearchEntityObservationType(entityType) ? textValue(entityDoc?.slug) : '') ||
+      undefined;
+    const excludedByKeyScope = await entityKeyAnchoredObservationsExcludedByEntityIdScope(
+      entityType,
+      entityIdString,
+      entityKeyForScope,
+      obs,
+    );
+    if (excludedByKeyScope.length > 0) obs = [...obs, ...excludedByKeyScope];
+  }
+
   const manuallyLockedFields: string[] = (entityDoc && entityDoc.manuallyLockedFields) || [];
   const manualValues: Record<string, unknown> = {};
   for (const f of manuallyLockedFields) {
     if (entityDoc && entityDoc[f] !== undefined) manualValues[f] = entityDoc[f];
   }
 
-  const materializationObs = obs.filter(
-    (o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o),
+  const materializationObs = collapseLatestWins(
+    obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o)),
+    entityType,
   );
 
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
@@ -2214,109 +3735,52 @@ export async function materializeEntity(
     manuallyLockedFields,
     manualValues,
   });
-
-  const set: Record<string, unknown> = {};
-  const unset: Record<string, ''> = {};
-  const confidenceByField: Record<string, number> = {
-    ...(entityDoc?.confidenceByField || {}),
-  };
-  const clearIgnoredAccessClaim = shouldClearIgnoredAccessClaimForEntity(
-    entityType,
-    obs,
-    manuallyLockedFields,
-  );
-  let conflicts = 0;
-  let fieldsWritten = 0;
-  for (const [field, r] of Object.entries(resolved)) {
-    if (manuallyLockedFields.includes(field)) continue;
-    if (
-      entityType === 'paper' &&
-      (PAPER_DERIVED_AUTHOR_FIELDS.has(field) || PAPER_MATERIALIZATION_ONLY_FIELDS.has(field))
-    ) {
-      continue;
+  if (isResearchEntityObservationType(entityType)) {
+    const grantEvidence = aggregateResearchEntityGrantEvidence(materializationObs);
+    if (grantEvidence.recentGrants && resolved.recentGrants) {
+      resolved.recentGrants.value = grantEvidence.recentGrants;
     }
-    if (entityType === 'user' && entityDoc && field === 'netid') continue;
-    const nextValue =
-      entityType === 'paper' && PAPER_SET_FIELDS.has(field)
-        ? mergeUniqueArrayValues(entityDoc?.[field], r.value)
-        : r.value;
-    if (entityType === 'user' && shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)) {
-      continue;
+    if (grantEvidence.recentGrantCount !== undefined && resolved.recentGrantCount) {
+      resolved.recentGrantCount.value = grantEvidence.recentGrantCount;
     }
-    set[field] = materializedFieldValue(entityType, field, nextValue);
-    confidenceByField[field] = r.confidence;
-    if (isResearchEntityObservationType(entityType)) {
-      const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);
-      if (provenance) set[`fieldProvenance.${field}`] = provenance;
+    if (grantEvidence.fundingAgencies && resolved.fundingAgencies) {
+      resolved.fundingAgencies.value = grantEvidence.fundingAgencies;
     }
-    if (r.hasConflict) conflicts++;
-    fieldsWritten++;
   }
-  if (
-    isResearchEntityObservationType(entityType) &&
-    !manuallyLockedFields.includes('shortDescription') &&
-    !set.shortDescription
-  ) {
-    const fullDescription = set.fullDescription || entityDoc?.fullDescription;
-    const derivedShortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
-    if (derivedShortDescription) {
-      set.shortDescription = derivedShortDescription;
-      const fullDescriptionConfidence = resolved.fullDescription?.confidence;
-      if (typeof fullDescriptionConfidence === 'number') {
-        confidenceByField.shortDescription = fullDescriptionConfidence;
-      }
-      const provenance = resolved.fullDescription
-        ? fieldProvenanceForResolvedObservation(
-            'fullDescription',
-            resolved.fullDescription,
+  let fullDescriptionShellGated = false;
+  if (isResearchEntityObservationType(entityType)) {
+    const orgKind = textValue(resolved.kind?.value ?? entityDoc?.kind).toLowerCase();
+    const slugForShellCheck = entityDoc?.slug ?? identifier.entityKey;
+    if (MULTI_PI_ORG_KINDS.has(orgKind) && isPersonOrGrantShellSlug(slugForShellCheck)) {
+      for (const shellGatedField of SINGLE_PI_SHELL_GATED_FIELDS) {
+        const candidate = resolved[shellGatedField];
+        if (
+          candidate &&
+          resolvedFieldSourcedOnlyFromPersonProfilePages(
+            shellGatedField,
+            candidate,
             materializationObs,
           )
-        : undefined;
-      if (provenance) set['fieldProvenance.shortDescription'] = provenance;
-      fieldsWritten++;
+        ) {
+          delete resolved[shellGatedField];
+          if (shellGatedField === 'fullDescription') fullDescriptionShellGated = true;
+        }
+      }
     }
   }
-  if (entityType === 'paper') {
-    const paperObs = materializationObs.map((o: any) => ({
-      field: o.field,
-      value: o.value,
-      sourceName: o.sourceName,
-      confidence: o.confidence,
-      observedAt: o.observedAt,
-      sourceUrl: o.sourceUrl,
-    })) as PaperMaterializationObservation[];
-    const evidence = authorshipEvidenceFromPaperObservations(paperObs);
-    if (!manuallyLockedFields.includes('yaleAuthorIds') && evidence.length > 0) {
-      set.yaleAuthorIds = mergeUniqueArrayValues(
-        entityDoc?.yaleAuthorIds,
-        evidence.map((item) => item.userId),
-      );
-    }
-    if (!manuallyLockedFields.includes('yaleAuthorNetIds') && evidence.length > 0) {
-      set.yaleAuthorNetIds = mergeUniqueArrayValues(
-        entityDoc?.yaleAuthorNetIds,
-        evidence.map((item) => item.netid).filter(Boolean),
-      );
-    }
-  }
-  if (clearIgnoredAccessClaim) {
-    delete set.acceptingUndergrads;
-    delete confidenceByField.acceptingUndergrads;
-    unset.acceptingUndergrads = '';
-  }
-  set.confidenceByField = confidenceByField;
-  // For ResearchGroup, mirror the per-field acceptance confidence to a
-  // top-level scalar so Meilisearch can filter on it. Meili can't index
-  // nested mixed objects (see researchGroupFilters.ts). Prefer the freshly
-  // resolved confidence (which includes the 1.0 boost for manually-locked
-  // fields) over whatever was already on the doc.
-  if (isResearchEntityObservationType(entityType)) {
-    const resolvedScore = resolved['acceptingUndergrads']?.confidence;
-    const fallbackScore = confidenceByField['acceptingUndergrads'];
-    const score = typeof resolvedScore === 'number' ? resolvedScore : fallbackScore;
-    set.acceptanceConfidence = typeof score === 'number' ? score : 0;
-  }
-  set.lastObservedAt = new Date();
+
+  const { set, unset, conflicts, fieldsWritten } = await projectFromLog(entityType, {
+    resolved,
+    manuallyLockedFields,
+    manualValues,
+    entityDoc,
+    materializationObs,
+    resolverObs,
+    fullDescriptionShellGated,
+    now: new Date(),
+    synthesizeCardDescription: options.synthesizeCardDescription,
+    writeOnlyFields: options.writeOnlyFields,
+  });
 
   if (options.dryRun) {
     return {
@@ -2327,26 +3791,53 @@ export async function materializeEntity(
       conflicts,
       created: !entityDoc,
       resolved,
+      plannedSet: set,
+      plannedUnset: unset,
     };
   }
 
+  const entityScalarUnchanged =
+    Boolean(entityDoc) &&
+    isMaterializerProjectionNoOp(entityDoc as Record<string, unknown>, set, unset);
+
   let created = false;
   if (entityDoc) {
-    const update: Record<string, unknown> = { $set: set };
-    if (Object.keys(unset).length > 0) update.$unset = unset;
-    await Model.updateOne({ _id: entityDoc._id }, update);
+    if (Object.keys(set).length === 0 && Object.keys(unset).length === 0) {
+      return {
+        entityType,
+        entityId: materializerDocumentId(entityDoc._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts,
+        created: false,
+        resolved,
+        skipped: 'no-scoped-fields',
+      };
+    }
+    // Skip the write (and, below, the redundant search re-sync) when the
+    // projection recomputed the same values it already stored - only the managed
+    // lastObservedAt would differ. Unconditional sub-projections (membership,
+    // access, logistics, browse-rank) still run; they have their own change
+    // detection and can change independently of the scalar projection.
+    if (!entityScalarUnchanged) {
+      const update: Record<string, unknown> = { $set: set };
+      if (Object.keys(unset).length > 0) update.$unset = unset;
+      if (isResearchEntityObservationType(entityType)) {
+        await withResearchEntityWriteTransaction((session) =>
+          Model.updateOne({ _id: entityDoc._id }, update, { session }),
+        );
+      } else {
+        await Model.updateOne({ _id: entityDoc._id }, update);
+      }
+    }
   } else {
     const keyField = uniqueKeyFieldForIdentifier(entityType, identifier.entityKey);
     if (!keyField || !identifier.entityKey) {
-      throw new Error(
-        `Cannot create new ${entityType}: missing entityKey or no keyField defined`,
-      );
+      throw new Error(`Cannot create new ${entityType}: missing entityKey or no keyField defined`);
     }
     const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
     if (!keyValue) {
-      throw new Error(
-        `Cannot create new ${entityType}: missing normalized unique key value`,
-      );
+      throw new Error(`Cannot create new ${entityType}: missing normalized unique key value`);
     }
     const insert: Record<string, unknown> = { ...set, [keyField]: keyValue };
     if (!hasRequiredFieldsForCreate(entityType, insert)) {
@@ -2361,19 +3852,64 @@ export async function materializeEntity(
         skipped: 'missing-required-fields',
       };
     }
-    const created_ = await Model.create(insert);
+    let created_;
+    let didCreate = true;
+    if (isResearchEntityObservationType(entityType)) {
+      const researchEntityId = new mongoose.Types.ObjectId();
+      try {
+        created_ = await withResearchEntityWriteTransaction(async (session) => {
+          const createdDocuments = await Model.create([{ _id: researchEntityId, ...insert }], {
+            session,
+          });
+          return createdDocuments[0];
+        });
+      } catch (error) {
+        // A concurrent writer may have minted the same unique slug between our
+        // resolve/lookup and this create; adopt the winning row instead of
+        // erroring the run (mirrors the non-research create path below).
+        if (isDuplicateKeyMongoError(error)) {
+          const adopted = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
+          if (!adopted) throw error;
+          created_ = adopted;
+          didCreate = false;
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      try {
+        created_ = await Model.create(insert);
+      } catch (error) {
+        // A concurrent writer may have minted the same unique key between our
+        // resolve/lookup and this create (soft identity keys are not DB-unique), so
+        // adopt the winning row instead of throwing - a resolve-at-mint race
+        // collapses to one record rather than erroring the run.
+        if (isDuplicateKeyMongoError(error)) {
+          const adopted = await findEntityDocByIdentifier(Model, entityType, identifier, obs);
+          if (!adopted) throw error;
+          created_ = adopted;
+          didCreate = false;
+        } else {
+          throw error;
+        }
+      }
+    }
     entityIdString = materializerDocumentId(created_._id);
-    created = true;
+    created = didCreate;
+    if (
+      c4ResolveAtMintEntitiesEnabled() &&
+      (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
+      didCreate &&
+      entityIdString &&
+      entityMintResolution?.status === 'mint'
+    ) {
+      await reserveEntityCanonicalAliases(entityType, obs, entityIdString);
+    }
   }
 
-  if (entityType === 'user' && entityIdString) {
-    await materializeOfficialProfileScholarlyLinks(entityIdString, obs);
-  }
-
-  const syncEntityType = entityType === 'researchGroup' ? 'researchEntity' : entityType;
-  if (isSyncableEntityType(syncEntityType) && entityIdString) {
+  if (isSyncableEntityType(entityType) && entityIdString && !entityScalarUnchanged) {
     const fresh = await Model.findById(entityIdString).lean();
-    if (fresh) await syncEntity(syncEntityType, fresh);
+    if (fresh) await syncEntity(entityType, fresh);
   }
 
   let postMaterializationMetrics: ReportPostMaterializationMetrics | undefined;
@@ -2381,20 +3917,28 @@ export async function materializeEntity(
     if (!options.dryRun) {
       await materializeInferredPiMembership(entityIdString, materializationObs);
       await materializeInferredDirectorMembership(entityIdString, materializationObs);
+      await inheritSchoolFromLeadPi(entityIdString, { manuallyLockedFields });
     }
     const accessResult = await materializeAccessForResearchGroup({
       researchEntityId: entityIdString,
       entityKey: identifier.entityKey,
     });
+    const logisticsResult = await materializeUndergraduateLogisticsForResearchEntity({
+      researchEntityId: entityIdString,
+      entityKey: identifier.entityKey,
+      dryRun: options.dryRun,
+    });
     postMaterializationMetrics = {
-      entryPathways: accessResult.entryPathways,
+      entryPathways: 0,
       accessSignals: accessResult.accessSignals,
-      contactRoutes: accessResult.contactRoutes,
+      contactRoutes: 0,
       postedOpportunities: 0,
-      guardedContactRoutes: accessResult.guardedContactRoutes,
+      undergraduateLogisticsClaims:
+        logisticsResult.known + logisticsResult.stale + logisticsResult.conflicts,
+      guardedContactRoutes: 0,
       staleEvidenceSkipped: accessResult.staleEvidenceSkipped,
-      conflicts: 0,
-      errors: accessResult.errors,
+      conflicts: logisticsResult.conflicts,
+      errors: accessResult.errors + logisticsResult.rejected,
     };
 
     // Recompute the browse-ranking score now that access signals exist, and
@@ -2411,136 +3955,111 @@ export async function materializeEntity(
     }
   }
 
+  if (
+    !options.dryRun &&
+    isResearchEntityObservationType(entityType) &&
+    entityIdString &&
+    isDeptRosterKey(identifier.entityKey)
+  ) {
+    await foldDeptRosterShellIntoCanonicalResearchEntity(entityIdString);
+  }
+
   return {
     entityType,
     entityId: entityIdString,
     entityKey: identifier.entityKey,
-    fieldsWritten,
+    fieldsWritten: entityScalarUnchanged ? 0 : fieldsWritten,
     conflicts,
     created,
     resolved,
     postMaterializationMetrics,
+    ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
   };
 }
 
-/**
- * Materialize all entities that have observations from a given ScrapeRun.
- */
-async function materializePaperObservationsFromRun(
+const OFFICIAL_ROSTER_SOURCE_NAME = 'official-research-home-roster';
+
+export interface OfficialRosterSnapshotForReconciliation {
+  complete?: boolean;
+  memberKeys?: unknown;
+  observedAt?: unknown;
+}
+
+export function buildOfficialRosterArchiveFilter(
+  researchEntityId: string,
+  snapshot: OfficialRosterSnapshotForReconciliation,
+): Record<string, unknown> | null {
+  const safeResearchEntityId = normalizeMaterializerObjectId(researchEntityId);
+  const memberKeys = Array.isArray(snapshot.memberKeys)
+    ? Array.from(
+        new Set(
+          snapshot.memberKeys
+            .map((value) => textValue(value))
+            .filter(Boolean)
+            .slice(0, 40),
+        ),
+      )
+    : [];
+  if (!safeResearchEntityId || snapshot.complete !== true || memberKeys.length === 0) return null;
+  return {
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': safeResearchEntityId,
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+    'rosterProvenance.sourceName': OFFICIAL_ROSTER_SOURCE_NAME,
+    'rosterProvenance.membershipKey': { $nin: memberKeys },
+  };
+}
+
+async function reconcileOfficialRosterSnapshotsFromRun(
   scrapeRunId: string,
-  options: MaterializeOptions = {},
-): Promise<{
-  materialized: number;
-  created: number;
-  updated: number;
-  conflicts: number;
-  skipped: number;
-  errors: number;
-}> {
+  options: MaterializeOptions,
+): Promise<number> {
   const runObjectId = toMaterializerObjectId(scrapeRunId);
-  if (!runObjectId) {
-    return { materialized: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, errors: 0 };
-  }
-  const observations = (await Observation.find({
+  if (!runObjectId || options.dryRun) return 0;
+  const snapshots = await Observation.find({
     scrapeRunId: runObjectId,
-    entityType: 'paper',
-    superseded: false,
+    sourceName: OFFICIAL_ROSTER_SOURCE_NAME,
+    entityType: 'researchEntity',
+    field: 'rosterEnrichment',
   })
-    .select('entityKey field value sourceName confidence observedAt sourceUrl')
-    .lean()) as Array<
-    PaperMaterializationObservation & {
-      entityKey?: string;
-    }
-  >;
-
-  const groups = new Map<string, PaperMaterializationObservation[]>();
-  for (const obs of observations) {
-    if (!obs.entityKey) continue;
-    const list = groups.get(obs.entityKey) || [];
-    list.push({
-      field: obs.field,
-      value: obs.value,
-      sourceName: obs.sourceName,
-      confidence: obs.confidence,
-      observedAt: obs.observedAt,
-      sourceUrl: obs.sourceUrl,
-    });
-    groups.set(obs.entityKey, list);
-  }
-
-  if (groups.size === 0) {
-    return { materialized: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, errors: 0 };
-  }
-
-  const { openAlexKeys, arxivKeys, doiKeys, doiValues } = paperIdentityBuckets(groups);
-  const existingPapers = await Paper.find({
-    $or: [
-      ...(openAlexKeys.length > 0 ? [{ openAlexId: { $in: openAlexKeys } }] : []),
-      ...(arxivKeys.length > 0 ? [{ arxivId: { $in: arxivKeys } }] : []),
-      ...(doiKeys.length > 0
-        ? [
-            {
-              doi: {
-                $in: doiKeys
-                  .map((key) => normalizeDoiForMaterialization(key.replace(/^doi:/i, '')))
-                  .filter((value): value is string => !!value),
-              },
-            },
-          ]
-        : []),
-      ...(doiValues.length > 0 ? [{ doi: { $in: doiValues } }] : []),
-    ],
-  })
-    .select('_id openAlexId arxivId doi manuallyLockedFields')
+    .select('entityKey value observedAt sourceUrl confidence')
     .lean();
-  const existingMaps = mapExistingPapers(existingPapers as any[]);
-
-  let materialized = 0;
-  let created = 0;
-  let updated = 0;
-  let conflicts = 0;
-  let skipped = 0;
-  let errors = 0;
-  const ops: any[] = [];
-
-  for (const [entityKey, obs] of groups.entries()) {
-    const existing = findPaperForObservationGroup(entityKey, obs, existingMaps);
-    const patch = buildPaperUpdateFromObservations(entityKey, obs, existing);
-    if (patch.skipped) {
-      skipped++;
-      continue;
+  let archived = 0;
+  for (const snapshotObservation of snapshots as any[]) {
+    const snapshot = objectRecord(
+      snapshotObservation.value,
+    ) as OfficialRosterSnapshotForReconciliation;
+    if (!snapshotObservation.entityKey) continue;
+    const entity: any = await ResearchEntity.findOne({
+      slug: snapshotObservation.entityKey,
+      archived: { $ne: true },
+    })
+      .select('_id')
+      .lean();
+    if (!entity?._id) continue;
+    const filter = buildOfficialRosterArchiveFilter(materializerDocumentId(entity._id), snapshot);
+    if (!filter) continue;
+    const endedAt = snapshotObservation.observedAt || new Date();
+    const departing = await RoleAssignment.find(filter).select('personId').lean();
+    const departingPersonIds = Array.from(
+      new Map(
+        (departing as any[])
+          .map((assignment) => assignment.personId)
+          .filter((id): id is mongoose.Types.ObjectId => id instanceof mongoose.Types.ObjectId)
+          .map((id) => [id.toString(), id] as const),
+      ).values(),
+    );
+    if (departingPersonIds.length > 0) {
+      await archiveCanonicalRoleAssignmentsForPersons(
+        materializerDocumentId(entity._id),
+        departingPersonIds,
+        endedAt,
+      );
     }
-    materialized++;
-    conflicts += patch.conflicts;
-    if (existing) updated++;
-    else created++;
-    if (options.dryRun) continue;
-
-    ops.push({
-      updateOne: {
-        filter: existing
-          ? { _id: existing._id }
-          : {
-              [uniqueKeyFieldForIdentifier('paper', entityKey) || 'openAlexId']:
-                uniqueKeyValueForIdentifier('paper', entityKey, obs) || entityKey,
-            },
-        update: patch.update,
-        upsert: !existing,
-      },
-    });
+    archived += departingPersonIds.length;
   }
-
-  if (!options.dryRun && ops.length > 0) {
-    try {
-      await Paper.bulkWrite(ops, { ordered: false });
-      await materializePaperAuthorEvidenceFromGroups(groups);
-    } catch (err) {
-      errors += ops.length;
-      console.error('materializePaperObservationsFromRun failed:', sanitizeLogValue(err));
-    }
-  }
-
-  return { materialized, created, updated, conflicts, skipped, errors };
+  return archived;
 }
 
 export async function materializeFromRun(
@@ -2555,11 +4074,15 @@ export async function materializeFromRun(
   errors: number;
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
 }> {
-  const paperResult = await materializePaperObservationsFromRun(scrapeRunId, options);
   const runObjectId = toMaterializerObjectId(scrapeRunId);
   if (!runObjectId) {
     return {
-      ...paperResult,
+      materialized: 0,
+      created: 0,
+      updated: 0,
+      conflicts: 0,
+      skipped: 0,
+      errors: 0,
       postMaterializationMetrics: emptyPostMaterializationMetrics(),
     };
   }
@@ -2567,7 +4090,7 @@ export async function materializeFromRun(
     {
       $match: {
         scrapeRunId: runObjectId,
-        entityType: { $ne: 'paper' },
+        entityType: { $nin: ['paper', 'departmentRosterHealth'] },
       },
     },
     {
@@ -2590,12 +4113,12 @@ export async function materializeFromRun(
     );
   });
 
-  let materialized = paperResult.materialized;
-  let created = paperResult.created;
-  let updated = paperResult.updated;
-  let conflicts = paperResult.conflicts;
-  let skipped = paperResult.skipped;
-  let errors = paperResult.errors;
+  let materialized = 0;
+  let created = 0;
+  let updated = 0;
+  let conflicts = 0;
+  let skipped = 0;
+  let errors = 0;
   const postMaterializationMetrics = emptyPostMaterializationMetrics();
   for (const row of distinct) {
     const { entityType, entityId, entityKey } = row._id;
@@ -2624,8 +4147,8 @@ export async function materializeFromRun(
     conflicts += res.conflicts;
     addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
   }
-  postMaterializationMetrics.postedOpportunities +=
-    await countListingBackedPostedOpportunitiesForRun(scrapeRunId);
+  const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
+  await reconcileFacultyRosterDeparturesFromRun(scrapeRunId, options);
   if (!options.dryRun) {
     await ScrapeRun.updateOne(
       { _id: scrapeRunId },
@@ -2636,6 +4159,7 @@ export async function materializeFromRun(
           materializationSkipped: skipped,
           materializationConflicts: conflicts,
           materializationErrors: errors,
+          entitiesArchived: rosterMembersArchived,
           postMaterializationMetrics,
         },
       },

@@ -28,7 +28,6 @@ describe('adminOperatorBoardService', () => {
   it('separates blocking repair reasons from positive evidence signals', () => {
     expect(classifyOperatorQueueReason('missing_action_evidence')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
-    expect(classifyOperatorQueueReason('pi_identity_conflict')).toBe('blocking');
     expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
     expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
     expect(classifyOperatorQueueReason('application_source_only')).toBe('review');
@@ -150,7 +149,7 @@ describe('adminOperatorBoardService', () => {
     });
     expect(deriveLaunchTrustGate()).toMatchObject({
       command:
-        'SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --include-research-activity --include-paper-quality --strict',
+        'SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --strict',
     });
     expect(deriveLaunchAcquisitionGate()).toMatchObject({
       command:
@@ -277,7 +276,7 @@ describe('adminOperatorBoardService', () => {
               count: 1,
               owner: 'data-quality operator',
               nextCommand:
-                'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+                'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
             },
           ],
           promotionBlockersByOwner: [
@@ -293,8 +292,7 @@ describe('adminOperatorBoardService', () => {
             preflightGuidance: {
               sharedWebsiteReview: {
                 clusterCount: 20,
-                outputPath:
-                  '/tmp/ylabs-duplicate-entity-name-review-shared-website-plan.json',
+                outputPath: '/tmp/ylabs-duplicate-entity-name-review-shared-website-plan.json',
                 requiredReviewerDecisions: [
                   'Confirm the shared website represents one research home.',
                   'Select the canonical ResearchEntity before any apply path.',
@@ -344,8 +342,7 @@ describe('adminOperatorBoardService', () => {
             'Accepted same-PI dedupe decisions are validation-only; apply mode cannot be combined with --accepted-decisions until decision-filtered apply exists.',
           artifactAvailable: true,
           reviewArtifactPath: '/tmp/ylabs-research-entity-dedupe.json',
-          acceptedDecisionInputPath:
-            '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json',
+          acceptedDecisionInputPath: '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json',
           decisionTemplateOutputPath:
             '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
           acceptedDecisionValidationOutputPath: '/tmp/ylabs-research-entity-dedupe.json',
@@ -388,7 +385,7 @@ describe('adminOperatorBoardService', () => {
           count: 1,
           owner: 'data-quality operator',
           nextCommand:
-            'SCRAPER_ENV=beta yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+            'SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
         },
       ],
       promotionBlockersByOwner: [
@@ -414,8 +411,7 @@ describe('adminOperatorBoardService', () => {
           },
         ],
         acceptedDecisionTemplate: {
-          outputPath:
-            '/tmp/ylabs-duplicate-entity-name-review-accepted-decisions-template.json',
+          outputPath: '/tmp/ylabs-duplicate-entity-name-review-accepted-decisions-template.json',
           command:
             'SCRAPER_ENV=beta yarn --cwd server research-entity:duplicate-name-review --limit=10000 --plan-limit=20 --decision-template-output /tmp/ylabs-duplicate-entity-name-review-accepted-decisions-template.json --output /tmp/ylabs-duplicate-entity-name-review.json',
         },
@@ -447,8 +443,7 @@ describe('adminOperatorBoardService', () => {
           'Accepted same-PI dedupe decisions are validation-only; apply mode cannot be combined with --accepted-decisions until decision-filtered apply exists.',
         artifactAvailable: true,
         reviewArtifactPath: '/tmp/ylabs-research-entity-dedupe.json',
-        acceptedDecisionInputPath:
-          '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json',
+        acceptedDecisionInputPath: '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json',
         decisionTemplateOutputPath:
           '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
         acceptedDecisionValidationOutputPath: '/tmp/ylabs-research-entity-dedupe.json',
@@ -477,7 +472,7 @@ describe('adminOperatorBoardService', () => {
           count: 1,
           owner: 'data-quality operator',
           nextCommand:
-            'SCRAPER_ENV=beta yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+            'SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
         },
       ],
       blockersByOwner: [
@@ -695,7 +690,9 @@ describe('adminOperatorBoardService', () => {
       }),
     );
 
-    expect(readDataQualityGateArtifact(artifactPath, new Date('2026-05-29T22:31:00.000Z'))).toMatchObject({
+    expect(
+      readDataQualityGateArtifact(artifactPath, new Date('2026-05-29T22:31:00.000Z')),
+    ).toMatchObject({
       artifactStatus: 'loaded',
       duplicateNamePreflight: {
         acceptedDecisionValidation: {
@@ -749,7 +746,7 @@ describe('adminOperatorBoardService', () => {
               name: 'referenceIntegrity',
               count: 1,
               nextCommand:
-                'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+                'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
             },
           ],
         },
@@ -812,7 +809,7 @@ describe('adminOperatorBoardService', () => {
       hardErrors: [
         {
           nextCommand:
-            'SCRAPER_ENV=beta yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+            'SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
         },
       ],
       duplicateNamePreflight: {
@@ -1158,8 +1155,7 @@ describe('adminOperatorBoardService', () => {
     });
     expect(deriveLaunchAcquisitionGate(artifact)).toMatchObject({
       status: 'blocked',
-      note:
-        'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+      note: 'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
       scanned: 75,
       piBlockers: 65,
       actionBlockers: 10,
@@ -1204,8 +1200,7 @@ describe('adminOperatorBoardService', () => {
     });
     expect(derivePromotionCopyGate(artifact)).toMatchObject({
       status: 'review_required',
-      note:
-        'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+      note: 'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
       excludedSyntheticUsers: 2,
       collectionCategoryCount: 1,
     });

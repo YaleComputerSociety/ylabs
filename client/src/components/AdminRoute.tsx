@@ -35,9 +35,9 @@ const getLocalAdminDevLoginUrl = () => {
     return null;
   }
 
-  return buildApiUrl(`/dev-login?userType=admin&redirect=${encodeURIComponent(
-    getSafeLocalAdminRedirectTarget(),
-  )}`);
+  return buildApiUrl(
+    `/dev-login?userType=admin&redirect=${encodeURIComponent(getSafeLocalAdminRedirectTarget())}`,
+  );
 };
 
 const AdminRoute = ({ Component }: AdminRouteProps) => {
@@ -45,11 +45,7 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
   const localAdminDevLoginUrl = getLocalAdminDevLoginUrl();
 
   useEffect(() => {
-    if (
-      !isLoading &&
-      localAdminDevLoginUrl &&
-      (!isAuthenticated || (user && user.userType !== 'admin'))
-    ) {
+    if (!isLoading && localAdminDevLoginUrl && (!isAuthenticated || (user && !user.isAdmin))) {
       window.location.assign(localAdminDevLoginUrl);
     }
   }, [isAuthenticated, isLoading, localAdminDevLoginUrl, user]);
@@ -74,19 +70,7 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
     return <Navigate to="/login" />;
   }
 
-  if (user && user.userType === 'unknown') {
-    if (localAdminDevLoginUrl) {
-      return (
-        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
-          Opening local admin session...
-        </div>
-      );
-    }
-
-    return <Navigate to="/unknown" />;
-  }
-
-  if (user && user.userType !== 'admin') {
+  if (user && !user.isAdmin) {
     if (localAdminDevLoginUrl) {
       return (
         <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">

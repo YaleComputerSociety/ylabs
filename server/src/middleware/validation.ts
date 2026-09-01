@@ -35,6 +35,29 @@ export const validateObjectId = (paramName: string = 'id') => {
   };
 };
 
+const RESEARCH_ENTITY_REF_RE = /^(?:[a-fA-F0-9]{24}|[a-z0-9][a-z0-9_-]{0,159})$/i;
+
+/**
+ * Middleware to validate a ResearchEntity reference parameter that may be either a
+ * raw 24-hex ObjectId or the entity's public slug, matching the slug-or-id inputs
+ * the saved-research-entity mutation routes already accept.
+ */
+export const validateResearchEntityId = (paramName: string = 'entityId') => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params[paramName];
+
+    if (!id) {
+      return res.status(400).json({ error: `Missing required parameter: ${paramName}` });
+    }
+
+    if (!RESEARCH_ENTITY_REF_RE.test(id)) {
+      return res.status(400).json({ error: `Invalid ${paramName}` });
+    }
+
+    next();
+  };
+};
+
 const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 
 /**
@@ -48,16 +71,6 @@ export const validateNetid = (paramName: string = 'netid') => {
     }
     next();
   };
-};
-
-/**
- * Middleware to validate request body exists
- */
-export const requireBody = (req: Request, res: Response, next: NextFunction) => {
-  if (!req.body || Object.keys(req.body).length === 0) {
-    return res.status(400).json({ error: 'Request body is required' });
-  }
-  next();
 };
 
 /**
@@ -100,29 +113,6 @@ export const validatePagination = (req: Request, res: Response, next: NextFuncti
   }
 
   next();
-};
-
-/**
- * Middleware to validate sort parameters
- */
-export const validateSort = (allowedFields: string[]) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const { sortBy, sortOrder } = req.query;
-
-    if (sortBy && !allowedFields.includes(sortBy as string)) {
-      return res.status(400).json({
-        error: `Invalid sortBy field. Allowed: ${allowedFields.join(', ')}`,
-      });
-    }
-
-    if (sortOrder && sortOrder !== '1' && sortOrder !== '-1') {
-      return res.status(400).json({
-        error: 'Invalid sortOrder. Must be "1" (ascending) or "-1" (descending)',
-      });
-    }
-
-    next();
-  };
 };
 
 /**

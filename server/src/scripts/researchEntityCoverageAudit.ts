@@ -4,24 +4,31 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
-import { Listing } from '../models/listing';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Observation } from '../models/observation';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import {
+  getResearchEntityRoster,
+  getResearchEntityRosterByEntityId,
+} from '../services/researchEntityMembershipAccessor';
 import { sourceCoverageRegistry } from '../scrapers/sourceCoverageRegistry';
 import {
   buildCoverageAuditRow,
   extractSuspiciousConstraintQuotes,
-  summarizeIssueCounts,
-  type CoverageAuditCounts,
+  selectCoverageAuditRows,
   type CoverageAuditFacts,
   type CoverageObservationFlags,
 } from './researchEntityCoverageAuditCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertPhase0SummaryOnlyConfiguredTarget,
+  assertPhase0SummaryOnlyConnectedTarget,
+  buildPhase0SummaryOnlyOutput,
+  parsePhase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyMetadata,
+} from './phase0SummaryOnlyAudit';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,6 +37,8 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export interface ResearchEntityCoverageAuditCliOptions {
   slug?: string;
+  summaryOnly?: boolean;
+  environment?: Phase0SummaryOnlyEnvironment;
   limit: number;
   minScore: number;
   includeArchived: boolean;
@@ -50,7 +59,6 @@ interface AuditEntityRecord {
   websiteUrl?: string;
   researchAreas?: string[];
   sourceUrls?: string[];
-  acceptanceConfidence?: number;
   undergradEvidenceQuote?: string;
   lastObservedAt?: Date;
 }
@@ -65,6 +73,20 @@ interface ObservationHint {
   sourceUrl?: string;
   confidence?: number;
 }
+
+const SUMMARY_ONLY_COVERAGE_ISSUES = [
+  'BLANK_DETAIL_RISK',
+  'MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS',
+  'INFERRED_PI_WITHOUT_MEMBERSHIP',
+  'NO_ACTIONABLE_ACCESS',
+  'MISSING_DESCRIPTION',
+  'NO_MEMBERS',
+  'NO_PATHWAYS',
+  'NO_PUBLIC_CONTACT_ROUTE',
+  'SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED',
+  'NO_RESEARCH_AREAS',
+  'MISSING_WEBSITE_URL',
+] as const;
 
 export function parseResearchEntityCoverageAuditArgs(
   argv: string[],
@@ -87,6 +109,26 @@ export function parseResearchEntityCoverageAuditArgs(
     }
     if (arg === '--all') {
       options.includeAll = true;
+      continue;
+    }
+    if (arg === '--summary-only') {
+      options.summaryOnly = true;
+      continue;
+    }
+    if (arg.startsWith('--summary-only=')) {
+      throw new Error('--summary-only does not accept a value');
+    }
+    if (arg === '--environment') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--environment requires a value');
+      }
+      options.environment = parsePhase0SummaryOnlyEnvironment(value);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--environment=')) {
+      options.environment = parsePhase0SummaryOnlyEnvironment(arg.slice('--environment='.length));
       continue;
     }
     if (arg.startsWith('--slug=')) {
@@ -156,22 +198,18 @@ export function buildResearchEntityCoverageAuditOutput<T extends object>(
   };
 }
 
-function stringId(value: unknown): string {
-  return value === undefined || value === null ? '' : String(value);
+export function assertResearchEntityCoverageSummaryOnlyAllowed(
+  options: ResearchEntityCoverageAuditCliOptions,
+): void {
+  if (options.summaryOnly && options.slug) {
+    throw new Error(
+      'research-entity:coverage-audit --summary-only cannot be combined with --slug.',
+    );
+  }
 }
 
-function makeEmptyCounts(): CoverageAuditCounts {
-  return {
-    researchAreas: 0,
-    sourceUrls: 0,
-    members: 0,
-    pathways: 0,
-    publicContactRoutes: 0,
-    totalContactRoutes: 0,
-    accessSignals: 0,
-    postedOpportunities: 0,
-    activeListings: 0,
-  };
+function stringId(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value);
 }
 
 function buildObservationFlags(observations: ObservationHint[]): CoverageObservationFlags {
@@ -225,7 +263,7 @@ async function aggregateCountMap(
 async function fetchEntities(filter: Record<string, unknown>) {
   return (await ResearchEntity.find(filter)
     .select(
-      '_id slug name kind entityType school description shortDescription fullDescription websiteUrl researchAreas sourceUrls archived',
+      '_id slug name kind entityType school shortDescription fullDescription websiteUrl researchAreas sourceUrls archived',
     )
     .sort({ name: 1 })
     .lean()) as unknown as AuditEntityRecord[];
@@ -243,44 +281,18 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
   const slugByEntityId = new Map(entities.map((entity) => [stringId(entity._id), entity.slug]));
   const validSlugSet = new Set(slugs);
 
-  const [
-    memberCounts,
-    pathwayCounts,
-    publicRouteCounts,
-    totalRouteCounts,
-    signalCounts,
-    opportunityCounts,
-    listingCounts,
-    observationHints,
-  ] = await Promise.all([
-    aggregateCountMap(ResearchGroupMember, { researchEntityId: { $in: entityIds } }),
-    aggregateCountMap(EntryPathway, {
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
+  const memberCounts = new Map<string, number>(
+    [...rosterByEntityId].map(([key, roster]) => [key, roster.length]),
+  );
+  const [signalCounts, observationHints] = await Promise.all([
+    aggregateCountMap(Signal, {
       researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-    }),
-    aggregateCountMap(ContactRoute, {
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-      visibility: 'PUBLIC',
-    }),
-    aggregateCountMap(ContactRoute, {
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-    }),
-    aggregateCountMap(AccessSignal, {
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-    }),
-    aggregateCountMap(PostedOpportunity, {
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-    }),
-    aggregateCountMap(Listing, {
-      researchEntityId: { $in: entityIds },
+      type: { $in: [...accessSignalTypes] },
       archived: { $ne: true },
     }),
     Observation.find({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: 'researchEntity',
       superseded: false,
       $and: [
         {
@@ -310,58 +322,92 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
     observationsBySlug.set(slug, list);
   }
 
-  const rows = entities
-    .map((entity) => {
-      const entityId = stringId(entity._id);
-      const facts: CoverageAuditFacts = {
-        slug: entity.slug,
-        name: entity.name,
-        kind: entity.kind,
-        school: entity.school,
-        websiteUrl: entity.websiteUrl,
-        description: entity.description,
-        shortDescription: entity.shortDescription,
-        fullDescription: entity.fullDescription,
-        counts: {
-          researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
-          sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
-          members: memberCounts.get(entityId) || 0,
-          pathways: pathwayCounts.get(entityId) || 0,
-          publicContactRoutes: publicRouteCounts.get(entityId) || 0,
-          totalContactRoutes: totalRouteCounts.get(entityId) || 0,
-          accessSignals: signalCounts.get(entityId) || 0,
-          postedOpportunities: opportunityCounts.get(entityId) || 0,
-          activeListings: listingCounts.get(entityId) || 0,
-        },
-        observationFlags: buildObservationFlags(observationsBySlug.get(entity.slug) || []),
-      };
-      return buildCoverageAuditRow(facts);
-    })
-    .filter((row) => (options.includeAll ? true : row.issueScore >= options.minScore))
-    .sort((a, b) => b.issueScore - a.issueScore || a.name.localeCompare(b.name));
+  const rows = entities.map((entity) => {
+    const entityId = stringId(entity._id);
+    const facts: CoverageAuditFacts = {
+      slug: entity.slug,
+      name: entity.name,
+      kind: entity.kind,
+      school: entity.school,
+      websiteUrl: entity.websiteUrl,
+      shortDescription: entity.shortDescription,
+      fullDescription: entity.fullDescription,
+      counts: {
+        researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
+        sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
+        members: memberCounts.get(entityId) || 0,
+        accessSignals: signalCounts.get(entityId) || 0,
+      },
+      observationFlags: buildObservationFlags(observationsBySlug.get(entity.slug) || []),
+    };
+    return buildCoverageAuditRow(facts);
+  });
+  const rowLimit = options.slug ? rows.length : options.limit;
+  const selection = selectCoverageAuditRows(rows, {
+    includeAll: options.includeAll,
+    minScore: options.minScore,
+    limit: rowLimit,
+  });
 
-  const limitedRows = options.slug ? rows : rows.slice(0, options.limit);
   return {
     generatedAt: new Date().toISOString(),
     scope: options.slug ? 'detail-candidate' : 'bulk',
     totalEntitiesScanned: entities.length,
-    flaggedEntities: rows.length,
+    flaggedEntities: selection.flaggedEntities,
     filters: {
       slug: options.slug || null,
       includeArchived: options.includeArchived,
       includeAll: options.includeAll,
-      limit: options.slug ? rows.length : options.limit,
+      limit: rowLimit,
       minScore: options.minScore,
     },
-    issueCounts: summarizeIssueCounts(rows),
-    rows: limitedRows,
+    issueCounts: selection.issueCounts,
+    rows: selection.rows,
   };
+}
+
+export function buildResearchEntityCoverageSummaryOnlyOutput(
+  result: {
+    generatedAt: string;
+    scope: string;
+    totalEntitiesScanned: number;
+    flaggedEntities: number;
+    filters: {
+      includeArchived: boolean;
+      includeAll: boolean;
+      minScore: number;
+    };
+    issueCounts: Record<string, number>;
+  },
+  metadata: Phase0SummaryOnlyMetadata,
+) {
+  return buildPhase0SummaryOnlyOutput(
+    {
+      generatedAt: result.generatedAt,
+      scope: result.scope,
+      applyBlocked: true,
+      totalEntitiesScanned: result.totalEntitiesScanned,
+      flaggedEntities: result.flaggedEntities,
+      filters: {
+        includeArchived: result.filters.includeArchived,
+        includeAll: result.filters.includeAll,
+        minScore: result.filters.minScore,
+      },
+      issueCounts: Object.fromEntries(
+        SUMMARY_ONLY_COVERAGE_ISSUES.flatMap((issue) => {
+          const count = result.issueCounts[issue];
+          return Number.isSafeInteger(count) && count >= 0 ? [[issue, count]] : [];
+        }),
+      ),
+    },
+    metadata,
+  );
 }
 
 async function buildSlugAudit(slug: string) {
   const entity = (await ResearchEntity.findOne({ slug })
     .select(
-      '_id slug name kind entityType school description shortDescription fullDescription websiteUrl sourceUrls researchAreas acceptanceConfidence undergradEvidenceQuote lastObservedAt',
+      '_id slug name kind entityType school shortDescription fullDescription websiteUrl sourceUrls researchAreas undergradEvidenceQuote lastObservedAt',
     )
     .lean()) as AuditEntityRecord | null;
   if (!entity) {
@@ -373,37 +419,18 @@ async function buildSlugAudit(slug: string) {
   }
 
   const entityId = stringId(entity._id);
-  const [
-    members,
-    pathways,
-    signals,
-    routes,
-    opportunities,
-    listings,
-    observations,
-  ] = await Promise.all([
-    ResearchGroupMember.find({ researchEntityId: entity._id })
-      .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
-      .lean(),
-    EntryPathway.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('pathwayType status evidenceStrength studentFacingLabel bestNextStep sourceUrls confidence derivationKey')
-      .lean(),
-    AccessSignal.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('signalType confidence confidenceScore excerpt sourceName sourceUrl observedAt derivationKey')
+  const [members, signals, observations] = await Promise.all([
+    getResearchEntityRoster(entity._id),
+    Signal.find({
+      researchEntityId: entity._id,
+      type: { $in: [...accessSignalTypes] },
+      archived: { $ne: true },
+    })
+      .select('type confidence confidenceScore source observedAt derivationKey')
       .sort({ observedAt: -1 })
       .lean(),
-    ContactRoute.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('routeType label name role url visibility contactPolicy rationale sourceName sourceUrl observedAt derivationKey')
-      .sort({ priority: 1, observedAt: -1 })
-      .lean(),
-    PostedOpportunity.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('title term status applicationUrl sourceUrls derivationKey')
-      .lean(),
-    Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('title deadline website')
-      .lean(),
     Observation.find({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: 'researchEntity',
       superseded: false,
       $or: [{ entityId: entity._id }, { entityKey: slug }],
     })
@@ -419,22 +446,16 @@ async function buildSlugAudit(slug: string) {
     kind: entity.kind,
     school: entity.school,
     websiteUrl: entity.websiteUrl,
-    description: entity.description,
     shortDescription: entity.shortDescription,
     fullDescription: entity.fullDescription,
     counts: {
       researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
       sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
       members: members.length,
-      pathways: pathways.length,
-      publicContactRoutes: routes.filter((route) => route.visibility === 'PUBLIC').length,
-      totalContactRoutes: routes.length,
       accessSignals: signals.length,
-      postedOpportunities: opportunities.length,
-      activeListings: listings.length,
     },
     observationFlags: buildObservationFlags(observationHints),
-    signalTypes: signals.map((signal) => signal.signalType),
+    signalTypes: signals.map((signal) => signal.type),
   };
 
   const row = buildCoverageAuditRow(coverageFacts);
@@ -455,12 +476,10 @@ async function buildSlugAudit(slug: string) {
       entityType: entity.entityType,
       school: entity.school,
       websiteUrl: entity.websiteUrl,
-      description: entity.description,
       shortDescription: entity.shortDescription,
       fullDescription: entity.fullDescription,
       researchAreas: entity.researchAreas || [],
       sourceUrls: entity.sourceUrls || [],
-      acceptanceConfidence: entity.acceptanceConfidence ?? 0,
       undergradEvidenceQuote: entity.undergradEvidenceQuote || '',
       lastObservedAt: entity.lastObservedAt || null,
     },
@@ -475,12 +494,7 @@ async function buildSlugAudit(slug: string) {
     observationFlags: coverageFacts.observationFlags,
     accessArtifacts: {
       members,
-      entryPathways: pathways,
       accessSignals: signals,
-      publicContactRoutes: routes.filter((route) => route.visibility === 'PUBLIC'),
-      nonPublicContactRoutes: routes.filter((route) => route.visibility !== 'PUBLIC'),
-      postedOpportunities: opportunities,
-      activeListings: listings,
     },
     recentObservations: observationHints.slice(0, 40),
   };
@@ -488,22 +502,37 @@ async function buildSlugAudit(slug: string) {
 
 async function main(): Promise<void> {
   const options = parseResearchEntityCoverageAuditArgs(process.argv.slice(2));
+  assertResearchEntityCoverageSummaryOnlyAllowed(options);
   const guard = assertScriptApplyAllowed({
     apply: false,
     scriptName: 'research-entity:coverage-audit',
     mongoUrl: process.env.MONGODBURL,
   });
+  assertPhase0SummaryOnlyConfiguredTarget({
+    summaryOnly: Boolean(options.summaryOnly),
+    environment: options.environment,
+    mongoUrl: process.env.MONGODBURL,
+    scriptName: 'research-entity:coverage-audit',
+  });
   await initializeConnections();
+  assertPhase0SummaryOnlyConnectedTarget({
+    summaryOnly: Boolean(options.summaryOnly),
+    environment: options.environment,
+    databaseName: mongoose.connection.db?.databaseName,
+    scriptName: 'research-entity:coverage-audit',
+  });
 
-  const result = options.slug
-    ? await buildSlugAudit(options.slug)
-    : await buildBulkAudit(options);
+  const result = options.slug ? await buildSlugAudit(options.slug) : await buildBulkAudit(options);
 
-  const output = buildResearchEntityCoverageAuditOutput(result, {
-    environment: guard.environment,
+  const metadata = {
+    environment: options.summaryOnly ? options.environment : guard.environment,
     db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
     options,
-  });
+  };
+  const output =
+    options.summaryOnly && 'totalEntitiesScanned' in result
+      ? buildResearchEntityCoverageSummaryOnlyOutput(result, metadata)
+      : buildResearchEntityCoverageAuditOutput(result, metadata);
   console.log(JSON.stringify(output, null, 2));
   writeResearchEntityCoverageAuditOutput(output, options.output);
 }

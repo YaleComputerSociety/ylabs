@@ -203,7 +203,7 @@ await audit('research profile CTA opens a research profile', async () => {
 await screenshot('03-research-profile');
 
 await audit('dashboard presents one planning overview', async () => {
-  await page.goto(`${clientBase}/account`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${clientBase}/dashboard`, { waitUntil: 'domcontentloaded' });
   await waitForResearchSettled();
   await assertTextMatches(/your plan/i);
   await assertTextIncludes('saved pathways');

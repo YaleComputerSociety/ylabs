@@ -22,7 +22,6 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
 }));
 
 import {
-  addProgramFavorite,
   getProgramFilterOptions,
   readProgram,
   readPrograms,
@@ -129,7 +128,7 @@ describe('program search service', () => {
       sortOrder: 1,
     });
 
-    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1 });
+    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1, _id: 1 });
   });
 
   it('keeps allowed program search sort fields before building Mongo sort objects', async () => {
@@ -140,7 +139,7 @@ describe('program search service', () => {
       sortOrder: 1,
     });
 
-    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1 });
+    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1, _id: 1 });
   });
 
   it('normalizes unsafe program search sort directions before building Mongo sort objects', async () => {
@@ -151,7 +150,7 @@ describe('program search service', () => {
       sortOrder: Number.NaN,
     });
 
-    expect(chain.sort).toHaveBeenCalledWith({ deadline: -1 });
+    expect(chain.sort).toHaveBeenCalledWith({ deadline: -1, _id: 1 });
   });
 
   it('does not stringify arbitrary program ids before detail lookup', async () => {
@@ -298,7 +297,7 @@ describe('program search service', () => {
         sourceLastChangedAt: new Date('2026-01-02T00:00:00Z'),
         studentVisibilityTier: 'student_ready',
         studentVisibilityReasons: ['operator note'],
-        studentVisibilityReviewedByUserId: 'operator-user-id',
+        studentVisibilityReviewedByAccountId: 'operator-user-id',
         archived: false,
         audited: true,
         views: 12,
@@ -322,7 +321,7 @@ describe('program search service', () => {
     expect(result.programs[0]).not.toHaveProperty('sourceLastChangedAt');
     expect(result.programs[0]).not.toHaveProperty('studentVisibilityTier');
     expect(result.programs[0]).not.toHaveProperty('studentVisibilityReasons');
-    expect(result.programs[0]).not.toHaveProperty('studentVisibilityReviewedByUserId');
+    expect(result.programs[0]).not.toHaveProperty('studentVisibilityReviewedByAccountId');
     expect(result.programs[0]).not.toHaveProperty('archived');
     expect(result.programs[0]).not.toHaveProperty('audited');
     expect(result.programs[0]).not.toHaveProperty('views');
@@ -380,7 +379,7 @@ describe('program search service', () => {
         sourceLastChangedAt: new Date('2026-01-02T00:00:00Z'),
         studentVisibilityTier: 'student_ready',
         studentVisibilityReasons: ['operator note'],
-        studentVisibilityReviewedByUserId: 'operator-user-id',
+        studentVisibilityReviewedByAccountId: 'operator-user-id',
         archived: false,
         audited: true,
         views: 12,
@@ -404,62 +403,11 @@ describe('program search service', () => {
     expect(program).not.toHaveProperty('sourceLastChangedAt');
     expect(program).not.toHaveProperty('studentVisibilityTier');
     expect(program).not.toHaveProperty('studentVisibilityReasons');
-    expect(program).not.toHaveProperty('studentVisibilityReviewedByUserId');
+    expect(program).not.toHaveProperty('studentVisibilityReviewedByAccountId');
     expect(program).not.toHaveProperty('archived');
     expect(program).not.toHaveProperty('audited');
     expect(program).not.toHaveProperty('views');
     expect(program).not.toHaveProperty('favorites');
-  });
-
-  it('strips internal review metadata from public program favorite responses', async () => {
-    mocks.findOneAndUpdate.mockResolvedValueOnce({
-      toObject: () => ({
-        _id: '67d8928150621bcef434a1d5',
-        title: 'Visible program',
-        sourceName: 'Yale Office',
-        sourceUrl: 'https://example.yale.edu/program',
-        sourceKey: 'internal-source-key',
-        sourceFingerprint: 'sha256:internal',
-        studentVisibilityTier: 'student_ready',
-        studentVisibilityReviewedByUserId: 'operator-user-id',
-        archived: false,
-        audited: true,
-        views: 12,
-        favorites: 4,
-      }),
-    });
-
-    const program = await addProgramFavorite('67d8928150621bcef434a1d5');
-
-    expect(program).toEqual(
-      expect.objectContaining({
-        _id: '67d8928150621bcef434a1d5',
-        title: 'Visible program',
-        sourceName: 'Yale Office',
-        sourceUrl: 'https://example.yale.edu/program',
-      }),
-    );
-    expect(program).not.toHaveProperty('sourceKey');
-    expect(program).not.toHaveProperty('sourceFingerprint');
-    expect(program).not.toHaveProperty('studentVisibilityTier');
-    expect(program).not.toHaveProperty('studentVisibilityReviewedByUserId');
-    expect(program).not.toHaveProperty('archived');
-    expect(program).not.toHaveProperty('audited');
-    expect(program).not.toHaveProperty('views');
-    expect(program).not.toHaveProperty('favorites');
-  });
-
-  it('does not stringify arbitrary program ids before favorite mutations', async () => {
-    await expect(
-      addProgramFavorite({
-        toString: () => {
-          throw new Error('program favorite stringified an arbitrary id');
-        },
-      }),
-    ).rejects.toThrow('Did not receive expected id type ObjectId');
-
-    expect(mocks.findByIdAndUpdate).not.toHaveBeenCalled();
-    expect(mocks.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('lets admin program detail reads inspect review or suppressed records', async () => {

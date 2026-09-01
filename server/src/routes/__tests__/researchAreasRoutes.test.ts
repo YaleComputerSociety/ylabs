@@ -30,7 +30,9 @@ vi.mock('../../models/researchArea', () => {
   return {
     ResearchArea,
     ResearchField,
-    fieldColorKeys: Object.fromEntries(Object.values(ResearchField).map((field) => [field, 'gray'])),
+    fieldColorKeys: Object.fromEntries(
+      Object.values(ResearchField).map((field) => [field, 'gray']),
+    ),
   };
 });
 
@@ -62,12 +64,12 @@ const invokeMiddleware = async (name: string) => {
 };
 
 const routesByPath = (path: string) =>
-  (router as any).stack.map((layer: any) => layer.route).filter((route: any) => route?.path === path);
+  (router as any).stack
+    .map((layer: any) => layer.route)
+    .filter((route: any) => route?.path === path);
 
 const routeHandlerNames = (route: any): string[] =>
-  (route?.stack || [])
-    .map((layer: any) => layer.handle?.name)
-    .filter(Boolean);
+  (route?.stack || []).map((layer: any) => layer.handle?.name).filter(Boolean);
 
 const invokeRouteHandler = async (path: string, method: string, request: any = {}) => {
   const route = routesByPath(path).find((candidate: any) => candidate.methods?.[method]);
@@ -103,13 +105,13 @@ describe('research area routes', () => {
     vi.clearAllMocks();
   });
 
-  it('keeps shared research-area creation limited to faculty-style users', () => {
+  it('limits shared research-area creation to admins', () => {
     const createRoutes = routesByPath('/');
     const postRoute = createRoutes.find((route: any) => route.methods?.post);
 
     expect(postRoute).toBeTruthy();
     expect(routeHandlerNames(postRoute)).toEqual(
-      expect.arrayContaining(['isAuthenticated', 'isProfessor']),
+      expect.arrayContaining(['isAuthenticated', 'isAdmin']),
     );
   });
 
@@ -118,10 +120,7 @@ describe('research area routes', () => {
 
     const { res, next } = await invokeMiddleware('setPrivateResearchAreaCacheHeaders');
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(next).toHaveBeenCalledOnce();
   });
@@ -178,25 +177,5 @@ describe('research area routes', () => {
       message: 'Research area name cannot include contact information',
     });
     expect(mocks.researchAreaFindOne).not.toHaveBeenCalled();
-  });
-
-  it('rejects oversized research area search queries before lookup', async () => {
-    const res = await invokeRouteHandler('/search', 'get', {
-      query: { query: 'a'.repeat(121) },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ message: 'Search query is too long' });
-    expect(mocks.researchAreaFind).not.toHaveBeenCalled();
-  });
-
-  it('rejects blank research area search queries before lookup', async () => {
-    const res = await invokeRouteHandler('/search', 'get', {
-      query: { query: '   ' },
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ message: 'Search query is required' });
-    expect(mocks.researchAreaFind).not.toHaveBeenCalled();
   });
 });

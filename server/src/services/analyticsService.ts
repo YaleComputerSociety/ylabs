@@ -1,13 +1,10 @@
 /**
  * Analytics event logging and aggregation service.
  */
-import {
-  AnalyticsEvent,
-  AnalyticsEventType,
-  RESEARCH_ENTITY_TYPES,
-} from '../models/analytics';
-import { User, ResearchEntity } from '../models/index';
-import { getListingModel } from '../db/connections';
+import { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from '../models/analytics';
+import { ResearchEntity, Fellowship } from '../models/index';
+import { Account } from '../models/account';
+import { Researcher } from '../models/researcher';
 import { Types, type PipelineStage } from 'mongoose';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -15,14 +12,14 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 export interface LogEventParams {
   eventType: AnalyticsEventType;
   netid: string;
-  userType: string;
-  listingId?: string;
+  userType?: string;
   fellowshipId?: string;
   entityType?: string;
   entityId?: string;
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: any;
+  dedupeKey?: string;
 }
 
 const MAX_ANALYTICS_METADATA_DEPTH = 5;
@@ -34,6 +31,7 @@ const MAX_ANALYTICS_USER_TYPE_LENGTH = 40;
 const ANALYTICS_USER_TYPE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const ANALYTICS_METADATA_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const ANALYTICS_OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+const ANALYTICS_DEDUPE_KEY_RE = /^[A-Za-z0-9:_-]{1,160}$/;
 const ANALYTICS_EVENT_TYPES = new Set<AnalyticsEventType>(Object.values(AnalyticsEventType));
 const ANALYTICS_RESEARCH_ENTITY_TYPES = new Set<string>(RESEARCH_ENTITY_TYPES);
 
@@ -72,10 +70,7 @@ const sanitizeAnalyticsMetadataKey = (key: string): string | undefined => {
   return trimmed;
 };
 
-const sanitizeAnalyticsMetadata = (
-  value: unknown,
-  depth = 0,
-): unknown => {
+const sanitizeAnalyticsMetadata = (value: unknown, depth = 0): unknown => {
   if (typeof value === 'string') return sanitizeAnalyticsText(value);
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
   if (typeof value === 'boolean' || value === null) return value;
@@ -107,7 +102,6 @@ const sanitizeAnalyticsMetadata = (
 
 const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
   const eventType = sanitizeAnalyticsEventType(event?.eventType) || AnalyticsEventType.VISITOR;
-  const listingId = normalizeAnalyticsStoredObjectIdString(event?.listingId);
   const fellowshipId = normalizeAnalyticsStoredObjectIdString(event?.fellowshipId);
   const searchQuery = sanitizeAnalyticsText(event?.searchQuery);
   const searchDepartments = sanitizeAnalyticsStringArray(event?.searchDepartments);
@@ -117,7 +111,6 @@ const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
     id: normalizeAnalyticsStoredObjectIdString(event?._id) || '',
     eventType,
     userType: sanitizeAnalyticsUserType(event?.userType),
-    ...(listingId ? { listingId } : {}),
     ...(fellowshipId ? { fellowshipId } : {}),
     ...(searchQuery !== undefined ? { searchQuery } : {}),
     ...(searchDepartments !== undefined ? { searchDepartments } : {}),
@@ -126,7 +119,12 @@ const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
   };
 };
 
-export type AnalyticsUserSort = 'lastActive' | 'totalEvents' | 'logins' | 'searches' | 'views';
+export type AnalyticsUserSort =
+  | 'lastActive'
+  | 'totalEvents'
+  | 'logins'
+  | 'searches'
+  | 'researchViews';
 export type AnalyticsSortDirection = 'asc' | 'desc';
 
 export interface AnalyticsUsersQuery {
@@ -136,6 +134,7 @@ export interface AnalyticsUsersQuery {
   sort?: AnalyticsUserSort;
   direction?: AnalyticsSortDirection;
   limit?: number;
+  offset?: number;
 }
 
 export interface AnalyticsUserDrilldownQuery {
@@ -151,18 +150,8 @@ export interface AnalyticsUserSummary {
   totalEvents: number;
   logins: number;
   searches: number;
-  views: number;
+  researchViews: number;
   fellowshipViews: number;
-  listingFavorites: number;
-  listingUnfavorites: number;
-  fellowshipFavorites: number;
-  fellowshipUnfavorites: number;
-  outreachClicks: number;
-  outreachOutcomes: number;
-  listingCreates: number;
-  listingUpdates: number;
-  listingArchives: number;
-  listingUnarchives: number;
   profileUpdates: number;
   firstSeen?: Date;
   lastEventAt?: Date;
@@ -175,6 +164,7 @@ export interface AnalyticsUsersResult {
   users: AnalyticsUserSummary[];
   total: number;
   limit: number;
+  offset: number;
 }
 
 export interface AnalyticsUserTypeCount {
@@ -186,8 +176,8 @@ export interface AnalyticsUserEvent {
   id: string;
   eventType: AnalyticsEventType;
   userType: string;
-  listingId?: string;
   fellowshipId?: string;
+  fellowshipTitle?: string;
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: any;
@@ -222,6 +212,10 @@ export interface SearchQualityAnalytics {
   byQueryAndEntityType: SearchQualityQueryAnalytics[];
   topZeroResultQueries: SearchQualityQueryAnalytics[];
   topQueries: SearchQualityQueryAnalytics[];
+  engagedSearches: number;
+  returnedButIgnoredSearches: number;
+  engagementRate: number;
+  attributionWindowMinutes: number;
 }
 
 export interface SearchQuerySearcherAnalytics {
@@ -252,11 +246,16 @@ export interface SearchQueryAnalytics {
 export interface FunnelAnalytics {
   logins: number;
   searches: number;
-  listingViews: number;
   fellowshipViews: number;
-  favoritesOrSaves: number;
-  outreachClicks: number;
-  outreachOutcomes: number;
+  researchSearches: number;
+  researchProfileOpens: number;
+  researchSaves: number;
+  researchComparisons: number;
+  researchPlanUpdates: number;
+  sourceInspections: number;
+  qualifiedActions: number;
+  officialRouteAttempts: number;
+  applicationOpens: number;
 }
 
 export interface HighSearchLowResultsAction {
@@ -269,22 +268,8 @@ export interface HighSearchLowResultsAction {
   uniqueSearchers: number;
 }
 
-export interface ListingHighViewsLowFavoritesAction {
-  listingId: string;
-  title?: string;
-  ownerFirstName?: string;
-  ownerLastName?: string;
-  departments?: string[];
-  rangeViews: number;
-  rangeFavorites: number;
-  lifetimeViews: number;
-  lifetimeFavorites: number;
-  favoriteRate: number;
-}
-
 export interface ActionNeededAnalytics {
   highSearchLowResults: HighSearchLowResultsAction[];
-  listingsHighViewsLowFavorites: ListingHighViewsLowFavoritesAction[];
 }
 
 const USER_ANALYTICS_SORTS = new Set<AnalyticsUserSort>([
@@ -292,7 +277,7 @@ const USER_ANALYTICS_SORTS = new Set<AnalyticsUserSort>([
   'totalEvents',
   'logins',
   'searches',
-  'views',
+  'researchViews',
 ]);
 
 const CANONICAL_ACADEMIC_USER_TYPE = 'professor';
@@ -300,17 +285,14 @@ const LEGACY_ACADEMIC_USER_TYPES = [CANONICAL_ACADEMIC_USER_TYPE, 'faculty'];
 
 const appUserAccountMatch = (): PipelineStage.Match['$match'] => ({
   archived: { $ne: true },
-  dedupedIntoUserId: { $exists: false },
-  $or: [
-    { loginCount: { $gt: 0 } },
-    { lastLogin: { $exists: true, $ne: null } },
-    { lastLoginAt: { $exists: true, $ne: null } },
-    { lastActive: { $exists: true, $ne: null } },
-  ],
+  lastLoginAt: { $exists: true, $ne: null },
 });
 
 export const normalizeAnalyticsUserTypeBucket = (userType?: string | null): string => {
-  const normalized = String(userType || 'unknown').trim().toLowerCase() || 'unknown';
+  const normalized =
+    String(userType || 'unknown')
+      .trim()
+      .toLowerCase() || 'unknown';
   return LEGACY_ACADEMIC_USER_TYPES.includes(normalized)
     ? CANONICAL_ACADEMIC_USER_TYPE
     : normalized;
@@ -341,18 +323,8 @@ export const MAX_USER_ANALYTICS_SEARCH_LENGTH = 120;
 const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   logins: AnalyticsEventType.LOGIN,
   searches: AnalyticsEventType.SEARCH,
-  views: AnalyticsEventType.LISTING_VIEW,
+  researchViews: AnalyticsEventType.RESEARCH_VIEW,
   fellowshipViews: AnalyticsEventType.FELLOWSHIP_VIEW,
-  listingFavorites: AnalyticsEventType.LISTING_FAVORITE,
-  listingUnfavorites: AnalyticsEventType.LISTING_UNFAVORITE,
-  fellowshipFavorites: AnalyticsEventType.FELLOWSHIP_FAVORITE,
-  fellowshipUnfavorites: AnalyticsEventType.FELLOWSHIP_UNFAVORITE,
-  outreachClicks: AnalyticsEventType.OUTREACH_CLICK,
-  outreachOutcomes: AnalyticsEventType.OUTREACH_OUTCOME,
-  listingCreates: AnalyticsEventType.LISTING_CREATE,
-  listingUpdates: AnalyticsEventType.LISTING_UPDATE,
-  listingArchives: AnalyticsEventType.LISTING_ARCHIVE,
-  listingUnarchives: AnalyticsEventType.LISTING_UNARCHIVE,
   profileUpdates: AnalyticsEventType.PROFILE_UPDATE,
 };
 
@@ -370,7 +342,9 @@ const isFixtureNetid = (netid: string): boolean => {
   );
 };
 
-export const shouldSuppressBetaAnalyticsEvent = (params: Pick<LogEventParams, 'netid' | 'userType'>): boolean => {
+export const shouldSuppressBetaAnalyticsEvent = (
+  params: Pick<LogEventParams, 'netid' | 'userType'>,
+): boolean => {
   if (!isBetaRuntime()) {
     return false;
   }
@@ -379,7 +353,11 @@ export const shouldSuppressBetaAnalyticsEvent = (params: Pick<LogEventParams, 'n
     return false;
   }
 
-  return BETA_STUDENT_USER_TYPES.has(String(params.userType || '').trim().toLowerCase());
+  return BETA_STUDENT_USER_TYPES.has(
+    String(params.userType || '')
+      .trim()
+      .toLowerCase(),
+  );
 };
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -402,9 +380,6 @@ const normalizeAnalyticsEventNetid = (value: string): string => {
   }
   return normalizeAnalyticsNetid(trimmed);
 };
-
-const isAnalyticsUserNetid = (value: string): boolean =>
-  !ANALYTICS_NON_USER_NETIDS.has(value) && ANALYTICS_NETID_RE.test(value);
 
 const sanitizeAnalyticsUserType = (value: unknown): string => {
   if (typeof value !== 'string') return 'unknown';
@@ -429,12 +404,18 @@ const sanitizeResearchEntityId = (value: unknown): string | undefined => {
   return sanitized && sanitized.trim() !== '' ? sanitized.slice(0, 128) : undefined;
 };
 
+const sanitizeAnalyticsDedupeKey = (value: unknown): string | undefined =>
+  typeof value === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(value) ? value : undefined;
+
 const normalizeAnalyticsStoredObjectIdString = (value: unknown): string | undefined => {
   if (value instanceof Types.ObjectId) {
     return value.toHexString();
   }
   return normalizeAnalyticsObjectIdString(value);
 };
+
+const toAnalyticsObjectIds = (ids: string[]): Types.ObjectId[] =>
+  ids.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id));
 
 const validateUserAnalyticsSearch = (value?: string): string | undefined => {
   if (value === undefined) {
@@ -459,6 +440,21 @@ const clampLimit = (value: unknown, defaultValue: number, maxValue: number): num
   }
 
   return Math.min(Math.floor(parsed), maxValue);
+};
+
+const MAX_USER_ANALYTICS_OFFSET = 100_000;
+
+const clampOffset = (value: unknown): number => {
+  if (value === undefined || value === null || value === '') {
+    return 0;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error('Invalid offset');
+  }
+
+  return Math.min(Math.floor(parsed), MAX_USER_ANALYTICS_OFFSET);
 };
 
 const validateRangeDate = (value: Date | undefined, field: 'start' | 'end'): Date | undefined => {
@@ -514,6 +510,7 @@ const buildEventCountAccumulator = (eventType: AnalyticsEventType) => ({
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
   const limit = clampLimit(query.limit, 50, 200);
+  const offset = clampOffset(query.offset);
   const search = validateUserAnalyticsSearch(query.search);
   const sort = query.sort && USER_ANALYTICS_SORTS.has(query.sort) ? query.sort : 'lastActive';
   const direction = query.direction === 'asc' ? 1 : -1;
@@ -542,29 +539,41 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
     },
     {
       $lookup: {
-        from: 'users',
+        from: 'accounts',
         localField: '_id',
         foreignField: 'netid',
-        as: 'user',
+        as: 'account',
       },
     },
     {
       $unwind: {
-        path: '$user',
+        path: '$account',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $lookup: {
+        from: 'researchers',
+        localField: 'account._id',
+        foreignField: 'accountId',
+        as: 'researcher',
+      },
+    },
+    {
+      $unwind: {
+        path: '$researcher',
         preserveNullAndEmptyArrays: true,
       },
     },
     {
       $addFields: {
         netid: '$_id',
-        userType: { $ifNull: ['$user.userType', '$analyticsUserType'] },
-        fname: '$user.fname',
-        lname: '$user.lname',
-        email: '$user.email',
-        firstSeen: { $ifNull: ['$user.createdAt', '$firstEventAt'] },
-        lastActive: { $ifNull: ['$user.lastActive', '$lastEventAt'] },
-        lastLogin: { $ifNull: ['$user.lastLogin', '$user.lastLoginAt'] },
-        loginCount: { $ifNull: ['$user.loginCount', 0] },
+        userType: '$analyticsUserType',
+        displayName: '$researcher.displayName',
+        email: '$account.email',
+        firstSeen: { $ifNull: ['$account.createdAt', '$firstEventAt'] },
+        lastActive: { $ifNull: ['$account.lastLoginAt', '$lastEventAt'] },
+        lastLogin: '$account.lastLoginAt',
       },
     },
   ];
@@ -580,8 +589,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
     const searchRegex = { $regex: escapeRegex(search), $options: 'i' };
     postLookupMatch.$or = [
       { netid: searchRegex },
-      { fname: searchRegex },
-      { lname: searchRegex },
+      { displayName: searchRegex },
       { email: searchRegex },
     ];
   }
@@ -596,30 +604,18 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         _id: 0,
         netid: 1,
         userType: 1,
-        fname: 1,
-        lname: 1,
+        displayName: 1,
         email: 1,
         totalEvents: 1,
         logins: 1,
         searches: 1,
-        views: 1,
+        researchViews: 1,
         fellowshipViews: 1,
-        listingFavorites: 1,
-        listingUnfavorites: 1,
-        fellowshipFavorites: 1,
-        fellowshipUnfavorites: 1,
-        outreachClicks: 1,
-        outreachOutcomes: 1,
-        listingCreates: 1,
-        listingUpdates: 1,
-        listingArchives: 1,
-        listingUnarchives: 1,
         profileUpdates: 1,
         firstSeen: 1,
         lastEventAt: 1,
         lastActive: 1,
         lastLogin: 1,
-        loginCount: 1,
       },
     },
     {
@@ -630,7 +626,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
     },
     {
       $facet: {
-        users: [{ $limit: limit }],
+        users: offset > 0 ? [{ $skip: offset }, { $limit: limit }] : [{ $limit: limit }],
         total: [{ $count: 'count' }],
       },
     },
@@ -649,12 +645,16 @@ export const getUserAnalytics = async (
   query: AnalyticsUsersQuery = {},
 ): Promise<AnalyticsUsersResult> => {
   const limit = clampLimit(query.limit, 50, 200);
-  const [result] = await AnalyticsEvent.aggregate(userSummaryPipeline(undefined, { ...query, limit }));
+  const offset = clampOffset(query.offset);
+  const [result] = await AnalyticsEvent.aggregate(
+    userSummaryPipeline(undefined, { ...query, limit, offset }),
+  );
 
   return {
     users: result?.users ?? [],
     total: result?.total ?? 0,
     limit,
+    offset,
   };
 };
 
@@ -680,9 +680,35 @@ export const getUserAnalyticsDrilldown = async (
     .limit(limit)
     .lean();
 
+  const publicEvents = events.map(publicAnalyticsUserEvent);
+  const fellowshipIds = Array.from(
+    new Set(
+      publicEvents.map((event) => event.fellowshipId).filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const drilldownFellowships = fellowshipIds.length
+    ? await Fellowship.find({ _id: { $in: toAnalyticsObjectIds(fellowshipIds) } })
+        .select('title')
+        .lean()
+    : [];
+  const fellowshipTitleById = new Map(
+    (drilldownFellowships as Array<{ _id: unknown; title?: string }>).map(
+      (fellowship) => [String(fellowship._id), fellowship.title] as const,
+    ),
+  );
+  const enrichedEvents = publicEvents.map((event) => {
+    const fellowshipTitle = event.fellowshipId
+      ? fellowshipTitleById.get(event.fellowshipId)
+      : undefined;
+    return {
+      ...event,
+      ...(fellowshipTitle ? { fellowshipTitle } : {}),
+    };
+  });
+
   return {
     user,
-    events: events.map(publicAnalyticsUserEvent),
+    events: enrichedEvents,
     limit,
   };
 };
@@ -701,10 +727,10 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       return;
     }
 
-    const listingId = sanitizeAnalyticsObjectId(params.listingId);
     const fellowshipId = sanitizeAnalyticsObjectId(params.fellowshipId);
     const entityType = sanitizeResearchEntityType(params.entityType);
     const entityId = sanitizeResearchEntityId(params.entityId);
+    const dedupeKey = sanitizeAnalyticsDedupeKey(params.dedupeKey);
     const eventPayload: Record<string, unknown> = {
       eventType,
       netid,
@@ -714,47 +740,111 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       metadata: sanitizeAnalyticsMetadata(params.metadata),
       timestamp: new Date(),
     };
-    if (listingId) eventPayload.listingId = listingId;
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
     if (entityType) eventPayload.entityType = entityType;
     if (entityId) eventPayload.entityId = entityId;
+    if (dedupeKey) eventPayload.dedupeKey = dedupeKey;
 
-    await AnalyticsEvent.create(eventPayload);
-
-    const now = new Date();
-    const updateFields: any = {
-      lastActive: now,
-    };
-
-    if (eventType === AnalyticsEventType.LOGIN) {
-      updateFields.lastLogin = now;
-      updateFields.$inc = { loginCount: 1 };
-    }
-
-    if (isAnalyticsUserNetid(netid)) {
-      User.findOneAndUpdate({ netid }, updateFields).catch((err: any) => {
-        console.error('Error updating user metrics:', sanitizeLogValue(err));
-      });
+    if (dedupeKey) {
+      const result = await AnalyticsEvent.updateOne(
+        { netid, dedupeKey },
+        { $setOnInsert: eventPayload },
+        { upsert: true },
+      );
+      if (result.upsertedCount === 0) return;
+    } else {
+      await AnalyticsEvent.create(eventPayload);
     }
   } catch (error) {
     console.error('Error logging analytics event:', sanitizeLogValue(error));
   }
 };
 
-export const getSearchQualityAnalytics = async (
+const SEARCH_ATTRIBUTION_WINDOW_MINUTES = 30;
+
+const SEARCH_ATTRIBUTION_EVENT_TYPES = [
+  AnalyticsEventType.SEARCH,
+  AnalyticsEventType.FELLOWSHIP_VIEW,
+  AnalyticsEventType.RESEARCH_VIEW,
+  AnalyticsEventType.PATHWAY_SAVE,
+];
+
+const ANALYTICS_CACHE_TTL_MS = 30 * 1000;
+
+interface RangeCacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+const rangeCacheKey = (range: AnalyticsDateRange): string => {
+  const bucket = (value?: Date): string =>
+    value instanceof Date && !Number.isNaN(value.getTime())
+      ? String(Math.floor(value.getTime() / ANALYTICS_CACHE_TTL_MS))
+      : 'none';
+  return `${bucket(range.start)}:${bucket(range.end)}`;
+};
+
+const createRangeTtlCache = <T>() => {
+  const store = new Map<string, RangeCacheEntry<T>>();
+
+  const load = async (range: AnalyticsDateRange, compute: () => Promise<T>): Promise<T> => {
+    const key = rangeCacheKey(range);
+    const now = Date.now();
+    const cached = store.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.value;
+    }
+
+    const value = await compute();
+    store.set(key, { value, expiresAt: now + ANALYTICS_CACHE_TTL_MS });
+
+    for (const [existingKey, entry] of store) {
+      if (entry.expiresAt <= now) {
+        store.delete(existingKey);
+      }
+    }
+
+    return value;
+  };
+
+  const clear = (): void => {
+    store.clear();
+  };
+
+  return { load, clear };
+};
+
+const computeSearchQualityAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<SearchQualityAnalytics> => {
   const [result] = await AnalyticsEvent.aggregate([
     {
       $match: {
-        eventType: AnalyticsEventType.SEARCH,
+        eventType: { $in: SEARCH_ATTRIBUTION_EVENT_TYPES },
         ...buildRangeTimestampMatch(range),
+      },
+    },
+    {
+      $setWindowFields: {
+        partitionBy: '$netid',
+        sortBy: { timestamp: 1 },
+        output: {
+          forwardEvents: {
+            $push: { eventType: '$eventType', timestamp: '$timestamp' },
+            window: { range: [0, SEARCH_ATTRIBUTION_WINDOW_MINUTES], unit: 'minute' },
+          },
+        },
+      },
+    },
+    {
+      $match: {
+        eventType: AnalyticsEventType.SEARCH,
       },
     },
     {
       $addFields: {
         normalizedQuery: { $trim: { input: { $ifNull: ['$searchQuery', ''] } } },
-        searchEntityType: { $ifNull: ['$metadata.entityType', 'listing'] },
+        searchEntityType: { $ifNull: ['$metadata.entityType', 'unknown'] },
         resultCount: {
           $convert: {
             input: '$metadata.resultCount',
@@ -762,6 +852,77 @@ export const getSearchQualityAnalytics = async (
             onError: 0,
             onNull: 0,
           },
+        },
+        attributionEvents: {
+          $filter: {
+            input: '$forwardEvents',
+            as: 'event',
+            cond: {
+              $and: [
+                { $gt: ['$$event.timestamp', '$timestamp'] },
+                {
+                  $lte: [
+                    '$$event.timestamp',
+                    {
+                      $dateAdd: {
+                        startDate: '$timestamp',
+                        unit: 'minute',
+                        amount: SEARCH_ATTRIBUTION_WINDOW_MINUTES,
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      $addFields: {
+        nextSearchAt: {
+          $min: {
+            $map: {
+              input: {
+                $filter: {
+                  input: '$attributionEvents',
+                  as: 'event',
+                  cond: { $eq: ['$$event.eventType', AnalyticsEventType.SEARCH] },
+                },
+              },
+              as: 'event',
+              in: '$$event.timestamp',
+            },
+          },
+        },
+      },
+    },
+    {
+      $addFields: {
+        hasAttributedAction: {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: '$attributionEvents',
+                  as: 'event',
+                  cond: {
+                    $and: [
+                      { $ne: ['$$event.eventType', AnalyticsEventType.SEARCH] },
+                      {
+                        $or: [
+                          { $eq: [{ $type: '$nextSearchAt' }, 'missing'] },
+                          { $eq: ['$nextSearchAt', null] },
+                          { $lt: ['$$event.timestamp', '$nextSearchAt'] },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            0,
+          ],
         },
       },
     },
@@ -776,6 +937,20 @@ export const getSearchQualityAnalytics = async (
                 $sum: { $cond: [{ $lte: ['$resultCount', 0] }, 1, 0] },
               },
               uniqueSearchers: { $addToSet: '$netid' },
+              engagedSearches: {
+                $sum: {
+                  $cond: [{ $and: [{ $gt: ['$resultCount', 0] }, '$hasAttributedAction'] }, 1, 0],
+                },
+              },
+              returnedButIgnoredSearches: {
+                $sum: {
+                  $cond: [
+                    { $and: [{ $gt: ['$resultCount', 0] }, { $not: ['$hasAttributedAction'] }] },
+                    1,
+                    0,
+                  ],
+                },
+              },
             },
           },
           {
@@ -784,6 +959,8 @@ export const getSearchQualityAnalytics = async (
               totalSearches: 1,
               zeroResultSearches: 1,
               uniqueSearchers: { $size: '$uniqueSearchers' },
+              engagedSearches: 1,
+              returnedButIgnoredSearches: 1,
             },
           },
         ],
@@ -824,8 +1001,11 @@ export const getSearchQualityAnalytics = async (
     totalSearches: 0,
     zeroResultSearches: 0,
     uniqueSearchers: 0,
+    engagedSearches: 0,
+    returnedButIgnoredSearches: 0,
   };
-  const byQueryAndEntityType = (result?.byQueryAndEntityType ?? []) as SearchQualityQueryAnalytics[];
+  const byQueryAndEntityType = (result?.byQueryAndEntityType ??
+    []) as SearchQualityQueryAnalytics[];
   const topQueries = byQueryAndEntityType.slice(0, 10);
   const topZeroResultQueries = [...byQueryAndEntityType]
     .filter((query) => query.zeroResultSearches > 0)
@@ -848,6 +1028,13 @@ export const getSearchQualityAnalytics = async (
     byQueryAndEntityType,
     topZeroResultQueries,
     topQueries,
+    engagedSearches: overall.engagedSearches,
+    returnedButIgnoredSearches: overall.returnedButIgnoredSearches,
+    engagementRate:
+      overall.totalSearches > 0
+        ? Number((overall.engagedSearches / overall.totalSearches).toFixed(4))
+        : 0,
+    attributionWindowMinutes: 30,
   };
 };
 
@@ -896,15 +1083,29 @@ export const getSearchQueryAnalytics = async (
     },
     {
       $lookup: {
-        from: 'users',
+        from: 'accounts',
         localField: '_id.netid',
         foreignField: 'netid',
-        as: 'user',
+        as: 'account',
       },
     },
     {
       $unwind: {
-        path: '$user',
+        path: '$account',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $lookup: {
+        from: 'researchers',
+        localField: 'account._id',
+        foreignField: 'accountId',
+        as: 'researcher',
+      },
+    },
+    {
+      $unwind: {
+        path: '$researcher',
         preserveNullAndEmptyArrays: true,
       },
     },
@@ -913,10 +1114,9 @@ export const getSearchQueryAnalytics = async (
         _id: 0,
         query: '$_id.query',
         netid: '$_id.netid',
-        userType: { $ifNull: ['$user.userType', '$userType'] },
-        fname: '$user.fname',
-        lname: '$user.lname',
-        email: '$user.email',
+        userType: '$userType',
+        displayName: '$researcher.displayName',
+        email: '$account.email',
         searchCount: 1,
         zeroResultSearches: 1,
         resultCountTotal: 1,
@@ -936,8 +1136,7 @@ export const getSearchQueryAnalytics = async (
           $push: {
             netid: '$netid',
             userType: '$userType',
-            fname: '$fname',
-            lname: '$lname',
+            displayName: '$displayName',
             email: '$email',
             searchCount: '$searchCount',
             lastSearchedAt: '$lastSearchedAt',
@@ -974,53 +1173,94 @@ export const getSearchQueryAnalytics = async (
 export const getFunnelAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<FunnelAnalytics> => {
-  const rows = await AnalyticsEvent.aggregate([
+  const [facet] = await AnalyticsEvent.aggregate([
     {
       $match: {
         eventType: {
           $in: [
             AnalyticsEventType.LOGIN,
             AnalyticsEventType.SEARCH,
-            AnalyticsEventType.LISTING_VIEW,
             AnalyticsEventType.FELLOWSHIP_VIEW,
-            AnalyticsEventType.LISTING_FAVORITE,
-            AnalyticsEventType.FELLOWSHIP_FAVORITE,
-            AnalyticsEventType.OUTREACH_CLICK,
-            AnalyticsEventType.OUTREACH_OUTCOME,
+            AnalyticsEventType.RESEARCH_SEARCH,
+            AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+            AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
+            AnalyticsEventType.RESEARCH_SAVE,
+            AnalyticsEventType.RESEARCH_COMPARE,
+            AnalyticsEventType.RESEARCH_PLAN_UPDATE,
+            AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
           ],
         },
         ...buildRangeTimestampMatch(range),
       },
     },
     {
-      $group: {
-        _id: '$eventType',
-        uniqueNetids: { $addToSet: '$netid' },
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        eventType: '$_id',
-        count: { $size: '$uniqueNetids' },
+      $facet: {
+        uniqueActorsByEventType: [
+          { $group: { _id: { eventType: '$eventType', netid: '$netid' } } },
+          { $group: { _id: '$_id.eventType', count: { $sum: 1 } } },
+          { $project: { _id: 0, eventType: '$_id', count: 1 } },
+        ],
+        qualifiedActorsByCategory: [
+          { $match: { eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION } },
+          { $group: { _id: { actionCategory: '$metadata.actionCategory', netid: '$netid' } } },
+          {
+            $group: {
+              _id: '$_id.actionCategory',
+              uniqueNetids: { $addToSet: '$_id.netid' },
+            },
+          },
+          { $project: { _id: 0, actionCategory: '$_id', uniqueNetids: 1 } },
+        ],
       },
     },
   ]);
 
-  const counts = Object.fromEntries(
-    rows.map((row: { eventType: AnalyticsEventType; count: number }) => [row.eventType, row.count]),
-  ) as Partial<Record<AnalyticsEventType, number>>;
+  const uniqueActorsByEventType = (facet?.uniqueActorsByEventType ?? []) as Array<{
+    eventType: AnalyticsEventType;
+    count: number;
+  }>;
+  const qualifiedActorsByCategory = (facet?.qualifiedActorsByCategory ?? []) as Array<{
+    actionCategory?: string;
+    uniqueNetids: string[];
+  }>;
+
+  const counts = uniqueActorsByEventType.reduce(
+    (result: Partial<Record<AnalyticsEventType, number>>, row) => {
+      result[row.eventType] = row.count;
+      return result;
+    },
+    {},
+  );
+  const countQualifiedCategories = (categories: string[]) =>
+    new Set(
+      qualifiedActorsByCategory
+        .filter((row) => categories.includes(row.actionCategory || ''))
+        .flatMap((row) => row.uniqueNetids),
+    ).size;
+  const qualifiedActions = countQualifiedCategories([
+    'open_position',
+    'official_application',
+    'reviewed_route',
+    'qualified_participation',
+  ]);
 
   return {
     logins: counts[AnalyticsEventType.LOGIN] ?? 0,
     searches: counts[AnalyticsEventType.SEARCH] ?? 0,
-    listingViews: counts[AnalyticsEventType.LISTING_VIEW] ?? 0,
     fellowshipViews: counts[AnalyticsEventType.FELLOWSHIP_VIEW] ?? 0,
-    favoritesOrSaves:
-      (counts[AnalyticsEventType.LISTING_FAVORITE] ?? 0) +
-      (counts[AnalyticsEventType.FELLOWSHIP_FAVORITE] ?? 0),
-    outreachClicks: counts[AnalyticsEventType.OUTREACH_CLICK] ?? 0,
-    outreachOutcomes: counts[AnalyticsEventType.OUTREACH_OUTCOME] ?? 0,
+    researchSearches: counts[AnalyticsEventType.RESEARCH_SEARCH] ?? 0,
+    researchProfileOpens: counts[AnalyticsEventType.RESEARCH_PROFILE_OPEN] ?? 0,
+    researchSaves: counts[AnalyticsEventType.RESEARCH_SAVE] ?? 0,
+    researchComparisons: counts[AnalyticsEventType.RESEARCH_COMPARE] ?? 0,
+    researchPlanUpdates: counts[AnalyticsEventType.RESEARCH_PLAN_UPDATE] ?? 0,
+    sourceInspections: counts[AnalyticsEventType.RESEARCH_SOURCE_REVIEW] ?? 0,
+    qualifiedActions,
+    officialRouteAttempts: countQualifiedCategories([
+      'open_position',
+      'official_application',
+      'reviewed_route',
+    ]),
+    applicationOpens: countQualifiedCategories(['open_position', 'official_application']),
   };
 };
 
@@ -1042,89 +1282,24 @@ export const getActionNeededAnalytics = async (
     )
     .slice(0, 10);
 
-  const listingCollectionName = getListingModel().collection.name;
-  const listingsHighViewsLowFavorites = await AnalyticsEvent.aggregate([
-    {
-      $match: {
-        eventType: {
-          $in: [AnalyticsEventType.LISTING_VIEW, AnalyticsEventType.LISTING_FAVORITE],
-        },
-        listingId: { $exists: true, $ne: null },
-        ...buildRangeTimestampMatch(range),
-      },
-    },
-    {
-      $group: {
-        _id: '$listingId',
-        rangeViews: {
-          $sum: { $cond: [{ $eq: ['$eventType', AnalyticsEventType.LISTING_VIEW] }, 1, 0] },
-        },
-        rangeFavorites: {
-          $sum: {
-            $cond: [{ $eq: ['$eventType', AnalyticsEventType.LISTING_FAVORITE] }, 1, 0],
-          },
-        },
-      },
-    },
-    {
-      $lookup: {
-        from: listingCollectionName,
-        localField: '_id',
-        foreignField: '_id',
-        as: 'listing',
-      },
-    },
-    { $unwind: '$listing' },
-    {
-      $match: {
-        rangeViews: { $gte: 3 },
-        'listing.confirmed': true,
-        'listing.archived': false,
-      },
-    },
-    {
-      $addFields: {
-        favoriteRate: {
-          $cond: [{ $gt: ['$rangeViews', 0] }, { $divide: ['$rangeFavorites', '$rangeViews'] }, 0],
-        },
-      },
-    },
-    { $sort: { favoriteRate: 1, rangeViews: -1, 'listing.views': -1 } },
-    { $limit: 10 },
-    {
-      $project: {
-        _id: 0,
-        listingId: { $toString: '$_id' },
-        title: '$listing.title',
-        ownerFirstName: '$listing.ownerFirstName',
-        ownerLastName: '$listing.ownerLastName',
-        departments: '$listing.departments',
-        rangeViews: 1,
-        rangeFavorites: 1,
-        lifetimeViews: { $ifNull: ['$listing.views', 0] },
-        lifetimeFavorites: { $ifNull: ['$listing.favorites', 0] },
-        favoriteRate: { $round: ['$favoriteRate', 4] },
-      },
-    },
-  ]);
-
   return {
     highSearchLowResults,
-    listingsHighViewsLowFavorites,
   };
 };
 
-export const getAnalytics = async () => {
+const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const rangeTimestampMatch = buildRangeTimestampMatch(range);
 
   const visitorStats = await AnalyticsEvent.aggregate([
     {
       $match: {
         eventType: { $in: [AnalyticsEventType.LOGIN, AnalyticsEventType.VISITOR] },
+        ...rangeTimestampMatch,
       },
     },
     {
@@ -1146,12 +1321,13 @@ export const getAnalytics = async () => {
         lifetimeVisitorsByType: [
           {
             $group: {
-              _id: { netid: '$netid', userType: '$userType' },
+              _id: '$netid',
+              userType: { $first: '$userType' },
             },
           },
           {
             $group: {
-              _id: '$_id.userType',
+              _id: '$userType',
               count: { $sum: 1 },
             },
           },
@@ -1190,12 +1366,13 @@ export const getAnalytics = async () => {
           },
           {
             $group: {
-              _id: { netid: '$netid', userType: '$userType' },
+              _id: '$netid',
+              userType: { $first: '$userType' },
             },
           },
           {
             $group: {
-              _id: '$_id.userType',
+              _id: '$userType',
               count: { $sum: 1 },
             },
           },
@@ -1234,12 +1411,13 @@ export const getAnalytics = async () => {
           },
           {
             $group: {
-              _id: { netid: '$netid', userType: '$userType' },
+              _id: '$netid',
+              userType: { $first: '$userType' },
             },
           },
           {
             $group: {
-              _id: '$_id.userType',
+              _id: '$userType',
               count: { $sum: 1 },
             },
           },
@@ -1290,6 +1468,7 @@ export const getAnalytics = async () => {
   ]);
 
   const engagementStats = await AnalyticsEvent.aggregate([
+    { $match: { ...rangeTimestampMatch } },
     {
       $facet: {
         searchStats: [
@@ -1315,7 +1494,6 @@ export const getAnalytics = async () => {
           {
             $match: {
               eventType: AnalyticsEventType.SEARCH,
-              timestamp: { $gte: thirtyDaysAgo },
               searchQuery: { $exists: true, $ne: '' },
             },
           },
@@ -1335,82 +1513,7 @@ export const getAnalytics = async () => {
             },
           },
         ],
-        viewStats: [
-          {
-            $match: {
-              eventType: AnalyticsEventType.LISTING_VIEW,
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              totalViews: { $sum: 1 },
-              viewsLast7Days: {
-                $sum: { $cond: [{ $gte: ['$timestamp', sevenDaysAgo] }, 1, 0] },
-              },
-              viewsToday: {
-                $sum: { $cond: [{ $gte: ['$timestamp', today] }, 1, 0] },
-              },
-            },
-          },
-        ],
-        favoriteStats: [
-          {
-            $match: {
-              eventType: {
-                $in: [AnalyticsEventType.LISTING_FAVORITE, AnalyticsEventType.LISTING_UNFAVORITE],
-              },
-            },
-          },
-          {
-            $group: {
-              _id: '$eventType',
-              total: { $sum: 1 },
-              last7Days: {
-                $sum: { $cond: [{ $gte: ['$timestamp', sevenDaysAgo] }, 1, 0] },
-              },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              eventType: '$_id',
-              total: 1,
-              last7Days: 1,
-            },
-          },
-        ],
-        trendingListings: [
-          {
-            $match: {
-              eventType: AnalyticsEventType.LISTING_VIEW,
-              timestamp: { $gte: thirtyDaysAgo },
-              listingId: { $exists: true },
-            },
-          },
-          {
-            $group: {
-              _id: '$listingId',
-              views: { $sum: 1 },
-              uniqueViewers: { $addToSet: '$netid' },
-            },
-          },
-          {
-            $project: {
-              listingId: '$_id',
-              views: 1,
-              uniqueViewers: { $size: '$uniqueViewers' },
-            },
-          },
-          { $sort: { views: -1 } },
-          { $limit: 10 },
-        ],
         userActivityStats: [
-          {
-            $match: {
-              timestamp: { $gte: sevenDaysAgo },
-            },
-          },
           {
             $group: {
               _id: '$netid',
@@ -1427,11 +1530,6 @@ export const getAnalytics = async () => {
         ],
         mostActiveUsers: [
           {
-            $match: {
-              timestamp: { $gte: thirtyDaysAgo },
-            },
-          },
-          {
             $group: {
               _id: { netid: '$netid', userType: '$userType' },
               eventCount: { $sum: 1 },
@@ -1440,11 +1538,40 @@ export const getAnalytics = async () => {
           { $sort: { eventCount: -1 } },
           { $limit: 10 },
           {
+            $lookup: {
+              from: 'accounts',
+              localField: '_id.netid',
+              foreignField: 'netid',
+              as: 'account',
+            },
+          },
+          {
+            $unwind: {
+              path: '$account',
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
+            $lookup: {
+              from: 'researchers',
+              localField: 'account._id',
+              foreignField: 'accountId',
+              as: 'researcher',
+            },
+          },
+          {
+            $unwind: {
+              path: '$researcher',
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
             $project: {
               _id: 0,
               userId: '$_id.netid',
               userType: '$_id.userType',
               eventCount: 1,
+              displayName: '$researcher.displayName',
             },
           },
         ],
@@ -1458,11 +1585,21 @@ export const getAnalytics = async () => {
     AnalyticsEventType.WAYS_IN_CLICK,
     AnalyticsEventType.CONTACT_ROUTE_CLICK,
     AnalyticsEventType.SOURCE_LINK_CLICK,
+    AnalyticsEventType.RESEARCH_SEARCH,
+    AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+    AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+    AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
+    AnalyticsEventType.RESEARCH_FILTER_CHANGE,
+    AnalyticsEventType.RESEARCH_SAVE,
+    AnalyticsEventType.RESEARCH_COMPARE,
+    AnalyticsEventType.RESEARCH_PLAN_UPDATE,
+    AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
   ];
   const researchStats = await AnalyticsEvent.aggregate([
     {
       $match: {
         eventType: { $in: researchEventTypes },
+        ...rangeTimestampMatch,
       },
     },
     {
@@ -1533,7 +1670,6 @@ export const getAnalytics = async () => {
           {
             $match: {
               eventType: AnalyticsEventType.RESEARCH_VIEW,
-              timestamp: { $gte: thirtyDaysAgo },
               entityType: { $exists: true, $ne: null },
               entityId: { $exists: true, $ne: '' },
             },
@@ -1561,159 +1697,7 @@ export const getAnalytics = async () => {
     },
   ]);
 
-  const listingStats = await getListingModel().aggregate([
-    {
-      $facet: {
-        overview: [
-          {
-            $group: {
-              _id: null,
-              total: { $sum: 1 },
-              active: {
-                $sum: {
-                  $cond: [
-                    { $and: [{ $eq: ['$archived', false] }, { $eq: ['$confirmed', true] }] },
-                    1,
-                    0,
-                  ],
-                },
-              },
-              archived: { $sum: { $cond: ['$archived', 1, 0] } },
-              unconfirmed: { $sum: { $cond: ['$confirmed', 0, 1] } },
-            },
-          },
-        ],
-        newListingsLast7Days: [
-          {
-            $match: {
-              createdAt: { $gte: sevenDaysAgo },
-            },
-          },
-          { $count: 'count' },
-        ],
-        newListingsToday: [
-          {
-            $match: {
-              createdAt: { $gte: today },
-            },
-          },
-          { $count: 'count' },
-        ],
-        listingsByDepartment: [
-          { $match: { archived: false, confirmed: true } },
-          { $unwind: '$departments' },
-          {
-            $group: {
-              _id: '$departments',
-              count: { $sum: 1 },
-            },
-          },
-          { $sort: { count: -1 } },
-          {
-            $project: {
-              _id: 0,
-              department: '$_id',
-              count: 1,
-            },
-          },
-        ],
-        listingsPerProfessor: [
-          { $match: { archived: false, confirmed: true } },
-          {
-            $group: {
-              _id: {
-                ownerId: '$ownerId',
-                ownerFirstName: '$ownerFirstName',
-                ownerLastName: '$ownerLastName',
-              },
-              count: { $sum: 1 },
-            },
-          },
-          { $sort: { count: -1 } },
-          { $limit: 20 },
-          {
-            $project: {
-              _id: 0,
-              professorName: {
-                $concat: ['$_id.ownerFirstName', ' ', '$_id.ownerLastName'],
-              },
-              netId: '$_id.ownerId',
-              count: 1,
-            },
-          },
-        ],
-        viewsAndFavorites: [
-          {
-            $group: {
-              _id: null,
-              totalViews: { $sum: '$views' },
-              totalFavorites: { $sum: '$favorites' },
-              avgViews: { $avg: '$views' },
-              avgFavorites: { $avg: '$favorites' },
-            },
-          },
-        ],
-        topViewedListings: [
-          { $match: { confirmed: true, archived: false } },
-          { $sort: { views: -1 } },
-          { $limit: 10 },
-          {
-            $project: {
-              _id: 1,
-              title: 1,
-              ownerFirstName: 1,
-              ownerLastName: 1,
-              views: 1,
-              departments: 1,
-            },
-          },
-        ],
-        topFavoritedListings: [
-          { $match: { confirmed: true, archived: false } },
-          { $sort: { favorites: -1 } },
-          { $limit: 10 },
-          {
-            $project: {
-              _id: 1,
-              title: 1,
-              ownerFirstName: 1,
-              ownerLastName: 1,
-              favorites: 1,
-              departments: 1,
-            },
-          },
-        ],
-        viewsByDepartment: [
-          { $match: { confirmed: true, archived: false } },
-          { $unwind: '$departments' },
-          {
-            $group: {
-              _id: '$departments',
-              totalViews: { $sum: '$views' },
-              listingCount: { $sum: 1 },
-              avgViews: { $avg: '$views' },
-            },
-          },
-          { $sort: { totalViews: -1 } },
-          {
-            $project: {
-              _id: 0,
-              department: '$_id',
-              totalViews: 1,
-              listingCount: 1,
-              avgViews: { $round: ['$avgViews', 2] },
-            },
-          },
-        ],
-        listingsWithZeroViews: [
-          { $match: { views: 0, confirmed: true, archived: false } },
-          { $count: 'count' },
-        ],
-      },
-    },
-  ]);
-
-  const userStats = await User.aggregate([
+  const userStats = await Account.aggregate([
     {
       $match: appUserAccountMatch(),
     },
@@ -1724,25 +1708,11 @@ export const getAnalytics = async () => {
             $group: {
               _id: null,
               total: { $sum: 1 },
-              confirmed: { $sum: { $cond: ['$userConfirmed', 1, 0] } },
+              confirmed: { $sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] } },
             },
           },
         ],
-        byType: [
-          {
-            $group: {
-              _id: '$userType',
-              count: { $sum: 1 },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              userType: '$_id',
-              count: 1,
-            },
-          },
-        ],
+        byType: [{ $match: { _id: { $exists: false } } }],
         newUsersLast7Days: [
           {
             $match: {
@@ -1759,26 +1729,7 @@ export const getAnalytics = async () => {
           },
           { $count: 'count' },
         ],
-        newUsersTodayByType: [
-          {
-            $match: {
-              createdAt: { $gte: today },
-            },
-          },
-          {
-            $group: {
-              _id: '$userType',
-              count: { $sum: 1 },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              userType: '$_id',
-              count: 1,
-            },
-          },
-        ],
+        newUsersTodayByType: [{ $match: { _id: { $exists: false } } }],
       },
     },
   ]);
@@ -1788,25 +1739,32 @@ export const getAnalytics = async () => {
   // so the dashboard leads with how complete and fresh that corpus is.
   // "Active" means not archived (archived: { $ne: true }) — the canonical
   // active filter for research entities.
+  const activeResearchEntityMatch = { $match: { archived: { $ne: true } } };
   const researchEntityStats = await ResearchEntity.aggregate([
-    { $match: { archived: { $ne: true } } },
     {
       $facet: {
-        overview: [{ $group: { _id: null, total: { $sum: 1 } } }],
+        overview: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              active: { $sum: { $cond: [{ $ne: ['$archived', true] }, 1, 0] } },
+            },
+          },
+        ],
         byType: [
+          activeResearchEntityMatch,
           { $group: { _id: '$entityType', count: { $sum: 1 } } },
           { $sort: { count: -1 } },
           { $project: { _id: 0, entityType: '$_id', count: 1 } },
         ],
         byVisibilityTier: [
+          activeResearchEntityMatch,
           { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
           { $project: { _id: 0, tier: '$_id', count: 1 } },
         ],
-        byOpenness: [
-          { $group: { _id: '$opennessStatusCache', count: { $sum: 1 } } },
-          { $project: { _id: 0, status: '$_id', count: 1 } },
-        ],
         freshness: [
+          activeResearchEntityMatch,
           {
             $group: {
               _id: null,
@@ -1839,12 +1797,10 @@ export const getAnalytics = async () => {
           },
         ],
         scholarly: [
+          activeResearchEntityMatch,
           {
             $group: {
               _id: null,
-              withRecentPapers: {
-                $sum: { $cond: [{ $gt: ['$recentPaperCount', 0] }, 1, 0] },
-              },
               withRecentGrants: {
                 $sum: { $cond: [{ $gt: ['$recentGrantCount', 0] }, 1, 0] },
               },
@@ -1855,37 +1811,106 @@ export const getAnalytics = async () => {
     },
   ]);
 
-  const archivedResearchEntityCount = await ResearchEntity.countDocuments({ archived: true });
-
   const visitors = visitorStats[0];
   const engagement = engagementStats[0];
-  const listings = listingStats[0];
   const users = userStats[0];
   const research = researchStats[0];
   const researchEntities = researchEntityStats[0];
-  const activeResearchEntityCount = researchEntities.overview[0]?.total || 0;
+  const researchEntityOverview = researchEntities.overview[0] || { total: 0, active: 0 };
+  const activeResearchEntityCount = researchEntityOverview.active || 0;
+  const totalResearchEntityCount = researchEntityOverview.total || 0;
 
-  const trendingListingIds = engagement.trendingListings
-    .map((t: any) => normalizeAnalyticsStoredObjectIdString(t.listingId))
-    .filter((id: string | undefined): id is string => Boolean(id));
-  const trendingListingsData = await getListingModel()
-    .find({ _id: { $in: trendingListingIds.map((id: string) => new Types.ObjectId(id)) } })
-    .lean();
-  const trendingListingsById = new Map(
-    trendingListingsData
-      .map((listing: any) => [normalizeAnalyticsStoredObjectIdString(listing._id), listing] as const)
-      .filter(([id]) => Boolean(id)),
+  const topEntitiesRaw = (research.topEntities || []) as Array<{
+    entityType: string;
+    entityId: string;
+    views: number;
+    uniqueViewers: number;
+  }>;
+  const topEntityIdsFor = (entityType: string): string[] =>
+    topEntitiesRaw
+      .filter((entity) => entity.entityType === entityType)
+      .map((entity) => entity.entityId);
+  const [topResearchEntityDocs, topFellowshipDocs, topProfileDocs] = await Promise.all([
+    topEntityIdsFor('research_entity').length
+      ? ResearchEntity.find({
+          _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('research_entity')) },
+        })
+          .select('name displayName slug')
+          .lean()
+      : Promise.resolve([]),
+    topEntityIdsFor('fellowship').length
+      ? Fellowship.find({ _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('fellowship')) } })
+          .select('title')
+          .lean()
+      : Promise.resolve([]),
+    topEntityIdsFor('profile').length
+      ? (async () => {
+          const accounts = await Account.find({ netid: { $in: topEntityIdsFor('profile') } })
+            .select('netid _id')
+            .lean();
+          const netidByAccountId = new Map(
+            accounts.map((account: any) => [String(account._id), account.netid] as const),
+          );
+          const researchers = await Researcher.find({
+            accountId: { $in: accounts.map((account: any) => account._id) },
+          })
+            .select('accountId displayName')
+            .lean();
+          return researchers
+            .map((researcher: any) => ({
+              netid: netidByAccountId.get(String(researcher.accountId)),
+              fname: researcher.displayName,
+              lname: '',
+            }))
+            .filter((row) => Boolean(row.netid));
+        })()
+      : Promise.resolve([]),
+  ]);
+  const researchEntityById = new Map(
+    (
+      topResearchEntityDocs as Array<{
+        _id: unknown;
+        name?: string;
+        displayName?: string;
+        slug?: string;
+      }>
+    ).map((doc) => [String(doc._id), doc] as const),
   );
-  const enrichedTrending = engagement.trendingListings.map((t: any) => {
-    const listingId = normalizeAnalyticsStoredObjectIdString(t.listingId);
-    const listing = listingId ? trendingListingsById.get(listingId) : undefined;
+  const fellowshipTitleById = new Map(
+    (topFellowshipDocs as Array<{ _id: unknown; title?: string }>).map(
+      (doc) => [String(doc._id), doc.title] as const,
+    ),
+  );
+  const profileByNetid = new Map(
+    (topProfileDocs as Array<{ netid: string; fname?: string; lname?: string }>).map(
+      (doc) => [doc.netid, doc] as const,
+    ),
+  );
+  const enrichedTopEntities = topEntitiesRaw.map((entity) => {
+    let name: string | undefined;
+    let href: string | undefined;
+    switch (entity.entityType) {
+      case 'research_entity': {
+        const doc = researchEntityById.get(entity.entityId);
+        name = doc?.displayName || doc?.name;
+        if (doc?.slug) href = `/research/${doc.slug}`;
+        break;
+      }
+      case 'fellowship': {
+        name = fellowshipTitleById.get(entity.entityId);
+        break;
+      }
+      case 'profile': {
+        const doc = profileByNetid.get(entity.entityId);
+        name = [doc?.fname, doc?.lname].filter(Boolean).join(' ') || undefined;
+        href = `/profile/${entity.entityId}`;
+        break;
+      }
+    }
     return {
-      ...t,
-      listingId,
-      title: listing?.title,
-      ownerFirstName: listing?.ownerFirstName,
-      ownerLastName: listing?.ownerLastName,
-      departments: listing?.departments,
+      ...entity,
+      ...(name ? { name } : {}),
+      ...(href ? { href } : {}),
     };
   });
 
@@ -1916,32 +1941,14 @@ export const getAnalytics = async () => {
         searchesToday: 0,
       },
       topSearchQueries: engagement.topSearchQueries || [],
-      views: engagement.viewStats[0] || { totalViews: 0, viewsLast7Days: 0, viewsToday: 0 },
-      favorites: engagement.favoriteStats || [],
-      trendingListings: enrichedTrending || [],
       userActivity: engagement.userActivityStats[0] || { activeUsers: 0, avgEventsPerUser: 0 },
       mostActiveUsers: engagement.mostActiveUsers || [],
-      totalViewsFromCounters: listings.viewsAndFavorites[0]?.totalViews || 0,
-      totalFavoritesFromCounters: listings.viewsAndFavorites[0]?.totalFavorites || 0,
-      avgViews: listings.viewsAndFavorites[0]?.avgViews || 0,
-      avgFavorites: listings.viewsAndFavorites[0]?.avgFavorites || 0,
-      viewsByDepartment: listings.viewsByDepartment || [],
     },
     research: {
       byEventType: research.byEventType || [],
       byEntityType: research.byEntityType || [],
       byUserType: combineAnalyticsUserTypeCounts(research.byUserType || []),
-      topEntities: research.topEntities || [],
-    },
-    listings: {
-      overview: listings.overview[0] || { total: 0, active: 0, archived: 0, unconfirmed: 0 },
-      newListingsLast7Days: listings.newListingsLast7Days[0]?.count || 0,
-      newListingsToday: listings.newListingsToday[0]?.count || 0,
-      byDepartment: listings.listingsByDepartment || [],
-      byProfessor: listings.listingsPerProfessor || [],
-      listingsWithZeroViews: listings.listingsWithZeroViews[0]?.count || 0,
-      topViewedListings: listings.topViewedListings || [],
-      topFavoritedListings: listings.topFavoritedListings || [],
+      topEntities: enrichedTopEntities,
     },
     users: {
       overview: users.overview[0] || { total: 0, confirmed: 0 },
@@ -1953,12 +1960,10 @@ export const getAnalytics = async () => {
     researchEntities: {
       overview: {
         active: activeResearchEntityCount,
-        archived: archivedResearchEntityCount,
-        total: activeResearchEntityCount + archivedResearchEntityCount,
+        total: totalResearchEntityCount,
       },
       byType: researchEntities.byType || [],
       byVisibilityTier: researchEntities.byVisibilityTier || [],
-      byOpenness: researchEntities.byOpenness || [],
       freshness: researchEntities.freshness[0] || {
         observedLast7Days: 0,
         observedLast30Days: 0,
@@ -1966,10 +1971,27 @@ export const getAnalytics = async () => {
         staleOver90Days: 0,
       },
       scholarly: researchEntities.scholarly[0] || {
-        withRecentPapers: 0,
         withRecentGrants: 0,
       },
     },
     timestamp: now.toISOString(),
   };
+};
+
+type AnalyticsResult = Awaited<ReturnType<typeof computeAnalytics>>;
+
+const analyticsCache = createRangeTtlCache<AnalyticsResult>();
+const searchQualityCache = createRangeTtlCache<SearchQualityAnalytics>();
+
+export const getSearchQualityAnalytics = (
+  range: AnalyticsDateRange = {},
+): Promise<SearchQualityAnalytics> =>
+  searchQualityCache.load(range, () => computeSearchQualityAnalytics(range));
+
+export const getAnalytics = (range: AnalyticsDateRange = {}): Promise<AnalyticsResult> =>
+  analyticsCache.load(range, () => computeAnalytics(range));
+
+export const invalidateAnalyticsCaches = (): void => {
+  analyticsCache.clear();
+  searchQualityCache.clear();
 };

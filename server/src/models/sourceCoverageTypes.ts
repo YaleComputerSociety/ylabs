@@ -8,10 +8,12 @@
 export const sourceCoverageArtifactTypes = [
   'Fellowship',
   'ResearchEntity',
+  'ResearchEntityMember',
   'EntryPathway',
   'AccessSignal',
   'ContactRoute',
   'PostedOpportunity',
+  'UndergraduateLogisticsClaim',
   'Observation',
 ] as const;
 
@@ -36,13 +38,17 @@ export const sourceCoverageEvidenceCategories = [
   'RESEARCH_SEMINAR',
   'FELLOWSHIP_COMPATIBILITY',
   'PAST_UNDERGRADS',
+  'UNDERGRAD_STUDENT_LEVEL',
+  'UNDERGRAD_COMPENSATION',
+  'UNDERGRAD_TIME_COMMITMENT',
+  'UNDERGRAD_MODALITY',
+  'UNDERGRAD_CURRENT_AVAILABILITY',
   'POSTED_OPENING',
   'FUNDING_ACTIVITY',
   'PUBLICATIONS',
 ] as const;
 
-export type SourceCoverageEvidenceCategory =
-  (typeof sourceCoverageEvidenceCategories)[number];
+export type SourceCoverageEvidenceCategory = (typeof sourceCoverageEvidenceCategories)[number];
 
 export const sourceCoverageTiers = [
   'PRIMARY_OFFICIAL',

@@ -3,8 +3,8 @@
  *
  * Usage:
  *   npx tsx server/src/scrapers/cli.ts list
- *   npx tsx server/src/scrapers/cli.ts run --source openalex [flags] [--output <path>]
- *   npx tsx server/src/scrapers/cli.ts cron --source openalex --release
+ *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [flags] [--output <path>]
+ *   npx tsx server/src/scrapers/cli.ts cron --source nih-reporter --release
  *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--confirm-materialize] [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts report --run <runId> [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts prune-observations [--apply --confirm-observation-prune] [--output <path>]
@@ -18,6 +18,11 @@
  *   --only <keys>   Comma-separated source-specific keys/netids to process
  *   --since <date>  Restrict scrapers that support recency filters
  *   --ignore-work-planner  Bypass freshness skips for full audit/backfill runs
+ *   --exhaustive     Process every eligible entity instead of source safety defaults
+ *   --force-llm      Re-run paid LLM extraction even when source content is unchanged
+ *   --logistics-production  Allow lab-microsite-undergrad-llm to emit corpus-wide
+ *                    undergraduate logistics claims outside the staging allowlist.
+ *                    Requires CONFIRM_LOGISTICS_ACQUISITION=true in the environment.
  *   --auto-materialize   After successful run, immediately materialize observations
  */
 import dotenv from 'dotenv';
@@ -25,11 +30,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
+import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
 import { materializeFromRun } from './entityMaterializer';
 import { getScrapeRunReport } from './runReport';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { resolveScraperEnvironment, summarizeMongoUrl } from './scraperEnvironment';
 import { createCronRunnerDependencies, runScraperCron } from './cronRunner';
+import { markSourceCrawled } from './sourceCrawlStamp';
 import { pruneSupersededObservations } from './observationRetention';
 import { writeOptionalJsonOutput } from './scraperCliOutput';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -57,6 +64,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export async function main(): Promise<void> {
+  installScraperHostConcurrencyInterceptor();
   const { command, flags } = parseArgs(process.argv);
 
   if (command === 'help' || command === '--help' || command === '-h') {
@@ -69,7 +77,7 @@ ylabs scraper CLI
   materialize --run <runId> [--output <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
-  prune-observations [flags]                 Prune old superseded Observation rows
+  prune-observations [flags]                 Prune old unreferenced superseded Observation rows
 
 Run flags:
   --dry-run            Skip Observation writes (preview only)
@@ -79,14 +87,18 @@ Run flags:
   --offset <n>         Skip first n ordered entities
   --only <keys>        Comma-separated source-specific keys/netids
   --since <date>       Restrict scrapers that support recency filters
-  --discover-openalex-authors
-                       For openalex, allow expensive name-only author discovery
-  --max-openalex-pages-per-author <n>
-                       For openalex, cap cursor pages per resolved author
   --manual-recipient-csv-dir <path>
                        For undergrad-fellowships-recipients, read <programKey>.csv files
   --ignore-work-planner
                        Bypass freshness skips for full audit/backfill runs
+  --exhaustive         Process every eligible entity instead of source safety defaults
+  --force-llm          Re-run paid LLM extraction even when source content is unchanged
+  --source-concurrency <n>
+                       Max targets a source fetches/extracts in parallel (default 5)
+  --logistics-production
+                       Allow lab-microsite-undergrad-llm to emit corpus-wide
+                       undergraduate logistics claims outside the staging allowlist.
+                       Requires CONFIRM_LOGISTICS_ACQUISITION=true in the environment.
   --auto-materialize   Materialize immediately after a successful run
   --output <path>      Save the ScrapeRun report JSON
 
@@ -109,6 +121,7 @@ Prune flags:
   --keep-runs <n>      Keep observations from the latest n runs per source (default 3)
   --source <name>      Restrict pruning to one source
   --output <path>      Save the prune report JSON
+  Durable Observation references are always preserved.
 
 Environment guardrails:
   SCRAPER_ENV=development|beta|production
@@ -140,9 +153,7 @@ Environment guardrails:
 
   try {
     const connectedDbLabel = (): string =>
-      mongoose.connection.db?.databaseName ||
-      mongoose.connection.name ||
-      summarizeMongoUrl(url);
+      mongoose.connection.db?.databaseName || mongoose.connection.name || summarizeMongoUrl(url);
 
     if (command === 'run') {
       if (preflight.command !== 'run') throw new Error('Invalid run preflight state.');
@@ -157,6 +168,10 @@ Environment guardrails:
       const { runId, result } = await orchestrator.run(sourceName, guard.options);
       console.log(`\nScrapeRun ${runId} finished:`);
       console.log(JSON.stringify(result, null, 2));
+
+      if (!guard.options.dryRun) {
+        await markSourceCrawled(sourceName, new Date());
+      }
 
       if (guard.autoMaterialize && !guard.options.dryRun) {
         console.log(`\nMaterializing observations from run ${runId}...`);
@@ -264,7 +279,9 @@ Environment guardrails:
       let visibilityGate: unknown | undefined;
       if (!guard.options.dryRun && result.errors === 0) {
         const sourceName = (report as any).run?.sourceName;
-        console.log(`\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`);
+        console.log(
+          `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,
+        );
         visibilityGate = await runStudentVisibilityGate({
           collection: 'all',
           mode: 'apply',

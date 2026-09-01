@@ -1,27 +1,47 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
-import { ResearchGroupMember } from '../../models/researchGroupMember';
 import { Observation } from '../../models/observation';
-import { User } from '../../models/user';
+import { Account } from '../../models/account';
+import { Researcher } from '../../models/researcher';
+import {
+  getResearchEntityRosterByEntityId,
+  type ResearchEntityRosterEntry,
+} from '../../services/researchEntityMembershipAccessor';
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
+import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
+import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import {
+  canonicalLegacyResearchHomeUrl,
+  isCustomYaleResearchHomeSubdomain,
+  isProfileOrPeopleDirectoryPath,
+  sourceUrlToResearchHomeWebsiteUrl,
+} from '../../utils/researchHomeWebsiteUrl';
 import {
   assessResearchEntityDescriptionQuality,
   deriveShortDescriptionFromFullDescription,
 } from '../../utils/researchEntityDescriptionQuality';
 import {
+  startsWithRoleTitleHeaderSentence,
+  stripLeadingRoleTitleHeaderSentences,
+} from '../../utils/descriptionHygiene';
+import {
   cleanPublicProfileBio,
   isLikelyPersonUrl,
-  isLikelySameNameContaminatedProfile,
   stripTrailingOfficialProfileUpdateMetadata,
 } from '../../services/profileService';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  isProseNotTopicPhrase,
+  isResearchSectionLabel,
+  RESEARCH_SECTION_LABEL_PREFIX,
+} from '../researchAreaLabels';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -43,6 +63,7 @@ const SOURCE_URL_WEBSITE_BACKFILL_KEY = 'source-url-website-backfill';
 const PROFILE_BIO_MIN_LENGTH = 120;
 const OFFICIAL_PROFILE_BIO_MAX_LENGTH = 1200;
 const VISIBLE_PROFILE_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'];
+const LEAD_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
 export const PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD =
   'profileDescriptionSuppressedByPreferredSourceNames';
 const PROFILE_DESCRIPTION_FIELDS = ['description', 'fullDescription', 'shortDescription'];
@@ -78,6 +99,7 @@ interface OfficialProfileIdentityOptions {
     fname?: string;
     lname?: string;
     email?: string;
+    netid?: string;
   }>;
 }
 
@@ -96,8 +118,8 @@ export interface OfficialProfileResearchHome {
   name: string;
   rawName: string;
   url: string;
-  kind: 'center' | 'institute' | 'lab' | 'program' | 'initiative';
-  entityType: 'CENTER' | 'INSTITUTE' | 'LAB' | 'PROGRAM' | 'INITIATIVE';
+  kind: 'center' | 'institute' | 'lab' | 'initiative';
+  entityType: 'CENTER' | 'INSTITUTE' | 'LAB' | 'INITIATIVE';
   score: number;
 }
 
@@ -151,31 +173,6 @@ const absolutize = (href: string, base: string): string => {
     return href;
   }
 };
-
-function canonicalLegacyResearchHomeUrl(url: URL): URL {
-  const path = url.pathname.replace(/\/+$/, '/').toLowerCase();
-  if (url.hostname === 'rjohnwilliams.wordpress.com') {
-    return new URL('https://campuspress.yale.edu/rjohnwilliams/');
-  }
-  if (url.hostname === 'slavlab.yale.edu') {
-    return new URL('https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/');
-  }
-  if (url.hostname === 'squirrel.commons.yale.edu') {
-    return new URL('https://campuspress.yale.edu/squirrel/people/elena-gracheva-lab/');
-  }
-  if (url.hostname === 'mrrc.yale.edu') {
-    return new URL('https://medicine.yale.edu/biomedical-imaging-institute/core-facilities/mr-core/');
-  }
-  if (url.hostname === 'childstudycenter.yale.edu' && path === '/research/del/') {
-    return new URL(
-      'https://medicine.yale.edu/childstudy/research/collaborative-labs/developmental-electrophysiology-lab/',
-    );
-  }
-  if (url.hostname === 'medicine.yale.edu' && path === '/cnrr/index.aspx') {
-    return new URL('https://medicine.yale.edu/cnrr/');
-  }
-  return url;
-}
 
 export function normalizeOfficialProfileUrl(value: unknown): string {
   const raw = textValue(value);
@@ -333,7 +330,8 @@ function isPotentialDirectYalePersonPageUrl(value: unknown): boolean {
 
 function officialPersonUrlMatchesEntity(value: unknown, entity: Record<string, any>): boolean {
   if (isOfficialYaleProfileUrl(value)) return true;
-  if (!isOfficialYalePersonPageUrl(value) && !isPotentialDirectYalePersonPageUrl(value)) return false;
+  if (!isOfficialYalePersonPageUrl(value) && !isPotentialDirectYalePersonPageUrl(value))
+    return false;
   return entityExpectedPeople(entity).some((person) => personPageUrlMatchesUser(value, person));
 }
 
@@ -364,8 +362,7 @@ function visibleBioProfileUrlMatchesUser(url: string, user: Record<string, any>)
   const last = textValue(user.lname);
   if (isOfficialYaleProfileUrl(url)) {
     return (
-      isLikelyPersonUrl(url, first, last) ||
-      officialProfileSlugMatchesGivenNameVariant(url, user)
+      isLikelyPersonUrl(url, first, last) || officialProfileSlugMatchesGivenNameVariant(url, user)
     );
   }
 
@@ -423,12 +420,6 @@ export function preferredOfficialProfileUrl(candidates: string[]): string {
   return candidates.find((url) => /medicine\.yale\.edu/i.test(url)) || candidates[0] || '';
 }
 
-function publicBioNeedsBackfill(user: Record<string, any>): boolean {
-  if (isLikelySameNameContaminatedProfile(user)) return true;
-  const bio = cleanPublicProfileBio(user);
-  return bio.length < PROFILE_BIO_MIN_LENGTH || bio.length > OFFICIAL_PROFILE_BIO_MAX_LENGTH;
-}
-
 function userIdentityMatchEntity(
   user: Record<string, any>,
   leadProfileUrls: string[] = [],
@@ -450,7 +441,65 @@ function userIdentityMatchEntity(
   };
 }
 
-export function generatedOfficialProfileUrlCandidatesForPerson(person: Record<string, any>): string[] {
+function researcherAccountToProfileUser(
+  researcher: Record<string, any>,
+  account: Record<string, any> | undefined,
+): Record<string, any> {
+  const displayName = textValue(researcher.displayName);
+  const split = splitName(displayName);
+  const profile =
+    researcher.profile && typeof researcher.profile === 'object' ? researcher.profile : {};
+  const links = Array.isArray(researcher.profileLinks) ? researcher.profileLinks : [];
+  const linkUrl = (kind: string): string =>
+    textValue(links.find((link: any) => link?.kind === kind)?.url);
+  const profileUrls: Record<string, string> = {};
+  const official = linkUrl('YALE_OFFICIAL');
+  const scholar = linkUrl('GOOGLE_SCHOLAR');
+  const orcidLink = linkUrl('ORCID');
+  if (official) profileUrls.official = official;
+  if (scholar) profileUrls.googleScholar = scholar;
+  if (orcidLink) profileUrls.orcid = orcidLink;
+  const websiteUrl = textValue(profile.websiteUrl);
+  return {
+    _id: idValue(researcher._id),
+    netid: textValue(account?.netid),
+    email: textValue(account?.email),
+    fname: split.first,
+    lname: split.last,
+    name: displayName,
+    displayName,
+    website: websiteUrl,
+    websiteUrl,
+    profileUrls,
+    imageUrl: textValue(profile.imageUrl),
+    orcid: textValue(researcher.identifiers?.orcid),
+  };
+}
+
+async function profileUsersByNetids(netids: string[]): Promise<Array<Record<string, any>>> {
+  const normalized = uniqueStrings(netids);
+  if (normalized.length === 0) return [];
+  const accounts = (await Account.find({ netid: { $in: normalized } })
+    .collation({ locale: 'en', strength: 2 })
+    .select('_id netid email')
+    .lean()) as Array<Record<string, any>>;
+  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
+  const accountIds = accounts.map((account) => account._id);
+  const researchers = accountIds.length
+    ? ((await Researcher.find({ accountId: { $in: accountIds }, archived: { $ne: true } })
+        .select('_id accountId displayName profile profileLinks identifiers')
+        .lean()) as Array<Record<string, any>>)
+    : [];
+  return researchers
+    .map((researcher) =>
+      researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
+    )
+    .filter((user) => user.netid);
+}
+
+export function generatedOfficialProfileUrlCandidatesForPerson(
+  person: Record<string, any>,
+): string[] {
   const first = textValue(person.fname);
   const last = textValue(person.lname);
   const email = textValue(person.email).toLowerCase();
@@ -458,10 +507,7 @@ export function generatedOfficialProfileUrlCandidatesForPerson(person: Record<st
   if (email && !email.endsWith('@yale.edu')) return [];
   const slug = slugify(normalizeName([first, last].join(' ')));
   if (!slug || slug.split('-').length < 2) return [];
-  return [
-    `https://medicine.yale.edu/profile/${slug}/`,
-    `https://ysph.yale.edu/profile/${slug}/`,
-  ];
+  return [`https://medicine.yale.edu/profile/${slug}/`, `https://ysph.yale.edu/profile/${slug}/`];
 }
 
 function canonicalUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string): string {
@@ -481,6 +527,28 @@ function profileSlug(value: unknown): string {
   } catch {
     return '';
   }
+}
+
+export function netidStyleProfileSlug(value: unknown): string {
+  const slug = profileSlug(value).toLowerCase();
+  if (!slug || slug.includes('-')) return '';
+  return /^[a-z]{1,8}[0-9]{1,6}$/.test(slug) ? slug : '';
+}
+
+export function expectedNetidsForOfficialProfile(
+  entity: Record<string, any>,
+  expectedPeople: OfficialProfileIdentityOptions['expectedPeople'],
+): string[] {
+  const people =
+    (expectedPeople || []).length > 0 ? expectedPeople || [] : entityExpectedPeople(entity);
+  return uniqueStrings(
+    [
+      textValue(entity.netid),
+      ...people.map((person) => textValue((person as Record<string, any>).netid)),
+    ]
+      .map((value) => value.toLowerCase())
+      .filter(Boolean),
+  );
 }
 
 function sameOfficialProfilePerson(left: string, right: string): boolean {
@@ -506,8 +574,7 @@ function sameOfficialPersonPageForEntity(
     return false;
   }
   if (
-    normalizedLeft.replace(/^https?:\/\//i, '') ===
-    normalizedRight.replace(/^https?:\/\//i, '')
+    normalizedLeft.replace(/^https?:\/\//i, '') === normalizedRight.replace(/^https?:\/\//i, '')
   ) {
     return true;
   }
@@ -548,14 +615,18 @@ function cleanOfficialProfileDisplayName(value: string): string {
       /\s*,?\s+(?:Ph\.?\s*D|M\.?\s*A|M\.?\s*S|M\.?\s*Sc|B\.?\s*A|B\.?\s*S|B\.?\s*Sc|M\.?\s*Phil|MPH|MFA|DPhil|JD|MD)(?=\s|,|$|Professor|Research|Associate|Assistant|Director|Scientist|Lecturer)[\s\S]*$/i,
       '',
     )
-    .replace(/\b(?:Professor|Research Scientist|Associate Director|Assistant Director|Director)\b[\s\S]*$/i, '')
+    .replace(
+      /\b(?:Professor|Research Scientist|Associate Director|Assistant Director|Director)\b[\s\S]*$/i,
+      '',
+    )
     .trim();
 }
 
 function isCredentialOnlyOfficialProfileBio(value: string, hasResearchAction: boolean): boolean {
   const degreeMatches =
-    value.match(/\b(?:Ph\.?\s*D|M\.?\s*A|M\.?\s*S|M\.?\s*Sc|B\.?\s*A|B\.?\s*S|B\.?\s*Sc|M\.?\s*Phil|MFA|DPhil|JD|MD)\b/gi) ||
-    [];
+    value.match(
+      /\b(?:Ph\.?\s*D|M\.?\s*A|M\.?\s*S|M\.?\s*Sc|B\.?\s*A|B\.?\s*S|B\.?\s*Sc|M\.?\s*Phil|MFA|DPhil|JD|MD)\b/gi,
+    ) || [];
   return (
     !hasResearchAction &&
     degreeMatches.length >= 1 &&
@@ -593,7 +664,10 @@ function isSemicolonDelimitedProfileTopicList(value: string): boolean {
   const text = textValue(value);
   const semicolonCount = (text.match(/;/g) || []).length;
   if (semicolonCount < 2) return false;
-  const sentenceCount = text.split(/[.!?]+/).map((part) => part.trim()).filter(Boolean).length;
+  const sentenceCount = text
+    .split(/[.!?]+/)
+    .map((part) => part.trim())
+    .filter(Boolean).length;
   return sentenceCount <= 1;
 }
 
@@ -618,7 +692,7 @@ function firstUsefulProfileTitle($: cheerio.CheerioAPI): string {
     for (const el of elements) {
       const value = cleanOfficialProfileTitle($(el).text() || $(el).attr('content') || '');
       if (!value || /^information for$/i.test(value)) continue;
-      if (officialProfileTitlePattern.test(value)) return value;
+      if (officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value)) return value;
     }
   }
   return '';
@@ -730,10 +804,12 @@ function jsonLdProfiles($: cheerio.CheerioAPI): Array<Record<string, any>> {
 }
 
 function canonicalResearchHomeName(value: unknown): string {
-  return textValue(value)
-    .replace(/\s*\(([A-Z][A-Z0-9&/ -]{1,24})\)\s*$/g, '')
-    .replace(/^Director of (?:the )?/i, '')
-    .trim();
+  return stripTrailingResearchHomeDescription(
+    textValue(value)
+      .replace(/\s*\(([A-Z][A-Z0-9&/ -]{1,24})\)\s*$/g, '')
+      .replace(/^Director of (?:the )?/i, '')
+      .trim(),
+  );
 }
 
 function publicOfficialYaleResearchHomeUrl(value: unknown, baseUrl: string): string {
@@ -779,47 +855,6 @@ function publicProfileLinkedLabWebsiteUrl(value: unknown, baseUrl: string): stri
   }
 }
 
-const genericYaleWebsiteSubdomains = new Set([
-  'african',
-  'americanstudies',
-  'art',
-  'arthistory',
-  'astronomy',
-  'classics',
-  'eall',
-  'earth',
-  'economics',
-  'eeb',
-  'engineering',
-  'english',
-  'environment',
-  'erm',
-  'filmstudies',
-  'german',
-  'gsp',
-  'history',
-  'jackson',
-  'law',
-  'macmillan',
-  'medicine',
-  'mba',
-  'music',
-  'nelc',
-  'physics',
-  'politicalscience',
-  'russian-studies',
-  'sociology',
-  'som',
-  'wgss',
-  'yalemusic',
-]);
-
-function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
-  if (!/(^|\.)yale\.edu$/i.test(url.hostname)) return false;
-  const prefix = url.hostname.replace(/\.yale\.edu$/i, '');
-  return Boolean(prefix && !prefix.includes('.') && !genericYaleWebsiteSubdomains.has(prefix));
-}
-
 function publicLeadDirectResearchHomeUrl(value: unknown): string {
   const raw = textValue(value);
   if (!raw) return '';
@@ -841,11 +876,7 @@ function publicLeadDirectResearchHomeUrl(value: unknown): string {
     if (!url.pathname.endsWith('/') && !/\.[a-z0-9]{2,8}$/i.test(url.pathname)) {
       url.pathname = `${url.pathname}/`;
     }
-    if (
-      /\/(?:people|person|faculty|faculty-directory)\//i.test(url.pathname) ||
-      /\/directory\/faculty\//i.test(url.pathname) ||
-      /\/who-we-are\/faculty\//i.test(url.pathname)
-    ) {
+    if (isProfileOrPeopleDirectoryPath(url.pathname)) {
       return '';
     }
 
@@ -888,86 +919,12 @@ export function leadDirectResearchHomeUrlsForEntity(entity: Record<string, any>)
     .filter(Boolean);
 }
 
-function publicSourceUrlWebsiteBackfillUrl(value: unknown): string {
-  const raw = textValue(value);
-  if (!raw) return '';
-  try {
-    const url = new URL(raw);
-    url.hash = '';
-    url.search = '';
-    url.hostname = url.hostname.toLowerCase();
-    if (!/^https?:$/i.test(url.protocol)) return '';
-    if (/\.(?:pdf|docx?|pptx?|xlsx?)$/i.test(url.pathname)) return '';
-    if (/\/profile\//i.test(url.pathname)) return '';
-    if (['epilepsy.yale.edu', 'sites.google.com'].includes(url.hostname)) return '';
-    if (['alexandercoppock.com', 'www.alexandercoppock.com'].includes(url.hostname)) return '';
-    if (url.hostname === 'www.yale.edu' && /^\/macmillan\/shapiro\/index\.htm\/?$/i.test(url.pathname)) {
-      return '';
-    }
-    if (
-      /\b(?:orcid\.org|pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov|doi\.org|linkedin\.com|researchgate\.net|scholar\.google\.com|reporter\.nih\.gov|nsf\.gov|academia\.edu|ispu\.org)$/i.test(
-        url.hostname,
-      )
-    ) {
-      return '';
-    }
-    if (!url.pathname.endsWith('/') && !/\.[a-z0-9]{2,8}$/i.test(url.pathname)) {
-      url.pathname = `${url.pathname}/`;
-    }
-    if (
-      /\/(?:people|person|faculty|faculty-directory)\//i.test(url.pathname) ||
-      /\/directory\/faculty\//i.test(url.pathname) ||
-      /\/who-we-are\/faculty\//i.test(url.pathname)
-    ) {
-      return '';
-    }
-    if (
-      /\/(?:membership\/directory|research-opportunities-undergraduates?|diversity\/research-opportunities)\b/i.test(
-        url.pathname,
-      )
-    ) {
-      return '';
-    }
-    if (
-      /\/(?:story|stories|news|search\/user)\b/i.test(url.pathname) ||
-      /(?:^|[/-])people(?:[/-]|$)/i.test(url.pathname)
-    ) {
-      return '';
-    }
-
-    const hostPath = `${url.hostname}${url.pathname}`;
-    const isYale = /(^|\.)yale\.edu$/i.test(url.hostname);
-    if (
-      isYale &&
-      genericYaleWebsiteSubdomains.has(url.hostname.replace(/\.yale\.edu$/i, '')) &&
-      /\/opportunities(?:-[0-9]+)?\//i.test(url.pathname)
-    ) {
-      return '';
-    }
-    const isDirectPersonalSite =
-      /(?:^|\.)campuspress\.yale\.edu$/i.test(url.hostname) ||
-      /github\.io$/i.test(url.hostname) ||
-      !isYale;
-    const isSpecificYaleResearchHomePath = /(?:lab|labs|project|group)/i.test(hostPath);
-    if (
-      !isDirectPersonalSite &&
-      !isSpecificYaleResearchHomePath &&
-      !isCustomYaleResearchHomeSubdomain(url)
-    ) {
-      return '';
-    }
-    return canonicalLegacyResearchHomeUrl(url).toString();
-  } catch {
-    return '';
-  }
-}
-
 export function sourceUrlResearchHomeUrlsForEntity(entity: Record<string, any>): string[] {
   return uniqueStrings([
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ...objectStringValues(entity.sourceObservationUrls),
   ])
-    .map(publicSourceUrlWebsiteBackfillUrl)
+    .map(sourceUrlToResearchHomeWebsiteUrl)
     .filter(Boolean);
 }
 
@@ -980,7 +937,8 @@ export function firstNonDuplicateLeadDirectWebsiteUrl(
   );
   return (
     uniqueStrings(urls).find(
-      (url) => !duplicateWebsiteUrls.has(url) && !duplicateWebsiteKeys.has(websiteDuplicateKey(url)),
+      (url) =>
+        !duplicateWebsiteUrls.has(url) && !duplicateWebsiteKeys.has(websiteDuplicateKey(url)),
     ) || ''
   );
 }
@@ -1028,19 +986,28 @@ function classifyResearchHome(
   if (/\b(?:lab|laboratory)\b/i.test(text)) return { kind: 'lab', entityType: 'LAB' };
   if (/\bcent(?:er|re)\b/i.test(text)) return { kind: 'center', entityType: 'CENTER' };
   if (/\binstitute\b/i.test(text)) return { kind: 'institute', entityType: 'INSTITUTE' };
-  if (/\bprogram\b/i.test(text)) return { kind: 'program', entityType: 'PROGRAM' };
-  if (/\binitiative\b/i.test(text)) return { kind: 'initiative', entityType: 'INITIATIVE' };
+  if (/\b(?:program|initiative)\b/i.test(text)) {
+    return { kind: 'initiative', entityType: 'INITIATIVE' };
+  }
   return null;
 }
 
 function genericOrganizationName(name: string): boolean {
   return (
-    /^(?:yale medicine|yale university|yale school of medicine|yale new haven health system)$/i.test(name) ||
-    /^(?:internal medicine|cardiovascular medicine|clinical radiology|nuclear cardiology|child study center)$/i.test(name) ||
-    /^(?:interdepartmental neuroscience program|yale combined program in the biological and biomedical sciences|community research fellows program)$/i.test(name) ||
+    /^(?:yale medicine|yale university|yale school of medicine|yale new haven health system)$/i.test(
+      name,
+    ) ||
+    /^(?:internal medicine|cardiovascular medicine|clinical radiology|nuclear cardiology|child study center)$/i.test(
+      name,
+    ) ||
+    /^(?:interdepartmental neuroscience program|yale combined program in the biological and biomedical sciences|community research fellows program)$/i.test(
+      name,
+    ) ||
     /\b(?:department|section|division)\b/i.test(name) ||
     /\b(?:track|ventures|patient|clinical program)\b/i.test(name) ||
-    /\b(?:day\s*care|daycare|kindergarten|public sector leadership|student leadership)\b/i.test(name)
+    /\b(?:day\s*care|daycare|kindergarten|public sector leadership|student leadership)\b/i.test(
+      name,
+    )
   );
 }
 
@@ -1082,6 +1049,49 @@ function leadershipMentionsOrganization(text: string, name: string, rawName: str
       return false;
     });
   });
+}
+
+export function textEvidencesNamedLeadership(text: string, names: string[]): boolean {
+  const leadershipTitle =
+    '(?:co-director|associate\\s+director|principal\\s+investigator|director|pi|faculty\\s+lead|founder)';
+  return uniqueStrings(names)
+    .filter((name) => name.length > 2)
+    .some((name) => {
+      const pattern = escapeRegex(name).replace(/\s+/g, '\\s+');
+      return [
+        `\\b${leadershipTitle}\\b[^.;\\n]{0,60}?\\b${pattern}\\b`,
+        `\\b${pattern}\\b[^.;\\n]{0,60}?\\b${leadershipTitle}\\b`,
+      ].some((source) => new RegExp(source, 'i').test(text));
+    });
+}
+
+/**
+ * A custom Yale subdomain (`isCustomYaleResearchHomeSubdomain`) is accepted as a
+ * research-home candidate on hostname shape alone, with no signal that the lead
+ * this website is being attached to actually directs it - a university-wide
+ * platform a PI is merely affiliated with or cited on passes the same heuristic
+ * as that PI's own lab site (issue: Seto Lab / urban.yale.edu). Before such a
+ * candidate is written to `websiteUrl`, fetch the page itself and require it to
+ * credit one of the entity's leads by name in a director/PI-type role; fail
+ * closed on fetch failure or no match.
+ */
+export async function candidateWebsiteOwnedByLead(
+  url: string,
+  leadNames: string[],
+  htmlFetcher: (url: string, useCache: boolean, sourceName: string) => Promise<string>,
+  useCache: boolean,
+): Promise<boolean> {
+  if (leadNames.length === 0) return false;
+  let html = '';
+  try {
+    html = await htmlFetcher(url, useCache, SOURCE_NAME);
+  } catch {
+    return false;
+  }
+  if (!html) return false;
+  const $ = cheerio.load(html);
+  const text = uniqueStrings([$('main').text(), $('article').text(), $('body').text()]).join(' ');
+  return textEvidencesNamedLeadership(text, leadNames);
 }
 
 function affiliationValuesFromProfiles(profiles: Array<Record<string, any>>): unknown[] {
@@ -1149,10 +1159,7 @@ function cleanProfileCardLabWebsiteLabel(value: string): string {
       .replace(/^\s*(?:The\s+)?Elena\s+Lab\s*$/i, 'Elena Gracheva Lab')
       .replace(/^\s*(?:The\s+)?Slav\s+Lab\s*$/i, 'Slav Bagriantsev Lab')
       .replace(/^[^/]{2,80}\s+Lab\s*\/\s*(?=(?:Yale\s+)?(?:Center|Centre)\b)/i, '')
-      .replace(
-        /(\([^)]*\blab\))\s+(?:my|our|his|her|their|dr\.?|this)\s+lab\b[\s\S]*$/i,
-        '$1',
-      )
+      .replace(/(\([^)]*\blab\))\s+(?:my|our|his|her|their|dr\.?|this)\s+lab\b[\s\S]*$/i, '$1')
       .replace(
         /\b(labs?|laboratory|center|program|initiative)\s+(?:my|our|his|her|their|dr\.?|this)\b[\s\S]*$/i,
         '$1',
@@ -1234,9 +1241,7 @@ function profileLinkedLabWebsitesFromHtml(
     const name = profileLinkedLabWebsiteName(rawName, context, profileName);
     if (!name || genericOrganizationName(name)) return;
     if (disallowedProfileLinkedResearchHome(name, url)) return;
-    const sectionHeading = textValue(
-      link.closest('section,aside').find('h2,h3,h4').first().text(),
-    );
+    const sectionHeading = textValue(link.closest('section,aside').find('h2,h3,h4').first().text());
     if (
       /contact\s+info/i.test(sectionHeading) &&
       !leadershipMentionsOrganization(evidenceText, name, rawName)
@@ -1287,7 +1292,9 @@ function linkedResearchHomesFromHtml(
     if (/\b(?:lab|laboratory|cent(?:er|re)|institute|program|initiative)\b/i.test(name)) {
       score += 2;
     }
-    if (/\/(?:research|lab|labs|center|centers|institute|institutes|program|programs)\b/i.test(url)) {
+    if (
+      /\/(?:research|lab|labs|center|centers|institute|institutes|program|programs)\b/i.test(url)
+    ) {
       score += 2;
     }
     if (score < 5) return;
@@ -1331,7 +1338,9 @@ export function extractOfficialProfileResearchHomes(
     if (/\b(?:lab|laboratory|cent(?:er|re)|institute|program|initiative)\b/i.test(name)) {
       score += 2;
     }
-    if (/\/(?:research|lab|labs|center|centers|institute|institutes|program|programs)\b/i.test(url)) {
+    if (
+      /\/(?:research|lab|labs|center|centers|institute|institutes|program|programs)\b/i.test(url)
+    ) {
       score += 2;
     }
     if (score < 5) continue;
@@ -1350,6 +1359,23 @@ export function extractOfficialProfileResearchHomes(
   return Array.from(homes.values()).sort(
     (a, b) => b.score - a.score || a.name.localeCompare(b.name),
   );
+}
+
+// A grant-derived PI shell (`nih-pi-*`/`nsf-pi-*`) carries only that PI's own
+// funded-research identity. A profile-linked institutional home (a center,
+// institute, program, or initiative the PI directs alongside their own grants)
+// is a separate organization, not that PI's personal lab, so attaching its
+// kind/entityType/website/description here would mint the exact "<PI> Lab"
+// CENTER hybrid this guard exists to prevent (issue #1484). A home already
+// classified as a lab is the PI's own and is never blocked.
+const GRANT_DERIVED_PI_SHELL_SLUG_RE = /^(?:nih-pi-|nsf-pi-)/;
+
+export function isInstitutionalHomeMismatchedWithGrantDerivedPiShell(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome | undefined,
+): boolean {
+  if (!home || home.entityType === 'LAB') return false;
+  return GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug));
 }
 
 export function entityResearchHomeToObservations(
@@ -1472,27 +1498,56 @@ function extractEmail(
   return '';
 }
 
+// Broader selectors such as [class*="organization"]/[class*="affiliation"] also
+// match section-heading chrome ("Other Departments & Organizations") and
+// center/institute affiliations that are not academic departments, so only an
+// element explicitly classed "department" is trusted as a department signal.
+const DEPARTMENT_HEADING_CHROME_PATTERN = /^other\s+departments?\b/i;
+
 function extractDepartments($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
-  $('[class*="department"], [class*="organization"], [class*="affiliation"]').each((_i, el) => {
+  $('[class*="department"]').each((_i, el) => {
     const value = textValue($(el).text());
-    if (value && value.length < 160) values.push(value);
+    if (value && value.length < 160 && !DEPARTMENT_HEADING_CHROME_PATTERN.test(value)) {
+      values.push(value);
+    }
   });
   return uniqueStrings(values).slice(0, 5);
+}
+
+function splitResearchInterestText(text: string): string[] {
+  return String(text || '')
+    .split(/[,;|•\n\r]+/)
+    .map((part) => textValue(part).replace(RESEARCH_SECTION_LABEL_PREFIX, ''))
+    .filter(
+      (part) => part.length > 0 && !isResearchSectionLabel(part) && !isProseNotTopicPhrase(part),
+    );
+}
+
+function researchInterestTermsFromContainer(
+  $: cheerio.CheerioAPI,
+  container: cheerio.Cheerio<any>,
+): string[] {
+  const childParts = container
+    .contents()
+    .map((_i, node) => textValue($(node).text()))
+    .get()
+    .filter(Boolean);
+  const source = childParts.length > 1 ? childParts.join('\n') : textValue(container.text());
+  return splitResearchInterestText(source);
 }
 
 function extractResearchInterests($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
   $('[class*="research-interest"], [class*="field-of-study"], [class*="interests"]').each(
     (_i, el) => {
-      const text = textValue($(el).text());
-      values.push(...text.split(/[,;|•\n\r]+/));
+      values.push(...researchInterestTermsFromContainer($, $(el)));
     },
   );
   $('h2,h3,h4,strong').each((_i, heading) => {
     const label = textValue($(heading).text()).toLowerCase();
     if (!/\b(research interests?|fields? of study|topics?)\b/.test(label)) return;
-    values.push(...textValue($(heading).next().text()).split(/[,;|•\n\r]+/));
+    values.push(...researchInterestTermsFromContainer($, $(heading).next()));
   });
   return sanitizeProfileResearchTerms(
     uniqueStrings(values)
@@ -1571,11 +1626,18 @@ function clipOfficialProfileBio(value: string): string {
     );
   });
   const lastSentenceEnd = sentenceEnds.at(-1);
-  if (lastSentenceEnd && typeof lastSentenceEnd.index === 'number' && lastSentenceEnd.index >= 300) {
+  if (
+    lastSentenceEnd &&
+    typeof lastSentenceEnd.index === 'number' &&
+    lastSentenceEnd.index >= 300
+  ) {
     return prefix.slice(0, lastSentenceEnd.index + 1).trim();
   }
 
-  const wordBoundary = prefix.replace(/\s+\S*$/, '').replace(/[,;:\-–—]+$/g, '').trim();
+  const wordBoundary = prefix
+    .replace(/\s+\S*$/, '')
+    .replace(/[,;:\-–—]+$/g, '')
+    .trim();
   return wordBoundary ? `${wordBoundary}.` : prefix;
 }
 
@@ -1584,7 +1646,10 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
   $('a[href*="orcid.org"], a[href^="orcid:"]').each((_i, el) => {
     candidates.push($(el).attr('href') || '', $(el).text());
   });
-  const bodyMatches = $('body').text().match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
+  const bodyMatches =
+    $('body')
+      .text()
+      .match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
   candidates.push(...bodyMatches);
   return candidates.map(normalizeOrcid).find(Boolean);
 }
@@ -1599,6 +1664,62 @@ function nameMatchesEntity(displayName: string, entity: Record<string, any>): bo
   return entitySlug.includes(nameParts[0]) && entitySlug.includes(nameParts[nameParts.length - 1]);
 }
 
+/**
+ * Single-discipline Yale profile hosts whose guessed match must be
+ * corroborated by the entity's own recorded school/department text. Each
+ * regex is the vocabulary that text would use if the entity actually belongs
+ * to that host's discipline. Covers both directions of the same-surname
+ * collision: a medical professor's medicine.yale.edu/ysph.yale.edu profile
+ * grafting onto an unrelated non-medical entity (issue #585), and an
+ * engineering professor's engineering.yale.edu profile grafting onto an
+ * unrelated medical-school entity that merely shares a surname (issue #1290).
+ * The arts/professional-school hosts below (issue #1407/#1413) are the same
+ * single-discipline set `personProfileEntityMatch.ts`'s
+ * `CONTRADICTION_SOURCE_SUBDOMAINS` already treats as never hosting
+ * cross-appointed researchers, so a guessed match there is just as reliably a
+ * same-name-different-person collision as the medicine/engineering case.
+ */
+const SINGLE_DISCIPLINE_PROFILE_HOST_TEXT: ReadonlyMap<string, RegExp> = new Map([
+  ['medicine.yale.edu', /\b(?:medicine|medical|health|nursing|hospital)\b/i],
+  ['ysph.yale.edu', /\b(?:medicine|medical|health|nursing|hospital)\b/i],
+  ['engineering.yale.edu', /\b(?:engineering|applied science)\b/i],
+  ['som.yale.edu', /\b(?:management|business)\b/i],
+  ['law.yale.edu', /\blaw\b/i],
+  ['divinity.yale.edu', /\bdivinity\b/i],
+  ['drama.yale.edu', /\bdrama\b/i],
+  ['architecture.yale.edu', /\barchitecture\b/i],
+  ['art.yale.edu', /\bart\b/i],
+  ['music.yale.edu', /\bmusic\b/i],
+]);
+
+function singleDisciplineProfileHostText(url: string): RegExp | undefined {
+  try {
+    return SINGLE_DISCIPLINE_PROFILE_HOST_TEXT.get(new URL(url).hostname.toLowerCase());
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * True when the entity's own recorded school/department text is present and
+ * plainly does not use the fetched profile host's discipline vocabulary. A
+ * guessed single-discipline profile must never be trusted as this entity's
+ * identity in that case, even when its name happens to match - the
+ * same-surname-but-different-school collision this guards against otherwise
+ * grafts a same-name professor's areas/website onto an unrelated entity.
+ */
+function entityDisciplineContradictsProfileHost(
+  entity: Record<string, any>,
+  hostDisciplineText: RegExp,
+): boolean {
+  const text = uniqueStrings([
+    entity.school,
+    ...(Array.isArray(entity.schools) ? entity.schools : []),
+    ...(Array.isArray(entity.departments) ? entity.departments : []),
+  ]).join(' ');
+  return Boolean(text) && !hostDisciplineText.test(text);
+}
+
 function officialProfileIdentityMatchesExpectedPerson(
   displayName: string,
   email: string,
@@ -1606,15 +1727,33 @@ function officialProfileIdentityMatchesExpectedPerson(
 ): boolean {
   const expected = expectedPeople || [];
   if (expected.length === 0) return true;
-  const displayWords = new Set(normalizeName(displayName).toLowerCase().split(/\s+/).filter(Boolean));
+  const displayWords = new Set(
+    normalizeName(displayName).toLowerCase().split(/\s+/).filter(Boolean),
+  );
   const normalizedEmail = textValue(email).toLowerCase();
+  const expectedEmails = uniqueStrings(expected.map((person) => textValue(person.email))).map(
+    (value) => value.toLowerCase(),
+  );
+
+  // A fetched profile carrying its own Yale email is stronger evidence than a
+  // name match: once it disagrees with every email we expect for this entity,
+  // the page belongs to a different person and must fail closed rather than
+  // falling through to the weaker name-token check below - the exact gap that
+  // let a same-name-different-person collision through (issue #585).
+  if (normalizedEmail && expectedEmails.length > 0) {
+    return expectedEmails.includes(normalizedEmail);
+  }
 
   return expected.some((person) => {
-    const expectedEmail = textValue(person.email).toLowerCase();
-    if (expectedEmail && normalizedEmail && expectedEmail === normalizedEmail) return true;
-
-    const first = normalizeName(person.fname || '').toLowerCase().split(/\s+/).filter(Boolean)[0];
-    const last = normalizeName(person.lname || '').toLowerCase().split(/\s+/).filter(Boolean).at(-1);
+    const first = normalizeName(person.fname || '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)[0];
+    const last = normalizeName(person.lname || '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .at(-1);
     return Boolean(first && last && displayWords.has(first) && displayWords.has(last));
   });
 }
@@ -1657,12 +1796,47 @@ export function extractOfficialProfileIdentity(
     email,
     options.expectedPeople,
   );
-  if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity)) return null;
+  if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity))
+    return null;
+  // A same-name faculty member at a different Yale school still passes the bare
+  // name-token check above. Only the fetched profile's own email actually
+  // establishes identity: skip the discipline backstop solely when that email
+  // is present and matches one we expect for this entity. In every other shape
+  // - no known lead, a lead with no recorded email, or a fetched page exposing
+  // no email - require the entity's own department/school to use the fetched
+  // host's discipline vocabulary before trusting a guessed single-discipline
+  // profile as this entity's identity (same root cause as #562's PI-attach
+  // gate, extended to the area/website layer, issues #585 and #1290).
+  const normalizedFetchedEmail = textValue(email).toLowerCase();
+  const expectedEmails = uniqueStrings(
+    (options.expectedPeople || []).map((person) => textValue(person.email)),
+  ).map((value) => value.toLowerCase());
+  const identityConfirmedByEmail =
+    Boolean(normalizedFetchedEmail) && expectedEmails.includes(normalizedFetchedEmail);
+  const fetchedHostDisciplineText = singleDisciplineProfileHostText(fetchedUrl);
+  if (
+    !identityConfirmedByEmail &&
+    fetchedHostDisciplineText &&
+    entityDisciplineContradictsProfileHost(entity, fetchedHostDisciplineText)
+  ) {
+    return null;
+  }
+  // A same-name different-person profile passes the name check above, so when
+  // the profile URL carries a netid-style slug it must equal a netid we expect
+  // for this person. This rejects name-only collisions such as attaching a
+  // `/profile/qz990` page to a different `ch51` lead who shares a name (issue #468).
+  const profileNetidSlug = netidStyleProfileSlug(canonicalUrl) || netidStyleProfileSlug(fetchedUrl);
+  if (profileNetidSlug) {
+    const expectedNetids = expectedNetidsForOfficialProfile(entity, options.expectedPeople);
+    if (expectedNetids.length > 0 && !expectedNetids.includes(profileNetidSlug)) {
+      return null;
+    }
+  }
 
-  const title = uniqueStrings([
-    firstJsonLdText(profiles, ['jobTitle']),
-    firstUsefulProfileTitle($),
-  ]).find((value) => officialProfileTitlePattern.test(value)) || '';
+  const title =
+    uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
+      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
+    ) || '';
   if (!title) return null;
 
   const bio = extractBio($);
@@ -1742,7 +1916,9 @@ function lowerInitial(value: string): string {
 }
 
 function terseOfficialBioTopic(identity: OfficialProfileIdentity): string {
-  let topic = textValue(identity.bio).replace(/[.;:,]+$/g, '').trim();
+  let topic = textValue(identity.bio)
+    .replace(/[.;:,]+$/g, '')
+    .trim();
   if (!topic || topic.length >= PROFILE_BIO_MIN_LENGTH) return '';
   if (!isUsefulOfficialProfileBioText(topic)) return '';
 
@@ -1813,14 +1989,11 @@ export function identityToUserObservations(
     ['netid', netid],
     ['fname', first],
     ['lname', last],
-    ['userType', 'faculty'],
-    ['profileVerified', true],
-    ['dataSources', [SOURCE_NAME]],
   ];
+  if (identity.email) identityObservations.push(['email', identity.email]);
   if (includeProfileEnrichment) {
-    identityObservations.splice(4, 0, ['title', identity.title], ['profileUrls', profileUrls]);
+    identityObservations.push(['title', identity.title], ['profileUrls', profileUrls]);
   }
-  if (identity.email) identityObservations.splice(3, 0, ['email', identity.email]);
 
   const observations: ObservationInput[] = includeIdentityEnrichment
     ? identityObservations.map(([field, value]) => ({
@@ -1834,45 +2007,6 @@ export function identityToUserObservations(
     : [];
 
   if (includeProfileEnrichment) {
-    const derivedBio = derivedBioFromOfficialProfile(identity);
-    const cleanedIdentityBio = identity.bio
-      ? cleanPublicProfileBio({
-          ...identity,
-          bio: identity.bio,
-          fname: first,
-          lname: last,
-          websiteUrl: identity.canonicalUrl,
-          profileUrls: {
-            medicine: identity.fetchedUrl,
-            official: identity.canonicalUrl,
-          },
-        })
-      : '';
-    const shouldUseDerivedBio =
-      Boolean(derivedBio) && (!cleanedIdentityBio || cleanedIdentityBio.length < PROFILE_BIO_MIN_LENGTH);
-    const rawBio = shouldUseDerivedBio ? derivedBio : cleanedIdentityBio || derivedBio;
-    const bioCandidate = hasExternalScholarProfileCallout(rawBio) ? '' : rawBio;
-    const bio = cleanPublicProfileBio({
-      ...identity,
-      bio: bioCandidate,
-      fname: first,
-      lname: last,
-      websiteUrl: identity.canonicalUrl,
-      profileUrls: {
-        medicine: identity.fetchedUrl,
-        official: identity.canonicalUrl,
-      },
-    });
-    if (bio && bio.length >= PROFILE_BIO_MIN_LENGTH && !isSemicolonDelimitedProfileTopicList(bio)) {
-      observations.push({
-        entityType: 'user',
-        entityKey: `netid:${netid}`,
-        field: 'bio',
-        value: bio,
-        sourceUrl: identity.canonicalUrl,
-        confidenceOverride: shouldUseDerivedBio || !cleanedIdentityBio ? 0.86 : 0.85,
-      });
-    }
     if (identity.imageUrl) {
       observations.push({
         entityType: 'user',
@@ -1883,23 +2017,14 @@ export function identityToUserObservations(
         confidenceOverride: 0.9,
       });
     }
-    const researchInterests = publicProfileResearchTerms(identity.researchInterests);
-    if (researchInterests.length > 0) {
+    if (identity.departments.length > 0) {
       observations.push({
         entityType: 'user',
         entityKey: `netid:${netid}`,
-        field: 'researchInterests',
-        value: researchInterests,
+        field: 'primaryDepartment',
+        value: identity.departments[0],
         sourceUrl: identity.canonicalUrl,
         confidenceOverride: 0.85,
-      });
-      observations.push({
-        entityType: 'user',
-        entityKey: `netid:${netid}`,
-        field: 'topics',
-        value: researchInterests,
-        sourceUrl: identity.canonicalUrl,
-        confidenceOverride: 0.8,
       });
     }
     if (identity.orcid) {
@@ -1946,9 +2071,7 @@ function shortOfficialProfileBio(value: string): string {
     return `Publishes on ${authorOfTopics[1].replace(/[.!?]+$/g, '').trim()}.`;
   }
 
-  const authorOf = text.match(
-    /\b(?:is|was)\s+(?:the\s+|an?\s+)?author\s+of\s+(.+?)(?:[.!?]|$)/i,
-  );
+  const authorOf = text.match(/\b(?:is|was)\s+(?:the\s+|an?\s+)?author\s+of\s+(.+?)(?:[.!?]|$)/i);
   if (authorOf?.[1]) {
     if (/^(?:many\s+)?(?:articles|books|articles\s+and\s+books)\b/i.test(authorOf[1])) {
       return '';
@@ -1962,7 +2085,8 @@ function shortOfficialProfileBio(value: string): string {
   if (nameLedResearch?.[1] && nameLedResearch?.[2]) {
     const verb = nameLedResearch[1].toLowerCase();
     const rest = nameLedResearch[2].replace(/[.!?]+$/g, '').trim();
-    const normalizedVerb = verb === 'studies' ? 'Studies' : `${verb.charAt(0).toUpperCase()}${verb.slice(1)}`;
+    const normalizedVerb =
+      verb === 'studies' ? 'Studies' : `${verb.charAt(0).toUpperCase()}${verb.slice(1)}`;
     return `${normalizedVerb} ${rest}.`;
   }
 
@@ -1986,7 +2110,11 @@ function shortOfficialProfileBio(value: string): string {
 
   const listParts = text
     .split(',')
-    .map((part) => textValue(part).replace(/[.;:]+$/g, ''))
+    .map((part) =>
+      textValue(part)
+        .replace(/[.;:]+$/g, '')
+        .replace(/^(?:and|or)\s+/i, ''),
+    )
     .filter((part) => part.length >= 8);
   if (!/[.!?]/.test(text) && listParts.length >= 3) {
     const lead = listParts.slice(0, 3);
@@ -1995,17 +2123,24 @@ function shortOfficialProfileBio(value: string): string {
 
   const derived = deriveShortDescriptionFromFullDescription(text);
   if (derived) return derived;
-  if (text.length <= 220) return text;
-  const prefix = text.slice(0, 220).trim();
+  const researchOnlyText = stripLeadingRoleTitleHeaderSentences(text);
+  if (researchOnlyText === text && startsWithRoleTitleHeaderSentence(text)) return '';
+  if (researchOnlyText.length <= 220) return researchOnlyText;
+  const prefix = researchOnlyText.slice(0, 220).trim();
   const sentenceEnds = Array.from(prefix.matchAll(/[.!?](?=\s|$)/g));
   const lastSentenceEnd = sentenceEnds.at(-1);
   if (lastSentenceEnd && typeof lastSentenceEnd.index === 'number' && lastSentenceEnd.index >= 80) {
     return prefix.slice(0, lastSentenceEnd.index + 1).trim();
   }
-  return `${prefix.replace(/\s+\S*$/, '').replace(/[,;:\-–—]+$/g, '').trim()}.`;
+  return `${prefix
+    .replace(/\s+\S*$/, '')
+    .replace(/[,;:\-–—]+$/g, '')
+    .trim()}.`;
 }
 
-export function shouldEmitProfileDescriptionBackfillForEntity(entity: Record<string, any>): boolean {
+export function shouldEmitProfileDescriptionBackfillForEntity(
+  entity: Record<string, any>,
+): boolean {
   const suppressedBy = entity[PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD];
   return !(Array.isArray(suppressedBy) && suppressedBy.length > 0);
 }
@@ -2066,6 +2201,52 @@ export function identityToResearchEntityDescriptionObservations(
   return observations;
 }
 
+function entityDepartmentsAreSchoolPollution(
+  departments: string[],
+  entity: Record<string, any>,
+): boolean {
+  if (departments.length === 0) return true;
+  const schoolValues = new Set(
+    uniqueStrings([entity.school, ...(Array.isArray(entity.schools) ? entity.schools : [])]).map(
+      (value) => value.toLowerCase(),
+    ),
+  );
+  if (schoolValues.size === 0) return false;
+  return departments.every((department) => schoolValues.has(department.toLowerCase()));
+}
+
+/**
+ * Real per-entity departments extracted from the PI's own official profile
+ * (e.g. medicine.yale.edu) instead of the school name the entity was left
+ * with when no department resolved at ingestion (#1384). Only fires when the
+ * entity's current departments are empty or are themselves just the school
+ * name, so a genuine, previously-extracted department is never overwritten.
+ */
+export function identityToResearchEntityDepartmentObservations(
+  identity: OfficialProfileIdentity,
+  entity: Record<string, any>,
+): ObservationInput[] {
+  if (identity.departments.length === 0) return [];
+  const existingDepartments = Array.isArray(entity.departments)
+    ? entity.departments.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+  if (!entityDepartmentsAreSchoolPollution(existingDepartments, entity)) return [];
+
+  const entityId = idValue(entity._id || entity.id);
+  const entityKey = textValue(entity.slug || entity._id);
+  return [
+    {
+      entityType: 'researchEntity',
+      ...(entityId ? { entityId } : {}),
+      ...(entityKey ? { entityKey } : {}),
+      field: 'departments',
+      value: identity.departments,
+      sourceUrl: identity.canonicalUrl,
+      confidenceOverride: 0.8,
+    },
+  ];
+}
+
 export function identityToResearchEntityPiObservations(
   identity: OfficialProfileIdentity,
   existingUser: ExistingProfileUser,
@@ -2106,7 +2287,11 @@ export function identityToResearchEntityPiKeyObservations(
   return [{ ...base, field: 'inferredPiUserKey', value: lookupKey }];
 }
 
-async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
+export async function fetchHtml(
+  url: string,
+  useCache: boolean,
+  sourceName: string,
+): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `official-profile-pi-backfill:${safeUrlText}`;
@@ -2127,43 +2312,69 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   return html;
 }
 
+function applyFiniteCandidateLimit<T extends { limit(value: number): T }>(
+  query: T,
+  limit: number,
+  multiplier: number,
+  minimum: number,
+): T {
+  if (Number.isFinite(limit)) {
+    query.limit(Math.max(limit * multiplier, minimum));
+  }
+  return query;
+}
+
+async function currentLeadRosterEntriesByEntity(
+  entityIds: unknown[],
+  roles: string[],
+): Promise<Map<string, ResearchEntityRosterEntry[]>> {
+  const roster = await getResearchEntityRosterByEntityId(entityIds);
+  const byEntity = new Map<string, ResearchEntityRosterEntry[]>();
+  for (const [key, entries] of roster) {
+    const leads = entries.filter(
+      (entry) => entry.state !== 'HISTORICAL' && roles.includes(entry.role),
+    );
+    if (leads.length > 0) byEntity.set(key, leads);
+  }
+  return byEntity;
+}
+
 async function selectQueuedEntities(limit: number): Promise<Array<Record<string, any>>> {
-  const queueItems = await VisibilityReleaseQueueItem.find({
-    collection: 'research',
-    status: 'open',
-    repairStage: 'pi_identity',
-    blockerReasons: 'missing_lead',
-  })
-    .sort({ lastSeenAt: -1 })
-    .limit(Math.max(limit * 10, 100))
-    .lean();
+  const queueItems = await applyFiniteCandidateLimit(
+    VisibilityReleaseQueueItem.find({
+      collection: 'research',
+      status: 'open',
+      repairStage: 'pi_identity',
+      blockerReasons: 'missing_lead',
+    }).sort({ lastSeenAt: -1 }),
+    limit,
+    10,
+    100,
+  ).lean();
   const entityIds = uniqueStrings(queueItems.map((item: any) => String(item.recordId || '')));
   if (entityIds.length === 0) return [];
 
-  const [entities, leadMembers] = await Promise.all([
+  const [entities, leadRosterByEntity] = await Promise.all([
     ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
-      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
       .lean(),
-    ResearchGroupMember.find({
-      researchEntityId: { $in: entityIds },
-      isCurrentMember: { $ne: false },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-    })
-      .select('researchEntityId')
-      .lean(),
+    currentLeadRosterEntriesByEntity(entityIds, LEAD_MEMBER_ROLES),
   ]);
-  const entitiesById = new Map((entities as any[]).map((entity) => [officialProfileDocumentId(entity._id), entity]));
-  const hasLead = new Set((leadMembers as any[]).map((member) => officialProfileDocumentId(member.researchEntityId)));
+  const entitiesById = new Map(
+    (entities as any[]).map((entity) => [officialProfileDocumentId(entity._id), entity]),
+  );
+  const hasLead = new Set(leadRosterByEntity.keys());
 
   const annotatedEntities = await annotateEntitiesWithSourceObservationUrls(
     entityIds
       .map((id) => entitiesById.get(id))
-      .filter((entity): entity is Record<string, any> => !!entity && !hasLead.has(officialProfileDocumentId(entity._id))),
+      .filter(
+        (entity): entity is Record<string, any> =>
+          !!entity && !hasLead.has(officialProfileDocumentId(entity._id)),
+      ),
   );
 
-  return annotatedEntities
-    .filter(shouldQueueEntityForPiBackfill)
-    .slice(0, limit);
+  return annotatedEntities.filter(shouldQueueEntityForPiBackfill).slice(0, limit);
 }
 
 async function selectDirectVisibleProfileBioUserTargets(
@@ -2172,23 +2383,34 @@ async function selectDirectVisibleProfileBioUserTargets(
 ): Promise<Array<Record<string, any>>> {
   if (limit <= 0) return [];
 
-  const users = await User.find({
-    archived: { $ne: true },
-    userType: 'faculty',
-    netid: { $exists: true, $ne: '' },
-    $or: [
-      { profileUrls: { $exists: true, $ne: null } },
-      { website: /yale\.edu/i },
-      { websiteUrl: /yale\.edu/i },
-    ],
-  })
-    .select('_id netid email fname lname userType title bio website websiteUrl profileUrls')
-    .sort({ updatedAt: 1 })
-    .limit(Math.max(limit * 4, 50))
-    .lean();
+  const researchers = (await applyFiniteCandidateLimit(
+    Researcher.find({
+      archived: { $ne: true },
+      accountId: { $exists: true, $ne: null },
+      $or: [
+        { 'profileLinks.kind': 'YALE_OFFICIAL' },
+        { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
+      ],
+    })
+      .select('_id accountId displayName profile profileLinks identifiers')
+      .sort({ updatedAt: 1 }),
+    limit,
+    4,
+    50,
+  ).lean()) as Array<Record<string, any>>;
+  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
+  const accounts = accountIds.length
+    ? ((await Account.find({ _id: { $in: accountIds } })
+        .select('_id netid email')
+        .lean()) as Array<Record<string, any>>)
+    : [];
+  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
 
-  return (users as any[])
-    .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)) && publicBioNeedsBackfill(user))
+  return researchers
+    .map((researcher) =>
+      researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
+    )
+    .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)))
     .map((user) => {
       const urls = visibleBioProfileUrlsForUser(user);
       return urls.length > 0 ? userIdentityMatchEntity(user, urls) : null;
@@ -2197,7 +2419,9 @@ async function selectDirectVisibleProfileBioUserTargets(
     .slice(0, limit);
 }
 
-export async function selectVisibleProfileBioTargets(limit: number): Promise<Array<Record<string, any>>> {
+export async function selectVisibleProfileBioTargets(
+  limit: number,
+): Promise<Array<Record<string, any>>> {
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
@@ -2206,40 +2430,36 @@ export async function selectVisibleProfileBioTargets(limit: number): Promise<Arr
     .lean();
   const entitiesById = new Map((entities as any[]).map((entity) => [idValue(entity._id), entity]));
 
-  const members =
-    entities.length > 0
-      ? await ResearchGroupMember.find({
-          researchEntityId: { $in: entities.map((entity: any) => entity._id) },
-          archived: { $ne: true },
-          isCurrentMember: { $ne: false },
-          role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-          userId: { $exists: true, $ne: null },
-        })
-          .select('researchEntityId userId sourceUrl')
-          .lean()
-      : [];
-  const userIds = uniqueStrings(members.map((member: any) => String(member.userId || '')));
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entities.map((entity: any) => entity._id),
+    VISIBLE_PROFILE_MEMBER_ROLES,
+  );
+  const rosterEntries = Array.from(leadRosterByEntity.values())
+    .flat()
+    .filter((entry) => entry.netid);
+  const rosterEntriesByNetid = new Map<string, ResearchEntityRosterEntry[]>();
+  for (const entry of rosterEntries) {
+    rosterEntriesByNetid.set(entry.netid, [
+      ...(rosterEntriesByNetid.get(entry.netid) || []),
+      entry,
+    ]);
+  }
+  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
 
-  const users =
-    userIds.length > 0
-      ? await User.find({ _id: { $in: userIds } })
-          .select('_id netid email fname lname userType title bio website websiteUrl profileUrls')
-          .sort({ updatedAt: 1 })
-          .lean()
-      : [];
+  const users = await profileUsersByNetids(netids);
 
-  const memberTargets = (users as any[])
-    .filter((user) => user.netid && publicBioNeedsBackfill(user))
+  const memberTargets = users
+    .filter((user) => user.netid)
     .map((user) => {
-      const attachedUrls = (members as any[])
-        .filter((member) => idValue(member.userId) === idValue(user._id))
-        .flatMap((member) => {
-          const entity = entitiesById.get(idValue(member.researchEntityId));
+      const attachedUrls = (rosterEntriesByNetid.get(textValue(user.netid).toLowerCase()) || [])
+        .flatMap((entry) => {
+          const entity = entitiesById.get(idValue(entry.researchEntityId));
           return [
             entity?.websiteUrl,
             entity?.website,
             ...(Array.isArray(entity?.sourceUrls) ? entity.sourceUrls : []),
-            member.sourceUrl,
+            entry.rosterProvenance?.profileUrl,
+            entry.rosterProvenance?.sourceUrl,
           ];
         })
         .filter((url) => visibleBioProfileUrlMatchesUser(textValue(url), user));
@@ -2251,7 +2471,10 @@ export async function selectVisibleProfileBioTargets(limit: number): Promise<Arr
   const excludedUserIds = new Set(memberTargets.map((target) => idValue(target._id)));
   return [
     ...memberTargets,
-    ...(await selectDirectVisibleProfileBioUserTargets(limit - memberTargets.length, excludedUserIds)),
+    ...(await selectDirectVisibleProfileBioUserTargets(
+      limit - memberTargets.length,
+      excludedUserIds,
+    )),
   ].slice(0, limit);
 }
 
@@ -2285,14 +2508,17 @@ async function selectProfileDescriptionTargets(
           _id: {
             $in: uniqueStrings(
               (
-                await VisibilityReleaseQueueItem.find({
-                  collection: 'research',
-                  status: 'open',
-                  repairStage: 'source_description',
-                  blockerReasons: { $in: sourceDescriptionProfileBlockers },
-                })
-                  .sort({ lastSeenAt: -1, _id: 1 })
-                  .limit(Math.max(limit * 20, 100))
+                await applyFiniteCandidateLimit(
+                  VisibilityReleaseQueueItem.find({
+                    collection: 'research',
+                    status: 'open',
+                    repairStage: 'source_description',
+                    blockerReasons: { $in: sourceDescriptionProfileBlockers },
+                  }).sort({ lastSeenAt: -1, _id: 1 }),
+                  limit,
+                  20,
+                  100,
+                )
                   .select('recordId')
                   .lean()
               ).map((item: any) => String(item.recordId || '')),
@@ -2300,19 +2526,21 @@ async function selectProfileDescriptionTargets(
           },
         };
 
-  const entities = (await ResearchEntity.find({
-    archived: { $ne: true },
-    ...identityFilter,
-  })
-    .select('_id slug name displayName website websiteUrl sourceUrls')
-    .sort({ lastObservedAt: -1, _id: 1 })
-    .limit(Math.max(limit * 20, 100))
-    .lean()) as Array<Record<string, any>>;
+  const entities = (await applyFiniteCandidateLimit(
+    ResearchEntity.find({
+      archived: { $ne: true },
+      ...identityFilter,
+    })
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
+      .sort({ lastObservedAt: -1, _id: 1 }),
+    limit,
+    20,
+    100,
+  ).lean()) as Array<Record<string, any>>;
 
   const entitiesWithLeadUsers = await annotateEntitiesWithLeadUsers(entities);
-  const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(
-    entitiesWithLeadUsers,
-  );
+  const entitiesWithObservationUrls =
+    await annotateEntitiesWithSourceObservationUrls(entitiesWithLeadUsers);
   const candidates = entitiesWithObservationUrls.filter(
     (entity) => officialProfileUrlsForEntity(entity).length > 0,
   );
@@ -2329,41 +2557,34 @@ async function annotateEntitiesWithLeadUsers(
   entities: Array<Record<string, any>>,
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
-  const entityIds = uniqueStrings(entities.map((entity) => idValue(entity._id || entity.id))).filter(
-    (id) => /^[a-f0-9]{24}$/i.test(id),
-  );
+  const entityIds = uniqueStrings(
+    entities.map((entity) => idValue(entity._id || entity.id)),
+  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
   if (entityIds.length === 0) return entities;
 
-  const members = (await ResearchGroupMember.find({
-    researchEntityId: { $in: entityIds },
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-  })
-    .select('researchEntityId userId fname lname name email')
-    .lean()) as Array<Record<string, any>>;
-  const userIds = uniqueStrings(members.map((member) => idValue(member.userId))).filter((id) =>
-    /^[a-f0-9]{24}$/i.test(id),
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entityIds,
+    VISIBLE_PROFILE_MEMBER_ROLES,
   );
-  const users = userIds.length
-    ? ((await User.find({ _id: { $in: userIds } })
-        .select('_id fname lname name displayName email')
-        .lean()) as Array<Record<string, any>>)
-    : [];
-  const usersById = new Map(users.map((user) => [idValue(user._id), user]));
+  const rosterEntries = Array.from(leadRosterByEntity.values()).flat();
+  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
+  const users = await profileUsersByNetids(netids);
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
   const generatedProfileUrlsByEntity = new Map<string, string[]>();
 
-  for (const member of members) {
-    const user = usersById.get(idValue(member.userId)) || member;
+  for (const entry of rosterEntries) {
+    const user = usersByNetid.get(entry.netid);
+    const split = splitName(entry.name);
     const lead = {
-      fname: user.fname,
-      lname: user.lname,
-      name: user.name || user.displayName || member.name,
-      displayName: user.displayName || user.name || member.name,
-      email: user.email || member.email,
+      fname: user?.fname || split.first,
+      lname: user?.lname || split.last,
+      name: user?.name || user?.displayName || entry.name,
+      displayName: user?.displayName || user?.name || entry.name,
+      email: user?.email || entry.email,
+      netid: textValue(user?.netid) || textValue(entry.netid),
     };
-    const entityId = idValue(member.researchEntityId);
+    const entityId = idValue(entry.researchEntityId);
     leadUsersByEntity.set(entityId, [...(leadUsersByEntity.get(entityId) || []), lead]);
     generatedProfileUrlsByEntity.set(entityId, [
       ...(generatedProfileUrlsByEntity.get(entityId) || []),
@@ -2389,9 +2610,9 @@ async function annotateEntitiesWithSourceObservationUrls(
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
 
-  const entityIds = uniqueStrings(entities.map((entity) => idValue(entity._id || entity.id))).filter(
-    (id) => /^[a-f0-9]{24}$/i.test(id),
-  );
+  const entityIds = uniqueStrings(
+    entities.map((entity) => idValue(entity._id || entity.id)),
+  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
   const entityKeys = uniqueStrings(entities.map((entity) => textValue(entity.slug)));
   if (entityIds.length === 0 && entityKeys.length === 0) return entities;
 
@@ -2433,9 +2654,9 @@ async function annotateProfileDescriptionPreferredSourceEvidence(
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
 
-  const entityIds = uniqueStrings(entities.map((entity) => idValue(entity._id || entity.id))).filter(
-    (id) => /^[a-f0-9]{24}$/i.test(id),
-  );
+  const entityIds = uniqueStrings(
+    entities.map((entity) => idValue(entity._id || entity.id)),
+  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
   const entityKeys = uniqueStrings(entities.map((entity) => textValue(entity.slug)));
   if (entityIds.length === 0 && entityKeys.length === 0) return entities;
 
@@ -2493,66 +2714,65 @@ async function selectResearchHomeProfileTargets(
           ],
         };
 
-  const entities = (await ResearchEntity.find({
-    archived: { $ne: true },
-    ...targetFilter,
-  })
-    .select('_id slug name displayName website websiteUrl sourceUrls')
-    .sort({ lastObservedAt: -1, _id: 1 })
-    .limit(Math.max(limit * 20, 100))
-    .lean()) as Array<Record<string, any>>;
+  const entities = (await applyFiniteCandidateLimit(
+    ResearchEntity.find({
+      archived: { $ne: true },
+      ...targetFilter,
+    })
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
+      .sort({ lastObservedAt: -1, _id: 1 }),
+    limit,
+    20,
+    100,
+  ).lean()) as Array<Record<string, any>>;
   if (entities.length === 0) return [];
 
-  const members = (await ResearchGroupMember.find({
-    researchEntityId: { $in: entities.map((entity) => entity._id) },
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-    userId: { $exists: true, $ne: null },
-  })
-    .select('researchEntityId userId')
-    .lean()) as Array<Record<string, any>>;
-  const userIds = uniqueStrings(members.map((member) => idValue(member.userId)));
-  if (userIds.length === 0) return [];
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entities.map((entity) => entity._id),
+    VISIBLE_PROFILE_MEMBER_ROLES,
+  );
+  const rosterEntries = Array.from(leadRosterByEntity.values())
+    .flat()
+    .filter((entry) => entry.netid);
+  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
+  if (netids.length === 0) return [];
 
-  const users = (await User.find({ _id: { $in: userIds } })
-    .select('_id fname lname email website websiteUrl profileUrls')
-    .lean()) as Array<Record<string, any>>;
-  const usersById = new Map(users.map((user) => [idValue(user._id), user]));
+  const users = await profileUsersByNetids(netids);
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const profileUrlsByEntity = new Map<string, string[]>();
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
 
-  for (const member of members) {
-    const user = usersById.get(idValue(member.userId));
-    if (!user) continue;
+  for (const entry of rosterEntries) {
+    const user = usersByNetid.get(entry.netid);
     const urls = uniqueStrings([
-      user.website,
-      user.websiteUrl,
-      ...objectStringValues(user.profileUrls),
+      user?.website,
+      user?.websiteUrl,
+      ...objectStringValues(user?.profileUrls),
+      entry.websiteUrl,
+      entry.rosterProvenance?.profileUrl,
     ]);
     if (urls.length === 0) continue;
-    const entityId = idValue(member.researchEntityId);
-    profileUrlsByEntity.set(entityId, [
-      ...(profileUrlsByEntity.get(entityId) || []),
-      ...urls,
-    ]);
+    const split = splitName(entry.name);
+    const entityId = idValue(entry.researchEntityId);
+    profileUrlsByEntity.set(entityId, [...(profileUrlsByEntity.get(entityId) || []), ...urls]);
     leadUsersByEntity.set(entityId, [
       ...(leadUsersByEntity.get(entityId) || []),
       {
-        fname: user.fname,
-        lname: user.lname,
-        email: user.email,
+        fname: user?.fname || split.first,
+        lname: user?.lname || split.last,
+        email: user?.email || entry.email,
+        netid: textValue(user?.netid) || textValue(entry.netid),
       },
     ]);
   }
 
-  const entitiesWithLeadUrls = entities
-    .map((entity) => ({
-      ...entity,
-      leadUserProfileUrls: uniqueStrings(profileUrlsByEntity.get(idValue(entity._id)) || []),
-      leadUsers: leadUsersByEntity.get(idValue(entity._id)) || [],
-    }));
-  const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(entitiesWithLeadUrls);
+  const entitiesWithLeadUrls = entities.map((entity) => ({
+    ...entity,
+    leadUserProfileUrls: uniqueStrings(profileUrlsByEntity.get(idValue(entity._id)) || []),
+    leadUsers: leadUsersByEntity.get(idValue(entity._id)) || [],
+  }));
+  const entitiesWithObservationUrls =
+    await annotateEntitiesWithSourceObservationUrls(entitiesWithLeadUrls);
 
   return entitiesWithObservationUrls
     .filter((entity) => officialProfileUrlsForEntity(entity).length > 0)
@@ -2578,42 +2798,48 @@ async function selectLeadDirectWebsiteTargets(
           studentVisibilityTier: { $ne: 'suppressed' },
         };
 
-  const entities = (await ResearchEntity.find({
-    archived: { $ne: true },
-    ...targetFilter,
-  })
-    .select('_id slug name displayName website websiteUrl sourceUrls')
-    .sort({ lastObservedAt: -1, _id: 1 })
-    .limit(Math.max(limit * 20, 100))
-    .lean()) as Array<Record<string, any>>;
+  const entities = (await applyFiniteCandidateLimit(
+    ResearchEntity.find({
+      archived: { $ne: true },
+      ...targetFilter,
+    })
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
+      .sort({ lastObservedAt: -1, _id: 1 }),
+    limit,
+    20,
+    100,
+  ).lean()) as Array<Record<string, any>>;
   if (entities.length === 0) return [];
 
-  const members = (await ResearchGroupMember.find({
-    researchEntityId: { $in: entities.map((entity) => entity._id) },
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-    userId: { $exists: true, $ne: null },
-  })
-    .select('researchEntityId userId')
-    .lean()) as Array<Record<string, any>>;
-  const userIds = uniqueStrings(members.map((member) => idValue(member.userId)));
-  const users =
-    userIds.length > 0
-      ? ((await User.find({ _id: { $in: userIds } })
-          .select('_id website websiteUrl profileUrls')
-          .lean()) as Array<Record<string, any>>)
-      : [];
-  const usersById = new Map(users.map((user) => [idValue(user._id), user]));
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entities.map((entity) => entity._id),
+    VISIBLE_PROFILE_MEMBER_ROLES,
+  );
+  const rosterEntries = Array.from(leadRosterByEntity.values())
+    .flat()
+    .filter((entry) => entry.netid);
+  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
+  const users = await profileUsersByNetids(netids);
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
 
   const urlsByEntity = new Map<string, string[]>();
-  for (const member of members) {
-    const user = usersById.get(idValue(member.userId));
-    if (!user) continue;
-    const urls = leadDirectResearchHomeUrlsForUser(user);
+  const leadNamesByEntity = new Map<string, string[]>();
+  for (const entry of rosterEntries) {
+    const user = usersByNetid.get(entry.netid);
+    const urls = uniqueStrings([
+      ...(user ? leadDirectResearchHomeUrlsForUser(user) : []),
+      publicLeadDirectResearchHomeUrl(entry.websiteUrl),
+      publicLeadDirectResearchHomeUrl(entry.rosterProvenance?.profileUrl),
+    ]);
     if (urls.length === 0) continue;
-    const entityId = idValue(member.researchEntityId);
+    const entityId = idValue(entry.researchEntityId);
     urlsByEntity.set(entityId, uniqueStrings([...(urlsByEntity.get(entityId) || []), ...urls]));
+    if (entry.name) {
+      leadNamesByEntity.set(
+        entityId,
+        uniqueStrings([...(leadNamesByEntity.get(entityId) || []), entry.name]),
+      );
+    }
   }
   const candidateUrls = uniqueStrings(Array.from(urlsByEntity.values()).flat());
   const candidateEntityIds = new Set(entities.map((entity) => idValue(entity._id)));
@@ -2622,7 +2848,10 @@ async function selectLeadDirectWebsiteTargets(
     const duplicateLookupUrls = uniqueStrings(candidateUrls.flatMap(websiteDuplicateLookupUrls));
     const existingWebsiteRows = (await ResearchEntity.find({
       archived: { $ne: true },
-      $or: [{ websiteUrl: { $in: duplicateLookupUrls } }, { website: { $in: duplicateLookupUrls } }],
+      $or: [
+        { websiteUrl: { $in: duplicateLookupUrls } },
+        { website: { $in: duplicateLookupUrls } },
+      ],
     })
       .select('_id website websiteUrl')
       .lean()) as Array<Record<string, any>>;
@@ -2641,6 +2870,7 @@ async function selectLeadDirectWebsiteTargets(
         urlsByEntity.get(idValue(entity._id)) || [],
         duplicateWebsiteUrls,
       ),
+      leadDirectWebsiteLeadNames: leadNamesByEntity.get(idValue(entity._id)) || [],
     }))
     .filter((entity) => textValue(entity.leadDirectWebsiteUrl))
     .slice(0, limit);
@@ -2665,14 +2895,19 @@ async function selectSourceUrlWebsiteTargets(
           studentVisibilityTier: { $ne: 'suppressed' },
         };
 
-  const entities = (await ResearchEntity.find({
-    archived: { $ne: true },
-    ...targetFilter,
-  })
-    .select('_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls')
-    .sort({ lastObservedAt: -1, _id: 1 })
-    .limit(Math.max(limit * 20, 100))
-    .lean()) as Array<Record<string, any>>;
+  const entities = (await applyFiniteCandidateLimit(
+    ResearchEntity.find({
+      archived: { $ne: true },
+      ...targetFilter,
+    })
+      .select(
+        '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
+      )
+      .sort({ lastObservedAt: -1, _id: 1 }),
+    limit,
+    20,
+    100,
+  ).lean()) as Array<Record<string, any>>;
   if (entities.length === 0) return [];
 
   const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(entities);
@@ -2683,6 +2918,16 @@ async function selectSourceUrlWebsiteTargets(
     urlsByEntity.set(idValue(entity._id), urls);
   }
 
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entities.map((entity) => entity._id),
+    VISIBLE_PROFILE_MEMBER_ROLES,
+  );
+  const leadNamesByEntity = new Map<string, string[]>();
+  for (const [entityId, entries] of leadRosterByEntity) {
+    const names = uniqueStrings(entries.map((entry) => entry.name));
+    if (names.length > 0) leadNamesByEntity.set(entityId, names);
+  }
+
   const candidateUrls = uniqueStrings(Array.from(urlsByEntity.values()).flat());
   const candidateEntityIds = new Set(entities.map((entity) => idValue(entity._id)));
   const duplicateWebsiteUrls = new Set<string>();
@@ -2690,7 +2935,10 @@ async function selectSourceUrlWebsiteTargets(
     const duplicateLookupUrls = uniqueStrings(candidateUrls.flatMap(websiteDuplicateLookupUrls));
     const existingWebsiteRows = (await ResearchEntity.find({
       archived: { $ne: true },
-      $or: [{ websiteUrl: { $in: duplicateLookupUrls } }, { website: { $in: duplicateLookupUrls } }],
+      $or: [
+        { websiteUrl: { $in: duplicateLookupUrls } },
+        { website: { $in: duplicateLookupUrls } },
+      ],
     })
       .select('_id website websiteUrl')
       .lean()) as Array<Record<string, any>>;
@@ -2709,6 +2957,7 @@ async function selectSourceUrlWebsiteTargets(
         urlsByEntity.get(idValue(entity._id)) || [],
         duplicateWebsiteUrls,
       ),
+      sourceUrlWebsiteLeadNames: leadNamesByEntity.get(idValue(entity._id)) || [],
     }))
     .filter((entity) => textValue(entity.sourceUrlWebsiteUrl))
     .slice(0, limit);
@@ -2719,54 +2968,79 @@ export async function resolveExistingUserForIdentity(
 ): Promise<ExistingProfileUser | null> {
   const urls = uniqueStrings([identity.fetchedUrl, identity.canonicalUrl]);
   const email = textValue(identity.email).toLowerCase();
-  const orFilters = [
-    ...(email ? [{ email }] : []),
-    ...(urls.length
-      ? [
-          { website: { $in: urls } },
-          { websiteUrl: { $in: urls } },
-          { 'profileUrls.medicine': { $in: urls } },
-          { 'profileUrls.official': { $in: urls } },
-          { 'profileUrls.ysm': { $in: urls } },
-        ]
-      : []),
-  ];
-  if (orFilters.length === 0) return null;
-  const candidates = await User.find({
-    $or: orFilters,
-  })
-    .select('netid email fname lname name displayName website websiteUrl profileUrls')
-    .limit(10)
-    .lean();
+  if (!email && urls.length === 0) return null;
+
+  const researchersById = new Map<string, Record<string, any>>();
+  const addResearchers = (docs: Array<Record<string, any>>) => {
+    for (const doc of docs) researchersById.set(idValue(doc._id), doc);
+  };
+  const researcherSelect = '_id accountId displayName profile profileLinks identifiers';
+
+  if (urls.length) {
+    addResearchers(
+      (await Researcher.find({
+        archived: { $ne: true },
+        $or: [{ 'profileLinks.url': { $in: urls } }, { 'profile.websiteUrl': { $in: urls } }],
+      })
+        .select(researcherSelect)
+        .limit(10)
+        .lean()) as Array<Record<string, any>>,
+    );
+  }
+  if (email) {
+    const emailAccounts = (await Account.find({ email }).select('_id').lean()) as Array<
+      Record<string, any>
+    >;
+    const emailAccountIds = emailAccounts.map((account) => account._id);
+    if (emailAccountIds.length) {
+      addResearchers(
+        (await Researcher.find({ archived: { $ne: true }, accountId: { $in: emailAccountIds } })
+          .select(researcherSelect)
+          .limit(10)
+          .lean()) as Array<Record<string, any>>,
+      );
+    }
+  }
+  if (researchersById.size === 0) return null;
+
+  const researchers = Array.from(researchersById.values());
+  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
+  const accounts = accountIds.length
+    ? ((await Account.find({ _id: { $in: accountIds } })
+        .select('_id netid email')
+        .lean()) as Array<Record<string, any>>)
+    : [];
+  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
+  const candidates = researchers.map((researcher) =>
+    researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
+  );
 
   const matchingCandidates =
-    candidates.length <= 1 ? candidates : candidates.filter((candidate: any) => {
-      const candidateEmail = textValue(candidate.email).toLowerCase();
-      if (email && candidateEmail === email) return true;
+    candidates.length <= 1
+      ? candidates
+      : candidates.filter((candidate) => {
+          const candidateEmail = textValue(candidate.email).toLowerCase();
+          if (email && candidateEmail === email) return true;
 
-      const identitySplit = splitName(identity.displayName);
-      const candidateSplit = splitName(
-        textValue(candidate.name || candidate.displayName) ||
-          textValue(`${textValue(candidate.fname)} ${textValue(candidate.lname)}`),
-      );
-      const candidateFirst = slugify(normalizeName(textValue(candidate.fname) || candidateSplit.first));
-      const candidateLast = slugify(normalizeName(textValue(candidate.lname) || candidateSplit.last));
-      const identityFirst = slugify(normalizeName(identitySplit.first));
-      const identityLast = slugify(normalizeName(identitySplit.last));
-      const exactNameMatch =
-        candidateFirst &&
-        candidateLast &&
-        identityFirst &&
-        identityLast &&
-        candidateFirst === identityFirst &&
-        candidateLast === identityLast;
-      if (exactNameMatch) return true;
+          const identitySplit = splitName(identity.displayName);
+          const candidateFirst = slugify(normalizeName(textValue(candidate.fname)));
+          const candidateLast = slugify(normalizeName(textValue(candidate.lname)));
+          const identityFirst = slugify(normalizeName(identitySplit.first));
+          const identityLast = slugify(normalizeName(identitySplit.last));
+          const exactNameMatch =
+            candidateFirst &&
+            candidateLast &&
+            identityFirst &&
+            identityLast &&
+            candidateFirst === identityFirst &&
+            candidateLast === identityLast;
+          if (exactNameMatch) return true;
 
-      return urls.some((url) => personPageUrlMatchesUser(url, candidate));
-    });
+          return urls.some((url) => personPageUrlMatchesUser(url, candidate));
+        });
 
   if (matchingCandidates.length !== 1) return null;
-  const user = matchingCandidates[0] as any;
+  const user = matchingCandidates[0];
   const netid = textValue(user.netid);
   return netid ? { _id: idValue(user._id), netid, email: textValue(user.email) } : null;
 }
@@ -2797,7 +3071,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       useCache: boolean,
       sourceName: string,
     ) => Promise<string> = fetchHtml,
-    private readonly entitySelector: (limit: number) => Promise<Array<Record<string, any>>> = selectQueuedEntities,
+    private readonly entitySelector: (
+      limit: number,
+    ) => Promise<Array<Record<string, any>>> = selectQueuedEntities,
     private readonly userResolver: (
       identity: OfficialProfileIdentity,
     ) => Promise<ExistingProfileUser | null> = resolveExistingUserForIdentity,
@@ -2835,12 +3111,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       targetKeys.length === 0 && (only.size === 0 || only.has(QUEUED_PI_BACKFILL_KEY));
     const runVisibleProfileBioBackfill =
       targetKeys.length === 0 && only.has(VISIBLE_PROFILE_BIO_BACKFILL_KEY);
-    const runProfileDescriptionBackfill =
-      only.has(PROFILE_DESCRIPTION_BACKFILL_KEY);
-    const runLeadDirectWebsiteBackfill =
-      only.has(LEAD_DIRECT_WEBSITE_BACKFILL_KEY);
-    const runSourceUrlWebsiteBackfill =
-      only.has(SOURCE_URL_WEBSITE_BACKFILL_KEY);
+    const runProfileDescriptionBackfill = only.has(PROFILE_DESCRIPTION_BACKFILL_KEY);
+    const runLeadDirectWebsiteBackfill = only.has(LEAD_DIRECT_WEBSITE_BACKFILL_KEY);
+    const runSourceUrlWebsiteBackfill = only.has(SOURCE_URL_WEBSITE_BACKFILL_KEY);
     const runProfileResearchHomeBackfill =
       only.size === 0 ||
       only.has(PROFILE_RESEARCH_HOME_BACKFILL_KEY) ||
@@ -2876,7 +3149,10 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
     }
-    const limit = limitOption ?? 25;
+    const limit =
+      ctx.options.exhaustive && limitOption === undefined
+        ? Number.POSITIVE_INFINITY
+        : (limitOption ?? 25);
     const selectedEntities = [
       ...(runQueuedPiBackfill ? await this.entitySelector(limit) : []),
       ...(runVisibleProfileBioBackfill ? await this.visibleProfileSelector(limit) : []),
@@ -2908,10 +3184,37 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
 
     for (const entity of entities) {
       if (runOnlyWebsiteObservationBackfill) {
-        const observations = entityLeadDirectWebsiteToObservations(
-          entity,
-          textValue(entity.leadDirectWebsiteUrl || entity.sourceUrlWebsiteUrl),
-        );
+        const websiteUrl = textValue(entity.leadDirectWebsiteUrl || entity.sourceUrlWebsiteUrl);
+        if (!websiteUrl) continue;
+        let candidateHost: URL | null = null;
+        try {
+          candidateHost = new URL(websiteUrl);
+        } catch {
+          candidateHost = null;
+        }
+        if (candidateHost && isCustomYaleResearchHomeSubdomain(candidateHost)) {
+          const leadNames: string[] = entity.leadDirectWebsiteUrl
+            ? entity.leadDirectWebsiteLeadNames || []
+            : entity.sourceUrlWebsiteLeadNames || [];
+          if (fetchAttempts > 0 && this.profileFetchThrottleMs > 0) {
+            await this.delay(this.profileFetchThrottleMs);
+          }
+          fetchAttempts += 1;
+          const owned = await candidateWebsiteOwnedByLead(
+            websiteUrl,
+            leadNames,
+            this.htmlFetcher,
+            ctx.options.useCache,
+          );
+          if (!owned) {
+            ctx.log('Skipped unverified custom-subdomain website candidate', {
+              entityId: officialProfileDocumentId(entity._id),
+              websiteUrl,
+            });
+            continue;
+          }
+        }
+        const observations = entityLeadDirectWebsiteToObservations(entity, websiteUrl);
         if (observations.length === 0) continue;
         await ctx.emit(observations);
         emitted += observations.length;
@@ -3017,8 +3320,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           });
           if (identity) {
             if (shouldEmitProfileDescriptionBackfillForEntity(entity)) {
-              observations.push(...identityToResearchEntityDescriptionObservations(identity, entity));
+              observations.push(
+                ...identityToResearchEntityDescriptionObservations(identity, entity),
+              );
             }
+            observations.push(...identityToResearchEntityDepartmentObservations(identity, entity));
             const existingUser = await existingUserForIdentity(identity);
             if (existingUser) {
               observations.push(
@@ -3051,6 +3357,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           if (!identity) continue;
           const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
           if (home && (await websiteUrlOwnedByAnotherEntity(home.url, entity))) continue;
+          if (isInstitutionalHomeMismatchedWithGrantDerivedPiShell(entity, home)) continue;
           observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
         }
 

@@ -4,11 +4,15 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ACTIVE_SOURCE_NAMES,
+  RETIRED_SOURCE_NAMES,
   assertSeedSourcesWriteAllowed,
   buildSeedSourcesOutput,
   parseSeedSourcesArgs,
   writeSeedSourcesOutput,
 } from '../seedSources';
+import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
+import { getSourceCoverage } from '../sourceCoverageRegistry';
 
 const productionEnv = {
   SCRAPER_ENV: 'production',
@@ -16,24 +20,47 @@ const productionEnv = {
 } as NodeJS.ProcessEnv;
 
 describe('seedSources CLI helpers', () => {
+  it('retires bibliography sources instead of seeding them as active', () => {
+    for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES) {
+      expect(ACTIVE_SOURCE_NAMES, sourceName).not.toContain(sourceName);
+      expect(RETIRED_SOURCE_NAMES, sourceName).toContain(sourceName);
+    }
+  });
+
+  it('retires the student-decision LLM source instead of seeding it as active', () => {
+    expect(ACTIVE_SOURCE_NAMES).not.toContain('student-decision-llm');
+    expect(RETIRED_SOURCE_NAMES).toContain('student-decision-llm');
+  });
+
+  it('retires the orphaned external-fellowship LLM seed instead of seeding it as active', () => {
+    expect(ACTIVE_SOURCE_NAMES).not.toContain('external-fellowship-llm-scraper');
+    expect(RETIRED_SOURCE_NAMES).toContain('external-fellowship-llm-scraper');
+  });
+
+  it('gives every active seeded source a coverage-registry entry', () => {
+    const orphaned = ACTIVE_SOURCE_NAMES.filter((name) => getSourceCoverage(name) === undefined);
+    expect(orphaned).toEqual([]);
+  });
+
   it('parses reset, dry-run, and output flags', () => {
     expect(parseSeedSourcesArgs([])).toEqual({
       apply: false,
       confirmSeedApply: false,
       reset: false,
     });
-    expect(parseSeedSourcesArgs(['--reset', '--dry-run', '--output=/tmp/sources.json'])).toEqual({
+    const tmpJsonReport = path.join(os.tmpdir(), 'sources.json');
+    expect(parseSeedSourcesArgs(['--reset', '--dry-run', `--output=${tmpJsonReport}`])).toEqual({
       apply: false,
       confirmSeedApply: false,
       reset: true,
-      output: '/tmp/sources.json',
+      output: tmpJsonReport,
     });
     expect(() => parseSeedSourcesArgs(['--output=/etc/sources.json'])).toThrow(
       /--output must write under/,
     );
-    expect(() => parseSeedSourcesArgs(['--output=/tmp/sources.txt'])).toThrow(
-      /--output must point to a \.json report file/,
-    );
+    expect(() =>
+      parseSeedSourcesArgs([`--output=${path.join(os.tmpdir(), 'sources.txt')}`]),
+    ).toThrow(/--output must point to a \.json report file/);
   });
 
   it('blocks apply source seeding without explicit confirmation', () => {

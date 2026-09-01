@@ -21,7 +21,6 @@ function baseFacts(): ResearchQualitySearchFacts {
     slug: 'example-lab',
     name: 'Example Lab',
     displayName: 'Example Lab',
-    description: 'Short.',
     shortDescription: '',
     fullDescription: '',
     sourceUrls: ['not-a-url'],
@@ -31,10 +30,7 @@ function baseFacts(): ResearchQualitySearchFacts {
     researchAreas: [],
     departments: [],
     duplicateCandidates: [{ slug: 'example-lab-2', name: 'Example Laboratory' }],
-    pathwayCount: 1,
-    publicContactRouteCount: 0,
     accessSignalCount: 0,
-    postedOpportunityCount: 0,
     topSearchReasons: [],
     matchedQueryNames: ['data science'],
   };
@@ -87,7 +83,6 @@ describe('buildResearchQualitySearchReviewRow', () => {
         'WEAK_SOURCE_DOMAIN',
         'DUPLICATE_OR_DISAMBIGUATION_RISK',
         'THIN_PATHWAY_EVIDENCE',
-        'THIN_CONTACT_EVIDENCE',
         'SEMANTIC_EXPLAINABILITY_GAP',
       ]),
     );
@@ -98,8 +93,6 @@ describe('buildResearchQualitySearchReviewRow', () => {
   it('does not flag a well-explained result with lead, context, and actionable evidence', () => {
     const row = buildResearchQualitySearchReviewRow({
       ...baseFacts(),
-      description:
-        'This lab studies student-facing research questions in computational biology, including methods, datasets, and collaboration patterns for undergraduate projects.',
       shortDescription: 'Computational biology research with undergraduate project context.',
       fullDescription:
         'Students can understand what the group studies, who leads it, and why a pathway result matched their search.',
@@ -110,10 +103,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       researchAreas: ['Computational Biology'],
       departments: ['Molecular Biophysics and Biochemistry'],
       duplicateCandidates: [],
-      pathwayCount: 2,
-      publicContactRouteCount: 1,
       accessSignalCount: 2,
-      postedOpportunityCount: 1,
       topSearchReasons: ['description matched computational biology', 'pathway evidence matched'],
     });
 
@@ -128,7 +118,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       entityType: 'CENTER',
       slug: 'center-yale-cancer-center',
       name: 'Yale Cancer Center',
-      description:
+      fullDescription:
         'The center supports cancer research across immunology, prevention, genomics, clinical trials, and precision medicine through affiliated faculty, member labs, shared programs, and source-backed center activity.',
       shortDescription:
         'Cancer research center with affiliated faculty, member labs, shared programs, and source-backed center activity.',
@@ -138,10 +128,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       members: [],
       researchAreas: ['Cancer Immunology'],
       duplicateCandidates: [],
-      pathwayCount: 0,
-      publicContactRouteCount: 0,
       accessSignalCount: 0,
-      postedOpportunityCount: 0,
       topSearchReasons: ['description matched cancer research'],
     });
 
@@ -155,7 +142,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       entityType: 'FACULTY_RESEARCH_AREA',
       slug: 'faculty-research-area-example',
       name: 'Example Faculty Research',
-      description:
+      fullDescription:
         'This faculty research area studies computational biology, statistical learning, and translational genomics through faculty-led research projects and public profile context.',
       shortDescription:
         'Faculty research area in computational biology, statistical learning, and translational genomics.',
@@ -165,13 +152,8 @@ describe('buildResearchQualitySearchReviewRow', () => {
       members: [{ role: 'pi', name: 'Ada Example' }],
       researchAreas: ['Computational Biology'],
       duplicateCandidates: [],
-      pathwayCount: 0,
-      pathwayTypes: [],
-      publicContactRouteCount: 0,
-      publicContactRouteTypes: [],
       accessSignalCount: 0,
       accessSignalTypes: [],
-      postedOpportunityCount: 0,
       topSearchReasons: ['description matched computational biology'],
     });
 
@@ -192,8 +174,6 @@ describe('summarizeResearchQualitySearchRows', () => {
       sourceTitle: 'Sourced Center',
       members: [{ role: 'director', name: 'Grace Example' }],
       researchAreas: ['Digital Humanities'],
-      pathwayCount: 2,
-      publicContactRouteCount: 1,
       accessSignalCount: 1,
       topSearchReasons: ['name matched digital humanities'],
     });
@@ -253,10 +233,7 @@ describe('researchQualitySearchReview CLI helpers', () => {
       ]),
     ).toThrow(/--output must write under/);
     expect(() =>
-      parseResearchQualitySearchReviewArgs([
-        '--output',
-        '/tmp/research-quality-search-review.txt',
-      ]),
+      parseResearchQualitySearchReviewArgs(['--output', '/tmp/research-quality-search-review.txt']),
     ).toThrow(/--output must point to a \.json report file/);
   });
 

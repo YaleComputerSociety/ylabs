@@ -153,6 +153,43 @@ describe('fellowshipSearchReducer', () => {
     expect(next.total).toBe(99);
   });
 
+  it('SEARCH_SUCCESS is not exhausted when loaded count is below the server total even if a full page returns', () => {
+    const firstPage = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_SUCCESS',
+      payload: {
+        fellowships: Array.from({ length: 100 }, (_, i) => makeFellowship({ id: `p1-${i}` })),
+        total: 135,
+        pageSize: 100,
+        append: false,
+      },
+    });
+    expect(firstPage.searchExhausted).toBe(false);
+
+    const secondPage = fellowshipSearchReducer(firstPage, {
+      type: 'SEARCH_SUCCESS',
+      payload: {
+        fellowships: Array.from({ length: 35 }, (_, i) => makeFellowship({ id: `p2-${i}` })),
+        total: 135,
+        pageSize: 100,
+        append: true,
+      },
+    });
+    expect(secondPage.fellowships).toHaveLength(135);
+    expect(secondPage.searchExhausted).toBe(true);
+  });
+
+  it('SEARCH_SUCCESS falls back to page-size heuristic for exhaustion when total is omitted', () => {
+    const next = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_SUCCESS',
+      payload: {
+        fellowships: Array.from({ length: 40 }, (_, i) => makeFellowship({ id: `x-${i}` })),
+        pageSize: 100,
+        append: false,
+      },
+    });
+    expect(next.searchExhausted).toBe(true);
+  });
+
   it('RESET_LIFECYCLE_FLAGS resets all loaded flags', () => {
     const state: FellowshipSearchState = createInitialFellowshipSearchState({
       queryStringLoaded: true,

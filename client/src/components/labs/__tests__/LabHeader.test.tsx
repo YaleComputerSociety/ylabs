@@ -6,10 +6,17 @@
  * jest-dom matchers. We assert on text content / attributes directly.
  */
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { render as rtlRender } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement, ReactNode } from 'react';
 
 import LabHeader from '../LabHeader';
 import { ResearchGroup } from '../../../types/researchGroup';
+
+const render = (ui: ReactElement) =>
+  rtlRender(ui, {
+    wrapper: ({ children }: { children: ReactNode }) => <MemoryRouter>{children}</MemoryRouter>,
+  });
 
 const baseGroup: ResearchGroup = {
   _id: 'g1',
@@ -22,8 +29,6 @@ const baseGroup: ResearchGroup = {
   departments: ['Computer Science', 'Mathematics'],
   researchAreas: ['Theoretical CS'],
   school: 'School of Engineering & Applied Science',
-  openness: 'open',
-  acceptingUndergrads: true,
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],
@@ -43,6 +48,22 @@ describe('LabHeader', () => {
     expect(container.textContent).toContain('Watson Center, Room 200');
   });
 
+  it('renders displayName in the H1 when it differs from name', () => {
+    const { container } = render(
+      <LabHeader
+        group={{ ...baseGroup, displayName: 'Grace Hopper Center for Advanced Computing' }}
+      />,
+    );
+    const h1 = container.querySelector('h1');
+    expect(h1?.textContent).toBe('Grace Hopper Center for Advanced Computing');
+  });
+
+  it('falls back to name in the H1 when displayName is empty', () => {
+    const { container } = render(<LabHeader group={{ ...baseGroup, displayName: '' }} />);
+    const h1 = container.querySelector('h1');
+    expect(h1?.textContent).toBe('Lovelace Computational Lab');
+  });
+
   it('renders all departments and a website link with the correct href', () => {
     const { container } = render(<LabHeader group={baseGroup} />);
     expect(container.textContent).toContain('Computer Science');
@@ -54,10 +75,73 @@ describe('LabHeader', () => {
   });
 
   it('hides the website link when websiteUrl is empty', () => {
-    const { container } = render(
-      <LabHeader group={{ ...baseGroup, websiteUrl: '' }} />,
-    );
+    const { container } = render(<LabHeader group={{ ...baseGroup, websiteUrl: '' }} />);
     expect(container.textContent).not.toContain('Visit lab website');
+  });
+
+  it('never renders a boilerplate platform host as the website CTA (#572)', () => {
+    const { container } = render(
+      <LabHeader group={{ ...baseGroup, websiteUrl: 'http://wordpress.org/' }} />,
+    );
+    expect(container.querySelector('a[href*="wordpress.org"]')).toBeNull();
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
+
+  it('still renders a named per-person platform subdomain as the website CTA (#556)', () => {
+    const { container } = render(
+      <LabHeader group={{ ...baseGroup, websiteUrl: 'https://rjohnwilliams.wordpress.com/' }} />,
+    );
+    const websiteLink = container.querySelector('a[href*="rjohnwilliams.wordpress.com"]');
+    expect(websiteLink).not.toBeNull();
+    expect(websiteLink?.textContent).toContain('Visit lab website');
+  });
+
+  it('never renders a section-index root as the website CTA (#569)', () => {
+    const { container } = render(
+      <LabHeader
+        group={{ ...baseGroup, websiteUrl: 'https://environment.yale.edu/research/centers' }}
+      />,
+    );
+    expect(container.querySelector('a[href*="research/centers"]')).toBeNull();
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
+
+  it('never renders a website CTA whose URL is marked UNAVAILABLE in sourceLinkHealth (#1027)', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          websiteUrl: 'https://example.edu/lovelace',
+          sourceLinkHealth: [
+            {
+              url: 'https://example.edu/lovelace',
+              healthStatus: 'UNAVAILABLE',
+              httpStatusCode: 404,
+            },
+            { url: 'https://example.edu/labs', healthStatus: 'HEALTHY', httpStatusCode: 200 },
+          ],
+        }}
+      />,
+    );
+    expect(container.querySelector('a[href*="example.edu/lovelace"]')).toBeNull();
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
+
+  it('still renders a website CTA whose URL is HEALTHY in sourceLinkHealth (#1027)', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          websiteUrl: 'https://example.edu/lovelace',
+          sourceLinkHealth: [
+            { url: 'https://example.edu/lovelace', healthStatus: 'HEALTHY', httpStatusCode: 200 },
+          ],
+        }}
+      />,
+    );
+    const websiteLink = container.querySelector('a[href*="example.edu/lovelace"]');
+    expect(websiteLink).not.toBeNull();
+    expect(websiteLink?.textContent).toContain('Visit lab website');
   });
 
   it('uses research website wording for faculty research profiles', () => {
@@ -85,7 +169,7 @@ describe('LabHeader', () => {
           ...baseGroup,
           name: 'Molecular Biophysics and Biochemistry Undergraduate Research',
           kind: 'program',
-          entityType: 'PROGRAM',
+          entityType: undefined,
           websiteUrl: 'https://mbb.yale.edu/introduction-undergraduate-program',
         }}
       />,
@@ -97,44 +181,8 @@ describe('LabHeader', () => {
   });
 });
 
-describe('LabHeader trust-gradient pill', () => {
-  it('shows "Evidence unknown" when there are no positive signals', () => {
-    const { container } = render(<LabHeader group={baseGroup} />);
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('unknown');
-    expect(pill?.textContent).toBe('Evidence unknown');
-  });
-
-  it('shows "Strong evidence" when the PI manually confirmed', () => {
-    const { container } = render(
-      <LabHeader
-        group={{
-          ...baseGroup,
-          manuallyLockedFields: ['acceptingUndergrads'],
-          acceptingUndergrads: true,
-        }}
-      />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('verified-accepting');
-    expect(pill?.textContent).toBe('Strong evidence');
-  });
-
-  it('shows "Some evidence" with a single strong signal (past advisees)', () => {
-    const { container } = render(
-      <LabHeader
-        group={{
-          ...baseGroup,
-          pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 1 }],
-        }}
-      />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('likely-accepting');
-    expect(pill?.textContent).toBe('Some evidence');
-  });
-
-  it('shows "Strong evidence" when there are 2+ strong signals', () => {
+describe('LabHeader signal-only header', () => {
+  it('renders no verdict-tier badge', () => {
     const { container } = render(
       <LabHeader
         group={{
@@ -142,34 +190,12 @@ describe('LabHeader trust-gradient pill', () => {
           pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 2 }],
           currentUndergradCount: 3,
         }}
-        hasActivePostedOpportunity={false}
       />,
     );
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('verified-accepting');
-  });
-
-  it('shows "Not currently available" when acceptingUndergrads=false', () => {
-    const { container } = render(
-      <LabHeader
-        group={{
-          ...baseGroup,
-          acceptingUndergrads: false,
-          manuallyLockedFields: ['acceptingUndergrads'],
-        }}
-      />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('not-accepting');
-    expect(pill?.textContent).toBe('Not currently available');
-  });
-
-  it('honors hasActivePostedOpportunity prop as a strong signal', () => {
-    const { container } = render(
-      <LabHeader group={baseGroup} hasActivePostedOpportunity={true} />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    // 1 strong signal → likely-accepting
-    expect(pill?.getAttribute('data-verdict')).toBe('likely-accepting');
+    expect(container.querySelector('[data-verdict]')).toBeNull();
+    expect(container.textContent).not.toContain('Strong evidence');
+    expect(container.textContent).not.toContain('Some evidence');
+    expect(container.textContent).not.toContain('Not currently available');
+    expect(container.textContent).not.toContain('Evidence unknown');
   });
 });

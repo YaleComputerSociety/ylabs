@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   getSearchQualityAnalytics: vi.fn(),
   getUserAnalytics: vi.fn(),
   getUserAnalyticsDrilldown: vi.fn(),
+  emitResearchEvent: vi.fn(),
+  researchEntityExists: vi.fn(),
 }));
 
 vi.mock('../../models/analytics', async (importOriginal) => ({
@@ -27,6 +29,12 @@ vi.mock('../../services/analyticsService', async (importOriginal) => ({
   getSearchQualityAnalytics: mocks.getSearchQualityAnalytics,
   getUserAnalytics: mocks.getUserAnalytics,
   getUserAnalyticsDrilldown: mocks.getUserAnalyticsDrilldown,
+}));
+
+vi.mock('../../services/researchAnalytics', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/researchAnalytics')>()),
+  emitResearchEvent: mocks.emitResearchEvent,
+  researchEntityExists: mocks.researchEntityExists,
 }));
 
 import router from '../analytics';
@@ -92,24 +100,78 @@ describe('analytics routes', () => {
     expect(routeByPath('/search-queries')).toBeTruthy();
   });
 
-  it('keeps the analytics debug endpoint behind the admin router guards', () => {
-    const route = routeByPath('/debug');
-    expect(route).toBeTruthy();
-    const handlerNames = route.stack.map((layer: any) => layer.handle?.name);
-    expect(handlerNames).toEqual(expect.arrayContaining(['isAuthenticated', 'isAdmin']));
-  });
-
   it('marks analytics responses as private no-store payloads', async () => {
     expect(middlewareNames()).toContain('setPrivateAnalyticsCacheHeaders');
 
     const { res, next } = await invokeMiddleware('setPrivateAnalyticsCacheHeaders');
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a batch of research events and reports the accepted count', async () => {
+    mocks.emitResearchEvent.mockResolvedValue(true);
+    mocks.researchEntityExists.mockResolvedValue(true);
+
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_search',
+            payload: {
+              outcome: 'results',
+              resultCountBucket: '6-20',
+              searchKind: 'query',
+              filterCountBucket: '0',
+            },
+          },
+          {
+            eventType: 'research_entity_impression',
+            entityType: 'research_entity',
+            entityId: '507f1f77bcf86cd799439011',
+            payload: { surface: 'browse', positionBucket: '1-3' },
+          },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toEqual({ accepted: 2 });
+    expect(mocks.emitResearchEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a batch that is not a non-empty array', async () => {
+    const res = await invokeRouteHandler('/research/batch', {
+      body: { events: [] },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(mocks.emitResearchEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized research event batch before emitting', async () => {
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: Array.from({ length: 51 }, () => ({
+          eventType: 'research_search',
+          payload: {
+            outcome: 'results',
+            resultCountBucket: '6-20',
+            searchKind: 'query',
+            filterCountBucket: '0',
+          },
+        })),
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    expect(res.statusCode).toBe(413);
+    expect(mocks.emitResearchEvent).not.toHaveBeenCalled();
   });
 
   it('does not leak internal messages from analytics helper-backed route failures', async () => {
@@ -146,6 +208,29 @@ describe('analytics routes', () => {
     expect(mocks.getUserAnalytics).not.toHaveBeenCalled();
   });
 
+  it('forwards a valid numeric offset for user activity pagination', async () => {
+    mocks.getUserAnalytics.mockResolvedValue({ users: [], total: 0, limit: 25, offset: 50 });
+
+    const res = await invokeRouteHandler('/users', {
+      query: { offset: '50', limit: '25' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mocks.getUserAnalytics).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 50, limit: 25 }),
+    );
+  });
+
+  it('rejects a negative offset before dispatching aggregation', async () => {
+    const res = await invokeRouteHandler('/users', {
+      query: { offset: '-5' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid analytics request' });
+    expect(mocks.getUserAnalytics).not.toHaveBeenCalled();
+  });
+
   it('does not leak internal messages from user analytics drilldown failures', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getUserAnalyticsDrilldown.mockRejectedValue(
@@ -158,50 +243,5 @@ describe('analytics routes', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Failed to fetch user analytics' });
-  });
-
-  it('does not expose raw netids or metadata from analytics debug events', async () => {
-    const chain = {
-      select: vi.fn(),
-      sort: vi.fn(),
-      limit: vi.fn(),
-      lean: vi.fn(),
-    };
-    chain.select.mockReturnValue(chain);
-    chain.sort.mockReturnValue(chain);
-    chain.limit.mockReturnValue(chain);
-    chain.lean.mockResolvedValue([
-      {
-        _id: '64a000000000000000000001',
-        eventType: 'login',
-        netid: 'student123',
-        userType: 'undergraduate',
-        metadata: {
-          loginMethod: 'CAS',
-          privateNote: 'ada@example.edu',
-        },
-        timestamp: new Date('2026-06-11T00:00:00.000Z'),
-      },
-    ]);
-    mocks.analyticsEventFind.mockReturnValue(chain);
-
-    const res = await invokeRouteHandler('/debug');
-
-    expect(mocks.analyticsEventFind).toHaveBeenCalledWith({
-      eventType: { $in: ['login', 'visitor'] },
-    });
-    expect(chain.select).toHaveBeenCalledWith('eventType userType timestamp');
-    expect(chain.limit).toHaveBeenCalledWith(50);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.events).toEqual([
-      {
-        eventType: 'login',
-        userType: 'undergraduate',
-        timestamp: new Date('2026-06-11T00:00:00.000Z'),
-      },
-    ]);
-    expect(JSON.stringify(res.body)).not.toContain('student123');
-    expect(JSON.stringify(res.body)).not.toContain('metadata');
-    expect(JSON.stringify(res.body)).not.toContain('ada@example.edu');
   });
 });

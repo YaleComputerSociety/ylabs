@@ -2,7 +2,10 @@
 
 Status: active runbook
 
-Last updated: 2026-05-29
+Last updated: 2026-07-24
+
+For the concise Development -> local Beta fetch -> Beta Render materialization -> Production operator sequence, use [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md).
+This longer document remains the source-specific deployment and recovery reference.
 
 ## Goal
 
@@ -20,10 +23,9 @@ The same check is also available as the `Production Security Smoke` GitHub
 Actions workflow. It fails if the deployed app is stale, if `/api/config` is
 missing CSP or Permissions-Policy, if current API routes are absent, or if
 authenticated/private surfaces no longer enforce the expected boundary.
-Scheduled and manually dispatched workflow runs default the expected deployment
-fingerprint to `github.sha`; override `SMOKE_API_BASE`, `SMOKE_APP_BASE`, or
-`--expect-commit <prefix>` only when intentionally checking a non-default host
-or a known deployment revision.
+Override `SMOKE_API_BASE` or `SMOKE_APP_BASE` only when intentionally checking a
+non-default host. The smoke does not verify which commit is deployed; read that
+from the Render deploy log.
 
 Use this with:
 
@@ -52,13 +54,15 @@ Source metadata
   -> ScrapeRun
   -> append-only Observation rows
   -> entity materialization
-  -> ResearchGroup/User/Paper/etc.
+  -> ResearchEntity/Researcher/RoleAssignment/etc.
   -> access materialization where evidence supports it
-  -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity
+  -> Signal (access types)
+  -> logistics materialization where exact official evidence supports each independent claim
+  -> Signal (logistics types)
   -> Meilisearch sync or later reindex
 ```
 
-The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
+The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old unreferenced superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
 
 ## Environment Progression
 
@@ -92,6 +96,13 @@ Rules:
 
 Purpose: seed a realistic staging dataset and validate UI/search behavior before touching production.
 
+Precondition: confirm `taxonomy_terms` is seeded in the target database before running any scraper against Beta or a fresh environment.
+The only writer for that collection (`data-migration/seedTaxonomyTerms.ts`) was deleted in #2186, so an empty environment stays empty and nothing in the repository will fill it.
+`research-area-source-extractor` is fail-closed against the approved registry and emits nothing when it is empty, and every other source's `researchAreas[]` then passes through raw and un-canonicalized.
+Both failures are silent: the run reports success with degraded research-area data.
+Check with `db.taxonomy_terms.countDocuments({ reviewStatus: 'APPROVED', status: 'ACTIVE', archived: false })` and treat zero as a stop.
+Development held 5,291 terms with 638 approved as of 2026-08-29; Beta held none.
+
 Preparation:
 
 ```bash
@@ -100,7 +111,7 @@ yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources
 yarn --cwd server scrape:seed-sources --apply --confirm-seed-apply --output /tmp/ylabs-seed-sources-apply.json
 ```
 
-Use `yarn --cwd server beta:readiness` without `--strict` for a diagnostic report. The command is read-only: it reports the Mongo target, accepted-input readiness, gated source posture, source metadata presence, canonical migration residue, and Pathway backend posture.
+Use `yarn --cwd server beta:readiness` without `--strict` for a diagnostic report. The command is read-only: it reports the Mongo target, accepted-input readiness, gated source posture, source metadata presence, and canonical migration residue.
 Use the seed-source dry-run artifact to confirm the target database and source actions before applying source metadata updates. Apply mode requires `--confirm-seed-apply`; production source seeding also requires `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`.
 
 The canonical Beta operator wrapper is:
@@ -111,7 +122,7 @@ SCRAPER_ENV=beta yarn --cwd server beta:seed --output /tmp/ylabs-beta-seed-plan.
 SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed --output /tmp/ylabs-beta-seed-result.json
 ```
 
-Use `beta:seed-meili` on the Beta server when Mongo is already populated and the launch task is to rebuild Meilisearch plus run the related checks. The broader `beta:seed` wrapper plans or runs Beta readiness, Source registry seeding, Meilisearch rebuilds, Pathway relevance review, and final Meili readiness acceptance. It does not run broad scrapers unless the operator explicitly names sources:
+Use `beta:seed-meili` on the Beta server when Mongo is already populated and the launch task is to rebuild Meilisearch plus run the related checks. The broader `beta:seed` wrapper plans or runs Beta readiness, Source registry seeding, the ResearchEntity Meilisearch rebuild, and final Meili readiness acceptance. It does not run broad scrapers unless the operator explicitly names sources:
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed \
@@ -119,15 +130,21 @@ SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed \
   --output /tmp/ylabs-beta-seed-result.json
 ```
 
-Use `--skip-meili`, `--skip-source-metadata`, `--skip-readiness`, or `--skip-pathway-relevance` only for a targeted recovery run after the omitted phase already has a fresh accepted artifact.
+Use `--skip-meili`, `--skip-source-metadata`, or `--skip-readiness` only for a targeted recovery run after the omitted phase already has a fresh accepted artifact.
 
 Then run accepted sources in rollout order:
 
-1. Entity discovery: `ysm-atoz-index`, `yse-centers-index`, `centers-institutes-index`, selected `dept-faculty-roster` departments.
+1. Entity discovery: `ysm-atoz-index`, `yse-centers-index`, `yse-faculty-directory`, `centers-institutes-index`, selected `dept-faculty-roster` departments.
 2. Profile metadata: `yale-directory`.
-3. Enrichment: `openalex`, `nih-reporter`, `nsf-award-search`, `arxiv` where relevant.
+3. Enrichment: `nih-reporter` and `nsf-award-search`.
 4. Access evidence: bounded `lab-microsite-undergrad-llm` source lists.
-5. Gated sources only after blockers clear: `undergrad-fellowships-recipients`.
+5. Gated sources only after blockers clear: `undergrad-fellowships-recipients` and bounded `official-research-home-roster` allowlist entries.
+
+OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref ingestion are retired and are not valid Beta or Render schedule targets.
+Researcher profiles may expose reviewed Google Scholar and ORCID links for outbound navigation, but those links do not rebuild a local publication corpus.
+Ordinary scraper runs, cron runs, and standalone materialization never read or write paper data; paper materialization and the `Paper` and `PaperAuthor` models and their readers are retired with no rollback opt-in.
+Historical `paper` observations are retained as read-only archived evidence and are never materialized.
+Retain historical source rows and observations and the stored scholarly collections until the human-gated `papers`/`paper_authors` collection drop in issue #207.
 
 For each Beta source:
 
@@ -137,13 +154,17 @@ For each Beta source:
 - Confirm public surfaces do not expose non-public scraped contact data.
 - Confirm expected access artifacts match the source's coverage metadata.
 
-Before switching Pathway search traffic, run:
+After a bounded logistics-producing run, save the read-only coverage and sampled-review artifact:
 
 ```bash
-PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relevance-review
+SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
+  --sample-size=25 \
+  --minimum-precision=0.95 \
+  --output=/tmp/ylabs-undergraduate-logistics-audit.json
 ```
 
-Keep runtime on Mongo until the review output is accepted. Rollback remains setting `PATHWAY_SEARCH_BACKEND=mongo`.
+Review every sampled claim against its official source, record the decisions in the audit command's `{"decisions":[...]}` input shape, and rerun with `--decisions=<reviewed-file>`.
+Do not broaden the source list or enable recurring logistics acquisition until parent issue `#187` records the accepted bounded private Beta run, `precision.releaseReady=true`, and accepted unknown, stale, conflict, validation-rejection, and per-claim coverage totals.
 
 Beta can be seeded from a local machine pointed at the Beta database. This is usually cheaper than paying for long-lived cloud compute during initial backfill.
 
@@ -162,8 +183,8 @@ Record each item in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.
 - [ ] **Dataset versioning:** Assign a promotion dataset version such as `prod-promote-YYYY-MM-DD-<lane>` and attach it to the accepted Beta snapshot or per-source production run IDs, saved reports, and Meili rebuild outputs.
 - [ ] **Copy-vs-delta decision:** Choose exactly one lane: accepted Beta copy or guarded production delta. Do not mix the lanes in one promotion window.
 - [ ] **Privacy payload gate:** Sample public API payloads before promotion and confirm they exclude non-public scraped contact data, suppressed/operator-review programs, raw observations, internal review notes, and production-only usage/session data.
-- [ ] **Meili sync and rollback:** Decide whether production traffic stays on Mongo or switches to Meili after rebuild; keep `PATHWAY_SEARCH_BACKEND=mongo` as the rollback posture until production relevance review and document counts are accepted.
-- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/opportunities/:id` when a known public id is available, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy route checks.
+- [ ] **Meili sync and rollback:** Rebuild the `researchentities` index after the Mongo copy and confirm the rebuilt document counts against the accepted Beta counts before opening production traffic.
+- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy route checks.
 - [ ] **No recurring writes by default:** Keep production cron, compact-retention apply mode, and broad/paid source reruns disabled until the manual promotion smoke checklist passes.
 
 Required before any production copy or write:
@@ -172,7 +193,6 @@ Required before any production copy or write:
 - The operator can name the exact restore point and the person who can restore it.
 - Source readiness is recorded in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
 - The Beta trust-audit caveats in the roadmap are either fixed or explicitly accepted for this release.
-- Production storage posture is decided: provision enough Atlas storage for raw OpenAlex observations, or keep compact retention after saved reports.
 - Promotion lane is chosen and recorded: accepted Beta copy or guarded production delta.
 - Promotion dataset version is recorded and tied to accepted reports or source run IDs.
 - Privacy payload gate is accepted for public student routes.
@@ -183,18 +203,18 @@ Required before any production copy or write:
 
 Fill this packet before any production copy, guarded production write, Meilisearch backend switch, or recurring cron enablement. The human operator delegated the lane/default posture decision to Codex on 2026-05-28; the defaults below are accepted, but blank owner/restore/copy fields still block production writes.
 
-| Field                         | Operator value                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Promotion lane                | Lane A accepted Beta copy                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Atlas backup / restore point  | BLOCKED: fresh Production restore point identifier not recorded                                                                                                                                                                                                                                                                                                                                                                            |
-| Rollback owner                | Codex autonomous operator for routine gate coordination; BLOCKED for actual Atlas restore execution until a fresh restore point and tested restore procedure are recorded                                                                                                                                                                                                                                                                  |
-| Smoke owner                   | Codex autonomous operator for routine smoke coordination; BLOCKED until the smoke commands are run against the real target and results are recorded                                                                                                                                                                                                                                                                                        |
-| Guarded copy dry-run reviewer | Codex autonomous operator; BLOCKED because the 2026-06-11 dry-run attempt could not start without `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`; rerun `production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json` after those separate targets are configured, then review the artifact before apply mode                                                                                                                                               |
-| Meili backend before gate     | Mongo-backed Pathways                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Meili backend after gate      | Keep Mongo-backed Pathways until production Meili rebuild counts and relevance review are accepted                                                                                                                                                                                                                                                                                                                                         |
-| Accepted warnings             | Sparse coverage and missing/weak descriptions are accepted as hidden-row or post-promotion backlog; the latest strict Beta audit reports 70 active research entities without pathways, 62 without access signals, 553 without contact routes, 53 missing short descriptions, 186 weak short descriptions, and 2 synthetic/dev user emails that are excluded from Lane A copy; duplicate-name, source-health, launch-trust, and scraper-integrity promotion blockers are cleared in the latest Beta artifacts |
+| Field                         | Operator value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Promotion lane                | Lane A accepted Beta copy                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Atlas backup / restore point  | BLOCKED: fresh Production restore point identifier not recorded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Rollback owner                | Codex autonomous operator for routine gate coordination; BLOCKED for actual Atlas restore execution until a fresh restore point and tested restore procedure are recorded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Smoke owner                   | Codex autonomous operator for routine smoke coordination; BLOCKED until the smoke commands are run against the real target and results are recorded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Guarded copy dry-run reviewer | Codex autonomous operator; BLOCKED because the 2026-06-11 dry-run attempt could not start without `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`; rerun `production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json` after those separate targets are configured, then review the artifact before apply mode                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Search index before gate      | `researchentities` at accepted Beta document counts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Search index after gate       | Rebuild `researchentities` and confirm document counts against the accepted Beta counts before opening traffic                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Accepted warnings             | Sparse coverage and missing/weak descriptions are accepted as hidden-row or post-promotion backlog; the latest strict Beta audit reports 62 active research entities without access signals, 53 missing short descriptions, 186 weak short descriptions, and 2 synthetic/dev user emails that are excluded from Lane A copy; duplicate-name, source-health, launch-trust, and scraper-integrity promotion blockers are cleared in the latest Beta artifacts                                                                                                                                                                                                                                                                                                                                                  |
 | Run IDs                       | Latest Beta preflight artifacts were refreshed on 2026-06-11: `launch:trust-contract --strict` wrote `/tmp/ylabs-launch-trust-final-after-dedupe.json` with `launchEligible=2291`, `limitedButSafe=0`, `held=0`, `suppressed=160`, and `publicVisibilityViolations=0`; `scraper:integrity-gate --include-samples` wrote `/tmp/ylabs-scraper-integrity-final-after-dedupe.json` with every hard count at 0; strict `beta:data-quality --include-samples` wrote `/tmp/ylabs-beta-data-quality-final-after-dedupe.json` with `promotionReady=true` and `promotionBlockerCount=0`; `student-visibility:gate --collection=all --mode=dry-run` wrote `/tmp/ylabs-student-visibility-gate-final-dryrun.json` with `changed=0`; dataset version should be `prod-promote-2026-06-11-lane-a-beta-copy` if copied today |
-| Rollback tested               | BLOCKED: restore drill/procedure not recorded or exercised                                                                                                                                                                                                                                                                                                                                                                                 |
+| Rollback tested               | BLOCKED: restore drill/procedure not recorded or exercised                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 True blockers before this packet can be accepted:
 
@@ -208,12 +228,12 @@ Safe pre-gate commands are read-only or local-smoke only:
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json
+SCRAPER_ENV=beta yarn --cwd server research-entity:audit-public-descriptions --strict --include-samples --output /tmp/ylabs-public-description-audit.json
 SCRAPER_ENV=beta yarn --cwd server scraper:integrity-gate --include-samples
-SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --include-research-activity --include-paper-quality --strict
+SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --strict
 SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=all --limit=250 --sample-limit=10
 yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host>
 SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false
-yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false --expect-commit "$(git rev-parse --short HEAD)"
 ```
 
 When `beta:data-quality --include-samples` reports `sourceHealthWarnings`, use each queue item's `nextCommand` to write the latest scraper report for that source. Those commands are read-only and point at `/tmp/ylabs-scraper-reports/<source>-<runId>.json`.
@@ -249,10 +269,10 @@ Integrity cleanup commands are dry-run first and Beta-only unless a production p
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --limit=10000
-SCRAPER_ENV=beta yarn --cwd server pathways:dedupe-exploratory --limit=1000
 ```
 
 Use `--apply` only after the dry-run output is reviewed and the target database is confirmed.
+The full guarded dry-run, reviewer-decision, and apply workflow for same-PI entity dedupe is documented in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
 ### Production Promotion Lanes
 
@@ -260,7 +280,7 @@ Choose one lane before touching production.
 
 #### Lane A: Accepted Beta Copy
 
-Use this when Beta is the accepted production candidate and a fresh parity check confirms Beta already contains every production base record that must be preserved, such as users, listings, departments, fellowships, and research areas.
+Use this when Beta is the accepted production candidate and a fresh parity check confirms Beta already contains every production base record that must be preserved, such as accounts, departments, org units, research areas, and fellowships.
 
 Gate:
 
@@ -271,11 +291,11 @@ Gate:
 5. Rebuild or sync Meilisearch after Mongo copy completes.
 6. Run the smoke checklist before declaring the gate complete.
 
-Minimum copy set for the accepted full Beta posture:
+The copy set is owned by `COPY_COLLECTIONS` in `server/src/scripts/promoteAcceptedBetaCopy.ts`, and the dry-run artifact lists it with per-collection counts, so read it there rather than from a second list that can drift.
+[`data-refresh-runbook.md`](./data-refresh-runbook.md) explains why each collection is in or out and why `observations` is left behind unless `--include-observations` is passed.
+Base and support collections are only safe to replace after parity is fresh.
 
-- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `papers`, `paper_authors`, and `grants`.
-- Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
-- Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
+Transitional note: until the human-gated `signalConsolidationMigration` is applied, the legacy `access_signals` and `undergraduate_logistics_claims` collections may still hold un-migrated rows and must also be copied and audited alongside `signals`.
 
 Rollback for a bad copy is restoring Production from the pre-copy Atlas backup, then rebuilding or resyncing Meilisearch.
 
@@ -284,8 +304,8 @@ Dry-run rollback drill before using Lane A:
 1. Record the Atlas backup or point-in-time restore timestamp that would be used if the copy is rejected.
 2. Name the collections that would be restored: every copied research-discovery, source audit, and base/support collection in the accepted copy set above.
 3. Confirm who has Atlas restore permission and how they will avoid restoring unrelated operational collections unless the incident requires a full database restore.
-4. Record the Meilisearch recovery command sequence: `yarn --cwd server meili:rebuild-pathways --confirm-meili-rebuild`, `yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild`, then `yarn --cwd server pathway:relevance-review`.
-5. Confirm `PATHWAY_SEARCH_BACKEND=mongo` is the live rollback posture until the rebuilt Meili indexes pass review.
+4. Record the Meilisearch recovery command: `yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild`.
+5. Confirm the rebuilt `researchentities` index document count matches the restored dataset before opening traffic.
 
 #### Lane B: Guarded Production Delta
 
@@ -321,7 +341,6 @@ Rules:
 - Prefer a bounded first production pass for expensive or broad sources.
 - Run `report` immediately and inspect warnings before moving to the next source.
 - Treat Meilisearch failures as non-blocking for Mongo correctness, then reindex or batch-sync after accepted writes.
-- Keep `PATHWAY_SEARCH_BACKEND=mongo` as the Pathways rollback posture until Meili production relevance and parity are accepted.
 
 Dry-run rollback drill before using Lane B:
 
@@ -329,8 +348,7 @@ Dry-run rollback drill before using Lane B:
 2. Confirm the source can be stopped by disabling `Source.enabled` for cron or by stopping the manual rollout; do not start additional source runs until the incident is classified.
 3. Record the pre-run Atlas backup or restore point for broad bad materialization.
 4. Confirm minor field-quality issues will use manual locks or a fixed rerun only after inspection, while broad materialization problems restore from the pre-run backup.
-5. Confirm `PATHWAY_SEARCH_BACKEND=mongo` is set or remains set if Meili behavior is questionable after the delta.
-6. Record the Meilisearch recovery command sequence after any accepted restore or fixed rerun.
+5. Record the Meilisearch recovery command sequence after any accepted restore or fixed rerun.
 
 ### Meilisearch Gate
 
@@ -338,22 +356,16 @@ After accepted production copy or writes, run with production Mongo and Meili en
 
 ```bash
 SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server meili:rebuild-pathways --confirm-meili-rebuild --output /tmp/ylabs-prod-meili-pathways-rebuild.json
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
   yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild --output /tmp/ylabs-prod-meili-researchentities-rebuild.json
-SCRAPER_ENV=production \
-  yarn --cwd server pathway:relevance-review --output /tmp/ylabs-prod-pathway-relevance-review.json
 ```
 
-The pathway rebuild is mandatory after promotion because the production index must include
-the current filterable fields, including `entityStudentVisibilityTier`, before traffic can
-use Meili. Keep `PATHWAY_SEARCH_BACKEND=mongo` until the rebuild completes and
-`yarn --cwd server pathway:relevance-review` has been accepted against that production
-index. The rebuild commands write to Meili and therefore require
-`SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`; their saved artifacts include
+The rebuild is mandatory after promotion because the production `researchentities` index must
+include the current filterable fields, including `entityStudentVisibilityTier`, before browse
+traffic can use it. The rebuild command writes to Meili and therefore requires
+`SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`; its saved artifact includes
 target `environment`, `db`, and parsed `options` metadata for promotion review.
 
-If Meili rebuild fails after Mongo writes succeeded, keep production traffic on Mongo-backed Pathways and complete the Mongo smoke checklist. Do not switch `PATHWAY_SEARCH_BACKEND=meili` until relevance review is accepted for the production index.
+If the Meili rebuild fails after Mongo writes succeeded, complete the Mongo smoke checklist and re-run the rebuild before opening browse traffic against the stale index.
 
 ### Smoke Checklist
 
@@ -361,10 +373,10 @@ Run these checks against the production app and production API after copy/delta 
 
 - `/api/config` returns `200` and points at the expected environment.
 - Research search returns real `research_entities` results for broad terms such as `machine learning`, `biology`, and `history`.
-- A known research detail page renders sources, evidence, people, and pathways without legacy `/labs` or `/api/research-groups` dependencies.
-- Research detail and opportunity pages show evidence-backed Ways In without exposing raw non-public scraped contact data.
-- Opportunity detail renders a listing-bridged open posting and a scraper-derived closed or historical posting.
-- Pathways and Programs/Fellowships search require authentication when unauthenticated, and authenticated operator smoke checks show payloads without `operator_review` or `suppressed` records.
+- Research relevance smoke checks cover short/noisy student queries such as `AI`, `Professor Zhong`, and `computer vision for medical imaging` without substring-only matches dominating true topic or person matches.
+- A known research detail page renders its simplified student-facing research summary, people, saved-plan action, and supported access context without legacy `/labs` or `/api/research-groups` dependencies.
+- The research detail page shows evidence-backed planning context and the derived official-profile link-out without exposing raw non-public scraped contact data.
+- Research and Programs/Fellowships search require authentication when unauthenticated, and authenticated operator smoke checks show payloads without `operator_review` or `suppressed` records.
 - Unauthenticated admin/operator routes return `401`.
 - Legacy `/api/research-groups/search`, `/labs`, and `/labs/:slug` remain unavailable.
 - Source health is `0 error`; any warnings match the accepted warnings in the roadmap.
@@ -376,10 +388,9 @@ Reusable read-only helper:
 ```bash
 yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host>
 SMOKE_COOKIE='<operator-session-cookie>' yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false
-yarn --cwd client smoke:production-promotion --api-base https://<host>/api --app-base https://<host> --ui=false --expect-commit "$(git rev-parse --short HEAD)"
 ```
 
-The helper writes only local artifacts under `tmp/ui-smoke/` by default. It does not call `/api/dev-login` and does not send write-method requests. Public API checks use the configured API base directly, and optional authenticated Programs/Fellowships payload checks use `SMOKE_COOKIE` or `--cookie` without printing the cookie. Do not put credentials in `--api-base` or `--app-base`; the helper rejects credentialed target URLs before network calls and strips credentials from any validation-failure report. Browser UI checks use read-only route interception for `/api/check`, saved-item endpoints, program list fixtures, and the Operator Board payload so student and admin route guards can be checked without creating sessions or analytics events. If Playwright is not installed in the runner, the helper still runs the public API and unauthenticated admin API checks and records the browser limitation in the JSON report. Public `/api/config` includes a narrow deployment fingerprint (`deployment.provider`, `deployment.gitCommit`, and `deployment.gitBranch`) from safe provider metadata; pass `--expect-commit` during promotion smoke so stale or wrong-backend deployments fail before production promotion.
+The helper writes only local artifacts under `tmp/ui-smoke/` by default. It does not call `/api/dev-login` and does not send write-method requests. Public API checks use the configured API base directly, and optional authenticated Programs/Fellowships payload checks use `SMOKE_COOKIE` or `--cookie` without printing the cookie. Do not put credentials in `--api-base` or `--app-base`; the helper rejects credentialed target URLs before network calls and strips credentials from any validation-failure report. Browser UI checks use read-only route interception for `/api/check`, saved-item endpoints, program list fixtures, and the Operator Board payload so student and admin route guards can be checked without creating sessions or analytics events. If Playwright is not installed in the runner, the helper still runs the public API and unauthenticated admin API checks and records the browser limitation in the JSON report. Public `/api/config` exposes only a coarse `deployment.provider`. It deliberately omits the deployed commit and branch, which `scripts/security-preflight.test.mjs` enforces by source literal, so the smoke cannot and does not verify which revision is live. Confirm the deployed commit in the Render deploy log instead.
 
 Current admin UI limitation: the client does not expose `/admin/operator-board` as a page route. The guarded API is `/api/admin/operator-board`, and the Operator Board UI renders inside the admin `/analytics` route. The smoke helper therefore checks unauthenticated access on `/api/admin/operator-board`, student denial on `/analytics`, and admin rendering on `/analytics` through route interception.
 
@@ -387,12 +398,9 @@ Current admin UI limitation: the client does not expose `/admin/operator-board` 
 
 These are not automatic blockers if still accurate and accepted in the roadmap, but the operator must re-read them before production promotion:
 
-- OpenAlex raw observations were pruned in Beta after report capture to stay inside the 5GB Atlas tier.
-- `dept-faculty-roster` and `arxiv` had reviewed non-fatal materialization conflicts.
-- The final accepted `arxiv` run hit rate limits/timeouts and should not be rerun immediately without backoff.
-- Some papers have missing `year` values or duplicate DOI groups, while identifier duplicates and unsupported name-only faculty links are cleared.
+- `dept-faculty-roster` had reviewed non-fatal materialization conflicts.
 - Eight logged-in placeholder accounts remain for account repair, not deletion.
-- Many entities still lack public contact routes or pathways; this is sparse coverage, not broken referential integrity.
+- Many entities still lack public access signals; this is sparse coverage, not broken referential integrity.
 - Local Meili may lack the semantic `default` embedder; production Meili must be checked independently.
 - Browser smoke may require host libraries that are missing in some local workspaces; if Playwright cannot run locally, use production API smokes plus a browser from an environment with the required libraries.
 
@@ -411,7 +419,7 @@ After a successful gate, update [`docs/tasks/priority-roadmap.md`](./tasks/prior
 - Backup or restore-point identifier, without secrets.
 - Collections or sources promoted.
 - Production run IDs and saved report locations.
-- Meili rebuild/sync outcome and active Pathways backend.
+- Meili rebuild/sync outcome and `researchentities` document count.
 - Smoke checklist outcome.
 - Rollback posture and any accepted warnings.
 
@@ -432,26 +440,31 @@ The cron command:
 - Skips cleanly with exit code `0` if another cron already owns that source lock.
 - Refuses disabled `Source` rows unless `--force-disabled` is passed for manual recovery.
 - Runs the scraper with `triggeredBy=cron`, materializes immediately, prints a cron summary plus run report when no output file is requested, and exits nonzero if materialization errors are reported.
+- When the run's materialization reports no errors, runs a corpus-wide inferred-PI lead reclaim before the visibility gate so entities whose PI evidence a prior or partial run recorded but never materialized get a lead attached in the same locked cycle.
+  The reclaim is idempotent and best-effort: it skips already-linked and unresolvable entities, and a reclaim failure is logged without failing the primary scrape (it retries next cycle).
+  This makes the standalone `data:materialize-inferred-pi-leads --all` backfill a manual recovery tool rather than a recurring necessity.
+- When the run's materialization reports no errors, runs a single unconditional corpus-wide visibility gate (`{ collection: 'all', mode: 'apply' }`).
+  The gate is a handful of batched Mongo reads with no LLM calls, writes only records whose computed tier or reasons actually changed, and syncs only those to Meilisearch, so it converges to a near no-op once the corpus is current.
+  Because the re-gate is corpus-wide and unconditional, a gate-logic change self-applies on the next scheduled per-source run with no version bump and no manual `student-visibility:gate` op.
 - Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
 
-Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional visibility-gate result, and ScrapeRun report.
+Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional inferred-PI lead reclaim result, optional visibility-gate result, and ScrapeRun report.
 
 Suggested starting cadence:
 
-| Source                             | Cadence                           | Notes                                                                                |
-| ---------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------ |
-| `ysm-atoz-index`                   | weekly                            | Entity discovery only.                                                               |
-| `yse-centers-index`                | weekly                            | Entity discovery only.                                                               |
-| `centers-institutes-index`         | weekly or biweekly                | Broad member extraction; stagger separately.                                         |
-| `dept-faculty-roster`              | weekly by department group        | Use source-specific `--only`/config where available.                                 |
-| `yale-directory`                   | weekly                            | Broad directory paging; watch runtime.                                               |
-| `nih-reporter`                     | weekly or monthly                 | Enrichment only; conflicts should remain understood aggregate churn.                 |
-| `nsf-award-search`                 | weekly or monthly                 | Enrichment only.                                                                     |
-| `openalex`                         | weekly after WorkPlanner          | Keep name-only discovery opt-in and page-capped.                                     |
-| `arxiv`                            | weekly with `--since`             | Recent research activity only.                                                       |
-| `lab-microsite-undergrad-llm`      | weekly after WorkPlanner          | Paid/LLM source; use stale-only work planning before recurring cron.                 |
-| `student-decision-llm`             | manual after accepted target list | Paid/LLM display enrichment; run bounded after source-backed access evidence exists. |
-| `undergrad-fellowships-recipients` | monthly/manual                    | Requires accepted real CSV/manual data.                                              |
+| Source                             | Cadence                              | Notes                                                                                                |
+| ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `ysm-atoz-index`                   | weekly                               | Entity discovery only.                                                                               |
+| `yse-centers-index`                | weekly                               | Entity discovery only.                                                                               |
+| `yse-faculty-directory`            | weekly                               | Faculty directory seed plus individual profile pages; profile pages are the cited source.            |
+| `centers-institutes-index`         | weekly or biweekly                   | Broad member extraction; stagger separately.                                                         |
+| `official-research-home-roster`    | weekly after audit                   | Disabled by default; data operations owns refresh and sampled precision review.                      |
+| `dept-faculty-roster`              | weekly by department group           | Use source-specific `--only`/config where available.                                                 |
+| `yale-directory`                   | weekly                               | Broad directory paging; watch runtime.                                                               |
+| `nih-reporter`                     | weekly or monthly                    | Enrichment only; conflicts should remain understood aggregate churn.                                 |
+| `nsf-award-search`                 | weekly or monthly                    | Enrichment only.                                                                                     |
+| `lab-microsite-undergrad-llm`      | weekly legacy-only after WorkPlanner | Paid/LLM source; logistics acquisition remains manual and bounded until the parent gate is accepted. |
+| `undergrad-fellowships-recipients` | monthly/manual                       | Requires accepted real CSV/manual data.                                                              |
 
 Use separate Render Cron jobs per source or per source group and stagger start times. If a job needs more than the platform's cron runtime limits, split it into batches or use a background worker temporarily for that backfill only.
 
@@ -459,33 +472,143 @@ Use separate Render Cron jobs per source or per source group and stagger start t
 
 Do not enable recurring cron for a source until its row is accepted. A source may be accepted for manual guarded runs while remaining unaccepted for unattended cron.
 
-| Source                            | Cron acceptance prerequisites                                                                                                                                                           | First cron posture                                                                           | Hold if                                                                                                                                 |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.                                | Weekly, one source-specific cron, report saved with run ID.                                  | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                                        |
-| `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed.                            | Manual or low-frequency cron after one accepted guarded run.                                 | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access.                      |
-| `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                                                      | Monthly or term-bound cron, aligned to public deadline cycles.                               | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.                       |
-| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested.                                          | Weekly after WorkPlanner, with saved report and sampled public UI smoke.                     | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained.                                  |
-| `student-decision-llm`            | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible.       | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained.        |
-| `openalex`                        | Production storage posture is accepted, compact-retention/report-save policy is recorded, and identifier-backed candidate rules are confirmed.                                          | Weekly or monthly, bounded by identifiers/offsets; save reports before pruning observations. | Name-only discovery is enabled unintentionally, Atlas storage is insufficient, or materialization creates unsupported authorship links. |
-| `arxiv`                           | Accepted ORCID/input target list is current, backoff window has cleared, and metadata-only behavior does not create name-only Yale author links.                                        | Weekly with `--since` or bounded accepted targets.                                           | Rate limits/timeouts recur, ORCID input is stale, or the source attempts unsupported faculty links.                                     |
+| Source                            | Cron acceptance prerequisites                                                                                                                                                                                                                                                                  | First cron posture                                                                                                                                                                      | Hold if                                                                                                                                                                                |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.                                                                                                                                       | Weekly, one source-specific cron, report saved with run ID.                                                                                                                             | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                                                                                       |
+| `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed.                                                                                                                                   | Manual or low-frequency cron after one accepted guarded run.                                                                                                                            | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access.                                                                     |
+| `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                                                                                                                                                             | Monthly or term-bound cron, aligned to public deadline cycles.                                                                                                                          | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.                                                                      |
+| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. Recurring runs remain legacy-only until parent issue `#187` records an accepted bounded private Beta run and sampled logistics precision audit. | Weekly legacy-only after WorkPlanner, with saved report and sampled public UI smoke. Logistics acquisition remains manual and explicitly allowlisted until the parent gate is accepted. | Cost cap is missing, source emits raw non-public emails, logistics review is incomplete or below threshold, parent acceptance is absent, or materialization conflicts are unexplained. |
+
+### Recurring fellowship refresh
+
+`yarn --cwd server fellowships:refresh` is the deployable scheduler entrypoint for the official Yale fellowship catalog.
+No recurring job is configured in the repository, so it is disabled by default.
+Configure it as a separate monthly scheduled job, with additional runs six weeks before the usual fall and spring application cycles, only after the target-specific database name and restore workflow have been verified.
+
+The command is dry-run by default and prints only aggregate, redacted counts.
+It requires an explicit `--target=beta|prod`, a matching `SCRAPER_ENV`, and a connected database whose name exactly matches `FELLOWSHIP_REFRESH_BETA_DB` or `FELLOWSHIP_REFRESH_PROD_DB`.
+Use an uncached bounded Beta dry-run first:
+
+```bash
+SCRAPER_ENV=beta \
+FELLOWSHIP_REFRESH_BETA_DB=<beta-db-name> \
+MONGODBURL=<beta-url> \
+yarn --cwd server fellowships:refresh --target=beta --limit=50
+```
+
+Review the aggregate created, updated, unchanged, review-required, and reopened counts plus the private review queue before execute mode.
+Execute mode additionally requires `--execute --confirm=execute-fellowship-refresh-beta` and a restore token, supplied either as `--restore-token=<restore-id>` or in the `FELLOWSHIP_REFRESH_RESTORE_TOKEN` environment variable.
+Prefer the environment variable so the token never appears in the host process table; the sweep's `catalog-refresh` stage passes it that way.
+Because the environment value satisfies the same per-run backup attestation as the flag, keep it out of any persisted `.env` or shell profile and set it only for the run you have just taken a backup for.
+Production requires the corresponding `prod` target and confirmation, plus `--confirm-prod=confirm-production-fellowship-refresh`.
+Never put a restore token in scheduler configuration committed to this repository.
+Use the secret manager provided by the deployment platform and rotate the token after the verified rollback window closes.
+
+Each run is bounded to at most 100 records, uses the existing distributed scraper lease, retries official page fetches with exponential backoff, and upserts by the authoritative source key.
+Missing or invalid deadlines, duplicate source identities, junk titles, and non-authoritative URLs go to `fellowship_refresh_review_queue` instead of changing a fellowship.
+Validated past-to-future transitions emit one idempotent `program_reopened` row in `program_watch_events` for downstream watchlist delivery.
+No future deadline is synthesized.
+Successful execute runs write aggregate freshness state to `fellowship_refresh_runs`; alert when no successful run exists within 45 days or when every discovered row requires review.
 
 ### Compact Observation Retention
 
-Run retention as its own scheduled job only after inspecting a dry-run:
+The student data operator owns a manual retention review once per semester, after the full Development scrape and before Beta promotion.
+Development is always cleaned first.
+Record the Atlas restore boundary and keep scrapers and materializers paused for the dry-run and apply window.
+
+Run the Development dry-run with an explicit target:
 
 ```bash
-yarn --cwd server scrape prune-observations --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-observation-retention-dry-run.json
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server scrape prune-observations --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-development-observation-retention-dry-run.json
 ```
 
-Apply mode requires an explicit production confirmation:
+Review the eligible, reference-protected, and deletable candidate counts, recent-window cutoff, and retained run count before apply.
+Development apply mode requires the non-production write guard and explicit confirmation:
 
 ```bash
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server scrape prune-observations --apply --confirm-observation-prune --older-than-days 30 --keep-runs 3
+SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true MONGODBURL=<development-url> \
+  yarn --cwd server scrape prune-observations --apply --confirm-observation-prune --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-development-observation-retention-apply.json
 ```
 
-The retention command deletes only old `superseded: true` observations. It always preserves active observations, recent observations inside the age window, and observations attached to the latest retained runs per source.
-Use `--output <path>` on dry-runs and apply runs so the promotion packet has the exact candidate/deleted counts, retained run ids, command, target `environment`, `db`, and parsed `options`.
+Verify Atlas accepts a bounded write, then re-run integrity, claim, strict data-quality, and visibility gates.
+Beta retention requires a new target-bound dry-run, the same restore-boundary record, and explicit operator approval after the Development rehearsal passes.
+Never reuse Development candidate counts or an old Beta artifact.
+
+The retention command deletes only old `superseded: true` observations that are not referenced by durable materialized records.
+It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, logistics claims, or supersession links.
+Use `--output <path>` on dry-runs and apply runs so the private promotion packet has eligible, protected, candidate, deleted, and retained-run counts plus command, target `environment`, `db`, and parsed `options`.
+
+Production retention stays disabled.
+A future reviewed issue must change the executable guard before any Production apply command can be prepared.
+
+`observations:prune-dead` is a separate command, not part of this semester review: it drops the age floor to reclaim storage mid-run or on demand, keeps the last runs per source so claim-local rollback survives, and is blocked against production.
+`docs/research-data-pipeline.md` owns its contract, guards, and sweep wiring.
+
+### Repair orphaned Observation references in Development
+
+Run this workflow only after a strict Development audit reports an Observation reference whose target no longer exists.
+Keep scrapers and materializers paused for the classifier, review, apply, and verification window.
+The command is Development-only and never creates replacement Observations.
+
+Create a bounded, target-bound private classifier and decision template:
+
+```bash
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server observations:repair-orphaned-references \
+  --limit-per-reference=100 \
+  --private-output=/tmp/ylabs-development-orphaned-observation-classifier.json \
+  --decision-template-output=/tmp/ylabs-development-orphaned-observation-decisions.json
+```
+
+Review the private classifier locally.
+For each decision, set `reviewedBy`, verify the recommended disposition against the owner and surviving evidence, and leave ambiguous rows as `defer_review` unless fail-closed archival has been explicitly accepted.
+Do not paste identifiers, counts, samples, artifact hashes, or artifact paths into a public issue or pull request.
+
+Apply only the reviewed bounded artifact to the same Development database:
+
+```bash
+SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true MONGODBURL=<development-url> \
+  yarn --cwd server observations:repair-orphaned-references \
+  --execute \
+  --confirm-development-orphan-reference-repair \
+  --max-apply=25 \
+  --apply-from=/tmp/ylabs-development-orphaned-observation-classifier.json \
+  --decisions=/tmp/ylabs-development-orphaned-observation-decisions.json \
+  --private-output=/tmp/ylabs-development-orphaned-observation-apply.json
+```
+
+The apply pass rejects stale or target-mismatched artifacts, changed owners, recreated targets, non-deterministic replacements, and decisions outside the classifier contract.
+It records each accepted repair in `observation_reference_repair_audits`.
+Archived rollback records remain present with their surviving provenance metadata; only the dangling identifier is removed, and the unrecoverable loss receives an explicit audit.
+
+After apply, rerun the classifier and the required gates:
+
+```bash
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server observations:repair-orphaned-references \
+  --limit-per-reference=100 \
+  --private-output=/tmp/ylabs-development-orphaned-observation-postcheck.json
+
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server scraper:integrity-gate \
+  --include-samples --include-claim-gate \
+  --output=/tmp/ylabs-development-integrity-after-observation-repair.json
+
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server student-visibility:gate \
+  --collection=all --mode=dry-run \
+  --output=/tmp/ylabs-development-visibility-after-observation-repair.json
+
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server beta:data-quality \
+  --strict --include-samples --progress \
+  --output=/tmp/ylabs-development-quality-after-observation-repair.json
+```
+
+The repaired canonical collections must have no remaining active orphaned Observation references.
+Any accepted exception needs a named owner and recovery plan in the private promotion packet.
+Production writes remain out of scope.
 
 ## Cost Controls
 
@@ -493,10 +616,14 @@ Use these controls before spending cloud or API money:
 
 - Run the initial backfill locally against Beta when practical.
 - Use `--limit`, `--only`, `--since`, and source-specific caps during the first pass.
-- Keep `--discover-openalex-authors` opt-in.
 - Keep LLM sources gated until the exact target list is accepted.
 - Use `--use-cache` for development reruns only.
 - Complete the WorkPlanner cost-control tasks in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before unattended recurring paid/broad jobs.
+- `lab-microsite-description-llm` and `lab-microsite-undergrad-llm` skip the paid LLM call when a per-entity `sourceContentHash` observation matches the fresh page bytes, so repeat runs (including `--exhaustive` sweeps that bypass WorkPlanner freshness) do not re-pay for unchanged pages.
+  Pass `--force-llm` only when intentionally re-extracting a source whose hash is up to date.
+  `lab-microsite-description-llm` also budgets for its research-page crawl: an entity whose page publishes a research anchor costs up to two extra HTTP fetches per run because the crawl feeds the hash input and therefore runs before that gate, and a crawled page that wins the description can add one LLM call for its own methods (#2176).
+  One entity class never benefits from that gate: an entity where the extractor kept its stored description instead of an unopposed crawled one records no hash by design, so it re-fetches and re-extracts on every run until its pages or its stored description change ([`research-data-pipeline.md`](./research-data-pipeline.md) owns why).
+  Treat that recurring per-entity cost as expected rather than a broken hash gate (#2180).
 
 ## Report Checklist
 
@@ -519,10 +646,59 @@ If a production run is bad:
 
 1. Disable the scheduled job or stop the manual rollout.
 2. Do not run more sources on top of questionable materialized data.
-3. Set `PATHWAY_SEARCH_BACKEND=mongo` if Pathways Meili behavior is questionable.
-4. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
-5. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
-6. Rebuild or resync Meilisearch after restoring MongoDB.
-7. Record the rollback and follow-up decision in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
+3. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
+4. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
+5. Rebuild or resync Meilisearch after restoring MongoDB.
+6. Record the rollback and follow-up decision in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
+
+For a bad undergraduate logistics acquisition run, first generate a claim-local dry-run plan:
+
+```bash
+SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
+  yarn --cwd server undergraduate-logistics:rollback \
+  --run=<scrapeRunId> \
+  --output=/tmp/ylabs-undergraduate-logistics-rollback.json
+```
+
+If the plan is accepted and the broad Atlas restore threshold is not met, add `--apply --confirm-undergraduate-logistics-rollback`.
+The command marks only the selected run's logistics observations as rolled back, restores the newest eligible predecessor observations, and rematerializes affected entities from the remaining evidence.
+Run the coverage and precision audit again before resuming acquisition.
 
 `Source.enabled=false` blocks cron execution by default. Use `--force-disabled` only for an explicit manual recovery run after checking the source-health report.
+
+### Rolling back a written description
+
+`fullDescription` and `shortDescription` are coupled, and treating either in isolation blanks the other.
+Never roll back or replace one without reverting or re-deriving the other in the same operation, then re-materializing.
+
+The coupling is the `winnerFullUseful` guard in `server/src/scrapers/entityMaterializer.ts`: a resolved winner is accepted only when `fullDescriptionQuality(...).isUseful` holds **and** `isFullDescriptionRestatementOfShortDescription(...)` does not.
+A winner that restates the stored short is rejected, and the ranked walk can terminate having written nothing.
+The guard only ever clears `fullDescription`, so the failure is invisible to the visibility gate: the short description survives, the record still looks complete, and the tier stays `student_ready` while the detail page has no prose to serve.
+
+This is how 19 entities lost their description, 14 of them served, after 99 synthesized `fullDescription` observations were superseded without touching the `shortDescription` values that had been derived from them.
+Marking the observations superseded and re-materializing was not enough, because the stale short was the thing causing the blank.
+A perfectly good alternative was active and unused the entire time.
+
+There is no standing command for this rollback.
+`server/src/scripts/descriptionPairRollbackCore.ts` exports pure helpers (`descriptionPairObservationFilter`, `planDescriptionPairRollback`, `describeDescriptionPairRisk`) that encode the contract, and the operator still authors the one-off repair script that runs them.
+Author it under the same guards as the sibling description repairs (`server/src/scripts/purgeMiskeyedProfileDescriptions.ts`): dry-run by default, writes only under `--apply` plus a named `--confirm-...` flag, with a `--max-apply` ceiling and a JSON `--output` plan.
+
+Procedure:
+
+- Check first whether the prior pair is a manufactured duplicate.
+  Restoring both fields to their pre-rollback values is **not** automatically safe: the `studentReadyDescription` emit block in `server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts` emits one string as `fullDescription` at 0.55 and, when it is card-length, the same string again as `shortDescription` at 0.55.
+  What decides whether such a pair is stable is how its two members are attributed, not the duplication.
+  Both of those pushes share one `...base`, so they carry the same `sourceName` and `sourceUrl`, the materializer treats the projected short as self-derived from the full, the guard is not applied, and the row keeps serving its prose.
+  Re-attribute the same string across two URLs or two sources, which is what a hand repair does and what a second source writing the card produces, and the short reads as independent evidence, so the guard fires and blanks the full.
+- When the restored pair would be attributed that way, no data repair holds until the emitting source stops producing the duplicate.
+  Fix the source, then repair the rows.
+- Use `server/src/scripts/descriptionPairRollbackCore.ts` to build the observation filter, so the query cannot be scoped to one field by accident, and so rows stored under `entityId` rather than `entityKey` are matched too.
+- Unset the projected `shortDescription` and `fieldProvenance.shortDescription` on the entity document in the same operation, before re-materializing.
+  `shortDescription` is not in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS`, so the projected card outlives the observation that produced it and the guard keeps refusing every replacement full: the record stays blank however many times it is re-materialized.
+  `planDescriptionPairRollback` returns those paths in `entityFieldsToUnset`.
+- Verify afterwards on the served record, not on the supersede count.
+  `describeDescriptionPairRisk` reports the three failure states, using the same two predicates as the materializer guard: an empty full description, a full that restates the short and will therefore blank on the next materialize, and a full that is distinct but below the usefulness bar, which the ranked walk refuses to write.
+  Pass the whole served document, including `fieldProvenance`.
+  It routes the short through the same self-derived exclusion the guard uses, so reading the raw stored short instead would report every re-derived card as a restatement and send an operator back to re-repair a healthy row.
+- Include an empty-`fullDescription`-on-`student_ready` count in any post-run diff.
+  This failure cannot be caught by tier checks, by construction.

@@ -1,10 +1,35 @@
-const DESCRIPTION_FIELDS = ['description', 'shortDescription', 'fullDescription'] as const;
+import {
+  hasContactBlockResidue,
+  isCitationAuthorListDumpText,
+  isConnectedToKeywordListStub,
+  isInstitutionalCenterBlurbText,
+  isStudiesResearchAreaEchoDescription,
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from './descriptionHygiene';
+import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormalization';
+import { normalizeResearchAreaList } from './researchAreaHygiene';
+import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
+import { filterProseResearchAreaChips } from './profileResearchTerms';
+import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomainCoherence';
+import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
+
+const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
 const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
   ...DESCRIPTION_FIELDS,
   'profileSynthesisDescription',
 ] as const;
+
+const HYGIENE_FULL_DESCRIPTION_FIELDS = ['fullDescription', 'profileSynthesisDescription'] as const;
+// This is a curated allowlist, not a mechanical inflection table: some
+// inflections of a listed verb carry no research signal in bio prose
+// ("currently developing a new feature" in a filmmaker CV), so a missing
+// inflection may be deliberate. Only add one whose every reading is a research
+// signal, as `researches`/`researching`/`studied`/`investigating` are (#1921:
+// their absence blanked "Roberts researches the histories of medicine ...,
+// investigating how ..." purely on verb tense).
 const NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT =
-  /\b(?:research|lab|laboratory|study|studies|studying|investigate|investigates|investigated|explore|explores|focus|focuses|focusing|works?\s+on|conducts|uses|develops|examines|examining|analysis|method|methods|model|models|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
+  /\b(?:research|researches|researching|lab|laboratory|study|studies|studying|studied|investigate|investigates|investigated|investigating|explore|explores|explored|exploring|focus|focuses|focusing|focused|works?\s+on|conducts|uses|using|develops|examine|examines|examined|examining|observe|observes|observed|observing|analysis|method|methods|model|models|modeled|modeling|projects?|theory|algorithm|algorithms|approach|approaches|data|paper|papers?|publications?)\b/i;
 
 type FacultyResearchTextEntity = {
   displayName?: string | null;
@@ -17,12 +42,7 @@ function textValue(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 }
 
-const LEAD_NAME_TOKENIZERS = [
-  /\bdr\.?\b/gi,
-  /\bprof\.?\b/gi,
-  /\bprofessor\b/gi,
-  /\bm\.?d\.?\b/gi,
-];
+const LEAD_NAME_TOKENIZERS = [/\bdr\.?\b/gi, /\bprof\.?\b/gi, /\bprofessor\b/gi, /\bm\.?d\.?\b/gi];
 
 function normalizePersonNameTokens(value: unknown): string[] {
   return String(value || '')
@@ -34,15 +54,14 @@ function normalizePersonNameTokens(value: unknown): string[] {
     .split(/\s+/)
     .map((token) => token.trim())
     .filter(Boolean)
-    .map((token) => LEAD_NAME_TOKENIZERS.reduce((next, pattern) => next.replace(pattern, ''), token))
+    .map((token) =>
+      LEAD_NAME_TOKENIZERS.reduce((next, pattern) => next.replace(pattern, ''), token),
+    )
     .map((token) => token.trim())
     .filter(Boolean);
 }
 
-function leadNamesMatchTextValue(
-  candidate: string,
-  leadMemberNames: readonly string[],
-): boolean {
+function leadNamesMatchTextValue(candidate: string, leadMemberNames: readonly string[]): boolean {
   const candidateTokens = normalizePersonNameTokens(candidate);
   if (candidateTokens.length < 2) return false;
   const lastIndex = candidateTokens[candidateTokens.length - 1];
@@ -57,15 +76,21 @@ function leadNamesMatchTextValue(
   });
 }
 
+// A card synthesized from research prose opens with a research-description verb
+// ("Studies Ménétrier's disease", "Studies Ivan Goncharov's travelogue"): here the
+// capitalized possessive is the eponymous object of study, not the entity's own
+// lead name, so the mismatched-person-name strip below must not fire and blank it.
+const RESEARCH_LEAD_VERB_PREFIX_TOKEN =
+  /^(?:studies|study|investigates|investigate|examines|examine|explores|explore|develops|develop|focuses|focus|focused|advances|advance|supports|support|fosters|foster|combines|combine|conducts|conduct|builds|build|designs|design|creates|create|analyzes|analyze|analyses|analyse|models|model|measures|measure|researches|research|seeks|seek|works|work|uses|use|employs|employ|innovates|innovate|enhances|enhance|improves|improve|unites|unite|provides|provide)$/i;
+
 function sanitizeLeadingMismatchedPersonNamePrefix(
   value: string,
   leadMemberNames: readonly string[] = [],
 ): string {
   if (!leadMemberNames.length) return value;
-  const match = value.match(
-    /^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u,
-  );
+  const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
+  if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
   if (leadNamesMatchTextValue(match[1], leadMemberNames)) return value;
   const remainder = value.slice(match[0].length);
   if (!NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(remainder)) return '';
@@ -76,8 +101,35 @@ function isLikelyResearchFocusedText(value: string): boolean {
   return NON_MATCHED_PROFILE_SUMMARY_RESEARCH_HINT.test(textValue(value));
 }
 
+// The guard fires only when the WHOLE field carries no research signal, so
+// there is never a research-bearing remainder to keep: sentence-granular repair
+// (the #1586 shape used by `repairFacultyBiographyOpener`) cannot apply here.
+// Both `sanitizeResearchEntityPublicDescriptionFields` and
+// `sanitizeFacultyResearchEntityCopyFields` must call this one definition; the
+// second was a copy that drifted out of sight and made the first invisible
+// during triage (#1921).
+function guardNonResearchProfileSynthesisText(
+  value: string,
+  entity: { descriptionSource?: unknown },
+): string {
+  if (String(entity.descriptionSource) !== 'PI_PROFILE_SYNTHESIS') return value;
+  return isLikelyResearchFocusedText(value) ? value : '';
+}
+
 function compactText(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+const DIRECTORY_INDEX_CHROME_PATTERNS = [
+  /\bA[\s.–—-]?Z index\b.{0,160}\blab websites\b/i,
+  /\blab websites in one place\b/i,
+  /\bbrowse alphabetically\b/i,
+];
+
+export function isDirectoryIndexChromeText(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+  return DIRECTORY_INDEX_CHROME_PATTERNS.some((pattern) => pattern.test(cleaned));
 }
 
 export function isResearchEntitySourceChromeText(value: unknown): boolean {
@@ -103,7 +155,10 @@ export function isResearchEntitySourceChromeText(value: unknown): boolean {
   ) {
     return true;
   }
+  if (hasContactBlockResidue(cleaned) || isCitationAuthorListDumpText(cleaned)) return true;
   return [
+    /\byou are here\b/i,
+    /[»›][^»›]{1,80}[»›]/,
     /\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i,
     /\bORCID\s*/i,
     /Publications\s*Timeline/i,
@@ -125,22 +180,39 @@ export function isBrokenResearchEntityDescriptionFragment(value: unknown): boole
   return (
     /^Dr[.,]\s+(?:using|with|in|and)\b/i.test(cleaned) ||
     /^(?:focuses\s+in|of\s+|is\s+in\s+)/i.test(cleaned) ||
-    /\b(?:and|with|by)\s+(?:[A-Z][a-z]+\s+[A-Z]\.|[A-Z][a-z]+\.|[A-Z]\.|Dr\.)$/.test(
-      cleaned,
-    )
+    /\b(?:and|with|by)\s+(?:[A-Z][a-z]+\s+[A-Z]\.|[A-Z]\.|Dr\.)$/.test(cleaned) ||
+    /\b(?:with|by)\s+[A-Z][a-z]+\.$/.test(cleaned)
   );
+}
+
+const MID_CV_CONTINUATION_OPENER_PATTERN =
+  /^(?:Next,|Subsequently,|After completing\b|In \d{4},\s+(?:he|she|they)\b)/i;
+
+/**
+ * A description field that opens mid-CV, continuing a biography narrative cut
+ * from elsewhere in the source page (#1456: "Next, he completed his graduate
+ * studies..."). Distinct from `isBrokenResearchEntityDescriptionFragment`,
+ * which catches fragments broken at the end rather than a resumed opener.
+ */
+export function isMidCvContinuationOpener(value: unknown): boolean {
+  const cleaned = textValue(value);
+  return Boolean(cleaned) && MID_CV_CONTINUATION_OPENER_PATTERN.test(cleaned);
 }
 
 export function isSyntheticResearchHomeMetadataDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
-  return [
-    /^research home connected to\b.*\.$/i,
-    /^research home focused on\b.*\.$/i,
-    /^.+ is a Yale research home(?: connected to\b.*)?\. This context is synthesized from indexed Yale(?: source)? metadata and should be checked against (?:the linked official sources|official sources before outreach)\.$/i,
-    /\band\s*\./i,
-    /\bconnected to\s*\./i,
-  ].some((pattern) => pattern.test(cleaned));
+  return (
+    [
+      /^research home connected to\b.*\.$/i,
+      /^research home focused on\b.*\.$/i,
+      /^.+ is a Yale research home(?: connected to\b.*)?\. This context is synthesized from indexed Yale(?: source)? metadata and should be checked against (?:the linked official sources|official sources before outreach)\.$/i,
+      /\band\s*\./i,
+      /\bconnected to\s*\./i,
+    ].some((pattern) => pattern.test(cleaned)) ||
+    // Shared with backfillDescriptionQualityCore's TEMPLATED classifier (#1511).
+    isConnectedToKeywordListStub(cleaned)
+  );
 }
 
 export function isResearchAreaPlaceholderDescription(value: unknown): boolean {
@@ -151,7 +223,15 @@ export function isResearchAreaPlaceholderDescription(value: unknown): boolean {
 
 export function isAcademicAppointmentDescription(value: unknown): boolean {
   const cleaned = textValue(value);
-  if (!cleaned) return false;
+  // The appointment patterns below identify a short title-only fragment ("X
+  // is Associate Professor of Y"). A long multi-sentence description that
+  // happens to open with that same sentence is not appointment-only - it is
+  // a research description with an orienting lead-in - so this check does
+  // not apply past a single-sentence-ish length (#1456: this false-positive
+  // was misclassifying real research prose as appointment-only whenever the
+  // research verbs elsewhere in the text used a different inflection than
+  // hasResearchDescriptionVerb's fixed list, e.g. "to develop", "investigation of").
+  if (!cleaned || cleaned.length > 300) return false;
   const hasResearchDescriptionVerb =
     /\b(studies|investigates|examines|explores|focuses on|works on|develops|uses|employs)\b/i.test(
       cleaned,
@@ -165,6 +245,7 @@ export function isAcademicAppointmentDescription(value: unknown): boolean {
     /^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)+\s+is\s+(?:an?\s+)?(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i,
     /\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b.*\bPrincipal Investigator\b/i,
     /\bPrincipal Investigator\b.*\b(?:Assistant|Associate|Full|Adjunct|Clinical|Visiting)?\s*Professor\b/i,
+    /\bholds?\s+(?:an?\s+)?(?:secondary|joint|dual)\s+appointment\s+as\b/i,
   ].some((pattern) => pattern.test(cleaned));
 }
 
@@ -209,11 +290,707 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
     isRoleOnlyTitleFragment(cleaned) ||
     isSyntheticResearchHomeMetadataDescription(cleaned) ||
     isBrokenResearchEntityDescriptionFragment(cleaned) ||
-    isResearchEntitySourceChromeText(cleaned)
+    isMidCvContinuationOpener(cleaned) ||
+    isDirectoryIndexChromeText(cleaned) ||
+    isResearchEntitySourceChromeText(cleaned) ||
+    isInstitutionalCenterBlurbText(cleaned)
   ) {
     return '';
   }
   return cleaned;
+}
+
+const NON_PERSON_ORG_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
+
+export function isNonPersonOrgEntityType(entity?: FacultyResearchTextEntity | null): boolean {
+  if (!entity || isFacultyResearchTextEntity(entity)) return false;
+  return NON_PERSON_ORG_ENTITY_TYPES.has(String(entity.entityType || '').toUpperCase());
+}
+
+const RESEARCHER_VOICE_STUDIES_LEAD_PATTERN = /^Studies\b/i;
+
+export function isResearcherVoiceStudiesLeadOnFundingProgram(
+  value: unknown,
+  entity?: FacultyResearchTextEntity | null,
+): boolean {
+  return (
+    isProgramLikeResearchEntity(entity as Record<string, unknown> | null | undefined) &&
+    RESEARCHER_VOICE_STUDIES_LEAD_PATTERN.test(textValue(value))
+  );
+}
+
+const ADVISING_MENTEE_NOUN =
+  '(?:students?|undergraduates?|undergrads?|grad(?:uate)?\\s+students?|mentees?|advisees?|research\\s+assistants?|trainees?|postdocs?|postdoctoral\\s+(?:fellows?|researchers?)|applicants?)';
+
+const FIRST_PERSON_ADVISING_NOTE_PATTERN = new RegExp(
+  `\\bI\\s+(?:only\\s+)?(?:consider|advise|welcome|require|expect|prefer|recruit|mentor|supervise|am\\s+(?:currently\\s+)?(?:recruiting|looking(?:\\s+for)?|accepting|seeking|interested\\s+in))\\b[^.!?]{0,80}?\\b${ADVISING_MENTEE_NOUN}\\b`,
+  'i',
+);
+
+const FIRST_PERSON_ADVISING_INVITATION_PATTERN = new RegExp(
+  `\\bI\\s+would\\s+(?:be\\s+happy|love|be\\s+glad|welcome\\s+the\\s+opportunity)\\s+to\\s+(?:meet|advise|discuss|supervise|mentor|talk|chat|work\\s+with)\\b[^.!?]{0,80}?\\b(?:an?\\s+)?${ADVISING_MENTEE_NOUN}\\b`,
+  'i',
+);
+
+/**
+ * The article before "Professor" is optional: a named/endowed chair reads
+ * "is William R. Kenan, Jr. Professor of Black Studies..." with no "the/a"
+ * before the donor name (#1745: Daphne Brooks), unlike the plain "is the
+ * Sterling Professor of..." shape the mandatory article previously assumed.
+ * The donor-name word atom also allows an embedded period so a middle
+ * initial or suffix ("R.", "Jr.") does not break the match.
+ */
+const PERSON_BIOGRAPHY_OPENER_PATTERN =
+  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:(?:the|an?)\s+)?(?:[\p{L}][\p{L}'’.-]*[\s,/-]+){0,8}Professor\b/u;
+
+const NAME_LEAD_PATTERN = /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4}\b/u;
+const DECEASED_LEAD_DATE_RANGE_PATTERN =
+  /\(\s*(?:1[6-9]|20)\d{2}\s*[-–—]\s*(?:1[6-9]|20)\d{2}\s*\)/;
+const EMERITUS_APPOINTMENT_PATTERN = /\bEmeritus\b/i;
+
+/**
+ * A LAB card's lead already opens on the PI's name and reads "(1932 - 2025),
+ * ... Emeritus ..." or otherwise flags the lead as deceased/emeritus within
+ * the opening clause (#1638: Demarque Lab spans 1932-2025, Costa Lab is
+ * emeritus). `isPersonBiographyOrAdvisingDescription`'s appointment-opener
+ * pattern requires a present-tense "is the/an ... Professor" clause and
+ * misses this retrospective phrasing entirely, so a deceased/emeritus lead is
+ * a distinct, stronger signal: the whole bio reads as a career retrospective,
+ * not a single stray opening sentence, so it is never worth salvaging via
+ * `repairFacultyBiographyOpener`'s single-sentence strip.
+ */
+export function isDeceasedOrEmeritusLeadBiography(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned || !NAME_LEAD_PATTERN.test(cleaned)) return false;
+  const opening = cleaned.slice(0, 220);
+  return (
+    DECEASED_LEAD_DATE_RANGE_PATTERN.test(opening) || EMERITUS_APPOINTMENT_PATTERN.test(opening)
+  );
+}
+
+const DEGREE_SUFFIX_CLAUSE =
+  '(?:,\\s*(?:PhD|Ph\\.D\\.?|MD|M\\.D\\.?|MPH|ScD|Sc\\.D\\.?|DPhil|JD|MS|MA|MBA|EdD)\\b\\.?)*';
+
+/**
+ * `PERSON_BIOGRAPHY_OPENER_PATTERN` only recognizes a present-tense "is
+ * the/an ... Professor" clause with a capitalized "Professor" - it misses a
+ * name-lead opener that names a different title ("is Director of ...", "is a
+ * senior lecturer at ...", "is a Fellow of ...") or uses a lowercase
+ * "professor" inline (#1638: Kotchen Lab reads "... is the Langdon K. Storm
+ * professor of economics ..."; King Lab reads "... is a senior lecturer at
+ * ..."; Latham Lab reads "... JD, PhD is Director of ...").
+ */
+const NAME_LEAD_TITLE_PATTERN = new RegExp(
+  `^[A-Z][\\p{L}.'’-]+(?:\\s+[A-Z][\\p{L}.'’-]+){1,4}${DEGREE_SUFFIX_CLAUSE}\\s+is\\s+(?:(?:the|an?)\\s+)?.{0,70}?\\b(?:professor|director|lecturer|fellow|scientist)\\b`,
+  'iu',
+);
+
+/**
+ * A "Dr. <Name>, a graduate of <institution>, is ..." lead, often preceded by
+ * a job-title fragment rather than opening directly on the name (#1638:
+ * Wisnewski Lab reads "Senior Research Scientist in Medicine ... Dr.
+ * Wisnewski, a graduate of the University of California and Brown
+ * University's ..., is a widely experienced ..."; Redlich Lab reads "Dr.
+ * Redlich, a graduate of Williams College and Yale University School of
+ * Medicine, is trained in ..."). Scanned within the opening window rather
+ * than anchored at the very start so the leading title fragment doesn't
+ * block the match.
+ */
+const GRADUATE_OF_LEAD_PATTERN =
+  /\bDr\.\s+[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3},\s+a\s+graduate\s+of\b/iu;
+
+export function isCredentialOrTitleLeadBiography(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+  const opening = cleaned.slice(0, 260);
+  return NAME_LEAD_TITLE_PATTERN.test(opening) || GRADUATE_OF_LEAD_PATTERN.test(opening);
+}
+
+const DEGREE_ABBREVIATION_ALTERNATION =
+  '(?:Ph\\.?D\\.?|M\\.?D\\.?|M\\.?Arch\\.?|B\\.?F\\.?A\\.?|M\\.?F\\.?A\\.?|B\\.?A\\.?|M\\.?A\\.?|B\\.?S\\.?|M\\.?S\\.?|M\\.?B\\.?A\\.?|Ed\\.?D\\.?|J\\.?D\\.?|degrees?)';
+
+/**
+ * A leading run of bare "DEGREE, Institution" fragments with no subject or
+ * verb at all - not even a "received" clause (#1745 round 4: Kishwar Rizvi's
+ * full opens "B.A., Wesleyan University M.Arch., Graduate School of Fine
+ * Arts, University of Pennsylvania Ph.D., Massachusetts Institute of
+ * Technology" before any prose). Anchored on the tell-tale "DEGREE," opener;
+ * the loop-strip's sentence-boundary scan (not this pattern) is responsible
+ * for finding where the run-on actually ends.
+ */
+const LEADING_BARE_DEGREE_LIST_PATTERN = new RegExp(
+  `^${DEGREE_ABBREVIATION_ALTERNATION}\\s*,`,
+  'u',
+);
+
+/**
+ * A name-lead opener whose whole sentence is a degree-receipt CV line rather
+ * than research prose ("Raffaella Zanuttini received her PhD in Linguistics
+ * from..."; "Dr. Mamula's received degrees from UCLA, ..."; "Ms. Feinstein
+ * received a B.F.A. from Pratt Institute..."), served verbatim as the
+ * description with zero research content (#1745). The determiner before the
+ * degree is optional so both "received her PhD" and "received a B.F.A." match.
+ */
+const DEGREE_RECEIPT_LEAD_PATTERN = new RegExp(
+  `^(?:Dr\\.\\s+|Ms\\.\\s+|Mr\\.\\s+|Mrs\\.\\s+)?[A-Z][\\p{L}.'’-]+(?:\\s+[A-Z][\\p{L}.'’-]+){0,3}(?:['’]s)?\\s+received\\s+(?:(?:an?|her|his|their)\\s+)?${DEGREE_ABBREVIATION_ALTERNATION}\\b`,
+  'u',
+);
+
+/**
+ * Common artist/humanities-bio closer clauses that carry no research/practice
+ * content of their own (#1745: Rochelle Feinstein's full is entirely CV -
+ * degrees, "lives and works in New York City", exhibition history, awards,
+ * a residency, upcoming museum surveys, a publications list, and a faculty
+ * appointment/emeritus note - with not one sentence describing her actual
+ * artistic practice or subject matter).
+ */
+const LIVES_AND_WORKS_LEAD_PATTERN = /^(?:He|She|They)\s+lives?\s+and\s+works?\s+in\b/iu;
+
+const WORK_EXHIBITED_OR_SHOWN_LEAD_PATTERN =
+  /^(?:Her|His|Their)\s+work\s+is\s+(?:exhibited|shown|displayed|performed)\b/iu;
+
+const AMONG_AWARDS_RECEIVED_LEAD_PATTERN = /^Among\s+.{0,40}?\bhas\s+received\b/iu;
+
+const RECENT_PUBLICATIONS_INCLUDE_LEAD_PATTERN = /^Recent\s+publications?\s+include\b/iu;
+
+const APPOINTED_TO_FACULTY_LEAD_PATTERN =
+  /^(?:Dr\.\s+|Ms\.\s+|Mr\.\s+|Mrs\.\s+)?[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}\s+was\s+appointed\s+to\s+the\s+.{0,40}?\bfaculty\b/iu;
+
+const ARTIST_IN_RESIDENCE_LEAD_PATTERN =
+  /^In\s+\d{4},?\s+(?:he|she|they)\s+was\s+an?\s+(?:artist|scholar|fellow)\s+in\s+residence\b/iu;
+
+const MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN =
+  /^(?:He|She|They)\s+(?:will\s+have|has\s+had|had)\s+major\s+surveys?\s+of\s+(?:his|her|their)\s+work\b/iu;
+
+/**
+ * A pronoun- or name-lead awards/fellowship credential opener with no
+ * research content ("He has received the Best Economics PhD Advisor Award
+ * ..."; "Zilibotti is a fellow of the Econometric Society..."), the
+ * third-person sibling of the first-person advising note (#1745).
+ */
+const PRONOUN_CREDENTIAL_LEAD_PATTERN =
+  /^(?:He|She|They)\s+(?:has|have)\s+(?:received|earned|been\s+recognized)\b/iu;
+
+/**
+ * A first-person appointment/title opener ("I am an Instructor in the
+ * Department of Medicine, Section of Infectious Diseases...") that the
+ * researcher-voice revoicer converts to third person but that carries no
+ * research content on its own - the first-person sibling of
+ * `NAME_LEAD_TITLE_PATTERN` (#1745). Requires the title to be anchored to an
+ * organizational unit ("in/at/of the Department/Division/..."), not just any
+ * self-description containing a title-shaped word, so a genuine specialization
+ * lead like "I am a physician-scientist with specialized training in
+ * immunology..." is left for the ordinary revoicer rather than blanked (#964).
+ */
+const FIRST_PERSON_TITLE_LEAD_PATTERN =
+  /^I\s+am\s+(?:(?:the|an?)\s+)?[\p{L}\s,/-]{0,40}\b(?:Professor|Instructor|Lecturer|Director|Fellow|Attending)\b\s+(?:in|at|of)\s+the\s+(?:Department|Division|Section|School|Center|Centre|Office|Program)\b/iu;
+
+/**
+ * A name-or-pronoun-lead "is a fellow of <Society>" clause and a continued
+ * "has (also) received ... awards/honors" clause: the CV/awards run a bio
+ * opener leads into often spans several sentences past the opener itself
+ * (#1745: Zilibotti's full continues "He has received the Best Economics
+ * PhD Advisor Award... Zilibotti is a fellow of the Econometric Society and
+ * has received several prestigious awards..." - two more credential
+ * sentences after the opener, with no research content of their own).
+ */
+const FELLOWSHIP_LEAD_PATTERN =
+  /^(?:He|She|They|[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3})\s+(?:is|was)\s+an?\s+fellow\s+of\b/iu;
+
+const CONTINUED_AWARDS_RECEIPT_PATTERN =
+  /^(?:and\s+)?has\s+(?:also\s+)?received\s+(?:several|many|numerous|additional)?\s*(?:prestigious\s+|other\s+)?(?:awards?|honors?|honours?)\b/iu;
+
+/**
+ * A "<Name/Title> is the author/winner of <work/prize>" clause: the most
+ * common bibliography-style continuation of a person-biography opener
+ * (#1745: Daphne Brooks's full continues "She is the author of Bodies in
+ * Dissent... winner of..." then "Liner Notes for the Revolution is the
+ * winner of eleven book awards and prizes..." - neither sentence names a
+ * person via the strict multi-word name-lead patterns above, so a lighter
+ * subject requirement is needed here).
+ */
+const AUTHOR_OR_WINNER_OF_LEAD_PATTERN =
+  /^[\p{L}][\p{L}\s.,:'’()-]{0,80}?\s+is\s+the\s+(?:author|winner)\s+of\b/iu;
+
+export function isCredentialOrAwardLeadBiography(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+  return (
+    DEGREE_RECEIPT_LEAD_PATTERN.test(cleaned) ||
+    PRONOUN_CREDENTIAL_LEAD_PATTERN.test(cleaned) ||
+    FIRST_PERSON_TITLE_LEAD_PATTERN.test(cleaned) ||
+    FELLOWSHIP_LEAD_PATTERN.test(cleaned) ||
+    CONTINUED_AWARDS_RECEIPT_PATTERN.test(cleaned) ||
+    AUTHOR_OR_WINNER_OF_LEAD_PATTERN.test(cleaned) ||
+    LIVES_AND_WORKS_LEAD_PATTERN.test(cleaned) ||
+    WORK_EXHIBITED_OR_SHOWN_LEAD_PATTERN.test(cleaned) ||
+    AMONG_AWARDS_RECEIVED_LEAD_PATTERN.test(cleaned) ||
+    RECENT_PUBLICATIONS_INCLUDE_LEAD_PATTERN.test(cleaned) ||
+    APPOINTED_TO_FACULTY_LEAD_PATTERN.test(cleaned) ||
+    ARTIST_IN_RESIDENCE_LEAD_PATTERN.test(cleaned) ||
+    MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN.test(cleaned) ||
+    LEADING_BARE_DEGREE_LIST_PATTERN.test(cleaned)
+  );
+}
+
+export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+
+  // Requires a mentee-type noun near the advising verb, not just the verb alone: a bare
+  // "I am interested in <research topic>" is the ordinary way faculty state research
+  // interests, not a recruiting note, and must not be blanked as one.
+  const hasFirstPersonAdvisingNote =
+    FIRST_PERSON_ADVISING_NOTE_PATTERN.test(cleaned) ||
+    FIRST_PERSON_ADVISING_INVITATION_PATTERN.test(cleaned);
+  if (hasFirstPersonAdvisingNote) return true;
+
+  return PERSON_BIOGRAPHY_OPENER_PATTERN.test(cleaned);
+}
+
+/**
+ * The credential/title-lead and graduate-of fallback patterns were
+ * originally tried only for LAB entities (#1638); FACULTY_RESEARCH_AREA and
+ * INDIVIDUAL_RESEARCH carry the identical name+appointment-lead shape and are
+ * now covered too (#1793).
+ */
+function firstBiographyOpenerMatch(
+  value: string,
+  allowCredentialTitlePatterns: boolean,
+): RegExpMatchArray | null {
+  return (
+    value.match(PERSON_BIOGRAPHY_OPENER_PATTERN) ||
+    (allowCredentialTitlePatterns
+      ? value.match(NAME_LEAD_TITLE_PATTERN) || value.match(GRADUATE_OF_LEAD_PATTERN)
+      : null) ||
+    value.match(DEGREE_RECEIPT_LEAD_PATTERN) ||
+    value.match(PRONOUN_CREDENTIAL_LEAD_PATTERN) ||
+    value.match(FIRST_PERSON_TITLE_LEAD_PATTERN) ||
+    value.match(FELLOWSHIP_LEAD_PATTERN) ||
+    value.match(CONTINUED_AWARDS_RECEIPT_PATTERN) ||
+    value.match(AUTHOR_OR_WINNER_OF_LEAD_PATTERN) ||
+    value.match(LIVES_AND_WORKS_LEAD_PATTERN) ||
+    value.match(WORK_EXHIBITED_OR_SHOWN_LEAD_PATTERN) ||
+    value.match(AMONG_AWARDS_RECEIVED_LEAD_PATTERN) ||
+    value.match(RECENT_PUBLICATIONS_INCLUDE_LEAD_PATTERN) ||
+    value.match(APPOINTED_TO_FACULTY_LEAD_PATTERN) ||
+    value.match(ARTIST_IN_RESIDENCE_LEAD_PATTERN) ||
+    value.match(MAJOR_SURVEYS_OF_WORK_LEAD_PATTERN) ||
+    value.match(LEADING_BARE_DEGREE_LIST_PATTERN)
+  );
+}
+
+const MAX_BIOGRAPHY_OPENER_SENTENCES_STRIPPED = 8;
+
+/**
+ * A CV/credential/awards run served as a description commonly spans several
+ * leading sentences, not just the opener (#1745: Zilibotti's opener is
+ * followed by a separate awards sentence and a separate fellowship sentence
+ * before any research content; Brooks's opener is followed by an
+ * author-of/winner-of bibliography run). Each of the biography-opener
+ * patterns above is anchored to the start of the string, so re-running the
+ * match against the shrinking remainder after every strip finds the next
+ * leading CV sentence, if any, until either a non-matching sentence is
+ * reached or the text is exhausted.
+ */
+function stripPersonBiographyOpenerSentence(
+  value: string,
+  allowCredentialTitlePatterns: boolean,
+): string {
+  let remaining = value;
+  let strippedAny = false;
+  for (let iteration = 0; iteration < MAX_BIOGRAPHY_OPENER_SENTENCES_STRIPPED; iteration += 1) {
+    const match = firstBiographyOpenerMatch(remaining, allowCredentialTitlePatterns);
+    if (!match || match.index === undefined) break;
+    const openerEnd = match.index + match[0].length;
+    const consumedEnd = sentenceEndIndex(remaining, openerEnd);
+    remaining = remaining.slice(consumedEnd).trim();
+    strippedAny = true;
+    if (!remaining) break;
+  }
+  return strippedAny ? remaining : value;
+}
+
+/**
+ * Faculty/individual entities can otherwise have a genuinely good research
+ * description that simply opens with a routine appointment sentence ("Elleza
+ * Kelley is an Assistant Professor of English..."). Drop only that opening
+ * sentence and keep the remainder when it still reads as a research
+ * description on its own, instead of blanking the whole field (#1586).
+ */
+function repairFacultyBiographyOpener(
+  value: string,
+  allowCredentialTitlePatterns: boolean,
+): string {
+  const stripped = stripPersonBiographyOpenerSentence(value, allowCredentialTitlePatterns);
+  if (!stripped || stripped === value) return '';
+  return isLikelyResearchFocusedText(stripped) && !isPersonBiographyOrAdvisingDescription(stripped)
+    ? stripped
+    : '';
+}
+
+const SUBJECTLESS_RESEARCH_LEAD_REPAIRS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^\s*Research\s+examines\b/i, 'Examines'],
+  [/^\s*Research\s+investigates\b/i, 'Investigates'],
+  [/^\s*Research\s+focuses\s+on\b/i, 'Studies'],
+  [/^\s*Research\s+studies\b/i, 'Studies'],
+  [/^\s*Research\s+explores\b/i, 'Explores'],
+  [/^\s*Focuses\s+on\b/i, 'Studies'],
+  [/^\s*Research\s+on\b/i, 'Studies'],
+];
+
+export function repairSubjectlessResearchLead(value: unknown): string {
+  const text = typeof value === 'string' ? value : '';
+  if (!text) return text;
+  for (const [pattern, replacement] of SUBJECTLESS_RESEARCH_LEAD_REPAIRS) {
+    if (pattern.test(text)) return text.replace(pattern, replacement);
+  }
+  return text;
+}
+
+const GREETING_LEAD_PATTERN = /^welcome to\b/i;
+
+// A period ending a greeting sentence can itself belong to a title
+// abbreviation or initial inside the opener ("Welcome to Prof. Xia's lab.",
+// "Welcome to Professor Scott A. Strobel's Laboratory."), so the scan below
+// only treats "." as a sentence end when it is not immediately preceded by
+// one of these; otherwise the greeting is left half-stripped.
+//
+// Every alternative also allows a period (not just whitespace/paren/start)
+// immediately before it, so every period inside a chained-initials or
+// multi-segment degree abbreviation ("B.F.A.", "M.F.A.", "M.Arch.", "Ralph J.
+// Gleason") is recognized, not just its first segment (#1745/#1790: only the
+// first period of "B.F.A." was skipped, so the scan stopped and cut the
+// sentence mid-abbreviation; #1745 round 4: "M.Arch." needs the same
+// treatment for its second, named segment).
+const SENTENCE_BOUNDARY_ABBREVIATION_PATTERN =
+  /(?:^|[\s(.])(?:[A-Z]|Prof|Dr|Mr|Mrs|Ms|Jr|Sr|St|Rev|Hon|Arch|Ph|Ph\.?D|M\.?D|B\.?S|M\.?S|M\.?A|D\.?Phil|Esq)\.$/;
+
+function sentenceEndIndex(value: string, from: number): number {
+  for (let index = from; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === '!' || char === '?') return index + 1;
+    if (char === '.') {
+      const precedingText = value.slice(Math.max(0, index - 14), index + 1);
+      if (SENTENCE_BOUNDARY_ABBREVIATION_PATTERN.test(precedingText)) continue;
+      return index + 1;
+    }
+  }
+  return value.length;
+}
+
+function countWords(value: string): number {
+  return value.split(/\s+/).filter(Boolean).length;
+}
+
+function stripLeadingPersonalGreeting(value: string): string {
+  if (!GREETING_LEAD_PATTERN.test(value)) return value;
+  let cursor = 0;
+  while (GREETING_LEAD_PATTERN.test(value.slice(cursor))) {
+    const sentenceEnd = sentenceEndIndex(value, cursor);
+    if (sentenceEnd <= cursor) break;
+    cursor = sentenceEnd;
+    while (cursor < value.length && /\s/.test(value[cursor])) cursor += 1;
+  }
+  const remainder = value.slice(cursor).trim();
+  if (countWords(remainder) < 6) return value;
+  return remainder;
+}
+
+const TRAILING_NAVIGATION_CHROME_PATTERNS: readonly RegExp[] = [
+  /[,;]?\s*please click on the links? (?:above|below)\.?\s*$/i,
+  /[,;]?\s*please (?:check|visit) the [A-Z][\w' &-]{0,60} section(?: for more information)?(?:,\s*(?:or\s+)?contact\b[^!?]*)?\.?\s*$/i,
+  /[,;]?\s*(?:(?:for\s+)?more information\s+)?(?:can be )?found on the [A-Z][\w' &-]{0,60} pages?\.?\s*$/i,
+  /[,;]?\s*please contact\b[^!?]*?,?\s*and include in the subject heading\b[^!?]*\.?\s*$/i,
+];
+
+function stripTrailingNavigationChromeClause(value: string): string {
+  let next = value;
+  for (const pattern of TRAILING_NAVIGATION_CHROME_PATTERNS) {
+    next = next.replace(pattern, '');
+  }
+  return next === value ? value : next.trim();
+}
+
+const THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS: Readonly<Record<string, string>> = {
+  am: 'is',
+  are: 'is',
+  have: 'has',
+  study: 'studies',
+  investigate: 'investigates',
+  examine: 'examines',
+  explore: 'explores',
+  use: 'uses',
+  focus: 'focuses',
+  develop: 'develops',
+  seek: 'seeks',
+  aim: 'aims',
+  ask: 'asks',
+  address: 'addresses',
+  analyze: 'analyzes',
+  apply: 'applies',
+  combine: 'combines',
+  build: 'builds',
+  model: 'models',
+  show: 'shows',
+  report: 'reports',
+  hypothesize: 'hypothesizes',
+  work: 'works',
+  research: 'researches',
+  lead: 'leads',
+  direct: 'directs',
+  hold: 'holds',
+  teach: 'teaches',
+  remain: 'remains',
+  run: 'runs',
+  serve: 'serves',
+  conduct: 'conducts',
+  believe: 'believes',
+  envision: 'envisions',
+  want: 'wants',
+};
+
+const FIRST_PERSON_PAST_OR_MODAL_VERBS = [
+  'had',
+  'was',
+  'would',
+  'studied',
+  'focused',
+  'began',
+  'started',
+  'joined',
+  'received',
+  'earned',
+  'became',
+  'worked',
+  'led',
+  'directed',
+  'held',
+  'taught',
+  'remained',
+  'ran',
+  'served',
+  'researched',
+  'analyzed',
+  'applied',
+  'combined',
+  'built',
+  'modeled',
+  'showed',
+  'reported',
+  'hypothesized',
+  'used',
+  'developed',
+  'sought',
+  'aimed',
+  'asked',
+  'addressed',
+  'examined',
+  'explored',
+  'investigated',
+];
+
+const FIRST_PERSON_VERB_ALTERNATION = [
+  ...Object.keys(THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS),
+  ...FIRST_PERSON_PAST_OR_MODAL_VERBS,
+].join('|');
+
+function conjugateFirstPersonVerbToThirdPersonSingular(verb: string): string {
+  return THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS[verb.toLowerCase()] || verb;
+}
+
+/**
+ * True when `offset` in `full` sits at the very start of the string or right
+ * after a sentence-ending punctuation mark, vs. mid-sentence (e.g. after a
+ * clause-introducing comma: "In particular, I am interested..."). The
+ * subject-pronoun revoice rules below match `I`/`We` regardless of position
+ * (#1745: a residual "I am" mid-sentence survived because the original rules
+ * only matched at a sentence boundary), so the replacement's capitalization
+ * has to be decided from this rather than baked into the pattern.
+ */
+function isAtSentenceStart(offset: number, full: string): boolean {
+  if (offset === 0) return true;
+  const precedingChar = full.slice(0, offset).trimEnd().slice(-1);
+  return precedingChar === '' || /[.!?]/.test(precedingChar);
+}
+
+const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<
+  readonly [RegExp, string | ((...args: any[]) => string)]
+> = [
+  [
+    /\bI['’]m\b/g,
+    (_match: string, offset: number, full: string) =>
+      isAtSentenceStart(offset, full) ? 'This researcher is' : 'this researcher is',
+  ],
+  [
+    /\bI['’]ve\b/g,
+    (_match: string, offset: number, full: string) =>
+      isAtSentenceStart(offset, full) ? 'This researcher has' : 'this researcher has',
+  ],
+  [
+    /(^|[.!?]\s+|,\s+)(?:my|our)\s+careers?\b/gi,
+    (_match: string, lead: string, offset: number, full: string) =>
+      `${lead}${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} researcher's career`,
+  ],
+  [
+    /(^|[.!?]\s+|,\s+)(?:my|our)\s+group\b/gi,
+    (_match: string, lead: string, offset: number, full: string) =>
+      `${lead}${isAtSentenceStart(offset + lead.length, full) ? 'This' : 'this'} research group`,
+  ],
+  [
+    new RegExp(`\\b(I|We)\\s+(${FIRST_PERSON_VERB_ALTERNATION})\\b`, 'g'),
+    (_match: string, subject: string, verb: string, offset: number, full: string) => {
+      const demonstrative = isAtSentenceStart(offset, full) ? 'This' : 'this';
+      const noun = subject === 'We' ? 'group' : 'researcher';
+      return `${demonstrative} ${noun} ${conjugateFirstPersonVerbToThirdPersonSingular(verb)}`;
+    },
+  ],
+  /**
+   * A possessive lead whose noun phrase is more than one word and is
+   * immediately followed by a copula/auxiliary ("My research interests
+   * are...", "Our career goals have been...") needs the demonstrative's
+   * number to agree with the phrase's actual head noun (its LAST word,
+   * matching the copula that already follows it), not the single word the
+   * generic catch-all below would grab first (#1806: "My research
+   * interests are" was becoming "This research interests are" - "This"
+   * agreeing with "research", a word the sentence's own verb never agreed
+   * with in the first place).
+   */
+  [
+    /(^|[.!?]\s+|,\s+)(?:my|our)\s+((?:[A-Za-z]+\s+){0,4}?[A-Za-z]+)(?=\s+(?:is|are|was|were|has|have)\b)/gi,
+    (_match: string, lead: string, phrase: string, offset: number, full: string) => {
+      const words = phrase.trim().split(/\s+/);
+      const headNoun = words[words.length - 1];
+      const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
+      return `${lead}${pluralAwareDemonstrative(headNoun, atSentenceStart)} ${phrase}`;
+    },
+  ],
+];
+
+const ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN =
+  /(^|[.!?]\s+)(?:My|Our)\s+((?:\w+\s+)?(?:goal|mission|focus|vision|approach))\b/gi;
+
+/**
+ * A bare demonstrative ("This goal is...", "This mission is...") dangles for
+ * these abstract singular nouns: there is no preceding antecedent sentence
+ * for "this" to point back to, so the student reads a non-sequitur. An
+ * entity-possessive subject ("The Foxman Lab's goal is...") reads correctly
+ * with no antecedent required.
+ */
+function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): string {
+  const baseName = entity ? facultyResearchLabelBase(entity) : '';
+  if (baseName) return possessiveName(baseName);
+  if (isLabResearchTextEntity(entity)) return "This lab's";
+  if (isFacultyResearchTextEntity(entity)) return "This researcher's";
+  return "This research group's";
+}
+
+const SINGULAR_NOUN_S_ENDING_EXCEPTIONS = /(?:ss|us|is|ics)$/i;
+
+function pluralAwareDemonstrative(noun: string, capitalized: boolean): string {
+  const isPlural = /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun);
+  const word = isPlural ? 'these' : 'this';
+  return capitalized ? `${word[0].toUpperCase()}${word.slice(1)}` : word;
+}
+
+const GENERIC_POSSESSIVE_LEAD_PATTERN = /(^|[.!?]\s+|,\s+)(?:my|our)\s+(\w+)\b/gi;
+
+const CONVERTED_FIRST_PERSON_SUBJECT_PATTERN = /\bthis (?:researcher|group)\b/i;
+
+/**
+ * A converted subject ("I received" -> "This researcher received") can leave
+ * a same-sentence possessive referring to that same subject unconverted
+ * ("This researcher received my PhD..."), since the possessive itself never
+ * matched any I/We rule (#1824). Scoped to the current sentence only, so a
+ * genuinely third-person sentence with an unrelated "our"/"my" (e.g. "This
+ * work advances our understanding...") is left untouched.
+ */
+function sentenceHasConvertedFirstPersonSubject(offset: number, full: string): boolean {
+  const beforeMatch = full.slice(0, offset);
+  const boundaryPattern = /[.!?]\s+/g;
+  let sentenceStart = 0;
+  let boundary: RegExpExecArray | null;
+  while ((boundary = boundaryPattern.exec(beforeMatch))) {
+    sentenceStart = boundary.index + boundary[0].length;
+  }
+  return CONVERTED_FIRST_PERSON_SUBJECT_PATTERN.test(beforeMatch.slice(sentenceStart));
+}
+
+export function revoiceFirstPersonResearchLead(
+  value: unknown,
+  entity?: FacultyResearchTextEntity | null,
+): string {
+  const text = typeof value === 'string' ? value : '';
+  if (!text) return text;
+  let next = stripLeadingPersonalGreeting(text);
+  const possessiveSubject = possessiveLeadSubject(entity);
+  next = next.replace(
+    ABSTRACT_SINGULAR_ANTECEDENT_NOUN_PATTERN,
+    (_match: string, lead: string, nounPhrase: string) =>
+      `${lead}${possessiveSubject} ${nounPhrase}`,
+  );
+  for (const [pattern, replacement] of FIRST_PERSON_LEAD_REVOICE_RULES) {
+    next = next.replace(pattern, replacement as any);
+  }
+  next = next.replace(
+    GENERIC_POSSESSIVE_LEAD_PATTERN,
+    (_match: string, lead: string, noun: string, offset: number, full: string) => {
+      const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
+      return `${lead}${pluralAwareDemonstrative(noun, atSentenceStart)} ${noun}`;
+    },
+  );
+  next = next.replace(/\b(?:my|our)\b/gi, (match: string, offset: number, full: string) =>
+    sentenceHasConvertedFirstPersonSubject(offset, full) ? 'their' : match,
+  );
+  return next;
+}
+
+export interface BiographyOrDeceasedEmeritusLeadRepair {
+  changed: boolean;
+  value: string;
+}
+
+/**
+ * The single guard-and-repair decision shared by every description/summary
+ * field: does this field's text open on a person-biography/advising note or a
+ * deceased/emeritus lead, and if so, is it salvageable by stripping just the
+ * opener (faculty/lab entities) or does it need to be blanked outright (a
+ * non-person org, or a deceased/emeritus lead whose whole bio reads as a
+ * retrospective rather than one stray sentence)? Exported standalone so a
+ * one-time backfill can apply exactly this decision to already-stored text
+ * without also re-running the unrelated first-person-revoice/subjectless-lead
+ * repairs that the rest of `sanitizeResearchEntityPublicDescriptionFields`
+ * performs on every read (#1638).
+ */
+export function repairBiographyOrDeceasedEmeritusLead(
+  value: unknown,
+  entity: FacultyResearchTextEntity,
+): BiographyOrDeceasedEmeritusLeadRepair {
+  const text = typeof value === 'string' ? value : '';
+  const rejectPersonBiography = isNonPersonOrgEntityType(entity);
+  const isLabEntity = isLabResearchTextEntity(entity);
+  const isFacultyEntity = isFacultyResearchTextEntity(entity);
+  const shouldGuard = rejectPersonBiography || isFacultyEntity || isLabEntity;
+  const deceasedOrEmeritusLead = isLabEntity && isDeceasedOrEmeritusLeadBiography(text);
+  const credentialLead = (isLabEntity || isFacultyEntity) && isCredentialOrTitleLeadBiography(text);
+  const credentialOrAwardLead = shouldGuard && isCredentialOrAwardLeadBiography(text);
+  if (
+    !shouldGuard ||
+    !(
+      isPersonBiographyOrAdvisingDescription(text) ||
+      deceasedOrEmeritusLead ||
+      credentialLead ||
+      credentialOrAwardLead
+    )
+  ) {
+    return { changed: false, value: text };
+  }
+  const repaired = deceasedOrEmeritusLead
+    ? ''
+    : isFacultyEntity || isLabEntity
+      ? repairFacultyBiographyOpener(text, isLabEntity || isFacultyEntity)
+      : '';
+  return { changed: repaired !== text, value: repaired };
 }
 
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
@@ -226,16 +1003,32 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {
       if (typeof next[field] !== 'string') continue;
+      const biographyRepair = repairBiographyOrDeceasedEmeritusLead(next[field], next);
+      if (biographyRepair.changed) {
+        next[field] = biographyRepair.value;
+        changed = true;
+        continue;
+      }
+      const withNavigationChromeStripped = stripTrailingNavigationChromeClause(next[field]);
+      const withResearchLeadRepair = repairSubjectlessResearchLead(withNavigationChromeStripped);
+      const withFirstPersonReVoice =
+        field === 'shortDescription'
+          ? withResearchLeadRepair
+          : revoiceFirstPersonResearchLead(withResearchLeadRepair, next);
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
-        next[field],
+        withFirstPersonReVoice,
         leadMemberNames,
       );
-      const withLeadNameCorrectionIfResearch =
-        String(next.descriptionSource) === 'PI_PROFILE_SYNTHESIS' &&
-        !isLikelyResearchFocusedText(withLeadNameCorrection)
+      const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
+        withLeadNameCorrection,
+        next,
+      );
+      const withFundingProgramStudiesGuard =
+        field === 'shortDescription' &&
+        isResearcherVoiceStudiesLeadOnFundingProgram(withLeadNameCorrectionIfResearch, next)
           ? ''
-          : withLeadNameCorrection;
-      const cleaned = publicResearchEntityDescriptionText(withLeadNameCorrectionIfResearch);
+          : withLeadNameCorrectionIfResearch;
+      const cleaned = publicResearchEntityDescriptionText(withFundingProgramStudiesGuard);
       if (cleaned !== next[field]) {
         next[field] = cleaned;
         changed = true;
@@ -244,7 +1037,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   }
 
   if ('summary' in next) {
-    const cleaned = publicResearchEntityDescriptionText(next.summary);
+    const summaryBiographyRepair = repairBiographyOrDeceasedEmeritusLead(next.summary, next);
+    const guardedSummary = summaryBiographyRepair.changed
+      ? summaryBiographyRepair.value
+      : next.summary;
+    const cleaned = publicResearchEntityDescriptionText(guardedSummary);
     if (cleaned !== next.summary) {
       next.summary = cleaned;
       changed = true;
@@ -257,22 +1054,37 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
 export function isFacultyResearchTextEntity(entity?: FacultyResearchTextEntity | null): boolean {
   return Boolean(
     entity &&
-      (entity.kind === 'individual' ||
-        entity.kind === 'solo' ||
-        entity.entityType === 'FACULTY_RESEARCH_AREA' ||
-        entity.entityType === 'INDIVIDUAL_RESEARCH'),
+    (entity.kind === 'individual' ||
+      entity.kind === 'solo' ||
+      entity.entityType === 'FACULTY_RESEARCH_AREA' ||
+      entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
 }
 
-function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
-  return textValue(entity.displayName || entity.name)
-    .replace(/\s+(?:Faculty Research|Lab|Laboratory)$/i, '')
+export function isLabResearchTextEntity(entity?: FacultyResearchTextEntity | null): boolean {
+  return Boolean(entity && (entity.kind === 'lab' || entity.entityType === 'LAB'));
+}
+
+export function stripFacultyResearchAreaNameTemplateSuffix(name: unknown): string {
+  return textValue(name)
+    .replace(/\s*[-–—]\s*Research$/i, '')
+    .replace(/\s+(?:Faculty Research|Lab|Laboratory|Research)$/i, '')
     .trim();
+}
+
+function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
+  return stripFacultyResearchAreaNameTemplateSuffix(entity.displayName || entity.name);
 }
 
 function possessiveName(name: string): string {
   return name.endsWith('s') ? `${name}'` : `${name}'s`;
 }
+
+const DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN =
+  /\b([A-Z][\p{L}.'’]*(?:\s+[A-Z][\p{L}.'’]*){0,4})\s+(?:[-–—]\s+)?Research(['’]s)\s+research\b/gu;
+
+const SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN =
+  /\bresearch profile\b(?=\s+(?:has|have|had|seeks?|aims?|focuses?|investigates?|studies|studying|develops?|uses?|explores?|examines?|works?|is|are|employs?|applies?|analyzes?|combines?|integrates?|leverages?|draws?|centers?)\b)/gi;
 
 export function sanitizeFacultyResearchEntityText(
   value: string,
@@ -283,6 +1095,8 @@ export function sanitizeFacultyResearchEntityText(
   const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
 
   return value
+    .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
+    .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN, 'research')
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
       `${possessive} research focuses on`,
@@ -295,10 +1109,7 @@ export function sanitizeFacultyResearchEntityText(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+investigates\b/i,
       `${possessive} research investigates`,
     )
-    .replace(
-      /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i,
-      `${possessive} research studies`,
-    )
+    .replace(/^The\s+(.+?)\s+(?:Lab|Laboratory)\s+studies\b/i, `${possessive} research studies`)
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+is\s+connected\s+to\b/i,
       `${possessive} research is connected to`,
@@ -314,16 +1125,25 @@ export function sanitizeFacultyResearchEntityText(
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+develops\b/gu, '$1 research develops')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?'s)\s+lab\s+investigates\b/gu, '$1 research investigates')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+studies\b/gu, '$1 research studies')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu, '$1 research focuses on')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+focuses\s+on\b/gu,
+      '$1 research focuses on',
+    )
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+uses\b/gu, '$1 research uses')
     .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+develops\b/gu, '$1 research develops')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu, '$1 research investigates')
+    .replace(
+      /\b([A-Z][\p{L}.' -]{1,80}?(?:'|’))\s+lab\s+investigates\b/gu,
+      '$1 research investigates',
+    )
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+studies\b/g, '$1 research studies')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+focuses\s+on\b/g, '$1 research focuses on')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+uses\b/g, '$1 research uses')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+develops\b/g, '$1 research develops')
     .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+investigates\b/g, '$1 research investigates')
-    .replace(/\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g, '$1 research examines')
+    .replace(
+      /\b(His|Her|Their|his|her|their)\s+lab\s+is\s+interested\s+in\b/g,
+      '$1 research examines',
+    )
     .replace(/^My\s+lab\s+focuses\s+on\b/i, 'This research focuses on')
     .replace(/^My\s+lab\s+studies\b/i, 'This research studies')
     .replace(/\bIn\s+([^.!?]{2,100}?)\s+lab\s+we\s+study\b/i, 'In $1 research, we study')
@@ -343,6 +1163,68 @@ export function sanitizeFacultyResearchEntityText(
     .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
 }
 
+const RESEARCH_HOME_SELF_NOUNS_BY_TYPE: Record<string, string> = {
+  CENTER: 'center',
+  INSTITUTE: 'institute',
+  INITIATIVE: 'initiative',
+  CORE_FACILITY: 'core facility',
+};
+
+const RESEARCH_HOME_SELF_NOUNS_BY_KIND: Record<string, string> = {
+  center: 'center',
+  institute: 'institute',
+  initiative: 'initiative',
+  group: 'group',
+  program: 'program',
+  core_facility: 'core facility',
+};
+
+function researchHomeSelfReferenceNoun(entity?: FacultyResearchTextEntity | null): string | null {
+  if (!entity || isFacultyResearchTextEntity(entity)) return null;
+  const byType = RESEARCH_HOME_SELF_NOUNS_BY_TYPE[String(entity.entityType || '').toUpperCase()];
+  if (byType) return byType;
+  return RESEARCH_HOME_SELF_NOUNS_BY_KIND[String(entity.kind || '').toLowerCase()] || null;
+}
+
+function matchLeadingCase(sample: string, replacement: string): string {
+  if (!sample || !replacement) return replacement;
+  const lead = sample.charAt(0);
+  const isUpper = lead === lead.toUpperCase() && lead !== lead.toLowerCase();
+  return isUpper ? replacement.charAt(0).toUpperCase() + replacement.slice(1) : replacement;
+}
+
+export function sanitizeResearchHomeSelfReferenceText(
+  value: string,
+  entity?: FacultyResearchTextEntity | null,
+): string {
+  const noun = researchHomeSelfReferenceNoun(entity);
+  if (!noun) return value;
+  return value.replace(
+    /\b(the|this|our|your|its)(\s+)(lab|laboratory)(['’]s)?\b/gi,
+    (_match, determiner: string, spacing: string, labToken: string, possessive?: string) =>
+      `${determiner}${spacing}${matchLeadingCase(labToken, noun)}${possessive || ''}`,
+  );
+}
+
+export function sanitizeResearchHomeSelfReferenceCopyFields<T extends Record<string, any>>(
+  entity: T,
+): T {
+  if (!researchHomeSelfReferenceNoun(entity)) return entity;
+  let changed = false;
+  const next: Record<string, any> = { ...entity };
+
+  for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
+    if (typeof next[field] !== 'string') continue;
+    const cleaned = sanitizeResearchHomeSelfReferenceText(next[field], next);
+    if (cleaned !== next[field]) {
+      next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  return changed ? (next as T) : entity;
+}
+
 export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
@@ -357,14 +1239,163 @@ export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string,
       next[field],
       leadMemberNames,
     );
-    const withLeadNameCorrectionIfResearch =
-      String(next.descriptionSource) === 'PI_PROFILE_SYNTHESIS' &&
-      !isLikelyResearchFocusedText(withLeadNameCorrection)
-        ? ''
-        : withLeadNameCorrection;
+    const withLeadNameCorrectionIfResearch = guardNonResearchProfileSynthesisText(
+      withLeadNameCorrection,
+      next,
+    );
     const cleaned = sanitizeFacultyResearchEntityText(withLeadNameCorrectionIfResearch, next);
     if (cleaned !== next[field]) {
       next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  return changed ? (next as T) : entity;
+}
+
+const SERVED_NAME_FIELDS = ['name', 'displayName'] as const;
+const SERVED_RESEARCH_AREA_FIELDS = ['researchAreas', 'profileResearchAreas'] as const;
+
+/**
+ * Serve-time fail-safe for a research-entity name/title: collapse a doubled
+ * research-home suffix ("Smith Lab Lab", "Foo Research Research") that a stored
+ * name can still carry when it predates the materialize-time normalization
+ * (#1108). The materialize seam owns the fuller name normalization (dash and
+ * trailing-description repair); serve only needs this idempotent fail-safe so
+ * every surface renders the same collapsed name.
+ */
+export function sanitizeServedResearchEntityName(value: unknown): string {
+  return typeof value === 'string' ? collapseDuplicateResearchHomeSuffix(value) : '';
+}
+
+/**
+ * Serve-time research-area chip hygiene: split bare comma-delimited blobs
+ * (#884), strip role-label suffixes / fail closed on prose, corrupt, and
+ * label-leak chips (#877/#1029/#867), dedupe, then drop prose-sentence chips
+ * (#870). Idempotent, so a re-run over already-clean chips is a no-op.
+ */
+const MAX_SERVED_RESEARCH_AREA_CHIPS = 200;
+
+export function sanitizeServedResearchAreaChips(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  const boundedInput = values
+    .slice(0, MAX_SERVED_RESEARCH_AREA_CHIPS)
+    .filter((v): v is string => typeof v === 'string');
+  for (const raw of normalizeResearchAreaList(boundedInput)) {
+    const cleaned = sanitizeResearchAreaLabel(raw);
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    labels.push(cleaned);
+  }
+  return filterProseResearchAreaChips(labels);
+}
+
+/**
+ * The single canonical serve-time sanitizer for a served research entity: the
+ * one "clean this entity before serving" entry point that every public serve
+ * path (detail, browse/search cards, embedded summaries, saved-plan cards,
+ * profile research-home lists) must run, so a guard added to any underlying
+ * layer takes effect on every surface at once rather than only on whichever
+ * serve path happened to run its subset (#1269/#1374).
+ *
+ * It composes the full guard union in a fixed order:
+ *  1. the text-transform layer (researchEntityDescriptionText) - subjectless-lead
+ *     repair, first-person re-voicing, mismatched-name-prefix correction, the
+ *     non-person-org biography guard, and the publicResearchEntityDescriptionText
+ *     fail-closed gate (appointment-only, role-only, chrome, synthetic, contact
+ *     route, directory-index, broken fragment);
+ *  2. the faculty relabel pass ("the Lab" -> "this research profile");
+ *  3. the research-home self-reference pass ("the lab" -> "the center");
+ *  4. the descriptionHygiene layer (chrome/dump strip, contact-block/publications/
+ *     center-blurb/html fail-close, and length clamp) that the DTO already ran
+ *     but the text/quality serve path did not;
+ *  5. the name fail-safe (doubled research-home suffix collapse) and the
+ *     research-area chip hygiene (split/relabel/fail-close/prose-drop), so a
+ *     serve path that never touched the DTO's per-field helpers still emits the
+ *     same names and chips as every other surface;
+ *  6. the unsourced research-area domain-coherence guard (#1407 second
+ *     mechanism): a `researchAreas` chip with no `fieldProvenance.researchAreas`
+ *     backing and zero vocabulary overlap with the entity's own sourced text is
+ *     dropped, since there is no provenance trail to reconcile it against.
+ *
+ * Every step is idempotent, so a description already cleaned upstream (the detail
+ * path runs the text-transform layer before the DTO) is unchanged by a second
+ * pass. Returns the input entity unchanged when nothing needed cleaning.
+ */
+export function sanitizeServedResearchEntityCopyFields<T extends Record<string, any>>(
+  entity: T,
+  leadMemberNames: readonly string[] = [],
+): T {
+  const withTextGuards = sanitizeResearchHomeSelfReferenceCopyFields(
+    sanitizeFacultyResearchEntityCopyFields(
+      sanitizeResearchEntityPublicDescriptionFields(entity, leadMemberNames),
+      leadMemberNames,
+    ),
+  );
+  let changed = withTextGuards !== entity;
+  const next: Record<string, any> = { ...withTextGuards };
+
+  HYGIENE_FULL_DESCRIPTION_FIELDS.forEach((field, index) => {
+    if (typeof next[field] !== 'string') return;
+    const areaField = SERVED_RESEARCH_AREA_FIELDS[index];
+    let cleaned = sanitizeResearchEntityDescription(next[field]);
+    if (isStudiesResearchAreaEchoDescription(cleaned, next[areaField])) cleaned = '';
+    if (cleaned !== next[field]) {
+      next[field] = cleaned;
+      changed = true;
+    }
+  });
+  if (typeof next.shortDescription === 'string') {
+    let cleaned = sanitizeResearchEntityShortDescription(next.shortDescription);
+    if (isStudiesResearchAreaEchoDescription(cleaned, next[SERVED_RESEARCH_AREA_FIELDS[0]])) {
+      cleaned = '';
+    }
+    if (cleaned !== next.shortDescription) {
+      next.shortDescription = cleaned;
+      changed = true;
+    }
+  }
+
+  for (const field of SERVED_NAME_FIELDS) {
+    if (typeof next[field] !== 'string') continue;
+    const cleaned = sanitizeServedResearchEntityName(next[field]);
+    if (cleaned !== next[field]) {
+      next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  for (const field of SERVED_RESEARCH_AREA_FIELDS) {
+    if (!Array.isArray(next[field])) continue;
+    const cleaned = sanitizeServedResearchAreaChips(next[field]);
+    const current = next[field] as unknown[];
+    if (
+      cleaned.length !== current.length ||
+      cleaned.some((value, index) => value !== current[index])
+    ) {
+      next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  if (Array.isArray(next.researchAreas)) {
+    const coherent = dropDomainIncoherentUnsourcedResearchAreas(
+      next.researchAreas as string[],
+      next.fieldProvenance,
+      {
+        name: next.name,
+        displayName: next.displayName,
+        departments: next.departments,
+        shortDescription: next.shortDescription,
+        fullDescription: next.fullDescription,
+      },
+    );
+    if (coherent !== next.researchAreas) {
+      next.researchAreas = coherent;
       changed = true;
     }
   }

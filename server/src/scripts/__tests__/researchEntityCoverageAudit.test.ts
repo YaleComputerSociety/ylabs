@@ -6,11 +6,14 @@ import {
   buildCoverageAuditRow,
   buildCoverageIssues,
   extractSuspiciousConstraintQuotes,
+  selectCoverageAuditRows,
   summarizeIssueCounts,
   type CoverageAuditFacts,
 } from '../researchEntityCoverageAuditCore';
 import {
+  assertResearchEntityCoverageSummaryOnlyAllowed,
   buildResearchEntityCoverageAuditOutput,
+  buildResearchEntityCoverageSummaryOnlyOutput,
   parseResearchEntityCoverageAuditArgs,
   writeResearchEntityCoverageAuditOutput,
 } from '../researchEntityCoverageAudit';
@@ -22,26 +25,20 @@ function baseFacts(): CoverageAuditFacts {
     kind: 'lab',
     school: 'Yale School of Engineering & Applied Science',
     websiteUrl: 'https://yuejiechi.github.io/',
-    description: '',
     shortDescription: '',
     fullDescription: '',
     counts: {
       researchAreas: 0,
       sourceUrls: 2,
       members: 0,
-      pathways: 0,
-      publicContactRoutes: 0,
-      totalContactRoutes: 0,
-      accessSignals: 1,
-      postedOpportunities: 0,
-      activeListings: 0,
+      accessSignals: 0,
     },
     observationFlags: {
       hasMicrositeObservation: true,
       hasInferredPiObservation: true,
       suspiciousConstraintQuotes: ["I regrettably don't have bandwidth to respond to all of them."],
     },
-    signalTypes: ['CONTACT_INSTRUCTIONS_EXIST'],
+    signalTypes: [],
   };
 }
 
@@ -67,8 +64,7 @@ describe('buildCoverageIssues', () => {
 
     expect(issues).toContain('MISSING_DESCRIPTION');
     expect(issues).toContain('NO_MEMBERS');
-    expect(issues).toContain('NO_PATHWAYS');
-    expect(issues).toContain('NO_PUBLIC_CONTACT_ROUTE');
+    expect(issues).toContain('NO_ACCESS_SIGNALS');
     expect(issues).toContain('NO_ACTIONABLE_ACCESS');
     expect(issues).toContain('MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS');
     expect(issues).toContain('INFERRED_PI_WITHOUT_MEMBERSHIP');
@@ -91,7 +87,6 @@ describe('buildCoverageAuditRow', () => {
     const row = buildCoverageAuditRow(baseFacts());
 
     expect(row.issueScore).toBeGreaterThan(0);
-    expect(row.descriptionChars).toBe(0);
   });
 });
 
@@ -102,15 +97,11 @@ describe('summarizeIssueCounts', () => {
       ...baseFacts(),
       slug: 'wu-tsai',
       name: 'Wu Tsai Institute',
-      description: 'Studies neuroscience and computation.',
       shortDescription: 'Neuroscience institute.',
       counts: {
         ...baseFacts().counts,
         researchAreas: 3,
         members: 5,
-        pathways: 2,
-        publicContactRoutes: 1,
-        totalContactRoutes: 1,
         accessSignals: 3,
       },
       observationFlags: {
@@ -125,6 +116,72 @@ describe('summarizeIssueCounts', () => {
 
     expect(summary.MISSING_DESCRIPTION).toBe(1);
     expect(summary.BLANK_DETAIL_RISK).toBe(1);
+  });
+});
+
+describe('selectCoverageAuditRows', () => {
+  const flaggedRow = buildCoverageAuditRow(baseFacts());
+  const belowThresholdRow = buildCoverageAuditRow({
+    ...baseFacts(),
+    slug: 'missing-website-only',
+    name: 'Missing Website Only',
+    websiteUrl: '',
+    fullDescription: 'Complete description.',
+    counts: {
+      ...baseFacts().counts,
+      researchAreas: 2,
+      members: 2,
+      accessSignals: 2,
+    },
+    observationFlags: {
+      hasMicrositeObservation: false,
+      hasInferredPiObservation: false,
+      suspiciousConstraintQuotes: [],
+    },
+  });
+  const cleanRow = buildCoverageAuditRow({
+    ...baseFacts(),
+    slug: 'complete-entity',
+    name: 'Complete Entity',
+    websiteUrl: 'https://example.test/',
+    fullDescription: 'Complete description.',
+    counts: {
+      ...baseFacts().counts,
+      researchAreas: 2,
+      members: 2,
+      accessSignals: 2,
+    },
+    observationFlags: {
+      hasMicrositeObservation: false,
+      hasInferredPiObservation: false,
+      suspiciousConstraintQuotes: [],
+    },
+  });
+
+  it('includes all bounded rows without changing threshold-based aggregates', () => {
+    const selection = selectCoverageAuditRows([cleanRow, belowThresholdRow, flaggedRow], {
+      includeAll: true,
+      minScore: 2,
+      limit: 10,
+    });
+
+    expect(selection.flaggedEntities).toBe(1);
+    expect(selection.rows).toHaveLength(3);
+    expect(selection.issueCounts.MISSING_DESCRIPTION).toBe(1);
+    expect(selection.issueCounts.MISSING_WEBSITE_URL).toBeUndefined();
+  });
+
+  it('includes only threshold-flagged rows when all-row inclusion is disabled', () => {
+    const selection = selectCoverageAuditRows([cleanRow, belowThresholdRow, flaggedRow], {
+      includeAll: false,
+      minScore: 2,
+      limit: 10,
+    });
+
+    expect(selection.flaggedEntities).toBe(1);
+    expect(selection.rows).toEqual([flaggedRow]);
+    expect(selection.issueCounts.MISSING_DESCRIPTION).toBe(1);
+    expect(selection.issueCounts.MISSING_WEBSITE_URL).toBeUndefined();
   });
 });
 
@@ -160,9 +217,9 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
     expect(() => parseResearchEntityCoverageAuditArgs(['--min-score=bad'])).toThrow(
       /--min-score requires a non-negative integer/,
     );
-    expect(() =>
-      parseResearchEntityCoverageAuditArgs(['--min-score=9007199254740992']),
-    ).toThrow(/--min-score requires a non-negative integer/);
+    expect(() => parseResearchEntityCoverageAuditArgs(['--min-score=9007199254740992'])).toThrow(
+      /--min-score requires a non-negative integer/,
+    );
     expect(() => parseResearchEntityCoverageAuditArgs(['--output', '--all'])).toThrow(
       /--output requires a path/,
     );
@@ -175,6 +232,33 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
     expect(() =>
       parseResearchEntityCoverageAuditArgs(['--output', '/tmp/research-entity-coverage.txt']),
     ).toThrow(/--output must point to a \.json report file/);
+  });
+
+  it('parses summary-only and rejects slug targeting before connecting', () => {
+    const options = parseResearchEntityCoverageAuditArgs([
+      '--summary-only',
+      '--environment=development',
+      '--all',
+    ]);
+    expect(options).toEqual({
+      summaryOnly: true,
+      environment: 'development',
+      includeAll: true,
+      includeArchived: false,
+      limit: 50,
+      minScore: 1,
+    });
+    expect(() => parseResearchEntityCoverageAuditArgs(['--summary-only=true'])).toThrow(
+      '--summary-only does not accept a value',
+    );
+    expect(() =>
+      parseResearchEntityCoverageAuditArgs(['--summary-only', '--environment=production']),
+    ).toThrow('--environment requires development, beta, or production-copy');
+    expect(() =>
+      assertResearchEntityCoverageSummaryOnlyAllowed(
+        parseResearchEntityCoverageAuditArgs(['--summary-only', '--slug=private-entity-slug']),
+      ),
+    ).toThrow(/--summary-only cannot be combined with --slug/);
   });
 
   it('writes the coverage audit artifact when output is provided', () => {
@@ -236,5 +320,46 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
         output: '/tmp/ylabs-research-entity-coverage.json',
       },
     });
+  });
+
+  it('builds a fail-closed aggregate-only coverage report', () => {
+    const payload = buildResearchEntityCoverageSummaryOnlyOutput(
+      {
+        generatedAt: '2026-07-28T00:00:00.000Z',
+        scope: 'bulk',
+        totalEntitiesScanned: 10,
+        flaggedEntities: 4,
+        filters: {
+          includeArchived: false,
+          includeAll: true,
+          minScore: 0,
+        },
+        issueCounts: {
+          NO_MEMBERS: 3,
+          'private-entity-slug': 999,
+        },
+      },
+      { environment: 'development', db: 'Development' },
+    );
+
+    expect(payload).toEqual({
+      summaryOnly: true,
+      environment: 'development',
+      db: 'Development',
+      generatedAt: '2026-07-28T00:00:00.000Z',
+      scope: 'bulk',
+      applyBlocked: true,
+      totalEntitiesScanned: 10,
+      flaggedEntities: 4,
+      filters: {
+        includeArchived: false,
+        includeAll: true,
+        minScore: 0,
+      },
+      issueCounts: {
+        NO_MEMBERS: 3,
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain('private');
   });
 });

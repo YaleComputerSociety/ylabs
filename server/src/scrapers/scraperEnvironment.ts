@@ -48,6 +48,57 @@ export function summarizeMongoUrl(mongoUrl: string | undefined): string {
   }
 }
 
+export function resolveMongoDatabaseName(mongoUrl: string | undefined): string | undefined {
+  if (!mongoUrl) return undefined;
+  try {
+    const parsed = new URL(mongoUrl);
+    const databaseName = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+    return databaseName || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function expectedDatabaseName(
+  environment: ScraperEnvironment,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  if (environment === 'development') {
+    return env.SCRAPER_DEVELOPMENT_DB_NAME || 'Development';
+  }
+  if (environment === 'beta') {
+    return env.SCRAPER_BETA_DB_NAME || 'Beta';
+  }
+  if (environment === 'production') {
+    return env.SCRAPER_PRODUCTION_DB_NAME || 'Production';
+  }
+  return undefined;
+}
+
+export function assertScraperEnvironmentMatchesMongoTarget(args: {
+  environment: ScraperEnvironment;
+  mongoUrl?: string;
+  env?: NodeJS.ProcessEnv;
+}): void {
+  if (!args.mongoUrl) return;
+
+  const env = args.env || process.env;
+  const expected = expectedDatabaseName(args.environment, env);
+  if (!expected) return;
+
+  const actual = resolveMongoDatabaseName(args.mongoUrl);
+  if (!actual) {
+    throw new Error(
+      `SCRAPER_ENV=${args.environment} requires MONGODBURL to include the explicit database name "${expected}".`,
+    );
+  }
+  if (actual !== expected) {
+    throw new Error(
+      `SCRAPER_ENV=${args.environment} requires Mongo database "${expected}", but MONGODBURL resolves to "${actual}".`,
+    );
+  }
+}
+
 export function applyScraperEnvironmentGuards(args: {
   command: 'run' | 'cron' | 'materialize' | 'report';
   options: ScraperOptions;
@@ -57,6 +108,11 @@ export function applyScraperEnvironmentGuards(args: {
 }): ScraperCommandGuardResult {
   const env = args.env || process.env;
   const environment = resolveScraperEnvironment(env);
+  assertScraperEnvironmentMatchesMongoTarget({
+    environment,
+    mongoUrl: args.mongoUrl,
+    env,
+  });
   const options: ScraperOptions = { ...args.options };
   let autoMaterialize = args.autoMaterialize;
   const warnings: string[] = [];
@@ -128,6 +184,11 @@ export function applyObservationPruneEnvironmentGuards(args: {
 }): ObservationPruneGuardResult {
   const env = args.env || process.env;
   const environment = resolveScraperEnvironment(env);
+  assertScraperEnvironmentMatchesMongoTarget({
+    environment,
+    mongoUrl: args.mongoUrl,
+    env,
+  });
   let apply = args.apply;
   const warnings: string[] = [];
   const allowNonProdWrites = env.ALLOW_NON_PROD_SCRAPER_WRITES === 'true';
@@ -139,10 +200,8 @@ export function applyObservationPruneEnvironmentGuards(args: {
     );
   }
 
-  if (environment === 'production' && apply && env.CONFIRM_PROD_SCRAPE !== 'true') {
-    throw new Error(
-      'Production observation pruning requires CONFIRM_PROD_SCRAPE=true in the environment.',
-    );
+  if (environment === 'production' && apply) {
+    throw new Error('Production observation pruning is disabled.');
   }
 
   return {

@@ -1,14 +1,30 @@
 import { ResearchEntity } from '../models/researchEntity';
-import { FacultyMember } from '../models/facultyMember';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { User } from '../models/user';
+import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import {
+  isStudiesResearchAreaEchoDescription,
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
+import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
+import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import {
+  RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
+  RESEARCH_ENTITY_MEILI_SYNONYMS,
+  STUDENT_TOPIC_TEXT_ALIAS_FREE_TEXT_GUARDED,
+  STUDENT_TOPIC_TEXT_ALIASES,
+} from './searchTopicAliases';
 
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
 export const RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY = 'id';
+
+export const RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS = 100000;
+
+export const RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET = 10000;
 
 const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   searchableAttributes: [
@@ -16,11 +32,12 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'displayName',
     'leadProfessorNames',
     'professorNames',
-    'description',
-    'summary',
-    'departments',
     'researchAreas',
-    'keywords',
+    'methods',
+    'studentSearchTerms',
+    'departments',
+    'shortDescription',
+    'fullDescription',
     'school',
     'kind',
     'entityType',
@@ -30,18 +47,39 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   filterableAttributes: [
     'archived',
     'kind',
+    'entityType',
     'school',
+    'schools',
     'departments',
     'researchAreas',
-    'openness',
-    'acceptingUndergrads',
-    'acceptanceConfidence',
-    'offersIndependentStudy',
-    'currentUndergradCount',
+    'hasUndergradHostingEvidence',
+    'hasDocumentedWayIn',
+    'undergraduateCurrentAvailability',
+    'undergraduateCompensationModel',
+    'undergraduateEligibleStudentLevels',
     'studentVisibilityTier',
   ],
   sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
   displayedAttributes: ['*'],
+  // `exactness` and `typo` precede `attribute` (Meili's default puts `attribute`
+  // first) so an exact, typo-free topical match in a lower-priority field beats a
+  // fuzzy/prefix collision that only wins on high-priority-field placement -
+  // e.g. "poetry" must not rank the surname "Petrylak" above real poetry scholars.
+  rankingRules: ['words', 'proximity', 'exactness', 'typo', 'attribute', 'sort'],
+  typoTolerance: {
+    minWordSizeForTypos: {
+      oneTypo: 5,
+      twoTypos: 9,
+    },
+    disableOnWords: RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
+  },
+  synonyms: RESEARCH_ENTITY_MEILI_SYNONYMS,
+  pagination: {
+    maxTotalHits: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+  },
+  faceting: {
+    maxValuesPerFacet: RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
+  },
 };
 
 export interface ResearchEntitySearchIndexRebuildOptions {
@@ -49,9 +87,7 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   clearExisting?: boolean;
   getIndex?: typeof getMeiliIndex;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
-  fetchMemberNames?: (
-    entityIds: unknown[],
-  ) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchMemberNames?: (entityIds: unknown[]) => Promise<ResearchEntitySearchMemberNameMap>;
 }
 
 export interface ResearchEntitySearchIndexRebuildResult {
@@ -68,10 +104,7 @@ export interface ResearchEntitySearchMemberNameFields {
   professorNames: string[];
 }
 
-export type ResearchEntitySearchMemberNameMap = Map<
-  string,
-  ResearchEntitySearchMemberNameFields
->;
+export type ResearchEntitySearchMemberNameMap = Map<string, ResearchEntitySearchMemberNameFields>;
 
 export function getResearchEntitySearchIndexSettings() {
   return {
@@ -79,13 +112,31 @@ export function getResearchEntitySearchIndexSettings() {
     filterableAttributes: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.filterableAttributes],
     sortableAttributes: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.sortableAttributes],
     displayedAttributes: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.displayedAttributes],
+    rankingRules: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.rankingRules],
+    typoTolerance: {
+      minWordSizeForTypos: {
+        ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.typoTolerance.minWordSizeForTypos,
+      },
+      disableOnWords: [...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.typoTolerance.disableOnWords],
+    },
+    synonyms: Object.fromEntries(
+      Object.entries(RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.synonyms).map(([key, values]) => [
+        key,
+        [...values],
+      ]),
+    ),
+    pagination: {
+      maxTotalHits: RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.pagination.maxTotalHits,
+    },
+    faceting: {
+      maxValuesPerFacet: RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.faceting.maxValuesPerFacet,
+    },
   };
 }
 
 const SEARCH_INDEX_TEXT_FIELDS = [
   'name',
   'displayName',
-  'description',
   'summary',
   'shortDescription',
   'fullDescription',
@@ -102,9 +153,17 @@ const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
   'phone',
 ] as const;
 
-const SEARCH_INDEX_PERSON_NAME_FIELDS = [
-  'leadProfessorNames',
-  'professorNames',
+const SEARCH_INDEX_PERSON_NAME_FIELDS = ['leadProfessorNames', 'professorNames'] as const;
+
+const RETIRED_ACCESS_INDEX_FIELDS = [
+  'openness',
+  'acceptingUndergrads',
+  'acceptanceConfidence',
+  'opennessSignals',
+  'opennessStatusCache',
+  'opennessExplanationCache',
+  'opennessComputedAt',
+  'opennessLastSignalAt',
 ] as const;
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
@@ -170,35 +229,98 @@ const uniquePersonNames = (values: unknown): string[] => {
   return out;
 };
 
-const personNameFromParts = (...parts: unknown[]): string =>
-  cleanPersonName(parts.filter(Boolean).join(' '));
+const normalizedAliasHaystack = (values: unknown[]): string =>
+  values
+    .flatMap((value) => {
+      if (Array.isArray(value)) return value;
+      return value == null ? [] : [value];
+    })
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-const userDisplayName = (user: any): string =>
-  cleanPersonName(user?.displayName) ||
-  personNameFromParts(user?.fname, user?.lname) ||
-  cleanPersonName(user?.name);
-
-const facultyDisplayName = (faculty: any): string =>
-  cleanPersonName(faculty?.name) ||
-  personNameFromParts(faculty?.firstName, faculty?.lastName);
-
-const memberDisplayName = (
-  member: any,
-  usersById: Map<string, any>,
-  facultyMembersById: Map<string, any>,
-): string => {
-  const rowName = cleanPersonName(member?.name);
-  if (rowName) return rowName;
-
-  const userId = serializedDocumentId(member?.userId);
-  const userName = userId ? userDisplayName(usersById.get(userId)) : '';
-  if (userName) return userName;
-
-  const facultyMemberId = serializedDocumentId(member?.facultyMemberId);
-  return facultyMemberId
-    ? facultyDisplayName(facultyMembersById.get(facultyMemberId))
-    : '';
+const addUniqueSearchTerm = (terms: string[], seen: Set<string>, term: string) => {
+  const cleaned = term.trim().replace(/\s+/g, ' ');
+  const key = cleaned.toLowerCase();
+  if (!cleaned || seen.has(key)) return;
+  seen.add(key);
+  terms.push(cleaned);
 };
+
+const CV_ADMIN_CONTEXT_PATTERNS: RegExp[] = [
+  /\b(?:email|send|submit|attach|include|provide|share|mail)\s+(?:a|an|your|the)?\s*cv\b/gi,
+  /\bcv\s+(?:to|and\s+(?:a\s+)?cover\s+letter|and\s+resume|or\s+resume)\b/gi,
+  /\b(?:r[ée]sum[ée]|cover\s+letter)\b[^.]{0,40}\bcv\b/gi,
+  /\bcv\b[^.]{0,40}\b(?:r[ée]sum[ée]|cover\s+letter)\b/gi,
+];
+
+const CV_CITATION_INITIALS_PATTERN = /\b[A-Z][a-zA-Z'-]{1,30}\s+CV[,.]/g;
+
+const stripCvFalsePositiveContext = (text: string): string => {
+  let cleaned = /\bcurriculum\b/i.test(text) ? text.replace(/\bcv\b/gi, ' ') : text;
+  cleaned = cleaned.replace(CV_CITATION_INITIALS_PATTERN, ' ');
+  for (const pattern of CV_ADMIN_CONTEXT_PATTERNS) {
+    cleaned = cleaned.replace(pattern, ' ');
+  }
+  return cleaned;
+};
+
+// An endowed-chair or rank title ("Sterling Professor of Political Science",
+// "William K. Townsend Professor of Law", "Assistant Professor of Chemistry")
+// is boilerplate that a literal search term can collide with (e.g. "townsend",
+// "sterling") even though the entity has no real connection to that term - the
+// department/field named after "of" is already indexed separately, so the
+// whole phrase carries no unique search signal. See #1286.
+const ENDOWED_CHAIR_TITLE_PATTERN =
+  /\b(?:the\s+)?(?:[A-Z][A-Za-z.'-]+\s+){1,4}Professor(?:\s+Emerit(?:us|a))?\s+of\s+[A-Z][A-Za-z]+(?:\s+(?:and|of|the)\s+[A-Z][A-Za-z]+|\s+[A-Z][A-Za-z]+){0,3}/g;
+
+const stripEndowedChairTitles = (text: string): string =>
+  text
+    .replace(ENDOWED_CHAIR_TITLE_PATTERN, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+
+export function buildStudentSearchTerms(doc: any): string[] {
+  const textFields = [
+    doc?.name,
+    doc?.displayName,
+    doc?.summary,
+    doc?.shortDescription,
+    doc?.fullDescription,
+    doc?.departments,
+    doc?.researchAreas,
+    doc?.keywords,
+    doc?.kind,
+    doc?.entityType,
+  ];
+
+  const haystack = normalizedAliasHaystack(textFields);
+  if (!haystack) return [];
+
+  const cvGuardedHaystack = normalizedAliasHaystack(
+    textFields.map((value) =>
+      typeof value === 'string' ? stripCvFalsePositiveContext(value) : value,
+    ),
+  );
+
+  const terms: string[] = [];
+  const seen = new Set<string>();
+  for (const [trigger, aliases] of Object.entries(STUDENT_TOPIC_TEXT_ALIASES)) {
+    const triggerPattern = new RegExp(`(^|\\s)${trigger.replace(/\s+/g, '\\s+')}(\\s|$)`, 'i');
+    const haystackForTrigger = STUDENT_TOPIC_TEXT_ALIAS_FREE_TEXT_GUARDED.has(trigger)
+      ? cvGuardedHaystack
+      : haystack;
+    if (!triggerPattern.test(haystackForTrigger)) continue;
+    for (const alias of aliases) {
+      addUniqueSearchTerm(terms, seen, alias);
+    }
+  }
+
+  return terms;
+}
 
 const emptyMemberNameFields = (): ResearchEntitySearchMemberNameFields => ({
   leadProfessorNames: [],
@@ -211,58 +333,24 @@ export async function fetchResearchEntitySearchMemberNames(
   const ids = uniqueObjectIdValues(entityIds);
   if (ids.length === 0) return new Map();
 
-  const members = await ResearchGroupMember.find({
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: Array.from(SEARCHABLE_PROFESSOR_MEMBER_ROLES) },
-    $or: [{ researchEntityId: { $in: ids } }, { researchGroupId: { $in: ids } }],
-  }).lean();
-
-  const memberRows = members as any[];
-  const userIds = uniqueObjectIdValues(memberRows.map((member) => member.userId));
-  const facultyMemberIds = uniqueObjectIdValues(memberRows.map((member) => member.facultyMemberId));
-  const [users, facultyMembers] = await Promise.all([
-    userIds.length > 0
-      ? User.find({ _id: { $in: userIds } })
-          .select('_id fname lname displayName name')
-          .lean()
-      : Promise.resolve([]),
-    facultyMemberIds.length > 0
-      ? FacultyMember.find({ _id: { $in: facultyMemberIds } })
-          .select('_id name firstName lastName')
-          .lean()
-      : Promise.resolve([]),
-  ]);
-
-  const usersById = new Map(
-    (users as any[]).flatMap((user) => {
-      const id = serializedDocumentId(user?._id);
-      return id ? [[id, user]] : [];
-    }),
-  );
-  const facultyMembersById = new Map(
-    (facultyMembers as any[]).flatMap((faculty) => {
-      const id = serializedDocumentId(faculty?._id);
-      return id ? [[id, faculty]] : [];
-    }),
-  );
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(ids);
   const byEntityId: ResearchEntitySearchMemberNameMap = new Map();
 
-  for (const member of memberRows) {
-    const entityId =
-      serializedDocumentId(member.researchEntityId) ||
-      serializedDocumentId(member.researchGroupId);
-    if (!entityId) continue;
+  for (const [entityId, roster] of rosterByEntityId) {
+    for (const member of roster) {
+      if (!member.isCurrentMember) continue;
+      if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
 
-    const name = memberDisplayName(member, usersById, facultyMembersById);
-    if (!name) continue;
+      const name = cleanPersonName(member.name);
+      if (!name) continue;
 
-    const fields = byEntityId.get(entityId) || emptyMemberNameFields();
-    fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
-    if (LEAD_PROFESSOR_MEMBER_ROLES.has(String(member.role || ''))) {
-      fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
+      const fields = byEntityId.get(entityId) || emptyMemberNameFields();
+      fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
+      if (LEAD_PROFESSOR_MEMBER_ROLES.has(member.role)) {
+        fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
+      }
+      byEntityId.set(entityId, fields);
     }
-    byEntityId.set(entityId, fields);
   }
 
   return byEntityId;
@@ -281,9 +369,7 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 };
 
 const publicHttpUrls = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) => publicHttpUrl(item) ?? [])
-    : [];
+  Array.isArray(value) ? value.flatMap((item) => publicHttpUrl(item) ?? []) : [];
 
 const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   for (const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS) {
@@ -294,6 +380,19 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     if (typeof out[field] === 'string') {
       out[field] = redactDirectContactInfo(out[field]);
     }
+  }
+
+  if (typeof out.fullDescription === 'string') {
+    let cleaned = sanitizeResearchEntityDescription(out.fullDescription);
+    if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
+    out.fullDescription = stripEndowedChairTitles(cleaned);
+  }
+  if (typeof out.shortDescription === 'string') {
+    let cleaned = sanitizeResearchEntityShortDescription(out.shortDescription);
+    if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
+    out.shortDescription = stripEndowedChairTitles(cleaned);
   }
 
   for (const field of SEARCH_INDEX_PERSON_NAME_FIELDS) {
@@ -315,6 +414,29 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     if (sourceUrls.length > 0) out.sourceUrls = sourceUrls;
     else delete out.sourceUrls;
   }
+
+  if (Array.isArray(out.researchAreas)) {
+    const coherentAreas = dropDomainIncoherentUnsourcedResearchAreas(
+      out.researchAreas,
+      out.fieldProvenance,
+      {
+        name: out.name,
+        displayName: out.displayName,
+        departments: out.departments,
+        shortDescription: out.shortDescription,
+        fullDescription: out.fullDescription,
+      },
+    );
+    const researchAreas = normalizeResearchAreaList(coherentAreas);
+    if (researchAreas.length > 0) out.researchAreas = researchAreas;
+    else delete out.researchAreas;
+  }
+
+  if (Array.isArray(out.methods)) {
+    const methods = normalizeResearchAreaList(out.methods);
+    if (methods.length > 0) out.methods = methods;
+    else delete out.methods;
+  }
 };
 
 export function buildResearchEntitySearchIndexDocument(
@@ -335,9 +457,16 @@ export function buildResearchEntitySearchIndexDocument(
     out.leadProfessorNames = memberNames.leadProfessorNames;
     out.professorNames = memberNames.professorNames;
   }
+  const studentSearchTerms = buildStudentSearchTerms(out);
+  if (studentSearchTerms.length > 0) {
+    out.studentSearchTerms = studentSearchTerms;
+  }
   delete out._id;
   delete out.__v;
   delete out.embedding;
+  for (const field of RETIRED_ACCESS_INDEX_FIELDS) {
+    delete out[field];
+  }
   sanitizeResearchEntityIndexDocument(out);
   return out;
 }
@@ -362,14 +491,12 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
     entityIds: unknown[],
   ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
 ): Promise<Record<string, any>[]> {
-  const memberNamesByEntityId = await fetchMemberNames(
-    docs.map((doc) => doc?._id ?? doc?.id),
-  );
+  const memberNamesByEntityId = await fetchMemberNames(docs.map((doc) => doc?._id ?? doc?.id));
   return buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId);
 }
 
 async function fetchResearchEntityPage(page: number, pageSize: number): Promise<any[]> {
-  return ResearchEntity.find({})
+  return ResearchEntity.find({ archived: { $ne: true } })
     .sort({ _id: 1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
@@ -384,6 +511,101 @@ function normalizeRebuildPageSize(pageSize: number | undefined): number {
   return pageSize;
 }
 
+export const RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME = 'default';
+export const RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL = 'text-embedding-3-small';
+
+export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
+  [RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME]: {
+    source: 'openAi',
+    apiKey,
+    model: RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
+    documentTemplate:
+      'Name: {{doc.name}}\n' +
+      '{% if doc.professorNames %}Professors: {{doc.professorNames}}\n{% endif %}' +
+      '{% if doc.departments %}Departments: {{doc.departments}}\n{% endif %}' +
+      '{% if doc.researchAreas %}Research areas: {{doc.researchAreas}}\n{% endif %}' +
+      '{% if doc.methods %}Methods: {{doc.methods}}\n{% endif %}' +
+      '{% if doc.shortDescription %}Description: {{doc.shortDescription}} {% endif %}' +
+      '{% if doc.fullDescription %}{{doc.fullDescription}}{% endif %}',
+  },
+});
+
+const RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let embedderConfiguredCache: boolean | null = null;
+let embedderConfiguredCacheAt = 0;
+
+export const invalidateResearchEntitySearchEmbedderCache = (): void => {
+  embedderConfiguredCache = null;
+  embedderConfiguredCacheAt = 0;
+};
+
+interface ResearchEntitySearchIndexLike {
+  getEmbedders?: () => Promise<Record<string, unknown> | null | undefined>;
+}
+
+export async function isResearchEntitySearchEmbedderConfigured(
+  index: ResearchEntitySearchIndexLike,
+): Promise<boolean> {
+  const now = Date.now();
+  if (
+    embedderConfiguredCache !== null &&
+    now - embedderConfiguredCacheAt < RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS
+  ) {
+    return embedderConfiguredCache;
+  }
+
+  let configured = false;
+  try {
+    const embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
+    configured = Boolean(
+      embedders &&
+      typeof embedders === 'object' &&
+      RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders,
+    );
+  } catch {
+    configured = false;
+  }
+
+  embedderConfiguredCache = configured;
+  embedderConfiguredCacheAt = now;
+  return configured;
+}
+
+const MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS = 180_000;
+
+interface MeiliTaskWaiter {
+  waitForTask: (
+    taskUid: number,
+    options?: { timeout?: number },
+  ) => Promise<{
+    status: string;
+    error?: unknown;
+  }>;
+}
+
+interface MeiliTaskAwareIndex {
+  tasks?: MeiliTaskWaiter;
+}
+
+async function assertMeiliSettingsTaskSucceeded(
+  index: MeiliTaskAwareIndex,
+  enqueued: unknown,
+  label: string,
+): Promise<void> {
+  const taskUid = (enqueued as { taskUid?: number })?.taskUid;
+  if (typeof index.tasks?.waitForTask !== 'function' || typeof taskUid !== 'number') return;
+
+  const task = await index.tasks.waitForTask(taskUid, {
+    timeout: MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  });
+  if (task.status !== 'succeeded') {
+    throw new Error(
+      `Meilisearch ${label} task ${taskUid} did not succeed (status: ${task.status}): ${JSON.stringify(task.error)}`,
+    );
+  }
+}
+
 export async function rebuildResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexRebuildOptions = {},
 ): Promise<ResearchEntitySearchIndexRebuildResult> {
@@ -393,7 +615,16 @@ export async function rebuildResearchEntitySearchIndex(
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
 
-  await index.updateSettings(getResearchEntitySearchIndexSettings());
+  const settingsTask = await index.updateSettings(getResearchEntitySearchIndexSettings());
+  await assertMeiliSettingsTaskSucceeded(index, settingsTask, 'updateSettings');
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  if (openAiApiKey && typeof (index as any).updateEmbedders === 'function') {
+    const embedderTask = await (index as any).updateEmbedders(
+      buildResearchEntitySearchEmbedderConfig(openAiApiKey),
+    );
+    await assertMeiliSettingsTaskSucceeded(index, embedderTask, 'updateEmbedders');
+    invalidateResearchEntitySearchEmbedderCache();
+  }
   if (clearExisting) {
     await index.deleteAllDocuments();
   }

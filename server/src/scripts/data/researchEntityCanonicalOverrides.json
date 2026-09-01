@@ -1,0 +1,15 @@
+{
+  "description": "Review-first canonical overrides for PI-shell research entities whose real lab website, name, and description were not auto-derived. Each applied field is locked via manuallyLockedFields so scrapers cannot revert it. Key entries by slug (portable across environments); recordId is optional. Verify every entry against the lab's official site before apply.",
+  "generatedFor": "Development",
+  "entries": [
+    {
+      "slug": "nsf-pi-67d8923a50621bcef4349271",
+      "name": "Malone Disturbance Ecology Lab",
+      "website": "https://www.malonelab.org/",
+      "shortDescription": "Studies ecosystem function across space and time - at the intersection of ecology, remote sensing, and data science - to understand ecosystem condition and vulnerability and help mitigate the impacts of climate, hydrology, and land-management change.",
+      "fullDescription": "We want to understand how and why our ecosystems are changing, and more importantly, how we can help mitigate negative consequences. We study ecosystem function across space and time to better understand ecosystem condition, sustainability, and vulnerability to extremes. This work lies at the intersection of ecology, remote sensing, and data science. Our goal is to understand the processes that govern ecosystem health at large scales, so that we can predict the impacts of changes in climate, hydrology, and land management.",
+      "confidence": "high",
+      "note": "Sparkle Malone's Yale directory page links malonelab.org; the site <title> is 'Malone Disturbance Ecology Lab'. Description is the lab site's own mission prose."
+    }
+  ]
+}

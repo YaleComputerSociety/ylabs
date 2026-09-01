@@ -1,4 +1,4 @@
-import { safeHttpUrl, safeRouteSegment } from './url';
+import { safeHttpUrl } from './url';
 
 export interface PrincipalInvestigatorLink {
   href: string;
@@ -110,56 +110,34 @@ const profileUrlFromCandidates = (
   return undefined;
 };
 
-const websiteLinkFromCandidates = (
-  candidates: Array<unknown>,
-): PrincipalInvestigatorLink | undefined => {
-  for (const candidate of candidates) {
-    const href = safeHttpUrl(candidate);
-    if (href) return { href, external: true };
-  }
-  return undefined;
-};
-
-const internalProfilePathFromCandidates = (
-  candidates: Array<unknown>,
-): PrincipalInvestigatorLink | undefined => {
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string') continue;
-    const trimmed = candidate.trim();
-    const match = /^\/profile\/([^/?#]+)$/.exec(trimmed);
-    if (!match) continue;
-    const segment = safeRouteSegment(match[1]);
-    if (segment) return { href: `/profile/${segment}`, external: false };
-  }
-  return undefined;
-};
-
-export const principalInvestigatorLinkFromMemberUser = (
+export const officialProfileUrlFromMemberUser = (
   user: Record<string, unknown> | undefined,
-): PrincipalInvestigatorLink | undefined => {
+): string | undefined => {
   if (!user) return undefined;
-  const officialProfileLink = profileUrlFromCandidates([
+  return profileUrlFromCandidates([
     ...profileUrlMapValues(user.profileUrls),
     ...profileUrlMapValues(user.profile_urls),
     user.websiteUrl,
     user.website,
-  ]);
-  return (
-    officialProfileLink ||
-    internalProfilePathFromCandidates([user.internalProfilePath, user.internal_profile_path]) ||
-    websiteLinkFromCandidates([user.websiteUrl, user.website])
-  );
+  ])?.href;
 };
 
 export const principalInvestigatorLinkFromResearchEntity = (
-  entity: Record<string, unknown> | undefined,
+  entity: object | undefined,
 ): PrincipalInvestigatorLink | undefined => {
   if (!entity) return undefined;
+  const values = entity as {
+    profileUrls?: unknown;
+    profile_urls?: unknown;
+    websiteUrl?: unknown;
+    website?: unknown;
+    sourceUrls?: unknown;
+  };
   return profileUrlFromCandidates([
-    ...profileUrlMapValues(entity.profileUrls),
-    ...profileUrlMapValues(entity.profile_urls),
-    entity.websiteUrl,
-    entity.website,
-    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ...profileUrlMapValues(values.profileUrls),
+    ...profileUrlMapValues(values.profile_urls),
+    values.websiteUrl,
+    values.website,
+    ...(Array.isArray(values.sourceUrls) ? values.sourceUrls : []),
   ]);
 };

@@ -7,7 +7,6 @@ import {
   buildSecurityHeaderChecks,
   containsInternalLabels,
   createSmokeReport,
-  deploymentFingerprintCheckFromSmokeConfig,
   parseSmokeConfig,
   shouldSendSmokeOrigin,
   smokeBrowserOrigin,
@@ -156,9 +155,6 @@ const runApiSmoke = async () => {
       present: check.present,
     });
   }
-  const deploymentCheck = deploymentFingerprintCheckFromSmokeConfig(config, configResponse.json);
-  addCheck('api.config.deploymentFingerprint', deploymentCheck.status, deploymentCheck);
-
   await discoverResearch();
   await checkOpportunityDetail();
   await checkProgramApis();
@@ -295,7 +291,7 @@ const runUiSmoke = async () => {
       ['/research', 'student-research'],
       [researchPath, 'student-research-detail'],
       ['/programs', 'student-programs'],
-      ['/account', 'student-account'],
+      ['/dashboard', 'student-dashboard'],
     ];
     if (report.discovered.opportunityId) {
       studentRoutes.splice(2, 0, [

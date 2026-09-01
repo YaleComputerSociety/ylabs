@@ -11,9 +11,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { Source } from '../models/source';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
+import {
+  assertScriptApplyAllowed,
+  resolveSafeJsonReportOutputPath,
+} from '../scripts/scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { getSourceCoverage } from './sourceCoverageRegistry';
+import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from './retiredPaperPipeline';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,6 +32,7 @@ interface SourceSeed {
   defaultWeight: number;
   isManualLock?: boolean;
   cadence: string;
+  enabled?: boolean;
   coverage?: SourceCoverageMetadata;
 }
 
@@ -161,7 +166,8 @@ const SOURCES: SourceSeed[] = [
   {
     name: 'ylabs-listing',
     displayName: 'YLabs listing',
-    description: 'Legacy YLabs posted research role row materialized into PostedOpportunity records.',
+    description:
+      'Legacy YLabs posted research role row materialized into PostedOpportunity records.',
     baseUrl: '',
     defaultWeight: 0.9,
     cadence: 'event',
@@ -176,36 +182,14 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'orcid',
-    displayName: 'ORCID',
-    description: 'Author-curated paper and biographical metadata from ORCID.',
-    baseUrl: 'https://pub.orcid.org/v3.0',
-    defaultWeight: 0.95,
-    cadence: 'weekly',
-  },
-  {
-    name: 'crossref',
-    displayName: 'Crossref',
-    description: 'DOI-of-record metadata; canonical title/year/venue precision.',
-    baseUrl: 'https://api.crossref.org',
-    defaultWeight: 0.9,
-    cadence: 'as-needed',
-  },
-  {
-    name: 'pubmed',
-    displayName: 'PubMed',
-    description: 'NLM-curated biomedical paper metadata.',
-    baseUrl: 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils',
+    name: 'undergrad-research-posting',
+    displayName: 'Undergraduate research postings',
+    description:
+      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting (title, resolvable hiring research home, apply route, and future-dated deadline), carrying the deadline as an expiry so the top-tier "Apply" state degrades once the window closes. Disabled by default until an operator confirms each page is reliably public on Development.',
+    baseUrl: 'https://science.yalecollege.yale.edu/research-opportunities',
     defaultWeight: 0.9,
     cadence: 'weekly',
-  },
-  {
-    name: 'europe-pmc',
-    displayName: 'Europe PMC',
-    description: 'ORCID-backed biomedical and life-science paper metadata.',
-    baseUrl: 'https://www.ebi.ac.uk/europepmc/webservices/rest',
-    defaultWeight: 0.9,
-    cadence: 'weekly',
+    enabled: false,
   },
   {
     name: 'yale-directory',
@@ -216,50 +200,28 @@ const SOURCES: SourceSeed[] = [
     cadence: 'nightly',
   },
   {
-    name: 'arxiv',
-    displayName: 'arXiv',
-    description: 'Preprints in CS / Physics / Math; author-submitted.',
-    baseUrl: 'http://export.arxiv.org/api/query',
-    defaultWeight: 0.85,
-    cadence: 'weekly',
-  },
-  {
-    name: 'openalex',
-    displayName: 'OpenAlex',
-    description: 'Broad institutional paper coverage; primary trunk for paper sync.',
-    baseUrl: 'https://api.openalex.org',
-    defaultWeight: 0.85,
-    cadence: 'weekly',
-  },
-  {
-    name: 'semantic-scholar',
-    displayName: 'Semantic Scholar',
-    description: 'Cross-validation source with TLDRs and citation context.',
-    baseUrl: 'https://api.semanticscholar.org/graph/v1',
-    defaultWeight: 0.85,
-    cadence: 'weekly',
-  },
-  {
-    name: 'ssrn',
-    displayName: 'SSRN',
-    description: 'Working papers in social sciences / law / economics.',
-    baseUrl: 'https://www.ssrn.com',
-    defaultWeight: 0.8,
-    cadence: 'weekly',
-  },
-  {
-    name: 'nber',
-    displayName: 'NBER',
-    description: 'Curated working papers in economics.',
-    baseUrl: 'https://www.nber.org',
-    defaultWeight: 0.8,
-    cadence: 'weekly',
-  },
-  {
     name: 'ysm-atoz-index',
     displayName: 'YSM A-to-Z Lab Index',
     description: 'Yale School of Medicine centralized labs index.',
-    baseUrl: 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+    baseUrl: 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'ysm-mesh-keyword',
+    displayName: 'YSM research-by-keyword (MeSH) directory',
+    description:
+      'Yale School of Medicine research-by-keyword (MeSH) and department indexes as crawl seeds for YSM faculty individual profile pages, from which governed MeSH research areas are attached to existing YSM research entities. Each faculty individual profile is the cited source; listing/facet pages are never recorded as a source.',
+    baseUrl: 'https://medicine.yale.edu/research/research-by-keyword/',
+    defaultWeight: 0.8,
+    cadence: 'monthly',
+  },
+  {
+    name: 'ysm-faculty-directory',
+    displayName: 'YSM Faculty Directory',
+    description:
+      'Yale School of Medicine school-wide A-Z faculty directory and individual profile pages for researcher identity, lab-website discovery, governed research areas, and official profile prose.',
+    baseUrl: 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/',
     defaultWeight: 0.8,
     cadence: 'weekly',
   },
@@ -268,6 +230,15 @@ const SOURCES: SourceSeed[] = [
     displayName: 'YSE Centers Index',
     description: 'Yale School of the Environment centers and programs index.',
     baseUrl: 'https://environment.yale.edu/research/centers',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
+    name: 'yse-faculty-directory',
+    displayName: 'YSE Faculty Directory',
+    description:
+      'Yale School of the Environment faculty directory and individual faculty profile pages for researcher identity, research homes, research areas, and official profile prose.',
+    baseUrl: 'https://environment.yale.edu/directory/faculty',
     defaultWeight: 0.8,
     cadence: 'weekly',
   },
@@ -319,9 +290,27 @@ const SOURCES: SourceSeed[] = [
     name: 'center-director-llm',
     displayName: 'Center director LLM extractor',
     description:
-      'Reads an organizational research home\'s official site + leadership pages and emits an entity-level inferred-director observation; the materializer resolves the name to a unique Yale User before promoting them to a director member.',
+      "Reads an organizational research home's official site + leadership pages and emits an entity-level inferred-director observation; the materializer resolves the name to a unique Yale User before promoting them to a director member.",
     baseUrl: '',
     defaultWeight: 0.6,
+    cadence: 'weekly',
+  },
+  {
+    name: 'grant-corpus-synthesis-llm',
+    displayName: 'Grant-corpus research synthesis LLM',
+    description:
+      'Synthesizes a grounded, PI-level research description for a grant-backed entity from its whole recentGrants corpus (aggregated NIH/NSF/NEH/USASpending/DOE titles and abstracts) via the grounded coverage synthesizer. Fails closed unless the output is grounded in the grant text and clears the description-quality bar. Weighted above the single-abstract grant fallback but below official-profile sources so a real profile still wins.',
+    baseUrl: '',
+    defaultWeight: 0.45,
+    cadence: 'weekly',
+  },
+  {
+    name: 'fra-profile-research-synthesis',
+    displayName: 'Faculty research-area profile synthesis LLM',
+    description:
+      "Synthesizes what a faculty member studies from the research prose on their own official Yale profile page, for FACULTY_RESEARCH_AREA entities whose stored description is a biography. Those pages state the research but interleave it with credentials, so no contiguous verbatim span carries it and the extractor can only copy a bio. Career, credential, and navigation sentences are excluded from the input; the grounded coverage synthesizer then fails closed unless the output is grounded in the retained research prose and clears the description-quality bar. Weighted above the grant-corpus lane because a professor's own profile is the better authority on their research, and below official-profile extraction so a genuine verbatim research statement still wins.",
+    baseUrl: '',
+    defaultWeight: 0.48,
     cadence: 'weekly',
   },
   {
@@ -333,21 +322,32 @@ const SOURCES: SourceSeed[] = [
     cadence: 'daily-during-cycle',
   },
   {
-    name: 'external-fellowship-llm-scraper',
-    displayName: 'External fellowship LLM scraper',
-    description: 'LLM extracts external programs (NSF REU, NIH, Goldwater, Beckman, etc.).',
-    baseUrl: '',
-    defaultWeight: 0.6,
-    cadence: 'weekly',
+    name: 'yale-reu-programs',
+    displayName: 'Yale REU & Summer Research Programs',
+    description:
+      "Yale-hosted NSF REU / summer research programs (e.g. the Dorrit Hoffleit Astronomy program, SUMRY). Cites each program's own official Yale page; the NSF REU Sites directory is a non-Yale crawl seed only and is never cited. Emits SUMMER_RESEARCH_PROGRAM records; fails closed on contact and on non-Yale source URLs.",
+    baseUrl: 'https://www.nsf.gov/crssprgm/reu/reu_search.jsp',
+    defaultWeight: 0.9,
+    cadence: 'daily-during-cycle',
   },
   {
-    name: 'student-decision-llm',
-    displayName: 'Student decision LLM',
+    name: 'yale-health-sciences-summer-programs',
+    displayName: 'Yale Health-Sciences Undergraduate Summer Research Programs',
     description:
-      'Precomputed, source-backed LLM explanations for student-facing Best Next Step decisions.',
-    baseUrl: '',
-    defaultWeight: 0.55,
-    cadence: 'after-materialization',
+      "Yale health-sciences undergraduate summer research programs hosted across the School of Medicine, Public Health, Nursing, and their institutes/centers - the biomedical analogue of yale-reu-programs on distinct host domains. Cites each program's own official Yale page; Yale-owned health-sciences listing pages are crawl seeds only and are never cited. The two already-covered WHR/YCMD seed URLs owned by yale-college-fellowships-office are excluded so a program is never minted twice. Emits SUMMER_RESEARCH_PROGRAM records; fails closed on contact and on non-Yale source URLs.",
+    baseUrl: 'https://medicine.yale.edu',
+    defaultWeight: 0.9,
+    cadence: 'daily-during-cycle',
+  },
+  {
+    name: 'student-grants-database',
+    displayName: 'Yale Student Grants Database (CommunityForce)',
+    description:
+      "Yale's comprehensive officially-curated student funding catalog. Enumerates each fund from the rendered CommunityForce fund search and cites the fund's own FundDetails page. Disabled by default until an operator confirms the rendered catalog is reliably public on Development; contact and unresolved funds fail closed.",
+    baseUrl: 'https://yale.communityforce.com/Funds/Search.aspx',
+    defaultWeight: 0.95,
+    cadence: 'daily-during-cycle',
+    enabled: false,
   },
   {
     name: 'nih-reporter',
@@ -366,9 +366,47 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'neh-funded-projects',
+    displayName: 'NEH funded projects',
+    description:
+      'Pulls Yale-awardee NEH funded projects from open-data bulk files; humanities/social-science analogue of the NIH/NSF grant lanes.',
+    baseUrl: 'https://apps.neh.gov/open/data',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
+    name: 'federal-award-usaspending',
+    displayName: 'USAspending federal awards (DOE/NASA/DoD)',
+    description:
+      'Pulls DOE, NASA, and DoD Yale awards from USAspending.gov to enrich physical-science and mission-agency research homes the NSF/NIH fallbacks miss. USAspending carries no structured PI field, so a PI is harvested only when the award description embeds one inline and resolves to a single existing Yale User; otherwise the award is skipped (fail-closed). Emits additive grant activity only.',
+    baseUrl: 'https://api.usaspending.gov/api/v2/search/spending_by_award/',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
+    name: 'doe-osti',
+    displayName: 'DOE OSTI (Yale technical reports)',
+    description:
+      'Pulls DOE-funded Yale technical reports from OSTI, attributing each to its Yale faculty PI to add physical-sciences funding activity and recency.',
+    baseUrl: 'https://www.osti.gov/api/v1/records',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
+    name: 'official-research-home-roster',
+    displayName: 'Official research-home current rosters',
+    description:
+      'Reviewed, explicitly current roster sections on allowlisted official research-home pages. Public contact details are excluded.',
+    baseUrl: 'https://medicine.yale.edu/lab/',
+    defaultWeight: 0.95,
+    cadence: 'weekly',
+    enabled: false,
+  },
+  {
     name: 'centers-institutes-index',
     displayName: 'Yale centers/institutes index',
-    description: 'Parameterized per-center scrapers (Wu Tsai, Cancer Center, Cowles, Tobin, MacMillan, ISPS, Whitney Humanities, Yale Quantum, etc.).',
+    description:
+      'Parameterized per-center scrapers (Wu Tsai, Cancer Center, Cowles, Tobin, MacMillan, ISPS, Whitney Humanities, Yale Quantum, etc.).',
     baseUrl: '',
     defaultWeight: 0.8,
     cadence: 'weekly',
@@ -391,6 +429,15 @@ const SOURCES: SourceSeed[] = [
     defaultWeight: 0.5,
     cadence: 'weekly',
   },
+  {
+    name: 'research-area-source-extractor',
+    displayName: 'Research-area source extractor',
+    description:
+      'Deterministic recovery of approved research areas for empty-area research entities from their official lab/department/profile pages; emits approved TaxonomyTerm areas only.',
+    baseUrl: '',
+    defaultWeight: 0.65,
+    cadence: 'monthly',
+  },
 ];
 
 const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
@@ -398,10 +445,15 @@ const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
   coverage: getSourceCoverage(seed.name),
 }));
 
-const RETIRED_SOURCE_NAMES = [
+export const ACTIVE_SOURCE_NAMES = SOURCES_WITH_COVERAGE.map((source) => source.name);
+
+export const RETIRED_SOURCE_NAMES = [
   'yale-course-catalog',
   'apify-google-scholar-bootstrap',
   'apify-google-scholar',
+  'student-decision-llm',
+  'external-fellowship-llm-scraper',
+  ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
 ];
 
 export async function seedSources(options: SeedSourcesCliOptions) {
@@ -443,7 +495,7 @@ export async function seedSources(options: SeedSourcesCliOptions) {
       });
     } else {
       if (options.apply) {
-        await Source.create({ ...seed, enabled: true });
+        await Source.create({ ...seed, enabled: seed.enabled ?? true });
       }
       sources.push({
         name: seed.name,

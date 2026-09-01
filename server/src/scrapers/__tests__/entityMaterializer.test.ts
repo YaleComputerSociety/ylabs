@@ -1,22 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPostMaterializationMetrics,
+  aggregateResearchEntityGrantEvidence,
   buildInferredPiMemberUpsert,
   centerRelationshipTypeForResolvedTarget,
   relationshipLabelForType,
-  buildOfficialProfileScholarlyLinkUpserts,
-  buildPaperUpdateFromObservations,
-  buildResearchGroupMemberUpsert,
-  countListingBackedPostedOpportunitiesForRun,
+  rosterEnrichmentWithRetainedSuccessfulSnapshot,
+  buildRosterMemberUpsert,
+  canonicalRosterProvenanceFromSet,
+  deriveResearchEntityWebsiteUrl,
+  buildOfficialRosterArchiveFilter,
   emptyPostMaterializationMetrics,
-  mergeUniqueArrayValues,
-  normalizeDoiForMaterialization,
+  leadPiSchoolInheritanceGate,
+  materializedFieldValue,
   normalizeMaterializerObjectId,
+  bestMaterializationProvenanceSourceUrl,
+  officialLeadProfileSourceUrl,
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
   selectOfficialProfileObservationUserMatch,
-  shouldPreserveExistingUserIdentityField,
-  shouldClearIgnoredAccessClaimForEntity,
   shouldIgnoreObservationForEntityMaterialization,
   uniqueKeyValueForIdentifier,
   userLookupFiltersForOfficialProfileObservations,
@@ -25,7 +27,143 @@ import {
 } from '../entityMaterializer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 
+describe('materializedFieldValue research-entity name hygiene', () => {
+  it('strips a description sentence glued onto a materialized name (#797)', () => {
+    expect(
+      materializedFieldValue(
+        'researchEntity',
+        'name',
+        'Example Lab We study how immune cells and metabolic networks restore tissue health.',
+      ),
+    ).toBe('Example Lab');
+  });
+
+  it('strips glued description prose from displayName too', () => {
+    expect(
+      materializedFieldValue(
+        'researchEntity',
+        'displayName',
+        'Example Center The center focuses on the intersection of energy and economics.',
+      ),
+    ).toBe('Example Center');
+  });
+
+  it('normalizes dashes and preserves clean names', () => {
+    expect(materializedFieldValue('researchEntity', 'name', 'Jane Doe — Research')).toBe(
+      'Jane Doe - Research',
+    );
+    expect(materializedFieldValue('researchEntity', 'name', 'Example Lab')).toBe('Example Lab');
+  });
+
+  it('normalizes shouty person-name casing on user fname/lname (#834)', () => {
+    expect(materializedFieldValue('user', 'fname', 'AZA')).toBe('Aza');
+    expect(materializedFieldValue('user', 'lname', 'BUDNITCKIY')).toBe('Budnitckiy');
+    expect(materializedFieldValue('user', 'fname', 'TJ')).toBe('TJ');
+  });
+
+  it('does not casing-normalize research-entity displayName (preserves lab acronyms)', () => {
+    expect(materializedFieldValue('researchEntity', 'displayName', 'PTSD Lab')).toBe('PTSD Lab');
+  });
+
+  it('rejects a kind observation value outside the researchGroupKinds enum, keeping the existing value (#observation-array-integrity)', () => {
+    expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', 'lab')).toBe('lab');
+    expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', undefined)).toBe(
+      undefined,
+    );
+    expect(materializedFieldValue('researchEntity', 'kind', 'individual', 'lab')).toBe(
+      'individual',
+    );
+  });
+
+  it('rejects an entityType observation value outside the researchEntityTypes enum, keeping the existing value (#observation-array-integrity)', () => {
+    expect(materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH', 'LAB')).toBe(
+      'LAB',
+    );
+    expect(
+      materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH_AREA', 'LAB'),
+    ).toBe('FACULTY_RESEARCH_AREA');
+  });
+});
+
 describe('entityMaterializer post-materialization metrics', () => {
+  it('merges cross-source grant evidence by stable grant id', () => {
+    expect(
+      aggregateResearchEntityGrantEvidence([
+        {
+          field: 'recentGrants',
+          sourceName: 'nih',
+          observedAt: new Date('2025-01-01'),
+          value: [{ id: 'AGED-OUT' }],
+        },
+        {
+          field: 'recentGrants',
+          sourceName: 'nih',
+          observedAt: new Date('2026-01-01'),
+          value: [{ id: 'NIH-1' }, { id: 'SHARED', title: 'old' }],
+        },
+        {
+          field: 'recentGrants',
+          sourceName: 'nsf',
+          observedAt: new Date('2026-01-01'),
+          value: [{ id: 'NSF-1' }, { id: 'shared', title: 'new' }],
+        },
+        {
+          field: 'recentGrantCount',
+          sourceName: 'nih',
+          observedAt: new Date('2025-01-01'),
+          value: 14,
+        },
+        {
+          field: 'recentGrantCount',
+          sourceName: 'nih',
+          observedAt: new Date('2026-01-01'),
+          value: 12,
+        },
+        {
+          field: 'recentGrantCount',
+          sourceName: 'nsf',
+          observedAt: new Date('2026-01-01'),
+          value: 11,
+        },
+        {
+          field: 'fundingAgencies',
+          sourceName: 'nih',
+          observedAt: new Date('2026-01-01'),
+          value: ['NIH'],
+        },
+        {
+          field: 'fundingAgencies',
+          sourceName: 'nsf',
+          observedAt: new Date('2026-01-01'),
+          value: ['NSF', 'nih'],
+        },
+      ]),
+    ).toEqual({
+      recentGrants: [{ id: 'NIH-1' }, { id: 'shared', title: 'new' }, { id: 'NSF-1' }],
+      recentGrantCount: 23,
+      fundingAgencies: ['NIH', 'NSF'],
+    });
+  });
+
+  it('bounds the grant display independently of source totals', () => {
+    const evidence = aggregateResearchEntityGrantEvidence([
+      {
+        field: 'recentGrants',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: Array.from({ length: 12 }, (_, index) => ({ id: `NSF-${index}` })),
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: 12,
+      },
+    ]);
+    expect(evidence.recentGrants).toHaveLength(10);
+    expect(evidence.recentGrantCount).toBe(12);
+  });
+
   it('normalizes materializer ObjectIds without object-shaped coercion', () => {
     expect(normalizeMaterializerObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
       '507f1f77bcf86cd799439011',
@@ -36,14 +174,6 @@ describe('entityMaterializer post-materialization metrics', () => {
         toString: () => '507f1f77bcf86cd799439011',
       }),
     ).toBeUndefined();
-  });
-
-  it('normalizes DOI values for paper identity matching', () => {
-    expect(normalizeDoiForMaterialization(' https://doi.org/10.1000/ABC ')).toBe(
-      '10.1000/abc',
-    );
-    expect(normalizeDoiForMaterialization('')).toBeNull();
-    expect(normalizeDoiForMaterialization(undefined)).toBeNull();
   });
 
   it('normalizes prefixed user entity keys to the stored netid value', () => {
@@ -73,10 +203,9 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('adds a department-scoped name lookup for inferred department PI keys', () => {
-    const filters = userLookupFiltersForInferredPiUserKey(
-      'dept:econ:timothy-christensen',
-      ['Economics'],
-    );
+    const filters = userLookupFiltersForInferredPiUserKey('dept:econ:timothy-christensen', [
+      'Economics',
+    ]);
 
     expect(filters).toEqual([
       { netid: 'dept:econ:timothy-christensen' },
@@ -185,39 +314,11 @@ describe('entityMaterializer post-materialization metrics', () => {
     };
 
     expect(
-      selectOfficialProfileObservationUserMatch(
-        observations,
-        [alias, canonical],
-        'ari.match',
-      ),
+      selectOfficialProfileObservationUserMatch(observations, [alias, canonical], 'ari.match'),
     ).toBe(canonical);
     expect(
       selectOfficialProfileObservationUserMatch(observations, [alias, canonical], 'az248'),
     ).toBeNull();
-  });
-
-  it('preserves existing non-initial user names over roster initials', () => {
-    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'AZ' })).toBe(
-      true,
-    );
-    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'Anna' })).toBe(
-      true,
-    );
-    expect(shouldPreserveExistingUserIdentityField('fname', 'Anna', { fname: 'AZ' })).toBe(
-      false,
-    );
-    expect(shouldPreserveExistingUserIdentityField('lname', 'Zayaruznaya', { fname: 'AZ' })).toBe(
-      false,
-    );
-  });
-
-  it('unions set-like paper fields without duplicating values', () => {
-    expect(mergeUniqueArrayValues(['u1', 'u2'], ['u2', 'u3'])).toEqual([
-      'u1',
-      'u2',
-      'u3',
-    ]);
-    expect(mergeUniqueArrayValues(undefined, 'arxiv')).toEqual(['arxiv']);
   });
 
   it('drops content-page URLs from materialized research entity source URLs', () => {
@@ -234,92 +335,73 @@ describe('entityMaterializer post-materialization metrics', () => {
       'https://ysph.yale.edu/profile/amy-bei/',
       'https://reporter.nih.gov/project-details/11380220',
     ]);
-    expect(sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news')).toBe(
-      'https://example.yale.edu/news',
-    );
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news'),
+    ).toEqual([]);
   });
 
-  it('builds paper bulk updates that union repeated set-like metadata observations', () => {
-    const patch = buildPaperUpdateFromObservations(
-      'https://openalex.org/W1',
-      [
-        {
-          field: 'title',
-          value: 'Shared paper',
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'authors',
-          value: ['Author One'],
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'authors',
-          value: ['Author Two'],
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'sources',
-          value: ['openalex'],
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.skipped).toBeUndefined();
-    expect(patch.update.$set).toMatchObject({
-      openAlexId: 'https://openalex.org/W1',
-      title: 'Shared paper',
-    });
-    expect(patch.update.$addToSet).toMatchObject({
-      authors: { $each: ['Author One', 'Author Two'] },
-      sources: { $each: ['openalex'] },
-    });
+  it('coerces a bare-string sourceUrls observation into an array instead of passing it through as a scalar (#observation-array-integrity)', () => {
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization('https://bei-lab.com/')).toEqual([
+      'https://bei-lab.com/',
+    ]);
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization('')).toEqual([]);
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization(null)).toEqual([]);
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization(undefined)).toEqual([]);
   });
 
-  it('does not count materializer-managed paper timestamps as resolved fields', () => {
-    const patch = buildPaperUpdateFromObservations(
-      'https://openalex.org/W1',
-      [
-        {
-          field: 'title',
-          value: 'Timestamp-safe paper',
-          sourceName: 'openalex',
-          confidence: 0.9,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'lastObservedAt',
-          value: new Date('2026-05-01T00:00:00Z'),
-          sourceName: 'openalex',
-          confidence: 0.9,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'lastObservedAt',
-          value: new Date('2026-05-02T00:00:00Z'),
-          sourceName: 'arxiv',
-          confidence: 0.89,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
+  it('drops self-referential Yale Research URLs from materialized source URLs', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://medicine.yale.edu/lab/qin-yan/',
+        'https://yalelabs.io/api/research',
+        'https://www.yalelabs.io/research/qin-yan-lab',
+      ]),
+    ).toEqual(['https://medicine.yale.edu/lab/qin-yan/']);
+  });
 
-    expect(patch.conflicts).toBe(0);
-    expect(patch.fieldsWritten).toBe(1);
-    expect(patch.update.$set.title).toBe('Timestamp-safe paper');
-    expect(patch.update.$set.lastObservedAt).toBeInstanceOf(Date);
-    expect(patch.update.$set).not.toHaveProperty('confidenceByField.lastObservedAt');
+  it('drops Drupal facet and section-index root URLs from materialized source URLs (#560)', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
+        'https://research.yale.edu/cores',
+        'https://research.yale.edu/centers-institutes',
+        'https://research.yale.edu/cores/keck-microarray',
+      ]),
+    ).toEqual(['https://research.yale.edu/cores/keck-microarray']);
+  });
+
+  it('drops a wrong-person Yale profile URL when the entity identity is known (#1301)', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization(
+        [
+          'https://medicine.yale.edu/profile/david-song/',
+          'https://jackson.yale.edu/person/david-simon/',
+        ],
+        { slug: 'simon-lab-djs69', name: 'Simon Lab' },
+      ),
+    ).toEqual(['https://jackson.yale.edu/person/david-simon/']);
+  });
+
+  it('keeps every source URL when no entity identity is supplied', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://medicine.yale.edu/profile/david-song/',
+        'https://jackson.yale.edu/person/david-simon/',
+      ]),
+    ).toEqual([
+      'https://medicine.yale.edu/profile/david-song/',
+      'https://jackson.yale.edu/person/david-simon/',
+    ]);
+  });
+
+  it('ignores sourceContentHash bookkeeping observations for entity materialization', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'sourceContentHash',
+        sourceName: 'lab-microsite-description-llm',
+        value: 'abc123',
+      }),
+    ).toBe(true);
   });
 
   it('ignores official-profile bio observations that are address or page chrome', () => {
@@ -401,123 +483,13 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(false);
   });
 
-  it('ignores untrusted paper-source author ids when building paper updates', () => {
-    const patch = buildPaperUpdateFromObservations(
-      '2401.01234',
-      [
-        {
-          field: 'arxivId',
-          value: '2401.01234',
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'title',
-          value: 'A name-matched preprint',
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'yaleAuthorIds',
-          value: ['64f000000000000000000001'],
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'yaleAuthorNetIds',
-          value: ['aa1'],
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.skipped).toBeUndefined();
-    expect(patch.update.$addToSet || {}).not.toHaveProperty('yaleAuthorIds');
-    expect(patch.update.$addToSet || {}).not.toHaveProperty('yaleAuthorNetIds');
-  });
-
-  it('derives denormalized paper authors from identity-backed authorship evidence', () => {
-    const patch = buildPaperUpdateFromObservations(
-      'https://openalex.org/W1',
-      [
-        {
-          field: 'title',
-          value: 'An identity-backed paper',
-          sourceName: 'openalex',
-          confidence: 0.9,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'paperAuthorshipEvidence',
-          value: {
-            userId: '64f000000000000000000001',
-            netid: 'aa1',
-            displayName: 'Amy Arnsten',
-            sourceName: 'openalex',
-            method: 'openalex-orcid',
-            externalAuthorIds: {
-              openAlex: 'https://openalex.org/A1',
-              orcid: '0000-0001-2345-6789',
-            },
-          },
-          sourceName: 'openalex',
-          confidence: 0.95,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.skipped).toBeUndefined();
-    expect(patch.update.$addToSet).toMatchObject({
-      yaleAuthorIds: { $each: ['64f000000000000000000001'] },
-      yaleAuthorNetIds: { $each: ['aa1'] },
-    });
-    expect(patch.update.$set).not.toHaveProperty('paperAuthorshipEvidence');
-  });
-
-  it('keys arXiv paper bulk updates by arxivId rather than openAlexId', () => {
-    const patch = buildPaperUpdateFromObservations(
-      '2401.01234',
-      [
-        {
-          field: 'arxivId',
-          value: '2401.01234',
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'title',
-          value: 'A careful arXiv paper',
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.skipped).toBeUndefined();
-    expect(patch.update.$set).toMatchObject({
-      arxivId: '2401.01234',
-      title: 'A careful arXiv paper',
-    });
-    expect(patch.update.$set).not.toHaveProperty('openAlexId');
-  });
-
   it('starts with zeroed access artifact counters', () => {
     expect(emptyPostMaterializationMetrics()).toEqual({
       entryPathways: 0,
       accessSignals: 0,
       contactRoutes: 0,
       postedOpportunities: 0,
+      undergraduateLogisticsClaims: 0,
       guardedContactRoutes: 0,
       staleEvidenceSkipped: 0,
       conflicts: 0,
@@ -536,6 +508,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     });
     addPostMaterializationMetrics(aggregate, {
       postedOpportunities: 4,
+      undergraduateLogisticsClaims: 0,
       staleEvidenceSkipped: 2,
       conflicts: 1,
       errors: 1,
@@ -547,6 +520,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       accessSignals: 3,
       contactRoutes: 1,
       postedOpportunities: 4,
+      undergraduateLogisticsClaims: 0,
       guardedContactRoutes: 1,
       staleEvidenceSkipped: 2,
       conflicts: 1,
@@ -554,45 +528,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     });
   });
 
-  it('counts posted opportunities linked to listing observations in a scrape run', async () => {
-    const listingId = '64f000000000000000000099';
-    const observationModel = {
-      aggregate: async () => [{ _id: listingId }, { _id: undefined }],
-    };
-    const postedOpportunityModel = {
-      countDocuments: async (filter: any) => {
-        expect(filter.listingId.$in.map(String)).toEqual([listingId]);
-        return 1;
-      },
-    };
-
-    await expect(
-      countListingBackedPostedOpportunitiesForRun('64f000000000000000000001', {
-        observationModel: observationModel as any,
-        postedOpportunityModel: postedOpportunityModel as any,
-      }),
-    ).resolves.toBe(1);
-  });
-
-  it('returns zero listing-backed posted opportunities when listing ids are missing', async () => {
-    const observationModel = {
-      aggregate: async () => [{ _id: undefined }, { _id: 'not-an-object-id' }],
-    };
-    const postedOpportunityModel = {
-      countDocuments: async () => {
-        throw new Error('should not count without valid listing ids');
-      },
-    };
-
-    await expect(
-      countListingBackedPostedOpportunitiesForRun('64f000000000000000000001', {
-        observationModel: observationModel as any,
-        postedOpportunityModel: postedOpportunityModel as any,
-      }),
-    ).resolves.toBe(0);
-  });
-
-  it('ignores discovery-only acceptingUndergrads observations for research groups', () => {
+  it('treats retired access fields as signal-source-only, never persisting them to the entity doc', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('researchEntity', {
         field: 'lastObservedAt',
@@ -605,18 +541,13 @@ describe('entityMaterializer post-materialization metrics', () => {
         sourceName: 'dept-faculty-roster',
       }),
     ).toBe(true);
-    expect(
-      shouldIgnoreObservationForEntityMaterialization('researchGroup', {
-        field: 'acceptingUndergrads',
-        sourceName: 'ysm-atoz-index',
-      }),
-    ).toBe(true);
-    expect(
-      shouldIgnoreObservationForEntityMaterialization('researchGroup', {
-        field: 'acceptingUndergrads',
-        sourceName: 'lab-microsite-undergrad-llm',
-      }),
-    ).toBe(false);
+    for (const field of ['acceptingUndergrads', 'openness']) {
+      for (const sourceName of ['ysm-atoz-index', 'lab-microsite-undergrad-llm']) {
+        expect(
+          shouldIgnoreObservationForEntityMaterialization('researchEntity', { field, sourceName }),
+        ).toBe(true);
+      }
+    }
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {
         field: 'acceptingUndergrads',
@@ -625,25 +556,44 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(false);
   });
 
-  it('clears legacy discovery-only acceptance claims unless manually locked or supported', () => {
+  it('ignores implausible undergradEvidenceQuote observations at field-resolution time (#1387)', () => {
     expect(
-      shouldClearIgnoredAccessClaimForEntity('researchGroup', [
-        { field: 'acceptingUndergrads', sourceName: 'ysm-atoz-index' },
-        { field: 'acceptingUndergrads', sourceName: 'yse-centers-index' },
-      ]),
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'undergradEvidenceQuote',
+        value: 'The Department of Chemistry maintains a glassblowing facility.',
+        sourceName: 'lab-microsite-undergrad-llm',
+      }),
     ).toBe(true);
     expect(
-      shouldClearIgnoredAccessClaimForEntity(
-        'researchGroup',
-        [{ field: 'acceptingUndergrads', sourceName: 'ysm-atoz-index' }],
-        ['acceptingUndergrads'],
-      ),
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'undergradEvidenceQuote',
+        value: 'Undergraduates are welcome to join the lab.',
+        sourceName: 'lab-microsite-undergrad-llm',
+      }),
     ).toBe(false);
+  });
+
+  it('ignores historical or non-Yale undergradEvidenceQuote observations at field-resolution time (#1372)', () => {
     expect(
-      shouldClearIgnoredAccessClaimForEntity('researchGroup', [
-        { field: 'acceptingUndergrads', sourceName: 'ysm-atoz-index' },
-        { field: 'acceptingUndergrads', sourceName: 'lab-microsite-undergrad-llm' },
-      ]),
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'undergradEvidenceQuote',
+        value: 'Matthew Barber (Physics, Yale College, 2009); Associate at Flexpoint Ford',
+        sourceName: 'lab-microsite-undergrad-llm',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'undergradEvidenceQuote',
+        value: 'Young Lin, undergraduate, Emory University',
+        sourceName: 'lab-microsite-undergrad-llm',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'undergradEvidenceQuote',
+        value: 'Jane Doe is a junior at Yale College majoring in Physics.',
+        sourceName: 'lab-microsite-undergrad-llm',
+      }),
     ).toBe(false);
   });
 
@@ -654,16 +604,13 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('builds a PI membership upsert from inferredPiUserId observations', () => {
-    const patch = buildInferredPiMemberUpsert(
-      '64f000000000000000000010',
-      {
-        value: '64f000000000000000000020',
-        sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
-        sourceName: 'ysm-atoz-index',
-        confidence: 0.84,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-      },
-    );
+    const patch = buildInferredPiMemberUpsert('64f000000000000000000010', {
+      value: '64f000000000000000000020',
+      sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
+      sourceName: 'ysm-atoz-index',
+      confidence: 0.84,
+      observedAt: new Date('2026-05-25T00:00:00Z'),
+    });
 
     expect(patch).toEqual({
       filter: {
@@ -675,7 +622,6 @@ describe('entityMaterializer post-materialization metrics', () => {
       update: {
         $set: {
           researchEntityId: '64f000000000000000000010',
-          researchGroupId: '64f000000000000000000010',
           userId: '64f000000000000000000020',
           role: 'pi',
           isCurrentMember: true,
@@ -699,7 +645,7 @@ describe('entityMaterializer post-materialization metrics', () => {
 
   it('builds a research entity member upsert from center member observations', () => {
     const observedAt = new Date('2026-06-06T00:00:00Z');
-    const patch = buildResearchGroupMemberUpsert(
+    const patch = buildRosterMemberUpsert(
       '64f000000000000000000010',
       {
         researchGroupKey: {
@@ -736,7 +682,7 @@ describe('entityMaterializer post-materialization metrics', () => {
           contributingSources: ['centers-institutes-index'],
         },
       },
-      { _id: '64f000000000000000000020', facultyMemberId: '64f000000000000000000030' },
+      { _id: '64f000000000000000000020' },
     );
 
     expect(patch).toMatchObject({
@@ -749,9 +695,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       update: {
         $set: {
           researchEntityId: '64f000000000000000000010',
-          researchGroupId: '64f000000000000000000010',
           userId: '64f000000000000000000020',
-          facultyMemberId: '64f000000000000000000030',
           name: 'Jane Doe',
           role: 'director',
           isCurrentMember: true,
@@ -772,205 +716,361 @@ describe('entityMaterializer post-materialization metrics', () => {
     });
   });
 
-  it('builds official-profile scholarly link upserts from user observations', () => {
-    const observedAt = new Date('2026-05-25T00:00:00Z');
-    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
-      {
-        field: 'officialProfilePublications',
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-        confidence: 0.9,
-        observedAt,
-        value: [
-          {
-            title: 'Persons, Roles and Minds',
-            year: 2001,
-            venue: 'Stanford University Press',
-            url: 'https://example.edu/persons-roles-and-minds.pdf',
-            sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-          },
-        ],
-      },
-    ]);
-
-    expect(ops).toHaveLength(1);
-    expect(ops[0].updateOne.filter).toMatchObject({
-      userId: expect.anything(),
-      url: 'https://example.edu/persons-roles-and-minds.pdf',
-    });
-    expect(String(ops[0].updateOne.filter.userId)).toBe('64f000000000000000000020');
-    expect(ops[0].updateOne.update.$set).toMatchObject({
-      title: 'Persons, Roles and Minds',
-      url: 'https://example.edu/persons-roles-and-minds.pdf',
-      destinationKind: 'OTHER',
-      displaySource: 'Official Yale profile',
-      freeFullTextUrl: '',
-      freeFullTextLabel: '',
-      discoveredVia: 'OFFICIAL_PROFILE',
-      year: 2001,
-      venue: 'Stanford University Press',
-      confidence: 0.9,
+  it('materializes official roster membership idempotently from stable source identity', () => {
+    const observedAt = new Date('2026-07-14T00:00:00Z');
+    const field = (value: unknown) => ({
+      value,
+      confidence: 0.95,
+      sourceName: 'official-research-home-roster',
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
       observedAt,
-      sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-      externalIds: {
-        officialProfileSourceUrl: 'https://eall.yale.edu/people/taylor-literature',
+      hasConflict: false,
+      contributingSources: ['official-research-home-roster'],
+    });
+    const resolved = {
+      role: field('grad-student'),
+      name: field('Fixture Scholar'),
+      title: field('Graduate Student'),
+      profileUrl: field('https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/'),
+      identityKey: field('official-profile:fixture-scholar'),
+      membershipKey: field('official-profile:fixture-scholar|grad-student'),
+      currentStatus: field('current'),
+      evidenceStatus: field('verified'),
+      freshnessExpiresAt: field('2026-08-04T00:00:00Z'),
+    };
+
+    const first = buildRosterMemberUpsert('64f000000000000000000010', resolved);
+    const second = buildRosterMemberUpsert('64f000000000000000000010', resolved);
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      filter: {
+        researchEntityId: '64f000000000000000000010',
+        membershipKey: 'official-profile:fixture-scholar|grad-student',
+        role: 'grad-student',
+        isCurrentMember: true,
       },
-      archived: false,
+      update: {
+        $set: {
+          sourceName: 'official-research-home-roster',
+          profileUrl: 'https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/',
+          evidenceStatus: 'verified',
+        },
+      },
     });
   });
 
-  it('deduplicates official-profile scholarly link upserts by destination URL', () => {
-    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
-      {
-        field: 'officialProfilePublications',
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://physics.yale.edu/people/example',
-        confidence: 0.9,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-        value: [
-          {
-            title: 'First title',
-            url: 'https://www.ncbi.nlm.nih.gov/pubmed/32737322',
-            sourceUrl: 'https://physics.yale.edu/people/example',
-          },
-          {
-            title: 'Second title',
-            url: 'https://www.ncbi.nlm.nih.gov/pubmed/32737322',
-            sourceUrl: 'https://physics.yale.edu/people/example-publications',
-          },
-        ],
-      },
-    ]);
-
-    expect(ops).toHaveLength(1);
-    expect(ops[0].updateOne.filter).toMatchObject({
-      userId: expect.anything(),
-      url: 'https://www.ncbi.nlm.nih.gov/pubmed/32737322',
+  it('coerces ISO-string roster dates from the member upsert set into Date provenance', () => {
+    const observedAt = new Date('2026-07-14T00:00:00Z');
+    const field = (value: unknown) => ({
+      value,
+      confidence: 0.95,
+      sourceName: 'official-research-home-roster',
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt,
+      hasConflict: false,
+      contributingSources: ['official-research-home-roster'],
     });
+    const upsert = buildRosterMemberUpsert('64f000000000000000000010', {
+      role: field('grad-student'),
+      name: field('Fixture Scholar'),
+      profileUrl: field('https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/'),
+      identityKey: field('official-profile:fixture-scholar'),
+      membershipKey: field('official-profile:fixture-scholar|grad-student'),
+      currentStatus: field('current'),
+      evidenceStatus: field('verified'),
+      freshnessExpiresAt: field('2026-08-04T00:00:00Z'),
+    });
+    const set = (upsert?.update as { $set?: Record<string, unknown> }).$set ?? {};
+    expect(typeof set.freshnessExpiresAt).toBe('string');
+
+    const provenance = canonicalRosterProvenanceFromSet(set, 'verified');
+    expect(provenance.freshnessExpiresAt).toBeInstanceOf(Date);
+    expect((provenance.freshnessExpiresAt as Date).toISOString()).toBe('2026-08-04T00:00:00.000Z');
+    expect(provenance.observedAt).toBeInstanceOf(Date);
+    expect(provenance.membershipKey).toBe('official-profile:fixture-scholar|grad-student');
+    expect(provenance.evidenceStatus).toBe('verified');
   });
 
-  it('does not materialize partial publication years from malformed strings', () => {
-    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
-      {
-        field: 'officialProfilePublications',
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://physics.yale.edu/people/example',
-        confidence: 0.9,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-        value: [
-          {
-            title: 'Malformed year paper',
-            year: '2024abc',
-            url: 'https://example.edu/malformed-year-paper',
-            sourceUrl: 'https://physics.yale.edu/people/example',
-          },
-        ],
-      },
-    ]);
-
-    expect(ops).toHaveLength(1);
-    expect(ops[0].updateOne.update.$set).not.toHaveProperty('year');
+  it('refuses name-only roster identity and any stable-identity collision', () => {
+    const observedAt = new Date('2026-07-14T00:00:00Z');
+    const field = (value: unknown, hasConflict = false) => ({
+      value,
+      confidence: 0.95,
+      sourceName: 'official-research-home-roster',
+      observedAt,
+      hasConflict,
+      contributingSources: ['official-research-home-roster'],
+    });
+    expect(
+      buildRosterMemberUpsert('64f000000000000000000010', {
+        role: field('staff'),
+        name: field('Same Name'),
+        currentStatus: field('current'),
+        evidenceStatus: field('verified'),
+      }),
+    ).toBeNull();
+    expect(
+      buildRosterMemberUpsert('64f000000000000000000010', {
+        role: field('staff'),
+        name: field('Conflicted Name', true),
+        identityKey: field('official-profile:collision', true),
+        membershipKey: field('official-profile:collision|staff'),
+        currentStatus: field('current'),
+        evidenceStatus: field('verified'),
+      }),
+    ).toBeNull();
   });
 
-  it('does not materialize implausible future publication years', () => {
-    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
-      {
-        field: 'officialProfilePublications',
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://physics.yale.edu/people/example',
-        confidence: 0.9,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-        value: [
-          {
-            title: 'Future year paper',
-            year: '9999',
-            url: 'https://example.edu/future-year-paper',
-            sourceUrl: 'https://physics.yale.edu/people/example',
-          },
-        ],
-      },
-    ]);
-
-    expect(ops).toHaveLength(1);
-    expect(ops[0].updateOne.update.$set).not.toHaveProperty('year');
+  it('archives only missing members after a non-empty complete roster snapshot', () => {
+    expect(
+      buildOfficialRosterArchiveFilter('64f000000000000000000010', {
+        complete: true,
+        memberKeys: ['official-profile:current|staff'],
+      }),
+    ).toEqual({
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': '64f000000000000000000010',
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+      'rosterProvenance.sourceName': 'official-research-home-roster',
+      'rosterProvenance.membershipKey': { $nin: ['official-profile:current|staff'] },
+    });
+    expect(
+      buildOfficialRosterArchiveFilter('64f000000000000000000010', {
+        complete: false,
+        memberKeys: [],
+      }),
+    ).toBeNull();
   });
 
-  it('does not build official-profile scholarly link upserts for unsafe destination URLs', () => {
-    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
+  it('retains the exact last successful roster snapshot across a failed refresh', () => {
+    const partial = {
+      state: 'partial',
+      memberKeys: ['official-profile:retained|staff'],
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt: new Date('2026-07-14T00:00:00Z'),
+      freshnessExpiresAt: new Date('2026-08-04T00:00:00Z'),
+    };
+    const materializedPartial = rosterEnrichmentWithRetainedSuccessfulSnapshot(partial);
+    const failed = rosterEnrichmentWithRetainedSuccessfulSnapshot(
       {
-        field: 'officialProfilePublications',
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://physics.yale.edu/people/example',
-        confidence: 0.9,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-        value: [
-          {
-            title: 'Unsafe destination paper',
-            year: 2024,
-            url: 'javascript:alert(1)',
-            sourceUrl: 'https://physics.yale.edu/people/example',
-          },
-        ],
+        state: 'failed',
+        memberKeys: [],
+        sourceUrl: partial.sourceUrl,
+        observedAt: new Date('2026-07-15T00:00:00Z'),
       },
-    ]);
+      materializedPartial,
+    );
 
-    expect(ops).toEqual([]);
+    expect(failed).toMatchObject({ state: 'failed', lastSuccessfulSnapshot: partial });
+  });
+});
+
+describe('deriveResearchEntityWebsiteUrl', () => {
+  it('derives websiteUrl from a promotable website when currently empty', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl({ website: 'https://lab.yale.edu/' }, { websiteUrl: '' }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://lab.yale.edu/' });
   });
 
-  it('does not build official-profile scholarly link upserts without HTTP source provenance', () => {
-    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
-      {
-        field: 'officialProfilePublications',
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'mailto:professor@example.edu',
-        confidence: 0.9,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-        value: [
-          {
-            title: 'Unsafe provenance paper',
-            year: 2024,
-            url: 'https://example.edu/paper',
-          },
-        ],
-      },
-    ]);
-
-    expect(ops).toEqual([]);
+  it('falls back to the first promotable sourceUrl when website is absent', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { sourceUrls: ['https://reporter.nih.gov/x', 'https://center.yale.edu/'] },
+        { websiteUrl: '' },
+      ),
+    ).toEqual({ action: 'set', websiteUrl: 'https://center.yale.edu/' });
   });
 
-  it('does not build official-profile scholarly link upserts without destination URLs', () => {
-    const ops = buildOfficialProfileScholarlyLinkUpserts('64f000000000000000000020', [
-      {
-        field: 'officialProfilePublications',
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-        confidence: 0.9,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-        value: [
-          {
-            title: 'Persons, Roles and Minds',
-            year: 2001,
-            venue: 'Stanford University Press',
-            sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-          },
-        ],
-      },
-    ]);
+  it('never overwrites an already-usable websiteUrl on the existing entity', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { website: 'https://other.yale.edu/' },
+        { websiteUrl: 'https://existing.yale.edu/' },
+      ),
+    ).toEqual({ action: 'keep' });
+  });
 
-    expect(ops).toEqual([]);
+  it('never overwrites a websiteUrl freshly materialized in this pass', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { websiteUrl: 'https://fresh.yale.edu/', website: 'https://other.yale.edu/' },
+        null,
+      ),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('excludes grant and identifier hosts as promotable candidates', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        {
+          website: 'https://reporter.nih.gov/project/123',
+          sourceUrls: ['https://orcid.org/0000-0000-0000-0000', 'https://nsf.gov/award'],
+        },
+        { websiteUrl: '' },
+      ),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('leaves websiteUrl empty when no promotable evidence is present', () => {
+    expect(deriveResearchEntityWebsiteUrl({}, { websiteUrl: '' })).toEqual({ action: 'keep' });
+  });
+
+  it('clears an A-Z-index listing websiteUrl when no research home is available', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        {},
+        {
+          websiteUrl: 'https://medicine.yale.edu/about/a-to-z-index/lab-websites',
+          sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+        },
+      ),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('re-picks a real research home over a directory listing websiteUrl', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        {},
+        {
+          websiteUrl: 'https://physics.yale.edu/people?page=8',
+          sourceUrls: ['https://example-computing-lab.example.org/'],
+        },
+      ),
+    ).toEqual({ action: 'set', websiteUrl: 'https://example-computing-lab.example.org/' });
+  });
+});
+
+describe('officialLeadProfileSourceUrl', () => {
+  it('promotes the lead-identity observation source when it is an official person profile (#613)', () => {
+    expect(
+      officialLeadProfileSourceUrl([
+        {
+          field: 'websiteUrl',
+          value: 'https://medicine.yale.edu/lab/steele/',
+          sourceUrl: 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+        },
+        {
+          field: 'inferredPiUserId',
+          value: 'user-123',
+          sourceUrl: 'https://medicine.yale.edu/profile/vaughn-steele/',
+          confidence: 0.78,
+        },
+      ]),
+    ).toBe('https://medicine.yale.edu/profile/vaughn-steele/');
+  });
+
+  it('prefers the highest-confidence lead-identity profile source', () => {
+    expect(
+      officialLeadProfileSourceUrl([
+        {
+          field: 'inferredPiUserKey',
+          value: 'k1',
+          sourceUrl: 'https://medicine.yale.edu/profile/first-lead/',
+          confidence: 0.5,
+        },
+        {
+          field: 'inferredPiUserId',
+          value: 'u1',
+          sourceUrl: 'https://medicine.yale.edu/profile/preferred-lead/',
+          confidence: 0.86,
+        },
+      ]),
+    ).toBe('https://medicine.yale.edu/profile/preferred-lead/');
+  });
+
+  it('ignores lead-identity observations whose source is a listing or non-profile page', () => {
+    expect(
+      officialLeadProfileSourceUrl([
+        {
+          field: 'inferredPiUserId',
+          value: 'u1',
+          sourceUrl: 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+          confidence: 0.5,
+        },
+        {
+          field: 'inferredDirectorName',
+          value: 'Jane Doe',
+          sourceUrl: 'https://medicine.yale.edu/faculty',
+          confidence: 0.6,
+        },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('ignores profile source URLs on non-lead observation fields', () => {
+    expect(
+      officialLeadProfileSourceUrl([
+        {
+          field: 'contactName',
+          value: 'Vaughn Steele',
+          sourceUrl: 'https://medicine.yale.edu/profile/vaughn-steele/',
+          confidence: 0.9,
+        },
+      ]),
+    ).toBeUndefined();
+  });
+});
+
+describe('bestMaterializationProvenanceSourceUrl (#1802 source-url projection)', () => {
+  it('projects the highest-confidence discovery provenance url of a grant-discovered entity', () => {
+    expect(
+      bestMaterializationProvenanceSourceUrl([
+        {
+          field: 'name',
+          value: 'Example Research Group',
+          sourceUrl: 'https://api.nsf.gov/services/v1/awards/2012345.json',
+          confidence: 0.6,
+        },
+        {
+          field: 'fundingAgencies',
+          value: ['NSF'],
+          sourceUrl: 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2012345',
+          confidence: 0.9,
+        },
+      ]),
+    ).toBe('https://www.nsf.gov/awardsearch/showAward?AWD_ID=2012345');
+  });
+
+  it('drops directory-loader provenance urls and returns the first usable one', () => {
+    expect(
+      bestMaterializationProvenanceSourceUrl([
+        {
+          field: 'name',
+          value: 'Example Lab',
+          sourceUrl: 'https://medicine.yale.edu/people/12345',
+          confidence: 0.95,
+        },
+        {
+          field: 'websiteUrl',
+          value: 'https://medicine.yale.edu/lab/example/',
+          sourceUrl: 'https://medicine.yale.edu/lab/example/',
+          confidence: 0.7,
+        },
+      ]),
+    ).toBe('https://medicine.yale.edu/lab/example/');
+  });
+
+  it('returns undefined when no observation carries a usable source url', () => {
+    expect(
+      bestMaterializationProvenanceSourceUrl([{ field: 'name', value: 'X', sourceUrl: null }]),
+    ).toBeUndefined();
   });
 });
 
 describe('center relationship type + label resolution', () => {
   it('chooses AFFILIATED_LAB when the resolved target is a real research home', () => {
-    expect(
-      centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA'),
-    ).toBe('AFFILIATED_LAB');
+    expect(centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA')).toBe(
+      'AFFILIATED_LAB',
+    );
   });
 
   it('keeps the fallback type for a generated faculty-research-area target', () => {
     expect(
-      centerRelationshipTypeForResolvedTarget('faculty-research-area-amy-arnsten', 'MEMBER_RESEARCH_AREA'),
+      centerRelationshipTypeForResolvedTarget(
+        'faculty-research-area-amy-arnsten',
+        'MEMBER_RESEARCH_AREA',
+      ),
     ).toBe('MEMBER_RESEARCH_AREA');
   });
 
@@ -983,7 +1083,54 @@ describe('center relationship type + label resolution', () => {
   it('labels each relationship type, with a generic fallback', () => {
     expect(relationshipLabelForType('AFFILIATED_LAB')).toBe('Affiliated lab');
     expect(relationshipLabelForType('MEMBER_RESEARCH_AREA')).toBe('Member');
-    expect(relationshipLabelForType('HOSTED_PROGRAM')).toBe('Hosted program');
+    // Dropped in #2213: unreachable, so it takes the generic fallback now.
+    expect(relationshipLabelForType('HOSTED_PROGRAM')).toBe('Related research home');
     expect(relationshipLabelForType('SOMETHING_ELSE')).toBe('Related research home');
+  });
+});
+
+describe('leadPiSchoolInheritanceGate (#2158 PI->school inheritance)', () => {
+  it('is eligible for a grant-derived lab shell with no school', () => {
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'lab' })).toBe('eligible');
+    expect(leadPiSchoolInheritanceGate({ school: undefined, kind: 'lab' })).toBe('eligible');
+  });
+
+  it('never overwrites a better-sourced existing school', () => {
+    expect(leadPiSchoolInheritanceGate({ school: 'School of Medicine', kind: 'lab' })).toBe(
+      'has-school',
+    );
+  });
+
+  it('treats an existing schools[] facet as a school even when the scalar mirror is empty', () => {
+    expect(
+      leadPiSchoolInheritanceGate({
+        school: '',
+        schools: ['School of the Environment'],
+        kind: 'lab',
+      }),
+    ).toBe('has-school');
+    expect(leadPiSchoolInheritanceGate({ school: '', schools: [], kind: 'lab' })).toBe('eligible');
+    expect(leadPiSchoolInheritanceGate({ school: '', schools: ['  '], kind: 'lab' })).toBe(
+      'eligible',
+    );
+  });
+
+  it('respects manually locked school or departments', () => {
+    expect(
+      leadPiSchoolInheritanceGate({ manuallyLockedFields: ['school'], school: '', kind: 'lab' }),
+    ).toBe('locked');
+    expect(
+      leadPiSchoolInheritanceGate({
+        manuallyLockedFields: ['departments'],
+        school: '',
+        kind: 'lab',
+      }),
+    ).toBe('locked');
+  });
+
+  it('fails closed for multi-PI org kinds so one director never guesses a whole center school', () => {
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'center' })).toBe('multi-pi-kind');
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'institute' })).toBe('multi-pi-kind');
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'program' })).toBe('multi-pi-kind');
   });
 });

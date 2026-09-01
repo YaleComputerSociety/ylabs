@@ -81,7 +81,9 @@ describe('safeHttpUrlList', () => {
   it('rejects non-arrays and caps HTTP URL normalization work', () => {
     expect(safeHttpUrlList({ url: 'https://example.yale.edu/source' })).toEqual([]);
     expect(
-      safeHttpUrlList(Array.from({ length: 55 }, (_, index) => `https://example.yale.edu/${index}`)),
+      safeHttpUrlList(
+        Array.from({ length: 55 }, (_, index) => `https://example.yale.edu/${index}`),
+      ),
     ).toHaveLength(50);
   });
 });
@@ -118,9 +120,7 @@ describe('safeMailtoHref', () => {
 
 describe('safeDoiUrl', () => {
   it('normalizes valid DOI values to doi.org URLs', () => {
-    expect(safeDoiUrl('10.1145/3368089.3409745')).toBe(
-      'https://doi.org/10.1145/3368089.3409745',
-    );
+    expect(safeDoiUrl('10.1145/3368089.3409745')).toBe('https://doi.org/10.1145/3368089.3409745');
     expect(safeDoiUrl('https://doi.org/10.1145/3368089.3409745')).toBe(
       'https://doi.org/10.1145/3368089.3409745',
     );

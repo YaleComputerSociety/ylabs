@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES,
+  MATERIALIZED_ACCESS_SIGNAL_TYPES,
+  ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES,
   deriveAccessArtifactsFromObservations,
+  deriveAccessArtifactsForResearchGroup,
   deriveIdentifiedLeadWaysIn,
+  isExplicitUndergradUnavailabilityPhrase,
   normalizeAccessMaterializerObjectId,
   officialNonGrantSourceUrl,
+  parsePostedOpening,
   type AccessObservation,
 } from '../accessMaterializer';
+import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../../services/accessAcceptanceLevel';
 
 const D = new Date('2026-05-07T12:00:00.000Z');
 
@@ -45,8 +52,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'CREDIT_FORMALIZATION_POSSIBLE',
       'FACULTY_SUPERVISES_STUDENT_PROJECTS',
     ]);
@@ -75,8 +81,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
-    expect(result.accessSignals.map((signal) => signal.signalType)).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type)).toEqual([
       'CREDIT_FORMALIZATION_POSSIBLE',
     ]);
   });
@@ -86,15 +91,9 @@ describe('deriveAccessArtifactsFromObservations', () => {
       obs({ field: 'currentUndergradCount', value: 2, confidence: 0.5 }),
     ]);
 
-    expect(result.entryPathways).toMatchObject([
-      {
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-      },
-    ]);
     expect(result.accessSignals).toMatchObject([
       {
-        signalType: 'CURRENT_UNDERGRADS',
+        type: 'CURRENT_UNDERGRADS',
         confidence: 'MEDIUM',
         confidenceScore: 0.5,
       },
@@ -111,15 +110,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toMatchObject([
-      {
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        compensation: 'UNKNOWN',
-        bestNextStep: 'Plan outreach and ask how student projects are usually formalized.',
-      },
-    ]);
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'FELLOWSHIP_COMPATIBLE',
       'PAST_UNDERGRADS',
     ]);
@@ -142,13 +133,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toHaveLength(1);
-    expect(result.entryPathways[0]).toMatchObject({
-      pathwayType: 'EXPLORATORY_CONTACT',
-      status: 'PLAUSIBLE',
-      compensation: 'UNKNOWN',
-    });
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'FELLOWSHIP_COMPATIBLE',
       'PAST_UNDERGRADS',
     ]);
@@ -166,7 +151,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
 
     expect(result.accessSignals).toMatchObject([
       {
-        signalType: 'CURRENT_UNDERGRADS',
+        type: 'CURRENT_UNDERGRADS',
         confidence: 'LOW',
         confidenceScore: 0.32,
         originalConfidence: 0.32,
@@ -191,8 +176,144 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals).toEqual([]);
+  });
+
+  it('does not derive reach-out-plausible from a single bare acceptingUndergrads=true (#696)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
+  });
+
+  it('does not derive reach-out-plausible from a bare accepting boolean plus an unvalidated quote alone (#1387)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'Undergraduates are welcome to join the lab.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
+  });
+
+  it('derives reach-out-plausible from structured undergradAccessEvidence, using a companion quote only as the excerpt (#1387)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'explicit_text',
+          evidenceQuote: 'Undergraduates are welcome to join the lab.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'Undergraduates are welcome to join the lab.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals).toMatchObject([
+      {
+        type: 'REACH_OUT_PLAUSIBLE',
+        excerpt: 'Undergraduates are welcome to join the lab.',
+      },
+    ]);
+  });
+
+  it('drops a wrong-entity/mission-blurb quote from the excerpt even when structured evidence corroborates access (#1387)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradAccessEvidence',
+        value: { openToUndergrads: 'yes', evidenceSource: 'members_section' },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value:
+          'The Department of Chemistry maintains a glassblowing facility to benefit the research community.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals).toMatchObject([
+      {
+        type: 'REACH_OUT_PLAUSIBLE',
+        excerpt: undefined,
+      },
+    ]);
+  });
+
+  it('derives reach-out-plausible when a second independent source corroborates accepting (#696)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'department-faculty-roster',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).toContain('REACH_OUT_PLAUSIBLE');
+  });
+
+  it('does not corroborate accepting from repeated observations of the same source (#696)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        _id: 'accepting-a',
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        _id: 'accepting-b',
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
   });
 
   it('stores explicit negative availability as a signal without creating a pathway', () => {
@@ -211,14 +332,98 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals).toMatchObject([
       {
-        signalType: 'NOT_CURRENTLY_AVAILABLE',
+        type: 'NOT_CURRENTLY_AVAILABLE',
         confidence: 'MEDIUM',
         excerpt: 'We are not taking undergraduate researchers this year.',
       },
     ]);
+  });
+
+  it('emits NOT_CURRENTLY_AVAILABLE from an explicit phrase inside undergradAccessEvidence (#1304)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'no',
+          evidenceSource: 'explicit_text',
+          evidenceQuote: 'We are not currently accepting undergraduate students.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals).toMatchObject([
+      {
+        type: 'NOT_CURRENTLY_AVAILABLE',
+        excerpt: 'We are not currently accepting undergraduate students.',
+      },
+    ]);
+  });
+
+  it('does not emit NOT_CURRENTLY_AVAILABLE from postdoc/grad recruiting text misparsed as negative (#1304)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'no',
+          evidenceSource: 'explicit_text',
+          evidenceQuote:
+            'We currently have an opening for either a postdoctoral associate or an associate research scientist.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
+      'NOT_CURRENTLY_AVAILABLE',
+    );
+  });
+
+  it('does not emit NOT_CURRENTLY_AVAILABLE from a research-abstract sentence misparsed as negative (#1304)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: false,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.8,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value:
+          'My research relates to the study of conformal field theories and the conformal bootstrap.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.8,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
+      'NOT_CURRENTLY_AVAILABLE',
+    );
+  });
+
+  it('does not emit NOT_CURRENTLY_AVAILABLE from an empty-roster fact (#1304)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: false,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.7,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'No undergraduates listed on the lab roster.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.7,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
+      'NOT_CURRENTLY_AVAILABLE',
+    );
   });
 
   it('derives official application routes from lab-microsite join-page evidence', () => {
@@ -247,33 +452,36 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-        }),
-        expect.objectContaining({
-          pathwayType: 'VOLUNTEER_OUTREACH',
-          status: 'PLAUSIBLE',
-          derivationKey: 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE',
-          studentFacingLabel: 'Official application route',
-        }),
-      ]),
-    );
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'APPLICATION_FORM_EXISTS',
       'CONTACT_INSTRUCTIONS_EXIST',
       'REACH_OUT_PLAUSIBLE',
     ]);
-    expect(result.contactRoutes).toMatchObject([
-      {
-        routeType: 'OFFICIAL_APPLICATION',
-        visibility: 'PUBLIC',
-        contactPolicy: 'APPLICATION_ONLY',
-        url: 'https://lab.example.edu/join',
-      },
+  });
+
+  it('does not mint microsite contact-instructions access evidence when undergrad access is explicitly no', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'no',
+          evidenceSource: 'explicit_text',
+          evidenceQuote: 'We are looking for postdocs and graduate students to work with us.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      }),
+      obs({
+        field: 'contactInstructionsQuote',
+        value: 'Please contact the PI by email to inquire.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      }),
     ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain(
+      'CONTACT_INSTRUCTIONS_EXIST',
+    );
   });
 
   it('treats department undergraduate research pages as access evidence, not posted openings', () => {
@@ -305,26 +513,14 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toMatchObject([
-      {
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        studentFacingLabel: 'Exploratory outreach',
-        bestNextStep:
-          'Use the evidence to plan targeted outreach rather than treating this as an open posting.',
-      },
-    ]);
     expect(result.accessSignals).toMatchObject([
       {
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         excerpt:
           'Students interested in research should contact the faculty member directly to explore opportunities.',
       },
     ]);
-    expect(result.contactRoutes).toEqual([]);
-    expect(result.entryPathways.map((pathway) => pathway.pathwayType)).not.toContain(
-      'POSTED_ROLE',
-    );
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('POSTED_OPENING');
   });
 
   it('derives department structured application pages as guarded official routes', () => {
@@ -348,31 +544,9 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-        }),
-        expect.objectContaining({
-          pathwayType: 'RECURRING_PROGRAM',
-          status: 'RECURRING',
-          derivationKey: 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE',
-          studentFacingLabel: 'Department research application',
-        }),
-      ]),
-    );
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'APPLICATION_FORM_EXISTS',
       'REACH_OUT_PLAUSIBLE',
-    ]);
-    expect(result.contactRoutes).toMatchObject([
-      {
-        routeType: 'OFFICIAL_APPLICATION',
-        visibility: 'PUBLIC',
-        contactPolicy: 'APPLICATION_ONLY',
-        url: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture',
-      },
     ]);
   });
 
@@ -386,12 +560,10 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals).toEqual([]);
-    expect(result.contactRoutes).toEqual([]);
   });
 
-  it('redacts direct contact details from public signal excerpts', () => {
+  it('drops marker-only contact quotes from derived signal excerpts (#1112)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'undergradAccessEvidence',
@@ -419,72 +591,134 @@ describe('deriveAccessArtifactsFromObservations', () => {
 
     expect(result.accessSignals).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          signalType: 'REACH_OUT_PLAUSIBLE',
-          excerpt: 'Email [email redacted] to apply.',
-        }),
-        expect.objectContaining({
-          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
-          excerpt: 'Call [phone redacted] or email [email redacted].',
-        }),
+        expect.objectContaining({ type: 'REACH_OUT_PLAUSIBLE', excerpt: undefined }),
+        expect.objectContaining({ type: 'CONTACT_INSTRUCTIONS_EXIST', excerpt: undefined }),
       ]),
     );
+    const serialized = JSON.stringify(result.accessSignals);
+    expect(serialized).not.toContain('ada@yale.edu');
+    expect(serialized).not.toContain('203-432-1234');
+    expect(serialized).not.toMatch(/redacted/i);
   });
 
-  it('derives guarded contact routes from contact observations', () => {
+  it('keeps a substantive contact quote while dropping its marker sentence (#1112)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'contactInstructionsQuote',
+        value:
+          'Prospective students should review current projects before writing. Email ada@yale.edu with a short note.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      }),
+    ]);
+
+    const contactSignal = result.accessSignals.find(
+      (signal) => signal.type === 'CONTACT_INSTRUCTIONS_EXIST',
+    );
+    expect(contactSignal?.excerpt).toMatch(/Prospective students should review current projects/i);
+    expect(contactSignal?.excerpt ?? '').not.toContain('ada@yale.edu');
+    expect(contactSignal?.excerpt ?? '').not.toMatch(/redacted/i);
+  });
+
+  it('derives contact-instruction signals from contact observations', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({ field: 'contactName', value: 'Ada Manager' }),
       obs({ field: 'contactEmail', value: 'Ada.Manager@Yale.edu' }),
       obs({ field: 'contactRole', value: 'Lab Manager' }),
     ]);
 
-    expect(result.contactRoutes).toMatchObject([
-      {
-        routeType: 'LAB_MANAGER',
-        email: 'Ada.Manager@Yale.edu',
-        name: 'Ada Manager',
-        role: 'Lab Manager',
-        visibility: 'AUTHENTICATED',
-        contactPolicy: 'DIRECT_CONTACT_OK',
-      },
-    ]);
     expect(result.accessSignals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+          type: 'CONTACT_INSTRUCTIONS_EXIST',
           excerpt: 'Official contact listed: Ada Manager, Lab Manager.',
         }),
       ]),
     );
   });
 
-  it('derives public course-instructor routes from explicit non-CourseTable contact evidence', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'contactName',
-        value: 'Beverly Gage',
-        sourceName: 'department-research-pathways',
-        confidence: 0.7,
-      }),
-      obs({
-        field: 'contactRole',
-        value: 'Course instructor for independent-study research',
-        sourceName: 'department-research-pathways',
-        confidence: 0.7,
-      }),
-    ]);
+  it('emits exactly the signal types listed in MATERIALIZED_ACCESS_SIGNAL_TYPES (#1303)', () => {
+    const perBranchFixtures: AccessObservation[][] = [
+      [
+        obs({ field: 'offersIndependentStudy', value: true, confidence: 0.7 }),
+        obs({
+          field: 'independentStudyCourses',
+          value: [{ code: 'HIST 491', title: 'Senior Essay' }],
+          confidence: 0.7,
+        }),
+      ],
+      [obs({ field: 'currentUndergradCount', value: 2, confidence: 0.5 })],
+      [
+        obs({
+          field: 'pastUndergradAdvisees',
+          value: [{ year: 2025, programName: 'STARS', count: 2 }],
+          sourceName: 'undergrad-fellowships-recipients',
+          confidence: 0.8,
+        }),
+      ],
+      [
+        obs({
+          field: 'undergradAccessEvidence',
+          value: {
+            openToUndergrads: 'yes',
+            evidenceSource: 'explicit_text',
+            evidenceQuote: 'We invite undergraduates to apply.',
+          },
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+        obs({
+          field: 'joinPageUrl',
+          value: 'https://lab.example.edu/join',
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+        obs({
+          field: 'contactInstructionsQuote',
+          value: 'Apply using the form on this page.',
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+      ],
+      [
+        obs({
+          field: 'acceptingUndergrads',
+          value: false,
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+        obs({
+          field: 'undergradEvidenceQuote',
+          value: 'We are not taking undergraduate researchers this year.',
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.5,
+        }),
+      ],
+      [
+        obs({
+          field: 'postedOpening',
+          value: {
+            title: 'Summer RA - Smith Lab',
+            applyUrl: 'https://apply.example.test/smith-lab-ra',
+            deadline: '2026-12-01T00:00:00.000Z',
+            hiringHome: 'Smith Lab',
+          },
+          sourceName: 'undergrad-research-posting',
+          confidence: 0.85,
+        }),
+      ],
+    ];
 
-    expect(result.contactRoutes).toMatchObject([
-      {
-        routeType: 'COURSE_INSTRUCTOR',
-        name: 'Beverly Gage',
-        role: 'Course instructor for independent-study research',
-        visibility: 'PUBLIC',
-        contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-        rationale: 'Derived from explicit course instructor evidence.',
-      },
-    ]);
-    expect(result.contactRoutes[0].email).toBeUndefined();
+    const emitted = new Set(
+      perBranchFixtures.flatMap((observations) =>
+        deriveAccessArtifactsFromObservations(
+          '64f000000000000000000001',
+          observations,
+        ).accessSignals.map((signal) => signal.type),
+      ),
+    );
+
+    expect([...emitted].sort()).toEqual([...MATERIALIZED_ACCESS_SIGNAL_TYPES].sort());
   });
 
   it('deduplicates repeated evidence by derivation key', () => {
@@ -497,11 +731,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       obs({ _id: 'course-b', field: 'offersIndependentStudy', value: true, confidence: 0.7 }),
     ]);
 
-    expect(first.entryPathways).toHaveLength(0);
     expect(first.accessSignals).toHaveLength(1);
-    expect(first.entryPathways.map((pathway) => pathway.derivationKey)).toEqual(
-      second.entryPathways.map((pathway) => pathway.derivationKey),
-    );
     expect(first.accessSignals.map((signal) => signal.derivationKey)).toEqual(
       second.accessSignals.map((signal) => signal.derivationKey),
     );
@@ -529,6 +759,21 @@ describe('officialNonGrantSourceUrl', () => {
   });
 });
 
+describe('deriveAccessArtifactsForResearchGroup', () => {
+  it('returns the same current evidence bundle without writing canonical artifacts', async () => {
+    const result = await deriveAccessArtifactsForResearchGroup(
+      { researchEntityId: '64f000000000000000000001' },
+      [obs({ _id: '64f000000000000000000099', field: 'currentUndergradCount', value: 2 })],
+    );
+
+    expect(result.researchEntityId).toBe('64f000000000000000000001');
+    expect(result.artifacts.accessSignals[0]).toMatchObject({
+      type: 'CURRENT_UNDERGRADS',
+      sourceEvidenceId: '64f000000000000000000099',
+    });
+  });
+});
+
 describe('deriveIdentifiedLeadWaysIn', () => {
   const supporting: AccessObservation = {
     _id: 'obs-identity',
@@ -548,17 +793,11 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     supportingObservations: [supporting],
   };
 
-  it('derives an exploratory-contact ways-in for an identified faculty lead', () => {
+  it('derives a reach-out-plausible ways-in signal for an identified faculty lead', () => {
     const result = deriveIdentifiedLeadWaysIn(baseInput);
-    expect(result.entryPathways.map((p) => p.pathwayType)).toEqual(['EXPLORATORY_CONTACT']);
-    expect(result.entryPathways[0].derivationKey).toBe(
-      'pathway:EXPLORATORY_CONTACT:IDENTIFIED_FACULTY_LEAD',
-    );
-    expect(result.accessSignals.map((s) => s.signalType)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.contactRoutes.map((r) => r.routeType)).toEqual(['FACULTY_PI']);
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
     // confidence is intentionally conservative (LOW / WEAK)
     expect(result.accessSignals[0].confidenceScore).toBeLessThanOrEqual(0.4);
-    expect(result.contactRoutes[0].email).toBeUndefined();
   });
 
   it('skips entities flagged as duplicates by the visibility gate', () => {
@@ -566,8 +805,7 @@ describe('deriveIdentifiedLeadWaysIn', () => {
       ...baseInput,
       entity: { ...baseInput.entity, studentVisibilityReasons: ['exact_url_duplicate_risk'] },
     });
-    expect(result.entryPathways).toHaveLength(0);
-    expect(result.contactRoutes).toHaveLength(0);
+    expect(result.accessSignals).toHaveLength(0);
   });
 
   it('skips grant-only source URLs and non-home entity types', () => {
@@ -575,17 +813,156 @@ describe('deriveIdentifiedLeadWaysIn', () => {
       deriveIdentifiedLeadWaysIn({
         ...baseInput,
         officialUrl: 'https://reporter.nih.gov/project-details/1',
-      }).entryPathways,
+      }).accessSignals,
     ).toHaveLength(0);
     expect(
-      deriveIdentifiedLeadWaysIn({ ...baseInput, entity: { entityType: 'PROGRAM' } }).entryPathways,
+      deriveIdentifiedLeadWaysIn({ ...baseInput, entity: { entityType: 'PROGRAM' } }).accessSignals,
     ).toHaveLength(0);
   });
 
   it('requires supporting source evidence so the claim gate keeps the artifacts', () => {
     const result = deriveIdentifiedLeadWaysIn({ ...baseInput, supportingObservations: [] });
-    expect(result.entryPathways).toHaveLength(0);
     expect(result.accessSignals).toHaveLength(0);
-    expect(result.contactRoutes).toHaveLength(0);
+  });
+
+  it('still requires an official non-grant page to emit REACH_OUT_PLAUSIBLE (creation criteria unchanged, #530)', () => {
+    expect(
+      deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: '' }).accessSignals,
+    ).toHaveLength(0);
+    expect(
+      deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: 'ftp://chemistry.yale.edu/lab' })
+        .accessSignals,
+    ).toHaveLength(0);
+  });
+
+  it('gives a lead-less digital-humanities project an organizational ways-in from its official page', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      researchEntityId: '64f000000000000000000011',
+      entity: { entityType: 'INITIATIVE', name: 'Mapping Manuscript Migrations' },
+      officialUrl: 'https://library.yale.edu/dhlab/projects/mapping-manuscript-migrations',
+      supportingObservations: [supporting],
+    });
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
+  });
+
+  it('keeps every organizational ways-in type eligible for the lead ways-in (three-allowlist consistency, #1361)', () => {
+    for (const entityType of ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES) {
+      expect(IDENTIFIED_LEAD_WAYS_IN_ENTITY_TYPES.has(entityType)).toBe(true);
+    }
+  });
+
+  it('derives the organizational center-level ways-in for a lead-exempt CORE_FACILITY (#1361)', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      ...baseInput,
+      entity: { entityType: 'CORE_FACILITY', name: 'Keck Mass Spectrometry Resource' },
+      officialUrl: 'https://medicine.yale.edu/keck/ms/',
+      leadName: undefined,
+    });
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.accessSignals[0].derivationKey).toBe(ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY);
+  });
+
+  it('gives a lead-less collections initiative an organizational ways-in from its official page (#1360)', () => {
+    const result = deriveIdentifiedLeadWaysIn({
+      researchEntityId: '64f000000000000000000012',
+      entity: {
+        entityType: 'INITIATIVE',
+        name: 'Prospects of Empire',
+      },
+      officialUrl: 'https://onlineexhibits.library.yale.edu/s/prospectsofempire',
+      supportingObservations: [supporting],
+    });
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.accessSignals[0].excerpt).toMatch(/explore its programs and affiliated people/i);
+  });
+});
+
+describe('POSTED_OPENING materialization (#1568)', () => {
+  const validPosting = {
+    title: 'Summer RA - Smith Lab',
+    applyUrl: 'https://apply.example.test/smith-lab-ra',
+    deadline: '2026-12-01T00:00:00.000Z',
+    hiringHome: 'Smith Lab',
+    evidenceQuote: 'The Smith Lab seeks an undergraduate research assistant for summer 2026.',
+  };
+
+  it('lists POSTED_OPENING in the materializer producer contract', () => {
+    expect(MATERIALIZED_ACCESS_SIGNAL_TYPES).toContain('POSTED_OPENING');
+  });
+
+  it('emits a POSTED_OPENING signal with the apply route and deadline expiry', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({ field: 'postedOpening', value: validPosting, confidence: 0.85 }),
+    ]);
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['POSTED_OPENING']);
+    const signal = result.accessSignals[0];
+    expect(signal.sourceUrl).toBe(validPosting.applyUrl);
+    expect(signal.expiresAt?.toISOString()).toBe('2026-12-01T00:00:00.000Z');
+    expect(signal.confidence).toBe('HIGH');
+    expect(signal.excerpt).toMatch(/Apply by 2026-12-01/);
+  });
+
+  it('fails closed when a posting is missing an apply route, deadline, or title', () => {
+    const missing = [
+      { ...validPosting, applyUrl: '' },
+      { ...validPosting, applyUrl: 'mailto:pi@example.test' },
+      { ...validPosting, deadline: '' },
+      { ...validPosting, deadline: 'not a date' },
+      { ...validPosting, title: '' },
+    ];
+    for (const value of missing) {
+      const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+        obs({ field: 'postedOpening', value }),
+      ]);
+      expect(result.accessSignals).toEqual([]);
+    }
+  });
+
+  it('deduplicates postings that share an apply route', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({ field: 'postedOpening', value: validPosting, _id: 'obs-a' }),
+      obs({ field: 'postedOpening', value: { ...validPosting, title: 'Alias' }, _id: 'obs-b' }),
+    ]);
+    expect(result.accessSignals).toHaveLength(1);
+  });
+
+  it('parsePostedOpening rejects incomplete payloads', () => {
+    expect(parsePostedOpening(null)).toBeNull();
+    expect(parsePostedOpening({ title: 'X', applyUrl: 'https://a.test' })).toBeNull();
+    expect(parsePostedOpening(validPosting)).not.toBeNull();
+  });
+});
+
+describe('isExplicitUndergradUnavailabilityPhrase (#1304)', () => {
+  it('accepts explicit undergraduate-unavailability phrases', () => {
+    const unavailable = [
+      'We are not taking undergraduate researchers this year.',
+      'We are not currently accepting undergraduate students.',
+      'The lab is currently full.',
+      'No undergraduate positions are available at this time.',
+      'We are not accepting applications right now.',
+      'Prof. Doe is unable to take on new undergraduate students.',
+      'I do not have bandwidth to respond to inquiries about undergraduate positions.',
+    ];
+    for (const quote of unavailable) {
+      expect(isExplicitUndergradUnavailabilityPhrase(quote)).toBe(true);
+    }
+  });
+
+  it('rejects recruiting, research-abstract, and empty-roster text', () => {
+    const notUnavailable = [
+      'We currently have an opening for either a postdoctoral associate or an associate research scientist.',
+      "We're Hiring! Apply to become a Postgraduate Research Associate in the YCVL!",
+      'The Dove Lab is currently accepting PhD and MESc students.',
+      'We are currently seeking talented developers and postdoctoral scholars to join.',
+      'My research relates to the study of conformal field theories and the conformal bootstrap.',
+      'No undergraduates listed on the lab roster.',
+      '',
+      undefined,
+    ];
+    for (const quote of notUnavailable) {
+      expect(isExplicitUndergradUnavailabilityPhrase(quote)).toBe(false);
+    }
   });
 });

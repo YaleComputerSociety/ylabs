@@ -6,10 +6,7 @@ import SignInButton from '../SignInButton';
 
 const renderSignInButton = (state?: { from?: string }) =>
   render(
-    <MemoryRouter
-      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-      initialEntries={[{ pathname: '/login', state }]}
-    >
+    <MemoryRouter initialEntries={[{ pathname: '/login', state }]}>
       <SignInButton />
     </MemoryRouter>,
   );
@@ -47,12 +44,12 @@ describe('SignInButton', () => {
   });
 
   it('normalizes same-origin absolute return targets to path-only CAS redirects', async () => {
-    sessionStorage.setItem('logoutReturnPath', `${window.location.origin}/account#plans`);
+    sessionStorage.setItem('logoutReturnPath', `${window.location.origin}/dashboard#plans`);
 
     renderSignInButton();
 
     await waitFor(() => {
-      expect(signInHref()).toContain(`redirect=${encodeURIComponent('/account#plans')}`);
+      expect(signInHref()).toContain(`redirect=${encodeURIComponent('/dashboard#plans')}`);
     });
     expect(sessionStorage.getItem('logoutReturnPath')).toBeNull();
   });
@@ -80,7 +77,7 @@ describe('SignInButton', () => {
   });
 
   it('clears legacy durable logout return paths without using them', async () => {
-    localStorage.setItem('logoutReturnPath', '/account?private=1');
+    localStorage.setItem('logoutReturnPath', '/dashboard?private=1');
 
     renderSignInButton({ from: '/research' });
 

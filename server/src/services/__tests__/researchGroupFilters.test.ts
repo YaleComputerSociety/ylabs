@@ -20,17 +20,8 @@ describe('buildResearchGroupFilterString', () => {
       departments: ['Genetics', 'Neurology'],
     });
     expect(filter).toBe(
-      'archived = false AND (school = "School of Medicine") AND (departments = "Genetics" OR departments = "Neurology")',
+      'archived = false AND (schools = "School of Medicine") AND (departments = "Genetics" OR departments = "Neurology")',
     );
-  });
-
-  it('appends the acceptingUndergrads boolean when provided', () => {
-    expect(
-      buildResearchGroupFilterString({ acceptingUndergrads: true }),
-    ).toBe('archived = false AND acceptingUndergrads = true');
-    expect(
-      buildResearchGroupFilterString({ acceptingUndergrads: false }),
-    ).toBe('archived = false AND acceptingUndergrads = false');
   });
 
   it('escapes quotes and backslashes inside filter values', () => {
@@ -51,9 +42,7 @@ describe('buildResearchGroupFilterString', () => {
   });
 
   it('omits the clause entirely if the filter array is empty after trimming', () => {
-    expect(
-      buildResearchGroupFilterString({ openness: ['', '  '] }),
-    ).toBe('archived = false');
+    expect(buildResearchGroupFilterString({ kind: ['', '  '] })).toBe('archived = false');
   });
 
   it('drops non-string filter values without coercion', () => {
@@ -74,53 +63,239 @@ describe('buildResearchGroupFilterString', () => {
       school: ['School of Medicine'],
       departments: ['Genetics'],
       researchAreas: ['Genomics'],
-      openness: ['open', 'inquire'],
-      acceptingUndergrads: true,
     });
     expect(filter).toBe(
       [
         'archived = false',
         '(kind = "lab")',
-        '(school = "School of Medicine")',
+        '(schools = "School of Medicine")',
         '(departments = "Genetics")',
         '(researchAreas = "Genomics")',
-        '(openness = "open" OR openness = "inquire")',
-        'acceptingUndergrads = true',
       ].join(' AND '),
     );
   });
 
-  describe('acceptanceLevel filter', () => {
-    it('"all" or unset → no extra clause', () => {
-      expect(buildResearchGroupFilterString({ acceptanceLevel: 'all' })).toBe(
+  describe('entityType filter', () => {
+    it('ORs multiple entityType enum values within the field', () => {
+      const filter = buildResearchGroupFilterString({
+        entityType: ['INITIATIVE', 'CORE_FACILITY', 'CENTER'],
+      });
+      expect(filter).toBe(
+        'archived = false AND (entityType = "INITIATIVE" OR entityType = "CORE_FACILITY" OR entityType = "CENTER")',
+      );
+    });
+
+    it('places the entityType clause right after kind and ANDs with other fields', () => {
+      const filter = buildResearchGroupFilterString({
+        kind: ['lab'],
+        entityType: ['LAB', 'INITIATIVE'],
+        departments: ['Genetics'],
+      });
+      expect(filter).toBe(
+        [
+          'archived = false',
+          '(kind = "lab")',
+          '(entityType = "LAB" OR entityType = "INITIATIVE")',
+          '(departments = "Genetics")',
+        ].join(' AND '),
+      );
+    });
+
+    it('omits the clause when the entityType array is empty after trimming', () => {
+      expect(buildResearchGroupFilterString({ entityType: ['', '  '] })).toBe('archived = false');
+    });
+
+    it('is droppable via excludeField for disjunctive faceting (#1080)', () => {
+      const filter = buildResearchGroupFilterString(
+        { entityType: ['LAB'], departments: ['Genetics'] },
+        { excludeField: 'entityType' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+  });
+
+  describe('excludeField option', () => {
+    it('omits the excluded field clause while keeping all other filters (#1080)', () => {
+      const filter = buildResearchGroupFilterString(
+        { school: ['Law School'], departments: ['Genetics'] },
+        { excludeField: 'school' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+
+    it('has no effect when the excluded field was not set', () => {
+      const filter = buildResearchGroupFilterString(
+        { departments: ['Genetics'] },
+        { excludeField: 'school' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+  });
+
+  describe('hostsUndergrads filter', () => {
+    it('true → filters on undergrad-specific hosting evidence, not the broad acceptance tier', () => {
+      const filter = buildResearchGroupFilterString({ hostsUndergrads: true });
+      expect(filter).toBe('archived = false AND hasUndergradHostingEvidence = true');
+    });
+
+    it('false or unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({ hostsUndergrads: false })).toBe('archived = false');
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('combines with other filters via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        departments: ['Genetics'],
+        hostsUndergrads: true,
+      });
+      expect(filter).toBe(
+        'archived = false AND (departments = "Genetics") AND hasUndergradHostingEvidence = true',
+      );
+    });
+  });
+
+  describe('hasDocumentedWayIn filter', () => {
+    it('true → filters on the documented-way-in projection', () => {
+      const filter = buildResearchGroupFilterString({ hasDocumentedWayIn: true });
+      expect(filter).toBe('archived = false AND hasDocumentedWayIn = true');
+    });
+
+    it('false or unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({ hasDocumentedWayIn: false })).toBe(
         'archived = false',
       );
       expect(buildResearchGroupFilterString({})).toBe('archived = false');
     });
 
-    it('"verified" → ANDs acceptingUndergrads=true with confidence floor', () => {
-      const filter = buildResearchGroupFilterString({ acceptanceLevel: 'verified' });
+    it('is independent of the hosts-undergrads filter and combines via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        hostsUndergrads: true,
+        hasDocumentedWayIn: true,
+      });
       expect(filter).toBe(
-        'archived = false AND (acceptingUndergrads = true AND acceptanceConfidence >= 0.7)',
+        'archived = false AND hasUndergradHostingEvidence = true AND hasDocumentedWayIn = true',
+      );
+    });
+  });
+
+  describe('currentAvailability filter', () => {
+    it('single value → filters the current-availability field', () => {
+      const filter = buildResearchGroupFilterString({ currentAvailability: ['OPEN'] });
+      expect(filter).toBe('archived = false AND (undergraduateCurrentAvailability = "OPEN")');
+    });
+
+    it('two values → ORs them within the field', () => {
+      const filter = buildResearchGroupFilterString({
+        currentAvailability: ['OPEN', 'ROLLING'],
+      });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateCurrentAvailability = "OPEN" OR undergraduateCurrentAvailability = "ROLLING")',
       );
     });
 
-    it('"verified-or-likely" → OR-grouped positive signals', () => {
+    it('unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('combines with other filters via AND', () => {
       const filter = buildResearchGroupFilterString({
-        acceptanceLevel: 'verified-or-likely',
+        departments: ['Genetics'],
+        currentAvailability: ['OPEN'],
       });
       expect(filter).toBe(
-        'archived = false AND (acceptingUndergrads = true OR offersIndependentStudy = true OR currentUndergradCount > 0)',
+        'archived = false AND (departments = "Genetics") AND (undergraduateCurrentAvailability = "OPEN")',
+      );
+    });
+  });
+
+  describe('compensation filter', () => {
+    it('single value → filters the compensation-model field', () => {
+      const filter = buildResearchGroupFilterString({ compensation: ['PAID_OR_STIPEND'] });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateCompensationModel = "PAID_OR_STIPEND")',
       );
     });
 
-    it('combines acceptanceLevel with other filters via AND', () => {
+    it('two values → ORs them within the field', () => {
       const filter = buildResearchGroupFilterString({
-        kind: ['lab'],
-        acceptanceLevel: 'verified',
+        compensation: ['PAID_OR_STIPEND', 'COURSE_CREDIT'],
       });
       expect(filter).toBe(
-        'archived = false AND (kind = "lab") AND (acceptingUndergrads = true AND acceptanceConfidence >= 0.7)',
+        'archived = false AND (undergraduateCompensationModel = "PAID_OR_STIPEND" OR undergraduateCompensationModel = "COURSE_CREDIT")',
+      );
+    });
+
+    it('unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('is droppable via excludeField for disjunctive faceting (#1080)', () => {
+      const filter = buildResearchGroupFilterString(
+        { compensation: ['PAID_OR_STIPEND'], departments: ['Genetics'] },
+        { excludeField: 'compensation' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+
+    it('combines with current availability and other filters via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        departments: ['Genetics'],
+        currentAvailability: ['OPEN'],
+        compensation: ['PAID_OR_STIPEND'],
+      });
+      expect(filter).toBe(
+        [
+          'archived = false',
+          '(departments = "Genetics")',
+          '(undergraduateCurrentAvailability = "OPEN")',
+          '(undergraduateCompensationModel = "PAID_OR_STIPEND")',
+        ].join(' AND '),
+      );
+    });
+  });
+
+  describe('eligibleStudentLevels filter', () => {
+    it('single value → filters the eligible-student-levels field', () => {
+      const filter = buildResearchGroupFilterString({ eligibleStudentLevels: ['FIRST_YEAR'] });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateEligibleStudentLevels = "FIRST_YEAR")',
+      );
+    });
+
+    it('two values → ORs them within the field', () => {
+      const filter = buildResearchGroupFilterString({
+        eligibleStudentLevels: ['FIRST_YEAR', 'SOPHOMORE'],
+      });
+      expect(filter).toBe(
+        'archived = false AND (undergraduateEligibleStudentLevels = "FIRST_YEAR" OR undergraduateEligibleStudentLevels = "SOPHOMORE")',
+      );
+    });
+
+    it('unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('is droppable via excludeField for disjunctive faceting (#1080)', () => {
+      const filter = buildResearchGroupFilterString(
+        { eligibleStudentLevels: ['FIRST_YEAR'], departments: ['Genetics'] },
+        { excludeField: 'eligibleStudentLevels' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+
+    it('combines with compensation and other filters via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        departments: ['Genetics'],
+        compensation: ['PAID_OR_STIPEND'],
+        eligibleStudentLevels: ['FIRST_YEAR', 'SOPHOMORE'],
+      });
+      expect(filter).toBe(
+        [
+          'archived = false',
+          '(departments = "Genetics")',
+          '(undergraduateCompensationModel = "PAID_OR_STIPEND")',
+          '(undergraduateEligibleStudentLevels = "FIRST_YEAR" OR undergraduateEligibleStudentLevels = "SOPHOMORE")',
+        ].join(' AND '),
       );
     });
   });

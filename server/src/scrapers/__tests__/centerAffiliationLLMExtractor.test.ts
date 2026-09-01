@@ -32,7 +32,10 @@ describe('affiliationExtractionToObservations', () => {
   it('emits relationship-only observations keyed by the center slug', () => {
     const obs = affiliationExtractionToObservations(
       { affiliatedPeople: [{ name: 'Jane Doe', role: 'director' }] },
-      { centerEntityKey: 'center-jackson-centers-blue-center', sourceUrl: 'https://jackson.yale.edu/x' },
+      {
+        centerEntityKey: 'center-jackson-centers-blue-center',
+        sourceUrl: 'https://jackson.yale.edu/x',
+      },
     );
     expect(obs.length).toBeGreaterThan(0);
     // relationship-only: no researchGroupMember observations
@@ -137,6 +140,25 @@ describe('CenterAffiliationLLMExtractor.run', () => {
     const result = await scraper.run(ctx);
     expect(result.entitiesObserved).toBe(0);
     expect(emitted).toEqual([]);
+  });
+
+  it('processes candidates beyond the default cap in exhaustive mode', async () => {
+    const candidates = Array.from({ length: 101 }, (_, index) => ({
+      _id: String(index),
+      slug: `center-${index}`,
+      name: `Center ${index}`,
+      websiteUrl: `https://example.yale.edu/center-${index}`,
+    }));
+    const fetchPage = vi.fn(async (url: string) => ({ url, html: '<main>Empty</main>' }));
+    const scraper = new CenterAffiliationLLMExtractor({
+      fetchPage,
+      centerFinder: vi.fn(async () => candidates),
+      apiKey: 'test-key',
+    });
+
+    await scraper.run(makeContext({ exhaustive: true }).ctx);
+
+    expect(fetchPage).toHaveBeenCalledTimes(101);
   });
 
   it('no-ops without an API key', async () => {

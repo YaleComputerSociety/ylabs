@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { allowsNonProductionSecurityBypass, isProduction } from '../utils/environment';
+import { isAsciiControlCode } from '../utils/asciiControl';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const MAX_CSRF_ORIGIN_HEADER_LENGTH = 2048;
@@ -7,7 +8,13 @@ const MAX_CSRF_ORIGIN_HEADER_LENGTH = 2048;
 const originFromUrl = (value: string | undefined): string => {
   if (!value) return '';
   if (value.length > MAX_CSRF_ORIGIN_HEADER_LENGTH) return '';
-  if (/[\u0000-\u0020\u007f\\]/.test(value)) return '';
+  if (
+    Array.from(value).some((character) => {
+      const code = character.charCodeAt(0);
+      return isAsciiControlCode(code) || code === 0x20 || character === '\\';
+    })
+  )
+    return '';
   try {
     const parsed = new URL(value);
     if (parsed.username || parsed.password) return '';
@@ -29,8 +36,7 @@ export function isTrustedUnsafeRequestOrigin(args: {
 }): boolean {
   const method = args.method.toUpperCase();
   const isWriteLikeSafeMethodPath =
-    SAFE_METHODS.has(method) &&
-    Boolean(args.path && args.writeLikeSafeMethodPaths?.has(args.path));
+    SAFE_METHODS.has(method) && Boolean(args.path && args.writeLikeSafeMethodPaths?.has(args.path));
   if (SAFE_METHODS.has(method) && !isWriteLikeSafeMethodPath) return true;
 
   const allowUnsafeOriginBypass = args.allowUnsafeOriginBypass ?? !args.production;

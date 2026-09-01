@@ -19,31 +19,21 @@ const Login = () => {
     if (returnPath.startsWith('/research') || returnPath.startsWith('/listings')) {
       return {
         heading: 'Continue to Yale Research',
-        description: 'Use your Yale account to browse research homes, evidence, and source-backed profiles.',
+        description:
+          'Use your Yale account to save research homes, keep private notes, and reach out.',
       };
     }
     if (returnPath.startsWith('/programs') || returnPath.startsWith('/fellowships')) {
       return {
         heading: 'Continue to Programs & Fellowships',
-        description: 'Use your Yale account to review structured programs, funding cycles, and planning context.',
+        description:
+          'Use your Yale account to review structured programs, funding cycles, and planning context.',
       };
     }
-    if (returnPath.startsWith('/opportunities')) {
+    if (returnPath.startsWith('/dashboard')) {
       return {
-        heading: 'Continue to Opportunity Details',
-        description: 'Use your Yale account to review the evidence, deadline, and application next step.',
-      };
-    }
-    if (returnPath.startsWith('/profile')) {
-      return {
-        heading: 'Continue to Profile',
-        description: 'Use your Yale account to view research interests, activity, and Yale Research context.',
-      };
-    }
-    if (returnPath.startsWith('/account')) {
-      return {
-        heading: 'Continue to Your Account',
-        description: 'Use your Yale account to manage saved research plans, profile details, and program planning.',
+        heading: 'Continue to Your Dashboard',
+        description: 'Use your Yale account to manage saved research plans and program planning.',
       };
     }
     if (returnPath.startsWith('/about')) {
@@ -60,7 +50,7 @@ const Login = () => {
 
   const getRedirectPath = () => {
     if (user?.userType === 'professor') {
-      return '/account';
+      return '/dashboard';
     }
     return '/';
   };
@@ -85,10 +75,10 @@ const Login = () => {
           </h1>
           <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
             Search by idea, method, professor, or pathway. Yale Research maps undergraduate
-            curiosity to research structures, evidence, and practical next steps.
+            curiosity to research homes, and surfaces signals pointing you to more information.
           </p>
           <div className="mt-6 grid gap-2 text-left sm:grid-cols-3">
-            {['Research homes', 'Evidence', 'Best next steps'].map((item) => (
+            {['Research homes', 'Signals', 'Official sources'].map((item) => (
               <div key={item} className="yr-card rounded-md px-3 py-3">
                 <p className="text-sm font-semibold text-slate-950">{item}</p>
               </div>
@@ -100,15 +90,9 @@ const Login = () => {
           aria-label="Yale CAS sign in"
           className="yr-panel mx-auto w-full max-w-[390px] rounded-md p-5 sm:p-6"
         >
-          <p className="yr-kicker">
-            Yale CAS
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-950">
-            {destination.heading}
-          </h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">
-            {destination.description}
-          </p>
+          <p className="yr-kicker">Yale CAS</p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950">{destination.heading}</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">{destination.description}</p>
           <div className="yr-muted-surface mt-5 rounded-md p-3">
             <p className="text-xs font-semibold text-slate-500">
               Authentication is handled by Yale CAS. Yale Research does not ask for your password.

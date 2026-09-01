@@ -4,6 +4,7 @@
 import { createContext } from 'react';
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
 import { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
+import { ProgramJourneySummary, emptyProgramJourneySummary } from '../utils/programJourney';
 
 export interface FellowshipSearchContextType {
   queryString: string;
@@ -23,6 +24,8 @@ export interface FellowshipSearchContextType {
   setSelectedTermOfAward: React.Dispatch<React.SetStateAction<string[]>>;
   selectedPurpose: string[];
   setSelectedPurpose: React.Dispatch<React.SetStateAction<string[]>>;
+  selectedSubjects: string[];
+  setSelectedSubjects: React.Dispatch<React.SetStateAction<string[]>>;
   selectedRegions: string[];
   setSelectedRegions: React.Dispatch<React.SetStateAction<string[]>>;
   selectedCitizenship: string[];
@@ -45,6 +48,7 @@ export interface FellowshipSearchContextType {
   setPage: React.Dispatch<React.SetStateAction<number>>;
   pageSize: number;
   total: number;
+  journeySummary: ProgramJourneySummary;
 
   filterOptions: FellowshipFilterOptions;
 
@@ -76,6 +80,8 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   setSelectedTermOfAward: () => {},
   selectedPurpose: [],
   setSelectedPurpose: () => {},
+  selectedSubjects: [],
+  setSelectedSubjects: () => {},
   selectedRegions: [],
   setSelectedRegions: () => {},
   selectedCitizenship: [],
@@ -95,6 +101,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   setPage: () => {},
   pageSize: 20,
   total: 0,
+  journeySummary: emptyProgramJourneySummary,
   filterOptions: {
     programCategory: [],
     programKind: [],
@@ -105,6 +112,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
     purpose: [],
     globalRegions: [],
     citizenshipStatus: [],
+    subjects: [],
   },
   sortableKeys: [],
   refreshFellowships: () => {},

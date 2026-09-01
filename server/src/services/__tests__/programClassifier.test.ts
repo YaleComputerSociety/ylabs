@@ -6,7 +6,8 @@ describe('classifyProgram', () => {
     expect(
       classifyProgram({
         title: 'STARS Summer Research Program',
-        summary: 'Students conduct summer research in a Yale lab and need a lab commitment before applying.',
+        summary:
+          'Students conduct summer research in a Yale lab and need a lab commitment before applying.',
       }),
     ).toMatchObject({
       programKind: 'STRUCTURED_PROGRAM',
@@ -32,6 +33,38 @@ describe('classifyProgram', () => {
     });
   });
 
+  it('does not let a Wu Tsai cross-referral in a record description hijack the record classification', () => {
+    const deansRosenfeld = classifyProgram({
+      title: "Yale College Dean's Research Fellowship & Rosenfeld Science Scholars Program",
+      sourceUrl: 'https://science.yalecollege.yale.edu/deans-research-fellowship',
+      description:
+        'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying to the Wu Tsai Undergraduate Fellowships Program instead.',
+    });
+    expect(deansRosenfeld).toMatchObject({
+      programKind: 'FELLOWSHIP_FUNDING',
+      studentFacingCategory: 'Funding after mentor',
+      yaleCollegeOnly: true,
+    });
+    expect(deansRosenfeld.mentorMatching).toBe(false);
+    expect(deansRosenfeld.bestNextStep).not.toContain('Wu Tsai');
+  });
+
+  it('classifies a first-year summer fellowship on its own identity even when it name-drops Wu Tsai', () => {
+    const firstYear = classifyProgram({
+      title: 'Yale College First-Year Summer Research Fellowship in the Sciences & Engineering',
+      sourceUrl: 'https://science.yalecollege.yale.edu/first-year-summer-research-fellowship',
+      description:
+        'Students interested in neuroscience should also consider the Wu Tsai Undergraduate Fellowships Program.',
+    });
+    expect(firstYear).toMatchObject({
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Funding after mentor',
+    });
+    expect(firstYear.mentorMatching).toBe(false);
+    expect(firstYear.bestNextStep).not.toContain('Wu Tsai');
+  });
+
   it('classifies mentor-required funding as funding after mentor fit', () => {
     expect(
       classifyProgram({
@@ -50,7 +83,8 @@ describe('classifyProgram', () => {
     expect(
       classifyProgram({
         title: 'Graduate Research Fellowships of the Gilder Lehrman Center',
-        summary: 'This fellowship is for graduate students conducting doctoral dissertation research.',
+        summary:
+          'This fellowship is for graduate students conducting doctoral dissertation research.',
       }),
     ).toMatchObject({
       undergraduateOnly: false,
@@ -158,7 +192,8 @@ describe('classifyProgram', () => {
     expect(
       classifyProgram({
         title: 'The Ferenc Gyorgyey/Stanley Simbonis YSM Research Travel Grant',
-        summary: 'Available to historians, medical practitioners, and other researchers outside of Yale.',
+        summary:
+          'Available to historians, medical practitioners, and other researchers outside of Yale.',
       }),
     ).toMatchObject({
       undergraduateOnly: false,
@@ -191,6 +226,39 @@ describe('classifyProgram', () => {
       undergraduateOnly: false,
       studentFacingCategory: 'Archive / review',
       entryMode: 'TRACK_NEXT_CYCLE',
+    });
+  });
+
+  it('classifies an NSF REU requiring a mentor first as SECURE_MENTOR_THEN_APPLY', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Astronomy Research Experiences for Undergraduates (REU)',
+        competitionType: 'NSF REU (Research Experiences for Undergraduates)',
+        description:
+          'A ten-week summer research program in astrophysics. Applicants must identify a Yale faculty mentor before applying.',
+      }),
+    ).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      requiresMentorBeforeApply: true,
+      studentFacingCategory: 'Summer research program (REU)',
+      programDates: 'Summer',
+    });
+  });
+
+  it('classifies a summer research program that matches mentors as DIRECT_FACULTY_MATCHING', () => {
+    expect(
+      classifyProgram({
+        title: 'Summer Undergraduate Math Research at Yale',
+        competitionType: 'Summer Undergraduate Research Program',
+        description:
+          'A nine-week summer program of original research; admitted students are matched with a faculty mentor.',
+      }),
+    ).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+      studentFacingCategory: 'Summer research program (REU)',
     });
   });
 });

@@ -30,7 +30,7 @@ export type ResearchEntityRepairFlag =
   | 'thin_description'
   | 'profile_fallback_only'
   | 'missing_lead'
-  | 'pi_identity_conflict'
+  | 'duplicate_risk'
   | 'missing_source_url';
 
 export interface ResearchEntityQualitySummary {
@@ -47,6 +47,10 @@ export type StudentVisibilityTier =
   | 'suppressed';
 
 export interface ResearchEntity extends ResearchEntityBacking {
+  /** Whether public lead identity evidence is safe to display or requires review. */
+  leadIdentityStatus?: 'verified' | 'under_review';
+  /** Public member key for the unique lead matched by entity-owned official profile evidence. */
+  leadProfessorPublicKey?: string;
   searchMatch?: ResearchEntitySearchMatch;
   waysIn?: PathwaySearchHit[];
   qualitySummary?: ResearchEntityQualitySummary;
@@ -59,29 +63,36 @@ export interface ResearchEntity extends ResearchEntityBacking {
   studentVisibilityReviewNote?: string;
 }
 
-export interface ResearchEntitySearchResponse
-  extends Partial<Omit<ResearchGroupSearchResponse, 'hits' | 'researchEntities'>> {
+export interface ResearchEntitySearchResponse extends Partial<
+  Omit<ResearchGroupSearchResponse, 'hits' | 'researchEntities'>
+> {
   researchEntities?: ResearchEntity[];
   hits?: ResearchEntity[];
+  facetDistribution?: Record<string, Record<string, number>>;
 }
 
-export interface NormalizedResearchEntitySearchResponse
-  extends Omit<ResearchGroupSearchResponse, 'hits' | 'researchEntities'> {
+export interface NormalizedResearchEntitySearchResponse extends Omit<
+  ResearchGroupSearchResponse,
+  'hits' | 'researchEntities'
+> {
   researchEntities: ResearchEntity[];
   hits: ResearchEntity[];
 }
 
-export interface ResearchEntityDetailPayload
-  extends Omit<LabDetailPayload, 'group' | 'researchEntity'> {
+export interface ResearchEntityDetailPayload extends Omit<
+  LabDetailPayload,
+  'group' | 'researchEntity'
+> {
   researchEntity: ResearchEntity;
   group?: ResearchEntity;
 }
 
-type MaybeResearchEntityDetailPayload =
-  Partial<Omit<LabDetailPayload, 'group' | 'researchEntity'>> & {
-    researchEntity?: ResearchEntity | null;
-    group?: ResearchEntity | null;
-  };
+type MaybeResearchEntityDetailPayload = Partial<
+  Omit<LabDetailPayload, 'group' | 'researchEntity'>
+> & {
+  researchEntity?: ResearchEntity | null;
+  group?: ResearchEntity | null;
+};
 
 const normalizeSearchMatch = (
   value: ResearchEntitySearchMatch | undefined,
@@ -107,7 +118,10 @@ const normalizeStudentDecisionExplanation = (
     headline: value.headline.trim(),
     explanation: value.explanation.trim(),
     why: Array.isArray(value.why)
-      ? value.why.map((item) => String(item).trim()).filter(Boolean).slice(0, 3)
+      ? value.why
+          .map((item) => String(item).trim())
+          .filter(Boolean)
+          .slice(0, 3)
       : [],
     sourceUrls: Array.isArray(value.sourceUrls)
       ? value.sourceUrls.map((item) => String(item).trim()).filter(Boolean)
@@ -118,7 +132,6 @@ const normalizeStudentDecisionExplanation = (
 const normalizeResearchEntity = (entity: ResearchEntity): ResearchEntity => ({
   ...entity,
   shortDescription: publicResearchDescriptionText(entity.shortDescription),
-  description: publicResearchDescriptionText(entity.description),
   fullDescription: publicResearchDescriptionText(entity.fullDescription),
   researchAreas: normalizeResearchMetadataLabels(entity.researchAreas),
   searchMatch: normalizeSearchMatch(entity.searchMatch),
@@ -165,19 +178,21 @@ export function normalizeResearchEntityDetailPayload(
     researchEntity: normalizedResearchEntity,
     group: normalizedGroup,
     members: payload.members ?? [],
-    researchActivityLinks: payload.researchActivityLinks ?? [],
-    scholarlyLinks: payload.scholarlyLinks ?? [],
-    memberScholarlyLinks: payload.memberScholarlyLinks ?? [],
-    recentPapers: payload.recentPapers ?? [],
-    recentArxivPreprints: payload.recentArxivPreprints ?? [],
-    activeListings: payload.activeListings ?? [],
-    entryPathways: payload.entryPathways ?? [],
+    roster: payload.roster ?? {
+      status: 'no-verified-data',
+      returned: 0,
+      truncated: false,
+      withheldCount: 0,
+    },
     accessSignals: payload.accessSignals ?? [],
-    contactRoutes: payload.contactRoutes ?? [],
-    postedOpportunities: payload.postedOpportunities ?? [],
+    undergraduateLogistics: payload.undergraduateLogistics ?? {
+      status: 'unavailable',
+      claims: [],
+    },
     entityRelationships: payload.entityRelationships ?? [],
     relatedResearchEntities: payload.relatedResearchEntities ?? [],
     affiliatedRelationships: payload.affiliatedRelationships ?? [],
     affiliatedResearchEntities: payload.affiliatedResearchEntities ?? [],
+    similarResearchEntities: payload.similarResearchEntities ?? [],
   };
 }

@@ -5,6 +5,7 @@
  * state transitions are testable without mounting the provider.
  */
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import { ProgramJourneySummary, emptyProgramJourneySummary } from '../utils/programJourney';
 
 export type FellowshipQuickFilter =
   | 'open'
@@ -23,6 +24,7 @@ export interface FellowshipSearchState {
   selectedStudentFacingCategory: string[];
   selectedTermOfAward: string[];
   selectedPurpose: string[];
+  selectedSubjects: string[];
   selectedRegions: string[];
   selectedCitizenship: string[];
   selectedStudentVisibilityTier: StudentVisibilityTier[];
@@ -33,6 +35,7 @@ export interface FellowshipSearchState {
   isLoading: boolean;
   searchExhausted: boolean;
   total: number;
+  journeySummary: ProgramJourneySummary;
   page: number;
   filterOptions: FellowshipFilterOptions;
   quickFilter: FellowshipQuickFilter;
@@ -55,11 +58,14 @@ export type FellowshipSearchAction =
   | { type: 'SET_SELECTED_YEAR_OF_STUDY'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_TERM_OF_AWARD'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_PURPOSE'; payload: string[] | ((prev: string[]) => string[]) }
+  | { type: 'SET_SELECTED_SUBJECTS'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_REGIONS'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_CITIZENSHIP'; payload: string[] | ((prev: string[]) => string[]) }
   | {
       type: 'SET_SELECTED_STUDENT_VISIBILITY_TIER';
-      payload: StudentVisibilityTier[] | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
+      payload:
+        | StudentVisibilityTier[]
+        | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
     }
   | { type: 'SET_SORT_BY'; payload: string }
   | { type: 'SET_SORT_ORDER'; payload: number }
@@ -79,6 +85,7 @@ export type FellowshipSearchAction =
       };
     }
   | { type: 'SEARCH_FAILURE' }
+  | { type: 'SET_JOURNEY_SUMMARY'; payload: ProgramJourneySummary }
   | { type: 'MARK_QUERY_STRING_LOADED' }
   | { type: 'MARK_FILTERS_LOADED' }
   | { type: 'MARK_INITIAL_SEARCH_DONE' }
@@ -96,6 +103,7 @@ export const createInitialFellowshipSearchState = (
   selectedYearOfStudy: [],
   selectedTermOfAward: [],
   selectedPurpose: [],
+  selectedSubjects: [],
   selectedRegions: [],
   selectedCitizenship: [],
   selectedStudentVisibilityTier: [],
@@ -106,6 +114,7 @@ export const createInitialFellowshipSearchState = (
   isLoading: false,
   searchExhausted: false,
   total: 0,
+  journeySummary: emptyProgramJourneySummary,
   page: 1,
   filterOptions: {
     programCategory: [],
@@ -117,6 +126,7 @@ export const createInitialFellowshipSearchState = (
     purpose: [],
     globalRegions: [],
     citizenshipStatus: [],
+    subjects: [],
   },
   quickFilter: null,
   filterBarHeight: 0,
@@ -159,10 +169,7 @@ export function fellowshipSearchReducer(
     case 'SET_SELECTED_STUDENT_FACING_CATEGORY':
       return {
         ...state,
-        selectedStudentFacingCategory: resolve(
-          action.payload,
-          state.selectedStudentFacingCategory,
-        ),
+        selectedStudentFacingCategory: resolve(action.payload, state.selectedStudentFacingCategory),
       };
 
     case 'SET_SELECTED_YEAR_OF_STUDY':
@@ -174,6 +181,9 @@ export function fellowshipSearchReducer(
     case 'SET_SELECTED_PURPOSE':
       return { ...state, selectedPurpose: resolve(action.payload, state.selectedPurpose) };
 
+    case 'SET_SELECTED_SUBJECTS':
+      return { ...state, selectedSubjects: resolve(action.payload, state.selectedSubjects) };
+
     case 'SET_SELECTED_REGIONS':
       return { ...state, selectedRegions: resolve(action.payload, state.selectedRegions) };
 
@@ -183,10 +193,7 @@ export function fellowshipSearchReducer(
     case 'SET_SELECTED_STUDENT_VISIBILITY_TIER':
       return {
         ...state,
-        selectedStudentVisibilityTier: resolve(
-          action.payload,
-          state.selectedStudentVisibilityTier,
-        ),
+        selectedStudentVisibilityTier: resolve(action.payload, state.selectedStudentVisibilityTier),
       };
 
     case 'SET_SORT_BY':
@@ -221,17 +228,23 @@ export function fellowshipSearchReducer(
 
     case 'SEARCH_SUCCESS': {
       const { fellowships, total, pageSize, append } = action.payload;
+      const nextFellowships = append ? [...state.fellowships, ...fellowships] : fellowships;
+      const nextTotal = total !== undefined ? total : nextFellowships.length;
       return {
         ...state,
-        fellowships: append ? [...state.fellowships, ...fellowships] : fellowships,
-        total: total !== undefined ? total : fellowships.length,
-        searchExhausted: fellowships.length < pageSize,
+        fellowships: nextFellowships,
+        total: nextTotal,
+        searchExhausted:
+          total !== undefined ? nextFellowships.length >= total : fellowships.length < pageSize,
         isLoading: false,
       };
     }
 
     case 'SEARCH_FAILURE':
       return { ...state, isLoading: false };
+
+    case 'SET_JOURNEY_SUMMARY':
+      return { ...state, journeySummary: action.payload };
 
     case 'MARK_QUERY_STRING_LOADED':
       return { ...state, queryStringLoaded: true };

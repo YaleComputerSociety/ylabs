@@ -38,11 +38,11 @@ const readFiles = (files) =>
 const findings = findSecretFindings(readFiles(listFiles()));
 
 if (findings.length > 0) {
-  console.error('Potential committed secrets found:');
+  console.error('Potential secrets found:');
   for (const finding of findings) {
     console.error(`- ${finding.path}:${finding.line} ${finding.rule}`);
   }
   process.exit(1);
 }
 
-console.log('No high-confidence committed secrets found.');
+console.log('No high-confidence secrets found in tracked or untracked non-ignored files.');

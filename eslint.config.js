@@ -11,8 +11,10 @@ export default [
       '**/node_modules/**',
       '**/build/**',
       '**/dist/**',
-      '**/*.config.{js,cjs,mjs,ts}',
-      'data-migration/**',
+      '**/*.config.js',
+      '**/*.config.cjs',
+      '**/*.config.mjs',
+      '**/*.config.ts',
       'client/src/utils/researchAreas.ts',
     ],
   },
@@ -29,13 +31,19 @@ export default [
     },
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { arguments: false } }],
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        { checksVoidReturn: { arguments: false } },
+      ],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },
   {
-    files: ['client/src/**/*.{ts,tsx}'],
+    files: ['client/src/**/*.ts', 'client/src/**/*.tsx'],
     languageOptions: {
       globals: { ...globals.browser },
       parserOptions: {
@@ -52,7 +60,10 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
       'react/jsx-uses-react': 'off',
       'react/react-in-jsx-scope': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },

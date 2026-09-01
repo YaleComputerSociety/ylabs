@@ -1,59 +1,47 @@
 import type mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
-import { AccessSignal } from '../accessSignal';
+import { Account } from '../account';
 import { AdminGrant } from '../adminGrant';
 import { AnalyticsEvent } from '../analytics';
-import { ContactRoute } from '../contactRoute';
 import { Department } from '../department';
-import { EntryPathway } from '../entryPathway';
-import { FacultyMember } from '../facultyMember';
+import { EvidenceClaim } from '../evidenceClaim';
 import { Fellowship } from '../fellowship';
-import { Grant } from '../grant';
-import { Listing } from '../listing';
 import { Observation } from '../observation';
-import { Paper } from '../paper';
-import { PaperAuthor } from '../paperAuthor';
-import { PostedOpportunity } from '../postedOpportunity';
+import { OrgUnit } from '../orgUnit';
+import { Researcher } from '../researcher';
 import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
-import { ResearchGroupMember } from '../researchGroupMember';
+import { RoleAssignment } from '../roleAssignment';
+import { Signal } from '../signal';
+import { ResearchPlan } from '../researchPlan';
+import { ReviewDecision } from '../reviewDecision';
 import { ScrapeRun } from '../scrapeRun';
 import { ScrapeSnapshot } from '../scrapeSnapshot';
 import { Source } from '../source';
-import { StudentApplication } from '../studentApplication';
-import { StudentEngagementEvent } from '../studentEngagementEvent';
-import { StudentOutreach } from '../studentOutreach';
-import { StudentProfile } from '../studentProfile';
-import { StudentTracking } from '../studentTracking';
-import { User } from '../user';
+import { SourceDocument } from '../sourceDocument';
+import { TaxonomyTerm } from '../taxonomyTerm';
 
 const models: Array<[mongoose.Model<any>, string]> = [
-  [AccessSignal, 'access_signals'],
+  [Account, 'accounts'],
   [AdminGrant, 'admin_grants'],
   [AnalyticsEvent, 'analytics_events'],
-  [ContactRoute, 'contact_routes'],
   [Department, 'departments'],
-  [EntryPathway, 'entry_pathways'],
-  [FacultyMember, 'faculty_members'],
+  [EvidenceClaim, 'evidence_claims'],
   [Fellowship, 'fellowships'],
-  [Grant, 'grants'],
-  [Listing, 'listings'],
   [Observation, 'observations'],
-  [Paper, 'papers'],
-  [PaperAuthor, 'paper_authors'],
-  [PostedOpportunity, 'posted_opportunities'],
+  [OrgUnit, 'org_units'],
+  [Researcher, 'researchers'],
   [ResearchArea, 'research_areas'],
   [ResearchEntity, 'research_entities'],
-  [ResearchGroupMember, 'research_entity_members'],
+  [RoleAssignment, 'role_assignments'],
+  [Signal, 'signals'],
+  [ResearchPlan, 'research_plans'],
+  [ReviewDecision, 'review_decisions'],
   [ScrapeRun, 'scrape_runs'],
   [ScrapeSnapshot, 'scrape_snapshots'],
   [Source, 'sources'],
-  [StudentApplication, 'student_applications'],
-  [StudentEngagementEvent, 'student_engagement_events'],
-  [StudentOutreach, 'student_outreaches'],
-  [StudentProfile, 'student_profiles'],
-  [StudentTracking, 'student_trackings'],
-  [User, 'users'],
+  [SourceDocument, 'source_documents'],
+  [TaxonomyTerm, 'taxonomy_terms'],
 ];
 
 function schemaPathSegments(model: mongoose.Model<any>): string[] {
@@ -72,7 +60,8 @@ describe('Mongo naming conventions', () => {
   it('uses lowercase plural snake_case Mongo collection names', () => {
     for (const [model, collectionName] of models) {
       expect(model.collection.name).toBe(collectionName);
-      expect(collectionName).toMatch(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*s$/);
+      expect(collectionName).toMatch(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/);
+      expect(collectionName.endsWith('s')).toBe(true);
     }
   });
 

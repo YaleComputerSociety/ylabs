@@ -3,10 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AdminPanel from '../AdminPanel';
 
-vi.mock('../AdminListingsTable', () => ({
-  default: () => <div data-testid="legacy-listings-table" />,
-}));
-
 vi.mock('../AdminFellowshipsTable', () => ({
   default: () => <div data-testid="fellowships-table" />,
 }));
@@ -17,10 +13,6 @@ vi.mock('../AdminResearchAreas', () => ({
 
 vi.mock('../AdminDepartments', () => ({
   default: () => <div data-testid="departments" />,
-}));
-
-vi.mock('../AdminFacultyProfilesTable', () => ({
-  default: () => <div data-testid="faculty-profiles" />,
 }));
 
 vi.mock('../AdminAccessReview', () => ({
@@ -47,14 +39,7 @@ describe('AdminPanel', () => {
   it('keeps admin tab controls large enough for touch input', () => {
     render(<AdminPanel />);
 
-    for (const tab of [
-      'Operator Board',
-      'Access Review',
-      'Fellowships',
-      'Research Areas',
-      'Departments',
-      'Faculty Profiles',
-    ]) {
+    for (const tab of ['Operator Board', 'Fellowships', 'Research Areas', 'Departments']) {
       expect(screen.getByRole('button', { name: tab }).className).toContain('min-h-[44px]');
     }
   });

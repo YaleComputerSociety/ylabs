@@ -1,46 +1,33 @@
-# Getting Started with Create React App
+# Yale Research - Client
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+The Yale Research web client: a React 19 + TypeScript single-page app built with Vite and styled with Tailwind CSS.
+It is the student-facing surface for research discovery, program and fellowship browsing, and the account dashboard.
 
-## Available Scripts
+See `PRODUCT.md` for the product model and `../AGENTS.md` for repository-wide conventions.
+When changing UI, read `DESIGN.md` (the design-token system) and `../skills/frontend-polish/SKILL.md` (the polish and accessibility bar).
 
-In the project directory, you can run:
+## Prerequisites
 
-### `npm start`
+- Node 20 (see the repo toolchain notes; newer majors can break the jsdom test environment).
+- Yarn (managed via Corepack).
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+Install dependencies from the repository root with `yarn install:all`, or from this directory with `yarn`.
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+## Scripts
 
-### `npm test`
+Run these from the `client/` directory:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- `yarn dev` - start the Vite dev server (defaults to port 3000; pass `--port <n>` to run alongside other instances).
+- `yarn build` - produce the production build.
+- `yarn preview` - serve the production build locally.
+- `yarn test` - run the Vitest suite in watch mode.
+- `yarn test:ci` - run the Vitest suite once (used in CI).
 
-### `npm run build`
+## Structure
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- `src/pages/` - route-level pages.
+- `src/components/` - components grouped by domain (`admin`, `analytics`, `research`, `labs`, `fellowship`, `profile`, `accounts`), plus `components/shared/` for reusable primitives.
+- `src/contexts/`, `src/providers/`, `src/reducers/` - React Context state with `useReducer`.
+- `src/hooks/`, `src/utils/`, `src/types/` - shared hooks, helpers, and types.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+Data is fetched over HTTP with the configured Axios client in `src/utils/axios.ts`; prefer it over importing `axios` directly so requests pass through the shared interceptors.

@@ -9,9 +9,7 @@ export const studentVisibilityTiers = [
 
 export type StudentVisibilityTier = (typeof studentVisibilityTiers)[number];
 
-export const publicStudentVisibilityTiers: StudentVisibilityTier[] = [
-  'student_ready',
-];
+export const publicStudentVisibilityTiers: StudentVisibilityTier[] = ['student_ready'];
 
 export const publicSafeStudentVisibilityTiers: StudentVisibilityTier[] = [
   'student_ready',
@@ -46,17 +44,13 @@ export const studentVisibilityFields = {
     type: Date,
     required: false,
   },
-  studentVisibilityVersion: {
-    type: String,
-    default: '',
-  },
   studentVisibilityReviewedAt: {
     type: Date,
     required: false,
   },
-  studentVisibilityReviewedByUserId: {
+  studentVisibilityReviewedByAccountId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'Account',
     required: false,
   },
 };

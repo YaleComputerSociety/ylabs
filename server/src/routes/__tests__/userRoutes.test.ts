@@ -7,17 +7,26 @@ const routeByPathAndMethod = (path: string, method: string) =>
     .find((route: any) => route?.path === path && route.methods?.[method]);
 
 describe('user routes', () => {
-  it('validates saved pathway-plan route ids before controller handlers', () => {
+  it('keeps entity-owned planning routes authenticated and validates entity ids', () => {
     for (const [path, method] of [
-      ['/savedResearchPlanDetails/:pathwayId', 'put'],
-      ['/savedResearchPlanDetails/:pathwayId', 'delete'],
-      ['/favPathwayPlans/:pathwayId', 'put'],
-      ['/favPathwayPlans/:pathwayId', 'delete'],
+      ['/savedResearchEntityPlans/:entityId', 'put'],
+      ['/watchedProgramPlans/:programId', 'put'],
     ]) {
       const route = routeByPathAndMethod(path, method);
-
       expect(route).toBeTruthy();
       expect(route.stack.length).toBeGreaterThanOrEqual(3);
+    }
+
+    for (const [path, method] of [
+      ['/savedResearchEntityIds', 'get'],
+      ['/savedResearchEntities', 'get'],
+      ['/savedResearchEntities', 'put'],
+      ['/savedResearchEntities', 'delete'],
+      ['/savedResearchEntityPlans', 'get'],
+    ]) {
+      const route = routeByPathAndMethod(path, method);
+      expect(route).toBeTruthy();
+      expect(route.stack.length).toBeGreaterThanOrEqual(2);
     }
   });
 });

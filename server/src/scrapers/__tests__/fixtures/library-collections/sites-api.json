@@ -1,0 +1,44 @@
+[
+  {
+    "o:id": 1,
+    "o:slug": "browse-yul-exhibits",
+    "o:title": "Browse Exhibitions",
+    "o:summary": "",
+    "o:is_public": true
+  },
+  {
+    "o:id": 2,
+    "o:slug": "more",
+    "o:title": "More",
+    "o:summary": "",
+    "o:is_public": true
+  },
+  {
+    "o:id": 3,
+    "o:slug": "prospectsofempire",
+    "o:title": "Prospects of Empire: Slavery and Ecology in Eighteenth-Century Atlantic Britain",
+    "o:summary": "“Prospects of Empire” explores the notion of empire’s “prospects”—its gaze upon bodies and landscapes, its speculations and desires, and its endeavors to capitalize upon seized land and labor in the long eighteenth century.",
+    "o:is_public": true
+  },
+  {
+    "o:id": 4,
+    "o:slug": "marks-in-lawbooks",
+    "o:title": "Precedents So Scrawl'd and Blurr'd: Readers' Marks in Law Books",
+    "o:summary": "Readers left their marks in law books for centuries. This exhibition draws on the Yale Law Library's rare book collection to explore how lawyers, students, and printers annotated the books they used.",
+    "o:is_public": true
+  },
+  {
+    "o:id": 5,
+    "o:slug": "YJIL-50",
+    "o:title": "Yale Journal of International Law at 50",
+    "o:summary": "",
+    "o:is_public": true
+  },
+  {
+    "o:id": 6,
+    "o:slug": "staff-preview-draft",
+    "o:title": "Unpublished staff preview",
+    "o:summary": "A private staging exhibition that should never be minted.",
+    "o:is_public": false
+  }
+]

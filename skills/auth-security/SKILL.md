@@ -11,19 +11,23 @@ Prefer source verification before editing `passport.ts`, `app.ts`, security midd
 ## Authentication flow
 
 ```
-User -> Yale CAS SSO -> passport.ts findOrCreateUser
-     -> Check DB, refresh if stale over 30 days
-     -> Yalies API for student/grad detection
-     -> Yale Directory for faculty detection
-     -> Fallback: fname "NA", userType "unknown"
-     -> Create/update User
+User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
+     -> Yalies API for undergrad/grad classification
+     -> Yale Directory for faculty classification
+     -> Fallback: userType "unknown"
+     -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt
      -> cookie-session for 30 days, httpOnly, secure in prod, sameSite lax
 ```
 
-The find-or-create cascade runs only at login time.
-Per-request session restore in `deserializeUser` is a plain `validateUser` read plus the admin-grant check.
+Authentication runs on the canonical `Account` (the private login principal); the legacy `User` model has been retired (#2014).
+Classification (undergrad/grad/faculty) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies/Directory profile (name, `userType`, title/department for faculty, college/year/major for students) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in.
+Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
+`userType` is a classification/analytics dimension only; it does not authorize anything, whether read from the session or the persisted profile.
+Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
+The classification cascade runs only at login time.
+Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
-A session whose user doc no longer exists deserializes to unauthenticated.
+A session whose `Account` no longer exists or is archived deserializes to unauthenticated.
 
 Dev login bypass:
 
@@ -31,7 +35,7 @@ Dev login bypass:
 
 This creates a test session as `test123` with user type `undergraduate`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local account.
-`unknown` is the only way to reach `/unknown` onboarding locally.
+`?userType=admin` mints an idempotent local bootstrap `AdminGrant` (via `ensureBootstrapAdminGrant`), so dev admin authority comes from a real grant, not a `userType` shortcut.
 
 ## Auth middleware
 
@@ -39,19 +43,19 @@ Defined in `server/src/middleware/auth.ts`.
 
 | Middleware | Check |
 |------------|-------|
-| `isAuthenticated` | `req.user` exists. |
-| `isAdmin` | `userType === 'admin'`. |
-| `isProfessor` | `userType` is `professor`, `faculty`, or `admin`. |
-| `isTrustworthy` | confirmed admin, professor, or faculty. |
-| `isConfirmed` | `userConfirmed === true`. |
-| `canCreateListing` | professor, faculty, or admin plus confirmed user and verified profile. |
+| `isAuthenticated` | `req.user` has a valid bounded NetID. |
+| `isAdmin` | active `AdminGrant` for the NetID (`hasActiveAdminGrant`). |
+
+There are no `userType`-based authorization guards.
+Admin-review write surfaces (research-area creation) use `isAdmin`; correction-report and listing-claim submission use `isAuthenticated`.
 
 Client route guards:
 
 | Guard | Purpose |
 |-------|---------|
-| `PrivateRoute` | Auth required; redirects unknown users when `unknownBlocked=true`. |
-| `AdminRoute` | Admin only. |
+| `PrivateRoute` | Auth required. |
+| `AdminRoute` | Admin only, keyed off the server-provided `user.isAdmin`. |
+| `PublicRoute` | Renders for logged-out and authenticated users alike. |
 | `UnprivateRoute` | No auth required. |
 
 ## Validation middleware
@@ -60,10 +64,8 @@ Exported from `server/src/middleware/`:
 
 - `validateObjectId(paramName?)`
 - `validateNetid(paramName?)`
-- `requireBody()`
 - `requireFields(fields[])`
 - `validatePagination()`
-- `validateSort(allowedFields[])`
 - `validateQuery(allowedParams[])`
 
 ## Security middleware
@@ -84,14 +86,28 @@ Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate
 
 ## Rate limits
 
-Rate limiters are keyed by authenticated user `netId` with IP fallback for unauthenticated requests.
+The limiters live in `server/src/middleware/rateLimiters.ts`.
+Request-scoped limiters (`globalLimiter`, `writeLimit`) are keyed by authenticated user's normalized `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
+The anonymous identifier is initialized only for `/api` requests.
+This prevents shared proxy buckets without trusting forwarding headers.
+`authLimiter` is keyed by the real TCP peer IP so login cannot be brute-forced from one host regardless of session.
 All limiters are skipped in CI, development, and test.
+Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
+
+Write limiting is opt-in per route, not inferred from the HTTP method.
+A route is billed as a write only if it lists the `writeLimit` middleware in its definition, so reads and telemetry (search, exports, `addView`, the `/analytics/research/batch` beacon) can never exhaust the mutation budget, and a new route defaults to read-safe.
 
 | Limiter | Scope | Limit |
 |---------|-------|-------|
-| `apiLimiter` | All `/api` except `/api/cas` and public discovery mounts. | 200 per 15 minutes. |
-| `publicDiscoveryLimiter` | `/api/research` and `/api/opportunities`. | 300 per 15 minutes. |
-| `writeLimiter` | Non-GET API routes, except known read-shaped unsafe methods. | 50 per 15 minutes. |
+| `globalLimiter` | All `/api` except `/api/cas`. Safety net across reads, telemetry, and writes. | 1000 per 15 minutes. |
+| `writeLimit` | Opt-in per route on genuine mutations (favorites/saves, profile edits, claims, research outreach, admin writes). | 50 per 15 minutes. |
+| `authLimiter` | `/api/cas` login callback, keyed per IP. | 20 per 15 minutes. |
+
+`globalLimiter` is sized high because un-batched view and impression telemetry rides this budget; lower it once analytics beacons are batched client-side.
+The limiters use express-rate-limit's in-process MemoryStore, which is correct only because the Render web service runs a single instance; if it is ever scaled beyond one instance, move to a shared store (e.g. Redis) first.
+
+Yale Research has no faculty lab or opportunity authoring routes.
+Source-discovered opportunity detail is public and returns only the student-safe projection.
 
 ## Error handling
 
@@ -111,7 +127,7 @@ Production responses are generic.
 
 - `server/.env` and `client/.env` contain credentials, API keys, and database URLs.
 Never commit them.
-- `server/src/passport.ts` controls CAS auth and user creation.
+- `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
 - Production scraper writes require explicit guardrails with `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
@@ -123,12 +139,11 @@ Never commit them.
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `MONGODBURL` | Yes | MongoDB connection string. |
-| `MONGODBURL_MIGRATION` | Migration mode | Secondary DB for dual-DB migrations. |
 | `SESSION_SECRET` | Yes | Cookie session signing key. |
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
-| `API_MODE` | No | `productionMigration` for dual-DB migration mode. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
+| `TRUSTED_PROXY_CIDRS` | Deployed | Non-empty comma-separated proxy CIDRs trusted for forwarded visitor IP resolution; empty is allowed only in local development and tests. |
 | `YALIES_API_KEY` | No | API key for yalies.io. |
 | `OPENAI_API_KEY` | No | OpenAI key for Meilisearch embedder config and LLM extractors. |
 | `MEILISEARCH_HOST` | No | Meilisearch host. |
@@ -138,6 +153,9 @@ Never commit them.
 | `SCRAPER_ENV` | No | Scraper write guards. |
 | `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Enables scraper writes to non-prod DBs. |
 | `CONFIRM_PROD_SCRAPE` | No | Enables production scraper writes with production env. |
+| `SCRAPER_DEVELOPMENT_DB_NAME` | No | Overrides the exact Development database name expected by scraper guards. |
+| `SCRAPER_BETA_DB_NAME` | No | Overrides the exact Beta database name expected by scraper guards. |
+| `SCRAPER_PRODUCTION_DB_NAME` | No | Overrides the exact Production database name expected by scraper guards. |
 | `GATE_SCORECARD_MAX_AGE_HOURS` | No | Max age before a gate scorecard is stale. |
 | `GATE_REFRESH_INTERVAL_MINUTES` | No | Positive value enables in-process gate refresh. |
 | `GATE_REFRESH_SKIP_HEAVY` | No | Skips heavy gate refresh work when `true`. |

@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import {
   applyStudentVisibilityGatePlans,
+  evaluateStudentVisibilityGateLeadResolution,
   planStudentVisibilityGate,
   runStudentVisibilityGateForPlans,
   type StudentVisibilityGateCollection,
@@ -102,7 +103,11 @@ export function assertStudentVisibilityGateApplyConfirmed(
   if (options.mode === 'apply' && options.maxApply === undefined) {
     throw new Error('--max-apply is required when --apply is set for student-visibility:gate.');
   }
-  if (options.mode === 'apply' && changedRecords !== undefined && changedRecords > options.maxApply!) {
+  if (
+    options.mode === 'apply' &&
+    changedRecords !== undefined &&
+    changedRecords > options.maxApply!
+  ) {
     throw new Error(
       `Apply would update visibility for ${changedRecords} changed records, above --max-apply.`,
     );
@@ -155,13 +160,22 @@ async function main() {
   });
   report.mode = options.mode;
   assertStudentVisibilityGateApplyConfirmed(options, report.counts.changed);
+
+  const leadResolution = evaluateStudentVisibilityGateLeadResolution(plans);
+  if (!leadResolution.safe) {
+    console.warn(`[student-visibility:gate] ${sanitizeLogValue(leadResolution.blocker)}`);
+    if (options.mode === 'apply') {
+      throw new Error(`Refusing to apply student visibility gate: ${leadResolution.blocker}`);
+    }
+  }
+
   if (options.mode === 'apply') {
     await applyStudentVisibilityGatePlans(plans);
   }
 
   const outputReport = buildStudentVisibilityGateOutput(
     { environment: guard.environment, db: guard.dbLabel, options },
-    report as unknown as Record<string, unknown>,
+    { ...(report as unknown as Record<string, unknown>), leadResolution },
   );
 
   console.log(JSON.stringify(outputReport, null, 2));

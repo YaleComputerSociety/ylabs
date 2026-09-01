@@ -1,14 +1,8 @@
 /**
  * Hero header for a lab detail page: name, kind badge, school, location,
- * trust-gradient evidence pill, departments, research areas, website link.
+ * departments, research areas, website link.
  *
  * Pure presentational — takes a ResearchGroup, no fetching or context.
- *
- * The evidence pill replaces the legacy boolean-only "Accepting Undergrads"
- * pill with a trust gradient ("Strong evidence" / "Some evidence" /
- * "Evidence unknown" / "Not currently available"). The verdict is computed by the shared
- * `computeAcceptanceVerdict` helper so this surface stays consistent with the
- * browse cards and the inquire CTA.
  */
 import { ResearchGroup } from '../../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
@@ -16,13 +10,13 @@ import { formatTitleCaseLabel } from '../../utils/displayText';
 import { useConfig } from '../../hooks/useConfig';
 import { ensureHttpPrefix } from '../../utils/url';
 import {
-  computeAcceptanceVerdict,
-  verdictBadgeStyles,
-  verdictLabel,
-} from '../../utils/undergradAcceptance';
+  isSuppressedResearchWebsiteCtaUrl,
+  isUnavailableResearchWebsiteCtaUrl,
+} from '../../utils/researchDetailSources';
 import {
   entityKindLabel,
   isFacultyResearchEntity as isFacultyResearchEntityCopy,
+  researchEntityTitle,
   researchWebsiteCtaLabel,
 } from '../../utils/researchEntityCopy';
 
@@ -30,11 +24,6 @@ interface LabHeaderProps {
   group: ResearchGroup;
   dedupeWebsiteUrls?: Array<string | undefined | null>;
   actions?: React.ReactNode;
-  /**
-   * Whether the research home has at least one active canonical posted
-   * opportunity. Legacy listings are not counted here.
-   */
-  hasActivePostedOpportunity?: boolean;
 }
 
 const normalizeActionUrl = (url?: string | null): string => {
@@ -52,17 +41,14 @@ const normalizeActionUrl = (url?: string | null): string => {
   }
 };
 
-const LabHeader = ({
-  group,
-  dedupeWebsiteUrls = [],
-  actions,
-  hasActivePostedOpportunity = false,
-}: LabHeaderProps) => {
+const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) => {
   const { departments } = useConfig();
-  const { verdict } = computeAcceptanceVerdict(group, hasActivePostedOpportunity);
-  const verdictClasses = verdictBadgeStyles(verdict);
-  const verdictText = verdictLabel(verdict);
-  const websiteHref = group.websiteUrl ? ensureHttpPrefix(group.websiteUrl) : '';
+  const websiteHref =
+    group.websiteUrl &&
+    !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
+    !isUnavailableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
+      ? ensureHttpPrefix(group.websiteUrl)
+      : '';
   const websiteDedupeKey = normalizeActionUrl(websiteHref);
   const hideWebsiteHref =
     Boolean(websiteDedupeKey) &&
@@ -86,26 +72,16 @@ const LabHeader = ({
   return (
     <div className="yr-panel flex flex-col gap-4 rounded-md p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="yr-pill yr-pill-blue">
-          {kindLabel}
-        </span>
-        <span
-          className={`yr-pill ${verdictClasses}`}
-          data-verdict={verdict}
-        >
-          {verdictText}
-        </span>
-        {group.school && (
-          <span className="yr-pill">
-            {group.school}
-          </span>
-        )}
+        <span className="yr-pill yr-pill-blue">{kindLabel}</span>
+        {group.school && <span className="yr-pill">{group.school}</span>}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="yr-kicker mb-2">Research profile</p>
-          <h1 className="text-3xl font-semibold leading-tight text-slate-950">{group.name}</h1>
+          <h1 className="text-3xl font-semibold leading-tight text-slate-950">
+            {researchEntityTitle(group)}
+          </h1>
           {group.location && (
             <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
               <svg
@@ -126,11 +102,7 @@ const LabHeader = ({
             </p>
           )}
         </div>
-        {actions && (
-          <div className="w-full shrink-0 sm:w-auto">
-            {actions}
-          </div>
-        )}
+        {actions && <div className="w-full shrink-0 sm:w-auto">{actions}</div>}
       </div>
 
       {departmentLabels.length > 0 && (
@@ -155,10 +127,7 @@ const LabHeader = ({
           </p>
           <div className="flex flex-wrap gap-1.5">
             {visibleProfileResearchAreas.map((area) => (
-              <span
-                key={area}
-            className="yr-pill rounded-md"
-              >
+              <span key={area} className="yr-pill rounded-md">
                 {formatTitleCaseLabel(area)}
               </span>
             ))}

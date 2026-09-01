@@ -3,6 +3,7 @@
  */
 import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';
+import { navFocusRingSx } from '../utils/focusRing';
 
 export default function AnalyticsButton() {
   const location = useLocation();
@@ -22,15 +23,16 @@ export default function AnalyticsButton() {
       onClick={handleClick}
       sx={{
         textTransform: 'none',
-        color: isActive ? '#1876D1' : '#000000',
+        color: isActive ? 'var(--yr-blue)' : 'var(--yr-ink)',
         fontFamily: 'Inter',
         fontWeight: 450,
         fontSize: '14px',
         minHeight: '44px',
         '&:hover': {
           backgroundColor: 'transparent',
-          color: '#1876D1',
+          color: 'var(--yr-blue)',
         },
+        ...navFocusRingSx,
       }}
       disableRipple={true}
     >

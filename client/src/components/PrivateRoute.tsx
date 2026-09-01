@@ -8,12 +8,10 @@ import LoadingSpinner from './shared/LoadingSpinner';
 
 interface PrivateRouteProps {
   Component: FunctionComponent;
-  unknownBlocked?: boolean;
-  knownBlocked?: boolean;
 }
 
-const PrivateRoute = ({ Component, unknownBlocked, knownBlocked }: PrivateRouteProps) => {
-  const { user, isLoading, isAuthenticated } = useContext(UserContext);
+const PrivateRoute = ({ Component }: PrivateRouteProps) => {
+  const { isLoading, isAuthenticated } = useContext(UserContext);
   const location = useLocation();
 
   if (isLoading) {
@@ -27,15 +25,6 @@ const PrivateRoute = ({ Component, unknownBlocked, knownBlocked }: PrivateRouteP
   if (!isAuthenticated) {
     const returnPath = `${location.pathname}${location.search}${location.hash}`;
     return <Navigate to="/login" state={{ from: returnPath }} replace />;
-  }
-
-  if (user) {
-    if (unknownBlocked && user.userType === 'unknown') {
-      return <Navigate to="/unknown" />;
-    }
-    if (knownBlocked && user.userType !== 'unknown') {
-      return <Navigate to="/" />;
-    }
   }
 
   return <Component />;

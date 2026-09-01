@@ -101,59 +101,24 @@ export const workPlannerSourcePolicies = [
       'Official microsite evidence; use the source-level lastObservedAt heartbeat to skip fresh entities before fetch/LLM calls.',
   },
   {
-    sourceName: 'student-decision-llm',
+    sourceName: 'research-area-source-extractor',
     entityType: 'researchEntity',
-    targetFields: ['studentDecisionExplanation'],
+    targetFields: ['researchAreas'],
     freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
-    paid: true,
-    defaultRecurringCadence: 'manual',
-    notes:
-      'Derived student-facing decision guidance; run only as a bounded/manual enrichment after source-backed access evidence exists.',
-  },
-  {
-    sourceName: 'openalex',
-    entityType: 'user',
-    targetFields: ['openAlexWorksSyncedAt'],
-    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    paid: false,
     defaultRecurringCadence: 'monthly',
     notes:
-      'Publication enrichment policy; concrete integration should emit a user-level freshness marker after a successful faculty sync.',
+      'Deterministic approved-registry area recovery for empty-area entities from their official pages; skip entities already carrying a recent area observation.',
   },
   {
-    sourceName: 'orcid',
-    entityType: 'user',
-    targetFields: ['orcidWorksSyncedAt'],
+    sourceName: 'ysm-mesh-keyword',
+    entityType: 'researchEntity',
+    targetFields: ['researchAreas'],
     freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    paid: false,
     defaultRecurringCadence: 'monthly',
     notes:
-      'Identity-backed ORCID public works ingestion for accepted Yale user ORCIDs.',
-  },
-  {
-    sourceName: 'europe-pmc',
-    entityType: 'user',
-    targetFields: ['europePmcWorksSyncedAt'],
-    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
-    defaultRecurringCadence: 'monthly',
-    notes:
-      'Biomedical ORCID-backed paper discovery; no name-only authorship.',
-  },
-  {
-    sourceName: 'pubmed',
-    entityType: 'user',
-    targetFields: ['pubmedWorksSyncedAt'],
-    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
-    defaultRecurringCadence: 'monthly',
-    notes:
-      'PubMed-facing ORCID-backed biomedical paper discovery via Europe PMC.',
-  },
-  {
-    sourceName: 'crossref',
-    entityType: 'paper',
-    targetFields: ['crossrefHydratedAt'],
-    freshnessWindowMs: 90 * WORK_PLANNER_DAY_MS,
-    defaultRecurringCadence: 'quarterly',
-    notes:
-      'DOI metadata hydration only; never creates Yale authorship links.',
+      'Governed MeSH research areas for YSM entities read from each faculty individual profile page; skip entities already carrying a recent area observation.',
   },
 ] satisfies WorkPlannerSourcePolicy[];
 
@@ -208,10 +173,7 @@ export function buildEntityWorkPlan(options: BuildEntityWorkPlanOptions): Entity
 
     const lastObservedAt = latestObservedAt(
       options.observations.filter(
-        (obs) =>
-          !obs.superseded &&
-          obs.sourceName === options.sourceName &&
-          obs.field === field,
+        (obs) => !obs.superseded && obs.sourceName === options.sourceName && obs.field === field,
       ),
     );
 

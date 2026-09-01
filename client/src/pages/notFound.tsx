@@ -14,12 +14,12 @@ const NotFound = () => {
           We couldn't find that Yale Research page
         </h1>
         <p className="mb-8 text-slate-600">
-          The link may be old, or the research profile may have moved. Explore Research is the
-          best place to search for a lab, program, faculty project, or pathway again.
+          The link may be old, or the research profile may have moved. Explore Research is the best
+          place to search for a lab, program, faculty project, or pathway again.
         </p>
         <Link
           to="/research"
-          className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
         >
           Explore Yale Research
         </Link>

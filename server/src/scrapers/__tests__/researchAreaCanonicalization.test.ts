@@ -1,0 +1,681 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  applyResearchEntityResearchAreaCanonicalization,
+  buildResearchAreaResolverIndex,
+  createResearchAreaCanonicalizer,
+  isDivisionLevelResearchAreaLabel,
+  isResearchAreaLabelLeakage,
+  researchAreaMatchKey,
+  resetResearchAreaCanonicalizerCache,
+  setResearchAreaCanonicalizerForTesting,
+  splitGluedRoleTrackLabels,
+  stripResearchAreaSourceChrome,
+} from '../researchAreaCanonicalization';
+
+const rows = [
+  { name: 'Artificial Intelligence' },
+  { name: 'Machine Learning' },
+  { name: 'Computer Vision' },
+  { name: 'Human-Computer Interaction' },
+  { name: 'Neuroscience' },
+  { name: 'Public Health' },
+  { name: 'Climate Change' },
+  { name: 'Economics' },
+  { name: 'Literature' },
+  { name: 'Gender Studies' },
+];
+
+const index = buildResearchAreaResolverIndex(rows);
+const canonicalizer = createResearchAreaCanonicalizer(index);
+
+afterEach(() => {
+  resetResearchAreaCanonicalizerCache();
+});
+
+describe('researchAreaMatchKey', () => {
+  it('normalizes case, punctuation, and ampersands', () => {
+    expect(researchAreaMatchKey('Machine Learning')).toBe('machine-learning');
+    expect(researchAreaMatchKey('machine   learning')).toBe('machine-learning');
+    expect(researchAreaMatchKey('Human-Computer Interaction')).toBe('human-computer-interaction');
+    expect(researchAreaMatchKey(42)).toBe('');
+  });
+});
+
+describe('stripResearchAreaSourceChrome', () => {
+  it('recovers multiple glued topics from YSM profile widget chrome (#487)', () => {
+    expect(
+      stripResearchAreaSourceChrome(
+        'Nuclear Envelope2 YSM ResearchersView 11 Related PublicationsCell Nucleus6 YSM ResearchersView 7 Related PublicationsChromatin7 YSM ResearchersView 6 Related PublicationsMechanotransduction',
+      ),
+    ).toEqual(['Nuclear Envelope', 'Cell Nucleus', 'Chromatin', 'Mechanotransduction']);
+  });
+
+  it('strips trailing chrome from a single topic', () => {
+    expect(
+      stripResearchAreaSourceChrome(
+        'Natural Language Processing9 YSM ResearchersView 121 Related Publications',
+      ),
+    ).toEqual(['Natural Language Processing']);
+    expect(
+      stripResearchAreaSourceChrome('Endometriosis4 YSM ResearchersView 123 Related Publications'),
+    ).toEqual(['Endometriosis']);
+  });
+
+  it('handles singular "Researcher" and missing counts', () => {
+    expect(
+      stripResearchAreaSourceChrome(
+        'SpectrinYSM ResearcherView 51 Related PublicationsComputer-Assisted InstructionYSM ResearcherView Related PublicationPathology43 YSM ResearchersView Related Publication',
+      ),
+    ).toEqual(['Spectrin', 'Computer-Assisted Instruction', 'Pathology']);
+  });
+
+  it('leaves a clean area untouched and never strips a legitimate trailing number', () => {
+    expect(stripResearchAreaSourceChrome('Immunology')).toEqual(['Immunology']);
+    expect(stripResearchAreaSourceChrome('Cell Biology')).toEqual(['Cell Biology']);
+    expect(stripResearchAreaSourceChrome('SARS-CoV-2')).toEqual(['SARS-CoV-2']);
+    expect(stripResearchAreaSourceChrome(42)).toEqual([]);
+    expect(stripResearchAreaSourceChrome('  ')).toEqual([]);
+  });
+
+  it('does not corrupt a hyphen-number topic glued to widget chrome into a dangling hyphen (#487)', () => {
+    const recovered = stripResearchAreaSourceChrome(
+      'SARS-CoV-23 YSM ResearchersView 5 Related PublicationsImmunology',
+    );
+    expect(recovered).not.toContain('SARS-CoV-');
+    expect(recovered).toEqual(['SARS-CoV-23', 'Immunology']);
+  });
+
+  it('strips a glued YSM Researcher role label with no widget chrome (#742)', () => {
+    expect(stripResearchAreaSourceChrome('MedicareYSM Researcher')).toEqual(['Medicare']);
+    expect(stripResearchAreaSourceChrome('Sarcoma, KaposiYSM Researcher')).toEqual([
+      'Sarcoma, Kaposi',
+    ]);
+    expect(
+      stripResearchAreaSourceChrome('Demyelinating Autoimmune Diseases, CNSYSM Researcher'),
+    ).toEqual(['Demyelinating Autoimmune Diseases, CNS']);
+    expect(stripResearchAreaSourceChrome('HistonesYSM Researchers')).toEqual(['Histones']);
+  });
+
+  it('leaves a bare role label for the downstream leakage stop-list to drop (#742)', () => {
+    expect(stripResearchAreaSourceChrome('YSM Researcher')).toEqual(['YSM Researcher']);
+  });
+
+  it('strips a stray leading coordinating conjunction from a split-fragment topic (#948)', () => {
+    expect(stripResearchAreaSourceChrome('and Optical Physics')).toEqual(['Optical Physics']);
+    expect(stripResearchAreaSourceChrome('and Market Design')).toEqual(['Market Design']);
+    expect(stripResearchAreaSourceChrome('Or Computational Biology')).toEqual([
+      'Computational Biology',
+    ]);
+  });
+
+  it('never strips an internal conjunction from a real multi-topic area', () => {
+    expect(stripResearchAreaSourceChrome('Ecology and Evolutionary Biology')).toEqual([
+      'Ecology and Evolutionary Biology',
+    ]);
+  });
+});
+
+describe('splitGluedRoleTrackLabels', () => {
+  it('splits a role-track label glued onto a topic with no delimiter (#943)', () => {
+    expect(splitGluedRoleTrackLabels('Astrophysics & CosmologyTheorist')).toEqual([
+      'Astrophysics & Cosmology',
+      'Theorist',
+    ]);
+    expect(splitGluedRoleTrackLabels('Particle PhysicsExperimentalist')).toEqual([
+      'Particle Physics',
+      'Experimentalist',
+    ]);
+  });
+
+  it('splits a topic + role-track + project-title triple glued with no delimiter (#943)', () => {
+    expect(
+      splitGluedRoleTrackLabels(
+        'Condensed Matter PhysicsExperimentalistCoherent control of light transport and absorption',
+      ),
+    ).toEqual([
+      'Condensed Matter Physics',
+      'Experimentalist',
+      'Coherent control of light transport and absorption',
+    ]);
+  });
+
+  it('leaves whitespace-delimited role words and clean topics untouched (#943)', () => {
+    expect(splitGluedRoleTrackLabels('Observational Cosmology')).toEqual([
+      'Observational Cosmology',
+    ]);
+    expect(splitGluedRoleTrackLabels('Theoretical Physics')).toEqual(['Theoretical Physics']);
+    expect(splitGluedRoleTrackLabels('Condensed Matter Physics')).toEqual([
+      'Condensed Matter Physics',
+    ]);
+    expect(splitGluedRoleTrackLabels('Astrophysics & Cosmology')).toEqual([
+      'Astrophysics & Cosmology',
+    ]);
+  });
+
+  it('leaves a bare role label for the downstream leakage stop-list to drop (#943)', () => {
+    expect(splitGluedRoleTrackLabels('Theorist')).toEqual(['Theorist']);
+    expect(splitGluedRoleTrackLabels('Experimentalist')).toEqual(['Experimentalist']);
+  });
+
+  it('returns an empty list for non-strings and blanks (#943)', () => {
+    expect(splitGluedRoleTrackLabels(42)).toEqual([]);
+    expect(splitGluedRoleTrackLabels('  ')).toEqual([]);
+  });
+});
+
+describe('canonicalizeResearchAreas', () => {
+  it('drops a glued role-track duplicate and keeps the clean topic sibling (#943)', () => {
+    const specific = createResearchAreaCanonicalizer(
+      buildResearchAreaResolverIndex([{ name: 'Astrophysics & Cosmology' }]),
+    );
+    const result = specific.canonicalizeResearchAreas([
+      'Astrophysics & CosmologyTheorist',
+      'Astrophysics & Cosmology',
+    ]);
+    expect(result.values).toEqual(['Astrophysics & Cosmology']);
+    expect(result.dropped).toContain('Theorist');
+  });
+
+  it('recovers each piece of a topic + role-track + project-title glue (#943)', () => {
+    const specific = createResearchAreaCanonicalizer(
+      buildResearchAreaResolverIndex([{ name: 'Condensed Matter Physics' }]),
+    );
+    const result = specific.canonicalizeResearchAreas([
+      'Condensed Matter PhysicsExperimentalistCoherent control of light transport and absorption',
+    ]);
+    expect(result.values).toEqual([
+      'Condensed Matter Physics',
+      'Coherent control of light transport and absorption',
+    ]);
+    expect(result.dropped).toContain('Experimentalist');
+  });
+
+  it('splits glued page-chrome into recovered topics before matching (#487)', () => {
+    const specific = createResearchAreaCanonicalizer(
+      buildResearchAreaResolverIndex([{ name: 'Natural Language Processing' }]),
+    );
+    const result = specific.canonicalizeResearchAreas([
+      'Natural Language Processing9 YSM ResearchersView 121 Related Publications',
+      'Internal Medicine',
+    ]);
+    expect(result.values).toEqual(['Natural Language Processing', 'Internal Medicine']);
+  });
+
+  it('maps exact names and curated aliases to canonical values', () => {
+    const result = canonicalizer.canonicalizeResearchAreas(['machine learning', 'AI', 'HCI']);
+    expect(result.values).toEqual([
+      'Machine Learning',
+      'Artificial Intelligence',
+      'Human-Computer Interaction',
+    ]);
+    expect(result.unmatched).toEqual([]);
+  });
+
+  it('fails closed: keeps unmatched raw strings and reports them for review', () => {
+    const result = canonicalizer.canonicalizeResearchAreas(['Basket Weaving', 'Neuroscience']);
+    expect(result.values).toEqual(['Basket Weaving', 'Neuroscience']);
+    expect(result.unmatched).toEqual(['Basket Weaving']);
+  });
+
+  it('dedupes canonical collisions case-insensitively', () => {
+    const result = canonicalizer.canonicalizeResearchAreas(['AI', 'artificial intelligence']);
+    expect(result.values).toEqual(['Artificial Intelligence']);
+  });
+
+  it('drops prose research-area chips while keeping clean topics on the same entity (#948)', () => {
+    const result = canonicalizer.canonicalizeResearchAreas([
+      'Neuroscience',
+      'I have been applying techniques drawn from probability theory and statistics',
+      'Research in the group is currently focused on three general themes: Decoding self-organization',
+      'and Optical Physics',
+    ]);
+    expect(result.values).toEqual(['Neuroscience', 'Optical Physics']);
+    expect(result.dropped).toEqual([
+      'I have been applying techniques drawn from probability theory and statistics',
+      'Research in the group is currently focused on three general themes: Decoding self-organization',
+    ]);
+  });
+});
+
+describe('matchCanonicalResearchAreas', () => {
+  it('returns only canonical matches and drops unmatched candidates', () => {
+    expect(canonicalizer.matchCanonicalResearchAreas(['Economics', 'Underwater Ceramics'])).toEqual(
+      ['Economics'],
+    );
+  });
+
+  it('drops scraper-label leakage before matching', () => {
+    expect(
+      canonicalizer.matchCanonicalResearchAreas(['Research Areas:', 'Economics', 'Theorist']),
+    ).toEqual(['Economics']);
+  });
+
+  it('resolves humanities department-name naming variants to their approved counterpart', () => {
+    expect(canonicalizer.matchCanonicalResearchAreas(['English Language and Literature'])).toEqual([
+      'Literature',
+    ]);
+    expect(
+      canonicalizer.matchCanonicalResearchAreas(["Women's, Gender, and Sexuality Studies"]),
+    ).toEqual(['Gender Studies']);
+  });
+});
+
+describe('isResearchAreaLabelLeakage', () => {
+  it('flags section headers, role labels, and publication chrome as leakage', () => {
+    for (const junk of [
+      'Research Areas:',
+      'Research Areas',
+      'Fields of Interest',
+      'Field of Study',
+      'YSM Researcher',
+      '3 YSM Researchers',
+      'Experimentalist',
+      'Theorist',
+      'Publications',
+      'Citations',
+      'Keywords and Concepts',
+      '42',
+      'N/A',
+      '···',
+      '--',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
+  it('never flags a real research area as leakage', () => {
+    for (const area of [
+      'Machine Learning',
+      'Neuroscience',
+      'Public Health',
+      'Condensed Matter Physics',
+      'Art History',
+      'Child and Adolescent Psychosocial and Emotional Development',
+      'Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes',
+      'Interstitial Lung Diseases and Idiopathic Pulmonary Fibrosis',
+      'Mesoscopic Physics / Nanoscience (Condensed Matter Physics)',
+      'C. elegans Genetics',
+      'Cognitive Neuroscience: Graduate Program',
+      'Global Health: Certificate Program',
+      'mRNA vaccine development platforms and delivery systems',
+      'iPSC-derived cardiomyocytes for disease modeling and drug screening',
+      'Keyword Extraction',
+      'in vivo imaging of tumor microenvironment dynamics',
+      'de novo protein design and directed evolution',
+      'Health policy in the U.S.',
+    ]) {
+      expect(isResearchAreaLabelLeakage(area)).toBe(false);
+    }
+  });
+
+  it('rejects non-topic chips: award lines, protocol ids, names, sentences, and label prefixes', () => {
+    for (const junk of [
+      '2019 Robin Testcase: NIH Extramural Clinical Loan Repayment Scholarship',
+      'HIC ID9999999',
+      'IRB Protocol #2019-0000',
+      'Fields of Interest Econometrics Public Economics',
+      'Research Areas: I am an ecologist interested in the fate of synthetic organisms',
+      'understanding the fictional dynamics that underlie invented macroeconomic events',
+      'Development of imaginary cardiac methods for placeholder dysfunction.',
+      'Others are versatile, capable of mediating two of these mechanisms.',
+      'https://www.ncbi.nlm.nih.gov/myncbi/fake.person.1/bibliography/public/',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
+  it('rejects a whitespace-delimited combined role-track label (#1613)', () => {
+    for (const junk of [
+      'Theorist & Experimentalist',
+      'Theorist and Experimentalist',
+      'Experimentalist/Theorist',
+      'Observer, Observational',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+    expect(isResearchAreaLabelLeakage('Theorist & Experimentalist Cosmology')).toBe(false);
+  });
+
+  it('flags first-person prose, lab-blurb sentences, and run-on concatenations (#948)', () => {
+    for (const junk of [
+      'I have been applying techniques drawn from probability theory and statistics',
+      'My main teaching interests lie in Experimental Physics',
+      'We study the emergence of collective behavior in living systems',
+      'Research in the group is currently focused on three general themes: Decoding self-organization',
+      'The laboratory investigates protein folding',
+      'Quantum Matter Fractons from polarons Light bipolarons stabilized by Peierls electron-electron coupling Non-equilibrium quantum dynamics Phonon-induced disorder in dynamics of optically pumped metals from non-linear electron-phonon coupling Artificial Intelligence and physics',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
+  it('rejects title-case grant titles and descriptor sentences at the 10-word ceiling (#1114)', () => {
+    for (const junk of [
+      'Treatment with Mecamylamine in Smoking and Non-Smoking Alcohol Dependent Patients',
+      'Hyperglycemia and glycemic control in critically ill and hospitalized patients',
+      'The development of solid-state quantum bits (qubits) for quantum computing',
+      'The study of problems at the interface of optical and condensed matter physics',
+      'The role of central insulin sensitivity on cognition in prediabetes',
+      'Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
+  it('keeps legitimate multi-word areas just under the 10-word ceiling (#1114)', () => {
+    for (const area of [
+      'iPSC-derived cardiomyocytes for disease modeling and drug screening',
+      'Child and Adolescent Psychosocial and Emotional Development',
+      'mRNA vaccine development platforms and delivery systems',
+    ]) {
+      expect(isResearchAreaLabelLeakage(area)).toBe(false);
+    }
+  });
+
+  it('does not treat short topic phrases that merely contain a stop word as prose', () => {
+    for (const area of [
+      'Machine Learning and Optimization',
+      'Interstitial Lung Diseases and Idiopathic Pulmonary Fibrosis',
+      'Optical Physics',
+      'Market Design',
+    ]) {
+      expect(isResearchAreaLabelLeakage(area)).toBe(false);
+    }
+  });
+});
+
+describe('canonicalizeResearchAreas leakage stop-list', () => {
+  it('drops leakage entirely - not into values nor the review queue', () => {
+    const result = canonicalizer.canonicalizeResearchAreas([
+      'Research Areas:',
+      'Theorist',
+      'machine learning',
+      'Basket Weaving',
+    ]);
+    expect(result.values).toEqual(['Machine Learning', 'Basket Weaving']);
+    expect(result.unmatched).toEqual(['Basket Weaving']);
+    expect(result.dropped).toEqual(['Research Areas:', 'Theorist']);
+  });
+});
+
+describe('deriveResearchAreasFromText', () => {
+  it('finds multi-word canonical phrases as whole-word matches', () => {
+    const text =
+      'Our lab studies machine learning and computer vision for climate change adaptation.';
+    expect(canonicalizer.deriveResearchAreasFromText(text)).toEqual(
+      expect.arrayContaining(['Machine Learning', 'Computer Vision', 'Climate Change']),
+    );
+  });
+
+  it('does not match a multi-word phrase glued inside a longer token', () => {
+    expect(canonicalizer.deriveResearchAreasFromText('biomachine learning device')).toEqual([]);
+  });
+
+  it('does not derive an ambiguous single-word area (economics) from prose', () => {
+    expect(canonicalizer.deriveResearchAreasFromText('the state of the art in economics')).toEqual(
+      [],
+    );
+  });
+
+  it('matches a multi-word alias in prose', () => {
+    expect(
+      canonicalizer.deriveResearchAreasFromText('work on human computer interaction methods'),
+    ).toEqual(['Human-Computer Interaction']);
+  });
+
+  it('matches a humanities department-name alias mentioned in bio prose, not just departments[]', () => {
+    const text =
+      'She teaches in the Programs of American Studies and Women, Gender, and Sexuality Studies.';
+    expect(canonicalizer.deriveResearchAreasFromText(text)).toEqual(['Gender Studies']);
+  });
+});
+
+describe('single-word specific-term derivation', () => {
+  const specificRows = [
+    { name: 'Immunology' },
+    { name: 'Genomics' },
+    { name: 'Bioinformatics' },
+    { name: 'Neuroscience' },
+    { name: 'Machine Learning' },
+    { name: 'Art' },
+    { name: 'History' },
+    { name: 'Statistics' },
+    { name: 'Economics' },
+    { name: 'Art History' },
+  ];
+  const specific = createResearchAreaCanonicalizer(buildResearchAreaResolverIndex(specificRows));
+
+  it('derives specific single-word technical terms from prose', () => {
+    expect(
+      specific.deriveResearchAreasFromText(
+        'The lab studies immunology and genomics using bioinformatics pipelines.',
+      ),
+    ).toEqual(expect.arrayContaining(['Immunology', 'Genomics', 'Bioinformatics']));
+  });
+
+  it('keeps ambiguous single-word names out of prose derivation', () => {
+    const derived = specific.deriveResearchAreasFromText(
+      'A survey of the history of art, with attention to economics and statistics.',
+    );
+    expect(derived).not.toContain('Art');
+    expect(derived).not.toContain('History');
+    expect(derived).not.toContain('Economics');
+    expect(derived).not.toContain('Statistics');
+  });
+
+  it('still derives a multi-word area whose words are individually ambiguous', () => {
+    expect(specific.deriveResearchAreasFromText('a course in art history and criticism')).toEqual([
+      'Art History',
+    ]);
+  });
+
+  it('does not fire a single-word term glued inside a longer token', () => {
+    expect(specific.deriveResearchAreasFromText('immunologist training program')).toEqual([]);
+  });
+
+  it('resolves an ambiguous single-word area through the exact index', () => {
+    expect(specific.matchCanonicalResearchAreas(['Economics', 'Statistics'])).toEqual([
+      'Economics',
+      'Statistics',
+    ]);
+  });
+});
+
+describe('finance and business single-word derivation precision', () => {
+  const financeRows = [
+    { name: 'Accounting' },
+    { name: 'Auditing' },
+    { name: 'Banking' },
+    { name: 'Genomics' },
+  ];
+  const finance = createResearchAreaCanonicalizer(buildResearchAreaResolverIndex(financeRows));
+
+  it('does not derive finance idiom words from non-topical prose', () => {
+    const derived = finance.deriveResearchAreasFromText(
+      'Estimates adjust for confounders after accounting for age and sex, banking on repeated measures while auditing the analysis pipeline; the team also studies genomics.',
+    );
+    expect(derived).not.toContain('Accounting');
+    expect(derived).not.toContain('Auditing');
+    expect(derived).not.toContain('Banking');
+    expect(derived).toContain('Genomics');
+  });
+
+  it('still resolves finance areas through the exact index', () => {
+    expect(finance.matchCanonicalResearchAreas(['Accounting', 'Banking', 'Auditing'])).toEqual([
+      'Accounting',
+      'Banking',
+      'Auditing',
+    ]);
+  });
+});
+
+describe('mathematics idiom single-word derivation precision', () => {
+  const mathRows = [{ name: 'Topology' }, { name: 'Optics' }, { name: 'Genomics' }];
+  const math = createResearchAreaCanonicalizer(buildResearchAreaResolverIndex(mathRows));
+
+  it('does not derive Topology from the "network topology" idiom', () => {
+    const derived = math.deriveResearchAreasFromText(
+      'The group designs distributed systems and studies network topology and optics for sensor genomics.',
+    );
+    expect(derived).not.toContain('Topology');
+    expect(derived).toContain('Optics');
+    expect(derived).toContain('Genomics');
+  });
+
+  it('still resolves Topology through the exact index', () => {
+    expect(math.matchCanonicalResearchAreas(['Topology'])).toEqual(['Topology']);
+  });
+});
+
+describe('generic seeded single-word derivation precision', () => {
+  const genericRows = [
+    { name: 'Aesthetics' },
+    { name: 'Classics' },
+    { name: 'Immigration' },
+    { name: 'Photography' },
+    { name: 'Sustainability' },
+    { name: 'Genomics' },
+  ];
+  const generic = createResearchAreaCanonicalizer(buildResearchAreaResolverIndex(genericRows));
+
+  it('does not derive generic seeded words from non-topical prose', () => {
+    const derived = generic.deriveResearchAreasFromText(
+      'The team weighs the aesthetics of the interface and the long-term sustainability of the program, drawing on classics of the field, while immigration reshaped the cohort and photography documented the work; separately they study genomics.',
+    );
+    expect(derived).not.toContain('Aesthetics');
+    expect(derived).not.toContain('Classics');
+    expect(derived).not.toContain('Immigration');
+    expect(derived).not.toContain('Photography');
+    expect(derived).not.toContain('Sustainability');
+    expect(derived).toContain('Genomics');
+  });
+
+  it('still resolves generic seeded areas through the exact index', () => {
+    expect(
+      generic.matchCanonicalResearchAreas([
+        'Aesthetics',
+        'Classics',
+        'Immigration',
+        'Photography',
+        'Sustainability',
+      ]),
+    ).toEqual(['Aesthetics', 'Classics', 'Immigration', 'Photography', 'Sustainability']);
+  });
+});
+
+describe('applyResearchEntityResearchAreaCanonicalization', () => {
+  it('rewrites the set researchAreas in place and reports unmatched', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['AI', 'Quilting'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence', 'Quilting']);
+    expect(result.unmatchedResearchAreas).toEqual(['Quilting']);
+  });
+
+  it('is a no-op when researchAreas is absent', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { school: 'Yale College' };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set);
+    expect(set).toEqual({ school: 'Yale College' });
+    expect(result.unmatchedResearchAreas).toEqual([]);
+    expect(result.droppedResearchAreas).toEqual([]);
+  });
+
+  it('drops scraper-label leakage from the set and reports it', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = {
+      researchAreas: ['Fields of Interest', 'AI', 'YSM Researcher'],
+    };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence']);
+    expect(result.droppedResearchAreas).toEqual(['Fields of Interest', 'YSM Researcher']);
+  });
+
+  it('drops an area entry that duplicates the entity own department (#1451)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = {
+      researchAreas: ['Neuroscience', 'Internal Medicine'],
+    };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, [
+      'Internal Medicine',
+      'Endocrinology',
+    ]);
+    expect(set.researchAreas).toEqual(['Neuroscience']);
+    expect(result.droppedResearchAreas).toEqual(['Internal Medicine']);
+  });
+
+  it('leaves researchAreas empty when every chip is a department name (#1451)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['Pathology'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Pathology']);
+    expect(set.researchAreas).toEqual([]);
+    expect(result.droppedResearchAreas).toEqual(['Pathology']);
+  });
+
+  it('matches a department duplicate case-insensitively and ignores punctuation (#1451)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = {
+      researchAreas: ['neuroscience', 'internal medicine.'],
+    };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, [
+      'Internal Medicine',
+    ]);
+    expect(set.researchAreas).toEqual(['Neuroscience']);
+    expect(result.droppedResearchAreas).toEqual(['internal medicine.']);
+  });
+
+  it('is unaffected by departments when none overlap (#1451)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['AI', 'Quilting'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Psychiatry']);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence', 'Quilting']);
+    expect(result.unmatchedResearchAreas).toEqual(['Quilting']);
+  });
+
+  it('rejects a bare division-level label even with empty departments (#1544)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = {
+      researchAreas: ['Genetics', 'Oncology', 'Hematology'],
+    };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, []);
+    expect(set.researchAreas).toEqual([]);
+    expect(result.droppedResearchAreas).toEqual(['Genetics', 'Oncology', 'Hematology']);
+  });
+
+  it('keeps a specific topic alongside a rejected division-level label (#1544)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['AI', 'Oncology'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence']);
+    expect(result.droppedResearchAreas).toEqual(['Oncology']);
+  });
+
+  it('rejects a division-level label regardless of the entity own departments (#1544)', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = { researchAreas: ['Genetics', 'AI'] };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Pathology']);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence']);
+    expect(result.droppedResearchAreas).toEqual(['Genetics']);
+  });
+});
+
+describe('isDivisionLevelResearchAreaLabel', () => {
+  it('flags coarse clinical-specialty and academic division labels', () => {
+    expect(isDivisionLevelResearchAreaLabel('Genetics')).toBe(true);
+    expect(isDivisionLevelResearchAreaLabel('oncology')).toBe(true);
+    expect(isDivisionLevelResearchAreaLabel('Hematology.')).toBe(true);
+    expect(isDivisionLevelResearchAreaLabel('Public Health')).toBe(true);
+  });
+
+  it('leaves a specific technical term alone even if Yale also has a department by that name', () => {
+    expect(isDivisionLevelResearchAreaLabel('Immunology')).toBe(false);
+    expect(isDivisionLevelResearchAreaLabel('Microbiology')).toBe(false);
+    expect(isDivisionLevelResearchAreaLabel('Cancer Genomics')).toBe(false);
+  });
+
+  it('fails closed for non-strings and empty values', () => {
+    expect(isDivisionLevelResearchAreaLabel(42)).toBe(false);
+    expect(isDivisionLevelResearchAreaLabel('')).toBe(false);
+    expect(isDivisionLevelResearchAreaLabel(null)).toBe(false);
+  });
+});

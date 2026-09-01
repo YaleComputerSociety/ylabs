@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminGrant } from '../../models/adminGrant';
+import { Account } from '../../models/account';
 import {
   MAX_ADMIN_GRANT_NOTE_LENGTH,
-  allowsLegacyAdminUserType,
+  clearAdminGrantCache,
   grantAdminAccess,
   hasActiveAdminGrant,
+  hasAdminAuthorityForUser,
+  listAdminGrants,
   revokeAdminAccess,
 } from '../adminGrantService';
 
@@ -30,28 +33,31 @@ describe('hasActiveAdminGrant', () => {
   });
 });
 
-describe('allowsLegacyAdminUserType', () => {
-  it('allows legacy admin userType only for localhost development', () => {
-    expect(
-      allowsLegacyAdminUserType({
-        NODE_ENV: 'development',
-        SERVER_BASE_URL: 'http://localhost:4000',
-      } as NodeJS.ProcessEnv),
-    ).toBe(true);
+describe('hasAdminAuthorityForUser', () => {
+  beforeEach(() => {
+    clearAdminGrantCache();
+  });
 
-    expect(
-      allowsLegacyAdminUserType({
-        NODE_ENV: 'production',
-        SERVER_BASE_URL: 'https://yalelabs.io',
-      } as NodeJS.ProcessEnv),
-    ).toBe(false);
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearAdminGrantCache();
+  });
 
-    expect(
-      allowsLegacyAdminUserType({
-        NODE_ENV: 'development',
-        SERVER_BASE_URL: 'https://yalelabs.io',
-      } as NodeJS.ProcessEnv),
-    ).toBe(false);
+  it('grants authority from an active grant regardless of userType', async () => {
+    const exists = vi.spyOn(AdminGrant, 'exists').mockResolvedValue({ _id: 'grant-1' } as any);
+
+    await expect(hasAdminAuthorityForUser({ netId: 'grantee1' })).resolves.toBe(true);
+    expect(exists).toHaveBeenCalledWith({ netid: 'grantee1', status: 'active' });
+  });
+
+  it('denies a principal with no active grant', async () => {
+    vi.spyOn(AdminGrant, 'exists').mockResolvedValue(null as any);
+
+    await expect(hasAdminAuthorityForUser({ netid: 'legacy9' })).resolves.toBe(false);
+  });
+
+  it('denies a missing principal', async () => {
+    await expect(hasAdminAuthorityForUser(null)).resolves.toBe(false);
   });
 });
 
@@ -60,35 +66,93 @@ describe('admin grant note persistence', () => {
     vi.restoreAllMocks();
   });
 
-  it('caps grant notes before persistence', async () => {
+  it('rejects missing and oversized grant notes', async () => {
     const findOneAndUpdate = vi
       .spyOn(AdminGrant, 'findOneAndUpdate')
       .mockReturnValue({ lean: vi.fn().mockResolvedValue({}) } as any);
 
-    await grantAdminAccess({
-      netid: 'abc123',
-      actorNetid: 'admin1',
-      note: ` ${'x'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH + 50)} `,
-    });
-
-    const update = findOneAndUpdate.mock.calls[0][1] as any;
-    expect(update.$set.note).toHaveLength(MAX_ADMIN_GRANT_NOTE_LENGTH);
-    expect(update.$set.note).toBe('x'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH));
+    await expect(
+      grantAdminAccess({ netid: 'abc123', actorNetid: 'admin1', note: '   ' }),
+    ).rejects.toThrow();
+    await expect(
+      grantAdminAccess({
+        netid: 'abc123',
+        actorNetid: 'admin1',
+        note: 'x'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH + 1),
+      }),
+    ).rejects.toThrow();
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('caps revoke notes before persistence', async () => {
+  it('rejects self grants before persistence', async () => {
+    const findOneAndUpdate = vi.spyOn(AdminGrant, 'findOneAndUpdate');
+    await expect(
+      grantAdminAccess({ netid: 'admin1', actorNetid: 'ADMIN1', note: 'reviewed' }),
+    ).rejects.toThrow();
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized revoke notes before persistence', async () => {
     const findOneAndUpdate = vi
       .spyOn(AdminGrant, 'findOneAndUpdate')
       .mockReturnValue({ lean: vi.fn().mockResolvedValue({}) } as any);
 
-    await revokeAdminAccess({
-      netid: 'abc123',
-      actorNetid: 'admin1',
-      note: ` ${'y'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH + 50)} `,
-    });
+    await expect(
+      revokeAdminAccess({
+        netid: 'abc123',
+        actorNetid: 'admin1',
+        note: 'y'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH + 1),
+      }),
+    ).rejects.toThrow();
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+});
 
-    const update = findOneAndUpdate.mock.calls[0][1] as any;
-    expect(update.$set.revokeNote).toHaveLength(MAX_ADMIN_GRANT_NOTE_LENGTH);
-    expect(update.$set.revokeNote).toBe('y'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH));
+describe('listAdminGrants history timeline', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('aggregates grant/revoke history across all grants newest-first', async () => {
+    const activeChain: any = {
+      sort: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([{ netid: 'admin2', status: 'active' }]),
+    };
+    const allHistoryChain: any = {
+      lean: vi.fn().mockResolvedValue([
+        {
+          netid: 'ADMIN2',
+          history: [
+            { action: 'granted', actorNetid: 'root1', note: 'onboarded', at: '2026-01-01' },
+          ],
+        },
+        {
+          netid: 'admin3',
+          history: [
+            { action: 'granted', actorNetid: 'root1', note: 'temp', at: '2026-02-01' },
+            { action: 'revoked', actorNetid: 'root1', note: 'off-boarded', at: '2026-03-01' },
+          ],
+        },
+      ]),
+    };
+    vi.spyOn(AdminGrant, 'find')
+      .mockReturnValueOnce(activeChain)
+      .mockReturnValueOnce(allHistoryChain);
+
+    const accountSummaryChain: any = {
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([]),
+    };
+    vi.spyOn(Account, 'find').mockReturnValue(accountSummaryChain);
+
+    const result = await listAdminGrants();
+
+    expect(result.history).toHaveLength(3);
+    expect(result.history[0]).toMatchObject({
+      action: 'revoked',
+      subjectNetid: 'admin3',
+      note: 'off-boarded',
+    });
+    expect(result.history[2]).toMatchObject({ action: 'granted', subjectNetid: 'admin2' });
   });
 });

@@ -6,9 +6,7 @@ import {
 } from '../launchTrustContractService';
 import type { StudentVisibilityGatePlan } from '../studentVisibilityGateService';
 
-const plan = (
-  overrides: Partial<StudentVisibilityGatePlan> = {},
-): StudentVisibilityGatePlan => ({
+const plan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'entity-1',
   label: 'Trusted Lab',
@@ -32,10 +30,7 @@ const report = (
 
 describe('buildLaunchTrustContractReport', () => {
   it('passes when every scanned record is launch-grade student_ready', () => {
-    const result = report([
-      plan(),
-      plan({ recordId: 'entity-2', label: 'Another Trusted Lab' }),
-    ]);
+    const result = report([plan(), plan({ recordId: 'entity-2', label: 'Another Trusted Lab' })]);
 
     expect(result.pass).toBe(true);
     expect(result.counts).toMatchObject({
@@ -180,6 +175,34 @@ describe('buildLaunchTrustContractReport', () => {
     expect(result.repairLanes).toEqual([]);
   });
 
+  it('keeps public visibility violations actionable when held rows exceed the sample bound', () => {
+    const heldPlans = Array.from({ length: 50 }, (_, index) =>
+      plan({
+        recordId: `held-${index}`,
+        currentTier: 'operator_review',
+        computedTier: 'operator_review',
+        tier: 'operator_review',
+        reasons: ['missing_description'],
+      }),
+    );
+    const publicViolation = plan({
+      recordId: 'public-violation',
+      currentTier: 'student_ready',
+      computedTier: 'operator_review',
+      tier: 'operator_review',
+      reasons: ['missing_description'],
+    });
+
+    const result = report([...heldPlans, publicViolation]);
+
+    expect(result.counts.publicVisibilityViolations).toBe(1);
+    expect(result.violations).toHaveLength(50);
+    expect(result.violations[0]).toMatchObject({
+      recordId: 'public-violation',
+      publicVisibilityViolation: true,
+    });
+  });
+
   it('does not recommend apply mode for review-exception lanes before accepted decisions', () => {
     const result = report([
       plan({
@@ -211,81 +234,5 @@ describe('buildLaunchTrustContractReport', () => {
     );
     expect(result.repairLanes[0].command).not.toContain('--mode=apply');
     expect(result.repairLanes[0].command).not.toContain('student-visibility:gate');
-  });
-
-  it('fails launch when research activity has unsupported scholarly-link provenance', () => {
-    const result = buildLaunchTrustContractReport([plan()], {
-      collection: 'all',
-      mode: 'student-ready-only',
-      researchActivity: {
-        pass: false,
-        counts: {
-          activeScholarlyLinks: 10,
-          activeAttributions: 3,
-          nullTargetAttributions: 1,
-          qualityFailureTotal: 1,
-        },
-        command: 'yarn --cwd server scholarly-links:provenance-audit --sample-limit=0',
-        fixCommand:
-          'yarn --cwd server scholarly-links:provenance-audit --apply --confirm-scholarly-link-apply',
-      },
-    });
-
-    expect(result.pass).toBe(false);
-    expect(result.researchActivity).toMatchObject({
-      pass: false,
-      counts: expect.objectContaining({ nullTargetAttributions: 1 }),
-      command: 'SCRAPER_ENV=beta yarn --cwd server scholarly-links:provenance-audit --sample-limit=0',
-      fixCommand:
-        'SCRAPER_ENV=beta yarn --cwd server scholarly-links:provenance-audit --apply --confirm-scholarly-link-apply',
-    });
-    expect(result.requiredCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server scholarly-links:provenance-audit --sample-limit=0',
-    );
-  });
-
-  it('fails launch when paper display quality has launch blockers', () => {
-    const result = buildLaunchTrustContractReport([plan()], {
-      collection: 'all',
-      mode: 'student-ready-only',
-      researchActivity: {
-        pass: true,
-        counts: {
-          totalPapers: 10,
-          papersWithYaleAuthors: 3,
-          paperAuthorRows: 3,
-        },
-        command: 'yarn --cwd server scholarly-links:provenance-audit --sample-limit=0',
-        fixCommand: '',
-      },
-      paperQuality: {
-        pass: false,
-        counts: {
-          totalActivePapers: 10,
-          missingYearOrDate: 2,
-          duplicateDoiGroups: 1,
-          qualityFailureTotal: 3,
-        },
-        command: 'yarn --cwd server papers:quality-audit --sample-limit=0',
-        fixCommands: [
-          'Run DOI/Crossref hydration for missing years and links.',
-          'Merge or suppress duplicate paper identifier groups before launch.',
-        ],
-      },
-    });
-
-    expect(result.pass).toBe(false);
-    expect(result.paperQuality).toMatchObject({
-      pass: false,
-      counts: expect.objectContaining({ qualityFailureTotal: 3 }),
-      command: 'SCRAPER_ENV=beta yarn --cwd server papers:quality-audit --sample-limit=0',
-      fixCommands: [
-        'Run DOI/Crossref hydration for missing years and links.',
-        'Merge or suppress duplicate paper identifier groups before launch.',
-      ],
-    });
-    expect(result.requiredCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server papers:quality-audit --sample-limit=0',
-    );
   });
 });

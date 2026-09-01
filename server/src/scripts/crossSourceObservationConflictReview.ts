@@ -4,10 +4,7 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
-import {
-  resolveField,
-  type ResolverObservation,
-} from '../scrapers/confidenceResolver';
+import { resolveField, type ResolverObservation } from '../scrapers/confidenceResolver';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -265,11 +262,7 @@ const IDENTITY_OR_ROUTING_CONFLICT_FIELDS = new Set([
   'title',
   'userType',
 ]);
-const CONTENT_CONFLICT_FIELDS = new Set([
-  'description',
-  'fullDescription',
-  'shortDescription',
-]);
+const CONTENT_CONFLICT_FIELDS = new Set(['description', 'fullDescription', 'shortDescription']);
 const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
   'undergradAccessEvidence',
   'undergradEvidenceQuote',
@@ -283,10 +276,7 @@ const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
   'joinPageUrl',
   'applicationUrl',
 ]);
-const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set([
-  'recentGrants',
-  'recentGrantCount',
-]);
+const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set(['recentGrants', 'recentGrantCount']);
 
 const PRIORITY_REVIEW_CATEGORIES = new Set<CrossSourceObservationReviewCategory>([
   'identity_or_routing',
@@ -396,10 +386,7 @@ export function parseCrossSourceObservationConflictReviewArgs(
       continue;
     }
     if (arg.startsWith('--plan-limit=')) {
-      args.planLimit = parsePositiveIntegerValue(
-        arg.slice('--plan-limit='.length),
-        '--plan-limit',
-      );
+      args.planLimit = parsePositiveIntegerValue(arg.slice('--plan-limit='.length), '--plan-limit');
       continue;
     }
     if (arg === '--plan-limit') {
@@ -813,7 +800,9 @@ async function loadCrossSourceConflictGroups(
     const groupKey = key._id as AggregatedCrossSourceObservationConflictGroup['_id'];
     const observations = await loadObservationsForGroupKey(groupKey);
     const sourceNames = new Set(observations.map((observation) => observation.sourceName));
-    const distinctValues = new Set(observations.map((observation) => serializeValue(observation.value)));
+    const distinctValues = new Set(
+      observations.map((observation) => serializeValue(observation.value)),
+    );
     if (sourceNames.size < 2 || distinctValues.size < 2) {
       continue;
     }
@@ -1012,7 +1001,9 @@ function compareSamplesForReview(
     right.distinctValueCount - left.distinctValueCount ||
     right.activeObservationCount - left.activeObservationCount ||
     left.entityType.localeCompare(right.entityType) ||
-    (left.entityKey || left.entityId || '').localeCompare(right.entityKey || right.entityId || '') ||
+    (left.entityKey || left.entityId || '').localeCompare(
+      right.entityKey || right.entityId || '',
+    ) ||
     left.field.localeCompare(right.field)
   );
 }
@@ -1071,7 +1062,10 @@ function buildPolicyBucketCounts(
   }
   return Array.from(counts.entries())
     .map(([policyBucket, count]) => ({ policyBucket, count }))
-    .sort((left, right) => right.count - left.count || left.policyBucket.localeCompare(right.policyBucket));
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.policyBucket.localeCompare(right.policyBucket),
+    );
 }
 
 function buildReviewQueues(
@@ -1180,11 +1174,7 @@ function consumeValue(
   return value;
 }
 
-function parseRequiredString(
-  value: string,
-  flagName: string,
-  requirement = 'a value',
-): string {
+function parseRequiredString(value: string, flagName: string, requirement = 'a value'): string {
   const trimmed = value.trim();
   if (!trimmed || trimmed.startsWith('--')) {
     throw new Error(`${flagName} requires ${requirement}`);
@@ -1225,9 +1215,7 @@ function normalizeObservationIdsBySource(
         observationIds,
       };
     })
-    .filter((item): item is { sourceName: string; observationIds: string[] } =>
-      Boolean(item),
-    );
+    .filter((item): item is { sourceName: string; observationIds: string[] } => Boolean(item));
   return rows.length > 0 ? rows : undefined;
 }
 
@@ -1285,7 +1273,10 @@ function serializeValue(value: unknown): string {
   if (typeof value === 'string') return `s:${value.trim().toLowerCase()}`;
   if (typeof value === 'number' || typeof value === 'boolean') return `p:${String(value)}`;
   if (Array.isArray(value)) {
-    return `a:[${value.map((item) => serializeValue(item)).sort().join(',')}]`;
+    return `a:[${value
+      .map((item) => serializeValue(item))
+      .sort()
+      .join(',')}]`;
   }
   if (typeof value === 'object') {
     return `o:${JSON.stringify(value, Object.keys(value as object).sort())}`;

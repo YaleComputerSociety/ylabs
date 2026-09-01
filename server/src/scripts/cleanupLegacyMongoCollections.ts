@@ -26,6 +26,19 @@ const EMPTY_LEGACY_COLLECTIONS = [
   'research_group_members',
   'research_group_stats',
   'paper_group_links',
+  // Retired models whose collections outlived them. `papers`/`paper_authors`
+  // are owned by retire:bibliographic-mirror and `student_applications` is the
+  // applications migration target above, so neither is listed here.
+  'faculty_members',
+  'listings',
+  'listingclaimrequests',
+  'research_scholarly_links',
+  'research_scholarly_attributions',
+  'student_engagement_events',
+  'student_outreaches',
+  'student_profiles',
+  'student_trackings',
+  'saved_searches',
 ];
 
 function parseRequiredOutputPath(value: string | undefined): string {
@@ -82,7 +95,9 @@ export function assertLegacyCleanupWriteAllowed(
   mongoUrl?: string,
 ) {
   if (args.mode === 'drop-legacy' && !args.confirmDropLegacy) {
-    throw new Error('--confirm-drop-legacy is required when --drop-legacy is set for legacy:cleanup');
+    throw new Error(
+      '--confirm-drop-legacy is required when --drop-legacy is set for legacy:cleanup',
+    );
   }
 
   return assertScriptApplyAllowed({

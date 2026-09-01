@@ -19,23 +19,6 @@ export interface ProfileImageIssueSample {
   profileUrls?: Record<string, string>;
 }
 
-export interface DuplicateProfileImageFinding {
-  imageUrl: string;
-  count: number;
-  distinctNameCount: number;
-  users: ProfileImageIssueSample[];
-}
-
-export interface ProfileImageQualitySummary {
-  userCount: number;
-  usersWithImageCount: number;
-  nonPersonImageCount: number;
-  duplicateImageGroupCount: number;
-  duplicateImageUserCount: number;
-  nonPersonImages: ProfileImageIssueSample[];
-  duplicateImages: DuplicateProfileImageFinding[];
-}
-
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
@@ -51,7 +34,9 @@ const normalizedName = (user: ProfileImageAuditUser): string =>
     .trim();
 
 const normalizedIdentityKey = (user: ProfileImageAuditUser): string =>
-  normalizedName(user) || textValue(user.netid).toLowerCase() || textValue(user.email).toLowerCase();
+  normalizedName(user) ||
+  textValue(user.netid).toLowerCase() ||
+  textValue(user.email).toLowerCase();
 
 export function normalizedProfileImageUrl(value: unknown): string {
   const raw = textValue(value);
@@ -118,59 +103,4 @@ export function isSharedProfileImageAcrossDifferentNames(
     const candidateName = normalizedName(candidate);
     return Boolean(candidateName && candidateName !== currentName);
   });
-}
-
-const sampleForUser = (user: ProfileImageAuditUser): ProfileImageIssueSample => ({
-  id: user.id,
-  netid: user.netid,
-  name: userName(user),
-  email: user.email,
-  title: user.title,
-  imageUrl: textValue(user.imageUrl),
-  profileUrls: user.profileUrls,
-});
-
-export function buildProfileImageQualitySummary(
-  users: ProfileImageAuditUser[],
-  options: { sampleLimit?: number } = {},
-): ProfileImageQualitySummary {
-  const sampleLimit = options.sampleLimit ?? 25;
-  const usersWithImage = users.filter((user) => textValue(user.imageUrl));
-  const nonPersonImages = usersWithImage
-    .filter((user) => isNonPersonProfileImageUrl(user.imageUrl))
-    .map(sampleForUser)
-    .slice(0, sampleLimit);
-
-  const grouped = new Map<string, ProfileImageAuditUser[]>();
-  for (const user of usersWithImage) {
-    if (!isLikelyPublicProfileImageUrl(user.imageUrl)) continue;
-    const key = normalizedProfileImageUrl(user.imageUrl);
-    grouped.set(key, [...(grouped.get(key) || []), user]);
-  }
-
-  const duplicateImages = Array.from(grouped.entries())
-    .flatMap(([imageUrl, groupedUsers]) => {
-      if (groupedUsers.length <= 1) return [];
-      const distinctNames = new Set(groupedUsers.map(normalizedName).filter(Boolean));
-      if (distinctNames.size <= 1) return [];
-      return [
-        {
-          imageUrl,
-          count: groupedUsers.length,
-          distinctNameCount: distinctNames.size,
-          users: groupedUsers.map(sampleForUser).slice(0, sampleLimit),
-        },
-      ];
-    })
-    .sort((a, b) => b.count - a.count || a.imageUrl.localeCompare(b.imageUrl));
-
-  return {
-    userCount: users.length,
-    usersWithImageCount: usersWithImage.length,
-    nonPersonImageCount: usersWithImage.filter((user) => isNonPersonProfileImageUrl(user.imageUrl)).length,
-    duplicateImageGroupCount: duplicateImages.length,
-    duplicateImageUserCount: duplicateImages.reduce((sum, finding) => sum + finding.count, 0),
-    nonPersonImages,
-    duplicateImages: duplicateImages.slice(0, sampleLimit),
-  };
 }

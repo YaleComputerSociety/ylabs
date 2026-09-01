@@ -5,8 +5,16 @@ import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import {
   buildFundingResearchEntityDedupePlan,
+  buildMultiPersonEntityQuarantine,
   buildOfficialLabUrlResearchEntityDedupePlan,
+  buildOrgNameResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
+  buildSameNameDifferentPersonQuarantine,
+  buildSharedPersonIdResearchEntityDedupePlan,
+  buildSpecificProfileLabUrlResearchEntityDedupePlan,
+  buildWebsiteUrlResearchEntityDedupePlan,
+  normalizeWebsiteUrlIdentityKey,
+  specificProfileLabUrlIdentityKey,
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
@@ -85,6 +93,312 @@ describe('buildResearchEntityPiDedupePlan', () => {
         duplicateEntityIds: ['profile-shell'],
         canonicalSlug: 'ysm-zhang',
         duplicateSlugs: ['faculty-research-area-fixture-access-lead'],
+      },
+    ]);
+  });
+
+  it('carries NIH grant funding evidence from a merged PI-derived shell in the generic dedupe lane', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-quill-user',
+        normalizedName: 'same-pi:fixture-quill-user',
+        piFirstName: 'Nadia',
+        piLastName: 'Quill',
+        entities: [
+          {
+            id: 'nih-quill-shell',
+            slug: 'nih-pi-nadia-quill',
+            name: 'Nadia Quill Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/20000001'],
+            recentGrantCount: 1,
+            fundingAgencies: ['NIH'],
+            recentGrants: [
+              {
+                id: '20000001',
+                agency: 'NIH',
+                title: 'Fixture Quill grant',
+                startDate: '2023-01-01',
+                url: 'https://reporter.nih.gov/project-details/20000001',
+              },
+            ],
+          },
+          {
+            id: 'quill-faculty-home',
+            slug: 'dept-cs-nadia-quill',
+            name: 'Nadia Quill',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://cs.yale.edu/profile/nadia-quill/',
+            sourceUrls: ['https://cs.yale.edu/profile/nadia-quill/'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'quill-faculty-home',
+        duplicateEntityIds: ['nih-quill-shell'],
+        mergedRecentGrantCount: 1,
+        mergedFundingAgencies: ['NIH'],
+      },
+    ]);
+    expect(plan[0]?.mergedRecentGrants?.[0]).toMatchObject({ id: '20000001' });
+  });
+
+  describe('cross-cutting institute department graft corroboration (#734)', () => {
+    it('strips an uncorroborated biomedical department seed grafted from a low-trust affiliate shell', () => {
+      const plan = buildResearchEntityPiDedupePlan([
+        {
+          userId: 'fixture-ellis-user',
+          normalizedName: 'same-pi:fixture-ellis-user',
+          piFirstName: 'Jordan',
+          piLastName: 'Ellis',
+          entities: [
+            {
+              id: 'faculty-home',
+              slug: 'dept-cs-jordan-ellis',
+              name: 'Jordan Ellis',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl: 'https://cs.yale.edu/ellis',
+              sourceUrls: ['https://cs.yale.edu/ellis'],
+              departments: ['Computer Science'],
+              researchAreas: ['Computer Graphics', 'Geometric Learning'],
+            },
+            {
+              id: 'institute-shell',
+              slug: 'nsf-pi-jordan-ellis',
+              name: 'Jordan Ellis Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              sourceUrls: [
+                'https://wti.yale.edu/humans/faculty',
+                'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500099',
+              ],
+              departments: [
+                'Neuroscience',
+                'Psychology',
+                'Molecular, Cellular, and Developmental Biology',
+              ],
+            },
+          ],
+        },
+      ]);
+
+      expect(plan).toMatchObject([
+        { canonicalEntityId: 'faculty-home', duplicateEntityIds: ['institute-shell'] },
+      ]);
+      expect(plan[0].mergedDepartments).toEqual(['Computer Science']);
+    });
+
+    it('keeps the biomedical department tuple when the merged researchAreas corroborate it', () => {
+      const plan = buildResearchEntityPiDedupePlan([
+        {
+          userId: 'fixture-ellis-user',
+          normalizedName: 'same-pi:fixture-ellis-user',
+          piFirstName: 'Jordan',
+          piLastName: 'Ellis',
+          entities: [
+            {
+              id: 'faculty-home',
+              slug: 'dept-cs-jordan-ellis',
+              name: 'Jordan Ellis',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl: 'https://cs.yale.edu/ellis',
+              sourceUrls: ['https://cs.yale.edu/ellis'],
+              departments: ['Computer Science'],
+              researchAreas: ['Computer Graphics', 'Cognitive Neuroscience'],
+            },
+            {
+              id: 'institute-shell',
+              slug: 'nsf-pi-jordan-ellis',
+              name: 'Jordan Ellis Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              sourceUrls: [
+                'https://wti.yale.edu/humans/faculty',
+                'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500099',
+              ],
+              departments: [
+                'Neuroscience',
+                'Psychology',
+                'Molecular, Cellular, and Developmental Biology',
+              ],
+            },
+          ],
+        },
+      ]);
+
+      expect(plan[0].mergedDepartments).toEqual([
+        'Computer Science',
+        'Neuroscience',
+        'Psychology',
+        'Molecular, Cellular, and Developmental Biology',
+      ]);
+    });
+
+    it('keeps the biomedical department tuple when a trusted, non-shell entity independently carries it', () => {
+      const plan = buildResearchEntityPiDedupePlan([
+        {
+          userId: 'fixture-ellis-user',
+          normalizedName: 'same-pi:fixture-ellis-user',
+          piFirstName: 'Jordan',
+          piLastName: 'Ellis',
+          entities: [
+            {
+              id: 'faculty-home',
+              slug: 'dept-neuro-jordan-ellis',
+              name: 'Jordan Ellis',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl: 'https://medicine.yale.edu/profile/jordan-ellis/',
+              sourceUrls: ['https://medicine.yale.edu/profile/jordan-ellis/'],
+              departments: [
+                'Neuroscience',
+                'Psychology',
+                'Molecular, Cellular, and Developmental Biology',
+              ],
+              researchAreas: ['Statistics'],
+            },
+            {
+              id: 'institute-shell',
+              slug: 'nsf-pi-jordan-ellis',
+              name: 'Jordan Ellis Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              sourceUrls: ['https://wti.yale.edu/humans/faculty'],
+              departments: ['Genetics'],
+            },
+          ],
+        },
+      ]);
+
+      expect(plan[0].mergedDepartments).toEqual([
+        'Neuroscience',
+        'Psychology',
+        'Molecular, Cellular, and Developmental Biology',
+        'Genetics',
+      ]);
+    });
+
+    it('never strips a lone member of the biomedical tuple when the other two never co-occur', () => {
+      const plan = buildResearchEntityPiDedupePlan([
+        {
+          userId: 'fixture-ellis-user',
+          normalizedName: 'same-pi:fixture-ellis-user',
+          piFirstName: 'Jordan',
+          piLastName: 'Ellis',
+          entities: [
+            {
+              id: 'faculty-home',
+              slug: 'dept-neuro-jordan-ellis',
+              name: 'Jordan Ellis',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl: 'https://medicine.yale.edu/profile/jordan-ellis/',
+              sourceUrls: ['https://medicine.yale.edu/profile/jordan-ellis/'],
+              departments: ['Neuroscience'],
+              researchAreas: ['Statistics'],
+            },
+            {
+              id: 'institute-shell',
+              slug: 'nsf-pi-jordan-ellis',
+              name: 'Jordan Ellis Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              sourceUrls: ['https://wti.yale.edu/humans/faculty'],
+              departments: ['Genetics'],
+            },
+          ],
+        },
+      ]);
+
+      expect(plan[0].mergedDepartments).toEqual(['Neuroscience', 'Genetics']);
+    });
+  });
+
+  it('keeps a real-website faculty home as canonical instead of archiving it into the PI-derived grant shell', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-fenwick-user',
+        normalizedName: 'same-pi:fixture-fenwick-user',
+        piFirstName: 'Robin',
+        piLastName: 'Fenwick',
+        entities: [
+          {
+            id: 'grant-shell',
+            slug: 'nsf-pi-robin-fenwick',
+            name: 'Robin Fenwick Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://efficient-computing.example.org/',
+            sourceUrls: [
+              'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500001',
+              'https://efficient-computing.example.org/',
+            ],
+          },
+          {
+            id: 'faculty-home',
+            slug: 'dept-cs-robin-fenwick',
+            name: 'Robin Fenwick',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://efficient-computing.example.org/',
+            sourceUrls: [
+              'https://efficient-computing.example.org/',
+              'https://cs.yale.edu/profile/robin-fenwick/',
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      { canonicalEntityId: 'faculty-home', duplicateEntityIds: ['grant-shell'] },
+    ]);
+    expect(plan.some((group) => group.duplicateEntityIds.includes('faculty-home'))).toBe(false);
+  });
+
+  it('carries the concrete website and name from a merged grant shell onto a canonical that lacks its own site', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-chen-user',
+        normalizedName: 'same-pi:fixture-chen-user',
+        piFirstName: 'Riley',
+        piLastName: 'Chen',
+        entities: [
+          {
+            id: 'dept-home',
+            slug: 'dept-cs-riley-chen',
+            name: 'Riley Chen Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            sourceUrls: ['https://cs.yale.edu/profile/riley-chen/'],
+          },
+          {
+            id: 'grant-shell',
+            slug: 'nsf-pi-riley-chen',
+            name: 'Riley Chen Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://chen-systems.example.org/',
+            sourceUrls: [
+              'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500003',
+              'https://chen-systems.example.org/',
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'dept-home',
+        duplicateEntityIds: ['grant-shell'],
+        canonicalWebsiteUrl: 'https://chen-systems.example.org/',
+        canonicalName: 'Riley Chen Lab',
       },
     ]);
   });
@@ -288,6 +602,81 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(plan).toEqual([]);
   });
 
+  it('merges a RoleAssignment-corroborated surname-only lab with its own website into the same-PI funding shell (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'townsend-person-id',
+        normalizedName: 'same-pi:townsend-person-id',
+        piFirstName: 'Jeffrey',
+        piLastName: 'Townsend',
+        entities: [
+          {
+            id: 'canonical-townsend',
+            slug: 'ysm-townsend',
+            name: 'Townsend Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/townsend/',
+            sourceUrls: ['https://medicine.yale.edu/lab/townsend/'],
+            departments: ['Biostatistics'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'funding-shell-townsend',
+            slug: 'nsf-pi-67d8927f50621bcef434a16d',
+            name: 'Jeffrey Townsend Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/10845546'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'canonical-townsend',
+        duplicateEntityIds: ['funding-shell-townsend'],
+        canonicalSlug: 'ysm-townsend',
+        duplicateSlugs: ['nsf-pi-67d8927f50621bcef434a16d'],
+      },
+    ]);
+  });
+
+  it('does not merge a surname-only lab with its own website when the person linkage is uncorroborated (#1113 guard)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'name:townsend',
+        normalizedName: 'name:townsend',
+        piFirstName: 'Jeffrey',
+        piLastName: 'Townsend',
+        entities: [
+          {
+            id: 'canonical-townsend',
+            slug: 'ysm-townsend',
+            name: 'Townsend Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/townsend/',
+            sourceUrls: ['https://medicine.yale.edu/lab/townsend/'],
+            departments: ['Biostatistics'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'funding-shell-townsend',
+            slug: 'nsf-pi-67d8927f50621bcef434a16d',
+            name: 'Jeffrey Townsend Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/10845546'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
   it('merges same-PI full-name and compound-surname lab names', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
@@ -364,6 +753,124 @@ describe('buildResearchEntityPiDedupePlan', () => {
         duplicateSlugs: ['zhang-lab-yz52'],
       },
     ]);
+  });
+
+  it('folds a PI-named funding shell into a same-PI home whose own name is topical (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-habit-lead-user',
+        normalizedName: 'same-pi:fixture-habit-lead-user',
+        piFirstName: 'Krysten',
+        piLastName: 'Bold',
+        entities: [
+          {
+            id: 'concrete-topical-home',
+            slug: 'ysm-bold',
+            name: 'HABIT Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/bold/',
+            sourceUrls: ['https://medicine.yale.edu/lab/bold/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'funding-name-shell',
+            slug: 'nih-pi-krysten-bold',
+            name: 'Krysten Bold Lab',
+            websiteUrl: 'https://medicine.yale.edu/profile/krysten-bold/',
+            sourceUrls: ['https://medicine.yale.edu/profile/krysten-bold/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        dedupeCategory: 'profile_area_shell_with_concrete_home',
+        canonicalEntityId: 'concrete-topical-home',
+        duplicateEntityIds: ['funding-name-shell'],
+        canonicalSlug: 'ysm-bold',
+        duplicateSlugs: ['nih-pi-krysten-bold'],
+      },
+    ]);
+  });
+
+  it('never merges two same-PI entities that both carry their own concrete lab website (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-fucito-lead-user',
+        normalizedName: 'same-pi:fixture-fucito-lead-user',
+        piFirstName: 'Fixture',
+        piLastName: 'Fucito',
+        entities: [
+          {
+            id: 'branded-home',
+            slug: 'ysm-digital',
+            name: 'DIGITAL Insights Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/digital/',
+            sourceUrls: ['https://medicine.yale.edu/lab/digital/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'surname-home',
+            slug: 'ysm-fucito',
+            name: 'Fucito Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fucito/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fucito/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('does not fold a PI-named shell when the person runs several concrete-website homes (#1136)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-multi-lead-user',
+        normalizedName: 'same-pi:fixture-multi-lead-user',
+        piFirstName: 'Fixture',
+        piLastName: 'Multi',
+        entities: [
+          {
+            id: 'topical-home-one',
+            slug: 'ysm-genomics',
+            name: 'Applied Genomics Collaborative',
+            websiteUrl: 'https://medicine.yale.edu/lab/genomics/',
+            sourceUrls: ['https://medicine.yale.edu/lab/genomics/'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'topical-home-two',
+            slug: 'ysm-imaging',
+            name: 'Systems Imaging Center',
+            websiteUrl: 'https://medicine.yale.edu/lab/imaging/',
+            sourceUrls: ['https://medicine.yale.edu/lab/imaging/'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'funding-multi-shell',
+            slug: 'nih-pi-fixture-multi',
+            name: 'Fixture Multi Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/10777777'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
   });
 
   it('selects only planned duplicate entity ids as same-PI duplicate visibility risk', () => {
@@ -458,7 +965,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
               'https://medicine.yale.edu/cancer/profile/fixture-systems-lead/',
               'https://medicine.yale.edu/profile/fixture-systems-lead/',
             ],
-            fullDescription: 'Research fields include systems immunology, maternal-infant dyads, and vaccines.',
+            fullDescription:
+              'Research fields include systems immunology, maternal-infant dyads, and vaccines.',
             shortDescription: 'Studies systems immunology, maternal-infant dyads, and vaccines.',
           },
         ],
@@ -658,6 +1166,76 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(plan[0]?.mergedResearchAreas).toEqual(['Cell signaling']);
   });
 
+  it('does not graft wrong-domain research areas from a low-trust funding shell and repairs a hallucinated canonical description with a fuller correct sibling (The Faboratory)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-kramer-bottiglio-user',
+        normalizedName: 'same-pi:fixture-kramer-bottiglio-user',
+        piFirstName: 'Rebecca',
+        piLastName: 'Kramer-Bottiglio',
+        entities: [
+          {
+            id: 'faboratory',
+            slug: 'kramer-bottiglio-lab-rk673',
+            name: 'Rebecca Kramer-Bottiglio Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://www.eng.yale.edu/faboratory/',
+            sourceUrls: ['https://www.eng.yale.edu/faboratory/'],
+            departments: ['Mechanical Engineering'],
+            researchAreas: [
+              'fabrication',
+              'Manufacturing',
+              'materials',
+              'Robotics',
+              'soft robotics',
+            ],
+            fullDescription:
+              'The Rebecca Kramer-Bottiglio Lab focuses on research in Optical Network Technologies, Photonic and Optical Devices, and Semiconductor Lasers and Optical Devices.',
+          },
+          {
+            id: 'nsf-shell',
+            slug: 'nsf-pi-kramer-bottiglio',
+            name: 'Rebecca Kramer-Bottiglio Lab',
+            sourceUrls: ['https://www.nsf.gov/awardsearch/showAward?AWD_ID=2233445'],
+            researchAreas: ['Optics', 'Photonics'],
+          },
+          {
+            id: 'dept-home',
+            slug: 'dept-seas-rebecca-kramer-bottiglio',
+            name: 'Rebecca Kramer-Bottiglio',
+            sourceUrls: ['https://seas.yale.edu/faculty/rebecca-kramer-bottiglio'],
+            researchAreas: [
+              'soft robotics',
+              'multifunctional materials',
+              'adaptive systems',
+              'manufacturing techniques',
+            ],
+            fullDescription:
+              'The Kramer-Bottiglio Lab designs soft, multifunctional robotic materials that merge structure and function, drawing on manufacturing techniques for adaptive systems that reconfigure their shape and stiffness on demand.',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    const group = plan[0];
+    expect(group.canonicalEntityId).toBe('faboratory');
+    expect([...group.duplicateEntityIds].sort()).toEqual(['dept-home', 'nsf-shell']);
+    expect(group.mergedResearchAreas).not.toContain('Optics');
+    expect(group.mergedResearchAreas).not.toContain('Photonics');
+    expect(group.mergedResearchAreas).toEqual(
+      expect.arrayContaining([
+        'fabrication',
+        'soft robotics',
+        'multifunctional materials',
+        'adaptive systems',
+        'manufacturing techniques',
+      ]),
+    );
+    expect(group.canonicalFullDescription).toContain('soft, multifunctional robotic materials');
+  });
+
   it('keeps the strongest current member row and retires duplicate memberships', () => {
     expect(
       selectCurrentMemberIdsToRetire([
@@ -689,7 +1267,11 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
+      orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
+      sharedPersonId: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -702,7 +1284,11 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
+      orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
+      sharedPersonId: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -721,7 +1307,11 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
+      orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: true,
+      sharedPersonId: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -734,33 +1324,45 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: true,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
+      orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
+      sharedPersonId: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
       slug: undefined,
     });
+    const acceptedDecisionsPath = path.join(
+      os.tmpdir(),
+      'ylabs-research-entity-pi-dedupe-accepted-decisions.json',
+    );
+    const decisionTemplatePath = path.join(
+      os.tmpdir(),
+      'ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
+    );
+    const outputPath = path.join(os.tmpdir(), 'ylabs-research-entity-dedupe.json');
     expect(
       parseResearchEntityPiDedupeArgs([
         '--mode=dry-run',
         '--limit=250',
         '--max-apply=2',
-        '--accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json',
+        `--accepted-decisions=${acceptedDecisionsPath}`,
         '--allow-empty-decisions',
         '--decision-template-output',
-        '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
-        '--output=/tmp/ylabs-research-entity-dedupe.json',
+        decisionTemplatePath,
+        `--output=${outputPath}`,
       ]),
     ).toMatchObject({
       apply: false,
       limit: 250,
       limitProvided: true,
       maxApply: 2,
-      acceptedDecisions: '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json',
+      acceptedDecisions: acceptedDecisionsPath,
       allowEmptyDecisions: true,
-      decisionTemplateOutput:
-        '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
-      output: '/tmp/ylabs-research-entity-dedupe.json',
+      decisionTemplateOutput: decisionTemplatePath,
+      output: outputPath,
     });
   });
 
@@ -792,9 +1394,9 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(() =>
       parseResearchEntityPiDedupeArgs(['--decision-template-output', '--apply']),
     ).toThrow(/--decision-template-output requires a path/);
-    expect(() =>
-      parseResearchEntityPiDedupeArgs(['--decision-template-output=--apply']),
-    ).toThrow(/--decision-template-output requires a path/);
+    expect(() => parseResearchEntityPiDedupeArgs(['--decision-template-output=--apply'])).toThrow(
+      /--decision-template-output requires a path/,
+    );
     expect(() => parseResearchEntityPiDedupeArgs(['--output=/var/tmp/entity-dedupe.json'])).toThrow(
       /--output must write under/,
     );
@@ -917,9 +1519,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
   });
 
   it('blocks archived-document conflict deletion unless delete mode explicitly allows it', () => {
-    expect(chooseArchivedDocumentConflictOutcome({ allowDeleteOnConflict: false })).toBe(
-      'blocked',
-    );
+    expect(chooseArchivedDocumentConflictOutcome({ allowDeleteOnConflict: false })).toBe('blocked');
     expect(chooseArchivedDocumentConflictOutcome({ allowDeleteOnConflict: true })).toBe('delete');
   });
 
@@ -1020,6 +1620,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
             'Radioactive element chemistry and processing',
             'Extraction and Separation Processes',
           ],
+          canonicalName: 'Jamie Award Lab',
+          canonicalWebsiteUrl: 'https://award-lab.example.org/',
         },
       ]),
     ).toMatchObject({
@@ -1030,6 +1632,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
       crossDepartmentGroups: 1,
       groupsWithMergedResearchAreas: 1,
       highResearchAreaMergeGroups: 1,
+      groupsCarryingCanonicalName: 1,
+      groupsCarryingCanonicalWebsite: 1,
       recommendedNarrowCommands: [
         'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --reviewed-profile-area-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-reviewed-profile-area.json',
         'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --funding-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-funding-only.json',
@@ -1059,9 +1663,9 @@ describe('buildResearchEntityPiDedupePlan', () => {
       plannedGroups: 1,
       plannedDuplicateEntities: 2,
     });
-    expect(() =>
-      writeResearchEntityPiDedupeOutput(payload, '/var/tmp/entity-dedupe.json'),
-    ).toThrow(/--output must write under/);
+    expect(() => writeResearchEntityPiDedupeOutput(payload, '/var/tmp/entity-dedupe.json')).toThrow(
+      /--output must write under/,
+    );
   });
 
   it('builds same-PI dedupe reviewer decision templates without enabling apply', () => {
@@ -1100,10 +1704,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       ],
     });
     expect(() =>
-      writeResearchEntityPiDedupeDecisionTemplate(
-        template,
-        '/var/tmp/entity-dedupe-template.json',
-      ),
+      writeResearchEntityPiDedupeDecisionTemplate(template, '/var/tmp/entity-dedupe-template.json'),
     ).toThrow(/--decision-template-output must write under/);
   });
 
@@ -1249,7 +1850,11 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: true,
       fullPlan: false,
       officialLabUrlOnly: false,
+      profileLabUrlOnly: false,
+      orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
+      sharedPersonId: false,
       limit: 50,
       limitProvided: true,
       maxApply: 10,
@@ -1339,6 +1944,785 @@ describe('buildOfficialLabUrlResearchEntityDedupePlan', () => {
         },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('specificProfileLabUrlIdentityKey', () => {
+  it('keys a /lab/ or /profile/ path on a yale.edu host, scheme/slash/www-agnostic', () => {
+    expect(specificProfileLabUrlIdentityKey('https://medicine.yale.edu/lab/pierce/')).toBe(
+      'medicine.yale.edu/lab/pierce',
+    );
+    expect(specificProfileLabUrlIdentityKey('http://www.medicine.yale.edu/profile/jack-tsai')).toBe(
+      'medicine.yale.edu/profile/jack-tsai',
+    );
+  });
+
+  it('returns empty for non-yale hosts, generic paths, and unparseable values', () => {
+    expect(specificProfileLabUrlIdentityKey('https://example.com/lab/pierce')).toBe('');
+    expect(specificProfileLabUrlIdentityKey('https://medicine.yale.edu/about/a-to-z-index/')).toBe(
+      '',
+    );
+    expect(specificProfileLabUrlIdentityKey('https://medicine.yale.edu/lab/')).toBe('');
+    expect(specificProfileLabUrlIdentityKey('not a url')).toBe('');
+  });
+});
+
+describe('buildSpecificProfileLabUrlResearchEntityDedupePlan', () => {
+  it('folds a FACULTY_RESEARCH_AREA facet into the concrete LAB sharing a profile URL', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/profile/jack-tsai/',
+        entities: [
+          {
+            id: 'ysm-tsai',
+            slug: 'ysm-tsai',
+            name: 'Tsai Lab',
+            entityType: 'LAB',
+            fullDescription:
+              'The Tsai Lab studies homelessness, veteran mental health, and community reintegration across health systems.',
+            sourceUrls: ['https://medicine.yale.edu/profile/jack-tsai/'],
+            researchAreas: ['Homelessness'],
+          },
+          {
+            id: 'ysm-faculty-jack-tsai',
+            slug: 'ysm-faculty-jack-tsai',
+            name: 'Jack Tsai Faculty Research',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.yale.edu/profile/jack-tsai/'],
+            researchAreas: ['Veteran Mental Health', 'Community Reintegration'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('ysm-tsai');
+    expect(plan[0].duplicateEntityIds).toEqual(['ysm-faculty-jack-tsai']);
+    expect(plan[0].mergedResearchAreas).toEqual(
+      expect.arrayContaining(['Homelessness', 'Veteran Mental Health', 'Community Reintegration']),
+    );
+  });
+
+  it('merges two lab slugs on a shared lab URL when the surname agrees', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/pierce/',
+        entities: [
+          {
+            id: 'ysm-pierce',
+            slug: 'ysm-pierce',
+            name: 'Pierce Lab',
+            entityType: 'LAB',
+            fullDescription: 'The Pierce Lab investigates airway epithelial biology and repair.',
+            websiteUrl: 'https://medicine.yale.edu/lab/pierce/',
+          },
+          {
+            id: 'ysm-faculty-richard-pierce',
+            slug: 'ysm-faculty-richard-pierce',
+            name: 'Pierce Lab',
+            entityType: 'LAB',
+            fullDescription:
+              'The Pierce Lab investigates airway epithelial biology, mucosal immunity, and tissue repair across models.',
+            sourceUrls: ['https://medicine.yale.edu/lab/pierce/'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(new Set([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds])).toEqual(
+      new Set(['ysm-pierce', 'ysm-faculty-richard-pierce']),
+    );
+  });
+
+  it('does not merge different people who share a surname on the same URL', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/smith/',
+        entities: [
+          {
+            id: 'ysm-faculty-john-smith',
+            slug: 'ysm-faculty-john-smith',
+            name: 'John Smith Lab',
+            entityType: 'LAB',
+            fullDescription: 'The John Smith Lab studies cardiac electrophysiology.',
+          },
+          {
+            id: 'ysm-faculty-jane-smith',
+            slug: 'ysm-faculty-jane-smith',
+            name: 'Jane Smith Lab',
+            entityType: 'LAB',
+            fullDescription: 'The Jane Smith Lab studies developmental neuroscience.',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('excludes a CENTER the person merely belongs to and funding shells', () => {
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/lab/reed/',
+          entities: [
+            { id: 'ysm-reed', slug: 'ysm-reed', name: 'Reed Lab', entityType: 'LAB' },
+            {
+              id: 'center-reed',
+              slug: 'center-reed',
+              name: 'Reed Center',
+              entityType: 'CENTER',
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/lab/reed/',
+          entities: [
+            { id: 'ysm-reed', slug: 'ysm-reed', name: 'Reed Lab', entityType: 'LAB' },
+            {
+              id: 'nih-pi-reed',
+              slug: 'nih-pi-reed',
+              name: 'Reed Lab',
+              entityType: 'LAB',
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('does not let a bare-surname node bridge two conflicting first names into one merge', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/smith/',
+        entities: [
+          {
+            id: 'ysm-faculty-john-smith',
+            slug: 'ysm-faculty-john-smith',
+            name: 'John Smith Lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'ysm-faculty-robert-smith',
+            slug: 'ysm-faculty-robert-smith',
+            name: 'Robert Smith Lab',
+            entityType: 'LAB',
+          },
+          { id: 'ysm-smith', slug: 'ysm-smith', name: 'Smith Lab', entityType: 'LAB' },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('merges a same-person multi-member cluster into one canonical', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/menon/',
+        entities: [
+          {
+            id: 'ysm-menon',
+            slug: 'ysm-menon',
+            name: 'Menon Lab',
+            entityType: 'LAB',
+            fullDescription: 'The Menon Lab studies transplant immunology and kidney disease.',
+            researchAreas: ['Transplant Immunology'],
+          },
+          {
+            id: 'ysm-faculty-madhav-menon',
+            slug: 'ysm-faculty-madhav-menon',
+            name: 'Menon Lab',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            researchAreas: ['Kidney Disease'],
+          },
+          {
+            id: 'ysm-faculty-gcb27',
+            slug: 'ysm-faculty-gcb27',
+            name: 'Menon',
+            entityType: 'FACULTY_RESEARCH_AREA',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('ysm-menon');
+    expect(new Set(plan[0].duplicateEntityIds)).toEqual(
+      new Set(['ysm-faculty-madhav-menon', 'ysm-faculty-gcb27']),
+    );
+  });
+
+  it('keeps the namesake merge but drops a lab member mislabeled under the lab name', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/bunick/',
+        entities: [
+          {
+            id: 'ysm-bunick',
+            slug: 'ysm-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+            fullDescription:
+              'The Bunick Lab studies structural biology of skin and circadian proteins.',
+          },
+          {
+            id: 'ysm-faculty-christopher-bunick',
+            slug: 'ysm-faculty-christopher-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'ysm-faculty-ivan-lomakin',
+            slug: 'ysm-faculty-ivan-lomakin',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    const members = new Set([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds]);
+    expect(members).toEqual(new Set(['ysm-bunick', 'ysm-faculty-christopher-bunick']));
+    expect(members.has('ysm-faculty-ivan-lomakin')).toBe(false);
+    expect(plan[0].canonicalEntityId).toBe('ysm-bunick');
+  });
+
+  it('drops a dept-slug lab member mislabeled under the lab name', () => {
+    const plan = buildSpecificProfileLabUrlResearchEntityDedupePlan([
+      {
+        url: 'https://medicine.yale.edu/lab/bunick/',
+        entities: [
+          {
+            id: 'ysm-bunick',
+            slug: 'ysm-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+            fullDescription:
+              'The Bunick Lab studies structural biology of skin and circadian proteins.',
+          },
+          {
+            id: 'dept-derm-christopher-bunick',
+            slug: 'dept-derm-christopher-bunick',
+            name: 'Bunick Lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'dept-neuro-ivan-lomakin',
+            slug: 'dept-neuro-ivan-lomakin',
+            name: 'Bunick Lab',
+            entityType: 'FACULTY_RESEARCH_AREA',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    const members = new Set([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds]);
+    expect(members).toEqual(new Set(['ysm-bunick', 'dept-derm-christopher-bunick']));
+    expect(members.has('dept-neuro-ivan-lomakin')).toBe(false);
+    expect(plan[0].canonicalEntityId).toBe('ysm-bunick');
+  });
+
+  it('does not merge when the only counterpart is a differently-named lab member', () => {
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/lab/decamilli/',
+          entities: [
+            {
+              id: 'ysm-decamilli',
+              slug: 'ysm-decamilli',
+              name: 'De Camilli Lab',
+              entityType: 'LAB',
+            },
+            {
+              id: 'ysm-faculty-hanieh-falahati',
+              slug: 'ysm-faculty-hanieh-falahati',
+              name: 'De Camilli Lab',
+              entityType: 'FACULTY_RESEARCH_AREA',
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('excludes a cluster when any member has an unresolved entityType', () => {
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/lab/reed/',
+          entities: [
+            { id: 'ysm-reed', slug: 'ysm-reed', name: 'Reed Lab', entityType: 'LAB' },
+            { id: 'ysm-reed-2', slug: 'ysm-reed-2', name: 'Reed Lab', entityType: undefined },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('ignores a generic non-lab/profile shared URL', () => {
+    expect(
+      buildSpecificProfileLabUrlResearchEntityDedupePlan([
+        {
+          url: 'https://medicine.yale.edu/about/a-to-z-index/',
+          entities: [
+            { id: 'ysm-one', slug: 'ysm-one', name: 'One Lab', entityType: 'LAB' },
+            { id: 'ysm-two', slug: 'ysm-two', name: 'Two Lab', entityType: 'LAB' },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('normalizeWebsiteUrlIdentityKey', () => {
+  it('collapses scheme, trailing slash, and www to one key', () => {
+    const key = 'marlowelab.example.edu';
+    expect(normalizeWebsiteUrlIdentityKey('http://marlowelab.example.edu/')).toBe(key);
+    expect(normalizeWebsiteUrlIdentityKey('https://marlowelab.example.edu')).toBe(key);
+    expect(normalizeWebsiteUrlIdentityKey('https://www.marlowelab.example.edu/')).toBe(key);
+  });
+
+  it('preserves a distinguishing path and drops query/fragment', () => {
+    expect(normalizeWebsiteUrlIdentityKey('https://stat.example.edu/~ab12/?x=1#top')).toBe(
+      'stat.example.edu/~ab12',
+    );
+  });
+
+  it('returns empty for blank or unparseable values', () => {
+    expect(normalizeWebsiteUrlIdentityKey('')).toBe('');
+    expect(normalizeWebsiteUrlIdentityKey('not a url')).toBe('');
+  });
+});
+
+describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
+  it('folds a same-person website clone into the PI-corroborated established lab', () => {
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://marlowelab.example.edu/',
+        entities: [
+          {
+            id: 'dept-eng-marlowe',
+            slug: 'dept-eng-marlowe',
+            name: 'The Marlowe Lab',
+            kind: 'lab',
+            websiteUrl: 'https://marlowelab.example.edu/',
+            shortDescription: 'The Marlowe lab integrates design and policy for sustainability.',
+            fullDescription:
+              'The Marlowe lab studies sustainable technologies across the full life cycle of materials and processes.',
+            sourceUrls: [
+              'https://engineering.example.edu/faculty/dana-marlowe',
+              'https://marlowelab.example.edu/',
+            ],
+            departments: ['Chemical Engineering'],
+            researchAreas: ['Sustainability', 'Green Chemistry'],
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'affil-marlowe-clone',
+            slug: 'affil-faculty-dana-marlowe',
+            name: 'Dana Marlowe Lab',
+            kind: 'lab',
+            websiteUrl: 'http://www.marlowelab.example.edu',
+            shortDescription: "Dr. Dana Marlowe's lab studies sustainable technologies.",
+            fullDescription: "Dr. Dana Marlowe's research focuses on sustainable technologies.",
+            sourceUrls: [
+              'https://environment.example.edu/directory/dana-marlowe',
+              'https://marlowelab.example.edu/',
+            ],
+            departments: [],
+            researchAreas: ['Circular Economy', 'Corporate Sustainability'],
+            piRoleCorroborated: false,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('dept-eng-marlowe');
+    expect(plan[0].duplicateEntityIds).toEqual(['affil-marlowe-clone']);
+    expect(plan[0].mergedResearchAreas).toEqual(
+      expect.arrayContaining([
+        'Sustainability',
+        'Green Chemistry',
+        'Circular Economy',
+        'Corporate Sustainability',
+      ]),
+    );
+  });
+
+  it('never collapses a shared group site hosting several distinct faculty', () => {
+    const sharedGroupEntities = [
+      { surname: 'fenwick', first: 'Alice', scheme: 'http://' },
+      { surname: 'castellan', first: 'Bruno', scheme: 'http://' },
+      { surname: 'okafor', first: 'Chidi', scheme: 'https://' },
+      { surname: 'delgado', first: 'Diego', scheme: 'https://' },
+    ].map((person) => ({
+      id: `dept-theory-${person.surname}`,
+      slug: `dept-theory-${person.surname}`,
+      name: `${person.first} ${person.surname[0].toUpperCase()}${person.surname.slice(1)} Faculty Research`,
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      websiteUrl: `${person.scheme}theory.example.edu/`,
+      departments: ['Physics'],
+      researchAreas: ['Theory'],
+      piRoleCorroborated: true,
+    }));
+
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      { websiteUrl: 'http://theory.example.edu/', entities: sharedGroupEntities },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('folds a funding shell into the same-person concrete home when the shared websiteUrl is a distinctive non-funding host (#1147, Zhou class)', () => {
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://stat.example.edu/~ab12/',
+        entities: [
+          {
+            id: 'nsf-pi-shell',
+            slug: 'nsf-pi-abcdef',
+            name: 'Robin Ashby Lab',
+            kind: 'lab',
+            websiteUrl: 'https://stat.example.edu/~ab12/',
+            sourceUrls: [
+              'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500123',
+              'https://stat.example.edu/~ab12/',
+            ],
+            researchAreas: ['Statistics'],
+            recentGrantCount: 1,
+            fundingAgencies: ['NSF'],
+          },
+          {
+            id: 'dept-stat-ashby',
+            slug: 'dept-statistics-robin-ashby',
+            name: 'Robin Ashby Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'http://stat.example.edu/~ab12/',
+            researchAreas: ['Statistics'],
+            piRoleCorroborated: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'dept-stat-ashby',
+        duplicateEntityIds: ['nsf-pi-shell'],
+        mergedFundingAgencies: ['NSF'],
+        mergedRecentGrantCount: 1,
+      },
+    ]);
+  });
+
+  it('leaves a faculty-research-area shell to the profile-area lane even on a distinctive host', () => {
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://stat.example.edu/~ab12/',
+        entities: [
+          {
+            id: 'area-shell',
+            slug: 'faculty-research-area-robin-ashby',
+            name: 'Robin Ashby Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://stat.example.edu/~ab12/',
+            researchAreas: ['Statistics'],
+          },
+          {
+            id: 'dept-stat-ashby',
+            slug: 'dept-statistics-robin-ashby',
+            name: 'Robin Ashby Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'http://stat.example.edu/~ab12/',
+            researchAreas: ['Statistics'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('leaves a funding shell to the other lanes when the shared websiteUrl host is not distinctive', () => {
+    const genericHostPlan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://medicine.yale.edu/',
+        entities: [
+          {
+            id: 'nih-pi-shell-generic',
+            slug: 'nih-pi-abcdef',
+            name: 'Robin Ashby Lab',
+            kind: 'lab',
+            websiteUrl: 'https://medicine.yale.edu/',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'dept-stat-ashby-generic',
+            slug: 'dept-statistics-robin-ashby',
+            name: 'Robin Ashby Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://medicine.yale.edu/',
+            piRoleCorroborated: false,
+          },
+        ],
+      },
+    ]);
+    expect(genericHostPlan).toEqual([]);
+
+    const fundingHostPlan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://reporter.nih.gov/project-details/20000099',
+        entities: [
+          {
+            id: 'nih-pi-shell-funding-host',
+            slug: 'nih-pi-abcdef',
+            name: 'Robin Ashby Lab',
+            kind: 'lab',
+            websiteUrl: 'https://reporter.nih.gov/project-details/20000099',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'dept-stat-ashby-funding-host',
+            slug: 'dept-statistics-robin-ashby',
+            name: 'Robin Ashby Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://reporter.nih.gov/project-details/20000099',
+            piRoleCorroborated: false,
+          },
+        ],
+      },
+    ]);
+    expect(fundingHostPlan).toEqual([]);
+  });
+
+  it('never merges a funding shell across distinct physics faculty sharing the het.yale.edu group site, even though the host is distinctive', () => {
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://het.yale.edu/',
+        entities: [
+          {
+            id: 'dept-physics-skiba',
+            slug: 'dept-physics-witold-skiba',
+            name: 'Witold Skiba Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://het.yale.edu/',
+            departments: ['Physics'],
+          },
+          {
+            id: 'dept-physics-appelquist',
+            slug: 'dept-physics-thomas-appelquist',
+            name: 'Thomas Appelquist Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://het.yale.edu/',
+            departments: ['Physics'],
+          },
+          {
+            id: 'nsf-pi-shell-het',
+            slug: 'nsf-pi-fixturehet0001',
+            name: 'Elena Voss Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://het.yale.edu/',
+            sourceUrls: ['https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500456'],
+          },
+        ],
+      },
+      {
+        websiteUrl: 'https://rhig.physics.yale.edu/',
+        entities: [
+          {
+            id: 'dept-physics-goldberger',
+            slug: 'dept-physics-walter-goldberger',
+            name: 'Walter Goldberger Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://rhig.physics.yale.edu/',
+            departments: ['Physics'],
+          },
+          {
+            id: 'dept-physics-poland',
+            slug: 'dept-physics-david-poland',
+            name: 'David Poland Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://rhig.physics.yale.edu/',
+            departments: ['Physics'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('does not cluster a solitary entity on a unique website', () => {
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl: 'https://lonelab.example.edu/',
+          entities: [
+            {
+              id: 'dept-lone',
+              slug: 'dept-lone',
+              name: 'The Lone Lab',
+              kind: 'lab',
+              websiteUrl: 'https://lonelab.example.edu/',
+              piRoleCorroborated: true,
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('buildOrgNameResearchEntityDedupePlan', () => {
+  it('merges same-name center twins into the members-rich survivor and carries the real website', () => {
+    const plan = buildOrgNameResearchEntityDedupePlan([
+      {
+        id: 'center-synthetic-genome',
+        slug: 'center-synthetic-genome',
+        name: 'Yale Center for Synthetic Genome Analysis',
+        entityType: 'CENTER',
+        websiteUrl: '',
+        sourceUrls: ['https://medicine.yale.edu/genetics/research/scga/people/'],
+        departments: ['Genetics'],
+        researchAreas: ['Genomics'],
+        memberCount: 12,
+      },
+      {
+        id: 'research-yale-synthetic-genome-shell',
+        slug: 'research-yale-synthetic-genome-analysis',
+        name: 'Yale Center for Synthetic Genome Analysis',
+        entityType: 'CENTER',
+        websiteUrl: 'https://syntheticgenome.yale.edu/',
+        sourceUrls: ['https://syntheticgenome.yale.edu/'],
+        departments: [],
+        memberCount: 0,
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('center-synthetic-genome');
+    expect(plan[0].duplicateEntityIds).toEqual(['research-yale-synthetic-genome-shell']);
+    expect(plan[0].canonicalWebsiteUrl).toBe('https://syntheticgenome.yale.edu/');
+    expect(plan[0].mergedDepartments).toContain('Genetics');
+  });
+
+  it('does not merge two different centers that merely share a word', () => {
+    expect(
+      buildOrgNameResearchEntityDedupePlan([
+        {
+          id: 'keck-mass-spec',
+          slug: 'yale-research-core-keck-mass-spectrometry',
+          name: 'Keck Mass Spectrometry and Proteomics Resource',
+          entityType: 'CORE_FACILITY',
+          websiteUrl: 'https://keckmassspec.yale.edu/',
+        },
+        {
+          id: 'keck-microarray',
+          slug: 'yale-research-core-keck-microarray',
+          name: 'Keck Microarray Shared Resource',
+          entityType: 'CORE_FACILITY',
+          websiteUrl: 'https://keckmicroarray.yale.edu/',
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('does not merge two org entities that both carry an attached PI person lead', () => {
+    expect(
+      buildOrgNameResearchEntityDedupePlan([
+        {
+          id: 'org-led-by-director-a',
+          slug: 'yse-climate-program-a',
+          name: 'Yale Program on Synthetic Climate Communication',
+          entityType: 'INITIATIVE',
+          websiteUrl: 'https://environment.yale.edu/research/centers/synthetic-climate-a',
+          hasAttachedPi: true,
+        },
+        {
+          id: 'org-led-by-director-b',
+          slug: 'yse-climate-program-b',
+          name: 'Yale Program on Synthetic Climate Communication',
+          entityType: 'INITIATIVE',
+          websiteUrl: 'https://syntheticclimate.yale.edu/',
+          hasAttachedPi: true,
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('merges a person-derived entity misnamed as a program into its real program twin (#684)', () => {
+    const plan = buildOrgNameResearchEntityDedupePlan([
+      {
+        id: 'org-program-home',
+        slug: 'yse-climate-program',
+        name: 'Yale Program on Synthetic Climate Communication (YPSCC)',
+        entityType: 'INITIATIVE',
+        websiteUrl: 'https://environment.yale.edu/research/centers/synthetic-climate',
+      },
+      {
+        id: 'person-mislabeled-as-program',
+        slug: 'yse-faculty-synthetic-person',
+        name: 'Yale Program on Synthetic Climate Communication',
+        entityType: 'INITIATIVE',
+        websiteUrl: 'https://syntheticclimate.yale.edu/',
+        hasAttachedPi: true,
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('org-program-home');
+    expect(plan[0].duplicateEntityIds).toEqual(['person-mislabeled-as-program']);
+    expect(plan[0].canonicalWebsiteUrl).toBe('https://syntheticclimate.yale.edu/');
+  });
+
+  it('corroborates a single-significant-token name via a shared distinctive host', () => {
+    const plan = buildOrgNameResearchEntityDedupePlan([
+      {
+        id: 'center-synthetic-quantum',
+        slug: 'center-synthetic-quantum-institute',
+        name: 'Yale Synthetic Institute',
+        entityType: 'INSTITUTE',
+        websiteUrl: '',
+        sourceUrls: ['https://synthquantum.yale.edu/people/members'],
+        memberCount: 20,
+      },
+      {
+        id: 'shell-synthetic-quantum',
+        slug: 'yale-research-center-synthetic-institute',
+        name: 'Yale Synthetic Institute',
+        entityType: 'INSTITUTE',
+        websiteUrl: 'https://synthquantum.yale.edu/',
+        sourceUrls: ['https://synthquantum.yale.edu/'],
+        memberCount: 0,
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('center-synthetic-quantum');
+    expect(plan[0].duplicateEntityIds).toEqual(['shell-synthetic-quantum']);
+    expect(plan[0].canonicalWebsiteUrl).toBe('https://synthquantum.yale.edu/');
   });
 });
 
@@ -1477,11 +2861,567 @@ describe('buildFundingResearchEntityDedupePlan', () => {
       'Computational image analysis',
     ]);
   });
+
+  it('does not graft a funding shell wrong-domain research area onto the Yale-backed canonical', () => {
+    const plan = buildFundingResearchEntityDedupePlan([
+      {
+        userId: 'name:fixture-optics-lab',
+        normalizedName: 'fixture optics lab',
+        piFirstName: 'Fixture',
+        piLastName: 'Optics',
+        entities: [
+          {
+            id: 'ysm-optics',
+            slug: 'dept-seas-fixture-optics',
+            name: 'Fixture Optics Lab',
+            websiteUrl: 'https://seas.yale.edu/fixture-optics-lab/',
+            sourceUrls: ['https://seas.yale.edu/fixture-optics-lab/'],
+            researchAreas: ['soft robotics', 'materials'],
+          },
+          {
+            id: 'nih-fixture-optics',
+            slug: 'nih-pi-fixture-optics',
+            name: 'Fixture Optics Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+            researchAreas: ['Optics', 'Photonics'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan[0]?.mergedResearchAreas).toEqual(['soft robotics', 'materials']);
+  });
+
+  it('carries the fullest correct description from a trusted sibling and never from a longer low-trust funding shell', () => {
+    const trustedSiblingDescription =
+      'A fuller correct description of the soft-robotics research program grounded in the Yale lab site.';
+    const hallucinatedShellDescription =
+      'Optics and photonics hallucinated program that is wrong-domain filler. '.repeat(10);
+
+    const plan = buildFundingResearchEntityDedupePlan([
+      {
+        userId: 'name:fixture-thin-canonical',
+        normalizedName: 'fixture thin canonical lab',
+        piFirstName: 'Fixture',
+        piLastName: 'Thin',
+        entities: [
+          {
+            id: 'ysm-thin',
+            slug: 'dept-seas-fixture-thin',
+            name: 'Fixture Thin Lab',
+            websiteUrl: 'https://seas.yale.edu/fixture-thin-lab/',
+            sourceUrls: [
+              'https://seas.yale.edu/fixture-thin-lab/',
+              'https://medicine.yale.edu/lab/fixture-thin/',
+            ],
+            fullDescription: 'Short thin blurb.',
+          },
+          {
+            id: 'nih-fixture-thin',
+            slug: 'nih-pi-fixture-thin',
+            name: 'Fixture Thin Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/2'],
+            fullDescription: hallucinatedShellDescription,
+          },
+          {
+            id: 'seas-thin-detail',
+            slug: 'dept-seas-fixture-thin-detail',
+            name: 'Fixture Thin Lab',
+            sourceUrls: ['https://medicine.yale.edu/profile/fixture-thin/'],
+            fullDescription: trustedSiblingDescription,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan[0]?.canonicalEntityId).toBe('ysm-thin');
+    expect(plan[0]?.canonicalFullDescription).toBe(trustedSiblingDescription);
+    expect(plan[0]?.canonicalFullDescription).not.toContain('hallucinated');
+  });
+
+  it('carries recentGrants/recentGrantCount/fundingAgencies from a funding-only NIH shell onto the canonical entity', () => {
+    const plan = buildFundingResearchEntityDedupePlan([
+      {
+        userId: 'name:fixture-oakley-lab',
+        normalizedName: 'fixture oakley lab',
+        entities: [
+          {
+            id: 'ysm-fixture-oakley',
+            slug: 'ysm-fixture-oakley',
+            name: 'Fixture Oakley Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fixture-oakley/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fixture-oakley/'],
+            recentGrantCount: 1,
+            fundingAgencies: ['NSF'],
+            recentGrants: [
+              {
+                id: 'nsf-0000001',
+                agency: 'NSF',
+                title: 'Existing NSF award',
+                startDate: '2024-01-01',
+              },
+            ],
+          },
+          {
+            id: 'nih-fixture-oakley',
+            slug: 'nih-pi-fixture-oakley',
+            name: 'Fixture Oakley Lab',
+            sourceUrls: [
+              'https://reporter.nih.gov/project-details/10000001',
+              'https://reporter.nih.gov/project-details/10000002',
+            ],
+            recentGrantCount: 2,
+            fundingAgencies: ['NIH'],
+            recentGrants: [
+              {
+                id: '10000001',
+                agency: 'NIH',
+                title: 'Fixture grant one',
+                startDate: '2023-06-01',
+                url: 'https://reporter.nih.gov/project-details/10000001',
+              },
+              {
+                id: '10000002',
+                agency: 'NIH',
+                title: 'Fixture grant two',
+                startDate: '2022-06-01',
+                url: 'https://reporter.nih.gov/project-details/10000002',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan[0]?.canonicalEntityId).toBe('ysm-fixture-oakley');
+    expect(plan[0]?.duplicateEntityIds).toEqual(['nih-fixture-oakley']);
+    expect(plan[0]?.mergedRecentGrantCount).toBe(3);
+    expect(plan[0]?.mergedFundingAgencies).toEqual(['NSF', 'NIH']);
+    expect((plan[0]?.mergedRecentGrants as Array<{ id: string }>).map((grant) => grant.id)).toEqual(
+      ['nsf-0000001', '10000001', '10000002'],
+    );
+  });
+
+  it('does not add merged grant fields when neither the canonical entity nor its duplicates carry grant data', () => {
+    const plan = buildFundingResearchEntityDedupePlan([
+      {
+        userId: 'name:fixture-no-grants-lab',
+        normalizedName: 'fixture no grants lab',
+        entities: [
+          {
+            id: 'ysm-fixture-no-grants',
+            slug: 'ysm-fixture-no-grants',
+            name: 'Fixture No Grants Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fixture-no-grants/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fixture-no-grants/'],
+          },
+          {
+            id: 'nih-fixture-no-grants',
+            slug: 'nih-pi-fixture-no-grants',
+            name: 'Fixture No Grants Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan[0]?.mergedRecentGrants).toBeUndefined();
+    expect(plan[0]?.mergedRecentGrantCount).toBeUndefined();
+    expect(plan[0]?.mergedFundingAgencies).toBeUndefined();
+  });
 });
 
 describe('shouldRetireDuplicateCurrentMembersForDedupeRun', () => {
   it('skips global current-member retirement in funding-only cleanup mode', () => {
     expect(shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly: true })).toBe(false);
     expect(shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly: false })).toBe(true);
+  });
+});
+
+describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
+  it('merges same-person entities regardless of differing names and picks the human-readable canonical', () => {
+    const rows = [
+      {
+        userId: 'person-1',
+        normalizedName: 'same-pi:person-1',
+        piFirstName: 'Sparkle',
+        piLastName: 'Malone',
+        entities: [
+          {
+            id: 'shell',
+            slug: 'nsf-pi-abc123',
+            name: 'Malone Disturbance Ecology Lab',
+            websiteUrl: 'https://www.malonelab.org/',
+            fullDescription: 'A'.repeat(528),
+            sourceUrls: ['https://www.malonelab.org/'],
+          },
+          {
+            id: 'named',
+            slug: 'yse-faculty-sparkle-malone',
+            name: 'Sparkle Malone Research',
+            websiteUrl: 'https://malonelab.org/',
+            fullDescription: 'B'.repeat(278),
+            sourceUrls: ['https://malonelab.org/'],
+          },
+        ],
+      },
+    ];
+
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(plan).toHaveLength(1);
+    const group = plan[0];
+    expect(group.canonicalEntityId).toBe('named');
+    expect(group.canonicalSlug).toBe('yse-faculty-sparkle-malone');
+    expect(group.duplicateEntityIds).toEqual(['shell']);
+    expect(group.dedupeCategory).toBe('shared_person_id');
+    expect(group.canonicalFullDescription).toBeUndefined();
+  });
+
+  it('does not carry a description when the canonical already has the fullest one', () => {
+    const rows = [
+      {
+        userId: 'person-2',
+        normalizedName: 'same-pi:person-2',
+        entities: [
+          {
+            id: 'rich',
+            slug: 'ysm-crair',
+            name: 'Crair Laboratory',
+            fullDescription: 'A'.repeat(900),
+          },
+          {
+            id: 'thin',
+            slug: 'nih-pi-michael-crair',
+            name: 'The Crair Laboratory',
+            fullDescription: 'B'.repeat(200),
+          },
+        ],
+      },
+    ];
+
+    const [group] = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(group.canonicalEntityId).toBe('rich');
+    expect(group.canonicalFullDescription).toBeUndefined();
+  });
+
+  it('never carries a longer low-trust shell description over a thin canonical, but does carry a fuller trusted sibling', () => {
+    const trustedSiblingDescription =
+      'A fuller correct account of the lab research program grounded in Yale sources.';
+    const hallucinatedShellDescription =
+      'Wrong-domain hallucinated optics and photonics filler description. '.repeat(12);
+
+    const rows = [
+      {
+        userId: 'person-shell-guard',
+        normalizedName: 'same-pi:person-shell-guard',
+        entities: [
+          {
+            id: 'home',
+            slug: 'ysm-fixture-home',
+            name: 'Fixture Home Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fixture-home/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fixture-home/'],
+            fullDescription: 'Short correct blurb.',
+          },
+          {
+            id: 'shell',
+            slug: 'nih-pi-fixture-home',
+            name: 'Fixture Home Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/9'],
+            fullDescription: hallucinatedShellDescription,
+          },
+          {
+            id: 'sibling',
+            slug: 'dept-seas-fixture-home',
+            name: 'Fixture Home Lab',
+            sourceUrls: ['https://seas.yale.edu/profile/fixture-home/'],
+            fullDescription: trustedSiblingDescription,
+          },
+        ],
+      },
+    ];
+
+    const [group] = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(group.canonicalEntityId).toBe('home');
+    expect(group.canonicalFullDescription).toBe(trustedSiblingDescription);
+    expect(group.canonicalFullDescription).not.toContain('hallucinated');
+  });
+
+  it('produces no group for a lone-entity person row', () => {
+    const rows = [
+      {
+        userId: 'person-3',
+        normalizedName: 'same-pi:person-3',
+        entities: [{ id: 'solo', slug: 'ysm-solo', name: 'Solo Lab' }],
+      },
+    ];
+    expect(buildSharedPersonIdResearchEntityDedupePlan(rows)).toEqual([]);
+  });
+
+  it('excludes a co-PI entity claimed by two persons from every merge group', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    const allEntityIds = plan.flatMap((group) => [
+      group.canonicalEntityId,
+      ...group.duplicateEntityIds,
+    ]);
+    expect(allEntityIds).not.toContain('shared-shell');
+    expect(plan).toEqual([]);
+  });
+
+  it('still merges a single-person two-entity row when no entity is shared', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+          { id: 'a-second', slug: 'nih-pi-a', name: 'Person A Grant' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].userId).toBe('person-a');
+    expect([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds].sort()).toEqual([
+      'a-home',
+      'a-second',
+    ]);
+    expect(plan[0].duplicateEntityIds).not.toContain('shared-shell');
+  });
+});
+
+describe('buildMultiPersonEntityQuarantine', () => {
+  it('reports each entity linked to more than one person with its distinct personIds', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const quarantine = buildMultiPersonEntityQuarantine(rows);
+    expect(quarantine).toHaveLength(1);
+    expect(quarantine[0].id).toBe('shared-shell');
+    expect(quarantine[0].slug).toBe('nsf-pi-shared');
+    expect(new Set(quarantine[0].personIds)).toEqual(new Set(['person-a', 'person-b']));
+  });
+
+  it('does not flag entities that belong to a single person', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+          { id: 'a-second', slug: 'nih-pi-a', name: 'Person A Grant' },
+        ],
+      },
+    ];
+    expect(buildMultiPersonEntityQuarantine(rows)).toEqual([]);
+  });
+});
+
+describe('buildSameNameDifferentPersonQuarantine', () => {
+  it('flags same-normalized-name entities that belong to different persons', () => {
+    const rows = [
+      {
+        userId: 'person-jun',
+        normalizedName: 'same-pi:person-jun',
+        entities: [{ id: 'jun', slug: 'ysm-jun-liu', name: 'The Liu Lab' }],
+      },
+      {
+        userId: 'person-qiao',
+        normalizedName: 'same-pi:person-qiao',
+        entities: [{ id: 'qiao', slug: 'nih-pi-qiao-liu', name: 'The Liu Lab' }],
+      },
+    ];
+
+    const quarantine = buildSameNameDifferentPersonQuarantine(rows);
+    expect(quarantine).toHaveLength(1);
+    expect(quarantine[0].normalizedName).toBe('the liu lab');
+    expect(new Set(quarantine[0].entities.map((entity) => entity.personId))).toEqual(
+      new Set(['person-jun', 'person-qiao']),
+    );
+  });
+
+  it('does not flag same-name entities that belong to the same person', () => {
+    const rows = [
+      {
+        userId: 'person-one',
+        normalizedName: 'same-pi:person-one',
+        entities: [
+          { id: 'a', slug: 'dept-seas-diana-qiu', name: 'Diana Qiu Research' },
+          { id: 'b', slug: 'dept-physics-diana-qiu', name: 'Diana Qiu Research' },
+        ],
+      },
+    ];
+    expect(buildSameNameDifferentPersonQuarantine(rows)).toEqual([]);
+  });
+});
+
+describe('buildResearchEntityPiDedupePlan center carve-out', () => {
+  it('never selects a CENTER as the canonical survivor of an FRA-shadow merge', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-center-and-lab',
+        normalizedName: 'same-pi:pi-center-and-lab',
+        piFirstName: 'Katherine',
+        piLastName: 'Johnson',
+        entities: [
+          {
+            id: 'johnson-center',
+            slug: 'ysm-johnson-center',
+            name: 'Johnson Center for Orbital Mechanics',
+            kind: 'center',
+            entityType: 'CENTER',
+            websiteUrl: 'https://medicine.yale.edu/johnson-center/',
+            sourceUrls: ['https://medicine.yale.edu/johnson-center/'],
+            departments: ['Astronomy'],
+          },
+          {
+            id: 'johnson-lab',
+            slug: 'ysm-johnson-lab',
+            name: 'Johnson Laboratory',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://medicine.yale.edu/lab/johnson/',
+            sourceUrls: ['https://medicine.yale.edu/lab/johnson/'],
+            departments: ['Astronomy'],
+          },
+          {
+            id: 'johnson-fra-shell',
+            slug: 'faculty-research-area-katherine-johnson',
+            name: 'Katherine Johnson Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.yale.edu/profile/katherine-johnson/'],
+            departments: ['Astronomy'],
+          },
+        ],
+      },
+    ]);
+    const shadowGroup = plan.find(
+      (group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home',
+    );
+    expect(shadowGroup?.canonicalEntityId).toBe('johnson-lab');
+    expect([
+      shadowGroup?.canonicalEntityId,
+      ...(shadowGroup?.duplicateEntityIds || []),
+    ]).not.toContain('johnson-center');
+  });
+
+  it('does not fold an FRA shell into a same-PI center when there is no lab', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-center-only',
+        normalizedName: 'same-pi:pi-center-only',
+        piFirstName: 'Grace',
+        piLastName: 'Hopper',
+        entities: [
+          {
+            id: 'hopper-center',
+            slug: 'ysm-hopper-center',
+            name: 'Hopper Center for Computing',
+            kind: 'center',
+            entityType: 'CENTER',
+            websiteUrl: 'https://medicine.yale.edu/hopper-center/',
+            sourceUrls: ['https://medicine.yale.edu/hopper-center/'],
+            departments: ['Computer Science'],
+          },
+          {
+            id: 'hopper-fra-shell',
+            slug: 'faculty-research-area-grace-hopper',
+            name: 'Grace Hopper Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.yale.edu/profile/grace-hopper/'],
+            departments: ['Computer Science'],
+          },
+        ],
+      },
+    ]);
+    expect(
+      plan.filter((group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home'),
+    ).toEqual([]);
+  });
+
+  it('never folds a person-named lab shell into a same-PI center that is its only website home', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-center-and-person-named-lab',
+        normalizedName: 'same-pi:pi-center-and-person-named-lab',
+        piFirstName: 'Grace',
+        piLastName: 'Hopper',
+        entities: [
+          {
+            id: 'hopper-center',
+            slug: 'ysm-hopper-center',
+            name: 'Hopper Center for Computing',
+            kind: 'center',
+            entityType: 'CENTER',
+            websiteUrl: 'https://medicine.yale.edu/hopper-center/',
+            sourceUrls: ['https://medicine.yale.edu/hopper-center/'],
+            departments: ['Computer Science'],
+          },
+          {
+            id: 'grace-hopper-lab-stub',
+            slug: 'ysm-grace-hopper-lab',
+            name: 'Grace Hopper Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            sourceUrls: ['https://medicine.yale.edu/profile/grace-hopper/'],
+            departments: ['Computer Science'],
+          },
+        ],
+      },
+    ]);
+    const shadowGroups = plan.filter(
+      (group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home',
+    );
+    expect(shadowGroups).toEqual([]);
+    expect(
+      shadowGroups.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
+    ).not.toContain('hopper-center');
   });
 });

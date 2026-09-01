@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  AnalyticsData,
-  analyticsReducer,
-  createInitialAnalyticsState,
-} from '../analyticsReducer';
+import { AnalyticsData, analyticsReducer, createInitialAnalyticsState } from '../analyticsReducer';
 
 const sampleData: AnalyticsData = {
   visitors: {
@@ -16,27 +12,10 @@ const sampleData: AnalyticsData = {
   engagement: {
     search: { totalSearches: 100, searchesLast7Days: 10, searchesToday: 2 },
     topSearchQueries: [],
-    views: { totalViews: 50, viewsLast7Days: 8, viewsToday: 1 },
-    favorites: [],
-    trendingListings: [],
     userActivity: { activeUsers: 4, avgEventsPerUser: 2.5 },
     mostActiveUsers: [],
-    totalViewsFromCounters: 50,
-    totalFavoritesFromCounters: 12,
-    avgViews: 5,
-    avgFavorites: 1.2,
-    viewsByDepartment: [],
   },
-  listings: {
-    overview: { total: 10, active: 8, archived: 1, unconfirmed: 1 },
-    newListingsLast7Days: 2,
-    newListingsToday: 0,
-    byDepartment: [],
-    byProfessor: [],
-    listingsWithZeroViews: 3,
-    topViewedListings: [],
-    topFavoritedListings: [],
-  },
+  research: { byEventType: [], byEntityType: [], byUserType: [], topEntities: [] },
   users: {
     overview: { total: 15, confirmed: 12 },
     byType: [],
@@ -45,17 +24,16 @@ const sampleData: AnalyticsData = {
     newUsersTodayByType: [],
   },
   researchEntities: {
-    overview: { active: 40, archived: 5, total: 45 },
+    overview: { active: 40, total: 40 },
     byType: [{ entityType: 'LAB', count: 30 }],
     byVisibilityTier: [{ tier: 'student_ready', count: 12 }],
-    byOpenness: [{ status: 'unknown', count: 25 }],
     freshness: {
       observedLast7Days: 8,
       observedLast30Days: 20,
       neverObserved: 4,
       staleOver90Days: 6,
     },
-    scholarly: { withRecentPapers: 18, withRecentGrants: 9 },
+    scholarly: { withRecentGrants: 9 },
   },
   timestamp: '2026-04-16T00:00:00.000Z',
 };

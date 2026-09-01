@@ -1,4 +1,11 @@
-import { publicStudentVisibilityTiers, type StudentVisibilityTier } from '../models/studentVisibility';
+import {
+  publicStudentVisibilityTiers,
+  type StudentVisibilityTier,
+} from '../models/studentVisibility';
+import {
+  evaluateRosterLeadResolution,
+  type RosterLeadResolutionResult,
+} from '../services/rosterLeadResolutionGuard';
 
 export interface StudentVisibilityPlannedUpdate {
   id: string;
@@ -7,6 +14,7 @@ export interface StudentVisibilityPlannedUpdate {
   tier: StudentVisibilityTier;
   computedTier: StudentVisibilityTier;
   reasons: string[];
+  hasResolvedLead?: boolean;
 }
 
 export interface StudentVisibilityBackfillCollectionReport {
@@ -23,6 +31,7 @@ export interface StudentVisibilityBackfillCollectionReport {
     recommendation: 'apply' | 'do_not_apply' | 'repair_source_materialization_first';
     blockers: string[];
   };
+  leadResolution?: RosterLeadResolutionResult;
   samplesByReason: Array<{
     reason: string;
     count: number;
@@ -82,15 +91,25 @@ export function nextRepairActionForReasons(reasons: string[]): string {
     return 'Suppress the grant shell unless a durable PI-owned research home or student access route is found.';
   }
   if (reasons.includes('duplicate_risk')) return 'Resolve duplicate or disambiguation risk.';
-  if (reasons.includes('content_page_risk')) return 'Suppress content pages or remap to a real research home.';
-  if (reasons.includes('pi_identity_conflict')) return 'Resolve mismatched PI identity before promotion.';
-  if (reasons.includes('missing_lead')) return 'Attach a source-backed PI, director, or lead member.';
+  if (reasons.includes('content_page_risk'))
+    return 'Suppress content pages or remap to a real research home.';
+  if (reasons.includes('profile_identity_risk')) {
+    return 'Resolve the person-derived identity: attach the lead whose official profile matches the entity, or suppress the contaminated shell.';
+  }
+  if (reasons.includes('missing_alternate_access_path')) {
+    return 'Give this organizational/program entity a real way in: attach a related lab, faculty area, or hosted program, or a source-backed people/staff/get-involved/programs page.';
+  }
+  if (reasons.includes('missing_lead'))
+    return 'Attach a source-backed PI, director, or lead member.';
   if (reasons.includes('missing_card_description')) {
     return 'Backfill a student-facing short description from source-backed research text.';
   }
-  if (reasons.includes('missing_description')) return 'Backfill a source-backed research description.';
-  if (reasons.includes('thin_description')) return 'Replace thin copy with a useful source-backed description.';
-  if (reasons.includes('profile_fallback_only')) return 'Verify the profile-derived description against an entity source.';
+  if (reasons.includes('missing_description'))
+    return 'Backfill a source-backed research description.';
+  if (reasons.includes('thin_description'))
+    return 'Replace thin copy with a useful source-backed description.';
+  if (reasons.includes('profile_fallback_only'))
+    return 'Verify the profile-derived description against an entity source.';
   if (reasons.includes('missing_source_url')) return 'Attach an official source URL.';
   if (reasons.includes('missing_action_evidence')) {
     return 'Add source-backed access or pathway evidence only if it exists.';
@@ -105,6 +124,10 @@ export function buildCollectionReport(
     reasonSampleSize?: number;
     minimumPublicCount?: number;
     maxPublicCollapseRatio?: number;
+    leadResolutionGuard?: {
+      maxZeroLeadRatio?: number;
+      minLeadRequiringEntities?: number;
+    };
   },
 ): StudentVisibilityBackfillCollectionReport {
   const reasonSampleSize = normalizeReasonSampleSize(options.reasonSampleSize);
@@ -121,6 +144,7 @@ export function buildCollectionReport(
   let changedCount = 0;
   let publicCount = 0;
   let currentPublicCount = 0;
+  let resolvedLeadEntityCount = 0;
 
   for (const update of updates) {
     incrementCount(counts, update.tier);
@@ -129,6 +153,7 @@ export function buildCollectionReport(
     if (update.currentTier !== update.tier) changedCount += 1;
     if (PUBLIC_TIERS.has(update.tier)) publicCount += 1;
     if (PUBLIC_TIERS.has(update.currentTier || '')) currentPublicCount += 1;
+    if (update.hasResolvedLead) resolvedLeadEntityCount += 1;
 
     for (const reason of update.reasons) {
       incrementCount(reasonCounts, reason);
@@ -158,6 +183,19 @@ export function buildCollectionReport(
     );
   }
 
+  let leadResolution: RosterLeadResolutionResult | undefined;
+  if (options.leadResolutionGuard) {
+    leadResolution = evaluateRosterLeadResolution({
+      resolvedLeadEntityCount,
+      zeroLeadEntityCount: reasonCounts.missing_lead || 0,
+      maxZeroLeadRatio: options.leadResolutionGuard.maxZeroLeadRatio,
+      minLeadRequiringEntities: options.leadResolutionGuard.minLeadRequiringEntities,
+    });
+    if (leadResolution.blocker) {
+      blockers.push(`${options.collectionName} ${leadResolution.blocker}`);
+    }
+  }
+
   const safeToApply = blockers.length === 0;
   const recommendation = safeToApply
     ? 'apply'
@@ -179,6 +217,7 @@ export function buildCollectionReport(
       recommendation,
       blockers,
     },
+    ...(leadResolution ? { leadResolution } : {}),
     samplesByReason: Object.entries(reasonCounts)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([reason, count]) => ({

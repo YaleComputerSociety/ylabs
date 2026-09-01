@@ -107,10 +107,10 @@ describe('csrfOriginGuard', () => {
       isTrustedUnsafeRequestOrigin({
         method: 'POST',
         allowedOrigins,
-      production: true,
-    }),
-  ).toBe(false);
-});
+        production: true,
+      }),
+    ).toBe(false);
+  });
 
   it('blocks oversized production origin headers before URL parsing', () => {
     expect(

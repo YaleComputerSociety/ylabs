@@ -40,6 +40,7 @@ const buildProgramSearchFilters = (query: Request['query']) => ({
   programKind: parseFilterParam(query.programKind),
   entryMode: parseFilterParam(query.entryMode),
   studentFacingCategory: parseFilterParam(query.studentFacingCategory),
+  subjects: parseFilterParam(query.subjects),
   studentVisibilityTier: parseFilterParam(query.studentVisibilityTier),
 });
 
@@ -53,6 +54,7 @@ const hasProgramSearchFilters = (filters: ReturnType<typeof buildProgramSearchFi
   filters.programKind.length > 0 ||
   filters.entryMode.length > 0 ||
   filters.studentFacingCategory.length > 0 ||
+  filters.subjects.length > 0 ||
   filters.studentVisibilityTier.length > 0;
 
 const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunction) => {
@@ -88,7 +90,9 @@ const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunc
             pageSize: data?.pageSize,
             totalPages: data?.totalPages,
           },
-        }).catch((err) => console.error('Error logging program search event:', sanitizeLogValue(err)));
+        }).catch((err) =>
+          console.error('Error logging program search event:', sanitizeLogValue(err)),
+        );
       }
     }
 
@@ -96,38 +100,6 @@ const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunc
   };
 
   next();
-};
-
-const logProgramEvent = (eventType: AnalyticsEventType) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const originalSend = res.send.bind(res);
-
-    res.send = function (data: any) {
-      const response = originalSend(data);
-
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        const currentUser = req.user as { netId?: string; userType: string };
-        const programId = req.params.id;
-
-        if (currentUser?.netId && programId) {
-          logEvent({
-            eventType,
-            netid: currentUser.netId,
-            userType: currentUser.userType,
-            fellowshipId: programId,
-            metadata: {
-              entityType: 'program',
-              programId,
-            },
-          }).catch((err: unknown) => console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)));
-        }
-      }
-
-      return response;
-    };
-
-    next();
-  };
 };
 
 router.get(
@@ -141,29 +113,5 @@ router.get(
 router.get('/filters', isAuthenticated, programController.getProgramFilterOptions);
 
 router.get('/:id', isAuthenticated, validateObjectId('id'), programController.getProgramById);
-
-router.put(
-  '/:id/addView',
-  isAuthenticated,
-  validateObjectId('id'),
-  logProgramEvent(AnalyticsEventType.FELLOWSHIP_VIEW),
-  programController.addViewToProgram,
-);
-
-router.put(
-  '/:id/addFavorite',
-  isAuthenticated,
-  validateObjectId('id'),
-  logProgramEvent(AnalyticsEventType.FELLOWSHIP_FAVORITE),
-  programController.addFavoriteToProgram,
-);
-
-router.put(
-  '/:id/removeFavorite',
-  isAuthenticated,
-  validateObjectId('id'),
-  logProgramEvent(AnalyticsEventType.FELLOWSHIP_UNFAVORITE),
-  programController.removeFavoriteFromProgram,
-);
 
 export default router;

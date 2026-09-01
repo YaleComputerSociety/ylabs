@@ -1,11 +1,10 @@
 /**
  * YaleDirectoryScraper
  *
- * Maintains the User collection (faculty roster) by paginating Yale faculty/staff
- * records from the Yalies API (https://api.yalies.io/v2/people). The legacy bootstrap
- * (`scripts/importFaculty.ts`) reads a static enriched JSON file once; this scraper
- * is the live equivalent — it can be re-run on a cadence so that new appointments,
- * title changes, and email/phone updates flow through the observation pipeline.
+ * Maintains the faculty roster by paginating Yale faculty/staff
+ * records from the Yalies API (https://api.yalies.io/v2/people). It can be re-run on a
+ * cadence so that new appointments, title changes, and email/phone updates flow through
+ * the observation pipeline.
  *
  * Source choice: the public web directory at https://directory.yale.edu sits behind a
  * search UI (autocomplete + login wall for full records), so it is not a viable bulk
@@ -14,7 +13,7 @@
  *
  * For each faculty record we emit User observations keyed by `netid` (the
  * EntityMaterializer's keyField for the user entity). All field writes go through
- * `ctx.emit` — we never write to the User collection directly.
+ * `ctx.emit` — we never write to the researcher/account collections directly.
  *
  * Honors:
  *   - ctx.options.useCache: cache each Yalies API page in snapshotCache
@@ -105,6 +104,47 @@ export function looksLikeNonResearchTitle(title: string | undefined | null): boo
   return NON_FACULTY_TITLE_PATTERNS.some((rx) => rx.test(title));
 }
 
+// Ranks held inside somebody else's research group. Kept separate from
+// NON_FACULTY_TITLE_PATTERNS on purpose: these people ARE researchers and must
+// keep their Researcher record and their lab membership, so the researcher-identity
+// vocabulary stays generous while home-minting stays strict.
+const SUBORDINATE_RESEARCH_RANK_PATTERNS: RegExp[] = [
+  /\bpostdoc(?:toral)?\b/i,
+  /\bpost-doc(?:toral)?\b/i,
+  /\bpostgraduate (?:associate|fellow|researcher)\b/i,
+  /\bassociate research scientist\b/i,
+  /\bresearch (?:associate|fellow)\b/i,
+  /\bresearch assistant\b/i,
+  /\bresearch affiliate\b/i,
+  /\bstaff affiliate\b/i,
+  /\bvisiting (?:scholar|fellow|researcher|student|assistant)\b/i,
+  /\b(?:graduate|doctoral|phd|medical|undergraduate) student\b/i,
+  /\bstudent researcher\b/i,
+  /\bclinical fellow\b/i,
+  /\b(?:resident|intern)\b/i,
+  /\btrainee\b/i,
+];
+
+/**
+ * Whether a title belongs to somebody who works inside another person's research
+ * group rather than owning one.
+ *
+ * The mint gate previously asked only `looksLikeNonResearchTitle`, which screens
+ * out coaches and facilities staff but says nothing about academic rank, so a
+ * postdoc with a lab link minted a research home of their own. Because the link
+ * on a trainee's profile points at their PI's lab, the minted row also inherited
+ * the PI's lab name, which is the mechanism behind the #2285 name grafts
+ * ("Groisman Lab" served as `ysm-faculty-akinori-kato`).
+ *
+ * Note the asymmetry with `isFacultyTitle`: `FACULTY_KEYWORDS` deliberately
+ * includes `postdoctoral` and `research associate`, because those people are
+ * researchers. They are simply never research-home owners (#2304).
+ */
+export function isSubordinateResearchRank(title: string | undefined | null): boolean {
+  if (!title) return false;
+  return SUBORDINATE_RESEARCH_RANK_PATTERNS.some((rx) => rx.test(title));
+}
+
 /**
  * Pure helper: does this title look faculty? Mirrors directoryService.isFacultyTitle
  * but with a slightly broader vocabulary for the bulk-roster case.
@@ -158,7 +198,8 @@ export function personToObservations(
   const base = { entityType: 'user' as const, entityKey: netid, sourceUrl };
   const out: ObservationInput[] = [];
 
-  const fname = (person.preferred_name && String(person.preferred_name).trim()) ||
+  const fname =
+    (person.preferred_name && String(person.preferred_name).trim()) ||
     (person.first_name && String(person.first_name).trim()) ||
     '';
   const lname = (person.last_name && String(person.last_name).trim()) || '';
@@ -166,7 +207,8 @@ export function personToObservations(
   const title = (person.title && String(person.title).trim()) || '';
   const phone = (person.phone && String(person.phone).trim()) || '';
   const college = (person.college && String(person.college).trim()) || '';
-  const school = (person.school_name && String(person.school_name).trim()) ||
+  const school =
+    (person.school_name && String(person.school_name).trim()) ||
     (person.school && String(person.school).trim()) ||
     '';
   const imageUrl = (person.image && String(person.image).trim()) || '';
@@ -291,7 +333,6 @@ export class YaleDirectoryScraper implements IScraper {
       try {
         records = await fetchYaliesPage(pageNum, undefined, ctx.options.useCache);
       } catch (err: unknown) {
-        const errAny = err as { message?: string; response?: { status?: number } };
         if (axios.isAxiosError(err) && err.response?.status === 401) {
           ctx.log(`Yalies API returned 401 (auth failed); aborting after page ${pageNum}.`);
           break;

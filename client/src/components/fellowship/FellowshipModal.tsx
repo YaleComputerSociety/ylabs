@@ -1,13 +1,23 @@
 /**
  * Detail modal for viewing full fellowship information.
  */
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import {
+  formatFellowshipDate,
+  getFellowshipApplicationStatus,
+  getStructuredEligibilityDetails,
+} from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
+import { buildSafeProgramLinks } from '../../utils/programLinks';
+import {
+  isLikelyUnavailableSourceLink,
+  labelizeResearchDetailValue,
+} from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
@@ -108,8 +118,97 @@ const FellowshipModal = ({
     setQueryString,
   } = useContext(FellowshipSearchContext);
 
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    const inerted: Array<{ element: HTMLElement; inert: boolean; ariaHidden: string | null }> = [];
+    let branch: HTMLElement | null = overlayRef.current;
+
+    while (branch?.parentElement) {
+      Array.from(branch.parentElement.children).forEach((sibling) => {
+        if (sibling === branch || !(sibling instanceof HTMLElement)) return;
+        inerted.push({
+          element: sibling,
+          inert: sibling.inert,
+          ariaHidden: sibling.getAttribute('aria-hidden'),
+        });
+        sibling.inert = true;
+        sibling.setAttribute('aria-hidden', 'true');
+      });
+      branch = branch.parentElement;
+      if (branch === document.body) break;
+    }
+
+    titleRef.current?.focus();
+
+    return () => {
+      inerted.forEach(({ element, inert, ariaHidden }) => {
+        element.inert = inert;
+        if (ariaHidden === null) element.removeAttribute('aria-hidden');
+        else element.setAttribute('aria-hidden', ariaHidden);
+      });
+      returnFocusRef.current?.focus();
+    };
+  }, [isOpen]);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !dialogRef.current) return;
+
+    const focusable = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+    if (focusable.length === 0) {
+      event.preventDefault();
+      titleRef.current?.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (
+      event.shiftKey &&
+      (document.activeElement === first || document.activeElement === titleRef.current)
+    ) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   if (!isOpen || !fellowship) return null;
   const cycleStatus = getFellowshipCycleStatus(fellowship);
+  const applicationStatus = getFellowshipApplicationStatus(fellowship);
+  const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
+  const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
+    ? 'Yes, secure a mentor before applying'
+    : fellowship.mentorMatching
+      ? 'Not first, the program helps match you with a mentor'
+      : 'Not usually';
 
   const handleFilterClick = (
     filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus',
@@ -150,18 +249,6 @@ const FellowshipModal = ({
     navigate('/programs');
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'Not specified';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
-
   const hasContactInfo =
     fellowship.contactName ||
     fellowship.contactEmail ||
@@ -171,26 +258,42 @@ const FellowshipModal = ({
     'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
   const filterChipClass =
     'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
-  const applicationActionLabel =
-    cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'
-      ? 'Apply'
-      : 'Open source';
-  const applicationHref = safeHttpUrl(fellowship.applicationLink);
+  const applicationActionLabel = applicationStatus.isApplicationWindowOpen
+    ? 'Apply'
+    : 'Open source';
+  const sourceLinkUnavailable = isLikelyUnavailableSourceLink(fellowship.sourceLinkHealth);
+  const sourceHref = sourceLinkUnavailable ? undefined : safeHttpUrl(fellowship.sourceUrl);
+  const applicationHref = safeHttpUrl(fellowship.applicationLink) || sourceHref;
+  const sourceLabel =
+    typeof fellowship.sourceName === 'string' && fellowship.sourceName.trim()
+      ? labelizeResearchDetailValue(fellowship.sourceName)
+      : '';
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
-  const safeLinks = (fellowship.links || [])
-    .map((link) => ({ ...link, href: safeHttpUrl(link.url) }))
-    .filter((link) => link.href);
+  const safeLinks = buildSafeProgramLinks(fellowship.links, fellowship.sourceUrl);
+  const applicationMaterials = fellowship.applicationMaterials || [];
+  const summaryText = (fellowship.summary ?? '').trim();
+  const descriptionText = (fellowship.description ?? '').trim();
+  const collapseWhitespace = (value: string) => value.replace(/\s+/g, ' ');
+  const hasDistinctSummaryAndDescription =
+    !!summaryText &&
+    !!descriptionText &&
+    collapseWhitespace(summaryText) !== collapseWhitespace(descriptionText);
+  const combinedDescriptionText = descriptionText || summaryText;
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 bg-black/60 z-[1200] flex items-center justify-center overflow-y-auto p-4 pt-20"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         className="bg-[var(--yr-panel)] rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="program-detail-title"
+        aria-describedby="program-detail-description"
+        onKeyDown={handleDialogKeyDown}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex-shrink-0 border-b border-[var(--yr-line)]">
@@ -207,6 +310,11 @@ const FellowshipModal = ({
                       {fellowship.competitionType}
                     </span>
                   )}
+                  {fellowship.researchFocused && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium">
+                      Research-focused
+                    </span>
+                  )}
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full font-medium ${cycleStatus.className}`}
                   >
@@ -214,9 +322,17 @@ const FellowshipModal = ({
                   </span>
                 </div>
 
-                <h2 id="program-detail-title" className="text-xl font-bold text-gray-900 leading-tight">
+                <h2
+                  ref={titleRef}
+                  id="program-detail-title"
+                  tabIndex={-1}
+                  className="text-xl font-bold text-gray-900 leading-tight focus:outline-none"
+                >
                   {fellowship.title}
                 </h2>
+                <p id="program-detail-description" className="sr-only">
+                  Program details, eligibility, deadlines, and application actions.
+                </p>
               </div>
 
               <div className="flex flex-shrink-0 flex-wrap items-center gap-1">
@@ -339,9 +455,22 @@ const FellowshipModal = ({
                     <div>
                       <span className="text-xs text-slate-500">What this is</span>
                       <p className="text-sm font-medium text-slate-900">
-                        {fellowship.studentFacingCategory || programKindLabel(fellowship.programKind)}
+                        {fellowship.studentFacingCategory ||
+                          programKindLabel(fellowship.programKind)}
                       </p>
                     </div>
+                    {(fellowship.undergraduateOnly === false ||
+                      fellowship.undergraduateOnly === true ||
+                      fellowship.yaleCollegeOnly === true) && (
+                      <div>
+                        <span className="text-xs text-slate-500">Audience</span>
+                        <p className="text-sm font-medium text-slate-900">
+                          {fellowship.undergraduateOnly === false
+                            ? 'Graduate students'
+                            : 'Undergraduate students'}
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <span className="text-xs text-slate-500">Entry mode</span>
                       <p className="text-sm font-medium text-slate-900">
@@ -350,15 +479,8 @@ const FellowshipModal = ({
                     </div>
                     <div>
                       <span className="text-xs text-slate-500">Do you need a mentor first?</span>
-                      <p className="text-sm font-medium text-slate-900">
-                        {fellowship.requiresMentorBeforeApply ? 'Yes' : 'Not usually'}
-                      </p>
+                      <p className="text-sm font-medium text-slate-900">{mentorFirstAnswer}</p>
                     </div>
-                    {fellowship.mentorMatching && (
-                      <p className="rounded-md bg-[var(--yr-panel)] px-2.5 py-2 text-xs font-medium text-slate-700">
-                        This source suggests a mentor-matching or mentored program route.
-                      </p>
-                    )}
                   </div>
                 </section>
 
@@ -367,6 +489,13 @@ const FellowshipModal = ({
                     Key Dates
                   </h3>
                   <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
+                    <div>
+                      <span className="text-xs text-blue-600">Current Status</span>
+                      <p className="text-sm font-semibold text-blue-900">
+                        {applicationStatus.label}
+                      </p>
+                      <p className="text-xs text-blue-700">{applicationStatus.detail}</p>
+                    </div>
                     {cycleStatus.category === 'nextCycle' && (
                       <div className="rounded-md bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
                         <p className="text-xs font-medium text-sky-800">
@@ -377,14 +506,23 @@ const FellowshipModal = ({
                     <div>
                       <span className="text-xs text-blue-600">Application Opens</span>
                       <p className="text-sm font-medium text-blue-900">
-                        {formatDate(fellowship.applicationOpenDate)}
+                        {formatFellowshipDate(fellowship.applicationOpenDate)}
                       </p>
                     </div>
                     <div>
-                      <span className="text-xs text-blue-600">Deadline</span>
+                      <span className="text-xs text-blue-600">
+                        {fellowship.deadlineProjectedNextCycle
+                          ? 'Estimated Next Deadline'
+                          : 'Deadline'}
+                      </span>
                       <p className="text-sm font-medium text-blue-900">
-                        {formatDate(fellowship.deadline)}
+                        {formatFellowshipDate(fellowship.deadline)}
                       </p>
+                      {fellowship.deadlineProjectedNextCycle && (
+                        <p className="text-xs text-blue-700">
+                          Projected from the last cycle - unconfirmed, verify at source.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </section>
@@ -441,7 +579,9 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {(fellowship.compensationSummary || fellowship.hoursPerWeek || fellowship.programDates) && (
+                {(fellowship.compensationSummary ||
+                  fellowship.hoursPerWeek ||
+                  fellowship.programDates) && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                       Time & Funding
@@ -621,40 +761,87 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {fellowship.summary && (
+                {(fellowship.applicationInformation || applicationMaterials.length > 0) && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Brief Description
+                      Application Process
                     </h3>
-                    <RichTextBlock
-                      text={fellowship.summary}
-                      className="text-sm text-gray-700 leading-relaxed"
-                    />
+                    <div className="space-y-3 rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/50 p-4">
+                      {applicationMaterials.length > 0 && (
+                        <div>
+                          <p className="mb-2 text-xs font-semibold text-blue-900">
+                            Materials listed by the official source
+                          </p>
+                          <ul className="grid gap-2 sm:grid-cols-2">
+                            {applicationMaterials.map((material) => (
+                              <li
+                                key={material}
+                                className="flex items-start gap-2 text-sm text-slate-700"
+                              >
+                                <span aria-hidden="true" className="mt-0.5 text-blue-600">
+                                  ✓
+                                </span>
+                                <span>{material}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {fellowship.applicationInformation && (
+                        <RichTextBlock
+                          text={fellowship.applicationInformation}
+                          className="text-sm leading-relaxed text-slate-700"
+                        />
+                      )}
+                      {applicationHref && (
+                        <a
+                          href={applicationHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
+                          className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+                        >
+                          Open official application
+                        </a>
+                      )}
+                    </div>
                   </section>
                 )}
 
-                {fellowship.description && fellowship.description !== fellowship.summary && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Full Description
-                    </h3>
-                    <RichTextBlock
-                      text={fellowship.description}
-                      className="text-sm text-gray-700 leading-relaxed"
-                    />
-                  </section>
-                )}
+                {hasDistinctSummaryAndDescription ? (
+                  <>
+                    <section>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                        Brief Description
+                      </h3>
+                      <RichTextBlock
+                        text={summaryText}
+                        className="text-sm text-gray-700 leading-relaxed"
+                      />
+                    </section>
 
-                {fellowship.applicationInformation && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Application Information
-                    </h3>
-                    <RichTextBlock
-                      text={fellowship.applicationInformation}
-                      className="text-sm text-gray-700 leading-relaxed bg-[var(--yr-blue-soft)]/50 border border-blue-100 rounded-lg p-4"
-                    />
-                  </section>
+                    <section>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                        Full Description
+                      </h3>
+                      <RichTextBlock
+                        text={descriptionText}
+                        className="text-sm text-gray-700 leading-relaxed"
+                      />
+                    </section>
+                  </>
+                ) : (
+                  combinedDescriptionText && (
+                    <section>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                        Description
+                      </h3>
+                      <RichTextBlock
+                        text={combinedDescriptionText}
+                        className="text-sm text-gray-700 leading-relaxed"
+                      />
+                    </section>
+                  )
                 )}
 
                 {fellowship.eligibility && (
@@ -666,6 +853,28 @@ const FellowshipModal = ({
                       text={fellowship.eligibility}
                       className="text-sm text-gray-700 leading-relaxed"
                     />
+                  </section>
+                )}
+
+                {!fellowship.eligibility && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                      Eligibility Requirements
+                    </h3>
+                    {structuredEligibilityDetails.length > 0 ? (
+                      <dl className="space-y-1.5">
+                        {structuredEligibilityDetails.map((detail) => (
+                          <div key={detail.label} className="text-sm leading-relaxed">
+                            <dt className="inline font-semibold text-gray-600">{detail.label}: </dt>
+                            <dd className="inline text-gray-700">{detail.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : (
+                      <p className="text-sm text-gray-700 leading-relaxed">
+                        Eligibility requirements have not been specified.
+                      </p>
+                    )}
                   </section>
                 )}
 
@@ -695,16 +904,29 @@ const FellowshipModal = ({
 
                 {applicationHref && (
                   <div className="pt-4 border-t border-[var(--yr-line)]">
+                    {!applicationStatus.isApplicationWindowOpen && (
+                      <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+                        {applicationStatus.kind === 'notOpenYet'
+                          ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate)}.`
+                          : 'This application window is not currently open. Use the source to verify the next cycle.'}
+                      </p>
+                    )}
                     <a
                       href={applicationHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                      className="inline-flex min-h-[44px] items-center rounded-md bg-blue-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      className={`inline-flex min-h-[44px] items-center rounded-md px-6 py-2.5 text-sm font-medium text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                        applicationStatus.isApplicationWindowOpen
+                          ? 'bg-brand hover:bg-brand-navy'
+                          : 'bg-gray-600 hover:bg-gray-700'
+                      }`}
                     >
-                      {cycleStatus.category === 'open' || cycleStatus.category === 'closingSoon'
+                      {applicationStatus.isApplicationWindowOpen
                         ? 'Apply Now'
-                        : 'Open Fellowship Source'}
+                        : applicationStatus.kind === 'notOpenYet'
+                          ? 'Track Opening Date'
+                          : 'Open Fellowship Source'}
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="16"
@@ -721,6 +943,24 @@ const FellowshipModal = ({
                       </svg>
                     </a>
                   </div>
+                )}
+
+                {(sourceLabel || sourceHref) && (
+                  <p className="mt-4 border-t border-[var(--yr-line)] pt-3 text-xs text-gray-500">
+                    Source:{' '}
+                    {sourceHref ? (
+                      <a
+                        href={sourceHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {sourceLabel || 'Official source'}
+                      </a>
+                    ) : (
+                      <span className="text-gray-600">{sourceLabel}</span>
+                    )}
+                  </p>
                 )}
               </div>
             </div>

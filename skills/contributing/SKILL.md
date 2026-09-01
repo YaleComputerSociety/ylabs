@@ -17,9 +17,9 @@ The server follows a layered architecture: **Routes -> Middleware -> Controllers
 4. Apply **auth middleware** (`isAuthenticated`, `isProfessor`, `isAdmin`, etc.) and **validation middleware** in the route.
 5. Add tests where risk justifies them.
 
-Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated`, `isAdmin`, `isProfessor` (professor/faculty/admin), `isTrustworthy`, `isConfirmed`, `canCreateListing`.
+Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated`, `isAdmin`, `isProfessor` (professor/faculty/admin), `isTrustworthy`, and `isConfirmed`.
 
-Validation middleware: `validateObjectId(paramName?)`, `validateNetid(paramName?)`, `requireBody()`, `requireFields(fields[])`, `validatePagination()`, `validateSort(allowedFields[])`, `validateQuery(allowedParams[])`.
+Validation middleware: `validateObjectId(paramName?)`, `validateNetid(paramName?)`, `requireFields(fields[])`, `validatePagination()`, `validateQuery(allowedParams[])`.
 
 The `asyncHandler` wrapper catches promise rejections in route handlers.
 
@@ -35,10 +35,10 @@ Iterate on canonical product surfaces instead of creating student-facing version
 
 1. **Mongoose schema** in `server/src/models/<model>.ts`.
 2. **TypeScript interfaces** in `client/src/types/`.
-3. **Migration script** in `data-migration/` if existing data needs transformation (run with `npx tsx --transpile-only <script>.ts`).
-4. If the model affects Research or Pathways search, update the relevant **Meilisearch** rebuild/index config and the release gate.
+3. **Backfill script** in `server/src/scripts/` if existing data needs transformation, wired as a `package.json` command and dry-run by default.
+4. If the model affects Research search, update the relevant **Meilisearch** rebuild/index config and the release gate.
 
 ## General implementation rules
 
 - When the user reports a problem, treat it as a signal to fix the upstream cause when feasible. Do not settle for a local symptom patch if a durable code, data, test, or workflow change would prevent the same class of issue from recurring.
-- Prefer first-class product-model collections (`ResearchEntity`, `EntryPathway`, `PostedOpportunity`, `AccessSignal`, `ContactRoute`) over embedding pathways/signals/routes inside `ResearchEntity`. Treat remaining `ResearchGroup`/`lab`/`researchGroupId` naming as migration residue unless the file is explicitly part of rollback/migration support.
+- Prefer first-class product-model collections (`ResearchEntity`, `Signal`, `ResearchEntityRelationship`) over embedding signals or access evidence inside `ResearchEntity`. Treat remaining `ResearchGroup`/`lab`/`researchGroupId` naming as migration residue unless the file is explicitly part of rollback/migration support.

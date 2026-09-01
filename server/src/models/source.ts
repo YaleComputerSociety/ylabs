@@ -49,6 +49,15 @@ const sourceSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    lastCrawledAt: {
+      type: Date,
+      required: false,
+    },
+    cadenceDays: {
+      type: Number,
+      min: 0,
+      required: false,
+    },
     notes: {
       type: String,
       default: '',

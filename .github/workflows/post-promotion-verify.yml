@@ -1,0 +1,62 @@
+name: Post-Promotion Verify
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-promotion-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: post-promotion-verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      # Invoke the immutable installs as yarn builtins, not via the
+      # install:all:immutable script: on a fresh checkout Yarn cannot run
+      # package.json scripts before an install has created its state file
+      # ("Couldn't find the node_modules state file"), so the script form
+      # fails on every CI runner.
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
+
+      # Render deploys main asynchronously, so give the rollout time to land
+      # before asserting against production. Which commit is live is read from
+      # the Render deploy log, not from the app.
+      - name: Wait for the Render rollout
+        run: sleep 180
+
+      - name: Run production security smoke
+        env:
+          SMOKE_API_BASE: https://yalelabs.io/api
+          SMOKE_APP_BASE: https://yalelabs.io
+        run: |
+          set +e
+          yarn security:smoke:production
+          status=$?
+          if [ -f tmp/ui-smoke/production-promotion-smoke-report.json ]; then
+            cat tmp/ui-smoke/production-promotion-smoke-report.json
+          fi
+          exit "$status"

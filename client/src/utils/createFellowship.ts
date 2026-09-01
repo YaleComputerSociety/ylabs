@@ -12,8 +12,7 @@ export function createFellowship(data: any): Fellowship {
     studentFacingCategory: data.studentFacingCategory || '',
     requiresMentorBeforeApply: data.requiresMentorBeforeApply || false,
     mentorMatching: data.mentorMatching || false,
-    undergraduateOnly:
-      typeof data.undergraduateOnly === 'boolean' ? data.undergraduateOnly : null,
+    undergraduateOnly: typeof data.undergraduateOnly === 'boolean' ? data.undergraduateOnly : null,
     yaleCollegeOnly: typeof data.yaleCollegeOnly === 'boolean' ? data.yaleCollegeOnly : null,
     compensationSummary: data.compensationSummary || '',
     hoursPerWeek: typeof data.hoursPerWeek === 'number' ? data.hoursPerWeek : null,
@@ -45,6 +44,7 @@ export function createFellowship(data: any): Fellowship {
     citizenshipStatus: data.citizenshipStatus || [],
     sourceName: data.sourceName || '',
     sourceUrl: data.sourceUrl || '',
+    sourceLinkHealth: data.sourceLinkHealth || undefined,
     sourceKey: data.sourceKey || '',
     sourceFingerprint: data.sourceFingerprint || '',
     sourceLastVerifiedAt: data.sourceLastVerifiedAt || null,

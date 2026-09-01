@@ -12,8 +12,7 @@ const copy = {
   },
   researchPlan: {
     title: 'Research plan saved',
-    body:
-      'Use your Dashboard to add notes, compare funding matches, and keep the next step visible.',
+    body: 'Open it from your Dashboard to find its official profile and reach out, and keep private notes as you plan.',
   },
 };
 
@@ -28,21 +27,19 @@ const FirstSaveCallout = ({ kind, onDismiss }: FirstSaveCalloutProps) => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold">{message.title}</p>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-blue-900">
-            {message.body}
-          </p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-blue-900">{message.body}</p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <Link
-            to="/account"
-            className="inline-flex min-h-[40px] items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            to="/dashboard"
+            className="yr-focus-ring inline-flex min-h-[40px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy"
           >
             Open Dashboard
           </Link>
           <button
             type="button"
             onClick={onDismiss}
-            className="inline-flex min-h-[40px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="yr-focus-ring inline-flex min-h-[40px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-[var(--yr-blue-soft)]"
           >
             Dismiss
           </button>

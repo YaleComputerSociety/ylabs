@@ -3,10 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { AccessSignal } from '../models/accessSignal';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
-import { PostedOpportunity } from '../models/postedOpportunity';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import {
   buildClaimGateReport,
   type AccessArtifactCandidate,
@@ -33,7 +31,11 @@ function valueAfterEquals(arg: string, flag: string): string | undefined {
   return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
 }
 
-function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
+function consumeValue(
+  argv: string[],
+  index: number,
+  flag: string,
+): { value: string; nextIndex: number } {
   const arg = argv[index];
   const inline = valueAfterEquals(arg, flag);
   const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
@@ -114,65 +116,29 @@ function stringId(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
-export async function loadResearchAccessArtifacts(limit: number): Promise<AccessArtifactCandidate[]> {
-  const [pathways, signals, routes, opportunities] = await Promise.all([
-    EntryPathway.find({ archived: { $ne: true } }).limit(limit).lean(),
-    AccessSignal.find({ archived: { $ne: true } }).limit(limit).lean(),
-    ContactRoute.find({ archived: { $ne: true } }).limit(limit).lean(),
-    PostedOpportunity.find({ archived: { $ne: true } }).limit(limit).lean(),
-  ]);
+export async function loadResearchAccessArtifacts(
+  limit: number,
+): Promise<AccessArtifactCandidate[]> {
+  const signals = await Signal.find({
+    type: { $in: [...accessSignalTypes] },
+    archived: { $ne: true },
+  })
+    .limit(limit)
+    .lean();
 
-  return [
-    ...pathways.map((pathway: any): AccessArtifactCandidate => ({
-      artifactType: 'EntryPathway',
-      id: stringId(pathway._id),
-      researchEntityId: stringId(pathway.researchEntityId),
-      derivationKey: pathway.derivationKey,
-      pathwayType: pathway.pathwayType,
-      sourceEvidenceIds: strings(pathway.sourceEvidenceIds?.map(stringId) || []),
-      sourceUrls: strings(pathway.sourceUrls || []),
-    })),
-    ...signals.map((signal: any): AccessArtifactCandidate => ({
+  return signals.map(
+    (signal: any): AccessArtifactCandidate => ({
       artifactType: 'AccessSignal',
       id: stringId(signal._id),
       researchEntityId: stringId(signal.researchEntityId),
-      entryPathwayId: stringId(signal.entryPathwayId),
       derivationKey: signal.derivationKey,
-      signalType: signal.signalType,
-      sourceEvidenceIds: strings([stringId(signal.sourceEvidenceId || signal.observationId)]),
-      sourceUrls: strings([signal.sourceUrl]),
-      sourceName: signal.sourceName,
-      sourceUrl: signal.sourceUrl,
-    })),
-    ...routes.map((route: any): AccessArtifactCandidate => ({
-      artifactType: 'ContactRoute',
-      id: stringId(route._id),
-      researchEntityId: stringId(route.researchEntityId),
-      entryPathwayId: stringId(route.entryPathwayId),
-      derivationKey: route.derivationKey,
-      routeType: route.routeType,
-      url: route.url,
-      sourceEvidenceIds: strings([
-        ...(route.sourceEvidenceIds?.map(stringId) || []),
-        stringId(route.sourceEvidenceId),
-      ]),
-      sourceUrls: strings([route.sourceUrl]),
-      sourceName: route.sourceName,
-      sourceUrl: route.sourceUrl,
-    })),
-    ...opportunities.map((opportunity: any): AccessArtifactCandidate => ({
-      artifactType: 'PostedOpportunity',
-      id: stringId(opportunity._id),
-      researchEntityId: stringId(opportunity.researchEntityId),
-      entryPathwayId: stringId(opportunity.entryPathwayId),
-      derivationKey: opportunity.derivationKey,
-      title: opportunity.title,
-      status: opportunity.status,
-      applicationUrl: opportunity.applicationUrl,
-      sourceEvidenceIds: strings(opportunity.sourceEvidenceIds?.map(stringId) || []),
-      sourceUrls: strings(opportunity.sourceUrls || []),
-    })),
-  ];
+      signalType: signal.type,
+      sourceEvidenceIds: strings((signal.source?.evidenceIds || []).map(stringId)),
+      sourceUrls: strings([signal.source?.url]),
+      sourceName: signal.source?.name,
+      sourceUrl: signal.source?.url,
+    }),
+  );
 }
 
 export function shouldClaimGateFailStrict(report: Pick<ClaimGateReport, 'summary'>): boolean {

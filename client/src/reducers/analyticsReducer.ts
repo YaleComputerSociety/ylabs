@@ -36,34 +36,17 @@ export interface AnalyticsData {
       searchesToday: number;
     };
     topSearchQueries: Array<{ query: string; count: number }>;
-    views: {
-      totalViews: number;
-      viewsLast7Days: number;
-      viewsToday: number;
-    };
-    favorites: Array<{ eventType: string; total: number; last7Days: number }>;
-    trendingListings: Array<any>;
     userActivity: {
       activeUsers: number;
       avgEventsPerUser: number;
     };
-    mostActiveUsers: Array<{ userId: string; userType: string; eventCount: number }>;
-    totalViewsFromCounters: number;
-    totalFavoritesFromCounters: number;
-    avgViews: number;
-    avgFavorites: number;
-    viewsByDepartment: Array<{
-      department: string;
-      totalViews: number;
-      listingCount: number;
-      avgViews: number;
+    mostActiveUsers: Array<{
+      userId: string;
+      userType: string;
+      eventCount: number;
+      fname?: string;
+      lname?: string;
     }>;
-    opportunityViewDataHealth?: {
-      opportunityViewEventsLast30Days: number;
-      resolvedOpportunityViewEventsLast30Days: number;
-      orphanedOpportunityViewEventsLast30Days: number;
-      orphanedOpportunityIds: string[];
-    };
   };
   research: {
     byEventType: Array<{ eventType: string; total: number; last7Days: number; today: number }>;
@@ -74,22 +57,9 @@ export interface AnalyticsData {
       entityId: string;
       views: number;
       uniqueViewers: number;
+      name?: string;
+      href?: string;
     }>;
-  };
-  listings: {
-    overview: {
-      total: number;
-      active: number;
-      archived: number;
-      unconfirmed: number;
-    };
-    newListingsLast7Days: number;
-    newListingsToday: number;
-    byDepartment: Array<{ department: string; count: number }>;
-    byProfessor: Array<{ professorName: string; netId: string; count: number }>;
-    listingsWithZeroViews: number;
-    topViewedListings: Array<any>;
-    topFavoritedListings: Array<any>;
   };
   users: {
     overview: { total: number; confirmed: number };
@@ -99,10 +69,9 @@ export interface AnalyticsData {
     newUsersTodayByType: Array<{ userType: string; count: number }>;
   };
   researchEntities: {
-    overview: { active: number; archived: number; total: number };
+    overview: { active: number; total: number };
     byType: Array<{ entityType: string; count: number }>;
     byVisibilityTier: Array<{ tier: string; count: number }>;
-    byOpenness: Array<{ status: string; count: number }>;
     freshness: {
       observedLast7Days: number;
       observedLast30Days: number;
@@ -110,7 +79,6 @@ export interface AnalyticsData {
       staleOver90Days: number;
     };
     scholarly: {
-      withRecentPapers: number;
       withRecentGrants: number;
     };
   };
@@ -126,18 +94,8 @@ export interface AnalyticsUserActivityRow {
   totalEvents: number;
   logins: number;
   searches: number;
-  views: number;
+  researchViews: number;
   fellowshipViews: number;
-  listingFavorites: number;
-  listingUnfavorites: number;
-  fellowshipFavorites: number;
-  fellowshipUnfavorites: number;
-  outreachClicks: number;
-  outreachOutcomes: number;
-  listingCreates: number;
-  listingUpdates: number;
-  listingArchives: number;
-  listingUnarchives: number;
   profileUpdates: number;
   loginCount: number;
   lastEventAt?: string | null;
@@ -151,8 +109,8 @@ export interface AnalyticsUserEvent {
   _id?: string;
   eventType: string;
   timestamp: string;
-  listingId?: string;
   fellowshipId?: string;
+  fellowshipTitle?: string;
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: Record<string, unknown>;
@@ -162,6 +120,7 @@ export interface AnalyticsUserActivityResponse {
   users: AnalyticsUserActivityRow[];
   total: number;
   limit: number;
+  offset: number;
 }
 
 export interface AnalyticsUserDrilldownResponse {
@@ -178,6 +137,13 @@ export interface AdminAccessUser {
   userType?: string;
 }
 
+export interface AdminAccessGrantHistoryEntry {
+  action: 'granted' | 'revoked';
+  actorNetid: string;
+  note: string;
+  at: string | null;
+}
+
 export interface AdminAccessGrant {
   netid: string;
   status: 'active' | 'revoked';
@@ -187,13 +153,47 @@ export interface AdminAccessGrant {
   revokedBy?: string;
   revokedAt?: string | null;
   note?: string;
+  history?: AdminAccessGrantHistoryEntry[];
   user?: AdminAccessUser;
+}
+
+export interface AdminAccessHistoryEntry {
+  action: 'granted' | 'revoked';
+  actorNetid: string;
+  note: string;
+  at: string | null;
+  subjectNetid: string;
 }
 
 export interface AdminAccessResponse {
   activeCount: number;
   grants: AdminAccessGrant[];
   legacyAdminsWithoutGrant: AdminAccessUser[];
+  history: AdminAccessHistoryEntry[];
+}
+
+export interface AdminAuditEventSummary {
+  fields?: string[];
+  note?: string;
+  status?: string;
+}
+
+export interface AdminAuditEvent {
+  id: string;
+  actorNetid: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  summary: AdminAuditEventSummary | null;
+  timestamp: string | null;
+}
+
+export interface AdminAuditEventsResponse {
+  events: AdminAuditEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export type AnalyticsRange = 'today' | '7d' | '30d' | 'semester' | 'all';
@@ -220,6 +220,10 @@ export interface AnalyticsSearchQualityResponse {
   avgResults?: number;
   avgResultsPerSearch?: number;
   avgLatencyMs?: number;
+  engagedSearches?: number;
+  returnedButIgnoredSearches?: number;
+  engagementRate?: number;
+  attributionWindowMinutes?: number;
   topQueries?: AnalyticsSearchQualityQuery[];
   zeroResultQueries?: AnalyticsSearchQualityQuery[];
   topZeroResultQueries?: AnalyticsSearchQualityQuery[];
@@ -266,11 +270,14 @@ export interface AnalyticsFunnelResponse {
   visitorCount?: number;
   searcherCount?: number;
   viewerCount?: number;
-  favoriteCount?: number;
   applicantCount?: number;
   profileUpdateCount?: number;
-  listingCreateCount?: number;
   overallConversionRate?: number;
+  journeyMetrics?: {
+    sourceInspections: number;
+    officialRouteAttempts: number;
+    applicationOpens: number;
+  };
 }
 
 export interface AnalyticsActionNeededItem {
@@ -290,7 +297,6 @@ export interface AnalyticsActionNeededItem {
 export interface AnalyticsActionNeededResponse {
   range?: AnalyticsRange;
   cards?: AnalyticsActionNeededItem[];
-  items?: AnalyticsActionNeededItem[];
 }
 
 export interface AnalyticsState {

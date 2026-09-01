@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildPathwayEvidenceRows,
   buildGroupedSearchResults,
-  buildResearchHomeEvidenceStatus,
   buildResearchHomeContextLine,
   buildIdentityConfidenceRecords,
   formatSourceLabel,
@@ -20,13 +18,12 @@ const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
   name: overrides.name || 'Example Research Group',
   displayName: overrides.displayName,
   kind: overrides.kind || 'lab',
-  description: overrides.description || 'Studies a focused research area.',
+  fullDescription: overrides.fullDescription || 'Studies a focused research area.',
   websiteUrl: overrides.websiteUrl || '',
   location: overrides.location || '',
   departments: overrides.departments || [],
   researchAreas: overrides.researchAreas || [],
   school: overrides.school || '',
-  openness: overrides.openness || 'unknown',
   typicalUndergradRoles: overrides.typicalUndergradRoles || [],
   prerequisiteCourses: overrides.prerequisiteCourses || [],
   creditOptions: overrides.creditOptions || [],
@@ -82,19 +79,9 @@ describe('pathway display helpers', () => {
     expect(getPathwayActionLabel('save-for-later')).toBe('Save for later');
   });
 
-  it('normalizes pathway type and evidence labels without raw enums', () => {
+  it('normalizes pathway type labels without raw enums', () => {
     expect(getPathwayTypeLabel('POSTED_ROLE')).toBe('Posted opening');
-    expect(getPathwayTypeLabel('REACH_OUT_PLAUSIBLE')).toBe('Exploratory outreach');
-
-    const evidenceRows = buildPathwayEvidenceRows(pathway());
-
-    expect(evidenceRows[0]).toMatchObject({
-      claim: 'A posted role mentions undergraduate research.',
-      sourceType: 'Posted opening',
-      url: 'https://example.yale.edu/posting',
-    });
-    expect(JSON.stringify(evidenceRows)).not.toContain('POSTED_OPENING');
-    expect(JSON.stringify(evidenceRows)).not.toContain('POSTED_ROLE');
+    expect(getPathwayTypeLabel('EXPLORATORY_CONTACT')).toBe('Exploratory outreach');
   });
 
   it('does not trust credential-bearing Yale-looking source URLs', () => {
@@ -104,23 +91,6 @@ describe('pathway display helpers', () => {
     expect(formatSourceLabel('https://medicine.yale.edu/profile/example')).toBe(
       'medicine.yale.edu',
     );
-
-    expect(
-      buildResearchHomeEvidenceStatus(
-        entity({
-          sourceUrls: ['https://operator:secret@medicine.yale.edu/profile/example'],
-        }),
-        [],
-      ),
-    ).toEqual({ label: 'Evidence limited', state: 'limited' });
-    expect(
-      buildResearchHomeEvidenceStatus(
-        entity({
-          sourceUrls: ['https://medicine.yale.edu/profile/example'],
-        }),
-        [],
-      ),
-    ).toEqual({ label: 'Official Yale source found', state: 'official' });
   });
 });
 
@@ -149,7 +119,9 @@ describe('buildIdentityConfidenceRecords', () => {
     expect(identities).toHaveLength(2);
     expect(identities[0].name).toBe('Ada Lovelace');
     expect(identities[1].name).toBe('Ada Lovelace');
-    expect(identities.every((identity) => identity.ambiguityLabel === 'Possible same-name ambiguity')).toBe(true);
+    expect(
+      identities.every((identity) => identity.ambiguityLabel === 'Possible same-name ambiguity'),
+    ).toBe(true);
     expect(identities[0].identityLabel).toBe('Identity: Yale-confirmed');
     expect(identities[1].identityLabel).toBe('Identity: unresolved');
   });
@@ -174,15 +146,36 @@ describe('buildGroupedSearchResults', () => {
         }),
       ],
       pathways: [],
-      papers: [],
     });
 
-    expect(grouped.clusters.map((cluster) => cluster.label)).toEqual([
-      'Neuro A',
-      'Neuro B',
-    ]);
+    expect(grouped.clusters.map((cluster) => cluster.label)).toEqual(['Neuro A', 'Neuro B']);
     expect(grouped.clusters.every((cluster) => cluster.entityCount === 1)).toBe(true);
     expect(grouped.clusters[0].contextLine).toBe('Neuroscience');
+  });
+
+  it('uses a server-resolved cardDescription instead of re-deriving from absent raw fields (#1583)', () => {
+    const grouped = buildGroupedSearchResults({
+      query: 'neuroscience',
+      researchEntities: [
+        entity({
+          _id: 'trimmed',
+          slug: 'trimmed-lab',
+          name: 'Trimmed Lab',
+          departments: ['Neuroscience'],
+          shortDescription: undefined,
+          fullDescription: undefined,
+          cardDescription: {
+            text: 'Server-resolved summary text.',
+            state: 'complete',
+            label: 'Research description',
+          },
+        }),
+      ],
+      pathways: [],
+    });
+
+    expect(grouped.clusters[0].description).toBe('Server-resolved summary text.');
+    expect(grouped.clusters[0].contextState).toBe('complete');
   });
 
   it('collapses prefixed and plain department labels in research home cards', () => {
@@ -200,7 +193,6 @@ describe('buildGroupedSearchResults', () => {
         }),
       ],
       pathways: [],
-      papers: [],
     });
 
     expect(buildResearchHomeContextLine(grouped.clusters[0].entities[0])).toBe(
@@ -210,6 +202,42 @@ describe('buildGroupedSearchResults', () => {
     expect(grouped.clusters[0].metadataTags).toEqual([
       'Molecular, Cellular & Developmental Biology',
     ]);
+  });
+
+  it('falls back to schools[] when the scalar school is empty on research home cards', () => {
+    const grouped = buildGroupedSearchResults({
+      query: 'efficient computing',
+      researchEntities: [
+        entity({
+          _id: 'ecl',
+          slug: 'ecl',
+          name: 'The Efficient Computing Lab (ECL)',
+          departments: ['Computer Science'],
+          school: '',
+          schools: ['School of Engineering & Applied Science'],
+        }),
+      ],
+      pathways: [],
+    });
+
+    expect(buildResearchHomeContextLine(grouped.clusters[0].entities[0])).toBe(
+      'Computer Science · School of Engineering & Applied Science',
+    );
+    expect(grouped.clusters[0].contextLine).toBe(
+      'Computer Science · School of Engineering & Applied Science',
+    );
+  });
+
+  it('prefers the scalar school over schools[] when both are present', () => {
+    expect(
+      buildResearchHomeContextLine(
+        entity({
+          departments: ['Therapeutic Radiology'],
+          school: 'School of Medicine',
+          schools: ['School of Nursing'],
+        }),
+      ),
+    ).toBe('Therapeutic Radiology · School of Medicine');
   });
 
   it('adds profile links when contact emails identify Yale netids and exposes lab context', () => {
@@ -228,16 +256,14 @@ describe('buildGroupedSearchResults', () => {
         }),
       ],
       pathways: [],
-      papers: [],
     });
 
     expect(grouped.people).toHaveLength(1);
-    expect(grouped.people[0].profileUrl).toBe('/profile/grace.hopper');
     expect(grouped.people[0].labName).toBe('Safe AI Lab');
     expect(grouped.people[0].labSlug).toBe('safe-ai');
   });
 
-  it('returns clusters, people, pathways, papers, and interpretation chips', () => {
+  it('returns clusters, people, pathways, and interpretation chips', () => {
     const grouped = buildGroupedSearchResults({
       query: 'AI safety mechanism design',
       researchEntities: [
@@ -252,12 +278,10 @@ describe('buildGroupedSearchResults', () => {
         }),
       ],
       pathways: [],
-      papers: [],
     });
 
     expect(grouped.clusters).toHaveLength(1);
     expect(grouped.people).toHaveLength(1);
-    expect(grouped.papers).toEqual([]);
     expect(grouped.pathways).toEqual([]);
     expect(grouped.interpretationChips).toEqual([
       'Query: AI safety mechanism design',

@@ -1,15 +1,19 @@
 import axios from 'axios';
 import { describe, it, expect, vi } from 'vitest';
 import * as cheerio from 'cheerio';
+import mongoose from 'mongoose';
 import {
   YsmAtoZScraper,
   extractLabHomepageDescription,
   extractProfileContactWidgetProfile,
   extractResearchFacultyUrl,
   extractSoleResearchFacultyProfile,
+  findPiUserId,
   inferPiNameFromLabName,
   labResearchFacultyToObservations,
   labToObservations,
+  parseLabs,
+  recoverLabDisplayName,
 } from '../sources/ysmAtoZScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 
@@ -136,6 +140,52 @@ describe('YsmAtoZ HTML parsing', () => {
   });
 });
 
+const INITIAL_MANGLING_HTML = `
+<html><body>
+<table>
+  <tbody>
+    <tr><td>XLiu Lab</td><td><a href="https://medicine.yale.edu/lab/x-liu/">https://medicine.yale.edu/lab/x-liu/</a></td></tr>
+    <tr><td>J. R. R. Example Lab</td><td><a href="https://medicine.yale.edu/lab/jrr-example/">https://medicine.yale.edu/lab/jrr-example/</a></td></tr>
+    <tr><td>Q.Example Lab</td><td><a href="https://medicine.yale.edu/lab/q-example/">https://medicine.yale.edu/lab/q-example/</a></td></tr>
+    <tr><td>Arnsten Lab</td><td><a href="https://medicine.yale.edu/lab/arnsten/">https://medicine.yale.edu/lab/arnsten/</a></td></tr>
+  </tbody>
+</table>
+</body></html>
+`;
+
+describe('parseLabs initial-spacing recovery (issue #581)', () => {
+  it('un-glues a leading initial that the source fused to the surname when the URL corroborates the split', () => {
+    const labs = parseLabs(INITIAL_MANGLING_HTML);
+    const liu = labs.find((l) => l.url === 'https://medicine.yale.edu/lab/x-liu/');
+    expect(liu?.name).toBe('X. Liu Lab');
+    expect(liu?.slug).toBe('ysm-x-liu');
+  });
+
+  it('preserves spacing for already-correct chained initials', () => {
+    const labs = parseLabs(INITIAL_MANGLING_HTML);
+    const example = labs.find((l) => l.url === 'https://medicine.yale.edu/lab/jrr-example/');
+    expect(example?.name).toBe('J. R. R. Example Lab');
+  });
+
+  it('restores the space after an initial period glued to the surname', () => {
+    const labs = parseLabs(INITIAL_MANGLING_HTML);
+    const q = labs.find((l) => l.url === 'https://medicine.yale.edu/lab/q-example/');
+    expect(q?.name).toBe('Q. Example Lab');
+  });
+
+  it('leaves an ordinary surname lab name unchanged', () => {
+    const labs = parseLabs(INITIAL_MANGLING_HTML);
+    const arnsten = labs.find((l) => l.url === 'https://medicine.yale.edu/lab/arnsten/');
+    expect(arnsten?.name).toBe('Arnsten Lab');
+  });
+
+  it('does not split a glued name when the URL slug does not corroborate an initial', () => {
+    expect(recoverLabDisplayName('QBio Institute', 'https://medicine.yale.edu/lab/qbio/')).toBe(
+      'QBio Institute',
+    );
+  });
+});
+
 describe('slugifyFromUrl', () => {
   it('extracts the path segment after /lab/ as the slug seed', () => {
     expect(slugifyFromUrl('https://medicine.yale.edu/lab/arnsten/')).toBe('ysm-arnsten');
@@ -157,7 +207,7 @@ describe('inferPiSurname', () => {
     expect(inferPiSurname('Iwasaki Lab')).toBe('Iwasaki');
   });
 
-  it("strips possessive apostrophe-s", () => {
+  it('strips possessive apostrophe-s', () => {
     expect(inferPiSurname("Abujarad's Digital Health Lab")).toBeTruthy();
   });
 
@@ -186,6 +236,42 @@ describe('inferPiNameFromLabName', () => {
   });
 });
 
+describe('findPiUserId surname-only safeguard (issue #562)', () => {
+  it('never attaches on a surname alone, even to a lone medicine-department candidate', async () => {
+    expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
+  });
+
+  it('never attaches on a surname alone when several faculty share the surname', async () => {
+    expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
+  });
+
+  it('does not attach a surname-only lab name to a lone same-surname faculty (Schwartz)', async () => {
+    expect(await findPiUserId(inferPiNameFromLabName('Schwartz Lab'))).toBeNull();
+  });
+
+  it('resolves a unique exact full-name match regardless of department', async () => {
+    const townsend = new mongoose.Types.ObjectId();
+    expect(
+      await findPiUserId(
+        { firstName: 'Jeffrey', lastName: 'Townsend' },
+        { allowUnknownExactName: true },
+        { resolveResearcherId: async () => ({ status: 'matched', researcherId: townsend }) },
+      ),
+    ).toBe(townsend.toString());
+  });
+
+  it('attaches only when a full first and last name both agree (Martin vs Michael Schwartz)', async () => {
+    const martin = new mongoose.Types.ObjectId();
+    expect(
+      await findPiUserId(
+        { firstName: 'Martin', lastName: 'Schwartz' },
+        { allowUnknownExactName: true },
+        { resolveResearcherId: async () => ({ status: 'matched', researcherId: martin }) },
+      ),
+    ).toBe(martin.toString());
+  });
+});
+
 describe('labToObservations', () => {
   it('does not emit index-only undergraduate access claims', () => {
     const obs = labToObservations(
@@ -198,6 +284,7 @@ describe('labToObservations', () => {
     );
 
     expect(obs.map((o) => o.field)).not.toContain('acceptingUndergrads');
+    expect(obs.map((o) => o.field)).not.toContain('openness');
   });
 });
 
@@ -237,7 +324,7 @@ describe('extractLabHomepageDescription', () => {
     expect(extractLabHomepageDescription(html)).toEqual({
       description: officialDescription,
       shortDescription:
-        'Specifically, we are interested in how chronic viral infection disrupts host homeostasis and causes chronic diseases, including chronic inflammation and cancer.',
+        'Investigates viral pathogenesis in the context of genomics, pathophysiology, immunology, and treatment, using advanced molecular biology, genomics, immunology, single-cell multi-omics, spatial transcriptomics, bioinformatics tools on clinical samples and animal models.',
     });
   });
 
@@ -254,6 +341,61 @@ describe('extractLabHomepageDescription', () => {
     ).toMatchObject({
       description,
     });
+  });
+
+  function pageDataHtml(pageData: unknown): string {
+    const escapedJson = JSON.stringify(pageData).replace(/"/g, '&quot;');
+    return `<html><body><script>${escapedJson}</script></body></html>`;
+  }
+
+  it('prefers the lab research block over a PI bio that appears first', () => {
+    const piBio =
+      'Dr. Fenwick Aldabra earned his doctorate from a coastal university and joined the faculty in 2007. He served as department chair from 2016 to 2021 and has received several honors for teaching and mentoring.';
+    const labResearch =
+      'The Aldabra Lab studies how reef microbiomes shape coral resilience and how thermal stress reshapes symbiont communities. We integrate field surveys, metagenomics, and controlled aquarium experiments to understand reef recovery.';
+
+    expect(
+      extractLabHomepageDescription(
+        pageDataHtml({
+          mainComponents: [
+            { key: 'ProfileContactWidget', model: { metaData: { description: piBio } } },
+            { key: 'GenericContent', model: { metaData: { description: labResearch } } },
+          ],
+        }),
+      ),
+    ).toMatchObject({ description: labResearch });
+  });
+
+  it('returns null when the page only offers a PI bio and welcome boilerplate', () => {
+    const piBio =
+      'Dr. Fenwick Aldabra earned his doctorate from a coastal university and joined the faculty in 2007. He served as department chair from 2016 to 2021 and has received several honors for teaching and mentoring.';
+    const welcome =
+      'Welcome to the homepage of the Aldabra Lab. Here you will find information about our team, recent news, publications, and opportunities to get involved. Please use the navigation menu to explore.';
+
+    expect(
+      extractLabHomepageDescription(
+        pageDataHtml({
+          mainComponents: [
+            { key: 'ProfileContactWidget', model: { metaData: { description: piBio } } },
+            { key: 'GenericContent', model: { metaData: { description: welcome } } },
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps a research-focused profile bio for a person entity', () => {
+    const piBio =
+      'Professor Fenwick Aldabra is a coral reef ecologist at a coastal university. His research examines how reef microbiomes shape coral resilience and how thermal stress reshapes symbiont communities.';
+
+    expect(
+      extractLabHomepageDescription(
+        pageDataHtml({
+          mainComponents: [{ key: 'GenericContent', model: { metaData: { description: piBio } } }],
+        }),
+        { kind: 'person' },
+      ),
+    ).toMatchObject({ description: piBio });
   });
 });
 
@@ -327,8 +469,8 @@ describe('extractSoleResearchFacultyProfile', () => {
   it('returns null when a people page has multiple profile cards', () => {
     const html = `
       <html><body>
-        <a href="/profile/one-person/">One Person</a>
-        <a href="/profile/two-person/">Two Person</a>
+        <a href="/profile/one-person/">One Researcher</a>
+        <a href="/profile/two-person/">Two Researcher</a>
       </body></html>
     `;
 
@@ -367,12 +509,14 @@ describe('extractProfileContactWidgetProfile', () => {
       </body></html>
     `;
 
-    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/garg/')).toEqual({
-      name: 'Skylar Lab',
-      profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
-      title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
-      email: 'skylar.lab@yale.edu',
-    });
+    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/garg/')).toEqual(
+      {
+        name: 'Skylar Lab',
+        profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+        title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
+        email: 'skylar.lab@yale.edu',
+      },
+    );
   });
 
   it('does not infer a lead when multiple profile contact widgets are present', () => {
@@ -404,7 +548,9 @@ describe('extractProfileContactWidgetProfile', () => {
       </body></html>
     `;
 
-    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/example/')).toBeNull();
+    expect(
+      extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/example/'),
+    ).toBeNull();
   });
 });
 
@@ -485,6 +631,8 @@ describe('labResearchFacultyToObservations', () => {
     );
 
     expect(observations.some((observation) => observation.entityType === 'user')).toBe(false);
-    expect(observations.find((observation) => observation.field === 'inferredPiUserKey')).toBeUndefined();
+    expect(
+      observations.find((observation) => observation.field === 'inferredPiUserKey'),
+    ).toBeUndefined();
   });
 });

@@ -40,10 +40,7 @@ const ARTIFACT_SPECS: ArtifactSpec[] = [
     collection: 'research_entity_members',
     activeMatch: { isCurrentMember: { $ne: false } },
   },
-  { artifactType: 'EntryPathway', collection: 'entry_pathways' },
-  { artifactType: 'AccessSignal', collection: 'access_signals' },
-  { artifactType: 'ContactRoute', collection: 'contact_routes' },
-  { artifactType: 'PostedOpportunity', collection: 'posted_opportunities' },
+  { artifactType: 'AccessSignal', collection: 'signals' },
 ];
 const ARCHIVED_ARTIFACT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
@@ -158,7 +155,9 @@ export function assertArchivedEntityArtifactRepairApplyAllowed({
 }): void {
   if (!apply) return;
   if (limitProvided === false) {
-    throw new Error('--limit is required when --apply is set for research-entity:repair-archived-artifacts');
+    throw new Error(
+      '--limit is required when --apply is set for research-entity:repair-archived-artifacts',
+    );
   }
   if (!confirmArchivedArtifactRepair) {
     throw new Error(
@@ -221,7 +220,10 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
     .select('_id canonicalGroupId')
     .lean();
   const canonicalByArchivedId = new Map(
-    archivedEntities.map((entity: any) => [stringId(entity._id), stringId(entity.canonicalGroupId)]),
+    archivedEntities.map((entity: any) => [
+      stringId(entity._id),
+      stringId(entity.canonicalGroupId),
+    ]),
   );
   const archivedIds = [...canonicalByArchivedId.keys()]
     .map(objectId)
@@ -257,7 +259,7 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
           _id: 1,
           researchEntityId: 1,
           derivationKey: 1,
-          signalType: 1,
+          type: 1,
           entryPathwayId: 1,
           userId: 1,
           role: 1,
@@ -273,7 +275,7 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
           _id: 1,
           researchEntityId: 1,
           derivationKey: 1,
-          signalType: 1,
+          type: 1,
           entryPathwayId: 1,
           userId: 1,
           role: 1,
@@ -289,7 +291,7 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
         researchEntityId,
         canonicalResearchEntityId: canonicalByArchivedId.get(researchEntityId) || '',
         derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.signalType),
+        signalType: stringId(row.type),
         entryPathwayId: stringId(row.entryPathwayId),
         userId: stringId(row.userId),
         role: stringId(row.role),
@@ -304,7 +306,7 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
         researchEntityId,
         canonicalResearchEntityId: researchEntityId,
         derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.signalType),
+        signalType: stringId(row.type),
         entryPathwayId: stringId(row.entryPathwayId),
         userId: stringId(row.userId),
         role: stringId(row.role),
@@ -349,7 +351,9 @@ async function archiveArtifact(
   if (canonicalObjectId) {
     set.researchEntityId = canonicalObjectId;
   }
-  const result = await db.collection(collectionName).updateOne({ _id: artifactObjectId }, { $set: set });
+  const result = await db
+    .collection(collectionName)
+    .updateOne({ _id: artifactObjectId }, { $set: set });
   return result.modifiedCount || 0;
 }
 
@@ -415,22 +419,6 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
         { $addToSet: addToSet, $set: { lastMaterializedAt: now } },
       );
       counts.mergedCanonicalArtifacts += result.modifiedCount || 0;
-    }
-
-    if (item.artifactType === 'EntryPathway') {
-      const childSpecs = [
-        { collection: 'access_signals', field: 'entryPathwayId' },
-        { collection: 'contact_routes', field: 'entryPathwayId' },
-        { collection: 'posted_opportunities', field: 'entryPathwayId' },
-      ];
-      for (const child of childSpecs) {
-        if (!(await collectionExists(child.collection))) continue;
-        const result = await db.collection(child.collection).updateMany(
-          { [child.field]: duplicateObjectId, archived: { $ne: true } },
-          { $set: { [child.field]: canonicalObjectId, lastMaterializedAt: now } },
-        );
-        counts.childReferencesRelinked += result.modifiedCount || 0;
-      }
     }
 
     counts.archivedMergedDuplicates += await archiveArtifact(

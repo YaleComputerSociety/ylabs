@@ -6,7 +6,6 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import {
   buildLaunchAcquisitionReport,
-  type LaunchAcquisitionReport,
   type LaunchAcquisitionReportOptions,
 } from '../services/launchAcquisitionReportService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -29,15 +28,9 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsed;
 }
 
-function parseRequiredValue(value: string | undefined, flag: string, requirement: string): string {
-  const trimmed = value?.trim();
-  if (!trimmed || trimmed.startsWith('--')) {
-    throw new Error(`${flag} requires ${requirement}`);
-  }
-  return trimmed;
-}
-
-export function parseLaunchAcquisitionReportArgs(argv: string[]): LaunchAcquisitionReportCliOptions {
+export function parseLaunchAcquisitionReportArgs(
+  argv: string[],
+): LaunchAcquisitionReportCliOptions {
   const options: LaunchAcquisitionReportCliOptions = {};
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -70,10 +63,7 @@ export function parseLaunchAcquisitionReportArgs(argv: string[]): LaunchAcquisit
   return options;
 }
 
-export function writeLaunchAcquisitionReportOutput(
-  report: object,
-  output?: string,
-): void {
+export function writeLaunchAcquisitionReportOutput(report: object, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });

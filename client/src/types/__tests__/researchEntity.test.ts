@@ -9,17 +9,16 @@ import {
 const entity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
   _id: 'entity-1',
   id: 'entity-1',
-  slug: 'digital-humanities-project',
-  name: 'Digital Humanities Project',
+  slug: 'example-research-initiative',
+  name: 'Example Research Initiative',
   kind: 'initiative',
-  entityType: 'DIGITAL_HUMANITIES_PROJECT',
+  entityType: 'INITIATIVE',
   description: 'Archives and computational methods.',
   websiteUrl: 'https://example.edu/project',
   location: '',
   departments: ['History'],
   researchAreas: ['Digital humanities'],
   school: 'Yale College',
-  openness: 'unknown',
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],
@@ -89,8 +88,6 @@ describe('normalizeResearchEntityDetailPayload', () => {
       researchEntity: canonical,
       group: legacy,
       members: [],
-      recentPapers: [],
-      activeListings: [],
     });
 
     expect(result.researchEntity).toEqual(expect.objectContaining(canonical));

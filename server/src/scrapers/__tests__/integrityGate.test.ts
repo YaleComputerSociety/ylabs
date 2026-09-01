@@ -4,8 +4,8 @@ const modelMocks = vi.hoisted(() => ({
   aggregate: vi.fn(async () => []),
 }));
 
-vi.mock('../../models/accessSignal', () => ({
-  AccessSignal: { aggregate: modelMocks.aggregate },
+vi.mock('../../models/signal', () => ({
+  Signal: { aggregate: modelMocks.aggregate },
 }));
 
 vi.mock('../../models/contactRoute', () => ({
@@ -16,10 +16,6 @@ vi.mock('../../models/entryPathway', () => ({
   EntryPathway: { aggregate: modelMocks.aggregate },
 }));
 
-vi.mock('../../models/paper', () => ({
-  Paper: { aggregate: modelMocks.aggregate },
-}));
-
 vi.mock('../../models/postedOpportunity', () => ({
   PostedOpportunity: { aggregate: modelMocks.aggregate },
 }));
@@ -28,12 +24,8 @@ vi.mock('../../models/researchEntity', () => ({
   ResearchEntity: { aggregate: modelMocks.aggregate },
 }));
 
-vi.mock('../../models/researchGroupMember', () => ({
-  ResearchGroupMember: { aggregate: modelMocks.aggregate },
-}));
-
-vi.mock('../../models/user', () => ({
-  User: { aggregate: modelMocks.aggregate },
+vi.mock('../../models/roleAssignment', () => ({
+  RoleAssignment: { aggregate: modelMocks.aggregate },
 }));
 
 import { runPostMaterializationIntegrityGate } from '../integrityGate';

@@ -5,8 +5,9 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { User } from '../models/user';
+import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
+import { Researcher } from '../models/researcher';
+import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -92,7 +93,11 @@ export function normalizeSurnameLabObjectId(value: unknown): mongoose.Types.Obje
   return new mongoose.Types.ObjectId(trimmed);
 }
 
-function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
+function consumeValue(
+  argv: string[],
+  index: number,
+  flag: string,
+): { value: string; nextIndex: number } {
   const value = argv[index + 1];
   if (value === undefined || value.trim() === '' || value.startsWith('--')) {
     throw new Error(`${flag} requires a value`);
@@ -186,7 +191,9 @@ export function assertDisambiguateSurnameLabApplyAllowed(
     );
   }
   if (args.apply && (!args.limitExplicit || !Number.isFinite(args.limit))) {
-    throw new Error('--limit is required when --apply is set for research-entity:disambiguate-surname-labs.');
+    throw new Error(
+      '--limit is required when --apply is set for research-entity:disambiguate-surname-labs.',
+    );
   }
   return assertScriptApplyAllowed({
     apply: args.apply,
@@ -280,7 +287,9 @@ export function buildSurnameLabDisambiguationPlans(input: {
         .map((member) => usersById.get(member.userId || ''))
         .filter((user): user is SurnameLabUserInput => !!user)
         .filter((user) => lnameMatchesSurname(user.lname, surname));
-      const uniqueUsers = Array.from(new Map(matchingUsers.map((user) => [user.id, user])).values());
+      const uniqueUsers = Array.from(
+        new Map(matchingUsers.map((user) => [user.id, user])).values(),
+      );
 
       if (uniqueUsers.length !== 1) {
         skipped.push({
@@ -311,7 +320,8 @@ export function buildSurnameLabDisambiguationPlans(input: {
       }
 
       const updateDisplayName =
-        !entity.displayName || normalizeNameKey(entity.displayName) === normalizeNameKey(entity.name);
+        !entity.displayName ||
+        normalizeNameKey(entity.displayName) === normalizeNameKey(entity.name);
       proposedForCluster.push({
         entityId: entity.id,
         slug: entity.slug,
@@ -325,8 +335,13 @@ export function buildSurnameLabDisambiguationPlans(input: {
       });
     }
 
-    const proposedNameKeys = new Set(proposedForCluster.map((plan) => normalizeNameKey(plan.newName)));
-    if (proposedForCluster.length !== entities.length || proposedNameKeys.size !== proposedForCluster.length) {
+    const proposedNameKeys = new Set(
+      proposedForCluster.map((plan) => normalizeNameKey(plan.newName)),
+    );
+    if (
+      proposedForCluster.length !== entities.length ||
+      proposedNameKeys.size !== proposedForCluster.length
+    ) {
       for (const entity of entities) {
         if (!proposedForCluster.some((plan) => plan.entityId === entity.id)) continue;
         skipped.push({
@@ -341,7 +356,10 @@ export function buildSurnameLabDisambiguationPlans(input: {
     plans.push(...proposedForCluster);
   }
 
-  plans.sort((left, right) => left.oldName.localeCompare(right.oldName) || left.newName.localeCompare(right.newName));
+  plans.sort(
+    (left, right) =>
+      left.oldName.localeCompare(right.oldName) || left.newName.localeCompare(right.newName),
+  );
   return { plans, skipped };
 }
 
@@ -355,7 +373,10 @@ function writeOutput(report: unknown, output?: string): void {
   console.log(serialized);
 }
 
-async function applyPlans(plans: SurnameLabDisambiguationPlan[], maxApply: number): Promise<ApplyResult[]> {
+async function applyPlans(
+  plans: SurnameLabDisambiguationPlan[],
+  maxApply: number,
+): Promise<ApplyResult[]> {
   const bounded = plans.slice(0, maxApply);
   const applied: ApplyResult[] = [];
   for (const plan of bounded) {
@@ -406,18 +427,26 @@ export async function runDisambiguateSurnameLabNames(args: DisambiguateSurnameLa
     .limit(args.limit)
     .lean()) as any[];
   const entityIds = entityRows.map((entity) => entity._id);
-  const memberRows = (await ResearchGroupMember.find({
-    researchEntityId: { $in: entityIds },
+  const roleAssignmentRows = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entityIds },
     archived: { $ne: true },
-    role: { $in: ['pi', 'director', 'co-pi', 'co-director'] },
+    role: { $in: ['PI', 'DIRECTOR', 'CO_PI', 'CO_DIRECTOR'] },
   })
-    .select('researchEntityId userId role isCurrentMember archived')
+    .select('target personId role state')
     .lean()) as any[];
-  const userIds = memberRows
+  const memberRows = roleAssignmentRows.map((assignment) => ({
+    researchEntityId: assignment.target?.id,
+    userId: assignment.personId,
+    role: LEGACY_ROLE_BY_CANONICAL[assignment.role as RoleAssignmentRole],
+    isCurrentMember: assignment.state !== 'HISTORICAL',
+    archived: false,
+  }));
+  const personIds = memberRows
     .map((member) => member.userId)
     .filter((id): id is mongoose.Types.ObjectId => !!id);
-  const userRows = (await User.find({ _id: { $in: userIds } })
-    .select('_id fname lname netid')
+  const userRows = (await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
+    .select('_id displayName')
     .lean()) as any[];
   const existingNames = (
     (await ResearchEntity.find(ACTIVE_FILTER).select('name').lean()) as Array<{ name?: string }>
@@ -438,12 +467,17 @@ export async function runDisambiguateSurnameLabNames(args: DisambiguateSurnameLa
       isCurrentMember: member.isCurrentMember,
       archived: member.archived,
     })),
-    users: userRows.map((user) => ({
-      id: serializedDocumentId(user._id) || '',
-      fname: user.fname,
-      lname: user.lname,
-      netid: user.netid,
-    })),
+    users: userRows.map((user) => {
+      const nameParts = String(user.displayName || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      return {
+        id: serializedDocumentId(user._id) || '',
+        fname: nameParts.slice(0, -1).join(' '),
+        lname: nameParts.length > 0 ? nameParts[nameParts.length - 1] : '',
+      };
+    }),
     existingActiveNames: existingNames,
   });
 

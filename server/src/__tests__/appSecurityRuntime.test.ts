@@ -64,6 +64,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     await import('../app');
@@ -79,14 +80,24 @@ describe('app security runtime classification', () => {
     );
   });
 
-  it('uses only bounded primitive session NetIDs for rate-limit user buckets', async () => {
-    const limiters: Array<{ keyGenerator: (req: { user?: unknown; ip?: string }) => string }> = [];
+  it('uses validated session identifiers for rate-limit buckets', async () => {
+    const limiters: Array<{
+      keyGenerator: (req: {
+        user?: unknown;
+        ip?: string;
+        headers?: Record<string, string>;
+        socket: { remoteAddress?: string };
+        session?: { rateLimitId?: unknown } | null;
+      }) => string;
+    }> = [];
     const ipKeyGenerator = vi.fn((ip: string) => `ip-key:${ip}`);
     vi.doMock('express-rate-limit', () => ({
-      default: vi.fn((options: { keyGenerator: (req: { user?: unknown; ip?: string }) => string }) => {
-        limiters.push(options);
-        return (_req: unknown, _res: unknown, next: () => void) => next();
-      }),
+      default: vi.fn(
+        (options: { keyGenerator: (req: { user?: unknown; ip?: string }) => string }) => {
+          limiters.push(options);
+          return (_req: unknown, _res: unknown, next: () => void) => next();
+        },
+      ),
       ipKeyGenerator,
     }));
     process.env = {
@@ -95,6 +106,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8,2001:db8:abcd::/48',
     };
 
     await import('../app');
@@ -108,11 +120,90 @@ describe('app security runtime classification', () => {
       },
     };
 
-    expect(keyGenerator({ user: { netId: 'AbC123' }, ip: '127.0.0.1' })).toBe('user:abc123');
-    expect(keyGenerator({ user: { netId: objectNetId }, ip: '203.0.113.7' })).toBe(
-      'ip:ip-key:203.0.113.7',
-    );
+    expect(
+      keyGenerator({
+        user: { netId: 'AbC123' },
+        session: { rateLimitId: '0123456789abcdef0123456789abcdef' },
+        socket: { remoteAddress: '127.0.0.1' },
+      }),
+    ).toBe('user:abc123');
+    expect(
+      keyGenerator({
+        user: { netId: objectNetId },
+        ip: '203.0.113.7',
+        socket: { remoteAddress: '192.0.2.7' },
+      }),
+    ).toBe('ip:ip-key:203.0.113.7');
     expect(coerced).toBe(false);
+
+    const anonymousRequest = {
+      ip: '198.51.100.20',
+      socket: { remoteAddress: '192.0.2.20' },
+      session: { rateLimitId: '0123456789abcdef0123456789abcdef' },
+    };
+    expect(keyGenerator(anonymousRequest)).toBe('anonymous:0123456789abcdef0123456789abcdef');
+
+    const malformedSessionRequest = {
+      ip: '198.51.100.8',
+      headers: {
+        'x-forwarded-for': '203.0.113.8',
+        'cf-connecting-ip': '203.0.113.9',
+      },
+      socket: { remoteAddress: '192.0.2.8' },
+      session: { rateLimitId: 'attacker-controlled' },
+    };
+    // The bucket comes from `req.ip`, which express resolves only from a peer
+    // that passes the validated TRUSTED_PROXY_CIDRS predicate - never from the
+    // raw forwarding headers, which any caller can set. Asserting the raw
+    // x-forwarded-for / cf-connecting-ip values are absent is the point of this
+    // case and it still holds after #2318; only the trusted input changed, from
+    // the load balancer's socket address to the client address it forwards.
+    expect(keyGenerator(malformedSessionRequest)).toBe('ip:ip-key:198.51.100.8');
+    expect(keyGenerator(malformedSessionRequest)).not.toContain('203.0.113.8');
+    expect(keyGenerator(malformedSessionRequest)).not.toContain('203.0.113.9');
+
+    expect(
+      keyGenerator({
+        ip: '198.51.100.9',
+        headers: {
+          'x-forwarded-for': '203.0.113.10',
+          'cf-connecting-ip': '203.0.113.11',
+        },
+        socket: { remoteAddress: '192.0.2.9' },
+        session: { rateLimitId: 'ABCDEF0123456789ABCDEF0123456789' },
+      }),
+    ).toBe('ip:ip-key:198.51.100.9');
+  });
+
+  it.each(['10.0.0.0/99', '10.0.0.0/8/garbage', '10.0.0.0/', '10.0.0.0/1e1'])(
+    'rejects malformed trusted proxy boundary %s',
+    async (trustedProxyCidrs) => {
+      process.env = {
+        ...ORIGINAL_ENV,
+        NODE_ENV: 'production',
+        SERVER_BASE_URL: 'https://yalelabs.io',
+        SSOBASEURL: 'https://secure.its.yale.edu/cas',
+        SESSION_SECRET: STRONG_SESSION_SECRET,
+        TRUSTED_PROXY_CIDRS: trustedProxyCidrs,
+      };
+
+      await expect(import('../app')).rejects.toThrow(/TRUSTED_PROXY_CIDRS/);
+    },
+  );
+
+  it('requires a trusted proxy boundary in deployed runtimes', async () => {
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '  , ',
+    };
+
+    await expect(import('../app')).rejects.toThrow(
+      /TRUSTED_PROXY_CIDRS must define at least one trusted proxy/,
+    );
   });
 
   it('keeps Express query parsing flat before request-shape sanitization', async () => {
@@ -123,11 +214,61 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');
 
     expect(app.get('query parser')).toBe('simple');
+  });
+
+  it('initializes anonymous rate-limit sessions only for API requests', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      const requestHeaders = { 'x-forwarded-proto': 'https' };
+      const staticResponse = await fetch(`http://127.0.0.1:${address.port}/missing.js`, {
+        headers: requestHeaders,
+      });
+      const apiResponse = await fetch(`http://127.0.0.1:${address.port}/api/missing`, {
+        headers: requestHeaders,
+      });
+      const readSession = (response: Response) => {
+        const sessionCookie = response.headers
+          .getSetCookie()
+          .find((cookie) => cookie.startsWith('__Host-session='));
+        const encodedSession = sessionCookie?.split(';', 1)[0].split('=', 2)[1];
+        return encodedSession
+          ? (JSON.parse(Buffer.from(encodedSession, 'base64').toString('utf8')) as Record<
+              string,
+              unknown
+            >)
+          : {};
+      };
+
+      expect(readSession(staticResponse)).not.toHaveProperty('rateLimitId');
+      expect(readSession(apiResponse).rateLimitId).toMatch(/^[a-f0-9]{32}$/);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it('serves public config with mounted browser hardening headers and no source revision fingerprint', async () => {
@@ -150,6 +291,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');
@@ -176,7 +318,9 @@ describe('app security runtime classification', () => {
       expect(response.headers.get('content-security-policy')).toContain("default-src 'self'");
       expect(response.headers.get('content-security-policy')).toContain("object-src 'none'");
       expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
-      expect(response.headers.get('content-security-policy')).toContain('upgrade-insecure-requests');
+      expect(response.headers.get('content-security-policy')).toContain(
+        'upgrade-insecure-requests',
+      );
       expect(response.headers.get('permissions-policy')).toContain('camera=()');
       expect(response.headers.get('permissions-policy')).toContain('microphone=()');
       expect(response.headers.get('permissions-policy')).toContain('geolocation=()');
@@ -203,6 +347,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');
@@ -240,6 +385,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');
@@ -279,6 +425,176 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      let lastStatus = 0;
+      let sessionCookie: string | undefined;
+
+      for (let attempt = 0; attempt < 51; attempt += 1) {
+        const response = await fetch(`http://127.0.0.1:${address.port}/api/users/watchedPrograms`, {
+          method: 'PUT',
+          headers: {
+            origin: 'https://yalelabs.io',
+            'content-type': 'application/json',
+            'x-forwarded-proto': 'https',
+            ...(sessionCookie ? { cookie: sessionCookie } : {}),
+          },
+          body: JSON.stringify({ data: { watchedPrograms: ['64a000000000000000000030'] } }),
+        });
+        if (!sessionCookie) {
+          sessionCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(';', 1)[0])
+            .join('; ');
+        }
+        lastStatus = response.status;
+        await response.text();
+      }
+
+      expect(lastStatus).toBe(429);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it('does not bill entity view telemetry against the write limiter', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      let lastStatus = 0;
+      let sessionCookie: string | undefined;
+
+      for (let attempt = 0; attempt < 51; attempt += 1) {
+        const response = await fetch(
+          `http://127.0.0.1:${address.port}/api/fellowships/64a000000000000000000030/addView`,
+          {
+            method: 'PUT',
+            headers: {
+              origin: 'https://yalelabs.io',
+              'content-type': 'application/json',
+              'x-forwarded-proto': 'https',
+              ...(sessionCookie ? { cookie: sessionCookie } : {}),
+            },
+          },
+        );
+        if (!sessionCookie) {
+          sessionCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(';', 1)[0])
+            .join('; ');
+        }
+        lastStatus = response.status;
+        await response.text();
+      }
+
+      expect(lastStatus).not.toBe(429);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it('does not bill the research analytics beacon against the write limiter', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      let lastStatus = 0;
+      let sessionCookie: string | undefined;
+
+      for (let attempt = 0; attempt < 51; attempt += 1) {
+        const response = await fetch(
+          `http://127.0.0.1:${address.port}/api/analytics/research/batch`,
+          {
+            method: 'POST',
+            headers: {
+              origin: 'https://yalelabs.io',
+              'content-type': 'application/json',
+              'x-forwarded-proto': 'https',
+              ...(sessionCookie ? { cookie: sessionCookie } : {}),
+            },
+            body: JSON.stringify({
+              events: [
+                {
+                  eventType: 'research_entity_impression',
+                  entityType: 'research_entity',
+                  entityId: '64a000000000000000000030',
+                },
+              ],
+            }),
+          },
+        );
+        if (!sessionCookie) {
+          sessionCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(';', 1)[0])
+            .join('; ');
+        }
+        lastStatus = response.status;
+        await response.text();
+      }
+
+      expect(lastStatus).not.toBe(429);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it('applies a per-IP auth limiter to the CAS login callback', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
     };
 
     const { default: app } = await import('../app');
@@ -292,15 +608,11 @@ describe('app security runtime classification', () => {
       const address = server.address() as AddressInfo;
       let lastStatus = 0;
 
-      for (let attempt = 0; attempt < 51; attempt += 1) {
-        const response = await fetch(`http://127.0.0.1:${address.port}/api/users/favPathways`, {
-          method: 'PUT',
-          headers: {
-            origin: 'https://yalelabs.io',
-            'content-type': 'application/json',
-            'x-forwarded-proto': 'https',
-          },
-          body: JSON.stringify({ data: { favPathways: ['64a000000000000000000030'] } }),
+      for (let attempt = 0; attempt < 21; attempt += 1) {
+        const response = await fetch(`http://127.0.0.1:${address.port}/api/cas`, {
+          method: 'GET',
+          headers: { 'x-forwarded-proto': 'https' },
+          redirect: 'manual',
         });
         lastStatus = response.status;
         await response.text();
