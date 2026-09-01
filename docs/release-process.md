@@ -14,15 +14,41 @@ There is no GitHub Actions deploy step, so moving a branch is what ships.
 
 ## Promoting beta to main
 
+`main` does not yet share history with `beta`.
+An earlier promotion was squash-merged, which severed the two branches, so the merge base is ancient and every intentional deletion on `beta` reads as a delete-versus-modify conflict.
+A direct `beta` into `main` pull request conflicts on roughly 485 paths that are not real conflicts.
+Check the current state with `git merge-base --is-ancestor origin/main origin/beta`: while that fails, the reconciliation below is still required.
+
+The **first** promotion is therefore a one-time reconciliation rather than a plain pull request:
+
+```bash
+git fetch origin
+git worktree add -b sync/beta-to-main /tmp/ylabs-sync origin/beta
+cd /tmp/ylabs-sync && git merge -s ours origin/main
+git diff --stat HEAD origin/beta                # must be empty
+git merge-base --is-ancestor origin/main HEAD   # must succeed
+git push -u origin sync/beta-to-main
+gh pr create --base main --head sync/beta-to-main --draft
+```
+
+`-s ours` keeps `beta`'s tree wholesale while recording `main` as a second parent.
+Before relying on it, confirm `main` holds no unique work: check that any revert pairs net to an empty diff, and that every file present only on `main` also exists somewhere in `beta` history.
+
+`-s ours` discards anything that exists only on `main`, silently and with no conflict.
+So re-confirm `main`'s unique commits immediately before merging, not only when the branch is built.
+A hotfix committed directly to `main` in between would be erased without warning.
+
+Once that has landed, `main` is an ancestor of `beta` and every later promotion is an ordinary pull request:
+
 1. Open a pull request from `beta` into `main`.
 2. Verify the change set on staging.
 3. Mark the pull request ready for review and merge it.
 
 Merge promotions with a **merge commit**.
 Never squash a branch-to-branch promotion.
-Squashing severs `main` from `beta` history, which makes the merge base ancient and turns every intentional deletion on `beta` into a delete-versus-modify conflict.
-This already happened once: `main` drifted to 1304 commits behind and a direct promotion pull request conflicted on 485 paths that were not real conflicts.
-Recovering required a branch based on `beta` that merged `main` with `-s ours` to keep `beta`'s tree while recording `main` as a second parent.
+Squashing drops the second parent, re-severs the histories, and reproduces the phantom conflicts on the next promotion.
+That is exactly how the current split arose.
+The `protect main (production)` ruleset restricts `main` to merge commits so it cannot recur by accident.
 
 Squashing individual feature pull requests into `beta` is fine and remains the norm.
 The rule applies only to promotions between long-lived branches.
@@ -79,6 +105,34 @@ Cherry-picking produces two commits carrying the same change with no ancestry li
 Keep the gap between `beta` and `main` small.
 Divergence costs nothing at a handful of commits and becomes expensive at hundreds, because every hotfix then needs a back-merge across a large refactor.
 If `beta` runs more than a sprint ahead of `main`, that is a signal to promote or to gate the unfinished work behind a flag.
+
+## Promoting data, not just code
+
+A promotion is a data migration as well as a merge.
+Moving the `main` branch deploys code; it does not move a single document.
+`server/src/scripts/promoteAcceptedBetaCopy.ts` copies Beta's Mongo into Production, and it contains no Meilisearch references at all, so the search index is a separate step again.
+
+Run the steps in this order.
+The order is not cosmetic and two of the orderings are the opposite of what seems natural.
+
+1. **Dry-run the copy.** `yarn --cwd server production:promote-beta-copy --dataset-version prod-promote-YYYY-MM-DD-lane-a-beta-copy`. Dry-run is the default. Read the per-collection plan before doing anything else.
+2. **Check for a collection that would copy nothing over existing documents.** Apply is blocked when `sourceCopyCount` is 0 and `targetCount` is above 0, because `copyCollection` deletes the whole target before inserting. Treat that blocker as a stop, not an obstacle.
+3. **Copy the data, before deploying the code.** The copy never touches Production's retired collections, so the currently deployed code keeps reading `users`, `entry_pathways`, `access_signals`, `contact_routes` and `research_entity_members` throughout. Data-first therefore has no broken window. Code-first has one: the current model reads `signals`, `accounts`, `researchers` and `role_assignments`, and a Production that has not received them yet cannot serve the visibility gate, browse ranking, login or person pages.
+4. **Re-gate visibility.** `yarn --cwd server student-visibility:gate --collection=all --apply --confirm-student-visibility-apply --max-apply=100000`. Apply mode throws without `--max-apply`, and refuses to write without `--confirm-student-visibility-apply`. Freshly copied rows do not carry a usable tier until a gate pass runs, so skipping this leaves part of the corpus stuck at `operator_review` and invisible.
+5. **Rebuild the search index, after the gate and not before.** `SCRAPER_ENV=production yarn --cwd server reindex:meili --confirm`, run inside the Production Render shell because the private Meilisearch is not reachable from a laptop. The gate writes tiers, so an index built before the gate carries pre-gate tiers. The rebuild applies the full settings object first, including `pagination.maxTotalHits`, so it also repairs an index left at Meilisearch's 1000-hit default.
+6. **Then reconcile and merge `main`**, which deploys the code.
+
+The gate refuses to apply when too many lead-requiring entities resolve no lead, and it throws rather than writing a partial result.
+That is the intended behaviour, and it is why the gate must follow a complete copy: a copy that stopped after `research_entities` but before `role_assignments` would make every row read as leadless.
+
+Never run `materialize` or a source-scoped scrape against Production after a copy that carried no observations.
+`entityMaterializer` walks ranked observation candidates for `fullDescription` and writes an empty string when the walk assigns nothing.
+With no observations in Production, any entity whose full description restates its short is blanked, `shortDescription` survives, the tier stays `student_ready`, and no gate or audit fires.
+The result is a healthy-looking row whose detail page serves nothing.
+Production is a serve-only environment: evidence accumulates in Development and arrives already materialised.
+
+`--include-observations` flips the observation default.
+It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
 
 ## Verifying a release
 
