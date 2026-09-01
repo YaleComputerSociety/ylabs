@@ -348,6 +348,46 @@ function isUncorroboratedGrantOnlyEntity(entity: Record<string, any>): boolean {
   return urls.every(isGrantOrOrcidSourceUrl);
 }
 
+/**
+ * The recorded-closure marker. Written into `studentVisibilitySuppressionReason`
+ * alongside the existing `research_infrastructure_only` convention, so no new
+ * field is required (#2284).
+ *
+ * Why a recorded marker rather than a detector: nothing in the model could
+ * express "this stopped existing", and nothing available can infer it either.
+ * Measured on the two known-closed rows:
+ *
+ *  - `rudnick-lab-rudnickg` — link health HEALTHY/200 on both recorded links. A
+ *    departed PI's Yale profile keeps returning 200 long after the lab is gone,
+ *    so link death cannot express closure and the one instrument that looks like
+ *    it should catch this actively reports the row as fine.
+ *  - `dept-astronomy-debra-fischer` — still observed by `dept-faculty-roster` on
+ *    2026-08-28, listed on `astronomy.yale.edu/people/faculty`, with a HEALTHY
+ *    PRIMARY_IDENTITY profile link verified 2026-08-31. The PI has relocated to
+ *    NASA. **Every Yale-derived signal says she is present**, because Yale's own
+ *    page is stale, so no detector built from Yale sources can ever catch this
+ *    class. It needs external evidence (an ORCID employment end date) or a human
+ *    report.
+ *
+ * THIS GATE FAILS OPEN, DELIBERATELY, AND MUST STAY THAT WAY. Absence of closure
+ * evidence is not evidence of closure: roughly 4,500 live rows carry no closure
+ * evidence either way, so treating "unobserved" as "closed" would suppress most
+ * of the corpus. Only a positively recorded marker suppresses. Do not "correct"
+ * this toward fail-closed — that is the opposite of the right default here, and
+ * it is the mirror of the inert-guard work in #2258.
+ *
+ * Deliberately NOT `NOT_CURRENTLY_AVAILABLE`, which is a live availability value
+ * meaning "not recruiting right now". A student reads "not taking students this
+ * term" and "this lab no longer exists" very differently, and collapsing them
+ * would be its own defect.
+ */
+export const PERMANENTLY_CLOSED_SUPPRESSION_REASON = 'permanently_closed';
+
+export const hasRecordedClosureEvidence = (entity: Record<string, any>): boolean =>
+  textValue(entity.studentVisibilitySuppressionReason).includes(
+    PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  );
+
 const FORMALIZATION_PROGRAM_KINDS = new Set([
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
@@ -552,6 +592,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'research_infrastructure_only',
   'non_owner_grant_shell',
   'grant_only_no_current_yale_source',
+  'permanently_closed',
   'lab_name_org_type_mismatch',
   'inactive_at_yale',
   'archive_review',
@@ -668,6 +709,8 @@ export function computeResearchEntityStudentVisibility({
   ) {
     reasons.push('research_infrastructure_only');
   }
+  const permanentlyClosed = hasRecordedClosureEvidence(entity);
+  if (permanentlyClosed) reasons.push('permanently_closed');
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
   if (contentPageRisk) reasons.push('content_page_risk');
@@ -717,6 +760,7 @@ export function computeResearchEntityStudentVisibility({
     profileBiographyShell ||
     nonOwnerGrantShell ||
     uncorroboratedGrantOnly ||
+    permanentlyClosed ||
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';
@@ -743,6 +787,20 @@ export function computeResearchEntityStudentVisibility({
       tier: result.computedTier,
       computedTier: result.computedTier,
       reasons: Array.from(new Set([...result.reasons, 'public_description_invariant_failed'])),
+    };
+  }
+  // A recorded closure outranks every later hold, including an operator override
+  // to publish and the missing-lead hold. The marker means someone established
+  // that the research home no longer exists, and "closed" is a stronger statement
+  // than "needs review" - so it is checked first. The way to un-close a row is to
+  // remove the marker, not to publish over it; leaving the override able to win
+  // would make the marker advisory, which is the "correct but cannot fire" shape
+  // catalogued in #2258.
+  if (permanentlyClosed && result.tier !== 'suppressed') {
+    return {
+      tier: 'suppressed',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, PERMANENTLY_CLOSED_SUPPRESSION_REASON])),
     };
   }
   // A lead-requiring entity with no attached PI can never be published to
