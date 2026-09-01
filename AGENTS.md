@@ -20,6 +20,7 @@ Claude Code can auto-discover them if `.claude/skills` is symlinked to `skills/`
 | `skills/contributing/SKILL.md` | Adding an API endpoint, a client page or route, or modifying a Mongoose schema. |
 | `skills/frontend-polish/SKILL.md` | Building or changing client UI: applying the polish, accessibility, and design-token bar. Pairs with `client/DESIGN.md`. |
 | `skills/finishing-work/SKILL.md` | Wrapping up: verification, diff review, docs maintenance, and roadmap cleanup. |
+| `docs/release-process.md` | Promoting `beta` to `main`, holding a release, feature flags, hotfix ordering, and the data-migration sequence a promotion requires. Read before any promotion or production data operation. |
 
 ## Default Task Loop
 
