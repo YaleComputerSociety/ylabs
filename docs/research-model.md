@@ -27,6 +27,16 @@ Public research identity, and a first-class findable entity in its own right: a 
 [`server/src/models/researcher.ts`](../server/src/models/researcher.ts) defines `displayName`, an optional `accountId` link to the private login principal, `profileLinks[]` (`kind`: `YALE_OFFICIAL` | `LAB_ABOUT` | `PERSONAL_ACADEMIC` | `GOOGLE_SCHOLAR` | `ORCID`, each with `url`, `verifiedAt`, and `healthStatus`), an optional `identifiers.orcid` and `identifiers.netid` (the netid disambiguation spine), a `profile` display projection (`title`, `primaryDepartment`, `imageUrl`, `websiteUrl`), `status` (`ACTIVE` | `DEPARTED` | `UNKNOWN`), and `archived`.
 `Researcher` rows are created only from Yale-confirmed evidence; an external identifier such as ORCID never creates one by itself.
 
+`identifiers.netid` holds the account's own netid, not whatever a source called a netid (#2325).
+A department roster publishes the friendly email alias (`corey.ohern`) rather than the netid (`co54`), and that alias passes the netid shape test, so `materializeUser` resolves identity by netid first, then by display name, and only then by the observed email.
+The email join runs last on purpose: it is a gap-filler, not an authority.
+On Development it reaches 177 observation keys nothing else reaches, but it also disagrees with the name resolver on 12, and one of those (`patricia.ryan-krause@yale.edu`) points at an account belonging to a different person, so letting the email overrule a name would graft one researcher's evidence onto another's record.
+Three guards keep it a gap-filler: it runs only when neither the netid nor the name reached anything, only when exactly one live (non-archived, non-`DISABLED`) account claims the address, and, when the observation carries a display name, only when that name agrees on surname and given name with the researcher the account already backs.
+A nameless observation still joins, since the roster rows this reaches often publish an address and a title but no name, and an email-only join therefore enriches the profile but never renames the researcher.
+`identifiers.netid` is stamped only from the account the researcher is actually linked to, so an accountless match stamps nothing rather than promoting an alias to a join key.
+Like `identifiers.orcid`, `identifiers.netid` carries a unique sparse index, so a netid another `Researcher` already holds yields to that holder: the enriched researcher keeps the netid it already had, the rest of its profile still lands, and the collision is counted as a materialization conflict and logged instead of failing the key.
+Roughly 37% of person-observation keys still resolve to no researcher, dominated by the `dept:` and `ysm:` key prefixes and by name-resolver `ambiguous`/`absent`; that remainder is tracked in #2325 and is why out-of-band repair lanes still carry work the sweep cannot.
+
 `profileLinks[].healthStatus` is a probed fact, not a default (#2292).
 `yarn --cwd server researchers:verify-official-profile-links` walks each `YALE_OFFICIAL` link grouped by department host, probes it through the SSRF-guarded `checkSourceLinkHealth`, and records `HEALTHY` or `UNAVAILABLE` with a fresh `verifiedAt`; [research-data-pipeline.md](research-data-pipeline.md) owns its invocation and apply guards.
 Only 404 and 410 settle a link: a 403, 429, 5xx, or transport failure means the department site would not answer us, so the run stamps a fresh `verifiedAt` but writes no health status, leaving the stored verdict alone, because `UNKNOWN` is the absence of a probed fact and writing it would un-retire a page an earlier probe already proved gone.
@@ -346,7 +356,8 @@ This metadata is a planning and review contract, not a substitute for evidence. 
 ORCID may disambiguate a Yale-confirmed researcher and support a reviewed outbound profile link, but it must not act as an account-creation shortcut or a works feed.
 
 Create a `Researcher` only when a research signal attaches the person to the corpus (a roster or PI/director role on a research entity); bare directory identity (a Yalies/Directory record with a netid and a faculty-ish title) no longer mints a `Researcher` or `Account` on its own.
-Directory identity instead enriches an already-existing researcher: it records the netid on `Researcher.identifiers.netid` (the disambiguation spine, replacing the retired scraper-minted `Account` lookup) and fills profile fields, but never creates the person record.
+Directory identity instead enriches an already-existing researcher: it fills profile fields and stamps the linked account's own netid on `Researcher.identifiers.netid` (the disambiguation spine, replacing the retired scraper-minted `Account` lookup), but never creates the person record.
+The [`Researcher`](#researcher-researchers) section owns how that identity is resolved and which netid may be stamped.
 Accounts are created only at login; the pruned directory people become login-provisioned identities if and when they actually sign in.
 Reviewed ORCID and Google Scholar profiles may support disambiguation and outbound navigation, while NIH and NSF may enrich grant context, but none should create a Yale person record by itself.
 
