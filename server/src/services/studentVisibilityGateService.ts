@@ -174,8 +174,17 @@ const suppressionRepairReasons = new Set([
   'research_infrastructure_only',
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
+// Every field the tier computation reads must be listed here. A field the
+// computation consults but the projection omits arrives as `undefined`, so the
+// branch depending on it silently never fires and the gate reports a clean
+// result - the same failure #2242 produced when this pattern dropped
+// `researchAreas` from the description audit and invented 275 phantom rows.
+//
+// `studentVisibilitySuppressionReason` was missing, which made BOTH operator
+// suppression markers inert: `research_infrastructure_only` (pre-existing) and
+// `permanently_closed` (#2284). Neither could ever suppress through the gate.
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
