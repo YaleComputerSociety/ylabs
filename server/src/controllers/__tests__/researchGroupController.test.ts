@@ -262,17 +262,18 @@ describe('researchGroupController', () => {
     expect(mocks.searchResearchGroupsViaMeili).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({
       researchEntities: [],
-      estimatedTotalHits: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
       page: 999_999_999,
       pageSize: 100,
+      depthLimited: true,
     });
   });
 
   it('ends a paging walk past the depth bound instead of re-serving the last reachable page', async () => {
     // A clamped response is indistinguishable from a full page of new rows to a
     // client that advances its own page counter, so it appends the same entities
-    // forever. The response must instead satisfy the client's exhaustion rule:
-    // a short page whose offset has passed the reported total.
+    // forever. The response must instead end the walk explicitly, and without
+    // inventing a result-set size for a search that never ran: a fabricated total
+    // would replace the real one the client is already displaying.
     const pageSize = 24;
     const lastReachablePage = Math.floor(RESEARCH_SEARCH_MAX_REACHABLE_RECORDS / pageSize);
     mocks.searchResearchGroupsViaMeili.mockResolvedValue({
@@ -298,7 +299,9 @@ describe('researchGroupController', () => {
     const payload = beyondRes.json.mock.calls[0][0];
     expect(payload.researchEntities).toEqual([]);
     expect(payload.page).toBe(lastReachablePage + 1);
-    expect(payload.page * payload.pageSize).toBeGreaterThanOrEqual(payload.estimatedTotalHits);
+    expect(payload.depthLimited).toBe(true);
+    expect('estimatedTotalHits' in payload).toBe(false);
+    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledTimes(1);
   });
 
   it('skips facet computation in the search layer when the page omits facets', async () => {

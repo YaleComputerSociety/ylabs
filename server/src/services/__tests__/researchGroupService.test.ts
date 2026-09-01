@@ -1550,6 +1550,24 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(cSharpResult.researchEntities).toEqual([]);
   });
 
+  it('answers a facet-requesting caller with a distribution even on a path that runs no search', async () => {
+    // A caller that asked for facets must never get a response without them:
+    // absent has to mean "unchanged, keep the copy you hold", otherwise a client
+    // keeps showing counts that describe a different result set.
+    const requested = await searchResearchGroupsViaMeili('C++', {}, 1, 24);
+    expect(requested.facetDistribution).toEqual({});
+
+    const notRequested = await searchResearchGroupsViaMeili(
+      'C++',
+      {},
+      1,
+      24,
+      {},
+      { includeFacets: false },
+    );
+    expect(notRequested.facetDistribution).toBeUndefined();
+  });
+
   it('still runs a real keyword search for a bare single letter with no stripped symbols (#1228 regression guard)', async () => {
     mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 358 });
 
@@ -2395,6 +2413,7 @@ describe('searchResearchGroupsViaMeili', () => {
         }),
       }),
     ]);
+    expect(result.facetDistribution).toEqual({});
   });
 });
 

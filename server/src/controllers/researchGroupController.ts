@@ -22,10 +22,7 @@ import {
 } from '../models/studentVisibility';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
-import {
-  RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
-  maxReachableResearchSearchPage,
-} from '../services/researchSearchPagination';
+import { maxReachableResearchSearchPage } from '../services/researchSearchPagination';
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
@@ -209,13 +206,15 @@ export const searchResearchGroups = async (request: Request, response: Response)
     // Past the bound, answer with an empty page instead of clamping to the last
     // reachable one: a clamped response looks like a full page of new rows to a
     // client that tracks its own page counter, which appends the same entities
-    // forever. An empty page terminates the walk and dispatches no search work.
+    // forever. An empty depth-limited page terminates the walk and dispatches no
+    // search work. No result-set size is reported: the search never ran, so any
+    // total here would be invented, and `depthLimited` already ends the walk.
     if (page > maxReachableResearchSearchPage(pageSize)) {
       return response.json({
         researchEntities: [],
-        estimatedTotalHits: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
         page,
         pageSize,
+        depthLimited: true,
       });
     }
     // Facets describe the whole result set, not the page, and they dominate the

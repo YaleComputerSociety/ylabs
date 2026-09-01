@@ -148,6 +148,10 @@ interface ResearchEntitySearchPage {
   // Absent when the server omitted facets for this page. Distinct from an empty
   // object, which means "this result set genuinely has no facet values".
   facetDistribution?: Record<string, Record<string, number>>;
+  // The requested page sat past the server's reachable pagination depth, so no
+  // search ran and `estimatedTotalHits` carries no information about the result
+  // set. Ends the walk without overwriting the total already on screen.
+  depthLimited?: boolean;
 }
 
 interface ActiveResearchSearchRequest {
@@ -247,6 +251,7 @@ const searchResearchEntities = async (
     page: normalized.page || page,
     pageSize: normalized.pageSize || pageSize,
     facetDistribution: normalized.facetDistribution,
+    depthLimited: normalized.depthLimited === true,
   };
 };
 
@@ -256,9 +261,12 @@ const searchResearchEntities = async (
 // later pages still hold servable homes. Only the reported total may end
 // pagination, which also bounds the walk: page advances until it passes
 // estimatedTotalHits.
+// A depth-limited page reports no total of its own, so it ends the walk on its
+// own signal rather than on the total comparison below.
 export const isResearchEntitySearchExhausted = (page: ResearchEntitySearchPage) =>
-  page.researchEntities.length < page.pageSize &&
-  page.page * page.pageSize >= page.estimatedTotalHits;
+  page.depthLimited === true ||
+  (page.researchEntities.length < page.pageSize &&
+    page.page * page.pageSize >= page.estimatedTotalHits);
 
 const SectionHeading = ({ children }: { children: string }) => (
   <div className="mb-3 flex w-full items-center justify-between gap-3">
@@ -720,7 +728,9 @@ const Research = () => {
       if (page === 1 && researchEntitiesPage.facetDistribution) {
         setBrowseFacetDistribution(researchEntitiesPage.facetDistribution);
       }
-      setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
+      if (!researchEntitiesPage.depthLimited) {
+        setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
+      }
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
       setDefaultSearchError('');
       researchEntities.forEach((entity, index) => {
@@ -985,7 +995,9 @@ const Research = () => {
           });
         });
       }
-      setSearchTotal(researchEntitiesPage.estimatedTotalHits);
+      if (!researchEntitiesPage.depthLimited) {
+        setSearchTotal(researchEntitiesPage.estimatedTotalHits);
+      }
       setSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
     } catch (error) {
       if (

@@ -1781,6 +1781,70 @@ describe('Research page', () => {
     ).toBeTruthy();
   });
 
+  it('keeps the reported result total when a load-more page reports the depth bound', async () => {
+    class MockIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback;
+      }
+
+      observe = vi.fn();
+      disconnect = vi.fn();
+      unobserve = vi.fn();
+      takeRecords = vi.fn(() => []);
+    }
+
+    window.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    globalThis.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      bottom: 2000,
+      height: 1,
+      left: 0,
+      right: 1,
+      top: 2000,
+      width: 1,
+      x: 0,
+      y: 2000,
+      toJSON: () => ({}),
+    }));
+
+    // A page past the server's reachable depth ran no search, so it reports no
+    // result-set size. The header must keep the total the search did report.
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      if (body.page === 2) {
+        return { data: { researchEntities: [], page: 2, pageSize: 24, depthLimited: true } };
+      }
+      return researchSearchResponse([researchEntity], { estimatedTotalHits: 6000, page: 1 });
+    });
+
+    renderResearch(departments, ['/research?q=protein+folding']);
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await screen.findByText(/6,000 research homes for 'protein folding'/);
+    await waitFor(() => {
+      expect(intersectionCallback).toBeDefined();
+    });
+
+    await act(async () => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/research/search',
+        expect.objectContaining({ page: 2, pageSize: 24 }),
+        expect.any(Object),
+      );
+    });
+
+    expect(screen.getByText(/6,000 research homes for 'protein folding'/)).toBeTruthy();
+  });
+
   it('preserves facet availability when loading more search results fails', async () => {
     class MockIntersectionObserver {
       constructor(callback: IntersectionObserverCallback) {

@@ -960,6 +960,11 @@ export async function searchResearchGroupsViaMeili(
     (!isBrowseAllQuery && trimmedQuery === '' && !hasUnicodeWordContent) ||
     isDegenerateSymbolCollapse;
   const meiliQueryText = trimmedQuery !== '' ? trimmedQuery : normalizedQuery.raw;
+  // Every path that was asked for facets answers with a distribution, so an
+  // absent key means "unchanged, keep the copy you hold" to a paging client and
+  // never leaves stale counts describing a different result set.
+  const requestedFacetDistribution: Record<string, Record<string, number>> | undefined =
+    safeOptions.includeFacets ? {} : undefined;
   if (isUnsearchableQuery) {
     return addResearchEntitySearchAliases(
       {
@@ -967,6 +972,7 @@ export async function searchResearchGroupsViaMeili(
         estimatedTotalHits: 0,
         page: safePage,
         pageSize: safePageSize,
+        facetDistribution: requestedFacetDistribution,
         degraded: false,
       },
       { includeOperatorFields: safeOptions.includeNonPublic },
@@ -1003,6 +1009,7 @@ export async function searchResearchGroupsViaMeili(
         estimatedTotalHits: filteredCandidates.length,
         page: safePage,
         pageSize: safePageSize,
+        facetDistribution: requestedFacetDistribution,
         degraded: planningContextResult.degraded,
       },
       { includeOperatorFields: safeOptions.includeNonPublic },
@@ -1401,7 +1408,7 @@ export async function searchResearchGroupsViaMeili(
       estimatedTotalHits: adjustedTotalHits,
       page: safePage,
       pageSize: safePageSize,
-      facetDistribution,
+      facetDistribution: facetDistribution ?? requestedFacetDistribution,
       degraded: degraded || planningContextResult.degraded,
     },
     { includeOperatorFields: safeOptions.includeNonPublic },
