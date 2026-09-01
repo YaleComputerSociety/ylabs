@@ -88,8 +88,9 @@ describe('ceiling configuration', () => {
   });
 
   it('describes the effective value so a fat-fingered env var is visible at boot', () => {
-    expect(describeFirstContactCeiling({ FIRST_CONTACT_RATE_LIMIT_MAX: '900' } as NodeJS.ProcessEnv))
-      .toBe('first-contact ceiling 900/15m (from FIRST_CONTACT_RATE_LIMIT_MAX)');
+    expect(
+      describeFirstContactCeiling({ FIRST_CONTACT_RATE_LIMIT_MAX: '900' } as NodeJS.ProcessEnv),
+    ).toBe('first-contact ceiling 900/15m (from FIRST_CONTACT_RATE_LIMIT_MAX)');
   });
 });
 
