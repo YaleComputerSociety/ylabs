@@ -11,6 +11,7 @@ import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
@@ -580,6 +581,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'thin_description',
   'blank_public_description',
   'missing_lead',
+  'unusable_name',
   'duplicate_name_risk',
   'duplicate_risk',
   'exact_url_duplicate_risk',
@@ -625,6 +627,10 @@ export interface ResearchEntityStudentReadyCorrectness {
   // directory / biography / non-owner grant / off-scope) are removed one tier
   // earlier, at `suppressed`.
   notDuplicate: boolean;
+  // (d) The record has a name that identifies something. A placeholder ("n/a",
+  // "unknown") or blank `name` leaves nothing to title the card with, and cannot
+  // be rescued by `displayName`, which is only ever a branded alias of `name`.
+  hasUsableName: boolean;
 }
 
 /**
@@ -644,7 +650,8 @@ export function researchEntityMeetsStudentReadyDefinition(
     correctness.descriptionCoherent &&
     correctness.entityContentMatchesCard &&
     correctness.rightLeadAttached &&
-    correctness.notDuplicate
+    correctness.notDuplicate &&
+    correctness.hasUsableName
   );
 }
 
@@ -701,8 +708,15 @@ export function computeResearchEntityStudentVisibility({
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
   const outsideResearchScope = !researchScope.researchHomeEligible;
+  // Keyed on `name` alone: `displayName` is only ever a branded alias of `name`,
+  // so a placeholder `name` leaves nothing to title the card with once a graft on
+  // the alias is withheld at serve time (#2367). Absence is deliberately NOT
+  // checked here: `name` is `required` on the schema and 0 records store an empty
+  // one, so a blank-name arm could never fire.
+  const hasUsableName = !isPlaceholderEntityName(entity.name);
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
+  if (!hasUsableName) reasons.push('unusable_name');
   if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (
     textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
@@ -748,6 +762,7 @@ export function computeResearchEntityStudentVisibility({
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
     notDuplicate: !duplicateRisk,
+    hasUsableName,
   };
 
   let computedTier: StudentVisibilityTier = 'operator_review';

@@ -31,6 +31,9 @@ They are the set `STUDENT_READY_HARD_BLOCKER_REASONS`, and each maps to one fiel
 
 - Description: `missing_description`, `missing_card_description`, `thin_description`, `blank_public_description`. A card that renders no real prose, or prose about something else. Maps to `descriptionCoherent` (and `entityContentMatchesCard` for off-entity content, e.g. a "<Person> Lab" name typed as an org whose body describes a center).
 - Identity / lead: `missing_lead`, `duplicate_name_risk`, `duplicate_risk`, `exact_url_duplicate_risk`, `pi_identity_conflict`, `profile_identity_risk`. Maps to `rightLeadAttached` and `notDuplicate`.
+- Name: `unusable_name`. A `name` that is filler rather than an identity ("n/a", "none", "unknown", "TBD"). Maps to `hasUsableName`.
+Checked on `name` alone, because `displayName` is only ever a branded alias of it: when a graft on the alias is withheld at serve time the card falls back to `name`, so filler there leaves nothing to title the card with.
+Absence is deliberately not a blocker, since `name` is `required` on the schema and no record stores an empty one.
 - Wrong-type / shell: `generic_directory_shell`, `profile_biography_shell`, `content_page_risk`, `non_research_entity`, `non_research_program`, `research_infrastructure_only`, `non_owner_grant_shell`, `lab_name_org_type_mismatch`. Removed at `suppressed` (a stronger form of the duplicate / suppressed-shell blocker).
 - Inactive / out of scope: `inactive_at_yale`, `archive_review`, `not_undergraduate_relevant`.
 

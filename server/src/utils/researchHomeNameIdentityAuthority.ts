@@ -156,6 +156,23 @@ export function isNonIdentifyingLinkLabelName(value: unknown): boolean {
   return words.every((word) => LINK_LABEL_WORDS.has(word));
 }
 
+// Matched against the WHOLE value before any word-splitting: `nameWords` splits
+// on non-alphanumerics, so "n/a" becomes ['n','a'] and can never match
+// LINK_LABEL_WORDS however many placeholder tokens are added to that set (#2367).
+const PLACEHOLDER_ENTITY_NAME_RE =
+  /^(?:n\s*[/.]?\s*a|none|null|nil|unknown|unnamed|untitled|undefined|tbd|to\s+be\s+determined|not\s+applicable|not\s+available|no\s+name|blank|empty|placeholder|test|x{3,})[.!]*$|^[-–—.?*\s]+$/i;
+
+/**
+ * A filler value a source emitted in place of a name. It identifies nothing, so
+ * it must never be stored as one and must never reach a student, and unlike a
+ * link label it cannot be detected word-wise.
+ */
+export function isPlaceholderEntityName(value: unknown): boolean {
+  const name = textValue(value).trim();
+  if (!name) return false;
+  return PLACEHOLDER_ENTITY_NAME_RE.test(name);
+}
+
 function nameCarriesIdentityToken(value: unknown, identityTokens: string[]): boolean {
   if (identityTokens.length === 0) return false;
   const words = new Set(nameWords(value));

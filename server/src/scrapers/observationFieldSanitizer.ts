@@ -40,6 +40,7 @@ import { sanitizeResearchAreaLabelList } from '../utils/researchAreaLabelHygiene
 import { isResearchAreaLabelLeakage } from './researchAreaCanonicalization';
 import {
   isNonIdentifyingLinkLabelName,
+  isPlaceholderEntityName,
   stripResearchHomeNameLinkWrapper,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isResearchSectionLabel } from './researchAreaLabels';
@@ -98,6 +99,7 @@ function isEntityNameFurniture(value: string): boolean {
     isNavMenuChromeTitle(value) ||
     isSectionLabelTitle(value) ||
     isNonIdentifyingLinkLabelName(value) ||
+    isPlaceholderEntityName(value) ||
     hasRawEmailAddress(value) ||
     hasStreetAddressFragment(value) ||
     hasPhoneContactFragment(value) ||
