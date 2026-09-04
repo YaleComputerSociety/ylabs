@@ -2,14 +2,20 @@ import {
   isBoilerplatePlatformHostUrl,
   isFileShareOrDocumentUrl,
   isListingOrIndexUrl,
+  isMultiTenantAcademicHostRootUrl,
   isPersonProfileOrDirectoryUrl,
   sourceUrlToResearchHomeWebsiteUrl,
+  type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 
 export interface WebsiteUrlBackfillCandidateEntity {
   websiteUrl?: unknown;
   website?: unknown;
   sourceUrls?: unknown;
+  name?: unknown;
+  displayName?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
 }
 
 const URL_MAXLENGTH = 2048;
@@ -72,7 +78,17 @@ export function isFileShareOrDocumentWebsiteUrl(value: unknown): boolean {
   return isFileShareOrDocumentUrl(value);
 }
 
-export function isPromotableWebsiteUrl(value: unknown): boolean {
+export function isMultiTenantHostRootWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return isMultiTenantAcademicHostRootUrl(value, entity);
+}
+
+export function isPromotableWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
   return (
     isPublicHttpUrl(value) &&
     !isGrantOrIdentifierUrl(value) &&
@@ -80,7 +96,26 @@ export function isPromotableWebsiteUrl(value: unknown): boolean {
     !isProfilePageWebsiteUrl(value) &&
     !isListingPageWebsiteUrl(value) &&
     !isBoilerplateHostWebsiteUrl(value) &&
-    !isFileShareOrDocumentWebsiteUrl(value)
+    !isFileShareOrDocumentWebsiteUrl(value) &&
+    !isMultiTenantHostRootWebsiteUrl(value, entity)
+  );
+}
+
+/**
+ * A stored `websiteUrl` that can never be served as an entity's research home,
+ * so it is re-picked from evidence when evidence has a real one and otherwise
+ * cleared. Distinct from the profile-page case, which falls back to keeping the
+ * profile as a PI link rather than clearing.
+ */
+export function isUnservableWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return (
+    isListingPageWebsiteUrl(value) ||
+    isBoilerplateHostWebsiteUrl(value) ||
+    isFileShareOrDocumentWebsiteUrl(value) ||
+    isMultiTenantHostRootWebsiteUrl(value, entity)
   );
 }
 
@@ -88,10 +123,13 @@ export function hasUsableWebsiteUrl(entity: WebsiteUrlBackfillCandidateEntity): 
   return isPublicHttpUrl(entity.websiteUrl);
 }
 
-function selectResearchHomeWebsiteUrl(candidates: unknown[]): string | undefined {
+function selectResearchHomeWebsiteUrl(
+  candidates: unknown[],
+  entity?: ResearchEntityHostOwnerIdentity,
+): string | undefined {
   for (const candidate of candidates) {
-    if (!isPromotableWebsiteUrl(candidate)) continue;
-    const url = sourceUrlToResearchHomeWebsiteUrl(candidate);
+    if (!isPromotableWebsiteUrl(candidate, entity)) continue;
+    const url = sourceUrlToResearchHomeWebsiteUrl(candidate, entity);
     if (url) return url;
   }
   return undefined;
@@ -110,11 +148,14 @@ export type WebsiteUrlBackfillResolution =
  * roots, bare `/people`, `/people/faculty`, `/faculty` roots), and generic
  * CMS/platform boilerplate hosts (e.g. `wordpress.org` "Powered by" footer links)
  * and file-share/direct-document hosts (Google Drive/Docs, Dropbox, Box, OneDrive,
- * bare `.pdf`/`.doc(x)`/`.ppt(x)`/`.xls(x)` links) are never promoted, so a listing,
- * profile, boilerplate, or non-navigable file page can never beat a real lab site.
- * An entity whose existing `websiteUrl` is a listing/index page (including
- * `/people/members`, `/people/index`, and other people-roster/index subpages), a
- * boilerplate platform host, or a file-share/document link is corrected to a genuine
+ * bare `.pdf`/`.doc(x)`/`.ppt(x)`/`.xls(x)` links) and the roots of shared academic
+ * hosts that publish one page per tenant under `~user` are never promoted, so a
+ * listing, profile, boilerplate, non-navigable file, or shared-host page can never
+ * beat a real lab site.
+ * An entity whose existing `websiteUrl` is unservable as a research home - a
+ * listing/index page (including `/people/members`, `/people/index`, and other
+ * people-roster/index subpages), a boilerplate platform host, a shared
+ * multi-tenant host root, or a file-share/document link - is corrected to a genuine
  * research home / lab site when one exists in its evidence, and otherwise cleared
  * (fail closed to no website rather than an off-site, directory-index, or dead/non-navigable
  * file link). A single-person
@@ -122,6 +163,10 @@ export type WebsiteUrlBackfillResolution =
  * otherwise kept as a PI fallback. Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
  * then ordered `sourceUrls`) is used.
+ * The entity's own shape and `name`/`displayName` are consulted only so a shared
+ * academic host's own organization keeps its root as its website instead of being
+ * stripped along with its tenants. A person-scoped entity is never eligible, so a
+ * grafted organization name cannot buy one an exemption.
  */
 export function resolveBackfillWebsiteUrl(
   entity: WebsiteUrlBackfillCandidateEntity,
@@ -130,26 +175,26 @@ export function resolveBackfillWebsiteUrl(
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
   ];
+  const hostOwnerIdentity: ResearchEntityHostOwnerIdentity = {
+    name: entity.name,
+    displayName: entity.displayName,
+    entityType: entity.entityType,
+    kind: entity.kind,
+  };
   if (hasUsableWebsiteUrl(entity)) {
-    if (isListingPageWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates);
-      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
-    }
-    if (isBoilerplateHostWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates);
-      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
-    }
-    if (isFileShareOrDocumentWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates);
+    if (isUnservableWebsiteUrl(entity.websiteUrl, hostOwnerIdentity)) {
+      const researchHome = selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity);
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }
     if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
-      const researchHome = selectResearchHomeWebsiteUrl(candidates);
+      const researchHome = selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity);
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'keep' };
     }
     return { action: 'keep' };
   }
-  const promotable = candidates.find(isPromotableWebsiteUrl);
+  const promotable = candidates.find((candidate) =>
+    isPromotableWebsiteUrl(candidate, hostOwnerIdentity),
+  );
   const cleaned = promotable ? cleanString(promotable) : undefined;
   return cleaned ? { action: 'set', websiteUrl: cleaned } : { action: 'keep' };
 }

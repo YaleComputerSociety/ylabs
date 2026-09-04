@@ -17,6 +17,7 @@ import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
+import { isMultiTenantAcademicHostRootUrl } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
 import { personScopedResearchEntityNameNamesSomethingElse } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
@@ -406,6 +407,12 @@ export function toPublicResearchEntityDto(
     served.shortDescription,
     served.fullDescription,
   );
+  const hostOwnerIdentity = {
+    name: served.name ?? group.name,
+    displayName: served.displayName ?? group.displayName,
+    entityType,
+    kind,
+  };
 
   const dto: PublicResearchEntityDto = {
     _id: id,
@@ -437,7 +444,7 @@ export function toPublicResearchEntityDto(
     if (group[field] !== undefined) {
       if (field === 'website' || field === 'websiteUrl') {
         const url = publicHttpUrl(group[field]);
-        if (url) dto[field] = url;
+        if (url && !isMultiTenantAcademicHostRootUrl(url, hostOwnerIdentity)) dto[field] = url;
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {

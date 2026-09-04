@@ -2558,18 +2558,18 @@ const publicString = (value: unknown): string | undefined =>
     ? redactDirectContactInfo(value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH))
     : undefined;
 
-const publicResearchDetailSourceUrl = (value: unknown): string | undefined => {
+const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | undefined => {
   const url = publicHttpUrl(value);
-  if (!url || isDisallowedResearchEntitySourceUrl(url)) return undefined;
+  if (!url || isDisallowedResearchEntitySourceUrl(url, entity)) return undefined;
   return url;
 };
 
-const publicAccessSignalForResearchDetail = (signal: any) => ({
+const publicAccessSignalForResearchDetail = (signal: any, entity?: any) => ({
   signalType: signal.type,
   confidence: signal.confidence,
   confidenceScore: signal.confidenceScore,
   excerpt: publicString(signal.source?.excerpt),
-  sourceUrl: publicResearchDetailSourceUrl(signal.source?.url),
+  sourceUrl: publicResearchDetailSourceUrl(signal.source?.url, entity),
   observedAt: signal.observedAt,
 });
 
@@ -2612,7 +2612,7 @@ const publicResearchDetailGroup = (group: any) => {
   } = group || {};
   if (Array.isArray(publicGroup.sourceUrls)) {
     publicGroup.sourceUrls = publicGroup.sourceUrls.filter(
-      (url: unknown) => !isDisallowedResearchEntitySourceUrl(url),
+      (url: unknown) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
     );
   }
   return {
@@ -2805,7 +2805,9 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   ]);
 
   const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
-  const publicAccessSignals = (accessSignals as any[]).map(publicAccessSignalForResearchDetail);
+  const publicAccessSignals = (accessSignals as any[]).map((signal) =>
+    publicAccessSignalForResearchDetail(signal, group),
+  );
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
   const structuralRelationExclusionKeys = [
     ...relationshipPayload.relatedResearchEntities,

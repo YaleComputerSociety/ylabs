@@ -323,6 +323,56 @@ describe('researchEntityDto', () => {
     expect(dto.sourceUrls).toEqual(['https://url-safety.example.edu/source']);
   });
 
+  it('suppresses a stored shared multi-tenant host root websiteUrl at read time (#2359)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-root',
+      slug: 'manohar-lab',
+      name: 'Manohar Lab',
+      kind: 'lab',
+      websiteUrl: 'https://csl.yale.edu/',
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
+  });
+
+  it('keeps the shared host root for the host organization’s own entity', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-owner',
+      slug: 'computer-systems-lab',
+      name: 'Computer Systems Lab',
+      entityType: 'CENTER',
+      kind: 'center',
+      websiteUrl: 'https://csl.yale.edu/',
+    });
+
+    expect(dto.websiteUrl).toBe('https://csl.yale.edu/');
+  });
+
+  it('withholds the shared host root from a person-scoped entity carrying a grafted host name', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-grafted-tenant',
+      slug: 'nih-pi-example-person',
+      name: 'Computer Systems Lab at Yale',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://csl.yale.edu/',
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
+  });
+
+  it('keeps a tenant page under a shared host as the served website', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-tenant-page',
+      slug: 'tenant-page-lab',
+      name: 'Tenant Page Lab',
+      kind: 'lab',
+      websiteUrl: 'https://gauss.math.yale.edu/~an592/',
+    });
+
+    expect(dto.websiteUrl).toBe('https://gauss.math.yale.edu/~an592/');
+  });
+
   it('redacts direct contact details from public evidence-style fields', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-evidence-redaction',

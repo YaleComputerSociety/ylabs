@@ -924,7 +924,7 @@ export function sourceUrlResearchHomeUrlsForEntity(entity: Record<string, any>):
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ...objectStringValues(entity.sourceObservationUrls),
   ])
-    .map(sourceUrlToResearchHomeWebsiteUrl)
+    .map((url) => sourceUrlToResearchHomeWebsiteUrl(url, entity))
     .filter(Boolean);
 }
 
