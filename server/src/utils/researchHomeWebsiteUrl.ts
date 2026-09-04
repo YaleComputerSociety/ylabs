@@ -199,12 +199,20 @@ export function isSharedPeopleRosterUrl(value: unknown): boolean {
   );
 }
 
-export function isDisallowedResearchEntitySourceUrl(value: unknown): boolean {
+export interface ResearchEntityHostOwnerIdentity {
+  name?: unknown;
+  displayName?: unknown;
+}
+
+export function isDisallowedResearchEntitySourceUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
   return (
     isSelfReferentialUrl(value) ||
     isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
-    isMultiTenantAcademicHostRootUrl(value)
+    isMultiTenantAcademicHostRootUrl(value, entity)
   );
 }
 
@@ -219,10 +227,9 @@ export function isBareDomainRootUrl(value: unknown): boolean {
 // Shared academic web hosts that publish one page per tenant under a `~user`
 // path. Each was found serving `/~user/` member pages in the corpus, which is
 // what makes the host organization rather than any one tenant the owner of its
-// root.
-const MULTI_TENANT_ACADEMIC_HOSTS = new Set([
+// root. Listed without any `www.` alias, which the host lookup normalizes away.
+export const MULTI_TENANT_ACADEMIC_HOSTS = [
   'csl.yale.edu',
-  'www.stat.yale.edu',
   'stat.yale.edu',
   'ursula.chem.yale.edu',
   'gauss.math.yale.edu',
@@ -232,9 +239,71 @@ const MULTI_TENANT_ACADEMIC_HOSTS = new Set([
   'pantheon.yale.edu',
   'math.mit.edu',
   'math.stanford.edu',
-]);
+] as const;
+
+const MULTI_TENANT_ACADEMIC_HOST_SET: ReadonlySet<string> = new Set(MULTI_TENANT_ACADEMIC_HOSTS);
+
+const hostnameWithoutWwwAlias = (url: URL): string =>
+  url.hostname.toLowerCase().replace(/^www\./, '');
+
+const isMultiTenantAcademicHost = (url: URL): boolean =>
+  MULTI_TENANT_ACADEMIC_HOST_SET.has(hostnameWithoutWwwAlias(url));
 
 const BARE_INDEX_FILE_PATH = /^\/index\.(?:php|html?|aspx|cgi)$/i;
+
+const TENANT_HOME_PATH = /^\/~[^/]+/;
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export const MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN = new RegExp(
+  `^https?://(?:www\\.)?(?:${MULTI_TENANT_ACADEMIC_HOSTS.map(escapeRegExp).join('|')})/*(?:index\\.(?:php|html?|aspx|cgi))?/*$`,
+  'i',
+);
+
+const HOST_OWNER_NAME_NOISE_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'at',
+  'for',
+  'in',
+  'of',
+  'on',
+  'the',
+  'university',
+  'yale',
+]);
+
+const hostOwnerNameWords = (value: unknown): string[] =>
+  textValue(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/[\s-]+/)
+    .filter((word) => word.length > 0 && !HOST_OWNER_NAME_NOISE_WORDS.has(word));
+
+/**
+ * Whether the entity being resolved is the host organization itself rather than
+ * one of its tenants, judged from its own name: `csl.yale.edu` is the Computer
+ * Systems Lab's own root, so the CSL entity keeps it as its website while a
+ * member's entity does not. Without this exception the umbrella's own entity
+ * would be stripped of the only clickable route it has, unlike the sibling
+ * rejections (`wordpress.org`, `drive.google.com`) which are never any entity's
+ * own home.
+ */
+export function researchEntityOwnsMultiTenantAcademicHost(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  const url = parseHttpUrl(value);
+  if (!url || !isMultiTenantAcademicHost(url)) return false;
+  const hostLabel = hostnameWithoutWwwAlias(url).split('.')[0];
+  if (!hostLabel) return false;
+  return [entity?.name, entity?.displayName].some((candidate) => {
+    const words = hostOwnerNameWords(candidate);
+    if (words.length === 0) return false;
+    return words.includes(hostLabel) || words.map((word) => word[0]).join('') === hostLabel;
+  });
+}
 
 /**
  * The root of a shared academic host, which names the host organization and not
@@ -244,16 +313,36 @@ const BARE_INDEX_FILE_PATH = /^\/index\.(?:php|html?|aspx|cgi)$/i;
  * professor's "Visit lab website" sends a student to the umbrella instead of the
  * person they clicked (#2359).
  *
- * Only the root is rejected. A `~user` page under the same host is exactly the
- * tenant's own research home and stays promotable, which is what keeps this from
- * discarding the evidence it is meant to protect.
+ * Only the root is rejected, and only for an entity that is not the host
+ * organization itself. A `~user` page under the same host is exactly the
+ * tenant's own research home and stays promotable - including on the
+ * multi-label hosts, where `isMultiTenantAcademicHostTenantPageUrl` is what
+ * keeps `sourceUrlToResearchHomeWebsiteUrl` from discarding the evidence this
+ * rule is meant to protect.
  */
-export function isMultiTenantAcademicHostRootUrl(value: unknown): boolean {
+export function isMultiTenantAcademicHostRootUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
-  if (!MULTI_TENANT_ACADEMIC_HOSTS.has(url.hostname.toLowerCase())) return false;
+  if (!isMultiTenantAcademicHost(url)) return false;
   const pathname = url.pathname.replace(/\/+$/, '');
-  return pathname.length === 0 || BARE_INDEX_FILE_PATH.test(pathname);
+  if (pathname.length > 0 && !BARE_INDEX_FILE_PATH.test(pathname)) return false;
+  return !researchEntityOwnsMultiTenantAcademicHost(url.toString(), entity);
+}
+
+/**
+ * A tenant's own page on a shared academic host (`csl.yale.edu/~arun/`). It is a
+ * personal site in every sense that matters, so it must clear the Yale-subdomain
+ * gate in `sourceUrlToResearchHomeWebsiteUrl`, which otherwise rejects every
+ * multi-label Yale host (`gauss.math.yale.edu`) and would leave the tenant page
+ * unpromotable exactly where the root has just been rejected.
+ */
+export function isMultiTenantAcademicHostTenantPageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return isMultiTenantAcademicHost(url) && TENANT_HOME_PATH.test(url.pathname);
 }
 
 const PROGRAM_APPLICATION_PORTAL_HOST =
@@ -408,12 +497,15 @@ export function isGoogleSitesResearchHome(url: URL): boolean {
   );
 }
 
-export function sourceUrlToResearchHomeWebsiteUrl(value: unknown): string {
+export function sourceUrlToResearchHomeWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): string {
   const raw = textValue(value);
   if (!raw) return '';
   if (isListingOrIndexUrl(raw)) return '';
   if (isBoilerplatePlatformHostUrl(raw)) return '';
-  if (isMultiTenantAcademicHostRootUrl(raw)) return '';
+  if (isMultiTenantAcademicHostRootUrl(raw, entity)) return '';
   try {
     const url = new URL(raw);
     url.hash = '';
@@ -470,6 +562,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(value: unknown): string {
     const isDirectPersonalSite =
       /(?:^|\.)campuspress\.yale\.edu$/i.test(url.hostname) ||
       /github\.io$/i.test(url.hostname) ||
+      isMultiTenantAcademicHostTenantPageUrl(url.toString()) ||
       !isYale;
     const isSpecificYaleResearchHomePath = /(?:lab|labs|project|group)/i.test(hostPath);
     if (

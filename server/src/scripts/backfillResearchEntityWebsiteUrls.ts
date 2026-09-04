@@ -7,6 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN } from '../utils/researchHomeWebsiteUrl';
 import {
   resolveBackfillWebsiteUrl,
   type WebsiteUrlBackfillCandidateEntity,
@@ -109,9 +110,10 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
         { websiteUrl: { $not: /^https?:\/\//i } },
         { websiteUrl: PROFILE_PAGE_WEBSITE_URL_PATTERN },
         { websiteUrl: LISTING_PAGE_WEBSITE_URL_PATTERN },
+        { websiteUrl: MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN },
       ],
     },
-    { _id: 1, slug: 1, name: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+    { _id: 1, slug: 1, name: 1, displayName: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
   ).lean();
 
   const result: ResearchEntityWebsiteUrlBackfillResult = {

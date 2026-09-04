@@ -906,6 +906,8 @@ export function deriveResearchEntityWebsiteUrl(
     websiteUrl: merged('websiteUrl'),
     website: merged('website'),
     sourceUrls: merged('sourceUrls'),
+    name: merged('name'),
+    displayName: merged('displayName'),
   });
 }
 

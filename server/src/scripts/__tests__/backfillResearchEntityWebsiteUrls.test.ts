@@ -311,6 +311,58 @@ describe('multi-tenant academic host roots (#2359)', () => {
       }),
     ).toEqual({ action: 'set', websiteUrl: 'https://csl.yale.edu/~arun/' });
   });
+
+  it('re-picks the tenant page on a multi-label host too, instead of clearing', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://gauss.math.yale.edu/',
+        sourceUrls: ['https://gauss.math.yale.edu/', 'https://gauss.math.yale.edu/~an592/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://gauss.math.yale.edu/~an592/' });
+  });
+
+  it('rejects the `www.` alias of a shared host root as well', () => {
+    expect(isMultiTenantHostRootWebsiteUrl('https://www.csl.yale.edu/')).toBe(true);
+    expect(isPromotableWebsiteUrl('https://www.csl.yale.edu/')).toBe(false);
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://www.csl.yale.edu/',
+        sourceUrls: ['https://www.csl.yale.edu/', 'https://www.csl.yale.edu/~arun/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://www.csl.yale.edu/~arun/' });
+  });
+
+  it('keeps the shared host root for the host organization’s own entity', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Computer Systems Lab',
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/'],
+      }),
+    ).toEqual({ action: 'keep' });
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Manohar Lab',
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('promotes the shared host root for the host organization when it has no website', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        displayName: 'Computer Systems Lab',
+        sourceUrls: ['https://csl.yale.edu/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://csl.yale.edu/' });
+    expect(
+      resolveBackfillWebsiteUrl({
+        name: 'Manohar Lab',
+        sourceUrls: ['https://csl.yale.edu/'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
 });
 
 describe('selectBackfillWebsiteUrl', () => {

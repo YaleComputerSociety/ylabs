@@ -8,6 +8,7 @@ import {
   isFileShareOrDocumentUrl,
   isListingOrIndexUrl,
   isMultiTenantAcademicHostRootUrl,
+  isMultiTenantAcademicHostTenantPageUrl,
   isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
@@ -544,10 +545,56 @@ describe('isMultiTenantAcademicHostRootUrl', () => {
     expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/index.html')).toBe(true);
   });
 
+  it('flags the `www.` alias of every listed host, not just the one spelled with it', () => {
+    expect(isMultiTenantAcademicHostRootUrl('https://www.csl.yale.edu/')).toBe(true);
+    expect(isMultiTenantAcademicHostRootUrl('https://www.pantheon.yale.edu/')).toBe(true);
+    expect(isMultiTenantAcademicHostRootUrl('https://www.gauss.math.yale.edu/index.php')).toBe(
+      true,
+    );
+    expect(isMultiTenantAcademicHostRootUrl('https://www.math.mit.edu/')).toBe(true);
+  });
+
   it('leaves a tenant page under the same host promotable', () => {
     expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/~arun/')).toBe(false);
     expect(isMultiTenantAcademicHostRootUrl('https://www.stat.yale.edu/~hz68/')).toBe(false);
     expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/index.php/people/')).toBe(false);
+  });
+
+  it('recognizes a tenant page on a multi-label host as the tenant’s own site', () => {
+    expect(isMultiTenantAcademicHostTenantPageUrl('https://gauss.math.yale.edu/~an592/')).toBe(
+      true,
+    );
+    expect(isMultiTenantAcademicHostTenantPageUrl('https://www.csl.yale.edu/~arun/')).toBe(true);
+    expect(isMultiTenantAcademicHostTenantPageUrl('https://csl.yale.edu/')).toBe(false);
+    expect(isMultiTenantAcademicHostTenantPageUrl('https://engineering.yale.edu/~arun/')).toBe(
+      false,
+    );
+  });
+
+  it('keeps the root for the host organization’s own entity', () => {
+    expect(
+      isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', { name: 'Computer Systems Lab' }),
+    ).toBe(false);
+    expect(
+      isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', {
+        name: 'Yale Computer Systems Laboratory',
+      }),
+    ).toBe(false);
+    expect(
+      isDisallowedResearchEntitySourceUrl('https://csl.yale.edu/', {
+        name: 'Computer Systems Lab',
+      }),
+    ).toBe(false);
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://csl.yale.edu/', { name: 'Computer Systems Lab' }),
+    ).toBe('https://csl.yale.edu/');
+  });
+
+  it('still rejects the root for a tenant whose name does not name the host', () => {
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', { name: 'Manohar Lab' })).toBe(
+      true,
+    );
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', { name: '' })).toBe(true);
   });
 
   it('ignores hosts that are not shared academic hosts, and malformed values', () => {
@@ -559,9 +606,24 @@ describe('isMultiTenantAcademicHostRootUrl', () => {
 
   it('is disallowed as a research-entity source URL and never becomes a website', () => {
     expect(isDisallowedResearchEntitySourceUrl('https://csl.yale.edu/')).toBe(true);
+    expect(isDisallowedResearchEntitySourceUrl('https://www.csl.yale.edu/')).toBe(true);
     expect(sourceUrlToResearchHomeWebsiteUrl('https://csl.yale.edu/')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://www.csl.yale.edu/')).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://csl.yale.edu/~arun/')).toBe(
       'https://csl.yale.edu/~arun/',
+    );
+  });
+
+  it('keeps a tenant page on a multi-label host promotable as a research home', () => {
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://gauss.math.yale.edu/~an592/')).toBe(
+      'https://gauss.math.yale.edu/~an592/',
+    );
+    expect(sourceUrlToResearchHomeWebsiteUrl('http://gauss.math.yale.edu/~jw378')).toBe(
+      'http://gauss.math.yale.edu/~jw378/',
+    );
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://gauss.math.yale.edu/')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://ursula.chem.yale.edu/~batista/')).toBe(
+      'https://ursula.chem.yale.edu/~batista/',
     );
   });
 });
