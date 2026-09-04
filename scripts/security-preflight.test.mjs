@@ -4928,7 +4928,7 @@ test('public research detail omits internal entity, relationship, and member ids
   assert.doesNotMatch(serviceSource, /researchEntityId: String\(researchEntityId \|\| ''\)/);
 
   const accessSignalSerializer = serviceSource.match(
-    /const publicAccessSignalForResearchDetail = \(signal: any\) => \(\{[\s\S]*?\n\}\);/,
+    /const publicAccessSignalForResearchDetail = \([^)]*\) => \(\{[\s\S]*?\n\}\);/,
   );
   assert.ok(accessSignalSerializer, 'public access-signal serializer should exist');
   assert.doesNotMatch(accessSignalSerializer[0], /_id:/);
