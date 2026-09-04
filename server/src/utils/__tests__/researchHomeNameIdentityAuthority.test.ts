@@ -10,6 +10,7 @@ import {
   isNonIdentifyingLinkLabelName,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
+  personSurnamesFromDisplayNames,
 } from '../researchHomeNameIdentityAuthority';
 
 describe('isUmbrellaOrganizationName', () => {
@@ -276,5 +277,148 @@ describe('nobiliary-particle surnames (#2285)', () => {
 
   it('does not widen the rule to a topical name whose host echoes it', () => {
     expect(corroboratedLabNameEponyms('Belief Lab', 'https://belieflab.example.edu/')).toEqual([]);
+  });
+});
+
+describe('personSurnamesFromDisplayNames', () => {
+  it('keeps the surname each display name ends on', () => {
+    expect(
+      personSurnamesFromDisplayNames(['Monika Sharma', 'Clemens R. Scherzer', 'Daniel F. Levey']),
+    ).toEqual(new Set(['sharma', 'scherzer', 'levey']));
+  });
+
+  it('ignores credential and honorific tails so they never read as surnames', () => {
+    const surnames = personSurnamesFromDisplayNames(['Amit Khanna, MD', 'Dr. Jing Hughes, PhD']);
+    expect(surnames.has('khanna')).toBe(true);
+    expect(surnames.has('hughes')).toBe(true);
+    expect(surnames.has('md')).toBe(false);
+    expect(surnames.has('phd')).toBe(false);
+  });
+
+  it('skips a display name with no usable token', () => {
+    expect(personSurnamesFromDisplayNames(['', '  ', 'Dr', 42, null])).toEqual(new Set());
+  });
+});
+
+// A trainee's PI's lab sits on its own eponymous host with a bare or generic
+// path, so the path rule sees no surname and the roster is the only corroboration
+// available (#2361).
+describe('claimsAnotherPersonsLab corroborated by a surname roster', () => {
+  const roster = new Set(['girgenti', 'scherzer', 'verhaak', 'cohen', 'sharma', 'sliby']);
+
+  it('flags a foreign eponymous lab whose surname only shows up in the host', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Girgenti Lab',
+        websiteUrl: 'https://www.girgentilab.org/home',
+        identityTokens: ['alexa', 'sliby'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
+  });
+
+  it('flags a foreign eponymous lab whose site path is generic', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Scherzer Lab',
+        websiteUrl: 'https://www.scherzerlaboratory.org/index.html',
+        identityTokens: ['monika', 'sharma'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves the eponym holder own row alone', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Scherzer Lab',
+        websiteUrl: 'https://www.scherzerlaboratory.org/index.html',
+        identityTokens: ['clemens', 'scherzer'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(false);
+  });
+
+  it('leaves a topical name alone however its host reads', () => {
+    for (const [name, url] of [
+      ['Belief Lab', 'https://belieflab.example.edu/'],
+      ['The UPLiFT Lab', 'https://theupliftlab.example.com/'],
+      ['CMB Lab', 'https://www.cmblab.example.org'],
+    ]) {
+      expect(
+        claimsAnotherPersonsLab({
+          harvestedName: name,
+          websiteUrl: url,
+          identityTokens: ['joshua', 'kenney'],
+          knownPersonSurnames: roster,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('stays path-only when no roster is supplied', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Girgenti Lab',
+        websiteUrl: 'https://www.girgentilab.org/home',
+        identityTokens: ['alexa', 'sliby'],
+      }),
+    ).toBe(false);
+  });
+
+  it('still prefers the path corroboration when the path does name a person', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Cohen Lab',
+        websiteUrl: 'https://medicine.example.edu/lab/tcohen/',
+        identityTokens: ['patrick', 'cudahy'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('classifyHarvestedResearchHomeName with lab-slot evidence', () => {
+  it('reads a slot describing a collaborative as an affiliation, not a lab', () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'APOLLO LAB, Northgate University',
+        personName: 'Rohan Vasquez',
+        websiteUrl: 'https://apollo-lab-northgate.github.io',
+        harvestedDescription: 'Applied Learning AI, Robotics AI Northgate Surgery Collaborative',
+      }),
+    ).toBe('AFFILIATED_ORGANIZATION');
+  });
+
+  it('adopts the same name when the slot carries no organizational blurb', () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'APOLLO LAB, Northgate University',
+        personName: 'Rohan Vasquez',
+        websiteUrl: 'https://apollo-lab-northgate.github.io',
+      }),
+    ).toBe('OWN_IDENTITY');
+  });
+
+  it('keeps a lab whose blurb merely names its host organization', () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'HAIR Lab',
+        personName: 'Amanda Trelling',
+        websiteUrl: 'https://medicine.example.edu/childstudy/collaborative-labs/',
+        harvestedDescription: 'The lab is part of the Northgate Child Study Center',
+      }),
+    ).toBe('OWN_IDENTITY');
+  });
+
+  it('refuses a foreign eponymous lab once the roster corroborates the surname', () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'Scherzer Lab',
+        personName: 'Monika Sharma',
+        websiteUrl: 'https://www.scherzerlaboratory.org/index.html',
+        knownPersonSurnames: new Set(['scherzer', 'sharma']),
+      }),
+    ).toBe('ANOTHER_PERSONS_LAB');
   });
 });

@@ -39,7 +39,7 @@ function profileHtml(options: {
   organizations?: Array<{ name: string }>;
   meshKeywords?: string[];
   researchDescription?: string;
-  labWebsite?: { name: string; url: string };
+  labWebsite?: { name: string; url: string; description?: string };
   orcid?: string;
   includeResearchSection?: boolean;
 }): string {
@@ -440,5 +440,63 @@ describe('facultyToResearchEntityObservations affiliated-organization guard (#22
     });
     expect(byField.name).toBe('Rivers Center for Cardiac Outcomes');
     expect(byField.entityType).toBe('LAB');
+  });
+});
+
+describe('facultyToResearchEntityObservations foreign-lab and affiliation evidence (#2361)', () => {
+  const SLOAN: RawYsmFaculty = {
+    name: 'Sloan, Avery',
+    profileUrl: 'https://medicine.yale.edu/profile/avery-sloan/',
+    slug: 'avery-sloan',
+  };
+
+  function entityFields(
+    faculty: RawYsmFaculty,
+    labWebsite: { name: string; url: string; description?: string },
+    roster?: ReadonlySet<string>,
+  ) {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: faculty.name.split(', ').reverse().join(' '),
+        meshKeywords: ['Heart Failure'],
+        labWebsite,
+      }),
+      faculty,
+    )!;
+    const obs = facultyToResearchEntityObservations(profile, `ysm:${faculty.slug}`, roster);
+    return Object.fromEntries(obs.map((o) => [o.field, o.value]));
+  }
+
+  it('refuses another person’s lab whose surname only appears in the host', () => {
+    const byField = entityFields(
+      SLOAN,
+      { name: 'Girgenti Lab', url: 'https://www.girgentilab.example.org/home' },
+      new Set(['girgenti', 'sloan']),
+    );
+    expect(byField.name).toBe('Avery Sloan Faculty Research');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.websiteUrl).toBeUndefined();
+  });
+
+  it('adopts the same link when the surname is not on the roster', () => {
+    const byField = entityFields(
+      SLOAN,
+      { name: 'Beacon Lab', url: 'https://www.beaconlab.example.org/home' },
+      new Set(['girgenti', 'sloan']),
+    );
+    expect(byField.name).toBe('Beacon Lab');
+    expect(byField.entityType).toBe('LAB');
+    expect(byField.websiteUrl).toBe('https://www.beaconlab.example.org/home');
+  });
+
+  it('refuses a lab slot that describes what it links as a collaborative', () => {
+    const byField = entityFields(SLOAN, {
+      name: 'APOLLO LAB, Northgate University',
+      url: 'https://apollo-lab-northgate.github.io',
+      description: 'Applied Learning AI, Robotics AI Northgate Surgery Collaborative',
+    });
+    expect(byField.name).toBe('Avery Sloan Faculty Research');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.websiteUrl).toBeUndefined();
   });
 });
