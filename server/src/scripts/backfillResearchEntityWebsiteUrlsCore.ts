@@ -135,6 +135,18 @@ function selectResearchHomeWebsiteUrl(
   return undefined;
 }
 
+const websiteUrlLedgerKey = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().replace(/\/+$/, '').toLowerCase() : '';
+
+function isWebsiteUrlAlreadyCitedAsEvidence(
+  entity: WebsiteUrlBackfillCandidateEntity,
+  candidates: unknown[],
+): boolean {
+  const key = websiteUrlLedgerKey(entity.websiteUrl);
+  if (!key) return false;
+  return candidates.some((candidate) => websiteUrlLedgerKey(candidate) === key);
+}
+
 export type WebsiteUrlBackfillResolution =
   | { action: 'keep' }
   | { action: 'set'; websiteUrl: string }
@@ -159,8 +171,14 @@ export type WebsiteUrlBackfillResolution =
  * research home / lab site when one exists in its evidence, and otherwise cleared
  * (fail closed to no website rather than an off-site, directory-index, or dead/non-navigable
  * file link). A single-person
- * profile-page `websiteUrl` is corrected to a research home when one exists and
- * otherwise kept as a PI fallback. Any other usable `websiteUrl` is kept.
+ * profile-page `websiteUrl` is corrected to a research home when one exists; when none
+ * does it is cleared if that same URL is already cited in the entity's own evidence,
+ * and kept as a PI fallback only when clearing would drop the URL entirely.
+ * The materializer projects a lead's official profile page onto `sourceUrls` (#613)
+ * and the detail page renders that as the official-profile CTA, so a profile URL that
+ * is already cited there reaches the student either way; keeping it as `websiteUrl` too
+ * only made an entity advertise a "Website" that was its PI's profile page under a
+ * second label (#2352). Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
  * then ordered `sourceUrls`) is used.
  * The entity's own shape and `name`/`displayName` are consulted only so a shared
@@ -188,7 +206,10 @@ export function resolveBackfillWebsiteUrl(
     }
     if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
       const researchHome = selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity);
-      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'keep' };
+      if (researchHome) return { action: 'set', websiteUrl: researchHome };
+      return isWebsiteUrlAlreadyCitedAsEvidence(entity, candidates)
+        ? { action: 'clear' }
+        : { action: 'keep' };
     }
     return { action: 'keep' };
   }
