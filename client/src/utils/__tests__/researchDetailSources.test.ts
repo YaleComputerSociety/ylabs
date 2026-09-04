@@ -1075,15 +1075,17 @@ describe('resolveDecisionProfileUrl', () => {
 
 describe('isDepartmentRosterProvenanceUrl', () => {
   it('flags department-scoped and rank-scoped roster slugs, not person profiles', () => {
-    expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/people/linguistics-faculty')).toBe(
-      true,
-    );
+    expect(
+      isDepartmentRosterProvenanceUrl('https://ling.yale.edu/people/linguistics-faculty'),
+    ).toBe(true);
     expect(isDepartmentRosterProvenanceUrl('https://english.yale.edu/people/ladder-faculty')).toBe(
       true,
     );
     expect(isDepartmentRosterProvenanceUrl('https://french.yale.edu/people/professors')).toBe(true);
     expect(isDepartmentRosterProvenanceUrl('https://whc.yale.edu/people/our-people')).toBe(true);
-    expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/profile/tom-example')).toBe(false);
+    expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/profile/tom-example')).toBe(
+      false,
+    );
     expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/people/claire-example')).toBe(
       false,
     );
