@@ -696,6 +696,15 @@ test('an unreachable advisory registry fails closed and stays bounded', () => {
   // "false" or "0" in CI config would satisfy.
   assert.match(runner, /process\.env\.DEPENDENCY_AUDIT_ALLOW_UNREACHABLE === '1'/);
 
+  // CI reaches the override through a repository variable, never a literal. A
+  // hardcoded "1" here would silently disable the gate for every future run, and
+  // an unset variable must leave it strict.
+  assert.match(
+    ciWorkflow,
+    /DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: \$\{\{ vars\.ALLOW_UNREACHABLE_ADVISORY_AUDIT \}\}/,
+  );
+  assert.doesNotMatch(ciWorkflow, /DEPENDENCY_AUDIT_ALLOW_UNREACHABLE:\s*['"]?1['"]?\s*$/m);
+
   // Yarn defaults to httpTimeout 60s and httpRetry 3, so one audit can burn three
   // minutes on a dead registry and six workspace audits far longer. The runner caps
   // both per invocation rather than in .yarnrc.yml, because a global httpTimeout

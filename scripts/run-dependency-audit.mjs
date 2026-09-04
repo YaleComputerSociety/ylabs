@@ -5,7 +5,6 @@ import {
   MAX_AUDIT_ATTEMPTS,
   REGISTRY_UNAVAILABLE_EXIT_CODE,
   runDependencyAudits,
-  spawnAudit,
 } from './dependency-audit-core.mjs';
 
 const argv = process.argv.slice(2);
@@ -29,7 +28,7 @@ const timeoutMs = numberFromEnv('DEPENDENCY_AUDIT_TIMEOUT_MS', DEFAULT_AUDIT_TIM
 const result = await runDependencyAudits({
   directories,
   auditArgs,
-  runAudit: (directory) => spawnAudit({ directory, auditArgs, timeoutMs }),
+  timeoutMs,
   attempts: numberFromEnv('DEPENDENCY_AUDIT_ATTEMPTS', MAX_AUDIT_ATTEMPTS),
   retryDelayMs: numberFromEnv('DEPENDENCY_AUDIT_RETRY_DELAY_MS', DEFAULT_RETRY_DELAY_MS),
   log: (message) => console.error(message),

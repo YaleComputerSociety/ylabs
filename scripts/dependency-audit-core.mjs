@@ -8,7 +8,20 @@ export const DEFAULT_RETRY_DELAY_MS = 5_000;
 // workspace audits stall CI far longer. Both are settable, but only per
 // invocation here: putting httpTimeout in .yarnrc.yml would also cap install
 // tarball fetches, where a low ceiling causes flaky installs on slow networks.
-export const DEFAULT_AUDIT_TIMEOUT_MS = 12_000;
+export const DEFAULT_AUDIT_TIMEOUT_MS = 20_000;
+
+// The advisory service degrades before it fails outright: on 2026-09-04 it
+// answered 2 of 5 probes in 19-28s and hung past 70s on the other 3. A single
+// tight timeout turns that into a false "unreachable", and a single generous one
+// makes a hard outage expensive. Grow the budget per attempt instead, so a dead
+// registry costs seconds on attempt 1 while a merely slow one still gets a real
+// chance before the run gives up.
+export const MAX_AUDIT_TIMEOUT_MS = 60_000;
+
+export function auditTimeoutForAttempt(attempt, baseMs = DEFAULT_AUDIT_TIMEOUT_MS) {
+  if (baseMs <= 0) return 0;
+  return Math.min(baseMs * Math.max(1, attempt), MAX_AUDIT_TIMEOUT_MS);
+}
 
 // Yarn exits on its own at httpTimeout with a legible "Timeout awaiting 'socket'"
 // error that isRegistryUnavailableFailure already classifies. The SIGKILL below is
@@ -138,7 +151,13 @@ export function spawnAudit({
 export async function runDependencyAudits({
   directories,
   auditArgs,
-  runAudit = (directory) => spawnAudit({ directory, auditArgs }),
+  timeoutMs = DEFAULT_AUDIT_TIMEOUT_MS,
+  runAudit = (directory, attempt) =>
+    spawnAudit({
+      directory,
+      auditArgs,
+      timeoutMs: auditTimeoutForAttempt(attempt, timeoutMs),
+    }),
   attempts = MAX_AUDIT_ATTEMPTS,
   retryDelayMs = DEFAULT_RETRY_DELAY_MS,
   sleep = wait,
@@ -158,7 +177,7 @@ export async function runDependencyAudits({
 
     log(`Auditing dependencies in ${directory}`);
     const result = await runAuditWithRetry({
-      runAudit: () => runAudit(directory),
+      runAudit: (attempt) => runAudit(directory, attempt),
       attempts,
       retryDelayMs,
       sleep,

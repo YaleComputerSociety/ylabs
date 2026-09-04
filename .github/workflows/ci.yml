@@ -13,6 +13,14 @@ permissions:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    # Operator escape hatch for an advisory-registry outage. Absent or anything
+    # other than "1" leaves the audit failing closed, so the default stays strict
+    # and turning it on is a deliberate, revocable act recorded in repo settings
+    # rather than an --admin merge that bypasses every other check too.
+    # Set repository variable ALLOW_UNREACHABLE_ADVISORY_AUDIT=1 to use it, and
+    # unset it the moment the registry is healthy again.
+    env:
+      DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: ${{ vars.ALLOW_UNREACHABLE_ADVISORY_AUDIT }}
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

@@ -8,7 +8,9 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  MAX_AUDIT_TIMEOUT_MS,
   REGISTRY_UNAVAILABLE_EXIT_CODE,
+  auditTimeoutForAttempt,
   isRegistryUnavailableFailure,
   runAuditWithRetry,
   runDependencyAudits,
@@ -195,6 +197,42 @@ const fakeChild = () => {
   };
   return child;
 };
+
+test('grows the per-attempt timeout so a slow registry is not misread as a dead one', () => {
+  // A degraded advisory service answered in 19-28s while hanging past 70s on other
+  // probes. Attempt 1 must be tight enough that a hard outage is cheap, and later
+  // attempts generous enough to catch a slow success instead of reporting a false
+  // "unreachable" and blocking every merge.
+  assert.equal(auditTimeoutForAttempt(1, 20_000), 20_000);
+  assert.equal(auditTimeoutForAttempt(2, 20_000), 40_000);
+  assert.equal(auditTimeoutForAttempt(3, 20_000), 60_000);
+
+  // Never exceed yarn's own default ceiling, or the bound stops being a bound.
+  assert.equal(auditTimeoutForAttempt(9, 20_000), MAX_AUDIT_TIMEOUT_MS);
+  assert.ok(MAX_AUDIT_TIMEOUT_MS <= 60_000);
+
+  // A zero base disables the bound entirely rather than escalating from nothing.
+  assert.equal(auditTimeoutForAttempt(3, 0), 0);
+  assert.equal(auditTimeoutForAttempt(0, 20_000), 20_000);
+});
+
+test('escalates the real spawn budget across retries', async () => {
+  const budgets = [];
+
+  await runDependencyAudits({
+    directories: ['.'],
+    auditArgs: [],
+    timeoutMs: 1_000,
+    runAudit: (directory, attempt) => {
+      budgets.push(auditTimeoutForAttempt(attempt, 1_000));
+      return { code: 1, output: REGISTRY_503_OUTPUT };
+    },
+    retryDelayMs: 0,
+    sleep: async () => {},
+  });
+
+  assert.deepEqual(budgets, [1_000, 2_000, 3_000]);
+});
 
 test('caps yarn http timeout and retry for the audit only, leaving installs alone', async () => {
   let spawnOptions = null;
