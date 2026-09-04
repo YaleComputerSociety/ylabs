@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildResearchDetailSources,
   isCitableAccessSignal,
+  isDepartmentRosterProvenanceUrl,
   isFileShareSourceUrl,
   isIdentifierOrGrantDbSourceUrl,
   isLikelyOfficialPersonProfileUrl,
@@ -1036,6 +1037,64 @@ describe('resolveDecisionProfileUrl', () => {
     );
 
     expect(url).toBe('https://example.yale.edu/profile/jane-doe');
+  });
+
+  it('skips a department-scoped roster slug and serves the person their own profile', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://ling.yale.edu/people/linguistics-faculty',
+      {
+        websiteUrl: 'https://sample-researcher.example.test/',
+        sourceUrls: [
+          'https://ling.yale.edu/profile/sample-researcher',
+          'https://ling.yale.edu/people/linguistics-faculty',
+          'https://sample-researcher.example.test/',
+        ],
+      },
+      undefined,
+    );
+
+    expect(url).toBe('https://ling.yale.edu/profile/sample-researcher');
+  });
+
+  it('offers no profile rather than a shared roster when the entity has no own profile', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://sample-researcher.example.test/',
+      {
+        websiteUrl: 'https://sample-researcher.example.test/',
+        sourceUrls: [
+          'https://ling.yale.edu/people/linguistics-faculty',
+          'https://sample-researcher.example.test/',
+        ],
+      },
+      undefined,
+    );
+
+    expect(url).toBeUndefined();
+  });
+});
+
+describe('isDepartmentRosterProvenanceUrl', () => {
+  it('flags department-scoped and rank-scoped roster slugs, not person profiles', () => {
+    expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/people/linguistics-faculty')).toBe(
+      true,
+    );
+    expect(isDepartmentRosterProvenanceUrl('https://english.yale.edu/people/ladder-faculty')).toBe(
+      true,
+    );
+    expect(isDepartmentRosterProvenanceUrl('https://french.yale.edu/people/professors')).toBe(true);
+    expect(isDepartmentRosterProvenanceUrl('https://whc.yale.edu/people/our-people')).toBe(true);
+    expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/profile/tom-example')).toBe(false);
+    expect(isDepartmentRosterProvenanceUrl('https://ling.yale.edu/people/claire-example')).toBe(
+      false,
+    );
+  });
+
+  it('does not read a long article slug as a roster', () => {
+    expect(
+      isDepartmentRosterProvenanceUrl(
+        'https://law.yale.edu/yls-today/news/professor-alex-example-aims-to-foster-connection',
+      ),
+    ).toBe(false);
   });
 });
 

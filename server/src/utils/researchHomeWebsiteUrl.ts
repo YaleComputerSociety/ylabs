@@ -165,6 +165,40 @@ export function isListingOrIndexUrl(value: unknown): boolean {
   );
 }
 
+const ROSTER_COLLECTIVE_LEAF_TOKEN =
+  /^(?:faculty|faculties|staff|professor|professors|lecturer|lecturers|instructor|instructors|people|persons|humans|member|members|membership|fellow|fellows|affiliate|affiliates|associates|scholars|researchers|team|teams|directory|listing|roster|index|primary|emeriti|emeritus)$/i;
+
+const MAX_ROSTER_LEAF_TOKEN_COUNT = 5;
+
+/**
+ * A page listing a whole group of people rather than one person's own profile.
+ * Yale department sites name these leaves with a collective noun that is routinely
+ * prefixed by the department or a rank - `/people/linguistics-faculty`,
+ * `/people/core-faculty`, `/people/ladder-faculty`, `/people/professors`,
+ * `/about/faculty-directory` - so the fixed `/people/faculty` shapes in
+ * `PEOPLE_ROSTER_PATH` miss most of them. Person slugs are name-shaped and never
+ * carry a collective noun, so keying on the leaf's token vocabulary separates the
+ * two; the token-count bound keeps long article slugs
+ * (`/news/professor-ian-ayres-aims-to-foster-...`) from reading as a roster.
+ *
+ * Deliberately NOT folded into `isListingOrIndexUrl`: that predicate also drives
+ * `websiteUrl` clearing in `resolveBackfillWebsiteUrl`, where widening it would
+ * strand small orgs whose only website is their own `/team` or `/people` page.
+ */
+export function isSharedPeopleRosterUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (isListingOrIndexUrl(value)) return true;
+  const segments = url.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+  const leaf = segments[segments.length - 1]?.toLowerCase();
+  if (!leaf || /\.[a-z0-9]{2,5}$/.test(leaf)) return false;
+  const tokens = leaf.split('-');
+  return (
+    tokens.length <= MAX_ROSTER_LEAF_TOKEN_COUNT &&
+    tokens.some((token) => ROSTER_COLLECTIVE_LEAF_TOKEN.test(token))
+  );
+}
+
 export function isDisallowedResearchEntitySourceUrl(value: unknown): boolean {
   return (
     isSelfReferentialUrl(value) || isListingOrIndexUrl(value) || isBoilerplatePlatformHostUrl(value)

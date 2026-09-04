@@ -12,6 +12,7 @@ import {
   isProfileOrPeopleDirectoryPath,
   isRecordSpecificApplicationPortalUrl,
   isSameHostShallowChromeUrl,
+  isSharedPeopleRosterUrl,
   isSiteNavigationOrFooterChromeUrl,
   isUnhelpfulProgramUrl,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -226,7 +227,55 @@ describe('isFileShareOrDocumentUrl', () => {
   });
 });
 
+describe('isSharedPeopleRosterUrl', () => {
+  it('flags department-scoped roster slugs that the fixed /people/faculty shapes miss', () => {
+    expect(isSharedPeopleRosterUrl('https://ling.example.edu/people/linguistics-faculty')).toBe(
+      true,
+    );
+    expect(isSharedPeopleRosterUrl('https://religion.example.edu/people/core-faculty')).toBe(true);
+    expect(isSharedPeopleRosterUrl('https://english.example.edu/people/ladder-faculty')).toBe(true);
+    expect(isSharedPeopleRosterUrl('https://eall.example.edu/people/professors')).toBe(true);
+    expect(isSharedPeopleRosterUrl('https://divinity.example.edu/about/faculty-directory')).toBe(
+      true,
+    );
+    expect(isSharedPeopleRosterUrl('https://art.example.edu/about/people/faculty-and-staff')).toBe(
+      true,
+    );
+    expect(isSharedPeopleRosterUrl('https://music.example.edu/meet-our-faculty')).toBe(true);
+    expect(isSharedPeopleRosterUrl('https://whc.example.edu/people/our-people')).toBe(true);
+    expect(isSharedPeopleRosterUrl('https://psychology.example.edu/people/faculty/primary')).toBe(
+      true,
+    );
+  });
+
+  it('never flags a person profile page as a shared roster', () => {
+    expect(isSharedPeopleRosterUrl('https://ling.example.edu/profile/tom-example')).toBe(false);
+    expect(isSharedPeopleRosterUrl('https://ling.example.edu/people/claire-example')).toBe(false);
+    expect(isSharedPeopleRosterUrl('https://medicine.example.edu/profile/jordan-example/')).toBe(
+      false,
+    );
+  });
+
+  it('does not read a long article slug as a roster', () => {
+    expect(
+      isSharedPeopleRosterUrl(
+        'https://law.example.edu/yls-today/news/professor-alex-example-aims-to-foster-connection-and-discourse',
+      ),
+    ).toBe(false);
+  });
+
+  it('still flags everything isListingOrIndexUrl flags', () => {
+    expect(isSharedPeopleRosterUrl('https://physics.example.edu/people?page=8')).toBe(true);
+    expect(isSharedPeopleRosterUrl('https://research.example.edu/cores')).toBe(true);
+  });
+});
+
 describe('isListingOrIndexUrl', () => {
+  it('leaves department-scoped roster slugs alone so websiteUrl promotion is unchanged', () => {
+    expect(isListingOrIndexUrl('https://ling.example.edu/people/linguistics-faculty')).toBe(false);
+    expect(isListingOrIndexUrl('https://theologyandpolicy.example.edu/team')).toBe(false);
+  });
+
   it('flags A-Z / lab-website index pages', () => {
     expect(
       isListingOrIndexUrl('https://medicine.example.edu/about/a-to-z-index/lab-websites'),

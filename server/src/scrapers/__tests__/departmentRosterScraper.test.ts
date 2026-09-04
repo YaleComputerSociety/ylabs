@@ -2252,6 +2252,7 @@ describe('DepartmentRosterScraper.run', () => {
         'https://fernlab.example.org/',
       );
       expect(entityObs.find((o) => o.field === 'sourceUrls')?.value).toEqual([
+        'https://www.art.yale.edu/FernLabowner',
         'https://www.art.yale.edu/about/people/faculty-and-staff',
         'https://fernlab.example.org/',
       ]);
@@ -3297,6 +3298,7 @@ describe('DepartmentRosterScraper.run', () => {
       'https://campuspress.yale.edu/leahboustan/',
     );
     expect(entityObs.find((o) => o.field === 'sourceUrls')?.value).toEqual([
+      'https://economics.yale.edu/people/lee-economics',
       'https://economics.yale.edu/people',
       'https://campuspress.yale.edu/leahboustan/',
     ]);
