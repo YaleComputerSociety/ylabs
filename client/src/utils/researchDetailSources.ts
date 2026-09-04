@@ -301,6 +301,14 @@ export const officialProfileMirrorKey = (url?: string | null): string | null => 
 const sourceDedupeKey = (url?: string | null): string | null =>
   officialProfileMirrorKey(url) || sourceLedgerKey(url);
 
+const actionDedupeKey = (url?: string | null): string | null =>
+  officialProfileMirrorKey(url) || normalizeActionDestination(url);
+
+export const isSameActionDestination = (first?: string | null, second?: string | null): boolean => {
+  const firstKey = actionDedupeKey(first);
+  return Boolean(firstKey) && firstKey === actionDedupeKey(second);
+};
+
 const pathSegmentCount = (url: string): number => {
   try {
     return new URL(url).pathname.split('/').filter(Boolean).length;

@@ -34,6 +34,7 @@ import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
   isLikelyUnavailableSourceLink,
+  isSameActionDestination,
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
@@ -450,23 +451,41 @@ const formatPastAdvisees = (group: any): string | null => {
 
 interface DecisionOutreachContext {
   websiteUrl?: string;
+  profileUrl?: string;
   piEmail?: string;
+  hasLeadCard: boolean;
   profileNeedsOwnButton: boolean;
   preferOrgEngagementOutreach: boolean;
   officialSource?: { url: string } | null;
 }
 
+const resolveLeadCardProfileUrl = (
+  profileUrl: string | undefined,
+  preferOrgEngagementOutreach: boolean,
+): string | undefined => (preferOrgEngagementOutreach ? undefined : profileUrl);
+
 const decisionSummaryShowsWebsiteCta = ({
   websiteUrl,
+  profileUrl,
   piEmail,
+  hasLeadCard,
   profileNeedsOwnButton,
   preferOrgEngagementOutreach,
   officialSource,
-}: DecisionOutreachContext): boolean =>
-  Boolean(websiteUrl) &&
-  !(preferOrgEngagementOutreach && Boolean(officialSource)) &&
-  !piEmail &&
-  !profileNeedsOwnButton;
+}: DecisionOutreachContext): boolean => {
+  if (!websiteUrl) return false;
+  if (preferOrgEngagementOutreach && officialSource) return false;
+  if (piEmail) return false;
+  if (profileNeedsOwnButton) return false;
+
+  const repeatsLeadCardProfileLink =
+    hasLeadCard &&
+    isSameActionDestination(
+      websiteUrl,
+      resolveLeadCardProfileUrl(profileUrl, preferOrgEngagementOutreach),
+    );
+  return !repeatsLeadCardProfileLink;
+};
 
 const DecisionSummary = ({
   group,
@@ -541,17 +560,19 @@ const DecisionSummary = ({
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const showsWebsiteCta = decisionSummaryShowsWebsiteCta({
     websiteUrl,
+    profileUrl,
     piEmail: piMailtoHref,
+    hasLeadCard: Boolean(principalInvestigator),
     profileNeedsOwnButton,
     preferOrgEngagementOutreach,
     officialSource,
   });
-  const leadCardProfileUrl = preferOrgEngagementOutreach ? undefined : profileUrl;
+  const leadCardProfileUrl = resolveLeadCardProfileUrl(profileUrl, preferOrgEngagementOutreach);
   const showGetInvolvedBlock =
     (preferOrgEngagementOutreach && Boolean(officialSource)) ||
     Boolean(piMailtoHref) ||
     profileNeedsOwnButton ||
-    Boolean(websiteUrl) ||
+    showsWebsiteCta ||
     Boolean(officialSource) ||
     !hasActionablePath;
   return (
@@ -1031,7 +1052,9 @@ const LabDetail = () => {
     principalInvestigators.some((member) => Boolean(resolveLeadOfficialProfileUrl(member)));
   const decisionSummaryLinksWebsite = decisionSummaryShowsWebsiteCta({
     websiteUrl: officialWebsiteUrl,
+    profileUrl: decisionProfileUrl,
     piEmail: singlePrincipalInvestigator?.user?.email?.trim(),
+    hasLeadCard: Boolean(singlePrincipalInvestigator),
     profileNeedsOwnButton:
       Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
     preferOrgEngagementOutreach,
