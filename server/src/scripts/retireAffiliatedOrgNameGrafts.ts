@@ -12,6 +12,8 @@ import {
   claimsAnotherPersonsLab,
   classifyHarvestedResearchHomeName,
   entityKeyPersonTokens,
+  eponymMatchesIdentity,
+  eponymousOrganizationNameSurnameCandidates,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
   personIdentityTokens,
@@ -148,7 +150,12 @@ function graftVerdict(
   if (sourceName !== MICROSITE_SOURCE) return null;
   if (isPersonCmsProfileUrl(sourceUrl)) return 'PERSON_CMS_PROFILE_SOURCE';
   if (!isPersonScopedResearchEntity(entity)) return null;
-  if (isUmbrellaOrganizationName(graftedName)) return 'AFFILIATED_ORGANIZATION';
+  if (isUmbrellaOrganizationName(graftedName)) {
+    const namesThisRecordsOwnLead = eponymousOrganizationNameSurnameCandidates(graftedName).some(
+      (eponym) => eponymMatchesIdentity(eponym, identityTokens),
+    );
+    return namesThisRecordsOwnLead ? null : 'AFFILIATED_ORGANIZATION';
+  }
   const foreign = claimsAnotherPersonsLab({
     harvestedName: graftedName,
     websiteUrl: linkedWebsiteUrl || sourceUrl,

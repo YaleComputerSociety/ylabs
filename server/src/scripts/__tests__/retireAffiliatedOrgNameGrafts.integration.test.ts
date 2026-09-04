@@ -272,6 +272,41 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     expect(await loadOrgNameGrafts()).toHaveLength(0);
   });
 
+  it('leaves an endowed organization named after its own lead alone', async () => {
+    const slug = 'ysm-faculty-metal-geochemistry';
+    const lead = await Researcher.create({ displayName: 'Matthew Girgenti' });
+    const record = await ResearchEntity.create({
+      slug,
+      name: 'Girgenti Center',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: record._id },
+      role: 'DIRECTOR',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: slug,
+      field: 'name',
+      value: 'Girgenti Center',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://girgenticenter.example.org/',
+      confidence: 0.95,
+      observedAt: new Date('2026-08-25T00:00:00Z'),
+      superseded: false,
+    });
+
+    expect(await loadOrgNameGrafts()).toHaveLength(0);
+  });
+
   it('leaves a manually locked field alone', async () => {
     await seedEntity({ displayName: AFFILIATION_GRAFT, manuallyLockedFields: ['displayName'] });
     await seedGraftObservation();

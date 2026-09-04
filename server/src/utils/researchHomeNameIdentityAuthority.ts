@@ -9,6 +9,7 @@
  * an umbrella organization and grafted the same organization onto several
  * different people (issue #2234).
  */
+import { normalizeName } from '../scrapers/utils/scraperHelpers';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -381,16 +382,22 @@ export function eponymMatchesIdentity(eponym: string, identityTokens: string[]):
 /**
  * The surname each display name ends on, as the eponym corroboration vocabulary.
  *
+ * `normalizeName` runs first because it is the repo's owner for peeling a
+ * credential clause off a display name, and a roster built on a divergent rule
+ * records the credential AS the surname: "Avery Sloan, MS" would contribute 'ms'
+ * and never 'sloan', so an eponym-shaped topical name ("MS Lab") gets refused
+ * while a genuinely foreign "Sloan Lab" stays adoptable.
+ *
  * Two-letter tokens count, on the same threshold `personIdentityTokens` uses:
  * "Wu" and "Xu" are surnames the eponym rule already accepts, so dropping them
  * would both leave "Wu Lab" unrefusable and record the GIVEN name of "Sheng Wu"
- * as a surname. Single-letter initials and credential tails are what the filter
- * is for.
+ * as a surname. Single-letter initials and comma-less credential tails are what
+ * the token filter is for.
  */
 export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>): Set<string> {
   const surnames = new Set<string>();
   for (const displayName of displayNames) {
-    const words = nameWords(displayName).filter(
+    const words = nameWords(normalizeName(textValue(displayName))).filter(
       (word) => word.length >= 2 && !PERSON_NAME_STOP_WORDS.has(word) && !/\d/.test(word),
     );
     const surname = words[words.length - 1];

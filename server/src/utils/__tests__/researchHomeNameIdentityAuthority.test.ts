@@ -449,6 +449,48 @@ describe('personSurnamesFromDisplayNames', () => {
   it('drops a single-letter initial so it never stands in as a surname', () => {
     expect(personSurnamesFromDisplayNames(['Avery Sloan H'])).toEqual(new Set(['sloan']));
   });
+
+  it('peels a comma-delimited credential clause the same way normalizeName does', () => {
+    expect(
+      personSurnamesFromDisplayNames([
+        'Avery Sloan, MS',
+        'Rohan Vasquez, JD',
+        'Dana Whitfield, EdD',
+        'Ms. Jane Kim',
+        'Priya Raghunathan, MA',
+      ]),
+    ).toEqual(new Set(['sloan', 'vasquez', 'whitfield', 'kim', 'raghunathan']));
+  });
+
+  it('keeps a two-letter surname that reads like a credential when no clause delimits it', () => {
+    expect(personSurnamesFromDisplayNames(['Jing Ma'])).toEqual(new Set(['ma']));
+  });
+});
+
+describe('a credential recorded as a surname would corrupt the roster (#2361)', () => {
+  const roster = personSurnamesFromDisplayNames(['Avery Sloan, MS', 'Patrick Cudahy']);
+
+  it('leaves a topical name that collides with the credential alone', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'MS Lab',
+        websiteUrl: 'https://mslab.example.org/home',
+        identityTokens: ['patrick', 'cudahy'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(false);
+  });
+
+  it('still refuses the surname that clause was hiding', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Sloan Lab',
+        websiteUrl: 'https://sloanlab.example.org/home',
+        identityTokens: ['patrick', 'cudahy'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
+  });
 });
 
 // A trainee's PI's lab sits on its own eponymous host with a bare or generic
@@ -539,15 +581,27 @@ describe('claimsAnotherPersonsLab corroborated by a surname roster', () => {
     ).toBe(false);
   });
 
-  it('still prefers the path corroboration when the path does name a person', () => {
+  it('still flags a path-corroborated foreign eponym the roster has never heard of', () => {
+    expect(roster.has('okonkwo')).toBe(false);
     expect(
       claimsAnotherPersonsLab({
-        harvestedName: 'Cohen Lab',
-        websiteUrl: 'https://medicine.example.edu/lab/tcohen/',
+        harvestedName: 'Okonkwo Lab',
+        websiteUrl: 'https://medicine.example.edu/lab/okonkwo/',
         identityTokens: ['patrick', 'cudahy'],
         knownPersonSurnames: roster,
       }),
     ).toBe(true);
+  });
+
+  it('lets the path clear the eponym holder own row even against a roster', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Cohen Lab',
+        websiteUrl: 'https://medicine.example.edu/lab/cohen/',
+        identityTokens: ['tara', 'cohen'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(false);
   });
 });
 
