@@ -14,6 +14,7 @@ import {
   entityKeyPersonTokens,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
+  personSurnamesFromDisplayNames,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isPersonCmsProfileUrl } from '../utils/researchHomeWebsiteUrl';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -98,6 +99,7 @@ function graftVerdict(
   sourceUrl: string,
   linkedWebsiteUrl: string,
   entity: EntityContext,
+  knownPersonSurnames?: ReadonlySet<string>,
 ): string | null {
   if (sourceName === PROFILE_LINK_SOURCE) {
     const personName = entity.personName || entityKeyPersonTokens(entity.slug).join(' ');
@@ -105,6 +107,7 @@ function graftVerdict(
       harvestedName: graftedName,
       personName,
       websiteUrl: linkedWebsiteUrl || sourceUrl,
+      knownPersonSurnames,
     });
     return verdict === 'AFFILIATED_ORGANIZATION' || verdict === 'ANOTHER_PERSONS_LAB'
       ? verdict
@@ -118,6 +121,7 @@ function graftVerdict(
     harvestedName: graftedName,
     websiteUrl: linkedWebsiteUrl || sourceUrl,
     identityTokens: entityKeyPersonTokens(entity.slug),
+    knownPersonSurnames,
   });
   return foreign ? 'ANOTHER_PERSONS_LAB' : null;
 }
@@ -159,6 +163,17 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const key = `${obs.entityKey || serializedDocumentId(obs.entityId)}|${obs.sourceName}`;
     if (!linkedWebsites.has(key)) linkedWebsites.set(key, String(obs.value || ''));
   }
+
+  // Every known researcher's surname, so an eponymous stored name claiming a
+  // person other than this entity's own lead is refusable even when the linked
+  // site's path never spells that surname out (#2361).
+  const knownPersonSurnames = personSurnamesFromDisplayNames(
+    (
+      await Researcher.find({ archived: { $ne: true } })
+        .select('displayName')
+        .lean()
+    ).map((person) => (person as { displayName?: unknown }).displayName),
+  );
 
   const slugById = new Map<string, string>();
   for (const entity of await ResearchEntity.find({}).select('_id slug').lean()) {
@@ -219,7 +234,14 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const sourceUrl = String(obs.sourceUrl || '');
     const sourceName = String(obs.sourceName);
     const linkedWebsiteUrl = linkedWebsites.get(`${entityKey || entityId}|${sourceName}`) || '';
-    const verdict = graftVerdict(sourceName, graftedName, sourceUrl, linkedWebsiteUrl, entity);
+    const verdict = graftVerdict(
+      sourceName,
+      graftedName,
+      sourceUrl,
+      linkedWebsiteUrl,
+      entity,
+      knownPersonSurnames,
+    );
     if (!verdict) continue;
 
     const groupKey = `${entity.slug}|${sourceName}|${graftedName}`;
