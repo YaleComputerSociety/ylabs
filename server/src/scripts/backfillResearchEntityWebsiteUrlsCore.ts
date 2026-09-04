@@ -1,5 +1,6 @@
 import {
   isBoilerplatePlatformHostUrl,
+  isDepartmentRosterProvenanceUrl,
   isFileShareOrDocumentUrl,
   isListingOrIndexUrl,
   isMultiTenantAcademicHostRootUrl,
@@ -7,6 +8,7 @@ import {
   sourceUrlToResearchHomeWebsiteUrl,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
+import { normalizeWebsiteUrlIdentityKey } from './researchEntityPiDedupeCore';
 
 export interface WebsiteUrlBackfillCandidateEntity {
   websiteUrl?: unknown;
@@ -135,16 +137,25 @@ function selectResearchHomeWebsiteUrl(
   return undefined;
 }
 
-const websiteUrlLedgerKey = (value: unknown): string =>
-  typeof value === 'string' ? value.trim().replace(/\/+$/, '').toLowerCase() : '';
+const websiteUrlDestinationKey = (value: unknown): string =>
+  typeof value === 'string' ? normalizeWebsiteUrlIdentityKey(value).toLowerCase() : '';
 
-function isWebsiteUrlAlreadyCitedAsEvidence(
+/**
+ * Whether clearing `websiteUrl` still leaves the student a way to that destination.
+ * Only `sourceUrls` counts as a citation: the detail page renders `websiteUrl` and
+ * `sourceUrls`, never the legacy `website` field, so a `website`-only match would
+ * drop the URL off the page entirely. A department-roster provenance shape does not
+ * count either, because the detail page drops those from both the Sources list and
+ * the official-profile CTA.
+ */
+function isWebsiteUrlAlreadyCitedAsRenderedEvidence(
   entity: WebsiteUrlBackfillCandidateEntity,
-  candidates: unknown[],
 ): boolean {
-  const key = websiteUrlLedgerKey(entity.websiteUrl);
+  if (isDepartmentRosterProvenanceUrl(entity.websiteUrl)) return false;
+  const key = websiteUrlDestinationKey(entity.websiteUrl);
   if (!key) return false;
-  return candidates.some((candidate) => websiteUrlLedgerKey(candidate) === key);
+  const sourceUrls = Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [];
+  return sourceUrls.some((candidate) => websiteUrlDestinationKey(candidate) === key);
 }
 
 export type WebsiteUrlBackfillResolution =
@@ -172,13 +183,16 @@ export type WebsiteUrlBackfillResolution =
  * (fail closed to no website rather than an off-site, directory-index, or dead/non-navigable
  * file link). A single-person
  * profile-page `websiteUrl` is corrected to a research home when one exists; when none
- * does it is cleared if that same URL is already cited in the entity's own evidence,
- * and kept as a PI fallback only when clearing would drop the URL entirely.
+ * does it is cleared if the same destination is already cited in the entity's own
+ * `sourceUrls`, and kept as a PI fallback only when clearing would drop the URL entirely.
  * The materializer projects a lead's official profile page onto `sourceUrls` (#613)
  * and the detail page renders that as the official-profile CTA, so a profile URL that
  * is already cited there reaches the student either way; keeping it as `websiteUrl` too
  * only made an entity advertise a "Website" that was its PI's profile page under a
- * second label (#2352). Any other usable `websiteUrl` is kept.
+ * second label (#2352). The citation match folds scheme, `www.`, trailing slash, and
+ * case, and it ignores citations the detail page refuses to render (the legacy `website`
+ * field, department-roster provenance pages) so clearing never leaves an entity with no
+ * link at all. Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
  * then ordered `sourceUrls`) is used.
  * The entity's own shape and `name`/`displayName` are consulted only so a shared
@@ -207,7 +221,7 @@ export function resolveBackfillWebsiteUrl(
     if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
       const researchHome = selectResearchHomeWebsiteUrl(candidates, hostOwnerIdentity);
       if (researchHome) return { action: 'set', websiteUrl: researchHome };
-      return isWebsiteUrlAlreadyCitedAsEvidence(entity, candidates)
+      return isWebsiteUrlAlreadyCitedAsRenderedEvidence(entity)
         ? { action: 'clear' }
         : { action: 'keep' };
     }

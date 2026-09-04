@@ -310,6 +310,34 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
       }),
     ).toEqual({ action: 'clear' });
   });
+
+  it('ignores scheme and a www. prefix when matching the cited profile page (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'http://www.economics.example.edu/people/jordan-example/',
+        sourceUrls: ['https://economics.example.edu/people/jordan-example'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('keeps a profile page cited only by the legacy website field, which the page never renders (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.example.edu/people/jordan-example',
+        website: 'https://economics.example.edu/people/jordan-example',
+        sourceUrls: [],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('keeps a cited department-roster profile page the detail page refuses to re-render (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.yale.edu/people/faculty/jordan-example',
+        sourceUrls: ['https://economics.yale.edu/people/faculty/jordan-example'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
 });
 
 describe('multi-tenant academic host roots (#2359)', () => {

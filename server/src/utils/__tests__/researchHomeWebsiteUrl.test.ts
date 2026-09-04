@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isBareDomainRootUrl,
   isBoilerplatePlatformHostUrl,
+  isDepartmentRosterProvenanceUrl,
   isDirectoryLoaderUrl,
   isDisallowedResearchEntitySourceUrl,
   isFacetedOrSectionIndexUrl,
@@ -838,5 +839,42 @@ describe('isPersonCmsProfileUrl', () => {
   it('ignores malformed values', () => {
     expect(isPersonCmsProfileUrl('not-a-url')).toBe(false);
     expect(isPersonCmsProfileUrl(undefined)).toBe(false);
+  });
+});
+
+describe('isDepartmentRosterProvenanceUrl', () => {
+  it('flags the Yale roster provenance shapes the detail page refuses to render', () => {
+    expect(isDepartmentRosterProvenanceUrl('https://economics.yale.edu/people/faculty')).toBe(true);
+    expect(
+      isDepartmentRosterProvenanceUrl('https://economics.yale.edu/people/faculty/jordan-example'),
+    ).toBe(true);
+    expect(
+      isDepartmentRosterProvenanceUrl(
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/load_faculty/172',
+      ),
+    ).toBe(true);
+    expect(
+      isDepartmentRosterProvenanceUrl(
+        'https://www.engineering.yale.edu/research-and-faculty/faculty-directory/',
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves a renderable person profile and any non-Yale host alone', () => {
+    expect(
+      isDepartmentRosterProvenanceUrl('https://medicine.yale.edu/profile/jordan-example/'),
+    ).toBe(false);
+    expect(
+      isDepartmentRosterProvenanceUrl(
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/jordan-example',
+      ),
+    ).toBe(false);
+    expect(
+      isDepartmentRosterProvenanceUrl(
+        'https://economics.example.edu/people/faculty/jordan-example',
+      ),
+    ).toBe(false);
+    expect(isDepartmentRosterProvenanceUrl('not-a-url')).toBe(false);
+    expect(isDepartmentRosterProvenanceUrl(undefined)).toBe(false);
   });
 });

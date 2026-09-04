@@ -139,6 +139,26 @@ export function isDirectoryLoaderUrl(value: unknown): boolean {
   );
 }
 
+const DEPARTMENT_FACULTY_ROSTER_PATH = /^\/people\/faculty(?:-|\/|$)/i;
+
+const FACULTY_DIRECTORY_ROOT_PATH = /^\/research-and-faculty\/faculty-directory$/i;
+
+// Mirrors client/src/utils/researchDetailSources.ts `isDepartmentRosterProvenanceUrl`;
+// changing either arm requires updating the other, because the server only clears a
+// cited link the detail page is willing to re-render.
+export function isDepartmentRosterProvenanceUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!host.endsWith('yale.edu')) return false;
+  const pathname = url.pathname.toLowerCase().replace(/\/+$/, '');
+  return (
+    DIRECTORY_LOADER_SEGMENT_PATH.test(pathname) ||
+    DEPARTMENT_FACULTY_ROSTER_PATH.test(pathname) ||
+    FACULTY_DIRECTORY_ROOT_PATH.test(pathname)
+  );
+}
+
 export function isFacetedOrSectionIndexUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
