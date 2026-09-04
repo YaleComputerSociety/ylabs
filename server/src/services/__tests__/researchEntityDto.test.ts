@@ -20,6 +20,43 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toBe('The lab studies airway disease.');
   });
 
+  it('withholds a person-scoped displayName that names an umbrella organization (#2351)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-affiliation-graft',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: 'Rafferty Duchamp Faculty Research',
+      displayName: 'Yale School of Management',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(dto.displayName).toBe('');
+    expect(dto.name).toBe('Rafferty Duchamp Faculty Research');
+  });
+
+  it('withholds the graft from the summary DTO title too', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      id: 'entity-affiliation-graft',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: '',
+      displayName: 'Yale School of Management',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(summary.name).toBe('');
+  });
+
+  it('keeps an organization-shaped record own organization displayName', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-center',
+      slug: 'center-customer-insights',
+      name: 'Yale Center for Customer Insights',
+      displayName: 'Yale Center for Customer Insights',
+      kind: 'center',
+      entityType: 'CENTER',
+    });
+    expect(dto.displayName).toBe('Yale Center for Customer Insights');
+  });
+
   it('drops methods already shown as research areas so a term never appears in both lists', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-methods',

@@ -72,6 +72,7 @@ export interface OrgNameGraftRow {
   sourceUrl: string;
   verdict: string;
   observationIds: string[];
+  documentStillServesGraft: boolean;
   replacementNameAfterRollback: string;
   needsRescrapeToRename: boolean;
   replacementIsStillAnOrganization: boolean;
@@ -80,6 +81,7 @@ export interface OrgNameGraftRow {
 interface EntityContext {
   slug: string;
   name: string;
+  displayName: string;
   entityType: string;
   kind: string;
   studentVisibilityTier: string;
@@ -122,15 +124,21 @@ function graftVerdict(
   return foreign ? 'ANOTHER_PERSONS_LAB' : null;
 }
 
+/**
+ * Grafted name observations, INCLUDING ones a previous run already retired.
+ * Skipping those is what stranded 36 records: the 2026-09-01 apply retired the
+ * observations, nothing rewrote the documents, and a re-run could no longer see
+ * the rows it had half-fixed (#2351). A row whose observation is retired AND
+ * whose document no longer serves it has nothing left to do and is dropped, so
+ * the repair still terminates.
+ */
 export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
   const observations = await Observation.find({
     entityType: 'researchEntity',
     field: { $in: NAME_FIELDS },
     sourceName: { $in: [PROFILE_LINK_SOURCE, MICROSITE_SOURCE] },
-    superseded: { $ne: true },
-    'rollback.rolledBackAt': { $exists: false },
   })
-    .select('_id entityKey entityId field value sourceName sourceUrl')
+    .select('_id entityKey entityId field value sourceName sourceUrl superseded')
     .lean();
 
   const allNameObservations = await Observation.find({
@@ -174,7 +182,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const cacheKey = entityKey || entityId || '';
     if (entityCache.has(cacheKey)) return entityCache.get(cacheKey) ?? null;
     const entity = await ResearchEntity.findOne(entityKey ? { slug: entityKey } : { _id: entityId })
-      .select('_id slug name entityType kind studentVisibilityTier manuallyLockedFields')
+      .select('_id slug name displayName entityType kind studentVisibilityTier manuallyLockedFields')
       .lean();
     if (!entity) {
       entityCache.set(cacheKey, null);
@@ -197,6 +205,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const context: EntityContext = {
       slug: String(record.slug || ''),
       name: String(record.name || ''),
+      displayName: String(record.displayName || ''),
       entityType: String(record.entityType || ''),
       kind: String(record.kind || ''),
       studentVisibilityTier: String(record.studentVisibilityTier || ''),
@@ -221,6 +230,10 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const linkedWebsiteUrl = linkedWebsites.get(`${entityKey || entityId}|${sourceName}`) || '';
     const verdict = graftVerdict(sourceName, graftedName, sourceUrl, linkedWebsiteUrl, entity);
     if (!verdict) continue;
+    const field = String(obs.field) === 'displayName' ? 'displayName' : 'name';
+    const documentServesThisGraft = entity[field] === graftedName;
+    const alreadyRetired = obs.superseded === true;
+    if (alreadyRetired && !documentServesThisGraft) continue;
 
     const groupKey = `${entity.slug}|${sourceName}|${graftedName}`;
     if (!grouped.has(groupKey)) {
@@ -236,12 +249,14 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
         verdict,
         observationIds: [],
         idSet: new Set<string>(),
+        documentStillServesGraft: false,
         replacementNameAfterRollback: '',
         needsRescrapeToRename: true,
         replacementIsStillAnOrganization: false,
       });
     }
     const group = grouped.get(groupKey)!;
+    group.documentStillServesGraft = group.documentStillServesGraft || documentServesThisGraft;
     const observationId = serializedDocumentId(obs._id);
     if (observationId && !group.idSet.has(observationId)) {
       group.idSet.add(observationId);
@@ -283,8 +298,53 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     .sort((a, b) => a.entitySlug.localeCompare(b.entitySlug));
 }
 
-async function applyRows(rows: OrgNameGraftRow[]): Promise<number> {
+/**
+ * Retiring the observation is not the repair. The document keeps whatever the
+ * graft wrote until something rewrites that field, and for `displayName` nothing
+ * ever does: no faculty-directory source emits it, so the retired value stayed
+ * on 36 served records after this script's own 2026-09-01 apply (#2351). So the
+ * document is corrected in the same pass, and only where it still carries the
+ * exact value being retired.
+ *
+ * `displayName` clears outright because every serve path falls back to `name`.
+ * `name` only moves to a surviving observation's value, so a record is never
+ * left nameless; when nothing survives, `needsRescrapeToRename` already reports
+ * it for a rename pass.
+ */
+async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
+  const entityFilter = row.entityId
+    ? { _id: new mongoose.Types.ObjectId(row.entityId) }
+    : { slug: row.entitySlug };
+  const correction = (field: string): Record<string, unknown> | null => {
+    if (field !== 'name') {
+      return { $unset: { [field]: '', [`fieldProvenance.${field}`]: '' } };
+    }
+    return row.replacementNameAfterRollback
+      ? {
+          $set: { name: row.replacementNameAfterRollback },
+          $unset: { 'fieldProvenance.name': '' },
+        }
+      : null;
+  };
+  let corrected = 0;
+  for (const field of NAME_FIELDS) {
+    const update = correction(field);
+    if (!update) continue;
+    const result = await ResearchEntity.updateOne(
+      { ...entityFilter, [field]: row.graftedName, manuallyLockedFields: { $ne: field } },
+      update,
+    );
+    corrected += result.modifiedCount || 0;
+  }
+  return corrected;
+}
+
+export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
+  rolledBack: number;
+  documentFieldsCorrected: number;
+}> {
   let rolledBack = 0;
+  let documentFieldsCorrected = 0;
   for (const row of rows) {
     const ids = row.observationIds.map((id) => new mongoose.Types.ObjectId(id));
     const result = await Observation.updateMany(
@@ -297,8 +357,9 @@ async function applyRows(rows: OrgNameGraftRow[]): Promise<number> {
       },
     );
     rolledBack += result.modifiedCount || 0;
+    documentFieldsCorrected += await clearGraftFromDocument(row);
   }
-  return rolledBack;
+  return { rolledBack, documentFieldsCorrected };
 }
 
 async function main() {
@@ -324,7 +385,9 @@ async function main() {
     }
   }
 
-  const rolledBack = args.apply ? await applyRows(rows) : 0;
+  const applied = args.apply
+    ? await applyRows(rows)
+    : { rolledBack: 0, documentFieldsCorrected: 0 };
 
   const byVerdict: Record<string, number> = {};
   const bySource: Record<string, number> = {};
@@ -340,7 +403,9 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     graftedEntities: rows.length,
     plannedObservations,
-    rolledBackObservations: rolledBack,
+    rolledBackObservations: applied.rolledBack,
+    documentFieldsCorrected: applied.documentFieldsCorrected,
+    documentsStillServingGraft: rows.filter((row) => row.documentStillServesGraft).length,
     byVerdict,
     bySource,
     studentReadyAffected: rows.filter((row) => row.studentVisibilityTier === 'student_ready')

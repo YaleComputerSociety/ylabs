@@ -375,3 +375,41 @@ export function isPersonScopedResearchEntity(entity: {
   if (entityType) return PERSON_SCOPED_ENTITY_TYPES.has(entityType);
   return PERSON_SCOPED_KINDS.has(textValue(entity.kind).toLowerCase());
 }
+
+/**
+ * Whether a name a person-scoped record currently carries names something other
+ * than that record: an umbrella organization it merely belongs to, or a
+ * different person's lab.
+ *
+ * This takes the record itself rather than a harvest context because the same
+ * judgement has to hold for a value already sitting on the document, not only
+ * for one arriving from a scrape. A graft survives its own retirement: rolling
+ * back the observation leaves the document untouched, and no faculty-directory
+ * source emits `displayName`, so nothing ever overwrites it (#2351).
+ *
+ * The record's own person identity comes from `personName` when a lead is known
+ * and otherwise from the slug, which is the same slug-token fallback the
+ * microsite extractor's attribution check uses.
+ */
+export function personScopedResearchEntityNameNamesSomethingElse(args: {
+  candidateName: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+  slug?: unknown;
+  personName?: unknown;
+  websiteUrl?: unknown;
+}): boolean {
+  if (!isPersonScopedResearchEntity(args)) return false;
+  const name = stripResearchHomeNameLinkWrapper(args.candidateName);
+  if (name.length < 2) return false;
+  const identityTokens = personIdentityTokens(args.personName).length
+    ? personIdentityTokens(args.personName)
+    : entityKeyPersonTokens(args.slug);
+  if (identityTokens.some((token) => new Set(nameWords(name)).has(token))) return false;
+  if (isUmbrellaOrganizationName(name)) return true;
+  return claimsAnotherPersonsLab({
+    harvestedName: name,
+    websiteUrl: args.websiteUrl,
+    identityTokens,
+  });
+}

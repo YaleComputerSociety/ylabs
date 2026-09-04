@@ -12,6 +12,7 @@ import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
 import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { personScopedResearchEntityNameNamesSomethingElse } from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
   RESEARCH_ENTITY_MEILI_SYNONYMS,
@@ -374,6 +375,22 @@ const publicHttpUrls = (value: unknown): string[] =>
 const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   for (const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS) {
     delete out[field];
+  }
+
+  // Browse and search read the indexed `displayName` for the card title, so the
+  // index has to drop an umbrella-organization or foreign-lab graft on the same
+  // terms the detail-page DTO does; otherwise the retired name keeps titling the
+  // card (#2351).
+  if (
+    personScopedResearchEntityNameNamesSomethingElse({
+      candidateName: out.displayName,
+      entityType: out.entityType,
+      kind: out.kind,
+      slug: out.slug,
+      websiteUrl: out.fieldProvenance?.displayName?.sourceUrl || out.websiteUrl || out.website,
+    })
+  ) {
+    delete out.displayName;
   }
 
   for (const field of SEARCH_INDEX_TEXT_FIELDS) {
