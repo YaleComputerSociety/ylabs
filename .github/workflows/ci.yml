@@ -60,7 +60,10 @@ jobs:
         run: yarn security:preflight
 
       - name: Check moderate all-environment dependency advisories
-        run: yarn security:audit:all-environments
+        run: |
+          yarn npm audit --recursive --severity moderate
+          yarn --cwd server npm audit --recursive --severity moderate
+          yarn --cwd client npm audit --recursive --severity moderate
 
       - name: Build server and client
         run: yarn build

@@ -15,9 +15,6 @@ Check this inventory before deleting or moving anything in this directory.
 | `research-detail-professor-audit.mjs` | Root `audit:research-detail-professors` script. |
 | `research-detail-professor-audit-core.mjs` | Shared helpers for the audit script and server-side tests. |
 | `security-preflight.test.mjs` | Root `security:policy` script and broad security policy coverage. |
-| `audit-dependencies.mjs` | Root `security:audit:production` and `security:audit:all-environments` scripts; runs `yarn npm audit` across root, server, and client, retrying only when the registry never answered. |
-| `dependency-audit-core.mjs` | Shared retry and failure-classification implementation for `audit-dependencies.mjs` and its test. |
-| `audit-dependencies.test.mjs` | Node test coverage for audit retry, fail-closed registry outages, and advisory failures. |
 | `unified-research-search-audit.mjs` | Root `audit:unified-research` script. |
 | `with-playwright-libs.sh` | Root `playwright:run` wrapper and Playwright MCP setup helper. |
 | `new-agent-worktree.sh` | Creates an isolated git worktree + branch off `beta`, installs dependencies, and reserves a free client dev-server port for parallel agent work. See the Worktree workflow in `AGENTS.md`. |
