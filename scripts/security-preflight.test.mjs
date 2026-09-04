@@ -570,7 +570,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
 test('root package exposes a deploy security preflight', () => {
   assert.equal(
     packageJson.scripts['security:policy'],
-    'node --test scripts/security-preflight.test.mjs',
+    'node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs',
   );
   assert.equal(
     packageJson.scripts['security:preflight'],
@@ -589,15 +589,29 @@ test('root package exposes the production security smoke used by deploy gates', 
   );
 });
 
+const parseDependencyAuditScript = (script) => {
+  const tokens = script.split(' ');
+  assert.deepEqual(tokens.slice(0, 2), ['node', 'scripts/run-dependency-audit.mjs']);
+  const separatorIndex = tokens.indexOf('--');
+  return {
+    directories: tokens.slice(2, separatorIndex),
+    auditArgs: tokens.slice(separatorIndex + 1),
+  };
+};
+
 test('production dependency audit covers root, server, and client workspaces', () => {
-  assert.equal(
-    packageJson.scripts['security:audit:production'],
-    [
-      'yarn npm audit --severity moderate --environment production',
-      'yarn --cwd server npm audit --severity moderate --environment production',
-      'yarn --cwd client npm audit --severity moderate --environment production',
-    ].join(' && '),
-  );
+  const audit = parseDependencyAuditScript(packageJson.scripts['security:audit:production']);
+
+  assert.deepEqual(audit.directories, ['.', 'server', 'client']);
+  assert.deepEqual(audit.auditArgs, ['--severity', 'moderate', '--environment', 'production']);
+});
+
+test('all-environment dependency audit covers every workspace recursively', () => {
+  const audit = parseDependencyAuditScript(packageJson.scripts['security:audit:all-environments']);
+
+  assert.deepEqual(audit.directories, ['.', 'server', 'client']);
+  assert.deepEqual(audit.auditArgs, ['--recursive', '--severity', 'moderate']);
+  assert.match(ciWorkflow, /run:\s*yarn security:audit:all-environments/);
 });
 
 test('CI runs immutable installs and the same deploy security preflight used locally', () => {

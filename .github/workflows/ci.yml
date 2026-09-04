@@ -60,19 +60,7 @@ jobs:
         run: yarn security:preflight
 
       - name: Check moderate all-environment dependency advisories
-        # Audits every workspace before failing. Under the default `bash -e` the
-        # three commands aborted at the first failing one, so advisories in a
-        # later workspace stayed invisible: two HIGH client advisories sat behind
-        # a moderate server one, and fixing the server first surfaced them as a
-        # fresh red that read like a regression (#2371).
-        run: |
-          status=0
-          for workspace in . server client; do
-            echo "::group::dependency advisories: ${workspace}"
-            (cd "${workspace}" && yarn npm audit --recursive --severity moderate) || status=1
-            echo "::endgroup::"
-          done
-          exit "${status}"
+        run: yarn security:audit:all-environments
 
       - name: Build server and client
         run: yarn build
