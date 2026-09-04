@@ -860,6 +860,17 @@ describe('isDepartmentRosterProvenanceUrl', () => {
     ).toBe(true);
   });
 
+  it('flags the collective-leaf roster shapes the client predicate also rejects', () => {
+    expect(isDepartmentRosterProvenanceUrl('https://whc.yale.edu/people/our-people')).toBe(true);
+    expect(
+      isDepartmentRosterProvenanceUrl('https://ling.yale.edu/people/linguistics-faculty'),
+    ).toBe(true);
+    expect(isDepartmentRosterProvenanceUrl('https://religion.yale.edu/people/core-faculty')).toBe(
+      true,
+    );
+    expect(isDepartmentRosterProvenanceUrl('https://french.yale.edu/people/professors')).toBe(true);
+  });
+
   it('leaves a renderable person profile and any non-Yale host alone', () => {
     expect(
       isDepartmentRosterProvenanceUrl('https://medicine.yale.edu/profile/jordan-example/'),

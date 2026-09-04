@@ -338,6 +338,15 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
       }),
     ).toEqual({ action: 'keep' });
   });
+
+  it('keeps a cited collective-leaf roster page the detail page refuses to re-render (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://whc.yale.edu/people/our-people',
+        sourceUrls: ['https://whc.yale.edu/people/our-people'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
 });
 
 describe('multi-tenant academic host roots (#2359)', () => {
