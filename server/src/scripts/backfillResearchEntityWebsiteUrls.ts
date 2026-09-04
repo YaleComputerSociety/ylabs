@@ -113,7 +113,17 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
         { websiteUrl: MULTI_TENANT_ACADEMIC_HOST_ROOT_URL_PATTERN },
       ],
     },
-    { _id: 1, slug: 1, name: 1, displayName: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+    {
+      _id: 1,
+      slug: 1,
+      name: 1,
+      displayName: 1,
+      entityType: 1,
+      kind: 1,
+      websiteUrl: 1,
+      website: 1,
+      sourceUrls: 1,
+    },
   ).lean();
 
   const result: ResearchEntityWebsiteUrlBackfillResult = {

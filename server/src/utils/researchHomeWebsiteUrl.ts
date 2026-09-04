@@ -202,6 +202,8 @@ export function isSharedPeopleRosterUrl(value: unknown): boolean {
 export interface ResearchEntityHostOwnerIdentity {
   name?: unknown;
   displayName?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
 }
 
 export function isDisallowedResearchEntitySourceUrl(
@@ -281,14 +283,43 @@ const hostOwnerNameWords = (value: unknown): string[] =>
     .split(/[\s-]+/)
     .filter((word) => word.length > 0 && !HOST_OWNER_NAME_NOISE_WORDS.has(word));
 
+// Entity shapes whose identity is a person or a person's lab. Mirrors
+// `isPersonScopedResearchEntity` in `researchHomeNameIdentityAuthority.ts`,
+// restated here rather than imported because that module is the name-identity
+// authority and importing it back would make the two mutually dependent.
+const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
+  'LAB',
+  'FACULTY_RESEARCH_AREA',
+  'INDIVIDUAL_RESEARCH',
+  'FACULTY_PROJECT',
+]);
+
+const PERSON_SCOPED_HOST_TENANT_KINDS = new Set(['lab', 'individual', 'solo']);
+
+const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean => {
+  const entityType = textValue(entity?.entityType).toUpperCase();
+  if (entityType) return PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES.has(entityType);
+  return PERSON_SCOPED_HOST_TENANT_KINDS.has(textValue(entity?.kind).toLowerCase());
+};
+
 /**
  * Whether the entity being resolved is the host organization itself rather than
- * one of its tenants, judged from its own name: `csl.yale.edu` is the Computer
- * Systems Lab's own root, so the CSL entity keeps it as its website while a
- * member's entity does not. Without this exception the umbrella's own entity
- * would be stripped of the only clickable route it has, unlike the sibling
- * rejections (`wordpress.org`, `drive.google.com`) which are never any entity's
- * own home.
+ * one of its tenants: `csl.yale.edu` is the Computer Systems Lab's own root, so
+ * the CSL entity keeps it as its website while a member's entity does not.
+ * Without this exception the umbrella's own entity would be stripped of the only
+ * clickable route it has, unlike the sibling rejections (`wordpress.org`,
+ * `drive.google.com`) which are never any entity's own home.
+ *
+ * Entity shape is checked BEFORE the name, and that ordering is the whole point.
+ * Judging ownership on the name alone is self-defeating on exactly the corpus
+ * this rule exists for, because a grafted affiliated-organization name (#2234,
+ * #2360) is indistinguishable from real ownership: `nih-pi-rajit-manohar` is one
+ * professor's grant-minted LAB row that a name graft renamed "Computer Systems
+ * Lab at Yale", so a name-only check read it as owning `csl.yale.edu` and kept
+ * the umbrella root on the one student-facing row this fix was written for.
+ * A person-scoped entity can never own a shared host that publishes per-person
+ * `~user` pages, whatever it happens to be named, so only an organization-shaped
+ * entity is eligible for the name comparison at all.
  */
 export function researchEntityOwnsMultiTenantAcademicHost(
   value: unknown,
@@ -296,6 +327,7 @@ export function researchEntityOwnsMultiTenantAcademicHost(
 ): boolean {
   const url = parseHttpUrl(value);
   if (!url || !isMultiTenantAcademicHost(url)) return false;
+  if (isPersonScopedHostTenant(entity)) return false;
   const hostLabel = hostnameWithoutWwwAlias(url).split('.')[0];
   if (!hostLabel) return false;
   return [entity?.name, entity?.displayName].some((candidate) => {

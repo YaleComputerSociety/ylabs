@@ -14,6 +14,8 @@ export interface WebsiteUrlBackfillCandidateEntity {
   sourceUrls?: unknown;
   name?: unknown;
   displayName?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
 }
 
 const URL_MAXLENGTH = 2048;
@@ -161,9 +163,10 @@ export type WebsiteUrlBackfillResolution =
  * otherwise kept as a PI fallback. Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
  * then ordered `sourceUrls`) is used.
- * The entity's own `name`/`displayName` is consulted only so a shared academic
- * host's own organization keeps its root as its website instead of being stripped
- * along with its tenants.
+ * The entity's own shape and `name`/`displayName` are consulted only so a shared
+ * academic host's own organization keeps its root as its website instead of being
+ * stripped along with its tenants. A person-scoped entity is never eligible, so a
+ * grafted organization name cannot buy one an exemption.
  */
 export function resolveBackfillWebsiteUrl(
   entity: WebsiteUrlBackfillCandidateEntity,
@@ -175,6 +178,8 @@ export function resolveBackfillWebsiteUrl(
   const hostOwnerIdentity: ResearchEntityHostOwnerIdentity = {
     name: entity.name,
     displayName: entity.displayName,
+    entityType: entity.entityType,
+    kind: entity.kind,
   };
   if (hasUsableWebsiteUrl(entity)) {
     if (isUnservableWebsiteUrl(entity.websiteUrl, hostOwnerIdentity)) {

@@ -340,11 +340,25 @@ describe('researchEntityDto', () => {
       id: 'entity-multi-tenant-owner',
       slug: 'computer-systems-lab',
       name: 'Computer Systems Lab',
-      kind: 'lab',
+      entityType: 'CENTER',
+      kind: 'center',
       websiteUrl: 'https://csl.yale.edu/',
     });
 
     expect(dto.websiteUrl).toBe('https://csl.yale.edu/');
+  });
+
+  it('withholds the shared host root from a person-scoped entity carrying a grafted host name', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-multi-tenant-grafted-tenant',
+      slug: 'nih-pi-example-person',
+      name: 'Computer Systems Lab at Yale',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://csl.yale.edu/',
+    });
+
+    expect(dto).not.toHaveProperty('websiteUrl');
   });
 
   it('keeps a tenant page under a shared host as the served website', () => {

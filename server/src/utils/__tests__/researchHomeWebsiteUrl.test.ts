@@ -17,6 +17,7 @@ import {
   isSharedPeopleRosterUrl,
   isSiteNavigationOrFooterChromeUrl,
   isUnhelpfulProgramUrl,
+  researchEntityOwnsMultiTenantAcademicHost,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../researchHomeWebsiteUrl';
 
@@ -595,6 +596,54 @@ describe('isMultiTenantAcademicHostRootUrl', () => {
       true,
     );
     expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', { name: '' })).toBe(true);
+  });
+
+  it('refuses ownership to a person-scoped entity even when a grafted name names the host', () => {
+    const graftedPersonRow = {
+      name: 'Computer Systems Lab at Yale',
+      displayName: 'Computer Systems Lab at Yale',
+      entityType: 'LAB',
+      kind: 'lab',
+    };
+    expect(
+      researchEntityOwnsMultiTenantAcademicHost('https://csl.yale.edu/', graftedPersonRow),
+    ).toBe(false);
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', graftedPersonRow)).toBe(true);
+    expect(isDisallowedResearchEntitySourceUrl('https://csl.yale.edu/', graftedPersonRow)).toBe(
+      true,
+    );
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://csl.yale.edu/', graftedPersonRow)).toBe('');
+  });
+
+  it('grants ownership to an organization-shaped entity that names the host', () => {
+    const organizationRow = {
+      name: 'Computer Systems Lab',
+      entityType: 'CENTER',
+      kind: 'center',
+    };
+    expect(
+      researchEntityOwnsMultiTenantAcademicHost('https://csl.yale.edu/', organizationRow),
+    ).toBe(true);
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', organizationRow)).toBe(false);
+  });
+
+  it('refuses ownership on entity shape alone for the other person-scoped types', () => {
+    for (const entityType of ['FACULTY_RESEARCH_AREA', 'INDIVIDUAL_RESEARCH', 'FACULTY_PROJECT']) {
+      expect(
+        isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', {
+          name: 'Computer Systems Lab',
+          entityType,
+        }),
+      ).toBe(true);
+    }
+    for (const kind of ['lab', 'individual', 'solo']) {
+      expect(
+        isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/', {
+          name: 'Computer Systems Lab',
+          kind,
+        }),
+      ).toBe(true);
+    }
   });
 
   it('ignores hosts that are not shared academic hosts, and malformed values', () => {

@@ -410,6 +410,8 @@ export function toPublicResearchEntityDto(
   const hostOwnerIdentity = {
     name: served.name ?? group.name,
     displayName: served.displayName ?? group.displayName,
+    entityType,
+    kind,
   };
 
   const dto: PublicResearchEntityDto = {

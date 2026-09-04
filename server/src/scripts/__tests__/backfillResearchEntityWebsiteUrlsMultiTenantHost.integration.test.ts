@@ -51,6 +51,14 @@ describe('research-entity website-url backfill on shared multi-tenant hosts (#23
       entityDoc({
         slug: 'synthetic-computer-systems-lab',
         name: 'Computer Systems Lab',
+        kind: 'center',
+        entityType: 'CENTER',
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/'],
+      }),
+      entityDoc({
+        slug: 'synthetic-grafted-host-name-tenant-lab',
+        name: 'Computer Systems Lab at Yale',
         websiteUrl: 'https://csl.yale.edu/',
         sourceUrls: ['https://csl.yale.edu/'],
       }),
@@ -70,6 +78,7 @@ describe('research-entity website-url backfill on shared multi-tenant hosts (#23
     const result = await runResearchEntityWebsiteUrlBackfill({ dryRun: true });
 
     expect(result.samples.map((sample) => sample.slug).sort()).toEqual([
+      'synthetic-grafted-host-name-tenant-lab',
       'synthetic-multi-label-host-tenant-lab',
       'synthetic-shared-root-tenant-lab',
       'synthetic-shared-root-www-alias-lab',
@@ -90,6 +99,7 @@ describe('research-entity website-url backfill on shared multi-tenant hosts (#23
       'https://gauss.math.yale.edu/~synthetic/',
     );
     expect(await storedWebsiteUrl('synthetic-computer-systems-lab')).toBe('https://csl.yale.edu/');
+    expect(await storedWebsiteUrl('synthetic-grafted-host-name-tenant-lab')).toBe('');
     expect(await storedWebsiteUrl('synthetic-untouched-lab')).toBe('https://belieflab.yale.edu/');
   });
 });
