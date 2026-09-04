@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
+import { auditedWorkspaceDirectories } from './dependency-audit-core.mjs';
+
 const packageJson = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 );
@@ -570,7 +572,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
 test('root package exposes a deploy security preflight', () => {
   assert.equal(
     packageJson.scripts['security:policy'],
-    'node --test scripts/security-preflight.test.mjs',
+    'node --test scripts/security-preflight.test.mjs scripts/audit-dependencies.test.mjs',
   );
   assert.equal(
     packageJson.scripts['security:preflight'],
@@ -592,12 +594,13 @@ test('root package exposes the production security smoke used by deploy gates', 
 test('production dependency audit covers root, server, and client workspaces', () => {
   assert.equal(
     packageJson.scripts['security:audit:production'],
-    [
-      'yarn npm audit --severity moderate --environment production',
-      'yarn --cwd server npm audit --severity moderate --environment production',
-      'yarn --cwd client npm audit --severity moderate --environment production',
-    ].join(' && '),
+    'node scripts/audit-dependencies.mjs --severity moderate --environment production',
   );
+  assert.equal(
+    packageJson.scripts['security:audit:all-environments'],
+    'node scripts/audit-dependencies.mjs --recursive --severity moderate',
+  );
+  assert.deepEqual(auditedWorkspaceDirectories, ['.', 'server', 'client']);
 });
 
 test('CI runs immutable installs and the same deploy security preflight used locally', () => {
