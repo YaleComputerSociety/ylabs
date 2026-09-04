@@ -789,7 +789,8 @@ export function computeResearchEntityStudentVisibility({
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
-    !duplicateRisk
+    !duplicateRisk &&
+    hasUsableName
   ) {
     computedTier = 'limited_but_safe';
   }
@@ -830,6 +831,18 @@ export function computeResearchEntityStudentVisibility({
       tier: 'operator_review',
       computedTier: result.computedTier,
       reasons: Array.from(new Set([...result.reasons, 'missing_lead'])),
+    };
+  }
+  // A record whose `name` is filler rather than an identity can never be
+  // published to students, even by an explicit operator override: there is
+  // nothing to title the card with, so publishing it would serve a card headed
+  // "n/a". The way to publish such a row is to give it a real name, not to
+  // override past the missing one.
+  if (!hasUsableName && (result.tier === 'student_ready' || result.tier === 'limited_but_safe')) {
+    return {
+      tier: 'operator_review',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, 'unusable_name'])),
     };
   }
   // A contested-identity entity mixes different people's identities, so it can

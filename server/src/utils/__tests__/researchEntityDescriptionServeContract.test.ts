@@ -413,6 +413,21 @@ describe('research-entity serve contract - names and research-area chips (#1374)
     expect(out.displayName).toBe('Systems Biology Lab');
   });
 
+  // Clients title the card with `displayName || name`, so filler stored on the
+  // alias would render as the card's heading even though `name` identifies the
+  // record. Withholding it makes every surface fall back to `name` (#2367).
+  it('withholds a placeholder displayName so the card falls back to name', () => {
+    const out = sanitizeServedResearchEntityCopyFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      slug: 'ysm-faculty-fixture-loyal',
+      name: 'Loyal Lab',
+      displayName: 'n/a',
+    });
+    expect(out.displayName).toBe('');
+    expect(out.name).toBe('Loyal Lab');
+  });
+
   it('splits a bare comma-delimited research-area blob into chips', () => {
     const out = sanitizeServedResearchEntityCopyFields({
       entityType: 'CENTER',
