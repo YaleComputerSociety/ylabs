@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,9 +8,11 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  REGISTRY_UNAVAILABLE_EXIT_CODE,
   isRegistryUnavailableFailure,
   runAuditWithRetry,
   runDependencyAudits,
+  spawnAudit,
 } from './dependency-audit-core.mjs';
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -134,10 +137,10 @@ test('audits every directory in order and reports which directory failed', async
   assert.equal(failing.directory, 'server');
 });
 
-test('keeps auditing the remaining workspaces when one cannot reach the registry', async () => {
+test('stops spawning audits once the registry is proven unreachable for the run', async () => {
   const audited = [];
 
-  const inconclusive = await runDependencyAudits({
+  const unreachable = await runDependencyAudits({
     directories: ['.', 'server', 'client'],
     auditArgs: [],
     runAudit: (directory) => {
@@ -150,29 +153,91 @@ test('keeps auditing the remaining workspaces when one cannot reach the registry
     sleep: async () => {},
   });
 
-  assert.deepEqual(inconclusive, { code: 0, registryUnavailableDirectories: ['server'] });
-  assert.deepEqual(audited, ['.', 'server', 'server', 'server', 'client']);
+  assert.deepEqual(unreachable, {
+    code: 0,
+    registryUnavailableDirectories: ['server', 'client'],
+  });
+  // 'client' is never spawned: one exhausted workspace already settles the verdict,
+  // and re-running the ladder per workspace only multiplies the stall.
+  assert.deepEqual(audited, ['.', 'server', 'server', 'server']);
 });
 
-test('still fails on a real advisory found after an unreachable workspace', async () => {
+test('reports an advisory found before the registry went unreachable', async () => {
   const failing = await runDependencyAudits({
     directories: ['.', 'server', 'client'],
     auditArgs: [],
     runAudit: (directory) => {
       if (directory === '.') {
-        return { code: 1, output: REGISTRY_503_OUTPUT };
+        return { code: 1, output: ADVISORY_OUTPUT };
       }
-      return directory === 'client'
-        ? { code: 1, output: ADVISORY_OUTPUT }
-        : { code: 0, output: '' };
+      return { code: 1, output: REGISTRY_503_OUTPUT };
     },
     retryDelayMs: 0,
     sleep: async () => {},
   });
 
   assert.equal(failing.code, 1);
-  assert.equal(failing.directory, 'client');
-  assert.deepEqual(failing.registryUnavailableDirectories, ['.']);
+  assert.equal(failing.directory, '.');
+  assert.deepEqual(failing.registryUnavailableDirectories, []);
+});
+
+const fakeChild = () => {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdout.setEncoding = () => {};
+  child.stderr.setEncoding = () => {};
+  child.killed = false;
+  // Never emits 'close', mimicking a killed yarn whose grandchildren still hold
+  // the stdio pipes open.
+  child.kill = () => {
+    child.killed = true;
+  };
+  return child;
+};
+
+test('caps yarn http timeout and retry for the audit only, leaving installs alone', async () => {
+  let spawnOptions = null;
+  const child = fakeChild();
+
+  await spawnAudit({
+    directory: '.',
+    auditArgs: [],
+    spawnProcess: (_command, _args, options) => {
+      spawnOptions = options;
+      return child;
+    },
+    stream: { write: () => {} },
+    timeoutMs: 30,
+    env: { PATH: '/usr/bin', EXISTING: 'kept' },
+  });
+
+  // Yarn's own timeout is what makes it exit gracefully with a classifiable error.
+  assert.equal(spawnOptions.env.YARN_HTTP_TIMEOUT, '30');
+  // Retry belongs to this runner; yarn's default 3 would multiply into 9 requests.
+  assert.equal(spawnOptions.env.YARN_HTTP_RETRY, '1');
+  // Scoped to the spawn, so .yarnrc.yml stays free of a global cap that would also
+  // throttle install tarball fetches.
+  assert.equal(spawnOptions.env.EXISTING, 'kept');
+  assert.equal(process.env.YARN_HTTP_TIMEOUT, undefined);
+});
+
+test('bounds a hanging audit attempt instead of waiting on the process to close', async () => {
+  const child = fakeChild();
+
+  const started = Date.now();
+  const result = await spawnAudit({
+    directory: '.',
+    auditArgs: [],
+    spawnProcess: () => child,
+    stream: { write: () => {} },
+    timeoutMs: 20,
+  });
+
+  assert.equal(child.killed, true);
+  assert.equal(result.code, 1);
+  assert.equal(isRegistryUnavailableFailure(result.output), true);
+  assert.ok(Date.now() - started < 30_000, 'the backstop must resolve without a close event');
 });
 
 const fakeYarnScript = (failureBody) => `#!/bin/sh
@@ -234,8 +299,9 @@ fi`);
   assert.match(result.output, /npm audit --recursive --severity moderate/);
 });
 
-test('the audit command exits zero when the registry never becomes reachable', async () => {
-  const fakeYarn = await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
+test('the audit command fails closed with a distinct code when the registry never becomes reachable', async () => {
+  const fakeYarn =
+    await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
 exit 1`);
 
   const result = await runAuditCli(
@@ -243,9 +309,73 @@ exit 1`);
     withFakeYarn(fakeYarn),
   );
 
+  assert.equal(result.code, REGISTRY_UNAVAILABLE_EXIT_CODE, result.output);
+  assert.notEqual(REGISTRY_UNAVAILABLE_EXIT_CODE, 0);
+  // Only the first workspace runs the ladder; 'server' is skipped.
+  assert.equal(await readFile(fakeYarn.callFile, 'utf8'), '3');
+  assert.match(result.output, /advisory registry unreachable, verdict unknown/);
+  assert.match(result.output, /Failing closed/);
+  // The operator must be told the override exists, or they will reach for --admin.
+  assert.match(result.output, /DEPENDENCY_AUDIT_ALLOW_UNREACHABLE=1/);
+});
+
+test('the audit command distinguishes an unreachable registry from a real advisory by exit code', async () => {
+  const unreachableYarn =
+    await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
+exit 1`);
+  const advisoryYarn = await createFakeYarn(`echo '${ADVISORY_OUTPUT.split('\n')[1]}' >&2
+exit 1`);
+
+  const unreachable = await runAuditCli(
+    ['.', '--', '--severity', 'moderate'],
+    withFakeYarn(unreachableYarn),
+  );
+  const advisory = await runAuditCli(
+    ['.', '--', '--severity', 'moderate'],
+    withFakeYarn(advisoryYarn),
+  );
+
+  assert.notEqual(
+    unreachable.code,
+    advisory.code,
+    'a caller must be able to tell "verdict unknown" from "verdict: bad"',
+  );
+  assert.equal(unreachable.code, REGISTRY_UNAVAILABLE_EXIT_CODE);
+  assert.equal(advisory.code, 1);
+});
+
+test('the operator override proceeds without a verdict but never hides that it did', async () => {
+  const fakeYarn =
+    await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
+exit 1`);
+
+  const result = await runAuditCli(['.', '--', '--severity', 'moderate'], {
+    ...withFakeYarn(fakeYarn),
+    DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: '1',
+  });
+
   assert.equal(result.code, 0, result.output);
-  assert.equal(await readFile(fakeYarn.callFile, 'utf8'), '6');
-  assert.match(result.output, /Dependency audit inconclusive for \., server/);
+  assert.match(result.output, /advisory registry unreachable, verdict unknown/);
+  assert.match(result.output, /operator override, not a pass/);
+});
+
+test('the override only accepts an exact opt-in value', async () => {
+  const fakeYarn =
+    await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
+exit 1`);
+
+  for (const value of ['', '0', 'true', 'yes', 'false']) {
+    const result = await runAuditCli(['.', '--', '--severity', 'moderate'], {
+      ...withFakeYarn(fakeYarn),
+      DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: value,
+    });
+
+    assert.equal(
+      result.code,
+      REGISTRY_UNAVAILABLE_EXIT_CODE,
+      `${JSON.stringify(value)} must not disable the gate`,
+    );
+  }
 });
 
 test('the audit command exits non-zero once for a real advisory and does not retry', async () => {
@@ -259,5 +389,5 @@ exit 1`);
 
   assert.equal(result.code, 1);
   assert.equal(await readFile(fakeYarn.callFile, 'utf8'), '1');
-  assert.match(result.output, /Dependency audit failed in \. after 1 attempt/);
+  assert.match(result.output, /Dependency audit FAILED in \. after 1 attempt/);
 });

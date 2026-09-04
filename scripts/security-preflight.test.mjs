@@ -1,6 +1,63 @@
-import assert from 'node:assert/strict';
+import nodeAssert from 'node:assert/strict';
 import fs from 'node:fs';
-import test from 'node:test';
+import nodeTest, { after } from 'node:test';
+
+import {
+  DEFAULT_AUDIT_TIMEOUT_MS,
+  REGISTRY_UNAVAILABLE_EXIT_CODE,
+} from './dependency-audit-core.mjs';
+
+// Every policy below pins a rule by reading source and asserting against it. When
+// the code a policy pinned is retired, the pin list can be emptied while the test
+// body survives: the loop iterates zero times, no assertion runs, and the suite
+// still reports ok. That is a guard that reports health by construction, which is
+// worse than no guard at all because it occupies the slot of a real one.
+// `publication and scholarly audit artifacts use safe JSON output paths` sat empty
+// this way from #2141 until #2366. Counting executed assertions per test makes the
+// next one fail instead of passing quietly.
+const executedAssertions = new Map();
+let runningTest = null;
+
+const countAssertion = () => {
+  if (runningTest === null) return;
+  executedAssertions.set(runningTest, (executedAssertions.get(runningTest) ?? 0) + 1);
+};
+
+const assert = new Proxy(nodeAssert, {
+  apply: (target, thisArg, args) => {
+    countAssertion();
+    return Reflect.apply(target, thisArg, args);
+  },
+  get: (target, property) => {
+    const value = target[property];
+    if (typeof value !== 'function') return value;
+    return (...args) => {
+      countAssertion();
+      return value.apply(target, args);
+    };
+  },
+});
+
+const test = (name, implementation) =>
+  nodeTest(name, async (...args) => {
+    runningTest = name;
+    executedAssertions.set(name, executedAssertions.get(name) ?? 0);
+    try {
+      return await implementation(...args);
+    } finally {
+      runningTest = null;
+    }
+  });
+
+after(() => {
+  const vacuous = [...executedAssertions].filter(([, count]) => count === 0).map(([name]) => name);
+
+  nodeAssert.deepEqual(
+    vacuous,
+    [],
+    `these security policies executed zero assertions and therefore pass by construction, not by checking anything: ${vacuous.join('; ')}. Either repoint the policy at the code that replaced what it pinned, or delete it.`,
+  );
+});
 
 const packageJson = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -612,6 +669,49 @@ test('all-environment dependency audit covers every workspace recursively', () =
   assert.deepEqual(audit.directories, ['.', 'server', 'client']);
   assert.deepEqual(audit.auditArgs, ['--recursive', '--severity', 'moderate']);
   assert.match(ciWorkflow, /run:\s*yarn security:audit:all-environments/);
+});
+
+test('an unreachable advisory registry fails closed and stays bounded', () => {
+  const runner = fs.readFileSync(
+    new URL('../scripts/run-dependency-audit.mjs', import.meta.url),
+    'utf8',
+  );
+  const core = fs.readFileSync(
+    new URL('../scripts/dependency-audit-core.mjs', import.meta.url),
+    'utf8',
+  );
+
+  // #2366: an audit that green-lights on "we could not check" lies exactly when it
+  // matters, and an outage window is a plausible time to publish a bad package.
+  // beta promotes to production, so unreachable must never exit 0 by default. A
+  // no-mistakes "apply CI fixes" round already reverted this once to get a green
+  // build; this policy is what makes that revert fail the suite instead of shipping.
+  assert.equal(REGISTRY_UNAVAILABLE_EXIT_CODE, 75);
+  assert.notEqual(REGISTRY_UNAVAILABLE_EXIT_CODE, 0);
+  assert.match(runner, /process\.exit\(REGISTRY_UNAVAILABLE_EXIT_CODE\)/);
+  assert.match(runner, /advisory registry unreachable, verdict unknown/);
+  assert.doesNotMatch(runner, /inconclusive rather than failed/);
+
+  // The override must be an exact opt-in, never a truthiness check that a stray
+  // "false" or "0" in CI config would satisfy.
+  assert.match(runner, /process\.env\.DEPENDENCY_AUDIT_ALLOW_UNREACHABLE === '1'/);
+
+  // Yarn defaults to httpTimeout 60s and httpRetry 3, so one audit can burn three
+  // minutes on a dead registry and six workspace audits far longer. The runner caps
+  // both per invocation rather than in .yarnrc.yml, because a global httpTimeout
+  // would also cap install tarball fetches and make installs flaky on slow links.
+  assert.ok(DEFAULT_AUDIT_TIMEOUT_MS > 0 && DEFAULT_AUDIT_TIMEOUT_MS < 60_000);
+  assert.match(core, /YARN_HTTP_TIMEOUT: String\(timeoutMs\)/);
+  assert.match(core, /YARN_HTTP_RETRY: YARN_AUDIT_HTTP_RETRY/);
+  assert.doesNotMatch(yarnrc, /httpTimeout/);
+
+  // SIGKILL stays as a backstop for a yarn that ignores its own timeout, and
+  // resolving on the timer rather than on 'close' is what makes the bound real:
+  // a killed yarn's grandchildren can hold the stdio pipes open indefinitely.
+  assert.match(core, /timeoutMs = DEFAULT_AUDIT_TIMEOUT_MS/);
+  assert.match(core, /child\.kill\('SIGKILL'\)/);
+  assert.match(core, /settle\(\{ code: 1, output: output \+ notice \}\)/);
+  assert.match(core, /timeoutMs \+ KILL_GRACE_MS/);
 });
 
 test('CI runs immutable installs and the same deploy security preflight used locally', () => {
@@ -4718,39 +4818,6 @@ test('quality and coverage audit artifacts use safe JSON output paths', () => {
     assert.match(
       source,
       /return resolveSafeJsonReportOutputPath\(value\)/,
-      `${name} must validate --output while parsing CLI flags`,
-    );
-    assert.match(
-      source,
-      /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/,
-      `${name} writer must revalidate output paths before file I/O`,
-    );
-    assert.doesNotMatch(
-      source,
-      /fs\.writeFileSync\(output,/,
-      `${name} must not write raw output paths`,
-    );
-    assert.doesNotMatch(
-      source,
-      /fs\.mkdirSync\(path\.dirname\(output\)/,
-      `${name} must not create raw output directories`,
-    );
-  }
-});
-
-test('publication and scholarly audit artifacts use safe JSON output paths', () => {
-  const files = [];
-
-  for (const [name, file] of files) {
-    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(
-      source,
-      /resolveSafeJsonReportOutputPath/,
-      `${name} must use the shared safe JSON report path resolver`,
-    );
-    assert.match(
-      source,
-      /options\.output = resolveSafeJsonReportOutputPath\(/,
       `${name} must validate --output while parsing CLI flags`,
     );
     assert.match(
