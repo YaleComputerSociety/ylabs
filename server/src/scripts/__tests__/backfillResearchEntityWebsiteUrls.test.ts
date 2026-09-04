@@ -209,6 +209,21 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
     ).toEqual({ action: 'keep' });
   });
 
+  // A lab minted from its PI's faculty-directory page cites that page as its own
+  // source, so keeping it as `websiteUrl` made the detail page render the same
+  // destination twice: once as "Website" and once as the official-profile CTA.
+  it('clears a faculty-directory websiteUrl the entity cites as its own source (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://engineering.example.edu/faculty-directory/jordan-example',
+        sourceUrls: [
+          'https://engineering.example.edu/faculty-directory/jordan-example',
+          'https://institute.example.edu/humans/faculty',
+        ],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
   it('clears a Google Drive share-link websiteUrl when no research home is available (#730)', () => {
     expect(
       resolveBackfillWebsiteUrl({
@@ -269,11 +284,66 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
     ).toEqual({ action: 'clear' });
   });
 
-  it('keeps a single-person /people/ profile page as a PI fallback (#518)', () => {
+  it('clears a single-person /people/ profile page the entity already cites (#518, #2352)', () => {
     expect(
       resolveBackfillWebsiteUrl({
         websiteUrl: 'https://economics.example.edu/people/jordan-example',
         sourceUrls: ['https://economics.example.edu/people/jordan-example'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('keeps a single-person profile page the entity cites nowhere else (#518)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.example.edu/people/jordan-example',
+        sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('ignores a trailing slash and case when matching the cited profile page (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://Economics.example.edu/people/Jordan-Example/',
+        sourceUrls: ['https://economics.example.edu/people/jordan-example'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('ignores scheme and a www. prefix when matching the cited profile page (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'http://www.economics.example.edu/people/jordan-example/',
+        sourceUrls: ['https://economics.example.edu/people/jordan-example'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('keeps a profile page cited only by the legacy website field, which the page never renders (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.example.edu/people/jordan-example',
+        website: 'https://economics.example.edu/people/jordan-example',
+        sourceUrls: [],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('keeps a cited department-roster profile page the detail page refuses to re-render (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.yale.edu/people/faculty/jordan-example',
+        sourceUrls: ['https://economics.yale.edu/people/faculty/jordan-example'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('keeps a cited collective-leaf roster page the detail page refuses to re-render (#2352)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://whc.yale.edu/people/our-people',
+        sourceUrls: ['https://whc.yale.edu/people/our-people'],
       }),
     ).toEqual({ action: 'keep' });
   });
@@ -593,7 +663,7 @@ describe('prefers a real lab site over a directory/profile stub (#537)', () => {
     ).toEqual({ action: 'set', websiteUrl: 'https://medicine.example.edu/lab/example/' });
   });
 
-  it('keeps a lone directory/profile stub when no better lab site exists', () => {
+  it('clears a lone directory/profile stub the entity already cites (#2352)', () => {
     expect(
       resolveBackfillWebsiteUrl({
         websiteUrl: 'https://math.example.edu/profile/jordan-example/',
@@ -603,7 +673,7 @@ describe('prefers a real lab site over a directory/profile stub (#537)', () => {
           'https://sites.google.com/',
         ],
       }),
-    ).toEqual({ action: 'keep' });
+    ).toEqual({ action: 'clear' });
   });
 });
 

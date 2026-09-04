@@ -3566,16 +3566,6 @@ export async function projectFromLog(
       input.applyResearchEntityResearchAreaCanonicalization ??
       applyResearchEntityResearchAreaCanonicalization
     )(set, set.departments ?? entityDoc?.departments);
-    if (!manuallyLockedFields.includes('websiteUrl')) {
-      const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
-      if (websiteResolution.action === 'set') {
-        set.websiteUrl = websiteResolution.websiteUrl;
-        fieldsWritten++;
-      } else if (websiteResolution.action === 'clear') {
-        set.websiteUrl = '';
-        fieldsWritten++;
-      }
-    }
     // The detail-page official-profile CTA reads only entity.sourceUrls, so a
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).
@@ -3600,6 +3590,19 @@ export async function projectFromLog(
           ]);
           fieldsWritten++;
         }
+      }
+    }
+    // websiteUrl resolves after the #613 sourceUrls projection: it clears a profile-page
+    // websiteUrl the entity already cites, so it has to see the projection this same pass
+    // or the duplicate way-in stays live until the next materialization (issue #2352).
+    if (!manuallyLockedFields.includes('websiteUrl')) {
+      const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
+      if (websiteResolution.action === 'set') {
+        set.websiteUrl = websiteResolution.websiteUrl;
+        fieldsWritten++;
+      } else if (websiteResolution.action === 'clear') {
+        set.websiteUrl = '';
+        fieldsWritten++;
       }
     }
     if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {

@@ -123,6 +123,21 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
     expect(sourceUrls.filter((url) => url === OFFICIAL_PROFILE_URL)).toHaveLength(1);
   });
 
+  it('clears a profile-page websiteUrl on the pass that cites the profile as a sourceUrl (#2352)', async () => {
+    await seedEntity({ websiteUrl: OFFICIAL_PROFILE_URL, sourceUrls: [A_TO_Z_INDEX_URL] });
+    await seedObservation('inferredPiUserKey', 'vaughn-steele', OFFICIAL_PROFILE_URL, 0.86);
+
+    await materializeEntity('researchEntity', { entityKey: 'ysm-steele-fixture' }, {});
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'ysm-steele-fixture',
+    }).lean<PersistedEntity>();
+    const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
+
+    expect(sourceUrls).toContain(OFFICIAL_PROFILE_URL);
+    expect(persisted?.websiteUrl ?? '').toBe('');
+  });
+
   it('does not promote the profile when sourceUrls is manually locked', async () => {
     await seedEntity({ manuallyLockedFields: ['sourceUrls'] });
     await seedObservation('websiteUrl', LAB_MICROSITE_URL, A_TO_Z_INDEX_URL, 0.9);

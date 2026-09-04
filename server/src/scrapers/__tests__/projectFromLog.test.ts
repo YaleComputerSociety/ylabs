@@ -175,4 +175,32 @@ describe('projectFromLog', () => {
     );
     expect(result.unset.methods).toBe('');
   });
+
+  it('clears a profile-page websiteUrl on the same pass that projects it onto sourceUrls (#2352)', async () => {
+    const leadProfileUrl = 'https://medicine.yale.edu/profile/jordan-example/';
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Example Lab') },
+        materializationObs: [
+          {
+            field: 'inferredPiUserId',
+            value: 'synthetic-user-id',
+            sourceUrl: leadProfileUrl,
+            confidence: 0.82,
+          },
+        ],
+        entityDoc: {
+          _id: 'f'.repeat(24),
+          kind: 'lab',
+          entityType: 'LAB',
+          websiteUrl: leadProfileUrl,
+          sourceUrls: [],
+          confidenceByField: {},
+        },
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([leadProfileUrl]);
+    expect(result.set.websiteUrl).toBe('');
+  });
 });
