@@ -33,7 +33,7 @@ describe('researchEntitySearchIndexService', () => {
     });
 
     expect(doc).not.toHaveProperty('displayName');
-    expect(doc.name).toBe('Rafferty Duchamp Faculty Research');
+    expect(doc?.name).toBe('Rafferty Duchamp Faculty Research');
   });
 
   it('keeps an organization-shaped record own organization displayName in the index', () => {
@@ -47,7 +47,7 @@ describe('researchEntitySearchIndexService', () => {
       archived: false,
     });
 
-    expect(doc.displayName).toBe('Yale Center for Customer Insights');
+    expect(doc?.displayName).toBe('Yale Center for Customer Insights');
   });
 
   it('builds Meilisearch-ready research entity documents without internal fields', () => {

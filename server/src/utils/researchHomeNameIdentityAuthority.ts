@@ -14,8 +14,12 @@ const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i
 
 const WORKING_GROUP_RE = /\bworking\s+group\b/i;
 
-const UMBRELLA_ORGANIZATION_HEAD_RE =
-  /\b(?:cent(?:er|re)s?|institutes?|programs?|programmes?|collaboratives?|clinics?|consorti(?:um|a)|units?|initiatives?|networks?|councils?|committees?|offices?|divisions?|departments?|sections?|schools?|colleges?|foundations?|societ(?:y|ies)|registr(?:y|ies)|alliances?|coalitions?|partnerships?|task\s+forces?|hospitals?|cores?|facilit(?:y|ies)|observator(?:y|ies)|museums?|librar(?:y|ies)|health\s+systems?)\b/i;
+const UMBRELLA_ORGANIZATION_HEAD_SOURCE =
+  '(?:cent(?:er|re)s?|institutes?|programs?|programmes?|collaboratives?|clinics?|consorti(?:um|a)|units?|initiatives?|networks?|councils?|committees?|offices?|divisions?|departments?|sections?|schools?|colleges?|foundations?|societ(?:y|ies)|registr(?:y|ies)|alliances?|coalitions?|partnerships?|task\\s+forces?|hospitals?|cores?|facilit(?:y|ies)|observator(?:y|ies)|museums?|librar(?:y|ies)|health\\s+systems?)';
+
+const UMBRELLA_ORGANIZATION_HEAD_RE = new RegExp(`\\b${UMBRELLA_ORGANIZATION_HEAD_SOURCE}\\b`, 'i');
+
+const NAME_PARTICLE_SOURCE = '(?:de|van|von|del|della|di|da|du|la|le|el|al|st)';
 
 // A CMS link label is built entirely from generic navigation words, so a name
 // made of nothing but these identifies no research home.
@@ -152,11 +156,14 @@ export function isNonIdentifyingLinkLabelName(value: unknown): boolean {
   return words.every((word) => LINK_LABEL_WORDS.has(word));
 }
 
-export function nameCarriesPersonIdentity(value: unknown, personName: unknown): boolean {
-  const tokens = personIdentityTokens(personName);
-  if (tokens.length === 0) return false;
+function nameCarriesIdentityToken(value: unknown, identityTokens: string[]): boolean {
+  if (identityTokens.length === 0) return false;
   const words = new Set(nameWords(value));
-  return tokens.some((token) => words.has(token));
+  return identityTokens.some((token) => words.has(token));
+}
+
+export function nameCarriesPersonIdentity(value: unknown, personName: unknown): boolean {
+  return nameCarriesIdentityToken(value, personIdentityTokens(personName));
 }
 
 // Path segments that structure a site rather than name a person, so they never
@@ -202,8 +209,20 @@ const STRUCTURAL_URL_SEGMENT_WORDS = new Set([
 // Lab", "Kliman Laboratories". Requiring exactly one surname token keeps topical
 // names out ("Computational Biomechanics Laboratory", "Yale NLP Lab"), which is
 // what makes the rule safe to act on.
-const EPONYMOUS_LAB_NAME_RE =
-  /^(?:the\s+)?((?:de|van|von|del|della|di|da|du|la|le|el|al|st)\s+)?([a-z][a-z'’-]*)\s+(?:lab|labs|laborator(?:y|ies)|group)\b/i;
+const EPONYMOUS_LAB_NAME_RE = new RegExp(
+  `^(?:the\\s+)?(${NAME_PARTICLE_SOURCE}\\s+)?([a-z][a-z'’-]*)\\s+(?:lab|labs|laborator(?:y|ies)|group)\\b`,
+  'i',
+);
+
+// The same eponym shape for an organization head noun: "Rooney Center for Metal
+// Geochemistry". Anchoring the surname directly in front of the head noun is what
+// separates a person's own endowed organization from a topical one that merely
+// shares a word with the record's slug ("Yale Cancer Center" for
+// `cancer-research-lab`), which slug tokens alone cannot tell apart.
+const EPONYMOUS_ORGANIZATION_NAME_RE = new RegExp(
+  `^(?:the\\s+)?(${NAME_PARTICLE_SOURCE}\\s+)?([a-z][a-z'’-]*)\\s+${UMBRELLA_ORGANIZATION_HEAD_SOURCE}\\b`,
+  'i',
+);
 
 /** The surname an eponymous lab name claims ownership for, if it is one. */
 export function eponymousLabNameSurname(harvestedName: unknown): string {
@@ -219,11 +238,19 @@ export function eponymousLabNameSurname(harvestedName: unknown): string {
  * different person's lab (#2285).
  */
 export function eponymousLabNameSurnameCandidates(harvestedName: unknown): string[] {
-  const match = EPONYMOUS_LAB_NAME_RE.exec(textValue(harvestedName));
+  return eponymSurnameCandidates(EPONYMOUS_LAB_NAME_RE.exec(textValue(harvestedName)));
+}
+
+function eponymSurnameCandidates(match: RegExpExecArray | null): string[] {
   const surname = (match?.[2] || '').toLowerCase();
   if (surname.length < 2) return [];
   const particle = (match?.[1] || '').trim().toLowerCase();
   return particle ? [surname, `${particle}${surname}`] : [surname];
+}
+
+/** The surname an eponymous organization name claims ownership for, if it is one. */
+export function eponymousOrganizationNameSurnameCandidates(value: unknown): string[] {
+  return eponymSurnameCandidates(EPONYMOUS_ORGANIZATION_NAME_RE.exec(textValue(value)));
 }
 
 /**
@@ -389,7 +416,13 @@ export function isPersonScopedResearchEntity(entity: {
  *
  * The record's own person identity comes from `personName` when a lead is known
  * and otherwise from the slug, which is the same slug-token fallback the
- * microsite extractor's attribution check uses.
+ * microsite extractor's attribution check uses. The two are not interchangeable
+ * as proof of identity: a person name is made of person-name words, so any
+ * overlap identifies the record, while a slug carries topical words a shared
+ * organization name is just as likely to carry ("cancer" for
+ * `cancer-research-lab` and for "Yale Cancer Center"). A slug token therefore
+ * only clears an organization name when it stands in the eponym position, which
+ * is the same narrow shape that makes the foreign-lab rule safe to act on.
  */
 export function personScopedResearchEntityNameNamesSomethingElse(args: {
   candidateName: unknown;
@@ -402,11 +435,14 @@ export function personScopedResearchEntityNameNamesSomethingElse(args: {
   if (!isPersonScopedResearchEntity(args)) return false;
   const name = stripResearchHomeNameLinkWrapper(args.candidateName);
   if (name.length < 2) return false;
-  const identityTokens = personIdentityTokens(args.personName).length
-    ? personIdentityTokens(args.personName)
-    : entityKeyPersonTokens(args.slug);
-  if (identityTokens.some((token) => new Set(nameWords(name)).has(token))) return false;
-  if (isUmbrellaOrganizationName(name)) return true;
+  const personTokens = personIdentityTokens(args.personName);
+  const identityTokens = personTokens.length ? personTokens : entityKeyPersonTokens(args.slug);
+  if (nameCarriesIdentityToken(name, personTokens)) return false;
+  if (isUmbrellaOrganizationName(name)) {
+    return !eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
+      eponymMatchesIdentity(eponym, identityTokens),
+    );
+  }
   return claimsAnotherPersonsLab({
     harvestedName: name,
     websiteUrl: args.websiteUrl,

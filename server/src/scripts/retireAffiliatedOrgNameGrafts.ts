@@ -14,6 +14,7 @@ import {
   entityKeyPersonTokens,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
+  personScopedResearchEntityNameNamesSomethingElse,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isPersonCmsProfileUrl } from '../utils/researchHomeWebsiteUrl';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -73,9 +74,23 @@ export interface OrgNameGraftRow {
   verdict: string;
   observationIds: string[];
   documentStillServesGraft: boolean;
+  documentGraftedFields: GraftedDocumentField[];
   replacementNameAfterRollback: string;
   needsRescrapeToRename: boolean;
   replacementIsStillAnOrganization: boolean;
+}
+
+/**
+ * A name field the DOCUMENT still serves wrongly, carrying the value the document
+ * actually holds rather than the observation's raw value. Materialization
+ * normalizes a name before storing it (dashes, smart quotes, trailing
+ * descriptions, credentials), so comparing the stored value to the observation
+ * string misses exactly the records whose graft was normalized on the way in and
+ * silently drops them from the repair (#2351).
+ */
+export interface GraftedDocumentField {
+  field: string;
+  storedName: string;
 }
 
 interface EntityContext {
@@ -125,12 +140,38 @@ function graftVerdict(
 }
 
 /**
+ * Whether the value the DOCUMENT currently holds for a name field still names
+ * something other than this record, judged with the same predicate the writers
+ * and serve paths now run. The byte-equality fallback covers the entities the
+ * predicate does not speak for (an organization-shaped record grafted from a
+ * profile lab-website link), so this is never narrower than comparing the stored
+ * value to the observation string.
+ */
+function documentNameStillNamesSomethingElse(
+  entity: EntityContext,
+  storedName: string,
+  graftedName: string,
+  websiteUrl: string,
+): boolean {
+  if (!storedName) return false;
+  if (storedName === graftedName) return true;
+  return personScopedResearchEntityNameNamesSomethingElse({
+    candidateName: storedName,
+    entityType: entity.entityType,
+    kind: entity.kind,
+    slug: entity.slug,
+    personName: entity.personName,
+    websiteUrl,
+  });
+}
+
+/**
  * Grafted name observations, INCLUDING ones a previous run already retired.
- * Skipping those is what stranded 36 records: the 2026-09-01 apply retired the
- * observations, nothing rewrote the documents, and a re-run could no longer see
- * the rows it had half-fixed (#2351). A row whose observation is retired AND
- * whose document no longer serves it has nothing left to do and is dropped, so
- * the repair still terminates.
+ * Skipping those is what stranded the records this issue reports: the
+ * 2026-09-01 apply retired the observations, nothing rewrote the documents, and a
+ * re-run could no longer see the rows it had half-fixed (#2351). A row whose
+ * observation is retired AND whose document no longer serves a wrong name has
+ * nothing left to do and is dropped, so the repair still terminates.
  */
 export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
   const observations = await Observation.find({
@@ -216,7 +257,10 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     return context;
   };
 
-  const grouped = new Map<string, OrgNameGraftRow & { idSet: Set<string> }>();
+  const grouped = new Map<
+    string,
+    OrgNameGraftRow & { idSet: Set<string>; entity: EntityContext; linkedWebsiteUrl: string }
+  >();
   const graftedPairsBySlug = new Map<string, Set<string>>();
   for (const obs of observations as Record<string, unknown>[]) {
     const entityKey = obs.entityKey ? String(obs.entityKey) : undefined;
@@ -230,8 +274,20 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const linkedWebsiteUrl = linkedWebsites.get(`${entityKey || entityId}|${sourceName}`) || '';
     const verdict = graftVerdict(sourceName, graftedName, sourceUrl, linkedWebsiteUrl, entity);
     if (!verdict) continue;
-    const field = String(obs.field) === 'displayName' ? 'displayName' : 'name';
-    const documentServesThisGraft = entity[field] === graftedName;
+    // A manually locked field has nothing the repair may do, so it never counts as
+    // still served; otherwise the row would be re-reported on every future run
+    // with no action available to close it out.
+    const graftedDocumentFields = NAME_FIELDS.filter(
+      (candidateField) =>
+        !entity.manuallyLockedFields.includes(candidateField) &&
+        documentNameStillNamesSomethingElse(
+          entity,
+          candidateField === 'displayName' ? entity.displayName : entity.name,
+          graftedName,
+          linkedWebsiteUrl || sourceUrl,
+        ),
+    );
+    const documentServesThisGraft = graftedDocumentFields.length > 0;
     const alreadyRetired = obs.superseded === true;
     if (alreadyRetired && !documentServesThisGraft) continue;
 
@@ -249,14 +305,24 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
         verdict,
         observationIds: [],
         idSet: new Set<string>(),
+        entity,
+        linkedWebsiteUrl: linkedWebsiteUrl || sourceUrl,
         documentStillServesGraft: false,
+        documentGraftedFields: [],
         replacementNameAfterRollback: '',
         needsRescrapeToRename: true,
         replacementIsStillAnOrganization: false,
       });
     }
     const group = grouped.get(groupKey)!;
-    group.documentStillServesGraft = group.documentStillServesGraft || documentServesThisGraft;
+    for (const graftedField of graftedDocumentFields) {
+      if (group.documentGraftedFields.some((entry) => entry.field === graftedField)) continue;
+      group.documentGraftedFields.push({
+        field: graftedField,
+        storedName: graftedField === 'displayName' ? entity.displayName : entity.name,
+      });
+    }
+    group.documentStillServesGraft = group.documentGraftedFields.length > 0;
     const observationId = serializedDocumentId(obs._id);
     if (observationId && !group.idSet.has(observationId)) {
       group.idSet.add(observationId);
@@ -280,7 +346,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
   }
 
   return Array.from(grouped.values())
-    .map(({ idSet: _idSet, ...row }) => {
+    .map(({ idSet: _idSet, entity, linkedWebsiteUrl, ...row }) => {
       const retired = graftedPairsBySlug.get(row.entitySlug) || new Set<string>();
       const survivors = (activeNamesBySlug.get(row.entitySlug) || [])
         .filter(
@@ -288,10 +354,24 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
             !retired.has(`${String(candidate.sourceName)}|${String(candidate.value || '')}`),
         )
         .sort((a, b) => Number(b.confidence) - Number(a.confidence));
+      // A survivor from a source this scan never looks at can itself be an
+      // umbrella-organization or foreign-lab name, so the replacement has to clear
+      // the same guard the writers run. When none does, the row falls through to
+      // `needsRescrapeToRename` rather than trading one graft for another.
+      const replacement = survivors.find(
+        (candidate) =>
+          String(candidate.value || '') &&
+          !documentNameStillNamesSomethingElse(
+            entity,
+            String(candidate.value || ''),
+            '',
+            linkedWebsiteUrl,
+          ),
+      );
       return {
         ...row,
-        replacementNameAfterRollback: String(survivors[0]?.value || ''),
-        needsRescrapeToRename: survivors.length === 0,
+        replacementNameAfterRollback: String(replacement?.value || ''),
+        needsRescrapeToRename: !replacement,
         replacementIsStillAnOrganization: isUmbrellaOrganizationName(survivors[0]?.value),
       };
     })
@@ -301,15 +381,17 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
 /**
  * Retiring the observation is not the repair. The document keeps whatever the
  * graft wrote until something rewrites that field, and for `displayName` nothing
- * ever does: no faculty-directory source emits it, so the retired value stayed
- * on 36 served records after this script's own 2026-09-01 apply (#2351). So the
- * document is corrected in the same pass, and only where it still carries the
- * exact value being retired.
+ * ever does: no faculty-directory source emits it, so the retired value stayed on
+ * served records after this script's own 2026-09-01 apply (#2351). So the document
+ * is corrected in the same pass, and only on the fields whose STORED value was
+ * itself judged wrong, matched by that stored value so a concurrent
+ * re-materialization is never overwritten blind.
  *
  * `displayName` clears outright because every serve path falls back to `name`.
- * `name` only moves to a surviving observation's value, so a record is never
- * left nameless; when nothing survives, `needsRescrapeToRename` already reports
- * it for a rename pass.
+ * `name` only moves to a surviving observation's value that clears the same
+ * identity guard, so a record is never left nameless nor renamed to a second
+ * umbrella organization; when nothing qualifies, `needsRescrapeToRename` already
+ * reports it for a rename pass.
  */
 async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
   const entityFilter = row.entityId
@@ -327,11 +409,11 @@ async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
       : null;
   };
   let corrected = 0;
-  for (const field of NAME_FIELDS) {
+  for (const { field, storedName } of row.documentGraftedFields) {
     const update = correction(field);
     if (!update) continue;
     const result = await ResearchEntity.updateOne(
-      { ...entityFilter, [field]: row.graftedName, manuallyLockedFields: { $ne: field } },
+      { ...entityFilter, [field]: storedName, manuallyLockedFields: { $ne: field } },
       update,
     );
     corrected += result.modifiedCount || 0;

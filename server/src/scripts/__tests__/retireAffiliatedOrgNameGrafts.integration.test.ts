@@ -137,6 +137,51 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     ).toBe(OWN_NAME);
   });
 
+  it('heals a stored graft that materialization normalized away from the observation value', async () => {
+    await seedEntity({ displayName: `${AFFILIATION_GRAFT} - Accounting` });
+    await seedGraftObservation({
+      superseded: true,
+      rollback: { rolledBackAt: new Date('2026-09-01T01:11:00Z'), reason: 'earlier run' },
+    });
+
+    const rows = await loadOrgNameGrafts();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].documentStillServesGraft).toBe(true);
+
+    expect((await applyRows(rows)).documentFieldsCorrected).toBe(1);
+    expect(
+      (await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{ displayName?: string }>())
+        ?.displayName,
+    ).toBeUndefined();
+  });
+
+  it('refuses to rename onto a survivor that is itself an umbrella organization', async () => {
+    await seedEntity({ name: AFFILIATION_GRAFT });
+    await seedGraftObservation({ field: 'name' });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: ENTITY_KEY,
+      field: 'name',
+      value: 'Yale Comprehensive Cancer Center',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'official-profile-pi-backfill',
+      sourceUrl: 'https://medicine.example.edu/profile/rafferty-duchamp/',
+      confidence: 0.8,
+      observedAt: new Date('2026-08-28T00:00:00Z'),
+      superseded: false,
+    });
+
+    const rows = await loadOrgNameGrafts();
+    expect(rows[0].replacementNameAfterRollback).toBe('');
+    expect(rows[0].needsRescrapeToRename).toBe(true);
+
+    await applyRows(rows);
+
+    expect(
+      (await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{ name?: string }>())?.name,
+    ).toBe(AFFILIATION_GRAFT);
+  });
+
   it('leaves a manually locked field alone', async () => {
     await seedEntity({ displayName: AFFILIATION_GRAFT, manuallyLockedFields: ['displayName'] });
     await seedGraftObservation();

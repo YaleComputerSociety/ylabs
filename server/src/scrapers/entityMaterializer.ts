@@ -3209,8 +3209,8 @@ const PERSON_SCOPED_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
  * It judges the EFFECTIVE served value (`set ?? entityDoc`) rather than only a
  * freshly resolved one. Retiring a graft observation does not rewrite the
  * document, and `displayName` is emitted by no faculty-directory source, so
- * nothing else would ever overwrite it: 39 records were still serving names
- * whose observations had already been rolled back (#2351).
+ * nothing else would ever overwrite it, which left person-scoped records serving
+ * names whose observations had already been rolled back (#2351).
  *
  * `displayName` clears on failure because every serve path falls back to `name`.
  * `name` only ever moves to a ranked candidate that passes, so refusing a graft
@@ -3236,53 +3236,73 @@ function enforcePersonScopedNameIdentityAuthority(input: {
     slug: entityDoc?.slug ?? input.sourceEntityIdentity?.slug,
   };
   // The URL a value was harvested from is what corroborates a foreign eponym, so
-  // a value already on the document is judged against its own provenance rather
-  // than against wherever the record's website currently points.
-  const provenanceSourceUrl = (field: string): unknown =>
+  // every value is judged against its OWN provenance: the served value against
+  // whatever is on the document, and each replacement candidate against the
+  // provenance that candidate would bring with it. Judging a candidate against
+  // the outgoing value's URL would clear another person's eponymous lab whenever
+  // the refused value happened to come from somewhere else.
+  const servedProvenanceSourceUrl = (field: string): unknown =>
     objectRecord(set[`fieldProvenance.${field}`] ?? entityDoc?.fieldProvenance?.[field]).sourceUrl;
-  const namesSomethingElse = (field: string, candidateName: unknown): boolean =>
+  // A candidate with no matching observation provenance (a manual value) has no
+  // URL of its own, so the record's own linked site is the last corroboration
+  // available rather than letting the foreign-lab check fail open.
+  const recordWebsiteUrl =
+    textValue(set.websiteUrl ?? entityDoc?.websiteUrl) ||
+    textValue(set.website ?? entityDoc?.website);
+  const namesSomethingElse = (candidateName: unknown, websiteUrl: unknown): boolean =>
     personScopedResearchEntityNameNamesSomethingElse({
       ...recordIdentity,
       candidateName,
-      websiteUrl: provenanceSourceUrl(field),
+      websiteUrl,
     });
 
   let fieldsWritten = 0;
   for (const field of PERSON_SCOPED_IDENTITY_NAME_FIELDS) {
     if (input.manuallyLockedFields.includes(field)) continue;
     const servedValue = set[field] ?? entityDoc?.[field];
-    if (!textValue(servedValue) || !namesSomethingElse(field, servedValue)) continue;
+    if (
+      !textValue(servedValue) ||
+      !namesSomethingElse(servedValue, servedProvenanceSourceUrl(field))
+    ) {
+      continue;
+    }
 
     const replacement = resolveFieldRanked(field, input.resolverObs, {
       manuallyLockedFields: input.manuallyLockedFields,
       manualValues: input.manualValues,
     })
-      .map((candidate) => ({
-        candidate,
-        materialized: sanitizeProjectedField(
-          input.entityType,
+      .map((candidate) => {
+        const provenance = fieldProvenanceForResolvedObservation(
           field,
-          candidate.value,
-          entityDoc?.[field],
-          input.sourceEntityIdentity,
-        ),
-      }))
+          candidate,
+          input.materializationObs,
+        );
+        return {
+          candidate,
+          provenance,
+          candidateSourceUrl: objectRecord(provenance).sourceUrl || recordWebsiteUrl,
+          materialized: sanitizeProjectedField(
+            input.entityType,
+            field,
+            candidate.value,
+            entityDoc?.[field],
+            input.sourceEntityIdentity,
+          ),
+        };
+      })
       .find(
-        ({ materialized }) =>
+        ({ materialized, candidateSourceUrl }) =>
           textValue(materialized) &&
           textValue(materialized) !== textValue(servedValue) &&
-          !namesSomethingElse(field, materialized),
+          !namesSomethingElse(materialized, candidateSourceUrl),
       );
 
     if (replacement) {
       set[field] = replacement.materialized;
       confidenceByField[field] = replacement.candidate.confidence;
-      const provenance = fieldProvenanceForResolvedObservation(
-        field,
-        replacement.candidate,
-        input.materializationObs,
-      );
-      if (provenance) set[`fieldProvenance.${field}`] = provenance;
+      if (replacement.provenance) {
+        set[`fieldProvenance.${field}`] = replacement.provenance;
+      }
       fieldsWritten++;
       continue;
     }

@@ -152,6 +152,28 @@ describe('materializeEntity refuses a name that names something other than the r
     expect((await persisted()).name).toBe(OWN_NAME);
   });
 
+  it('judges a replacement candidate against its own provenance, not the refused value provenance', async () => {
+    await seedPersonScopedEntity({
+      displayName: 'Liver Center',
+      fieldProvenance: {
+        displayName: {
+          sourceName: 'official-profile-pi-backfill',
+          sourceUrl: 'https://medicine.example.edu/liver-center/',
+        },
+      },
+    });
+    await seedObservation({
+      field: 'displayName',
+      value: 'The Liu Lab',
+      sourceName: 'official-profile-pi-backfill',
+      sourceUrl: 'https://medicine.example.edu/lab/liu/',
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).displayName ?? '').toBe('');
+  });
+
   it('leaves an organization-shaped record own organization name alone', async () => {
     await ResearchEntity.create({
       slug: ENTITY_KEY,

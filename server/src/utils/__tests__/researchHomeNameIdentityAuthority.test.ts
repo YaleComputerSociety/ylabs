@@ -337,6 +337,26 @@ describe('personScopedResearchEntityNameNamesSomethingElse', () => {
     ).toBe(false);
   });
 
+  it('refuses an umbrella organization that only shares a topical word with the slug', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        entityType: 'LAB',
+        slug: 'cancer-research-lab',
+        candidateName: 'Yale Cancer Center',
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses an umbrella organization whose topical word trails the head noun', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        entityType: 'LAB',
+        slug: 'aging-lab',
+        candidateName: 'Yale Center on Aging',
+      }),
+    ).toBe(true);
+  });
+
   it('uses the lead person name over the slug when one is known', () => {
     expect(
       personScopedResearchEntityNameNamesSomethingElse({
