@@ -223,7 +223,9 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const cacheKey = entityKey || entityId || '';
     if (entityCache.has(cacheKey)) return entityCache.get(cacheKey) ?? null;
     const entity = await ResearchEntity.findOne(entityKey ? { slug: entityKey } : { _id: entityId })
-      .select('_id slug name displayName entityType kind studentVisibilityTier manuallyLockedFields')
+      .select(
+        '_id slug name displayName entityType kind studentVisibilityTier manuallyLockedFields',
+      )
       .lean();
     if (!entity) {
       entityCache.set(cacheKey, null);
