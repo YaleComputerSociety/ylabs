@@ -124,7 +124,11 @@ test('audits every directory in order and reports which directory failed', async
     sleep: async () => {},
   });
 
-  assert.deepEqual(passing, { code: 0, registryUnavailableDirectories: [] });
+  assert.deepEqual(passing, {
+    code: 0,
+    failedDirectories: [],
+    registryUnavailableDirectories: [],
+  });
   assert.deepEqual(audited, ['.', 'server', 'client']);
 
   const failing = await runDependencyAudits({
@@ -137,6 +141,27 @@ test('audits every directory in order and reports which directory failed', async
 
   assert.equal(failing.code, 1);
   assert.equal(failing.directory, 'server');
+  assert.deepEqual(failing.failedDirectories, ['server']);
+});
+
+test('keeps auditing after a real advisory so a later workspace cannot stay hidden', async () => {
+  const audited = [];
+
+  const failing = await runDependencyAudits({
+    directories: ['.', 'server', 'client'],
+    auditArgs: [],
+    runAudit: (directory) => {
+      audited.push(directory);
+      return directory === '.' ? { code: 0, output: '' } : { code: 1, output: ADVISORY_OUTPUT };
+    },
+    sleep: async () => {},
+  });
+
+  // Aborting at 'server' is what kept two HIGH client advisories invisible for an
+  // entire outage (#2371): every workspace has to be reached in one run.
+  assert.deepEqual(audited, ['.', 'server', 'client']);
+  assert.equal(failing.code, 1);
+  assert.deepEqual(failing.failedDirectories, ['server', 'client']);
 });
 
 test('stops spawning audits once the registry is proven unreachable for the run', async () => {
@@ -157,6 +182,7 @@ test('stops spawning audits once the registry is proven unreachable for the run'
 
   assert.deepEqual(unreachable, {
     code: 0,
+    failedDirectories: [],
     registryUnavailableDirectories: ['server', 'client'],
   });
   // 'client' is never spawned: one exhausted workspace already settles the verdict,
@@ -180,7 +206,10 @@ test('reports an advisory found before the registry went unreachable', async () 
 
   assert.equal(failing.code, 1);
   assert.equal(failing.directory, '.');
-  assert.deepEqual(failing.registryUnavailableDirectories, []);
+  assert.deepEqual(failing.failedDirectories, ['.']);
+  // The advisory decides the exit code, and the workspaces whose verdict is
+  // unknown are still reported rather than silently counted as clean.
+  assert.deepEqual(failing.registryUnavailableDirectories, ['server', 'client']);
 });
 
 const fakeChild = () => {
@@ -416,7 +445,7 @@ exit 1`);
   }
 });
 
-test('the audit command exits non-zero once for a real advisory and does not retry', async () => {
+test('the audit command reports every workspace with a real advisory and does not retry either', async () => {
   const fakeYarn = await createFakeYarn(`echo '${ADVISORY_OUTPUT.split('\n')[1]}' >&2
 exit 1`);
 
@@ -426,6 +455,9 @@ exit 1`);
   );
 
   assert.equal(result.code, 1);
-  assert.equal(await readFile(fakeYarn.callFile, 'utf8'), '1');
-  assert.match(result.output, /Dependency audit FAILED in \. after 1 attempt/);
+  // One attempt each, both workspaces: a real advisory is not retried, and it does
+  // not abort the sweep either, so the run reports the complete set of findings.
+  assert.equal(await readFile(fakeYarn.callFile, 'utf8'), '2');
+  assert.match(result.output, /Dependency audit FAILED in \., server/);
+  assert.match(result.output, /complete set of findings/);
 });

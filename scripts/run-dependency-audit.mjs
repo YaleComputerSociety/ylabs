@@ -36,7 +36,10 @@ const result = await runDependencyAudits({
 
 if (result.code !== 0) {
   console.error(
-    `Dependency audit FAILED in ${result.directory} after ${result.attempts} attempt(s): the registry answered and reported advisories at or above the requested severity.`,
+    `Dependency audit FAILED in ${result.failedDirectories.join(', ')}: the registry answered and reported advisories at or above the requested severity.`,
+  );
+  console.error(
+    '  Every workspace above was audited, so this is the complete set of findings, not the first one.',
   );
   process.exit(result.code);
 }

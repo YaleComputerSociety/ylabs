@@ -164,6 +164,8 @@ export async function runDependencyAudits({
   log = () => {},
 }) {
   const registryUnavailableDirectories = [];
+  const failedDirectories = [];
+  let firstFailure;
 
   for (const directory of directories) {
     // One exhausted workspace already proves the registry is down for this run.
@@ -196,8 +198,22 @@ export async function runDependencyAudits({
       continue;
     }
 
-    return { ...result, directory, registryUnavailableDirectories };
+    // A real finding must NOT stop the sweep. Aborting here is what kept two
+    // HIGH client advisories invisible behind a moderate server one for an
+    // entire outage (#2371): each fix only revealed the next workspace. Collect
+    // every workspace's verdict and fail once at the end instead.
+    failedDirectories.push(directory);
+    firstFailure ??= result;
   }
 
-  return { code: 0, registryUnavailableDirectories };
+  if (failedDirectories.length > 0) {
+    return {
+      ...firstFailure,
+      directory: failedDirectories[0],
+      failedDirectories,
+      registryUnavailableDirectories,
+    };
+  }
+
+  return { code: 0, failedDirectories, registryUnavailableDirectories };
 }
