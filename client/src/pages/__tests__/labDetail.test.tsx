@@ -2350,6 +2350,73 @@ describe('LabDetail display name unification', () => {
     expect(websiteLink.getAttribute('href')).toBe('https://lab-home.example.test/materials');
   });
 
+  it('drops the research website CTA when it repeats the lead card profile link', async () => {
+    const LEAD_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-lead';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: LEAD_PROFILE_URL,
+        sourceUrls: [`${LEAD_PROFILE_URL}/`],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+            profileUrls: { official: `${LEAD_PROFILE_URL}/` },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
+    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+    expect(
+      screen.getAllByRole('link').filter((link) => link.getAttribute('href') === LEAD_PROFILE_URL),
+    ).toHaveLength(1);
+  });
+
+  it('keeps the research website CTA when the lead profile points somewhere else', async () => {
+    const LEAD_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-lead/';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: MATERIALS_LAB_WEBSITE_URL,
+        sourceUrls: [MATERIALS_LAB_WEBSITE_URL, LEAD_PROFILE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+            profileUrls: { official: LEAD_PROFILE_URL },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'Visit research website' }).getAttribute('href')).toBe(
+      MATERIALS_LAB_WEBSITE_URL,
+    );
+  });
+
   it('surfaces an official person-profile way-in from sourceUrls with no attached lead (#646)', async () => {
     const PERSON_PROFILE_SOURCE_URL = 'https://medicine.yale.edu/profile/example-lead/';
     renderLabDetail({
