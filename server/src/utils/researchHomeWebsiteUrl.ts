@@ -201,7 +201,10 @@ export function isSharedPeopleRosterUrl(value: unknown): boolean {
 
 export function isDisallowedResearchEntitySourceUrl(value: unknown): boolean {
   return (
-    isSelfReferentialUrl(value) || isListingOrIndexUrl(value) || isBoilerplatePlatformHostUrl(value)
+    isSelfReferentialUrl(value) ||
+    isListingOrIndexUrl(value) ||
+    isBoilerplatePlatformHostUrl(value) ||
+    isMultiTenantAcademicHostRootUrl(value)
   );
 }
 
@@ -211,6 +214,46 @@ export function isBareDomainRootUrl(value: unknown): boolean {
   const hasPath = url.pathname.replace(/\/+$/, '').length > 0;
   const hasQuery = url.search.replace(/^\?/, '').trim().length > 0;
   return !hasPath && !hasQuery;
+}
+
+// Shared academic web hosts that publish one page per tenant under a `~user`
+// path. Each was found serving `/~user/` member pages in the corpus, which is
+// what makes the host organization rather than any one tenant the owner of its
+// root.
+const MULTI_TENANT_ACADEMIC_HOSTS = new Set([
+  'csl.yale.edu',
+  'www.stat.yale.edu',
+  'stat.yale.edu',
+  'ursula.chem.yale.edu',
+  'gauss.math.yale.edu',
+  'aida.econ.yale.edu',
+  'aida.wss.yale.edu',
+  'dido.econ.yale.edu',
+  'pantheon.yale.edu',
+  'math.mit.edu',
+  'math.stanford.edu',
+]);
+
+const BARE_INDEX_FILE_PATH = /^\/index\.(?:php|html?|aspx|cgi)$/i;
+
+/**
+ * The root of a shared academic host, which names the host organization and not
+ * the tenant whose entity is being resolved. `csl.yale.edu` is the Computer
+ * Systems Lab, a cross-department umbrella whose people page lists 13 faculty
+ * and whose members publish at `csl.yale.edu/~user/`, so serving its root as one
+ * professor's "Visit lab website" sends a student to the umbrella instead of the
+ * person they clicked (#2359).
+ *
+ * Only the root is rejected. A `~user` page under the same host is exactly the
+ * tenant's own research home and stays promotable, which is what keeps this from
+ * discarding the evidence it is meant to protect.
+ */
+export function isMultiTenantAcademicHostRootUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (!MULTI_TENANT_ACADEMIC_HOSTS.has(url.hostname.toLowerCase())) return false;
+  const pathname = url.pathname.replace(/\/+$/, '');
+  return pathname.length === 0 || BARE_INDEX_FILE_PATH.test(pathname);
 }
 
 const PROGRAM_APPLICATION_PORTAL_HOST =
@@ -370,6 +413,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(value: unknown): string {
   if (!raw) return '';
   if (isListingOrIndexUrl(raw)) return '';
   if (isBoilerplatePlatformHostUrl(raw)) return '';
+  if (isMultiTenantAcademicHostRootUrl(raw)) return '';
   try {
     const url = new URL(raw);
     url.hash = '';

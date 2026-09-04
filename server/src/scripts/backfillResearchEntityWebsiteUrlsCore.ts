@@ -2,6 +2,7 @@ import {
   isBoilerplatePlatformHostUrl,
   isFileShareOrDocumentUrl,
   isListingOrIndexUrl,
+  isMultiTenantAcademicHostRootUrl,
   isPersonProfileOrDirectoryUrl,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../utils/researchHomeWebsiteUrl';
@@ -72,6 +73,10 @@ export function isFileShareOrDocumentWebsiteUrl(value: unknown): boolean {
   return isFileShareOrDocumentUrl(value);
 }
 
+export function isMultiTenantHostRootWebsiteUrl(value: unknown): boolean {
+  return isMultiTenantAcademicHostRootUrl(value);
+}
+
 export function isPromotableWebsiteUrl(value: unknown): boolean {
   return (
     isPublicHttpUrl(value) &&
@@ -80,7 +85,8 @@ export function isPromotableWebsiteUrl(value: unknown): boolean {
     !isProfilePageWebsiteUrl(value) &&
     !isListingPageWebsiteUrl(value) &&
     !isBoilerplateHostWebsiteUrl(value) &&
-    !isFileShareOrDocumentWebsiteUrl(value)
+    !isFileShareOrDocumentWebsiteUrl(value) &&
+    !isMultiTenantHostRootWebsiteUrl(value)
   );
 }
 
@@ -110,11 +116,13 @@ export type WebsiteUrlBackfillResolution =
  * roots, bare `/people`, `/people/faculty`, `/faculty` roots), and generic
  * CMS/platform boilerplate hosts (e.g. `wordpress.org` "Powered by" footer links)
  * and file-share/direct-document hosts (Google Drive/Docs, Dropbox, Box, OneDrive,
- * bare `.pdf`/`.doc(x)`/`.ppt(x)`/`.xls(x)` links) are never promoted, so a listing,
- * profile, boilerplate, or non-navigable file page can never beat a real lab site.
+ * bare `.pdf`/`.doc(x)`/`.ppt(x)`/`.xls(x)` links) and the roots of shared academic
+ * hosts that publish one page per tenant under `~user` are never promoted, so a
+ * listing, profile, boilerplate, non-navigable file, or shared-host page can never
+ * beat a real lab site.
  * An entity whose existing `websiteUrl` is a listing/index page (including
  * `/people/members`, `/people/index`, and other people-roster/index subpages), a
- * boilerplate platform host, or a file-share/document link is corrected to a genuine
+ * boilerplate platform host, a shared multi-tenant host root, or a file-share/document link is corrected to a genuine
  * research home / lab site when one exists in its evidence, and otherwise cleared
  * (fail closed to no website rather than an off-site, directory-index, or dead/non-navigable
  * file link). A single-person
@@ -140,6 +148,10 @@ export function resolveBackfillWebsiteUrl(
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }
     if (isFileShareOrDocumentWebsiteUrl(entity.websiteUrl)) {
+      const researchHome = selectResearchHomeWebsiteUrl(candidates);
+      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
+    }
+    if (isMultiTenantHostRootWebsiteUrl(entity.websiteUrl)) {
       const researchHome = selectResearchHomeWebsiteUrl(candidates);
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }

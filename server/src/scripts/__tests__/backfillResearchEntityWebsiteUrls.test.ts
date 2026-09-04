@@ -5,6 +5,7 @@ import {
   isFileShareOrDocumentWebsiteUrl,
   isGrantOrIdentifierUrl,
   isListingPageWebsiteUrl,
+  isMultiTenantHostRootWebsiteUrl,
   isProfilePageWebsiteUrl,
   isPromotableWebsiteUrl,
   isPublicHttpUrl,
@@ -275,6 +276,40 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
         sourceUrls: ['https://economics.example.edu/people/jordan-example'],
       }),
     ).toEqual({ action: 'keep' });
+  });
+});
+
+describe('multi-tenant academic host roots (#2359)', () => {
+  it('refuses to promote the root of a host whose members publish at ~user', () => {
+    expect(isMultiTenantHostRootWebsiteUrl('https://csl.yale.edu/')).toBe(true);
+    expect(isPromotableWebsiteUrl('https://csl.yale.edu/')).toBe(false);
+  });
+
+  it('still promotes a tenant page under the same host', () => {
+    expect(isMultiTenantHostRootWebsiteUrl('https://csl.yale.edu/~arun/')).toBe(false);
+    expect(isPromotableWebsiteUrl('https://csl.yale.edu/~arun/')).toBe(true);
+  });
+
+  it('clears a shared host root when the entity has no other research home', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/11046553',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/rajit-example/',
+          'https://csl.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('re-picks the tenant page when the entity has one in its evidence', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://csl.yale.edu/',
+        sourceUrls: ['https://csl.yale.edu/', 'https://csl.yale.edu/~arun/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://csl.yale.edu/~arun/' });
   });
 });
 

@@ -7,6 +7,7 @@ import {
   isFacetedOrSectionIndexUrl,
   isFileShareOrDocumentUrl,
   isListingOrIndexUrl,
+  isMultiTenantAcademicHostRootUrl,
   isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
@@ -526,6 +527,42 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
         'https://history.example.edu/sites/default/files/files/2010%20rankin%20-%20epistemology%20of%20the%20suburbs.pdf',
       ),
     ).toBe('');
+  });
+});
+
+describe('isMultiTenantAcademicHostRootUrl', () => {
+  it('flags the root of a shared academic host that publishes ~user tenant pages (#2359)', () => {
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/')).toBe(true);
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu')).toBe(true);
+    expect(isMultiTenantAcademicHostRootUrl('http://CSL.yale.edu/')).toBe(true);
+    expect(isMultiTenantAcademicHostRootUrl('https://www.stat.yale.edu/')).toBe(true);
+    expect(isMultiTenantAcademicHostRootUrl('https://ursula.chem.yale.edu/')).toBe(true);
+  });
+
+  it('flags an index-file root, because the host routes through index.php', () => {
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/index.php')).toBe(true);
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/index.html')).toBe(true);
+  });
+
+  it('leaves a tenant page under the same host promotable', () => {
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/~arun/')).toBe(false);
+    expect(isMultiTenantAcademicHostRootUrl('https://www.stat.yale.edu/~hz68/')).toBe(false);
+    expect(isMultiTenantAcademicHostRootUrl('https://csl.yale.edu/index.php/people/')).toBe(false);
+  });
+
+  it('ignores hosts that are not shared academic hosts, and malformed values', () => {
+    expect(isMultiTenantAcademicHostRootUrl('https://engineering.yale.edu/')).toBe(false);
+    expect(isMultiTenantAcademicHostRootUrl('https://belieflab.yale.edu/')).toBe(false);
+    expect(isMultiTenantAcademicHostRootUrl('not a url')).toBe(false);
+    expect(isMultiTenantAcademicHostRootUrl(undefined)).toBe(false);
+  });
+
+  it('is disallowed as a research-entity source URL and never becomes a website', () => {
+    expect(isDisallowedResearchEntitySourceUrl('https://csl.yale.edu/')).toBe(true);
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://csl.yale.edu/')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://csl.yale.edu/~arun/')).toBe(
+      'https://csl.yale.edu/~arun/',
+    );
   });
 });
 
