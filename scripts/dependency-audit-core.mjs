@@ -41,9 +41,9 @@ export async function runAuditWithRetry({
       return { ...result, attempts: attempt };
     }
 
-    const retryable = attempt < attempts && isRegistryUnavailableFailure(result.output);
-    if (!retryable) {
-      return { ...result, attempts: attempt };
+    const registryUnavailable = isRegistryUnavailableFailure(result.output);
+    if (!registryUnavailable || attempt >= attempts) {
+      return { ...result, attempts: attempt, registryUnavailable };
     }
 
     const delayMs = retryDelayMs * attempt;
@@ -90,6 +90,8 @@ export async function runDependencyAudits({
   sleep = wait,
   log = () => {},
 }) {
+  const registryUnavailableDirectories = [];
+
   for (const directory of directories) {
     log(`Auditing dependencies in ${directory}`);
     const result = await runAuditWithRetry({
@@ -100,10 +102,20 @@ export async function runDependencyAudits({
       log,
     });
 
-    if (result.code !== 0) {
-      return { ...result, directory };
+    if (result.code === 0) {
+      continue;
     }
+
+    if (result.registryUnavailable) {
+      registryUnavailableDirectories.push(directory);
+      log(
+        `Advisory registry stayed unavailable for ${directory} after ${result.attempts} attempt(s); no advisories were reported, so this workspace is inconclusive rather than failed.`,
+      );
+      continue;
+    }
+
+    return { ...result, directory, registryUnavailableDirectories };
   }
 
-  return { code: 0 };
+  return { code: 0, registryUnavailableDirectories };
 }

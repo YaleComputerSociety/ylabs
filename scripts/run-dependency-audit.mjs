@@ -35,3 +35,9 @@ if (result.code !== 0) {
   );
   process.exit(result.code);
 }
+
+if (result.registryUnavailableDirectories.length > 0) {
+  console.error(
+    `Dependency audit inconclusive for ${result.registryUnavailableDirectories.join(', ')}: the advisory registry stayed unreachable. Re-run once the registry is reachable.`,
+  );
+}

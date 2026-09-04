@@ -88,7 +88,7 @@ test('fails immediately on a real advisory instead of retrying', async () => {
   assert.equal(calls, 1);
 });
 
-test('surfaces the failure when every retry hits the registry outage', async () => {
+test('reports an exhausted registry outage as unavailable rather than an advisory failure', async () => {
   let calls = 0;
 
   const result = await runAuditWithRetry({
@@ -102,6 +102,7 @@ test('surfaces the failure when every retry hits the registry outage', async () 
 
   assert.equal(result.code, 1);
   assert.equal(result.attempts, 3);
+  assert.equal(result.registryUnavailable, true);
   assert.equal(calls, 3);
 });
 
@@ -118,7 +119,7 @@ test('audits every directory in order and reports which directory failed', async
     sleep: async () => {},
   });
 
-  assert.deepEqual(passing, { code: 0 });
+  assert.deepEqual(passing, { code: 0, registryUnavailableDirectories: [] });
   assert.deepEqual(audited, ['.', 'server', 'client']);
 
   const failing = await runDependencyAudits({
@@ -131,6 +132,47 @@ test('audits every directory in order and reports which directory failed', async
 
   assert.equal(failing.code, 1);
   assert.equal(failing.directory, 'server');
+});
+
+test('keeps auditing the remaining workspaces when one cannot reach the registry', async () => {
+  const audited = [];
+
+  const inconclusive = await runDependencyAudits({
+    directories: ['.', 'server', 'client'],
+    auditArgs: [],
+    runAudit: (directory) => {
+      audited.push(directory);
+      return directory === 'server'
+        ? { code: 1, output: REGISTRY_503_OUTPUT }
+        : { code: 0, output: '' };
+    },
+    retryDelayMs: 0,
+    sleep: async () => {},
+  });
+
+  assert.deepEqual(inconclusive, { code: 0, registryUnavailableDirectories: ['server'] });
+  assert.deepEqual(audited, ['.', 'server', 'server', 'server', 'client']);
+});
+
+test('still fails on a real advisory found after an unreachable workspace', async () => {
+  const failing = await runDependencyAudits({
+    directories: ['.', 'server', 'client'],
+    auditArgs: [],
+    runAudit: (directory) => {
+      if (directory === '.') {
+        return { code: 1, output: REGISTRY_503_OUTPUT };
+      }
+      return directory === 'client'
+        ? { code: 1, output: ADVISORY_OUTPUT }
+        : { code: 0, output: '' };
+    },
+    retryDelayMs: 0,
+    sleep: async () => {},
+  });
+
+  assert.equal(failing.code, 1);
+  assert.equal(failing.directory, 'client');
+  assert.deepEqual(failing.registryUnavailableDirectories, ['.']);
 });
 
 const fakeYarnScript = (failureBody) => `#!/bin/sh
@@ -190,6 +232,20 @@ fi`);
   assert.equal(result.code, 0, result.output);
   assert.equal(await readFile(fakeYarn.callFile, 'utf8'), '3');
   assert.match(result.output, /npm audit --recursive --severity moderate/);
+});
+
+test('the audit command exits zero when the registry never becomes reachable', async () => {
+  const fakeYarn = await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
+exit 1`);
+
+  const result = await runAuditCli(
+    ['.', 'server', '--', '--severity', 'moderate'],
+    withFakeYarn(fakeYarn),
+  );
+
+  assert.equal(result.code, 0, result.output);
+  assert.equal(await readFile(fakeYarn.callFile, 'utf8'), '6');
+  assert.match(result.output, /Dependency audit inconclusive for \., server/);
 });
 
 test('the audit command exits non-zero once for a real advisory and does not retry', async () => {
