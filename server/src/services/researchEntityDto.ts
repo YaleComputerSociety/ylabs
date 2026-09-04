@@ -18,6 +18,7 @@ import {
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
+import { personScopedResearchEntityNameNamesSomethingElse } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -181,6 +182,31 @@ function servedShortDescriptionFallback(served: Record<string, any>, entityType:
   return derived || publicShortDescriptionString(served.fullDescription);
 }
 
+/**
+ * The displayName a person-scoped record may serve, or nothing when the stored
+ * value names something else: an umbrella organization the person merely belongs
+ * to, or a different person's lab.
+ *
+ * This is the one name field clients prefer over `name` and the one field no
+ * faculty-directory source emits, so a graft on it outlives its own retirement
+ * and nothing ever overwrites it (#2351). Withholding it is always safe because
+ * `displayName` is only ever a branded alias of `name`, which every caller
+ * already falls back to.
+ */
+function servedPersonScopedDisplayName(group: Record<string, any>, value: unknown): string {
+  const displayName = publicResearchEntityName(value);
+  if (!displayName) return '';
+  return personScopedResearchEntityNameNamesSomethingElse({
+    candidateName: displayName,
+    entityType: group.entityType,
+    kind: group.kind,
+    slug: group.slug,
+    websiteUrl: group.fieldProvenance?.displayName?.sourceUrl || group.websiteUrl || group.website,
+  })
+    ? ''
+    : displayName;
+}
+
 function publicResearchAreaArray(value: unknown): string[] {
   const seen = new Set<string>();
   const labels: string[] = [];
@@ -294,7 +320,9 @@ export function toPublicResearchEntitySummaryDto(
   return {
     id: publicResearchEntityId(group),
     slug: publicTextString(group.slug || ''),
-    name: publicResearchEntityName(served.name || served.displayName || ''),
+    name:
+      publicResearchEntityName(served.name) ||
+      servedPersonScopedDisplayName(group, served.displayName),
     kind: group.kind === undefined ? undefined : publicTextString(group.kind),
     entityType:
       group.entityType === undefined
@@ -383,9 +411,13 @@ export function toPublicResearchEntityDto(
     _id: id,
     id,
     slug: publicTextString(group.slug || ''),
-    name: publicResearchEntityName(served.name || served.displayName || ''),
+    name:
+      publicResearchEntityName(served.name) ||
+      servedPersonScopedDisplayName(group, served.displayName),
     displayName:
-      group.displayName === undefined ? undefined : publicResearchEntityName(served.displayName),
+      group.displayName === undefined
+        ? undefined
+        : servedPersonScopedDisplayName(group, served.displayName),
     kind,
     entityKind: kind,
     entityType,

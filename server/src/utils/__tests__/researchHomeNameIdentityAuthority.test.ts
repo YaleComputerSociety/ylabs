@@ -10,6 +10,7 @@ import {
   isNonIdentifyingLinkLabelName,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
+  personScopedResearchEntityNameNamesSomethingElse,
 } from '../researchHomeNameIdentityAuthority';
 
 describe('isUmbrellaOrganizationName', () => {
@@ -276,5 +277,94 @@ describe('nobiliary-particle surnames (#2285)', () => {
 
   it('does not widen the rule to a topical name whose host echoes it', () => {
     expect(corroboratedLabNameEponyms('Belief Lab', 'https://belieflab.example.edu/')).toEqual([]);
+  });
+});
+
+describe('personScopedResearchEntityNameNamesSomethingElse', () => {
+  const duguay = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    slug: 'dept-econ-raphael-duguay',
+  };
+
+  it('refuses the affiliation line a person site led with (#2351)', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...duguay,
+        candidateName: 'Yale School of Management',
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps the record own name', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...duguay,
+        candidateName: 'Raphael Duguay Faculty Research',
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps an organization name that carries the person own identity', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        entityType: 'LAB',
+        slug: 'dept-earth-planetary-sciences-alan-rooney',
+        candidateName: 'Rooney Center for Metal Geochemistry',
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses another person lab corroborated by the page it came from', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        slug: 'ysm-faculty-huaxin-yu',
+        candidateName: 'The Liu Lab',
+        websiteUrl: 'https://medicine.example.edu/lab/liu/',
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves an organization-shaped record own organization name alone', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        entityType: 'CENTER',
+        kind: 'center',
+        slug: 'center-customer-insights',
+        candidateName: 'Yale Center for Customer Insights',
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses an umbrella organization that only shares a topical word with the slug', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        entityType: 'LAB',
+        slug: 'cancer-research-lab',
+        candidateName: 'Yale Cancer Center',
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses an umbrella organization whose topical word trails the head noun', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        entityType: 'LAB',
+        slug: 'aging-lab',
+        candidateName: 'Yale Center on Aging',
+      }),
+    ).toBe(true);
+  });
+
+  it('uses the lead person name over the slug when one is known', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        entityType: 'LAB',
+        slug: 'nih-pi-a1b2c3',
+        personName: 'Erica Herzog',
+        candidateName: 'Herzog Research Program',
+      }),
+    ).toBe(false);
   });
 });

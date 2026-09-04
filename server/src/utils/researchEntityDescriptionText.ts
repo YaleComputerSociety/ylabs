@@ -13,6 +13,7 @@ import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
 import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomainCoherence';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
+import { personScopedResearchEntityNameNamesSomethingElse } from './researchHomeNameIdentityAuthority';
 
 const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
 const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
@@ -1321,6 +1322,12 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *     mechanism): a `researchAreas` chip with no `fieldProvenance.researchAreas`
  *     backing and zero vocabulary overlap with the entity's own sourced text is
  *     dropped, since there is no provenance trail to reconcile it against.
+ *  7. the person-scoped name identity guard: a `displayName` that names an
+ *     umbrella organization the record merely belongs to, or another person's
+ *     lab, is withheld so every surface falls back to `name` (#2234/#2351).
+ *     It belongs here rather than in one DTO because the saved-plan and profile
+ *     serve paths build their own summaries and would otherwise keep titling
+ *     their cards with the retired graft.
  *
  * Every step is idempotent, so a description already cleaned upstream (the detail
  * path runs the text-transform layer before the DTO) is unchanged by a second
@@ -1367,6 +1374,22 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
       next[field] = cleaned;
       changed = true;
     }
+  }
+
+  if (
+    typeof next.displayName === 'string' &&
+    next.displayName &&
+    personScopedResearchEntityNameNamesSomethingElse({
+      candidateName: next.displayName,
+      entityType: next.entityType,
+      kind: next.kind,
+      slug: next.slug,
+      websiteUrl:
+        next.fieldProvenance?.displayName?.sourceUrl || next.websiteUrl || next.website || '',
+    })
+  ) {
+    next.displayName = '';
+    changed = true;
   }
 
   for (const field of SERVED_RESEARCH_AREA_FIELDS) {

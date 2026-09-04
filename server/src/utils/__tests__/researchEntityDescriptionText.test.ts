@@ -1571,6 +1571,38 @@ describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1
   });
 });
 
+describe('sanitizeServedResearchEntityCopyFields person-scoped name identity (#2351)', () => {
+  const graftedRecord = {
+    slug: 'dept-econ-rafferty-duchamp',
+    name: 'Rafferty Duchamp Faculty Research',
+    displayName: 'Yale School of Management',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+  };
+
+  it('withholds an umbrella-organization displayName on every serve path that runs it', () => {
+    const served = sanitizeServedResearchEntityCopyFields(graftedRecord);
+    expect(served.displayName).toBe('');
+    expect(served.name).toBe('Rafferty Duchamp Faculty Research');
+  });
+
+  it('keeps a person-scoped record own displayName', () => {
+    const entity = { ...graftedRecord, displayName: 'Duchamp Reporting Lab' };
+    expect(sanitizeServedResearchEntityCopyFields(entity)).toBe(entity);
+  });
+
+  it('leaves an organization-shaped record own organization name alone', () => {
+    const entity = {
+      slug: 'center-customer-insights',
+      name: 'Yale Center for Customer Insights',
+      displayName: 'Yale Center for Customer Insights',
+      kind: 'center',
+      entityType: 'CENTER',
+    };
+    expect(sanitizeServedResearchEntityCopyFields(entity)).toBe(entity);
+  });
+});
+
 describe('isSyntheticResearchHomeMetadataDescription "is connected to <chips>" stub (#1511)', () => {
   it('flags the keyword-list-fallback stub even when a chip label ends in a bare research-activity noun', () => {
     expect(

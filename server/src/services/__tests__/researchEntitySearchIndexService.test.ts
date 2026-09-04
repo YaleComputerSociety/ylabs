@@ -21,6 +21,35 @@ import {
 } from '../researchEntitySearchIndexService';
 
 describe('researchEntitySearchIndexService', () => {
+  it('drops a person-scoped displayName that names an umbrella organization (#2351)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-affiliation-graft',
+      slug: 'dept-econ-rafferty-duchamp',
+      name: 'Rafferty Duchamp Faculty Research',
+      displayName: 'Yale School of Management',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+
+    expect(doc).not.toHaveProperty('displayName');
+    expect(doc?.name).toBe('Rafferty Duchamp Faculty Research');
+  });
+
+  it('keeps an organization-shaped record own organization displayName in the index', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-center',
+      slug: 'center-customer-insights',
+      name: 'Yale Center for Customer Insights',
+      displayName: 'Yale Center for Customer Insights',
+      kind: 'center',
+      entityType: 'CENTER',
+      archived: false,
+    });
+
+    expect(doc?.displayName).toBe('Yale Center for Customer Insights');
+  });
+
   it('builds Meilisearch-ready research entity documents without internal fields', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-1',
