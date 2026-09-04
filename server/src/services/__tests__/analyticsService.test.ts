@@ -648,10 +648,12 @@ describe('getAnalytics research coverage and range scoping', () => {
       await db
         .collection('accounts')
         .insertOne({ _id: linkedAccountId, netid: 'linked01', email: 'linked01@example.edu' });
-      await db.collection('researchers').insertMany([
-        { accountId: linkedAccountId, displayName: 'Linked Researcher' },
-        ...Array.from({ length: 25 }, (_, index) => ({ displayName: `Shell ${index}` })),
-      ]);
+      await db
+        .collection('researchers')
+        .insertMany([
+          { accountId: linkedAccountId, displayName: 'Linked Researcher' },
+          ...Array.from({ length: 25 }, (_, index) => ({ displayName: `Shell ${index}` })),
+        ]);
 
       const [result] = await db
         .collection('analyticsevents')
@@ -872,10 +874,12 @@ describe('getUserAnalytics', () => {
       await db
         .collection('accounts')
         .insertOne({ _id: linkedAccountId, netid: 'linked01', email: 'linked01@example.edu' });
-      await db.collection('researchers').insertMany([
-        { accountId: linkedAccountId, displayName: 'Linked Researcher' },
-        ...Array.from({ length: 25 }, (_, index) => ({ displayName: `Shell ${index}` })),
-      ]);
+      await db
+        .collection('researchers')
+        .insertMany([
+          { accountId: linkedAccountId, displayName: 'Linked Researcher' },
+          ...Array.from({ length: 25 }, (_, index) => ({ displayName: `Shell ${index}` })),
+        ]);
 
       const [result] = await db.collection('analyticsevents').aggregate(pipeline).toArray();
 
