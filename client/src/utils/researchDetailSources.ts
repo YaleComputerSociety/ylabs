@@ -142,6 +142,33 @@ const DEPARTMENT_FACULTY_ROSTER_PATH = /^\/people\/faculty(?:-|\/|$)/i;
 
 const FACULTY_DIRECTORY_ROOT_PATH = /^\/research-and-faculty\/faculty-directory$/i;
 
+const ROSTER_COLLECTIVE_LEAF_TOKEN =
+  /^(?:faculty|faculties|staff|professor|professors|lecturer|lecturers|instructor|instructors|people|persons|humans|member|members|membership|fellow|fellows|affiliate|affiliates|associates|scholars|researchers|team|teams|directory|listing|roster|index|primary|emeriti|emeritus)$/i;
+
+const MAX_ROSTER_LEAF_TOKEN_COUNT = 5;
+
+/**
+ * Yale department sites name a whole-roster page with a collective noun that is
+ * routinely prefixed by the department or a rank - `/people/linguistics-faculty`,
+ * `/people/core-faculty`, `/people/ladder-faculty`, `/people/professors`,
+ * `/about/faculty-directory` - so the fixed `/people/faculty` shape above misses
+ * most of them and one shared roster ends up offered as every colleague's own
+ * profile. Person slugs are name-shaped and never carry a collective noun, so the
+ * leaf's token vocabulary separates the two; the token-count bound keeps long
+ * article slugs (`/news/professor-ian-ayres-aims-to-foster-...`) from reading as a
+ * roster. Mirrors `isSharedPeopleRosterUrl` on the server.
+ */
+const hasRosterCollectiveLeaf = (path: string): boolean => {
+  const segments = path.split('/').filter(Boolean);
+  const leaf = segments[segments.length - 1];
+  if (!leaf || /\.[a-z0-9]{2,5}$/.test(leaf)) return false;
+  const tokens = leaf.split('-');
+  return (
+    tokens.length <= MAX_ROSTER_LEAF_TOKEN_COUNT &&
+    tokens.some((token) => ROSTER_COLLECTIVE_LEAF_TOKEN.test(token))
+  );
+};
+
 const DIRECTORY_ROSTER_ROOT_PATH =
   /\/directory\/(?:faculty(?:-fellows|-directory|-and-staff|-staff|-affiliates)?|staff|people|members|fellows|affiliates)$/i;
 
@@ -170,7 +197,8 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
     return (
       DIRECTORY_LOADER_SEGMENT_PATH.test(path) ||
       DEPARTMENT_FACULTY_ROSTER_PATH.test(path) ||
-      FACULTY_DIRECTORY_ROOT_PATH.test(path)
+      FACULTY_DIRECTORY_ROOT_PATH.test(path) ||
+      hasRosterCollectiveLeaf(path)
     );
   } catch {
     return false;

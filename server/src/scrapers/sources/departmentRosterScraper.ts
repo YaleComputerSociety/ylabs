@@ -53,8 +53,8 @@ import {
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import {
-  isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
+  isSharedPeopleRosterUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
 import {
@@ -2877,16 +2877,16 @@ function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
 }
 
 /**
- * Official-profile page that a lab-less research home may cite as its own
- * source. A roster listing root is never citable: it is shared by the whole
- * department, `isListingOrIndexUrl` rejects it downstream, and an entity whose
- * only URL is a generic directory root is suppressed as a directory shell.
+ * The person's own official profile page. A roster listing is never citable as
+ * one: it is shared by the whole department, so citing it makes every colleague's
+ * entity claim the same page as its profile, and an entity whose only URL is a
+ * generic directory root is suppressed as a directory shell.
  */
-function labLessResearchHomeCitationUrl(entry: FacultyEntry): string {
+function officialProfileCitationUrl(entry: FacultyEntry): string {
   if (entry.namePlaceholder) return '';
   const profileUrl = entry.profileSourceUrl || entry.profileUrl || '';
   if (!profileUrl || !isOfficialYaleUrl(profileUrl)) return '';
-  if (isListingOrIndexUrl(profileUrl)) return '';
+  if (isSharedPeopleRosterUrl(profileUrl)) return '';
   return profileUrl;
 }
 
@@ -2937,7 +2937,8 @@ export function entryToResearchEntityObservations(
 
   const evidence = rosterResearchHomeEvidence(entry);
   const { groundedDescription, topics } = evidence;
-  const labLessCitationUrl = entry.labUrl ? '' : labLessResearchHomeCitationUrl(entry);
+  const profileCitationUrl = officialProfileCitationUrl(entry);
+  const labLessCitationUrl = entry.labUrl ? '' : profileCitationUrl;
   const hasLabLessResearchEvidence =
     Boolean(labLessCitationUrl) && (Boolean(groundedDescription) || topics.length > 0);
   if (!entry.labUrl && !hasLabLessResearchEvidence) return [];
@@ -2969,7 +2970,9 @@ export function entryToResearchEntityObservations(
     {
       ...base,
       field: 'sourceUrls',
-      value: entry.labUrl ? [sourceUrl, entry.labUrl] : [labLessCitationUrl],
+      value: entry.labUrl
+        ? uniqueStrings([profileCitationUrl, sourceUrl, entry.labUrl].filter(Boolean))
+        : [labLessCitationUrl],
     },
     {
       ...base,
