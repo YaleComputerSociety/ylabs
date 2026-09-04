@@ -184,6 +184,9 @@ export const isDirectoryRosterRootUrl = (url?: string | null): boolean => {
   }
 };
 
+// Mirrored by `isDepartmentRosterProvenanceUrl` in server/src/utils/researchHomeWebsiteUrl.ts,
+// which gates the server from clearing a cited link this predicate refuses to re-render;
+// changing the arms here requires updating that copy.
 export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean => {
   const normalized = normalizeSourceUrl(url);
   if (!normalized) return false;

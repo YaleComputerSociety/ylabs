@@ -106,8 +106,9 @@ export function isPromotableWebsiteUrl(
 /**
  * A stored `websiteUrl` that can never be served as an entity's research home,
  * so it is re-picked from evidence when evidence has a real one and otherwise
- * cleared. Distinct from the profile-page case, which falls back to keeping the
- * profile as a PI link rather than clearing.
+ * cleared unconditionally. Distinct from the profile-page case, which clears only
+ * when the entity already cites the same destination and otherwise keeps the
+ * profile as a PI link.
  */
 export function isUnservableWebsiteUrl(
   value: unknown,
