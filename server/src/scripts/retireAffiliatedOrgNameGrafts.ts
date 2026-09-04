@@ -14,6 +14,7 @@ import {
   entityKeyPersonTokens,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
+  personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
 } from '../utils/researchHomeNameIdentityAuthority';
@@ -106,6 +107,19 @@ interface EntityContext {
 }
 
 /**
+ * The record's own person identity, resolved the way
+ * `personScopedResearchEntityNameNamesSomethingElse` resolves it: the lead's name
+ * when a lead is known, and only otherwise the slug's tokens. A slug names the
+ * research rather than the person (`yale-sleep-neurobiology-lab`), so judging an
+ * eponym against slug tokens alone reads a lab correctly named after its own PI
+ * as somebody else's (#2361).
+ */
+function entityIdentityTokens(entity: EntityContext): string[] {
+  const personTokens = personIdentityTokens(entity.personName);
+  return personTokens.length > 0 ? personTokens : entityKeyPersonTokens(entity.slug);
+}
+
+/**
  * Whether the fixed writers would still refuse this stored name for this entity.
  * Running the same guards the writers now run keeps the repair and the write
  * path from drifting apart.
@@ -118,6 +132,7 @@ function graftVerdict(
   entity: EntityContext,
   knownPersonSurnames?: ReadonlySet<string>,
 ): string | null {
+  const identityTokens = entityIdentityTokens(entity);
   if (sourceName === PROFILE_LINK_SOURCE) {
     const personName = entity.personName || entityKeyPersonTokens(entity.slug).join(' ');
     const verdict = classifyHarvestedResearchHomeName({
@@ -137,7 +152,7 @@ function graftVerdict(
   const foreign = claimsAnotherPersonsLab({
     harvestedName: graftedName,
     websiteUrl: linkedWebsiteUrl || sourceUrl,
-    identityTokens: entityKeyPersonTokens(entity.slug),
+    identityTokens,
     knownPersonSurnames,
   });
   return foreign ? 'ANOTHER_PERSONS_LAB' : null;

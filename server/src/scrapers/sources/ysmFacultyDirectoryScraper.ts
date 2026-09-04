@@ -252,7 +252,7 @@ function extractLabWebsite(
   return {
     url,
     name: url ? textValue(raw?.name) || undefined : undefined,
-    description: url ? textValue(raw?.description) || undefined : undefined,
+    description: url ? htmlToText(raw?.description) || undefined : undefined,
   };
 }
 

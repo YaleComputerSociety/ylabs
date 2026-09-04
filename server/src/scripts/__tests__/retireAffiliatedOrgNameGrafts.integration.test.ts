@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { applyRows, loadOrgNameGrafts } from '../retireAffiliatedOrgNameGrafts';
 
 const ENTITY_KEY = 'dept-econ-rafferty-duchamp';
@@ -233,6 +234,42 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     expect((await ResearchEntity.findOne({ slug: labSlug }).lean<{ name?: string }>())?.name).toBe(
       ownName,
     );
+  });
+
+  it('leaves a lab named after its own lead alone when the slug names the research', async () => {
+    const labSlug = 'yale-sleep-neurobiology-lab';
+    const lead = await Researcher.create({ displayName: 'Matthew Girgenti' });
+    const lab = await ResearchEntity.create({
+      slug: labSlug,
+      name: 'Girgenti Lab',
+      displayName: 'Girgenti Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: lab._id },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: labSlug,
+      field: 'name',
+      value: 'Girgenti Lab',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://girgentilab.example.org/',
+      confidence: 0.95,
+      observedAt: new Date('2026-08-25T00:00:00Z'),
+      superseded: false,
+    });
+
+    expect(await loadOrgNameGrafts()).toHaveLength(0);
   });
 
   it('leaves a manually locked field alone', async () => {

@@ -494,6 +494,17 @@ describe('facultyToResearchEntityObservations foreign-lab and affiliation eviden
     expect(byField.websiteUrl).toBeUndefined();
   });
 
+  it('refuses the same collaborative blurb when the CMS delivers it as HTML', () => {
+    const byField = entityFields(SLOAN, {
+      name: 'APOLLO LAB, Northgate University',
+      url: 'https://apollo-lab-northgate.github.io',
+      description: '<p>Applied Learning AI, Robotics AI Northgate Surgery Collaborative</p>',
+    });
+    expect(byField.name).toBe('Avery Sloan Faculty Research');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.websiteUrl).toBeUndefined();
+  });
+
   it('keeps a lab whose blurb only mentions where the research happens', () => {
     const byField = entityFields(SLOAN, {
       name: 'HAIR Lab',
