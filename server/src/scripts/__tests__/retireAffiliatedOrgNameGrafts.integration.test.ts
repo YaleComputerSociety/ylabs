@@ -3,6 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
 import { applyRows, loadOrgNameGrafts } from '../retireAffiliatedOrgNameGrafts';
 
 const ENTITY_KEY = 'dept-econ-rafferty-duchamp';
@@ -180,6 +181,58 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     expect(
       (await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{ name?: string }>())?.name,
     ).toBe(AFFILIATION_GRAFT);
+  });
+
+  it('heals a normalized foreign-lab name the surname roster is the only witness for', async () => {
+    const labSlug = 'ysm-faculty-alexa-sliby';
+    const ownName = 'Alexa Sliby Faculty Research';
+    const labSite = 'https://www.girgentilab.example.org/home';
+    await Researcher.create([{ displayName: 'Matthew Girgenti' }, { displayName: 'Alexa Sliby' }]);
+    await ResearchEntity.create({
+      slug: labSlug,
+      name: 'Girgenti Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    const graftSource = {
+      entityType: 'researchEntity' as const,
+      entityKey: labSlug,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: 'https://medicine.example.edu/profile/alexa-sliby/',
+      confidence: 0.8,
+      observedAt: new Date('2026-08-25T00:00:00Z'),
+      superseded: false,
+    };
+    await Observation.create({
+      ...graftSource,
+      field: 'name',
+      value: 'Girgenti Lab - Yale School of Medicine',
+      superseded: true,
+      rollback: { rolledBackAt: new Date('2026-09-01T01:11:00Z'), reason: 'earlier run' },
+    });
+    await Observation.create({ ...graftSource, field: 'websiteUrl', value: labSite });
+    await Observation.create({
+      ...graftSource,
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://medicine.example.edu/people',
+      field: 'name',
+      value: ownName,
+      confidence: 0.7,
+    });
+
+    const rows = await loadOrgNameGrafts();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe('ANOTHER_PERSONS_LAB');
+    expect(rows[0].documentGraftedFields).toEqual([{ field: 'name', storedName: 'Girgenti Lab' }]);
+    expect(rows[0].replacementNameAfterRollback).toBe(ownName);
+
+    expect((await applyRows(rows)).documentFieldsCorrected).toBe(1);
+    expect((await ResearchEntity.findOne({ slug: labSlug }).lean<{ name?: string }>())?.name).toBe(
+      ownName,
+    );
   });
 
   it('leaves a manually locked field alone', async () => {

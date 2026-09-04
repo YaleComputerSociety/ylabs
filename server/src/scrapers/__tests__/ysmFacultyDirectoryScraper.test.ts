@@ -444,12 +444,6 @@ describe('facultyToResearchEntityObservations affiliated-organization guard (#22
 });
 
 describe('facultyToResearchEntityObservations foreign-lab and affiliation evidence (#2361)', () => {
-  const SLOAN: RawYsmFaculty = {
-    name: 'Sloan, Avery',
-    profileUrl: 'https://medicine.yale.edu/profile/avery-sloan/',
-    slug: 'avery-sloan',
-  };
-
   function entityFields(
     faculty: RawYsmFaculty,
     labWebsite: { name: string; url: string; description?: string },
@@ -498,5 +492,16 @@ describe('facultyToResearchEntityObservations foreign-lab and affiliation eviden
     expect(byField.name).toBe('Avery Sloan Faculty Research');
     expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
     expect(byField.websiteUrl).toBeUndefined();
+  });
+
+  it('keeps a lab whose blurb only mentions where the research happens', () => {
+    const byField = entityFields(SLOAN, {
+      name: 'HAIR Lab',
+      url: 'https://www.hairlab.example.org/',
+      description: 'Research in the Department of Psychiatry on adolescent sleep',
+    });
+    expect(byField.name).toBe('HAIR Lab');
+    expect(byField.entityType).toBe('LAB');
+    expect(byField.websiteUrl).toBe('https://www.hairlab.example.org/');
   });
 });

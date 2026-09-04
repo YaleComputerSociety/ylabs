@@ -150,12 +150,18 @@ function graftVerdict(
  * predicate does not speak for (an organization-shaped record grafted from a
  * profile lab-website link), so this is never narrower than comparing the stored
  * value to the observation string.
+ *
+ * The surname roster reaches this predicate too, so a stored graft normalized on
+ * the way in ("Girgenti Lab - Yale School of Medicine" stored as "Girgenti Lab")
+ * is still recognized on a generic site path, which is what lets the repair
+ * rewrite the document rather than retire the observation and walk away (#2361).
  */
 function documentNameStillNamesSomethingElse(
   entity: EntityContext,
   storedName: string,
   graftedName: string,
   websiteUrl: string,
+  knownPersonSurnames?: ReadonlySet<string>,
 ): boolean {
   if (!storedName) return false;
   if (storedName === graftedName) return true;
@@ -166,6 +172,7 @@ function documentNameStillNamesSomethingElse(
     slug: entity.slug,
     personName: entity.personName,
     websiteUrl,
+    knownPersonSurnames,
   });
 }
 
@@ -309,6 +316,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
           candidateField === 'displayName' ? entity.displayName : entity.name,
           graftedName,
           linkedWebsiteUrl || sourceUrl,
+          knownPersonSurnames,
         ),
     );
     const documentServesThisGraft = graftedDocumentFields.length > 0;
@@ -390,6 +398,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
             String(candidate.value || ''),
             '',
             linkedWebsiteUrl,
+            knownPersonSurnames,
           ),
       );
       return {

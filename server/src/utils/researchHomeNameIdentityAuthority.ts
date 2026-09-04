@@ -151,6 +151,29 @@ export function isUmbrellaOrganizationName(value: unknown): boolean {
   return UMBRELLA_ORGANIZATION_HEAD_RE.test(name);
 }
 
+// A blurb is prose, so an organizational word inside it can merely MENTION an
+// organization ("Research in the Department of Psychiatry on adolescent sleep")
+// instead of declaring what the slot links. Requiring the head noun to be the
+// phrase the blurb ENDS on separates the two, so describing where a lab sits
+// never costs the lab its own name, type, and website (#2361).
+const TRAILING_UMBRELLA_ORGANIZATION_RE = new RegExp(
+  `\\b${UMBRELLA_ORGANIZATION_HEAD_SOURCE}[\\s.,;:!?)]*$`,
+  'i',
+);
+
+/**
+ * Whether a free-text blurb beside a linked site NAMES an umbrella organization
+ * as the thing it links, rather than mentioning one in passing. This is the
+ * description-shaped counterpart of `isUmbrellaOrganizationName`, which reads a
+ * name and would over-refuse on prose.
+ */
+export function describesAffiliatedOrganization(value: unknown): boolean {
+  const description = textValue(value);
+  if (!description) return false;
+  if (RESEARCH_HOME_LAB_HEAD_RE.test(description)) return false;
+  return TRAILING_UMBRELLA_ORGANIZATION_RE.test(description);
+}
+
 /**
  * A content-management link label ("Lab Website", "Research Page") rather than
  * the linked site's name. It identifies nothing and must never be a name.
@@ -355,12 +378,20 @@ export function eponymMatchesIdentity(eponym: string, identityTokens: string[]):
   );
 }
 
-/** The surname each display name ends on, as the eponym corroboration vocabulary. */
+/**
+ * The surname each display name ends on, as the eponym corroboration vocabulary.
+ *
+ * Two-letter tokens count, on the same threshold `personIdentityTokens` uses:
+ * "Wu" and "Xu" are surnames the eponym rule already accepts, so dropping them
+ * would both leave "Wu Lab" unrefusable and record the GIVEN name of "Sheng Wu"
+ * as a surname. Single-letter initials and credential tails are what the filter
+ * is for.
+ */
 export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>): Set<string> {
   const surnames = new Set<string>();
   for (const displayName of displayNames) {
     const words = nameWords(displayName).filter(
-      (word) => word.length >= 3 && !PERSON_NAME_STOP_WORDS.has(word) && !/\d/.test(word),
+      (word) => word.length >= 2 && !PERSON_NAME_STOP_WORDS.has(word) && !/\d/.test(word),
     );
     const surname = words[words.length - 1];
     if (surname) surnames.add(surname);
@@ -416,9 +447,10 @@ export type HarvestedNameIdentityVerdict =
  * only cases where the harvested name may become the entity's identity.
  *
  * `harvestedDescription` is the blurb the profile's own lab slot carries beside
- * the link. A slot that describes what it links as a center, collaborative, or
+ * the link. A slot whose blurb NAMES what it links as a center, collaborative, or
  * consortium is declaring an affiliation even when its name reads as a lab, and
- * that blurb is the only evidence distinguishing the two (#2361).
+ * that blurb is the only evidence distinguishing the two (#2361). See
+ * `describesAffiliatedOrganization` for why a passing mention does not count.
  *
  * `knownPersonSurnames` is the roster the eponym check corroborates against; see
  * `claimsAnotherPersonsLab`. Omitting it keeps the older path-only behavior.
@@ -435,7 +467,9 @@ export function classifyHarvestedResearchHomeName(args: {
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
-  if (isUmbrellaOrganizationName(args.harvestedDescription)) return 'AFFILIATED_ORGANIZATION';
+  if (describesAffiliatedOrganization(args.harvestedDescription)) {
+    return 'AFFILIATED_ORGANIZATION';
+  }
   const foreign = claimsAnotherPersonsLab({
     harvestedName: name,
     websiteUrl: args.websiteUrl,
@@ -489,6 +523,11 @@ export function isPersonScopedResearchEntity(entity: {
  * `cancer-research-lab` and for "Yale Cancer Center"). A slug token therefore
  * only clears an organization name when it stands in the eponym position, which
  * is the same narrow shape that makes the foreign-lab rule safe to act on.
+ *
+ * `knownPersonSurnames` is the same eponym corroboration roster the harvest-time
+ * classifier takes, forwarded so a caller that HAS the roster reaches the same
+ * verdict here as it would there; a caller without one keeps the path-only
+ * behavior (#2361).
  */
 export function personScopedResearchEntityNameNamesSomethingElse(args: {
   candidateName: unknown;
@@ -497,6 +536,7 @@ export function personScopedResearchEntityNameNamesSomethingElse(args: {
   slug?: unknown;
   personName?: unknown;
   websiteUrl?: unknown;
+  knownPersonSurnames?: ReadonlySet<string>;
 }): boolean {
   if (!isPersonScopedResearchEntity(args)) return false;
   const name = stripResearchHomeNameLinkWrapper(args.candidateName);
@@ -513,5 +553,6 @@ export function personScopedResearchEntityNameNamesSomethingElse(args: {
     harvestedName: name,
     websiteUrl: args.websiteUrl,
     identityTokens,
+    knownPersonSurnames: args.knownPersonSurnames,
   });
 }
