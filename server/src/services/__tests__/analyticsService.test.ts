@@ -99,6 +99,16 @@ afterEach(() => {
   invalidateAnalyticsCaches();
 });
 
+const expectNullSafeSingleMatchLookup = (stages: Array<Record<string, any>>, as: string): void => {
+  const lookupStage = stages.find((stage) => stage.$lookup?.as === `${as}LookupMatches`);
+  expect(lookupStage).toBeDefined();
+  const { foreignField, pipeline } = lookupStage!.$lookup;
+  expect(pipeline[0].$match[foreignField].$type).toMatch(/^(string|objectId)$/);
+
+  const firstStage = stages.find((stage) => stage.$addFields?.[as]);
+  expect(firstStage!.$addFields[as]).toEqual({ $first: `$${as}LookupMatches` });
+};
+
 describe('analytics user type normalization', () => {
   it('combines professor and faculty into the canonical professor bucket', () => {
     expect(normalizeAnalyticsUserTypeBucket('professor')).toBe('professor');
@@ -580,11 +590,59 @@ describe('getAnalytics research coverage and range scoping', () => {
     const mostActiveStages = facetCall![0].find(
       (stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers,
     ).$facet.mostActiveUsers;
-    const lookupStage = mostActiveStages.find((stage: Record<string, any>) => stage.$lookup);
-    expect(lookupStage.$lookup.from).toBe('accounts');
-    expect(lookupStage.$lookup.foreignField).toBe('netid');
-    const projectStage = mostActiveStages.find((stage: Record<string, any>) => stage.$project);
+    const lookupStages = mostActiveStages.filter((stage: Record<string, any>) => stage.$lookup);
+    expect(lookupStages.map((stage: Record<string, any>) => stage.$lookup.from)).toEqual([
+      'accounts',
+      'researchers',
+    ]);
+    expect(mostActiveStages.some((stage: Record<string, any>) => stage.$unwind)).toBe(false);
+    expectNullSafeSingleMatchLookup(mostActiveStages, 'account');
+    expectNullSafeSingleMatchLookup(mostActiveStages, 'researcher');
+    const projectStage = mostActiveStages.find(
+      (stage: Record<string, any>) => stage.$project?.userId,
+    );
     expect(projectStage.$project.displayName).toBe('$researcher.displayName');
+  });
+
+  it('emits one row per active user when the user has no account, instead of one per accountless researcher', async () => {
+    primeAnalyticsMocks();
+
+    await getAnalytics();
+
+    const engagementPipeline = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers),
+    )![0];
+
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri());
+    try {
+      await client.connect();
+      const db = client.db('analytics_fanout');
+
+      await db.collection('analyticsevents').insertMany(
+        Array.from({ length: 3 }, () => ({
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'accountless01',
+          userType: 'undergraduate',
+          timestamp: new Date(),
+        })),
+      );
+      await db
+        .collection('researchers')
+        .insertMany(Array.from({ length: 25 }, (_, index) => ({ displayName: `Shell ${index}` })));
+
+      const [result] = await db
+        .collection('analyticsevents')
+        .aggregate(engagementPipeline)
+        .toArray();
+
+      expect(result.mostActiveUsers).toEqual([
+        { userId: 'accountless01', userType: 'undergraduate', eventCount: 3 },
+      ]);
+    } finally {
+      await client.close();
+      await server.stop();
+    }
   });
 
   it('resolves top research entity ids to human-readable names and hrefs', async () => {

@@ -507,6 +507,74 @@ const buildEventCountAccumulator = (eventType: AnalyticsEventType) => ({
   },
 });
 
+/**
+ * Joins at most one foreign document, and never joins on an absent key.
+ *
+ * Two guards, both load bearing. A `localField` join coerces an absent key to
+ * null and matches every foreign document whose key is also null, so the join
+ * requires the foreign key to be present and correctly typed - null can then
+ * never find a partner. Taking `$first` rather than `$unwind` keeps a duplicate
+ * on the foreign side from multiplying the row. Keying off `localField` rather
+ * than a correlated `$expr` keeps the join index-eligible.
+ */
+const singleMatchLookupStages = (input: {
+  from: string;
+  localField: string;
+  foreignField: string;
+  foreignFieldType: 'string' | 'objectId';
+  project: Record<string, 1>;
+  as: string;
+}): PipelineStage.FacetPipelineStage[] => {
+  const matchesField = `${input.as}LookupMatches`;
+
+  return [
+    {
+      $lookup: {
+        from: input.from,
+        localField: input.localField,
+        foreignField: input.foreignField,
+        as: matchesField,
+        pipeline: [
+          { $match: { [input.foreignField]: { $type: input.foreignFieldType } } },
+          { $project: input.project },
+        ],
+      },
+    },
+    { $addFields: { [input.as]: { $first: `$${matchesField}` } } },
+    { $project: { [matchesField]: 0 } },
+  ];
+};
+
+const accountByNetidLookupStages = (netidField: string): PipelineStage.FacetPipelineStage[] =>
+  singleMatchLookupStages({
+    from: 'accounts',
+    localField: netidField,
+    foreignField: 'netid',
+    foreignFieldType: 'string',
+    project: { email: 1, createdAt: 1, lastLoginAt: 1 },
+    as: 'account',
+  });
+
+/**
+ * Joins the researcher profile for an account, if any.
+ *
+ * Analytics rows routinely have no account, and an unguarded
+ * `localField: 'account._id'` join then matches every accountless researcher
+ * shell, multiplying each row thousands of times and inflating every
+ * downstream count.
+ */
+const researcherByAccountLookupStages = (
+  accountIdField: string,
+): PipelineStage.FacetPipelineStage[] =>
+  singleMatchLookupStages({
+    from: 'researchers',
+    localField: accountIdField,
+    foreignField: 'accountId',
+    foreignFieldType: 'objectId',
+    project: { displayName: 1 },
+    as: 'researcher',
+  });
+
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
   const limit = clampLimit(query.limit, 50, 200);
@@ -537,34 +605,8 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         ),
       },
     },
-    {
-      $lookup: {
-        from: 'accounts',
-        localField: '_id',
-        foreignField: 'netid',
-        as: 'account',
-      },
-    },
-    {
-      $unwind: {
-        path: '$account',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $lookup: {
-        from: 'researchers',
-        localField: 'account._id',
-        foreignField: 'accountId',
-        as: 'researcher',
-      },
-    },
-    {
-      $unwind: {
-        path: '$researcher',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
+    ...accountByNetidLookupStages('_id'),
+    ...researcherByAccountLookupStages('account._id'),
     {
       $addFields: {
         netid: '$_id',
@@ -1081,34 +1123,8 @@ export const getSearchQueryAnalytics = async (
         lastSearchedAt: { $max: '$timestamp' },
       },
     },
-    {
-      $lookup: {
-        from: 'accounts',
-        localField: '_id.netid',
-        foreignField: 'netid',
-        as: 'account',
-      },
-    },
-    {
-      $unwind: {
-        path: '$account',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    {
-      $lookup: {
-        from: 'researchers',
-        localField: 'account._id',
-        foreignField: 'accountId',
-        as: 'researcher',
-      },
-    },
-    {
-      $unwind: {
-        path: '$researcher',
-        preserveNullAndEmptyArrays: true,
-      },
-    },
+    ...accountByNetidLookupStages('_id.netid'),
+    ...researcherByAccountLookupStages('account._id'),
     {
       $project: {
         _id: 0,
@@ -1537,34 +1553,8 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
           { $sort: { eventCount: -1 } },
           { $limit: 10 },
-          {
-            $lookup: {
-              from: 'accounts',
-              localField: '_id.netid',
-              foreignField: 'netid',
-              as: 'account',
-            },
-          },
-          {
-            $unwind: {
-              path: '$account',
-              preserveNullAndEmptyArrays: true,
-            },
-          },
-          {
-            $lookup: {
-              from: 'researchers',
-              localField: 'account._id',
-              foreignField: 'accountId',
-              as: 'researcher',
-            },
-          },
-          {
-            $unwind: {
-              path: '$researcher',
-              preserveNullAndEmptyArrays: true,
-            },
-          },
+          ...accountByNetidLookupStages('_id.netid'),
+          ...researcherByAccountLookupStages('account._id'),
           {
             $project: {
               _id: 0,
