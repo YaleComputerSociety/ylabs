@@ -355,19 +355,51 @@ export function eponymMatchesIdentity(eponym: string, identityTokens: string[]):
   );
 }
 
+/** The surname each display name ends on, as the eponym corroboration vocabulary. */
+export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>): Set<string> {
+  const surnames = new Set<string>();
+  for (const displayName of displayNames) {
+    const words = nameWords(displayName).filter(
+      (word) => word.length >= 3 && !PERSON_NAME_STOP_WORDS.has(word) && !/\d/.test(word),
+    );
+    const surname = words[words.length - 1];
+    if (surname) surnames.add(surname);
+  }
+  return surnames;
+}
+
 /**
  * Whether a harvested lab name claims a person other than the one this entity
- * belongs to, corroborated by the linked site's URL path.
+ * belongs to.
+ *
+ * Two independent corroborations, because a foreign lab is only refusable once
+ * something outside the name confirms the eponym is a person at all. The linked
+ * site's URL path is one ("The Liu Lab" at `/lab/jun-liu/`). A roster of known
+ * surnames is the other, and it is what covers the common shape the path rule
+ * cannot see: a trainee's PI's lab sits on its own eponymous host with a bare or
+ * generic path (`girgentilab.org`, `scherzerlaboratory.org`), so the host carries
+ * the only echo of the surname and the host is deliberately not corroboration
+ * (#2361). A topical name is not a surname, so "Belief Lab" and "The UPLiFT Lab"
+ * stay this person's own however their host reads.
  */
 export function claimsAnotherPersonsLab(args: {
   harvestedName: unknown;
   websiteUrl: unknown;
   identityTokens: string[];
+  knownPersonSurnames?: ReadonlySet<string>;
 }): boolean {
   if (args.identityTokens.length === 0) return false;
-  const eponyms = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
-  if (eponyms.length === 0) return false;
-  return !eponyms.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
+  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  if (pathCorroborated.length > 0) {
+    return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
+  }
+  const knownSurnames = args.knownPersonSurnames;
+  if (!knownSurnames || knownSurnames.size === 0) return false;
+  const rosterCorroborated = eponymousLabNameSurnameCandidates(args.harvestedName).filter(
+    (candidate) => knownSurnames.has(candidate),
+  );
+  if (rosterCorroborated.length === 0) return false;
+  return !rosterCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
 }
 
 export type HarvestedNameIdentityVerdict =
@@ -382,21 +414,33 @@ export type HarvestedNameIdentityVerdict =
  * `OWN_IDENTITY` is returned when the name carries the person's own name, or
  * reads as a research home rather than an umbrella organization; those are the
  * only cases where the harvested name may become the entity's identity.
+ *
+ * `harvestedDescription` is the blurb the profile's own lab slot carries beside
+ * the link. A slot that describes what it links as a center, collaborative, or
+ * consortium is declaring an affiliation even when its name reads as a lab, and
+ * that blurb is the only evidence distinguishing the two (#2361).
+ *
+ * `knownPersonSurnames` is the roster the eponym check corroborates against; see
+ * `claimsAnotherPersonsLab`. Omitting it keeps the older path-only behavior.
  */
 export function classifyHarvestedResearchHomeName(args: {
   harvestedName: unknown;
   personName: unknown;
   websiteUrl?: unknown;
+  harvestedDescription?: unknown;
+  knownPersonSurnames?: ReadonlySet<string>;
 }): HarvestedNameIdentityVerdict {
   const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
+  if (isUmbrellaOrganizationName(args.harvestedDescription)) return 'AFFILIATED_ORGANIZATION';
   const foreign = claimsAnotherPersonsLab({
     harvestedName: name,
     websiteUrl: args.websiteUrl,
     identityTokens: personIdentityTokens(args.personName),
+    knownPersonSurnames: args.knownPersonSurnames,
   });
   return foreign ? 'ANOTHER_PERSONS_LAB' : 'OWN_IDENTITY';
 }

@@ -39,7 +39,10 @@ import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
 import { flattenHtmlToText } from '../utils/htmlText';
 import { normalizeOrcid } from '../../utils/orcid';
-import { classifyHarvestedResearchHomeName } from '../../utils/researchHomeNameIdentityAuthority';
+import {
+  classifyHarvestedResearchHomeName,
+  personSurnamesFromDisplayNames,
+} from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
@@ -92,6 +95,7 @@ export interface YsmFacultyProfile {
   bio?: string;
   labUrl?: string;
   labName?: string;
+  labDescription?: string;
 }
 
 const textValue = (value: unknown): string =>
@@ -242,10 +246,14 @@ function extractOrcid(research: Record<string, unknown>): string | undefined {
 function extractLabWebsite(
   research: Record<string, unknown>,
   about: Record<string, unknown>,
-): { url?: string; name?: string } {
+): { url?: string; name?: string; description?: string } {
   const raw = (research.labWebsite || about.labWebsite) as Record<string, unknown> | null;
   const url = raw && isHttpUrl(raw.url) ? textValue(raw.url) : undefined;
-  return { url, name: url ? textValue(raw?.name) || undefined : undefined };
+  return {
+    url,
+    name: url ? textValue(raw?.name) || undefined : undefined,
+    description: url ? textValue(raw?.description) || undefined : undefined,
+  };
 }
 
 /**
@@ -293,6 +301,7 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     bio: clippedText(htmlToText(about.bio)),
     labUrl: labWebsite.url,
     labName: labWebsite.name,
+    labDescription: labWebsite.description,
   };
 }
 
@@ -349,15 +358,22 @@ export interface ProfileLabWebsiteClassification {
  * research-home identity. The YSM profile content model offers one such slot for
  * both "my lab" and "a center I am affiliated with", so an affiliation link must
  * not become the entity's name, type, or website (issue #2234).
+ *
+ * `knownPersonSurnames` is the directory's own roster of surnames, which is what
+ * lets an eponymous name reading as somebody else's lab be refused when the
+ * linked site's path never spells the surname out (#2361).
  */
 export function classifyProfileLabWebsite(
-  profile: Pick<YsmFacultyProfile, 'name' | 'labUrl' | 'labName'>,
+  profile: Pick<YsmFacultyProfile, 'name' | 'labUrl' | 'labName' | 'labDescription'>,
+  knownPersonSurnames?: ReadonlySet<string>,
 ): ProfileLabWebsiteClassification {
   if (!profile.labUrl) return { isOwnResearchHome: false, verdict: 'NO_LINK' };
   const verdict = classifyHarvestedResearchHomeName({
     harvestedName: profile.labName,
     personName: profile.name,
     websiteUrl: profile.labUrl,
+    harvestedDescription: profile.labDescription,
+    knownPersonSurnames,
   });
   if (verdict === 'AFFILIATED_ORGANIZATION' || verdict === 'ANOTHER_PERSONS_LAB') {
     return { isOwnResearchHome: false, verdict };
@@ -388,8 +404,9 @@ export function classifyProfileLabWebsite(
 export function facultyToResearchEntityObservations(
   profile: YsmFacultyProfile,
   fallbackUserKey: string,
+  knownPersonSurnames?: ReadonlySet<string>,
 ): ObservationInput[] {
-  const linkedSite = classifyProfileLabWebsite(profile);
+  const linkedSite = classifyProfileLabWebsite(profile, knownPersonSurnames);
   if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return [];
   const hasLab = linkedSite.isOwnResearchHome;
 
@@ -494,6 +511,11 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     const offsetRoster = offset > 0 ? selected.slice(offset) : selected;
     const limited = limitOption ? offsetRoster.slice(0, limitOption) : offsetRoster;
 
+    // Built from the whole roster rather than the limited slice: whose lab a
+    // harvested name claims does not depend on how many profiles this run walks,
+    // and a `--limit` run must reach the same verdict as a full one (#2361).
+    const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
+
     let totalObs = 0;
     let profilesScanned = 0;
     let researchersEnriched = 0;
@@ -529,7 +551,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       await ctx.emit(userObs);
       totalObs += userObs.length;
 
-      const entityObs = facultyToResearchEntityObservations(profile, entityKey);
+      const entityObs = facultyToResearchEntityObservations(profile, entityKey, directorySurnames);
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);
         totalObs += entityObs.length;
