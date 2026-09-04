@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 
 const mocks = vi.hoisted(() => ({
   analyticsAggregate: vi.fn(),
@@ -98,6 +98,21 @@ import { AnalyticsEventType } from '../../models/analytics';
 afterEach(() => {
   invalidateAnalyticsCaches();
 });
+
+const expectNullSafeSingleMatchLookup = (
+  stages: Array<Record<string, any>>,
+  as: string,
+  expected: { foreignField: string; foreignFieldType: 'string' | 'objectId' },
+): void => {
+  const lookupStage = stages.find((stage) => stage.$lookup?.as === `${as}LookupMatches`);
+  expect(lookupStage).toBeDefined();
+  const { foreignField, pipeline } = lookupStage!.$lookup;
+  expect(foreignField).toBe(expected.foreignField);
+  expect(pipeline[0].$match[foreignField]).toEqual({ $type: expected.foreignFieldType });
+
+  const firstStage = stages.find((stage) => stage.$addFields?.[as]);
+  expect(firstStage!.$addFields[as]).toEqual({ $first: `$${as}LookupMatches` });
+};
 
 describe('analytics user type normalization', () => {
   it('combines professor and faculty into the canonical professor bucket', () => {
@@ -580,11 +595,84 @@ describe('getAnalytics research coverage and range scoping', () => {
     const mostActiveStages = facetCall![0].find(
       (stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers,
     ).$facet.mostActiveUsers;
-    const lookupStage = mostActiveStages.find((stage: Record<string, any>) => stage.$lookup);
-    expect(lookupStage.$lookup.from).toBe('accounts');
-    expect(lookupStage.$lookup.foreignField).toBe('netid');
-    const projectStage = mostActiveStages.find((stage: Record<string, any>) => stage.$project);
+    const lookupStages = mostActiveStages.filter((stage: Record<string, any>) => stage.$lookup);
+    expect(lookupStages.map((stage: Record<string, any>) => stage.$lookup.from)).toEqual([
+      'accounts',
+      'researchers',
+    ]);
+    expect(mostActiveStages.some((stage: Record<string, any>) => stage.$unwind)).toBe(false);
+    expectNullSafeSingleMatchLookup(mostActiveStages, 'account', {
+      foreignField: 'netid',
+      foreignFieldType: 'string',
+    });
+    expectNullSafeSingleMatchLookup(mostActiveStages, 'researcher', {
+      foreignField: 'accountId',
+      foreignFieldType: 'objectId',
+    });
+    const projectStage = mostActiveStages.find(
+      (stage: Record<string, any>) => stage.$project?.userId,
+    );
     expect(projectStage.$project.displayName).toBe('$researcher.displayName');
+  });
+
+  it('resolves the linked display name and still emits one row for a user with no account', async () => {
+    primeAnalyticsMocks();
+
+    await getAnalytics();
+
+    const engagementPipeline = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers),
+    )![0];
+
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri());
+    try {
+      await client.connect();
+      const db = client.db('analytics_fanout');
+      const linkedAccountId = new ObjectId();
+
+      await db.collection('analyticsevents').insertMany([
+        ...Array.from({ length: 3 }, () => ({
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'accountless01',
+          userType: 'undergraduate',
+          timestamp: new Date(),
+        })),
+        ...Array.from({ length: 5 }, () => ({
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'linked01',
+          userType: 'graduate',
+          timestamp: new Date(),
+        })),
+      ]);
+      await db
+        .collection('accounts')
+        .insertOne({ _id: linkedAccountId, netid: 'linked01', email: 'linked01@example.edu' });
+      await db
+        .collection('researchers')
+        .insertMany([
+          { accountId: linkedAccountId, displayName: 'Linked Researcher' },
+          ...Array.from({ length: 25 }, (_, index) => ({ displayName: `Shell ${index}` })),
+        ]);
+
+      const [result] = await db
+        .collection('analyticsevents')
+        .aggregate(engagementPipeline)
+        .toArray();
+
+      expect(result.mostActiveUsers).toEqual([
+        {
+          userId: 'linked01',
+          userType: 'graduate',
+          eventCount: 5,
+          displayName: 'Linked Researcher',
+        },
+        { userId: 'accountless01', userType: 'undergraduate', eventCount: 3 },
+      ]);
+    } finally {
+      await client.close();
+      await server.stop();
+    }
   });
 
   it('resolves top research entity ids to human-readable names and hrefs', async () => {
@@ -753,6 +841,67 @@ describe('getUserAnalytics', () => {
     await expect(getUserAnalytics({ offset: -1 })).rejects.toThrow('Invalid offset');
 
     expect(mocks.analyticsAggregate).not.toHaveBeenCalled();
+  });
+
+  it('resolves the linked identity fields and keeps one row per netid without an account', async () => {
+    mocks.analyticsAggregate.mockResolvedValue([{ users: [], total: 0 }]);
+
+    await getUserAnalytics({});
+
+    const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
+
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri());
+    try {
+      await client.connect();
+      const db = client.db('analytics_user_summary');
+      const linkedAccountId = new ObjectId();
+
+      await db.collection('analyticsevents').insertMany([
+        {
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'linked01',
+          userType: 'graduate',
+          timestamp: new Date(),
+        },
+        {
+          eventType: AnalyticsEventType.SEARCH,
+          netid: 'accountless01',
+          userType: 'undergraduate',
+          timestamp: new Date(),
+        },
+      ]);
+      await db
+        .collection('accounts')
+        .insertOne({ _id: linkedAccountId, netid: 'linked01', email: 'linked01@example.edu' });
+      await db
+        .collection('researchers')
+        .insertMany([
+          { accountId: linkedAccountId, displayName: 'Linked Researcher' },
+          ...Array.from({ length: 25 }, (_, index) => ({ displayName: `Shell ${index}` })),
+        ]);
+
+      const [result] = await db.collection('analyticsevents').aggregate(pipeline).toArray();
+
+      expect(result.total).toBe(2);
+      const linked = result.users.find((user: Record<string, any>) => user.netid === 'linked01');
+      expect(linked).toMatchObject({
+        netid: 'linked01',
+        userType: 'graduate',
+        displayName: 'Linked Researcher',
+        email: 'linked01@example.edu',
+        totalEvents: 1,
+      });
+      const accountless = result.users.find(
+        (user: Record<string, any>) => user.netid === 'accountless01',
+      );
+      expect(accountless).toMatchObject({ totalEvents: 1 });
+      expect(accountless.displayName).toBeUndefined();
+      expect(accountless.email).toBeUndefined();
+    } finally {
+      await client.close();
+      await server.stop();
+    }
   });
 });
 

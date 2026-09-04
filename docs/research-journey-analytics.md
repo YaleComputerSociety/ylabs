@@ -50,3 +50,14 @@ The admin funnel reports source inspections, official-route attempts, applicatio
 Application opens include only `open_position` and `official_application` qualified categories.
 Official-route attempts include only the `open_position`, `official_application`, and `reviewed_route` categories, and exclude `qualified_participation`.
 Confirmed outcomes remain `outreach_outcome` records and are never inferred from route attempts.
+
+## Identity Joins Must Fail Closed
+
+Most analytics netids have no `Account`, so every join from an analytics row to `Account` and then to `Researcher` runs with a possibly-absent key.
+MongoDB coerces an absent `localField` to null, so an unguarded join matches every foreign document whose key is also null, which for `Researcher.accountId` is the whole accountless-shell population.
+That multiplies one row into thousands, inflates every downstream count, and grafts an unrelated researcher name onto the row.
+
+Join identity through `singleMatchLookupStages` in `server/src/services/analyticsService.ts`, which requires the foreign key to be present and correctly typed and takes `$first` rather than `$unwind`.
+A guard written as a correlated `$expr` comparison against null does not work, because a `let` binding for a missing path is BSON undefined rather than null.
+Substituting an empty-array key does not work either, because an empty array coerces to null in a join.
+Absent identity must read as absent: a missing `Account` yields no `displayName`, never a borrowed one.
