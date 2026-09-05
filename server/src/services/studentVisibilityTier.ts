@@ -12,6 +12,10 @@ import { classifyResearchEntityResearchScope } from './researchEntityResearchSco
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  hasRecordedClosureEvidence,
+} from '../utils/researchEntityYaleStatus';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
@@ -349,45 +353,11 @@ function isUncorroboratedGrantOnlyEntity(entity: Record<string, any>): boolean {
   return urls.every(isGrantOrOrcidSourceUrl);
 }
 
-/**
- * The recorded-closure marker. Written into `studentVisibilitySuppressionReason`
- * alongside the existing `research_infrastructure_only` convention, so no new
- * field is required (#2284).
- *
- * Why a recorded marker rather than a detector: nothing in the model could
- * express "this stopped existing", and nothing available can infer it either.
- * Measured on the two known-closed rows:
- *
- *  - `rudnick-lab-rudnickg` — link health HEALTHY/200 on both recorded links. A
- *    departed PI's Yale profile keeps returning 200 long after the lab is gone,
- *    so link death cannot express closure and the one instrument that looks like
- *    it should catch this actively reports the row as fine.
- *  - `dept-astronomy-debra-fischer` — still observed by `dept-faculty-roster` on
- *    2026-08-28, listed on `astronomy.yale.edu/people/faculty`, with a HEALTHY
- *    PRIMARY_IDENTITY profile link verified 2026-08-31. The PI has relocated to
- *    NASA. **Every Yale-derived signal says she is present**, because Yale's own
- *    page is stale, so no detector built from Yale sources can ever catch this
- *    class. It needs external evidence (an ORCID employment end date) or a human
- *    report.
- *
- * THIS GATE FAILS OPEN, DELIBERATELY, AND MUST STAY THAT WAY. Absence of closure
- * evidence is not evidence of closure: roughly 4,500 live rows carry no closure
- * evidence either way, so treating "unobserved" as "closed" would suppress most
- * of the corpus. Only a positively recorded marker suppresses. Do not "correct"
- * this toward fail-closed — that is the opposite of the right default here, and
- * it is the mirror of the inert-guard work in #2258.
- *
- * Deliberately NOT `NOT_CURRENTLY_AVAILABLE`, which is a live availability value
- * meaning "not recruiting right now". A student reads "not taking students this
- * term" and "this lab no longer exists" very differently, and collapsing them
- * would be its own defect.
- */
-export const PERMANENTLY_CLOSED_SUPPRESSION_REASON = 'permanently_closed';
-
-export const hasRecordedClosureEvidence = (entity: Record<string, any>): boolean =>
-  textValue(entity.studentVisibilitySuppressionReason).includes(
-    PERMANENTLY_CLOSED_SUPPRESSION_REASON,
-  );
+// The recorded-closure marker and its predicate moved to
+// `utils/researchEntityYaleStatus.ts` (#1923), which documents them, because the
+// Yale-status derivation now reads the same marker so a recorded closure survives
+// re-materialization. Re-exported here so existing import sites keep working.
+export { PERMANENTLY_CLOSED_SUPPRESSION_REASON, hasRecordedClosureEvidence };
 
 const FORMALIZATION_PROGRAM_KINDS = new Set([
   'FELLOWSHIP_FUNDING',

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveResearchEntityYaleStatus } from '../researchEntityYaleStatus';
+import {
+  PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  deriveResearchEntityYaleStatus,
+  hasEvidencelessInactiveYaleStatus,
+  hasRecordedClosureEvidence,
+} from '../researchEntityYaleStatus';
 
 describe('deriveResearchEntityYaleStatus', () => {
   it('does not flag a professor-emeritus source URL path as departed', () => {
@@ -145,5 +150,128 @@ describe('deriveResearchEntityYaleStatus', () => {
   it('returns null for a null or undefined entity', () => {
     expect(deriveResearchEntityYaleStatus(null)).toBeNull();
     expect(deriveResearchEntityYaleStatus(undefined)).toBeNull();
+  });
+});
+
+describe('recorded closure as a durable departure (#1923)', () => {
+  const closureReason =
+    'permanently_closed: research home no longer active; PI departed/relocated (reported 2026-08-31, recorded per #2284)';
+
+  it('derives a departed signal from a recorded closure marker', () => {
+    const signal = deriveResearchEntityYaleStatus({
+      name: 'Avram Holmes - Research',
+      sourceUrls: ['https://orcid.org/0000-0001-6583-803X'],
+      studentVisibilitySuppressionReason: closureReason,
+    });
+
+    expect(signal).toEqual({
+      yaleStatusCache: 'departed',
+      activeAtYaleCache: false,
+      reason: 'departed',
+    });
+  });
+
+  it('re-derives on every pass, so the departure survives re-materialization', () => {
+    const entity = {
+      name: 'Debra Fischer Faculty Research',
+      sourceUrls: ['https://astronomy.yale.edu/people/faculty'],
+      fullDescription: 'Studies exoplanet detection and radial-velocity instrumentation.',
+      studentVisibilitySuppressionReason: closureReason,
+      activeAtYaleCache: false,
+      yaleStatusCache: 'departed',
+      yaleStatusReasonCache: 'departed',
+    };
+
+    // The reset branch is only reached when the derivation yields nothing, so a
+    // re-derivable signal is what makes the marker durable.
+    expect(deriveResearchEntityYaleStatus(entity)).not.toBeNull();
+  });
+
+  it('keeps deceased ahead of departed when both markers are present', () => {
+    const signal = deriveResearchEntityYaleStatus({
+      name: 'Pierre Demarque (1932 - 2025)',
+      studentVisibilitySuppressionReason: closureReason,
+    });
+
+    expect(signal?.reason).toBe('deceased');
+  });
+
+  it('fails open: no marker means no departure signal', () => {
+    expect(
+      deriveResearchEntityYaleStatus({
+        name: 'Jane Roe Lab',
+        sourceUrls: ['https://mcdb.yale.edu/people/jane-roe'],
+        studentVisibilitySuppressionReason: '',
+      }),
+    ).toBeNull();
+    expect(
+      deriveResearchEntityYaleStatus({
+        name: 'Jane Roe Lab',
+        sourceUrls: ['https://mcdb.yale.edu/people/jane-roe'],
+      }),
+    ).toBeNull();
+  });
+
+  it('does not treat an unrelated suppression reason as a closure', () => {
+    expect(
+      deriveResearchEntityYaleStatus({
+        name: 'Yale Core Facility',
+        studentVisibilitySuppressionReason: 'research_infrastructure_only',
+      }),
+    ).toBeNull();
+  });
+
+  it('recognises the marker alongside another recorded reason', () => {
+    const signal = deriveResearchEntityYaleStatus({
+      name: 'Rudnick Lab',
+      studentVisibilitySuppressionReason: `research_infrastructure_only, ${closureReason}`,
+    });
+
+    expect(signal?.reason).toBe('departed');
+  });
+
+  it('leaves a closure-marked row alone instead of resetting it', () => {
+    const entity = {
+      name: 'Avram Holmes - Research',
+      studentVisibilitySuppressionReason: closureReason,
+      activeAtYaleCache: false,
+      yaleStatusCache: 'departed',
+      yaleStatusReasonCache: 'departed',
+    };
+
+    expect(deriveResearchEntityYaleStatus(entity)).not.toBeNull();
+    expect(hasEvidencelessInactiveYaleStatus(entity)).toBe(false);
+  });
+
+  it('still resets an inactive cache that has no evidence of any kind behind it', () => {
+    expect(
+      hasEvidencelessInactiveYaleStatus({
+        name: 'Jane Roe Lab',
+        activeAtYaleCache: false,
+        yaleStatusReasonCache: '',
+        studentVisibilitySuppressionReason: '',
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('hasRecordedClosureEvidence', () => {
+  it('matches the marker constant and tolerates a missing field', () => {
+    expect(
+      hasRecordedClosureEvidence({
+        studentVisibilitySuppressionReason: PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+      }),
+    ).toBe(true);
+    expect(hasRecordedClosureEvidence({})).toBe(false);
+    expect(hasRecordedClosureEvidence(null)).toBe(false);
+    expect(hasRecordedClosureEvidence(undefined)).toBe(false);
+  });
+
+  it('is the same symbol the tier service uses, so the two cannot drift', async () => {
+    const tierService = await import('../../services/studentVisibilityTier');
+    expect(tierService.hasRecordedClosureEvidence).toBe(hasRecordedClosureEvidence);
+    expect(tierService.PERMANENTLY_CLOSED_SUPPRESSION_REASON).toBe(
+      PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+    );
   });
 });
