@@ -184,6 +184,59 @@ describe('denoiseOrgUnitValue', () => {
     expect(denoiseOrgUnitValue('EASBME BME Faculty')).toBe('BME Faculty');
   });
 
+  it('keeps a legitimate acronym prefix, which is not an HR org code', () => {
+    // Every one of these was truncated by the old any-caps-token heuristic, and
+    // measurement found 57 such rewrites in the corpus against zero real HR codes
+    // (#2500). Grant mechanisms, agencies, medical acronyms, and program names.
+    expect(denoiseOrgUnitValue('MR Core')).toBe('MR Core');
+    expect(denoiseOrgUnitValue('PET Core')).toBe('PET Core');
+    expect(denoiseOrgUnitValue('DNA Damage and Genome Integrity')).toBe(
+      'DNA Damage and Genome Integrity',
+    );
+    expect(denoiseOrgUnitValue('SPORE in Lung Cancer')).toBe('SPORE in Lung Cancer');
+    expect(denoiseOrgUnitValue('VA Connecticut Healthcare System')).toBe(
+      'VA Connecticut Healthcare System',
+    );
+    expect(denoiseOrgUnitValue('LGBTQ Mental Health Initiative')).toBe(
+      'LGBTQ Mental Health Initiative',
+    );
+    expect(denoiseOrgUnitValue('K12 Calabresi Immuno-Oncology Training Program (IOTP)')).toBe(
+      'K12 Calabresi Immuno-Oncology Training Program (IOTP)',
+    );
+  });
+
+  it('never truncates a value onto a different real department name', () => {
+    // The wrong-attribution case: these landed on canonical department names, so
+    // served YSM cardiology rows claimed the School of Management's Operations
+    // department and a VA affiliation claimed YSM Neurosurgery.
+    expect(denoiseOrgUnitValue('YCRG Operations')).toBe('YCRG Operations');
+    expect(denoiseOrgUnitValue('VA Neurosurgery')).toBe('VA Neurosurgery');
+  });
+
+  it('still strips the enumerated Yale HR org codes it exists for', () => {
+    expect(denoiseOrgUnitValue('MEDCCC Medical Oncology')).toBe('Medical Oncology');
+    expect(denoiseOrgUnitValue('PRV Provost Administration')).toBe('Provost Administration');
+    expect(denoiseOrgUnitValue('DIVFIN Divinity General')).toBe('Divinity General');
+  });
+
+  it('leaves single-word clinical subspecialty names alone, which a length rule would not', () => {
+    // The discriminating set: real subspecialties written short. Any fix keyed on
+    // "too short" or "single word" rejects all of these.
+    for (const name of [
+      'Immunology',
+      'Rheumatology',
+      'Neuroradiology',
+      'Dermatopathology',
+      'Gastroenterology',
+      'Hepatology',
+      'Cytopathology',
+      'Neuropathology',
+      'Physiatry',
+    ]) {
+      expect(denoiseOrgUnitValue(name)).toBe(name);
+    }
+  });
+
   it('leaves fully upper-case names and plain hyphenated names untouched', () => {
     expect(denoiseOrgUnitValue('SOCIAL SCIENCES')).toBe('SOCIAL SCIENCES');
     expect(denoiseOrgUnitValue('VETERINARY SCIENCES')).toBe('VETERINARY SCIENCES');

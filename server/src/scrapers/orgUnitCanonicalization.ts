@@ -63,14 +63,16 @@ const LEADING_ORG_CODE_PATTERN = /^([A-Z][A-Z0-9]{1,6})\s+(?=.*[a-z])(.+)$/;
 /**
  * Strips a leading Yale HR/directory org code (an opaque all-caps token such as
  * "PRVAIT" or "EASBME") from a scraped org-unit string, leaving the human name.
- * The lowercase lookahead guards fully-uppercase names ("SOCIAL SCIENCES") from
- * having a leading word mistaken for a code.
+ * Only a code in `HR_ORG_CODE_PREFIXES` is stripped, so a legitimate acronym is
+ * left alone. The lowercase lookahead additionally guards fully-uppercase names
+ * ("SOCIAL SCIENCES") from having a leading word mistaken for a code.
  */
 export function denoiseOrgUnitValue(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   const trimmed = raw.trim();
   const match = trimmed.match(LEADING_ORG_CODE_PATTERN);
   if (!match) return trimmed;
+  if (!HR_ORG_CODE_PREFIXES.has(match[1])) return trimmed;
   const remainder = match[2].trim();
   return remainder.length >= 3 ? remainder : trimmed;
 }
@@ -101,6 +103,39 @@ export const ADMINISTRATIVE_ORG_UNIT_VALUES = [
   'YCO Yale College Operating Units',
   'YCORCH Jonathan Edwards Head of College',
 ] as const;
+
+/**
+ * The Yale HR/directory org codes this denoiser exists to strip, as a closed set.
+ *
+ * It used to strip *any* leading all-caps token of two to seven characters, which
+ * cannot distinguish an opaque HR code from a legitimate acronym. Measured against
+ * every distinct `departments` value in the corpus, that heuristic rewrote 57
+ * strings and **not one** of the tokens it stripped was an HR code: they were grant
+ * mechanisms (`SPORE`, `K12`), agencies (`VA`, `NIDA`), medical acronyms (`MR`,
+ * `PET`, `DNA`, `HPV`, `ALS`, `ECP`), and program names (`GROW`, `PRIME`, `HABIT`).
+ * Meanwhile the 13 codes actually enumerated below appeared in zero live values, so
+ * the heuristic's every firing was a false positive (#2500).
+ *
+ * The damage was not cosmetic. `"YCRG Operations"` became `"Operations"`, which
+ * resolves to the School of Management's Operations department, so served YSM
+ * cardiology rows claimed a management department; `"VA Neurosurgery"` became
+ * `"Neurosurgery"`. A truncation that lands on a real canonical name is a
+ * wrong-attribution defect, not lost precision.
+ *
+ * An allowlist is the right shape here where a denylist was the wrong shape for
+ * #2409's department facet: the population of Yale HR codes is bounded and has a
+ * real source (the administrative units below, plus the two codes the denoiser was
+ * written against), whereas the population of legitimate acronyms is open-ended.
+ */
+const HR_ORG_CODE_PREFIXES = new Set<string>([
+  ...ADMINISTRATIVE_ORG_UNIT_VALUES.map((value) => value.split(/\s+/)[0]).filter((token) =>
+    /^[A-Z][A-Z0-9]{1,6}$/.test(token),
+  ),
+  // Codes the denoiser was written against that name no administrative unit of
+  // their own, so they are absent from the list above.
+  'MEDCCC',
+  'EASBME',
+]);
 
 const ADMINISTRATIVE_ORG_UNIT_KEYS = new Set(
   ADMINISTRATIVE_ORG_UNIT_VALUES.map((value) => orgUnitMatchKey(value)).filter(Boolean),
