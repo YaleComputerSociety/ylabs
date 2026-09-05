@@ -320,7 +320,7 @@ const AdminFellowshipsTable = () => {
                         ✓
                       </span>
                     ) : (
-                      <span className="text-gray-400 text-xs">—</span>
+                      <span className="text-muted text-xs">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm">
@@ -333,7 +333,7 @@ const AdminFellowshipsTable = () => {
                       </button>
                       <button
                         onClick={() => handleArchive(fellowship)}
-                        className="text-yellow-600 hover:text-yellow-800"
+                        className="text-yellow-700 hover:text-yellow-800"
                       >
                         {fellowship.archived ? 'Unarchive' : 'Archive'}
                       </button>

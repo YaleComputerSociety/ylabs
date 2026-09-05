@@ -19,8 +19,8 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
           onClick={() => setMode('union')}
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
             mode === 'union'
-              ? 'bg-[var(--yr-panel)] shadow-sm text-green-600'
-              : 'text-gray-400 hover:text-gray-600'
+              ? 'bg-[var(--yr-panel)] shadow-sm text-green-700'
+              : 'text-muted hover:text-gray-600'
           }`}
           title="Any (OR) - Match any of the selected items"
         >
@@ -57,7 +57,7 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
             mode === 'intersection'
               ? 'bg-panel shadow-sm text-brand'
-              : 'text-gray-400 hover:text-gray-600'
+              : 'text-muted hover:text-gray-600'
           }`}
           title="All (AND) - Match all of the selected items"
         >

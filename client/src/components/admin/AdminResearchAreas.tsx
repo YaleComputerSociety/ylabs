@@ -210,7 +210,7 @@ const AdminResearchAreas = () => {
           placeholder="Filter research areas..."
           className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
-        <div className="text-xs text-gray-400 mt-1">{filtered.length} research areas</div>
+        <div className="text-xs text-muted mt-1">{filtered.length} research areas</div>
       </div>
 
       <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
@@ -291,9 +291,9 @@ const AdminResearchAreas = () => {
                     </td>
                     <td className="py-2 px-4 text-center">
                       {area.isDefault ? (
-                        <span className="text-green-600 text-xs font-medium">Yes</span>
+                        <span className="text-green-700 text-xs font-medium">Yes</span>
                       ) : (
-                        <span className="text-gray-400 text-xs">No</span>
+                        <span className="text-muted text-xs">No</span>
                       )}
                     </td>
                     <td className="py-2 px-4">

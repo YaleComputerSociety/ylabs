@@ -208,7 +208,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            className="text-muted hover:text-gray-600 text-2xl leading-none"
           >
             &times;
           </button>
@@ -219,7 +219,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
             <div>
               <div className="mb-3">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Title <span className="text-red-500">*</span>
+                  Title <span className="text-red-700">*</span>
                 </label>
                 <input
                   value={title}

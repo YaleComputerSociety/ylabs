@@ -322,7 +322,7 @@ const CombinedFilterDropdown = ({
                 <p className="px-3 py-2 text-sm text-gray-500">No options found</p>
               )}
               {activeTab.maxDisplay && activeTab.options.length > activeTab.maxDisplay && (
-                <p className="px-3 py-2 text-xs text-gray-400 text-center">
+                <p className="px-3 py-2 text-xs text-muted text-center">
                   Showing first {activeTab.maxDisplay}. Type to search more...
                 </p>
               )}

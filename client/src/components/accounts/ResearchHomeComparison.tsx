@@ -93,7 +93,7 @@ const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: str
   return links;
 };
 
-const UnknownCell = () => <span className="text-xs italic text-gray-400">Unknown</span>;
+const UnknownCell = () => <span className="text-xs italic text-muted">Unknown</span>;
 
 const ResearchHomeComparison = ({
   entities,
@@ -311,10 +311,10 @@ const ResearchHomeComparison = ({
 
   const renderCell = (column: ComparisonColumn, field: string): ReactNode => {
     if (column.status === 'loading') {
-      return <span className="text-xs text-gray-400">Loading…</span>;
+      return <span className="text-xs text-muted">Loading…</span>;
     }
     if (column.status === 'error') {
-      return <span className="text-xs italic text-gray-400">Could not load</span>;
+      return <span className="text-xs italic text-muted">Could not load</span>;
     }
     return renderReadyCell(column.entity, field);
   };
@@ -456,7 +456,7 @@ const ResearchHomeComparison = ({
                         {included ? (
                           <p className="text-xs italic text-gray-700">{note}</p>
                         ) : (
-                          <span className="text-xs italic text-gray-400">Not shown</span>
+                          <span className="text-xs italic text-muted">Not shown</span>
                         )}
                       </td>
                     );

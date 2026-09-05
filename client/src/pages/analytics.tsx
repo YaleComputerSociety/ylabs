@@ -32,6 +32,7 @@ import {
   createInitialAnalyticsState,
 } from '../reducers/analyticsReducer';
 import { SortOrder, UserActivitySort } from '../components/analytics/analyticsTypes';
+import ScrollableTableRegion from '../components/analytics/ScrollableTableRegion';
 import {
   AUDIT_ACTION_LABELS,
   DashboardMetric,
@@ -746,7 +747,7 @@ const Analytics = () => {
           )}
 
           <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
-            <div className="overflow-x-auto">
+            <ScrollableTableRegion label="Access grants">
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b bg-gray-50">
@@ -840,7 +841,7 @@ const Analytics = () => {
                   )}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTableRegion>
           </div>
 
           <div className="mt-6">
@@ -1011,7 +1012,7 @@ const Analytics = () => {
           )}
 
           <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
-            <div className="overflow-x-auto">
+            <ScrollableTableRegion label="Audit events">
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b bg-gray-50">
@@ -1087,7 +1088,7 @@ const Analytics = () => {
                   )}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTableRegion>
           </div>
 
           <div className="mt-3 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
