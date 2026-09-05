@@ -11,6 +11,7 @@ export interface OrgUnitBackfillEntity {
   school?: unknown;
   departments?: unknown;
   schools?: unknown;
+  orgAffiliationLabels?: unknown;
 }
 
 export interface OrgUnitBackfillPlanRow {
@@ -26,6 +27,8 @@ export interface OrgUnitBackfillPlanRow {
   droppedDepartments: string[];
   beforeSchools: string[];
   afterSchools: string[];
+  beforeOrgAffiliationLabels: string[];
+  afterOrgAffiliationLabels: string[];
 }
 
 export interface OrgUnitBackfillSummary {
@@ -34,6 +37,7 @@ export interface OrgUnitBackfillSummary {
   departmentsDropped: number;
   schoolRewrites: number;
   departmentRewrites: number;
+  orgAffiliationLabelRewrites: number;
 }
 
 const asStringArray = (value: unknown): string[] =>
@@ -60,11 +64,18 @@ export async function planOrgUnitBackfillRow(
   const afterDepartments = asStringArray(set.departments);
   const beforeSchools = asStringArray(entity.schools);
   const afterSchools = asStringArray(set.schools);
+  const beforeOrgAffiliationLabels = asStringArray(entity.orgAffiliationLabels);
+  const afterOrgAffiliationLabels = hasDepartments
+    ? asStringArray(set.orgAffiliationLabels)
+    : beforeOrgAffiliationLabels;
 
   const update: Record<string, unknown> = {};
   if (hasSchool && set.school !== entity.school) update.school = set.school;
   if (hasDepartments && !sameStringArray(beforeDepartments, afterDepartments)) {
     update.departments = afterDepartments;
+  }
+  if (!sameStringArray(beforeOrgAffiliationLabels, afterOrgAffiliationLabels)) {
+    update.orgAffiliationLabels = afterOrgAffiliationLabels;
   }
   if (!sameStringArray(beforeSchools, afterSchools)) update.schools = afterSchools;
 
@@ -81,6 +92,8 @@ export async function planOrgUnitBackfillRow(
     droppedDepartments: canonicalization.droppedDepartments,
     beforeSchools,
     afterSchools,
+    beforeOrgAffiliationLabels,
+    afterOrgAffiliationLabels,
   };
 }
 
@@ -89,11 +102,13 @@ export function summarizeOrgUnitBackfill(rows: OrgUnitBackfillPlanRow[]): OrgUni
   let departmentsDropped = 0;
   let schoolRewrites = 0;
   let departmentRewrites = 0;
+  let orgAffiliationLabelRewrites = 0;
   for (const row of rows) {
     if (row.changed) changed += 1;
     departmentsDropped += row.droppedDepartments.length;
     if ('school' in row.update) schoolRewrites += 1;
     if ('departments' in row.update) departmentRewrites += 1;
+    if ('orgAffiliationLabels' in row.update) orgAffiliationLabelRewrites += 1;
   }
   return {
     scanned: rows.length,
@@ -101,6 +116,7 @@ export function summarizeOrgUnitBackfill(rows: OrgUnitBackfillPlanRow[]): OrgUni
     departmentsDropped,
     schoolRewrites,
     departmentRewrites,
+    orgAffiliationLabelRewrites,
   };
 }
 

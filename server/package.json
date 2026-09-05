@@ -114,6 +114,8 @@
     "research-homes:backfill-research-areas": "tsx src/scripts/backfillResearchAreas.ts",
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
     "research-homes:backfill-org-units": "tsx src/scripts/backfillResearchEntityOrgUnits.ts",
+    "org-units:seed-catalog-gaps": "tsx src/scripts/seedOrgUnitCatalogGaps.ts",
+    "org-units:department-facet-audit": "tsx src/scripts/auditDepartmentFacetCatalog.ts",
     "research-homes:backfill-school-host-mismatch": "tsx src/scripts/backfillSchoolHostMismatch.ts",
     "research-homes:repair-nih-nsf-pi-center-lab-conflation": "tsx src/scripts/repairNihNsfPiCenterLabConflation.ts",
     "research-homes:backfill-school-from-profile-host": "tsx src/scripts/backfillSchoolFromProfileHost.ts",

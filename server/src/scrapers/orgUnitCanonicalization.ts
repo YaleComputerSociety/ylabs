@@ -11,6 +11,7 @@ export interface OrgUnitCanonicalizer {
   canonicalizeSchool(raw: unknown): { value: string; matched: boolean };
   canonicalizeDepartments(raw: unknown): {
     values: string[];
+    affiliationLabels: string[];
     unmatched: string[];
     dropped: string[];
   };
@@ -26,7 +27,17 @@ interface OrgUnitResolverRow {
 }
 
 const SCHOOL_KINDS: OrgUnitKind[] = ['SCHOOL', 'DIVISION'];
-const DEPARTMENT_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'DIVISION', 'OFFICE'];
+
+/**
+ * The only OrgUnit kinds a `research_entities.departments` value may carry, and
+ * therefore the only kinds the browse department facet can offer. An `OFFICE` is
+ * an administrative unit rather than an academic peer of Genetics, so it is not
+ * department-facet eligible (#2194).
+ */
+const DEPARTMENT_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'DIVISION'];
+
+/** Parent-school derivation still walks up from an administrative unit. */
+const DEPARTMENT_TO_SCHOOL_KINDS: OrgUnitKind[] = ['DEPARTMENT', 'OFFICE'];
 
 /**
  * Deterministic match key for a scraped school or department string. slugify
@@ -158,14 +169,39 @@ function toRawList(raw: unknown): string[] {
 
 /**
  * Wraps a resolver index in the fail-closed school/department canonicalizers the
- * materializer applies at ingest. Any value that does not resolve is kept as its
- * trimmed raw string so a missing OrgUnit never silently drops or guesses a
- * department, matching the evidence-first write posture.
+ * materializer applies at ingest.
+ *
+ * `canonicalizeDepartments` fails closed on a value that does not resolve to a
+ * department-kind OrgUnit, because `departments[]` is a browse facet and a facet
+ * value is an assertion about Yale's org chart. Sources list every organization
+ * near a person's appointment in one flat list - a real department
+ * ("Dermatology"), a clinical section, a center, a hospital system, a donor
+ * society, even a lab or a job title - so keeping an unresolved string as a
+ * department put "Yale Medicine" and "Yale New Haven Health System" above
+ * "Internal Medicine" at the head of the department facet (#2194). A value that
+ * is not a canonical department is still real evidence, so it is returned as an
+ * affiliation label for the entity's search text rather than discarded.
+ *
+ * Fail-closed is suspended when the index carries no department rows at all, so
+ * an unseeded or half-restored `org_units` collection degrades to the previous
+ * keep-raw behavior instead of emptying `departments[]` corpus-wide.
+ *
+ * `canonicalizeSchool` still keeps an unresolved school as its raw string: the
+ * only non-canonical school value in the corpus is "Yale West Campus", and 22 of
+ * its 26 entities have no other school or department, so failing it closed would
+ * remove them from both browse facets with nothing to fall back to (#2277).
  */
 export function createOrgUnitCanonicalizer(
   index: Map<string, OrgUnitCanonical>,
   departmentToSchool: Map<string, string> = new Map(),
 ): OrgUnitCanonicalizer {
+  // An index with no department rows means the catalog is unavailable, not that
+  // Yale has no departments, so fail-closed is suspended: an unseeded or
+  // half-restored `org_units` collection must not empty `departments[]` across
+  // the whole corpus.
+  const hasDepartmentCatalog = [...index.values()].some((unit) =>
+    DEPARTMENT_KINDS.includes(unit.kind),
+  );
   return {
     schoolForDepartment(canonicalDepartmentName) {
       return departmentToSchool.get(canonicalDepartmentName) ?? null;
@@ -180,9 +216,11 @@ export function createOrgUnitCanonicalizer(
     canonicalizeDepartments(raw) {
       const entries = toRawList(raw);
       const values: string[] = [];
+      const affiliationLabels: string[] = [];
       const unmatched: string[] = [];
       const dropped: string[] = [];
       const seen = new Set<string>();
+      const seenAffiliation = new Set<string>();
       for (const entry of entries) {
         const trimmed = entry.trim();
         if (!trimmed) continue;
@@ -191,30 +229,41 @@ export function createOrgUnitCanonicalizer(
           continue;
         }
         let hit = resolveOrgUnitCanonical(index, trimmed, DEPARTMENT_KINDS);
-        let fallback = trimmed;
+        let label = trimmed;
         if (!hit) {
           const denoised = denoiseOrgUnitValue(trimmed);
           if (denoised && denoised !== trimmed) {
             hit = resolveOrgUnitCanonical(index, denoised, DEPARTMENT_KINDS);
-            fallback = denoised;
+            label = denoised;
           }
           // A school (School of Medicine) is not a peer of a department
           // (Genetics, Immunobiology): a value that only resolves to a school,
           // whether alone or alongside a real department, is never a valid
-          // department-facet value and is dropped rather than kept raw (#1384).
+          // department-facet value, and it is already carried by the school
+          // facet, so it is dropped outright rather than kept (#1384).
           if (!hit && resolvesToSchool(index, trimmed, denoised)) {
             dropped.push(trimmed);
             continue;
           }
+          if (!hit) {
+            unmatched.push(label);
+            if (hasDepartmentCatalog) {
+              const affiliationKey = label.toLocaleLowerCase();
+              if (!seenAffiliation.has(affiliationKey)) {
+                seenAffiliation.add(affiliationKey);
+                affiliationLabels.push(label);
+              }
+              continue;
+            }
+          }
         }
-        const canonical = hit ? hit.name : fallback;
-        if (!hit) unmatched.push(canonical);
+        const canonical = hit ? hit.name : label;
         const dedupeKey = canonical.toLocaleLowerCase();
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         values.push(canonical);
       }
-      return { values, unmatched, dropped };
+      return { values, affiliationLabels, unmatched, dropped };
     },
   };
 }
@@ -256,7 +305,7 @@ export function buildDepartmentToSchoolMap(rows: OrgUnitParentRow[]): Map<string
   };
   const map = new Map<string, string>();
   for (const row of rows) {
-    if (row.kind !== 'DEPARTMENT' && row.kind !== 'OFFICE') continue;
+    if (!DEPARTMENT_TO_SCHOOL_KINDS.includes(row.kind)) continue;
     const school = schoolNameFor(row);
     if (school) map.set(row.name, school);
   }
@@ -367,7 +416,7 @@ export function researchEntityHasSchoolButNoRealDepartment(entity: {
 /**
  * Canonicalizes a research-entity materialization `$set` in place: the scalar
  * `school` and the `departments[]` strings are rewritten to their canonical
- * OrgUnit names when they resolve, and left as raw values otherwise. It also
+ * OrgUnit names when they resolve, and cleared from the facet otherwise. It also
  * derives the multi-valued `schools[]` (the entity's own school plus each
  * department's parent school) so a cross-school lab is filterable under every
  * school it belongs to. When the scalar `school` would otherwise stay empty, it
@@ -378,6 +427,10 @@ export function researchEntityHasSchoolButNoRealDepartment(entity: {
  * (Genetics, Immunobiology), so when no real department resolves,
  * `departments[]` is left as-is (typically empty) and the entity stays
  * discoverable through the `school`/`schools[]` facet instead (#1384).
+ * Every other department value that does not resolve to a canonical department
+ * is moved to `orgAffiliationLabels[]`, which is search text rather than a
+ * facet, so a center, hospital, program, or society a source listed beside the
+ * appointment stays findable without claiming to be a department (#2194).
  * `existing` supplies the entity's current school and departments so
  * `schools[]` reflects the merged record when a scrape updates only one of
  * them. Never throws - a canonicalization failure or an unseeded `org_units`
@@ -392,14 +445,17 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   unmatchedSchool?: string;
   unmatchedDepartments: string[];
   droppedDepartments: string[];
+  orgAffiliationLabels: string[];
 }> {
   const result: {
     unmatchedSchool?: string;
     unmatchedDepartments: string[];
     droppedDepartments: string[];
+    orgAffiliationLabels: string[];
   } = {
     unmatchedDepartments: [],
     droppedDepartments: [],
+    orgAffiliationLabels: [],
   };
   const hasSchool = Object.prototype.hasOwnProperty.call(set, 'school');
   const hasDepartments = Object.prototype.hasOwnProperty.call(set, 'departments');
@@ -408,15 +464,18 @@ export async function applyResearchEntityOrgUnitCanonicalization(
   try {
     const canonicalizer = await getOrgUnitCanonicalizer();
     if (hasSchool && typeof set.school === 'string' && set.school.trim()) {
-      const canonical = canonicalizer.canonicalizeSchool(set.school);
+      const rawSchool = set.school.trim();
+      const canonical = canonicalizer.canonicalizeSchool(rawSchool);
       set.school = canonical.value;
-      if (!canonical.matched) result.unmatchedSchool = canonical.value;
+      if (!canonical.matched) result.unmatchedSchool = rawSchool;
     }
     if (hasDepartments && Array.isArray(set.departments)) {
       const canonical = canonicalizer.canonicalizeDepartments(set.departments);
       set.departments = canonical.values;
+      set.orgAffiliationLabels = canonical.affiliationLabels;
       result.unmatchedDepartments = canonical.unmatched;
       result.droppedDepartments = canonical.dropped;
+      result.orgAffiliationLabels = canonical.affiliationLabels;
     }
 
     const effectiveSchool = hasSchool ? set.school : existing?.school;

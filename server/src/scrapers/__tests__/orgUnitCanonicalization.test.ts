@@ -95,20 +95,41 @@ describe('createOrgUnitCanonicalizer', () => {
     expect(canonicalizer.canonicalizeSchool('')).toEqual({ value: '', matched: false });
   });
 
-  it('canonicalizes matched departments, keeps unmatched raw, and dedupes', () => {
+  it('canonicalizes matched departments, dedupes, and routes an uncataloged value to affiliations', () => {
     const result = canonicalizer.canonicalizeDepartments([
       'NSCI',
       'YSM Neuro',
       'Molecular Biophysics & Biochemistry',
       'Underwater Basket Weaving',
     ]);
-    expect(result.values).toEqual([
-      'Neuroscience',
-      'Molecular Biophysics and Biochemistry',
-      'Underwater Basket Weaving',
-    ]);
+    expect(result.values).toEqual(['Neuroscience', 'Molecular Biophysics and Biochemistry']);
+    expect(result.affiliationLabels).toEqual(['Underwater Basket Weaving']);
     expect(result.unmatched).toEqual(['Underwater Basket Weaving']);
     expect(result.dropped).toEqual([]);
+  });
+
+  it('dedupes repeated affiliation labels', () => {
+    const result = canonicalizer.canonicalizeDepartments([
+      'Yale Medicine',
+      'yale medicine',
+      'Yale New Haven Health System',
+    ]);
+    expect(result.values).toEqual([]);
+    expect(result.affiliationLabels).toEqual(['Yale Medicine', 'Yale New Haven Health System']);
+  });
+
+  it('suspends fail-closed when the catalog carries no departments at all', () => {
+    const schoolsOnly = createOrgUnitCanonicalizer(
+      buildOrgUnitResolverIndex([
+        { slug: 'yale-school-of-medicine', name: 'Yale School of Medicine', kind: 'SCHOOL' },
+      ]),
+    );
+    const result = schoolsOnly.canonicalizeDepartments(['Chemistry', 'Yale Medicine']);
+    expect(result.values).toEqual(['Chemistry', 'Yale Medicine']);
+    expect(result.affiliationLabels).toEqual([]);
+    expect(
+      createOrgUnitCanonicalizer(new Map()).canonicalizeDepartments(['Chemistry']).values,
+    ).toEqual(['Chemistry']);
   });
 
   it('drops administrative org units from the department facet', () => {
@@ -136,7 +157,8 @@ describe('createOrgUnitCanonicalizer', () => {
       'School of Medicine',
       'NSCI',
     ]);
-    expect(result.values).toEqual(['Psychiatry', 'Neuroscience']);
+    expect(result.values).toEqual(['Neuroscience']);
+    expect(result.affiliationLabels).toEqual(['Psychiatry']);
     expect(result.unmatched).toEqual(['Psychiatry']);
     expect(result.dropped).toEqual(['Yale School of Medicine', 'YSM', 'School of Medicine']);
   });
@@ -147,9 +169,10 @@ describe('createOrgUnitCanonicalizer', () => {
     expect(result.dropped).toEqual(['Yale School of Medicine']);
   });
 
-  it('strips an HR org-code prefix from an unresolved department instead of showing raw', () => {
+  it('strips an HR org-code prefix from an uncataloged department before affiliating it', () => {
     const result = canonicalizer.canonicalizeDepartments(['MEDCCC Medical Oncology']);
-    expect(result.values).toEqual(['Medical Oncology']);
+    expect(result.values).toEqual([]);
+    expect(result.affiliationLabels).toEqual(['Medical Oncology']);
     expect(result.unmatched).toEqual(['Medical Oncology']);
     expect(result.dropped).toEqual([]);
   });
@@ -191,10 +214,22 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     };
     const result = await applyResearchEntityOrgUnitCanonicalization(set);
     expect(set.school).toBe('Yale School of Medicine');
-    expect(set.departments).toEqual(['Neuroscience', 'Ghost Studies']);
+    expect(set.departments).toEqual(['Neuroscience']);
+    expect(set.orgAffiliationLabels).toEqual(['Ghost Studies']);
     expect(set.name).toBe('Some Lab');
     expect(result.unmatchedSchool).toBeUndefined();
     expect(result.unmatchedDepartments).toEqual(['Ghost Studies']);
+    expect(result.orgAffiliationLabels).toEqual(['Ghost Studies']);
+  });
+
+  it('leaves orgAffiliationLabels alone when only the school is written', async () => {
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
+    const set: Record<string, unknown> = { school: 'YSM' };
+    await applyResearchEntityOrgUnitCanonicalization(set, {
+      departments: ['Neuroscience'],
+      orgAffiliationLabels: ['Yale Medicine'],
+    });
+    expect(set.orgAffiliationLabels).toBeUndefined();
   });
 
   it('leaves the set untouched when neither field is present', async () => {
