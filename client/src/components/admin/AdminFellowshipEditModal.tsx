@@ -56,7 +56,7 @@ const TagInput = ({
             <button
               type="button"
               onClick={() => onChange(values.filter((x) => x !== v))}
-              className="ml-1 text-muted hover:text-brand"
+              className="ml-1 text-muted hover:text-brand yr-focus-ring"
             >
               &times;
             </button>
@@ -74,7 +74,7 @@ const TagInput = ({
         <button
           type="button"
           onClick={handleAdd}
-          className="px-2 py-1 bg-brand text-white text-xs rounded hover:bg-brand-navy"
+          className="px-2 py-1 bg-brand text-white text-xs rounded hover:bg-brand-navy yr-focus-ring"
         >
           Add
         </button>
@@ -208,7 +208,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            className="text-muted hover:text-gray-600 text-2xl leading-none yr-focus-ring"
           >
             &times;
           </button>
@@ -219,7 +219,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
             <div>
               <div className="mb-3">
                 <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Title <span className="text-red-500">*</span>
+                  Title <span className="text-red-700">*</span>
                 </label>
                 <input
                   value={title}
@@ -473,21 +473,21 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 swal({ text: clientErrorMessage(error, 'Failed to delete'), icon: 'error' });
               }
             }}
-            className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
+            className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors yr-focus-ring"
           >
             Delete Fellowship
           </button>
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm border border-[var(--yr-line-strong)] rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors"
+              className="px-4 py-2 text-sm border border-[var(--yr-line-strong)] rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="px-4 py-2 text-sm bg-brand text-white rounded-md hover:bg-brand-navy disabled:opacity-50 transition-colors"
+              className="px-4 py-2 text-sm bg-brand text-white rounded-md hover:bg-brand-navy disabled:opacity-50 transition-colors yr-focus-ring"
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
             </button>

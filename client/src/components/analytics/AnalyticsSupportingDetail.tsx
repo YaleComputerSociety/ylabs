@@ -13,6 +13,7 @@ import {
 } from '../../reducers/analyticsReducer';
 import { SortOrder, UserActivitySort } from './analyticsTypes';
 import BarChart from './charts/BarChart';
+import ScrollableTableRegion from './ScrollableTableRegion';
 import { csvTimestampSuffix, downloadRowsAsCsv } from '../../utils/csvExport';
 import {
   DetailSectionHeader,
@@ -609,7 +610,7 @@ const AnalyticsSupportingDetail = ({
         </div>
 
         <div className="overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-md">
-          <div className="overflow-x-auto">
+          <ScrollableTableRegion label="Search queries">
             <table className="min-w-full">
               <thead>
                 <tr className="border-b bg-[var(--yr-panel-muted)]">
@@ -681,7 +682,7 @@ const AnalyticsSupportingDetail = ({
                 )}
               </tbody>
             </table>
-          </div>
+          </ScrollableTableRegion>
         </div>
       </section>
 
@@ -691,7 +692,7 @@ const AnalyticsSupportingDetail = ({
             Most Active Users ({selectedRangeLabel})
           </h2>
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-            <div className="overflow-x-auto">
+            <ScrollableTableRegion label="User activity">
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b">
@@ -720,7 +721,7 @@ const AnalyticsSupportingDetail = ({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTableRegion>
           </div>
         </section>
       )}
@@ -745,7 +746,7 @@ const AnalyticsSupportingDetail = ({
             <button
               type="button"
               onClick={fetchUserActivity}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-slate-300"
               disabled={isUserActivityLoading}
             >
               {isUserActivityLoading ? 'Refreshing...' : 'Refresh Users'}
@@ -864,7 +865,7 @@ const AnalyticsSupportingDetail = ({
                 </div>
               )}
 
-              <div className="overflow-x-auto">
+              <ScrollableTableRegion label="NetID user activity">
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b bg-[var(--yr-panel-muted)]">
@@ -966,7 +967,7 @@ const AnalyticsSupportingDetail = ({
                     )}
                   </tbody>
                 </table>
-              </div>
+              </ScrollableTableRegion>
             </div>
 
             <aside className="w-full rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4 xl:w-96">
@@ -1164,7 +1165,7 @@ const AnalyticsSupportingDetail = ({
                         <span className="font-medium">{label}</span>
                       </span>
                       {item.name && (
-                        <span className="truncate text-xs text-gray-400">{item.entityId}</span>
+                        <span className="truncate text-xs text-muted">{item.entityId}</span>
                       )}
                     </span>
                   );
@@ -1174,7 +1175,10 @@ const AnalyticsSupportingDetail = ({
                       className="flex items-start justify-between gap-3 text-sm"
                     >
                       {item.href ? (
-                        <Link to={item.href} className="min-w-0 text-brand hover:underline">
+                        <Link
+                          to={item.href}
+                          className="min-w-0 text-brand hover:underline yr-focus-ring"
+                        >
                           {detail}
                         </Link>
                       ) : (

@@ -50,7 +50,7 @@ const RichText = ({ text }: { text: string }) => {
           href={linkHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-brand hover:underline"
+          className="text-brand hover:underline yr-focus-ring"
         >
           {match[1]}
         </a>,
@@ -100,6 +100,8 @@ const trackFellowshipApplyClick = (fellowshipId: string, href: string) => {
     payload: { waysInKind: 'apply', label: 'Apply' },
   });
 };
+
+const sectionHeadingClass = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted';
 
 const FellowshipModal = ({
   fellowship,
@@ -436,9 +438,7 @@ const FellowshipModal = ({
               <div className="col-span-1 space-y-6">
                 {fellowship.awardAmount && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Award Amount
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Award Amount</h3>
                     <div className="bg-emerald-50 rounded-lg p-3">
                       <p className="text-sm font-semibold text-emerald-800">
                         {fellowship.awardAmount}
@@ -448,9 +448,7 @@ const FellowshipModal = ({
                 )}
 
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    Program Route
-                  </h3>
+                  <h3 className={sectionHeadingClass}>Program Route</h3>
                   <div className="space-y-2 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
                     <div>
                       <span className="text-xs text-slate-500">What this is</span>
@@ -485,9 +483,7 @@ const FellowshipModal = ({
                 </section>
 
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    Key Dates
-                  </h3>
+                  <h3 className={sectionHeadingClass}>Key Dates</h3>
                   <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
                     <div>
                       <span className="text-xs text-brand">Current Status</span>
@@ -529,9 +525,7 @@ const FellowshipModal = ({
 
                 {hasContactInfo && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Contact
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Contact</h3>
                     <div className="space-y-2">
                       {fellowship.contactName && (
                         <p className="text-sm text-gray-800 font-medium">
@@ -583,9 +577,7 @@ const FellowshipModal = ({
                   fellowship.hoursPerWeek ||
                   fellowship.programDates) && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Time & Funding
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Time & Funding</h3>
                     <div className="space-y-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">
                       {fellowship.compensationSummary && <p>{fellowship.compensationSummary}</p>}
                       {fellowship.hoursPerWeek && <p>{fellowship.hoursPerWeek} hours/week</p>}
@@ -596,9 +588,7 @@ const FellowshipModal = ({
 
                 {safeLinks.length > 0 && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Links
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Links</h3>
                     <div className="space-y-1.5">
                       {safeLinks.map((link, i) => (
                         <a
@@ -642,10 +632,8 @@ const FellowshipModal = ({
                 )}
 
                 <section>
-                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    Eligibility Filters
-                  </h3>
-                  <p className="text-xs text-gray-400 mb-3">Click to find similar fellowships</p>
+                  <h3 className={sectionHeadingClass}>Eligibility Filters</h3>
+                  <p className="text-xs text-muted mb-3">Click to find similar fellowships</p>
                   <div className="space-y-3">
                     {fellowship.yearOfStudy.length > 0 && (
                       <div>
@@ -734,9 +722,7 @@ const FellowshipModal = ({
               <div className="col-span-1 md:col-span-2 space-y-6">
                 {fellowship.bestNextStep && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      What To Do Next
-                    </h3>
+                    <h3 className={sectionHeadingClass}>What To Do Next</h3>
                     <p className="rounded-lg border border-line-brand bg-brand-soft/70 p-4 text-sm leading-relaxed text-brand-navy">
                       {fellowship.bestNextStep}
                     </p>
@@ -745,9 +731,7 @@ const FellowshipModal = ({
 
                 {fellowship.prepSteps.length > 0 && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Prep Steps
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Prep Steps</h3>
                     <div className="flex flex-wrap gap-2">
                       {fellowship.prepSteps.map((step) => (
                         <span
@@ -763,9 +747,7 @@ const FellowshipModal = ({
 
                 {(fellowship.applicationInformation || applicationMaterials.length > 0) && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Application Process
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Application Process</h3>
                     <div className="space-y-3 rounded-lg border border-line-brand bg-brand-soft/50 p-4">
                       {applicationMaterials.length > 0 && (
                         <div>
@@ -811,9 +793,7 @@ const FellowshipModal = ({
                 {hasDistinctSummaryAndDescription ? (
                   <>
                     <section>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                        Brief Description
-                      </h3>
+                      <h3 className={sectionHeadingClass}>Brief Description</h3>
                       <RichTextBlock
                         text={summaryText}
                         className="text-sm text-gray-700 leading-relaxed"
@@ -821,9 +801,7 @@ const FellowshipModal = ({
                     </section>
 
                     <section>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                        Full Description
-                      </h3>
+                      <h3 className={sectionHeadingClass}>Full Description</h3>
                       <RichTextBlock
                         text={descriptionText}
                         className="text-sm text-gray-700 leading-relaxed"
@@ -833,9 +811,7 @@ const FellowshipModal = ({
                 ) : (
                   combinedDescriptionText && (
                     <section>
-                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                        Description
-                      </h3>
+                      <h3 className={sectionHeadingClass}>Description</h3>
                       <RichTextBlock
                         text={combinedDescriptionText}
                         className="text-sm text-gray-700 leading-relaxed"
@@ -846,9 +822,7 @@ const FellowshipModal = ({
 
                 {fellowship.eligibility && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Eligibility Requirements
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Eligibility Requirements</h3>
                     <RichTextBlock
                       text={fellowship.eligibility}
                       className="text-sm text-gray-700 leading-relaxed"
@@ -858,9 +832,7 @@ const FellowshipModal = ({
 
                 {!fellowship.eligibility && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Eligibility Requirements
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Eligibility Requirements</h3>
                     {structuredEligibilityDetails.length > 0 ? (
                       <dl className="space-y-1.5">
                         {structuredEligibilityDetails.map((detail) => (
@@ -880,9 +852,7 @@ const FellowshipModal = ({
 
                 {fellowship.restrictionsToUseOfAward && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Restrictions to Use of Award
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Restrictions to Use of Award</h3>
                     <RichTextBlock
                       text={fellowship.restrictionsToUseOfAward}
                       className="text-sm text-gray-700 leading-relaxed"
@@ -892,9 +862,7 @@ const FellowshipModal = ({
 
                 {fellowship.additionalInformation && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Additional Information
-                    </h3>
+                    <h3 className={sectionHeadingClass}>Additional Information</h3>
                     <RichTextBlock
                       text={fellowship.additionalInformation}
                       className="text-sm text-gray-700 leading-relaxed"
@@ -953,7 +921,7 @@ const FellowshipModal = ({
                         href={sourceHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-brand hover:underline"
+                        className="text-brand hover:underline yr-focus-ring"
                       >
                         {sourceLabel || 'Official source'}
                       </a>

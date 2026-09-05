@@ -48,14 +48,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
                 type="button"
-                className="rounded-md bg-brand px-5 py-3 font-semibold text-white transition-colors hover:bg-brand-navy"
+                className="rounded-md bg-brand px-5 py-3 font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                 onClick={this.handleReload}
               >
                 Refresh page
               </button>
               <button
                 type="button"
-                className="rounded-md border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                className="rounded-md border border-slate-300 px-5 py-3 font-semibold text-slate-700 transition-colors hover:bg-slate-50 yr-focus-ring"
                 onClick={this.handleHome}
               >
                 Go home

@@ -112,7 +112,7 @@ export const UndergraduateLogisticsSection = ({
                       href={sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand hover:text-brand-navy"
+                      className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-brand hover:text-brand-navy yr-focus-ring"
                     >
                       Official evidence
                     </a>

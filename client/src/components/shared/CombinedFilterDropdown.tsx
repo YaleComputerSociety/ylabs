@@ -203,7 +203,7 @@ const CombinedFilterDropdown = ({
                 type="button"
                 aria-pressed={activeTabKey === tab.key}
                 onClick={() => setActiveTabKey(tab.key)}
-                className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap yr-focus-ring-inset ${
                   activeTabKey === tab.key
                     ? 'text-brand bg-panel border-b-2 border-brand -mb-px'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-[var(--yr-panel-muted)]'
@@ -251,7 +251,7 @@ const CombinedFilterDropdown = ({
             {activeTab.selected.length > 0 && activeTab.searchable && (
               <button
                 onClick={() => activeTab.setSelected([])}
-                className="text-xs text-brand hover:text-brand-navy mb-2 font-medium"
+                className="text-xs text-brand hover:text-brand-navy mb-2 font-medium yr-focus-ring"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 Clear selected ({activeTab.selected.length})
@@ -322,7 +322,7 @@ const CombinedFilterDropdown = ({
                 <p className="px-3 py-2 text-sm text-gray-500">No options found</p>
               )}
               {activeTab.maxDisplay && activeTab.options.length > activeTab.maxDisplay && (
-                <p className="px-3 py-2 text-xs text-gray-400 text-center">
+                <p className="px-3 py-2 text-xs text-muted text-center">
                   Showing first {activeTab.maxDisplay}. Type to search more...
                 </p>
               )}
@@ -333,7 +333,7 @@ const CombinedFilterDropdown = ({
             <div className="border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
               <button
                 onClick={handleClearAll}
-                className="w-full text-sm text-gray-600 hover:text-gray-900 py-1.5 rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors"
+                className="w-full text-sm text-gray-600 hover:text-gray-900 py-1.5 rounded-md hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 Clear all filters ({totalFilters})

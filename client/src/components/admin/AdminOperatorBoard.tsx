@@ -1208,7 +1208,7 @@ const AdminOperatorBoard = () => {
         <button
           type="button"
           onClick={fetchBoard}
-          className="min-h-10 rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-[var(--yr-panel-muted)]"
+          className="min-h-10 rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
         >
           Refresh
         </button>

@@ -196,7 +196,7 @@ const AdminResearchAreas = () => {
           </div>
           <button
             onClick={handleAdd}
-            className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors"
+            className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors yr-focus-ring"
           >
             Add
           </button>
@@ -210,7 +210,7 @@ const AdminResearchAreas = () => {
           placeholder="Filter research areas..."
           className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
-        <div className="text-xs text-gray-400 mt-1">{filtered.length} research areas</div>
+        <div className="text-xs text-muted mt-1">{filtered.length} research areas</div>
       </div>
 
       <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
@@ -291,9 +291,9 @@ const AdminResearchAreas = () => {
                     </td>
                     <td className="py-2 px-4 text-center">
                       {area.isDefault ? (
-                        <span className="text-green-600 text-xs font-medium">Yes</span>
+                        <span className="text-green-700 text-xs font-medium">Yes</span>
                       ) : (
-                        <span className="text-gray-400 text-xs">No</span>
+                        <span className="text-muted text-xs">No</span>
                       )}
                     </td>
                     <td className="py-2 px-4">
@@ -302,13 +302,13 @@ const AdminResearchAreas = () => {
                           <>
                             <button
                               onClick={() => handleUpdate(area._id)}
-                              className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                              className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 yr-focus-ring"
                             >
                               Save
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
+                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400 yr-focus-ring"
                             >
                               Cancel
                             </button>
@@ -317,13 +317,13 @@ const AdminResearchAreas = () => {
                           <>
                             <button
                               onClick={() => startEdit(area)}
-                              className="min-h-[44px] text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy"
+                              className="min-h-[44px] text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy yr-focus-ring"
                             >
                               Edit
                             </button>
                             <button
                               onClick={() => handleDelete(area)}
-                              className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
+                              className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 yr-focus-ring"
                             >
                               Delete
                             </button>

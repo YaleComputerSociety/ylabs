@@ -234,7 +234,7 @@ const AdminDepartments = () => {
           </div>
           <button
             onClick={handleAdd}
-            className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors"
+            className="min-h-[44px] bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition-colors yr-focus-ring"
           >
             Add
           </button>
@@ -248,7 +248,7 @@ const AdminDepartments = () => {
           placeholder="Filter departments..."
           className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
-        <div className="text-xs text-gray-400 mt-1">{filtered.length} departments</div>
+        <div className="text-xs text-muted mt-1">{filtered.length} departments</div>
       </div>
 
       <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
@@ -358,7 +358,7 @@ const AdminDepartments = () => {
                           <span className="text-xs">{editDraft.active ? 'Yes' : 'No'}</span>
                         </label>
                       ) : dept.isActive ? (
-                        <span className="text-green-600 text-xs font-medium">Yes</span>
+                        <span className="text-green-700 text-xs font-medium">Yes</span>
                       ) : (
                         <span className="text-red-600 text-xs font-medium">No</span>
                       )}
@@ -369,13 +369,13 @@ const AdminDepartments = () => {
                           <>
                             <button
                               onClick={() => handleUpdate(dept._id)}
-                              className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                              className="min-h-[44px] text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 yr-focus-ring"
                             >
                               Save
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400"
+                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400 yr-focus-ring"
                             >
                               Cancel
                             </button>
@@ -384,13 +384,13 @@ const AdminDepartments = () => {
                           <>
                             <button
                               onClick={() => startEdit(dept)}
-                              className="min-h-[44px] text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy"
+                              className="min-h-[44px] text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-navy yr-focus-ring"
                             >
                               Edit
                             </button>
                             <button
                               onClick={() => handleDelete(dept)}
-                              className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700"
+                              className="min-h-[44px] text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 yr-focus-ring"
                             >
                               Delete
                             </button>
