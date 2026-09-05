@@ -197,7 +197,7 @@ const AdminFellowshipsTable = () => {
           placeholder="Search fellowships..."
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring w-64"
         />
 
         <select
@@ -205,7 +205,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
         >
           <option value="">All</option>
           <option value="false">Active</option>
@@ -217,7 +217,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
         >
           <option value="">All (Audit)</option>
           <option value="true">Audited</option>
@@ -227,7 +227,7 @@ const AdminFellowshipsTable = () => {
         <select
           value={pageSize}
           onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
         >
           {PAGE_SIZES.map((size) => (
             <option key={size} value={size}>

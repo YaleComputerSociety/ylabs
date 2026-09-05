@@ -452,7 +452,7 @@ const Analytics = () => {
           <button
             type="button"
             onClick={fetchAnalytics}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
           >
             Retry Analytics
           </button>
@@ -550,7 +550,7 @@ const Analytics = () => {
                 <select
                   value={analyticsRange}
                   onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
-                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
                 >
                   {analyticsRanges.map((range) => (
                     <option key={range.value} value={range.value}>
@@ -568,7 +568,7 @@ const Analytics = () => {
                   fetchImpactAnalytics();
                   fetchAdminAccess();
                 }}
-                className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
               >
                 Refresh Data
               </button>
@@ -680,7 +680,7 @@ const Analytics = () => {
                 Grant admin NetID
               </span>
               <input
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
                 value={adminGrantNetid}
                 onChange={(event) => setAdminGrantNetid(event.target.value)}
                 placeholder="fixture-admin"
@@ -691,7 +691,7 @@ const Analytics = () => {
                 Admin grant note
               </span>
               <input
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
                 value={adminGrantNote}
                 onChange={(event) => setAdminGrantNote(event.target.value)}
                 placeholder="Required reason for this grant"
@@ -963,7 +963,7 @@ const Analytics = () => {
                 value={auditActorFilter}
                 onChange={(event) => setAuditActorFilter(event.target.value)}
                 placeholder="e.g. abc1234"
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
               />
             </label>
             <label className="block">
@@ -973,7 +973,7 @@ const Analytics = () => {
               <select
                 value={auditActionFilter}
                 onChange={(event) => setAuditActionFilter(event.target.value)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
               >
                 <option value="all">All actions</option>
                 {Object.entries(AUDIT_ACTION_LABELS).map(([action, label]) => (
@@ -990,7 +990,7 @@ const Analytics = () => {
               <select
                 value={auditTargetTypeFilter}
                 onChange={(event) => setAuditTargetTypeFilter(event.target.value)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
               >
                 <option value="all">All targets</option>
                 <option value="adminGrant">Admin grant</option>

@@ -123,7 +123,7 @@ const CombinedFilterDropdown = ({
         aria-expanded={isOpen}
         aria-haspopup={mobileSheet ? 'dialog' : undefined}
         onClick={() => (isOpen ? closeFilters(mobileSheet) : setIsOpen(true))}
-        className="flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
+        className="flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring whitespace-nowrap"
         style={{ color: '#374151' }}
       >
         <svg
@@ -190,7 +190,7 @@ const CombinedFilterDropdown = ({
                 aria-label="Close filters"
                 data-mobile-only="true"
                 onClick={() => closeFilters()}
-                className="flex h-11 w-11 items-center justify-center rounded-md text-2xl text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex h-11 w-11 items-center justify-center rounded-md text-2xl text-slate-600 yr-focus-ring"
               >
                 <span aria-hidden="true">×</span>
               </button>
@@ -244,7 +244,7 @@ const CombinedFilterDropdown = ({
                 value={getSearch(activeTab.key)}
                 onChange={(e) => setSearch(activeTab.key, e.target.value)}
                 placeholder={`Search ${activeTab.label.toLowerCase()}...`}
-                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-md text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-md text-sm mb-3 yr-focus-ring focus:border-transparent"
               />
             )}
 
@@ -268,7 +268,7 @@ const CombinedFilterDropdown = ({
                 return (
                   <label
                     key={option}
-                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors yr-focus-ring-inset ${
                       isSelected
                         ? 'bg-[var(--yr-blue-soft)] text-blue-900'
                         : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
@@ -289,7 +289,7 @@ const CombinedFilterDropdown = ({
                         isSelected
                           ? 'bg-blue-500 border-blue-500'
                           : 'border-[var(--yr-line-strong)]'
-                      } peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2`}
+                      } yr-focus-ring-peer`}
                       aria-hidden="true"
                     >
                       {isSelected && (

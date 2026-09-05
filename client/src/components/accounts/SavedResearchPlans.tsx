@@ -291,7 +291,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
             type="button"
             onClick={() => setIsComparing(true)}
             disabled={!canCompare}
-            className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             Compare{selectedCount > 0 ? ` (${selectedCount})` : ''}
           </button>
@@ -305,7 +305,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
             <button
               type="button"
               onClick={() => setSelectedForCompare([])}
-              className="text-xs font-medium text-gray-600 underline hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              className="text-xs font-medium text-gray-600 underline hover:text-gray-800 yr-focus-ring"
             >
               Clear selection
             </button>
@@ -338,7 +338,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                           disabled={atCompareLimit && !selectedForCompare.includes(entity._id)}
                           onChange={() => toggleCompareSelection(entity._id)}
                           aria-label={`Select ${entityDisplayName(entity)} to compare`}
-                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       )}
                       <div className="min-w-0">
@@ -348,7 +348,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                         <h3 className="truncate text-sm font-semibold text-gray-900">
                           <Link
                             to={`/research/${safeRouteSegment(entity.slug)}`}
-                            className="hover:text-blue-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            className="hover:text-blue-700 focus-visible:rounded-sm yr-focus-ring"
                           >
                             {entityDisplayName(entity)}
                           </Link>
@@ -389,7 +389,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                       </button>
                       <Link
                         to={`/research/${safeRouteSegment(entity.slug)}`}
-                        className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-xs font-semibold text-[var(--yr-blue)] hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-xs font-semibold text-[var(--yr-blue)] hover:bg-[var(--yr-panel)] yr-focus-ring"
                       >
                         Open
                       </Link>
@@ -432,7 +432,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                         maxLength={MAX_PLAN_NOTES_LENGTH}
                         placeholder="Add a private note about this research home..."
                         rows={2}
-                        className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
                       <p
                         className={`mt-1 text-xs ${

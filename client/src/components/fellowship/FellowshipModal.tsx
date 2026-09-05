@@ -255,9 +255,9 @@ const FellowshipModal = ({
     fellowship.contactPhone ||
     fellowship.contactOffice;
   const iconActionClass =
-    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 yr-focus-ring';
   const filterChipClass =
-    'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
+    'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 yr-focus-ring';
   const applicationActionLabel = applicationStatus.isApplicationWindowOpen
     ? 'Apply'
     : 'Open source';
@@ -407,7 +407,7 @@ const FellowshipModal = ({
                 />
                 <button
                   onClick={onClose}
-                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-600 yr-focus-ring"
                   aria-label="Close"
                 >
                   <svg
@@ -549,7 +549,7 @@ const FellowshipModal = ({
                               payload: { contactMethod: 'email' },
                             })
                           }
-                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline yr-focus-ring"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -616,7 +616,7 @@ const FellowshipModal = ({
                               });
                             }
                           }}
-                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline yr-focus-ring"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -799,7 +799,7 @@ const FellowshipModal = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                          className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+                          className="inline-flex min-h-[44px] items-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
                         >
                           Open official application
                         </a>
@@ -916,7 +916,7 @@ const FellowshipModal = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                      className={`inline-flex min-h-[44px] items-center rounded-md px-6 py-2.5 text-sm font-medium text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                      className={`inline-flex min-h-[44px] items-center rounded-md px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
                         applicationStatus.isApplicationWindowOpen
                           ? 'bg-brand hover:bg-brand-navy'
                           : 'bg-gray-600 hover:bg-gray-700'

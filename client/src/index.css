@@ -200,6 +200,25 @@ code {
     outline-offset: 2px;
   }
 
+  /* For a visually-hidden `peer` control whose focus must show on a styled
+     proxy element: the proxy never receives focus itself, so `.yr-focus-ring`
+     cannot fire on it. */
+  .peer:focus-visible ~ .yr-focus-ring-peer {
+    outline: 2px solid color-mix(in srgb, var(--yr-blue) 72%, white);
+    outline-offset: 2px;
+  }
+
+  .yr-focus-ring-inset {
+    outline: none;
+  }
+
+  /* Drawn inside the border box via a negative offset, for a control whose
+     parent clips overflow: an outset outline is invisible there. */
+  .yr-focus-ring-inset:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--yr-blue) 72%, white);
+    outline-offset: -2px;
+  }
+
   .yr-fade-in {
     animation: yr-fade-in-up 220ms ease-out backwards;
   }

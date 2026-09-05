@@ -108,7 +108,7 @@ export default function AdminCorrectionReports() {
                 setSelected(report);
                 setReviewerNote(report.reviewerNote || '');
               }}
-              className="min-h-14 w-full px-2 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              className="min-h-14 w-full px-2 py-3 text-left yr-focus-ring"
             >
               <span className="font-semibold text-gray-900">
                 {report.entitySnapshot.name || report.entitySlug}

@@ -92,7 +92,7 @@ export default function ResearchTeamSection({
                           href={profileUrl}
                           target="_blank"
                           rel={EXTERNAL_LINK_REL}
-                          className="block min-h-11 rounded-sm py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="block min-h-11 rounded-sm py-1 yr-focus-ring"
                           aria-label={`${name}, ${label}. Open official public profile`}
                         >
                           {content}
@@ -117,7 +117,7 @@ export default function ResearchTeamSection({
                 href={sourceUrl}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="font-semibold text-blue-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="font-semibold text-blue-700 underline-offset-4 hover:underline yr-focus-ring"
               >
                 Official roster source
               </a>
