@@ -448,6 +448,54 @@ describe('resolveField name selection prefers branded over synthesized', () => {
     expect(r?.contributingSources).toEqual(['lab-microsite-description-llm']);
   });
 
+  // A microsite "n/a" used to count as the genuine brand to prefer, which filtered
+  // every roster candidate out of the ranked list and left the materialize name
+  // repair nothing to fall through to (#2367).
+  it('never lets placeholder filler win or suppress a real name from another source', () => {
+    const observations = [
+      {
+        field: 'name',
+        value: 'n/a',
+        sourceName: 'lab-microsite-description-llm',
+        confidence: 0.95,
+        observedAt: D('2026-08-23'),
+      },
+      {
+        field: 'name',
+        value: 'Rafferty Duchamp Faculty Research',
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.7,
+        observedAt: D('2026-07-25'),
+      },
+    ];
+
+    expect(resolveField('name', observations, { now: D('2026-08-24') })?.value).toBe(
+      'Rafferty Duchamp Faculty Research',
+    );
+    expect(
+      resolveFieldRanked('name', observations, { now: D('2026-08-24') }).map((r) => r.value),
+    ).toContain('Rafferty Duchamp Faculty Research');
+  });
+
+  // The corpus is never left nameless: with nothing better on offer the filler is
+  // still returned, and the `unusable_name` visibility blocker holds the record.
+  it('keeps placeholder filler when it is the only name on offer', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'n/a',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-23'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('n/a');
+  });
+
   it('demotes a bare person name in favor of a head-noun lab name from the same source', () => {
     const r = resolveField(
       'name',

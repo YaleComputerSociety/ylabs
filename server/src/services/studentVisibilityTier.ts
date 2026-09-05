@@ -627,9 +627,11 @@ export interface ResearchEntityStudentReadyCorrectness {
   // directory / biography / non-owner grant / off-scope) are removed one tier
   // earlier, at `suppressed`.
   notDuplicate: boolean;
-  // (d) The record has a name that identifies something. A placeholder ("n/a",
-  // "unknown") or blank `name` leaves nothing to title the card with, and cannot
-  // be rescued by `displayName`, which is only ever a branded alias of `name`.
+  // (d) The record's `name` identifies something rather than being placeholder
+  // filler ("n/a", "unknown"), which leaves nothing to title the card with and
+  // cannot be rescued by `displayName`, only ever a branded alias of `name`.
+  // Absence is a different failure and is deliberately not claimed here; see
+  // `computeResearchEntityStudentVisibility`.
   hasUsableName: boolean;
 }
 

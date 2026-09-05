@@ -34,7 +34,7 @@ type PersistedEntity = {
 const persisted = () =>
   ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<PersistedEntity>() as Promise<PersistedEntity>;
 
-describe('materializeEntity refuses a name that names something other than the record (#2351)', () => {
+describe('materializeEntity refuses a name that identifies nothing or names something else (#2351/#2367)', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
@@ -150,6 +150,36 @@ describe('materializeEntity refuses a name that names something other than the r
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
 
     expect((await persisted()).name).toBe(OWN_NAME);
+  });
+
+  // Ingest now refuses the emitting source's fresh "n/a", so the already-stored
+  // placeholder observation is never superseded and keeps being re-projected. Only
+  // the materialize pass can retire the stored value (#2367).
+  it('moves a stored placeholder name to the ranked candidate that passes', async () => {
+    await seedPersonScopedEntity({ name: 'n/a' });
+    await seedObservation({ field: 'name', value: 'n/a', confidence: 0.95 });
+    await seedObservation({
+      field: 'name',
+      value: OWN_NAME,
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://economics.example.edu/people',
+      confidence: 0.7,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).name).toBe(OWN_NAME);
+  });
+
+  it('clears a stored placeholder displayName so every surface falls back to name', async () => {
+    await seedPersonScopedEntity({ displayName: 'n/a' });
+    await seedObservation({ field: 'departments', value: ['Economics'] });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const entity = await persisted();
+    expect(entity.displayName ?? '').toBe('');
+    expect(entity.name).toBe(OWN_NAME);
   });
 
   it('judges a replacement candidate against its own provenance, not the refused value provenance', async () => {

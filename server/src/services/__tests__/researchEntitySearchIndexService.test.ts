@@ -36,6 +36,23 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc?.name).toBe('Rafferty Duchamp Faculty Research');
   });
 
+  // `displayName` is searchable, so filler left in the index keyword matches a
+  // record whose served title is its real `name` (#2367).
+  it('drops a placeholder displayName so filler cannot match the record', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-placeholder-alias',
+      slug: 'ysm-faculty-fixture-loyal',
+      name: 'Loyal Lab',
+      displayName: 'n/a',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+
+    expect(doc).not.toHaveProperty('displayName');
+    expect(doc?.name).toBe('Loyal Lab');
+  });
+
   it('keeps an organization-shaped record own organization displayName in the index', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-center',

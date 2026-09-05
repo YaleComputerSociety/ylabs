@@ -31,7 +31,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     ['content about a different entity', 'entityContentMatchesCard'],
     ['wrong or missing lead', 'rightLeadAttached'],
     ['duplicate/suppressed shell', 'notDuplicate'],
-    ['placeholder or blank name', 'hasUsableName'],
+    ['placeholder name', 'hasUsableName'],
   ] as const)('is blocked when %s (%s is false)', (_label, field) => {
     expect(researchEntityMeetsStudentReadyDefinition({ ...correct, [field]: false })).toBe(false);
   });

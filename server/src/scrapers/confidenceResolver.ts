@@ -20,6 +20,7 @@ import {
   scoreResearchHomeDescriptionCandidate,
 } from '../utils/researchHomeDescriptionSelection';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
+import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 
 export interface ResolverObservation {
   field: string;
@@ -349,13 +350,20 @@ function preferGenuineEntityNameGroups<T extends { value: unknown; sources: Set<
   // a "<PI> Lab" grant name is kept and a non-microsite affiliation name never
   // wins by default. A bare person name is never a good entity name, so it is
   // demoted whenever a head-noun alternative exists, regardless of source.
+  // Placeholder filler is never a genuine brand, so it neither wins nor suppresses
+  // the real names other sources offer. Without this a microsite "n/a" counted as
+  // the brand to prefer and every roster candidate was filtered out of the ranked
+  // list, leaving nothing for the materialize name repair to fall through to, so a
+  // stored placeholder could only be corrected by hand (#2367).
   const micrositeGenuineExists = groups.some(
     (group) =>
       hasMicrositeSource(group) &&
       !isBarePersonName(group.value) &&
-      !isFacultyResearchName(group.value),
+      !isFacultyResearchName(group.value) &&
+      !isPlaceholderEntityName(group.value),
   );
   const isLowQualityNameGroup = (group: T): boolean => {
+    if (isPlaceholderEntityName(group.value)) return true;
     if (
       micrositeGenuineExists &&
       (isSynthesizedNameGroup(group) || isFacultyResearchName(group.value))

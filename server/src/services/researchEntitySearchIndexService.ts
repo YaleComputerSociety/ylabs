@@ -12,7 +12,10 @@ import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
 import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEntityDescriptionText';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import { personScopedResearchEntityNameNamesSomethingElse } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  isPlaceholderEntityName,
+  personScopedResearchEntityNameNamesSomethingElse,
+} from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
   RESEARCH_ENTITY_MEILI_SYNONYMS,
@@ -378,10 +381,12 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 
   // Browse and search read the indexed `displayName` for the card title, so the
-  // index has to drop an umbrella-organization or foreign-lab graft on the same
-  // terms the detail-page DTO does; otherwise the retired name keeps titling the
-  // card (#2351).
+  // index has to drop placeholder filler or an umbrella-organization / foreign-lab
+  // graft on the same terms the detail-page DTO does; otherwise the retired name
+  // keeps titling the card, and filler left in `searchableAttributes` keyword
+  // matches a record whose served title is its real `name` (#2351/#2367).
   if (
+    isPlaceholderEntityName(out.displayName) ||
     personScopedResearchEntityNameNamesSomethingElse({
       candidateName: out.displayName,
       entityType: out.entityType,
