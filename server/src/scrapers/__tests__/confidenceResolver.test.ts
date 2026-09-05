@@ -1024,3 +1024,131 @@ describe('person-bio demotion for fullDescription', () => {
     expect(resolved?.value).toBe(BIO);
   });
 });
+
+describe('undergrad-access lane demotion for fullDescription', () => {
+  // Shapes taken from Development rows this demotion was measured on:
+  // `center-ycga` and `yse-green-chemistry` serve the first while the second
+  // sits unadopted in an active observation (#2266).
+  const ACCESS_SUMMARY =
+    'The lab focuses on genomic technology, offering sequencing and analysis services to Yale researchers across a range of projects.';
+  const MICROSITE_RESEARCH =
+    'The center develops and applies high-throughput sequencing technology for human genetics, spanning whole-genome and exome sequencing, single-cell transcriptomics, and long-read assembly. Its staff collaborate with investigators on experimental design, library preparation, and downstream statistical analysis, and it maintains shared instrumentation for the wider Yale research community.';
+
+  const obs = (value: string, sourceName: string, confidence: number, observedAt = D('2026-02-01')) => ({
+    field: 'fullDescription',
+    value,
+    sourceName,
+    confidence,
+    observedAt,
+  });
+
+  it('lets a richer microsite description displace a fresher undergrad-access summary', () => {
+    // The access lane re-emits weekly at 0.5, so recency alone keeps a 128-char
+    // access blurb ahead of the lab's own 383-char research description.
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(MICROSITE_RESEARCH);
+    expect(resolved?.contributingSources).toEqual(['lab-microsite-description-llm']);
+  });
+
+  it('ranks the access summary last but keeps it reachable as the materializer fallback', () => {
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(ranked.map((entry) => entry.value)).toEqual([MICROSITE_RESEARCH, ACCESS_SUMMARY]);
+  });
+
+  it('still serves a sole undergrad-access summary rather than blanking the description', () => {
+    const resolved = resolveField(
+      'fullDescription',
+      [obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55)],
+      { now: D('2026-02-08') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('keeps the access summary when the richer alternative is a career biography', () => {
+    // The regression this demotion invites: on 52 of the thin served rows the
+    // richest available value is a resume, and length alone would adopt it.
+    const CAREER_BIO =
+      'Godfrey Pearlson received his medical degree from the University of Edinburgh and completed his residency in psychiatry at Johns Hopkins, where he joined the faculty in 1980 before coming to Yale. He is the recipient of numerous awards for his work in neuroimaging and has served as director of several research centers.';
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(CAREER_BIO, 'ysm-faculty-directory', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('keeps the access summary when the richer alternative is an escaped-HTML citation dump', () => {
+    // A "Selected Publications" widget reaches fullDescriptionQuality with zero
+    // flags, because the interposed `</span>` breaks the citation-author-list
+    // run the detector matches on (`faculty-research-area-chao-ma`).
+    const CITATION_DUMP =
+      '<span data-id="165184">Djebra Y</span>, <span data-id="165327">Liu X</span>, <span data-id="165133">Marin T</span>, <span data-id="168637">Dhaynaut M</span>, <span data-id="165201">Petibon Y</span>, <span data-id="165399">Fakhri G</span>, <span data-id="165402">Ma C</span>. Joint reconstruction and motion estimation in respiratory-gated positron emission tomography using a matrix-free approach.';
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(CITATION_DUMP, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('keeps the access summary when the alternative is not materially richer', () => {
+    const SLIGHTLY_LONGER = `${ACCESS_SUMMARY} It also runs a seminar series.`;
+    const resolved = resolveField(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(SLIGHTLY_LONGER, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('does not demote an access-lane value a human also recorded', () => {
+    // The demotion only applies to a group sourced solely from the access lane,
+    // so a value co-signed by a manual edit keeps the curated decay exemption
+    // and stays ahead of a richer scraped description.
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+        obs(ACCESS_SUMMARY, 'manual-admin-edit', 0.55, D('2025-06-01')),
+        obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(ranked[0]?.value).toBe(ACCESS_SUMMARY);
+  });
+
+  it('leaves other fields untouched by the access-lane demotion', () => {
+    const resolved = resolveField(
+      'shortDescription',
+      [
+        { ...obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')), field: 'shortDescription' },
+        { ...obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')), field: 'shortDescription' },
+      ],
+      { now: D('2026-02-25') },
+    );
+    expect(resolved?.value).toBe(ACCESS_SUMMARY);
+  });
+});
