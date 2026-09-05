@@ -6,7 +6,10 @@ import {
   parseRetireBibliographicMirrorArgs,
   retireBibliographicMirror,
 } from '../retireBibliographicMirror';
-import { assertRetireBibliographicMirrorInvariants } from '../retireBibliographicMirrorCore';
+import {
+  RETIRED_COLLECTIONS,
+  assertRetireBibliographicMirrorInvariants,
+} from '../retireBibliographicMirrorCore';
 
 describe('retireBibliographicMirror CLI helpers', () => {
   it('defaults to a dry-run and parses apply safety flags', () => {
@@ -48,33 +51,41 @@ describe('retireBibliographicMirror CLI helpers', () => {
 });
 
 describe('assertRetireBibliographicMirrorInvariants', () => {
-  it('rejects a changed OFFICIAL_PROFILE link count', () => {
+  const allEmpty = () =>
+    Object.fromEntries(RETIRED_COLLECTIONS.map((name) => [name, 0])) as Record<string, number>;
+
+  it('rejects surviving rows in any retired collection', () => {
     expect(() =>
       assertRetireBibliographicMirrorInvariants({
-        officialProfileLinksBefore: 3,
-        officialProfileLinksAfter: 2,
-        nonOfficialLinksAfter: 0,
+        remainingByCollection: { ...allEmpty(), research_scholarly_links: 757 },
       }),
-    ).toThrow(/OFFICIAL_PROFILE scholarly links changed/);
+    ).toThrow(/rows remain after apply \(research_scholarly_links=757\)/);
   });
 
-  it('rejects surviving non-official links', () => {
+  it('names every collection that still has rows', () => {
     expect(() =>
       assertRetireBibliographicMirrorInvariants({
-        officialProfileLinksBefore: 3,
-        officialProfileLinksAfter: 3,
-        nonOfficialLinksAfter: 1,
+        remainingByCollection: {
+          ...allEmpty(),
+          research_scholarly_links: 757,
+          research_scholarly_attributions: 23,
+        },
       }),
-    ).toThrow(/non-OFFICIAL_PROFILE scholarly links remain/);
+    ).toThrow(/research_scholarly_links=757, research_scholarly_attributions=23/);
   });
 
-  it('accepts an unchanged official count with zero survivors', () => {
+  it('rejects a report that omits a retired collection instead of passing vacuously', () => {
+    const partial = allEmpty();
+    delete partial.research_scholarly_attributions;
+
     expect(() =>
-      assertRetireBibliographicMirrorInvariants({
-        officialProfileLinksBefore: 3,
-        officialProfileLinksAfter: 3,
-        nonOfficialLinksAfter: 0,
-      }),
+      assertRetireBibliographicMirrorInvariants({ remainingByCollection: partial }),
+    ).toThrow(/no post-apply count reported for research_scholarly_attributions/);
+  });
+
+  it('accepts every retired collection reporting zero', () => {
+    expect(() =>
+      assertRetireBibliographicMirrorInvariants({ remainingByCollection: allEmpty() }),
     ).not.toThrow();
   });
 });
@@ -156,9 +167,12 @@ describe('retireBibliographicMirror with MongoDB', () => {
     const result = await retireBibliographicMirror({ apply: false });
 
     expect(result.mode).toBe('dry-run');
-    expect(result.before.papers).toBe(2);
-    expect(result.before.officialProfileScholarlyLinks).toBe(1);
-    expect(result.before.nonOfficialScholarlyLinks).toBe(2);
+    expect(result.before).toEqual({
+      papers: 2,
+      paper_authors: 1,
+      research_scholarly_links: 3,
+      research_scholarly_attributions: 3,
+    });
 
     await expect(db.collection('papers').countDocuments()).resolves.toBe(2);
     await expect(db.collection('paper_authors').countDocuments()).resolves.toBe(1);
@@ -170,7 +184,7 @@ describe('retireBibliographicMirror with MongoDB', () => {
     expect(user?.hIndex).toBe(7);
   });
 
-  it('retires the mirror while keeping OFFICIAL_PROFILE activity intact', async () => {
+  it('drops the whole mirror, including OFFICIAL_PROFILE rows', async () => {
     const db = mongoose.connection.db!;
     const result = await retireBibliographicMirror({ apply: true });
 
@@ -178,23 +192,13 @@ describe('retireBibliographicMirror with MongoDB', () => {
     expect(result.droppedCollections).toEqual([
       { name: 'papers', existed: true, droppedCount: 2 },
       { name: 'paper_authors', existed: true, droppedCount: 1 },
+      { name: 'research_scholarly_links', existed: true, droppedCount: 3 },
+      { name: 'research_scholarly_attributions', existed: true, droppedCount: 3 },
     ]);
-    expect(result.deletedNonOfficialScholarlyLinks).toBe(2);
-    expect(result.deletedScholarlyAttributions).toBe(2);
 
-    await expect(db.listCollections({ name: 'papers' }).hasNext()).resolves.toBe(false);
-    await expect(db.listCollections({ name: 'paper_authors' }).hasNext()).resolves.toBe(false);
-
-    const survivingLinks = await db.collection('research_scholarly_links').find({}).toArray();
-    expect(survivingLinks).toHaveLength(1);
-    expect(String(survivingLinks[0]._id)).toBe(String(officialLinkId));
-
-    const survivingAttributions = await db
-      .collection('research_scholarly_attributions')
-      .find({})
-      .toArray();
-    expect(survivingAttributions).toHaveLength(1);
-    expect(String(survivingAttributions[0].scholarlyLinkId)).toBe(String(officialLinkId));
+    for (const name of RETIRED_COLLECTIONS) {
+      await expect(db.listCollections({ name }).hasNext()).resolves.toBe(false);
+    }
 
     const user = await db.collection('users').findOne({ netid: 'synthetic.person' });
     expect(user?.publications).toBeUndefined();
@@ -210,9 +214,11 @@ describe('retireBibliographicMirror with MongoDB', () => {
     expect(entity?.lastPaperAtCache).toBeUndefined();
     expect(entity?.name).toBe('Synthetic Home');
 
-    expect(result.after.officialProfileScholarlyLinks).toBe(
-      result.before.officialProfileScholarlyLinks,
-    );
-    expect(result.after.nonOfficialScholarlyLinks).toBe(0);
+    expect(result.after).toEqual({
+      papers: 0,
+      paper_authors: 0,
+      research_scholarly_links: 0,
+      research_scholarly_attributions: 0,
+    });
   });
 });
