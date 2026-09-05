@@ -151,9 +151,9 @@ export function getItemSubtitleColor(item: BrowsableItem): string {
   const { deadline } = item.data;
   if (!deadline) return 'text-gray-500';
   const d = new Date(deadline);
-  if (d < new Date()) return 'text-red-500';
+  if (d < new Date()) return 'text-red-700';
   const daysUntil = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  if (daysUntil <= 14) return 'text-amber-600 font-medium';
+  if (daysUntil <= 14) return 'text-amber-700 font-medium';
   return 'text-gray-500';
 }
 

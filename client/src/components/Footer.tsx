@@ -16,7 +16,7 @@ const Footer = () => {
             href="https://www.hudsonrivertrading.com/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center"
+            className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md"
           >
             <img
               src="/assets/logos/HudsonRiverTrading.png"
@@ -30,7 +30,7 @@ const Footer = () => {
             href="https://www.minimax.com/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center"
+            className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md"
           >
             <img
               src="/assets/logos/MiniMax.png"

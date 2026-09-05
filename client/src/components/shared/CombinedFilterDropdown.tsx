@@ -244,7 +244,7 @@ const CombinedFilterDropdown = ({
                 value={getSearch(activeTab.key)}
                 onChange={(e) => setSearch(activeTab.key, e.target.value)}
                 placeholder={`Search ${activeTab.label.toLowerCase()}...`}
-                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-md text-sm mb-3 yr-focus-ring focus:border-transparent"
+                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-md text-base mb-3 yr-focus-ring focus:border-transparent"
               />
             )}
 
