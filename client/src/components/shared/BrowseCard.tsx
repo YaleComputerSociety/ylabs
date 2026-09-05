@@ -93,7 +93,7 @@ const BrowseCard = React.memo(
                   e.stopPropagation();
                   onAdminEdit();
                 }}
-                className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-[var(--yr-panel-muted)] transition-colors"
+                className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-brand-navy hover:bg-[var(--yr-panel-muted)] transition-colors"
                 aria-label="Admin edit"
                 title={`Edit ${item.type} (Admin)`}
               >
@@ -142,7 +142,7 @@ const BrowseCard = React.memo(
               <button
                 type="button"
                 onClick={handleClick}
-                className="yr-focus-ring line-clamp-2 text-left hover:text-blue-700 focus-visible:rounded-sm"
+                className="yr-focus-ring line-clamp-2 text-left hover:text-brand-navy focus-visible:rounded-sm"
                 aria-label={`View details for ${item.data.title}`}
               >
                 {item.data.title}
@@ -163,7 +163,7 @@ const BrowseCard = React.memo(
 
             <div className="flex-1" />
 
-            <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--yr-line)] pt-3">
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
               {tags.length > 0 ? (
                 <div className="flex min-w-0 flex-wrap gap-1">
                   {tags.slice(0, isCompact ? tags.length : FELLOWSHIP_TAG_CAP).map((tag) => (
@@ -186,7 +186,7 @@ const BrowseCard = React.memo(
               <button
                 type="button"
                 onClick={handleClick}
-                className="yr-focus-ring inline-flex flex-shrink-0 items-center gap-1 rounded-sm text-sm font-semibold text-[var(--yr-blue)] transition-colors hover:text-blue-800"
+                className="yr-focus-ring inline-flex flex-shrink-0 items-center gap-1 rounded-sm text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
               >
                 View details
                 <svg

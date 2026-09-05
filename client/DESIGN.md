@@ -48,6 +48,23 @@ Rules:
 - Those render a Material blue that is not the Yale brand color and is the source of the color drift this system exists to prevent.
 - Links and active navigation use `brand`; inactive navigation uses `ink`.
 - Gold is a sparing accent for secondary emphasis, never a second primary.
+- A brand-tinted border uses `line-brand` (`--yr-blue-border`), the same tint `.yr-pill-blue` draws.
+
+### Categorical, state, and chart-series colors
+
+The rule above is scoped to **brand color**.
+Three cases are not brand color, and for them Tailwind's generic hues are the sanctioned choice:
+
+- A **categorical identity** in a multi-hue palette, where the hue distinguishes one category from its siblings.
+- A **position in an ordered state scale**, where the sequence of hues carries the meaning.
+- A **chart series color**, where adjacent series must be distinguishable from each other.
+
+Do not convert a single hue out of one of these scales to a brand token.
+The scale reads as a set only because its members are siblings, so replacing one member with the brand accent breaks the progression and collides with the brand meaning elsewhere on the page.
+Change such a scale as a whole or not at all.
+
+These files hold deliberate scales rather than brand-color drift:
+`src/providers/ConfigContextProvider.tsx` (ten-hue category palette and a department-index map), `src/utils/researchPlanStages.ts` (SAVED through APPLIED), `src/utils/fellowshipCycle.ts`, `src/types/browsable.ts`, `src/pages/analytics.tsx`, `src/components/analytics/AnalyticsSupportingDetail.tsx`, `src/components/analytics/analyticsPresentation.tsx`, and `src/components/admin/AdminOperatorBoard.tsx`.
 
 ## 3. Typography Rules
 

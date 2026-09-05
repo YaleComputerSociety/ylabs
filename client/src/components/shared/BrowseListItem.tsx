@@ -65,7 +65,7 @@ const BrowseListItem = React.memo(
 
     return (
       <div
-        className={`group bg-[var(--yr-panel)] rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-[var(--yr-line)]'} hover:border-blue-400 hover:shadow-sm transition-all duration-200 cursor-pointer`}
+        className={`group bg-panel rounded-md border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-sm transition-all duration-200 cursor-pointer`}
         onClick={item.type === 'fellowship' ? undefined : handleClick}
       >
         <div className="p-4 grid grid-cols-12 gap-4 items-start">
@@ -78,7 +78,7 @@ const BrowseListItem = React.memo(
                 <button
                   type="button"
                   onClick={handleClick}
-                  className="yr-focus-ring block max-w-full truncate text-left hover:text-blue-700 focus-visible:rounded-sm"
+                  className="yr-focus-ring block max-w-full truncate text-left hover:text-brand-navy focus-visible:rounded-sm"
                   aria-label={`View details for ${item.data.title}`}
                 >
                   {item.data.title}
@@ -133,7 +133,7 @@ const BrowseListItem = React.memo(
                     e.stopPropagation();
                     onAdminEdit();
                   }}
-                  className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-[var(--yr-panel-muted)] transition-colors"
+                  className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-brand-navy hover:bg-[var(--yr-panel-muted)] transition-colors"
                   title="Edit listing (Admin)"
                   aria-label="Admin edit"
                 >

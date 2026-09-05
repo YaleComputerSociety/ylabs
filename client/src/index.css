@@ -20,6 +20,7 @@
   --yr-panel: #ffffff;
   --yr-panel-muted: #f7f3ec;
   --yr-blue-soft: #e6edf5;
+  --yr-blue-border: color-mix(in srgb, #00356b 22%, white);
   --yr-gold-soft: #fff7e6;
   --yr-green: #23705b;
   --yr-green-soft: #e5f4ee;
@@ -170,7 +171,7 @@ code {
   }
 
   .yr-pill-blue {
-    border-color: color-mix(in srgb, var(--yr-blue) 22%, white);
+    border-color: var(--yr-blue-border);
     background: var(--yr-blue-soft);
     color: var(--yr-blue);
   }

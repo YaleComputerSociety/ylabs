@@ -141,7 +141,7 @@ const CombinedFilterDropdown = ({
         </svg>
         <span>Filters</span>
         {totalFilters > 0 && (
-          <span className="ml-2 bg-blue-500 text-white text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+          <span className="ml-2 bg-brand text-white text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
             {totalFilters}
           </span>
         )}
@@ -205,7 +205,7 @@ const CombinedFilterDropdown = ({
                 onClick={() => setActiveTabKey(tab.key)}
                 className={`relative flex min-h-[44px] flex-1 items-center justify-center px-2 py-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
                   activeTabKey === tab.key
-                    ? 'text-blue-600 bg-[var(--yr-panel)] border-b-2 border-blue-500 -mb-px'
+                    ? 'text-brand bg-panel border-b-2 border-brand -mb-px'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-[var(--yr-panel-muted)]'
                 }`}
               >
@@ -214,7 +214,7 @@ const CombinedFilterDropdown = ({
                   <span
                     className={`ml-1 text-xs px-1.5 py-0.5 rounded-full ${
                       activeTabKey === tab.key
-                        ? 'bg-[var(--yr-blue-soft)] text-blue-700'
+                        ? 'bg-brand-soft text-brand'
                         : 'bg-[var(--yr-panel-muted)] text-gray-600'
                     }`}
                   >
@@ -251,7 +251,7 @@ const CombinedFilterDropdown = ({
             {activeTab.selected.length > 0 && activeTab.searchable && (
               <button
                 onClick={() => activeTab.setSelected([])}
-                className="text-xs text-blue-600 hover:text-blue-800 mb-2 font-medium"
+                className="text-xs text-brand hover:text-brand-navy mb-2 font-medium"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 Clear selected ({activeTab.selected.length})
@@ -270,7 +270,7 @@ const CombinedFilterDropdown = ({
                     key={option}
                     className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors yr-focus-ring-inset ${
                       isSelected
-                        ? 'bg-[var(--yr-blue-soft)] text-blue-900'
+                        ? 'bg-brand-soft text-brand'
                         : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
                     }`}
                   >
@@ -286,9 +286,7 @@ const CombinedFilterDropdown = ({
                     />
                     <span
                       className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                        isSelected
-                          ? 'bg-blue-500 border-blue-500'
-                          : 'border-[var(--yr-line-strong)]'
+                        isSelected ? 'bg-brand border-brand' : 'border-[var(--yr-line-strong)]'
                       } yr-focus-ring-peer`}
                       aria-hidden="true"
                     >

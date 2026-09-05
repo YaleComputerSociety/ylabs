@@ -160,7 +160,7 @@ const ResearchSortDropdown = ({
                 {sortBy === option.value && (
                   <svg
                     aria-hidden="true"
-                    className="h-4 w-4 text-blue-500"
+                    className="h-4 w-4 text-brand"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
