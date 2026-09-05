@@ -1938,7 +1938,7 @@ describe('DepartmentRosterScraper.run', () => {
   // declares the DEAN; #2385 attributed four departmental sites to one dean that
   // way. `title` is the observable enrichment field here: when the guard refuses,
   // nothing from the page is merged, but the citation the roster asserted is kept.
-  it('refuses a foreign page\'s enrichment and still keeps the citation', async () => {
+  it("refuses a foreign page's enrichment and still keeps the citation", async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       { name: 'Robin Roster', profileUrl: 'https://medicine.yale.edu/about/' },
     ]);
@@ -3789,6 +3789,30 @@ describe('profileBelongsToRosterPerson (#2437)', () => {
     ).toBe(false);
   });
 
+  // A colleague who merely shares a GIVEN name is the same wrong-subject merge as
+  // the dean page: the roster row's own surname has to be on the page.
+  it('refuses a page whose declared name shares only a given name', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Nancy Ruddle',
+        profileUrl: 'https://medicine.yale.edu/about/',
+        profileDeclaredName: 'Nancy Brown',
+      }),
+    ).toBe(false);
+  });
+
+  // An accent-rendering difference between the roster row and the profile page is
+  // still the same person, so folding keeps legitimate enrichment.
+  it('accepts a declared name that differs from the roster row only by accents', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Jose Martinez',
+        profileUrl: 'https://medicine.yale.edu/profile/jm88/',
+        profileDeclaredName: 'José Martínez',
+      }),
+    ).toBe(true);
+  });
+
   // The namePlaceholder path is the ONE case where a wrong fetch RENAMES the row
   // rather than only gap-filling it, because mergeProfileEnrichment adopts the
   // fetched name when the roster row is a slug placeholder. A slug placeholder
@@ -3868,6 +3892,35 @@ describe('profileBelongsToRosterPerson (#2437)', () => {
         }),
       ).toBe(false);
     }
+  });
+
+  // A department or section landing page names nobody and is not person-scoped, so
+  // it cannot be enumerated as a section word - the URL shape has to carry it.
+  it('refuses a department landing page whose leaf is not a known section word', () => {
+    for (const landing of [
+      'https://medicine.yale.edu/psychiatry/',
+      'https://medicine.yale.edu/specialties/vascular/',
+      'https://medicine.yale.edu/education/',
+    ]) {
+      expect(
+        profileBelongsToRosterPerson({
+          rosterName: 'Robin Roster',
+          profileUrl: landing,
+          profileDeclaredName: undefined,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  // A personal Yale site is named by its host label, not its path.
+  it('accepts a personal site whose host label names the roster person', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Paul Konezny',
+        profileUrl: 'https://konezny.sites.yale.edu/',
+        profileDeclaredName: undefined,
+      }),
+    ).toBe(true);
   });
 
   it('refuses when the roster row carries no usable identity tokens', () => {

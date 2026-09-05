@@ -2800,17 +2800,48 @@ const NON_PROFILE_SECTION_LEAF_TOKENS = new Set([
   'overview',
 ]);
 
+// `personIdentityTokens` splits on non-alphanumerics without folding accents, so
+// "José Martínez" tokenizes as ['jos','mart','nez'] and shares nothing with a
+// roster row spelled "Jose Martinez". Folding first (the same NFKD form
+// `scrapers/utils/piNameMatch.ts` uses) keeps an accent-rendering difference
+// between the roster and the profile page from reading as a different person.
+function identityTokens(value: unknown): string[] {
+  if (typeof value !== 'string') return personIdentityTokens(value);
+  return personIdentityTokens(value.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''));
+}
+
 function profileUrlLeafTokens(profileUrl: string): string[] {
   try {
-    const segments = new URL(profileUrl).pathname
-      .replace(/\/+$/, '')
-      .split('/')
-      .filter(Boolean);
+    const segments = new URL(profileUrl).pathname.replace(/\/+$/, '').split('/').filter(Boolean);
     const leaf = segments[segments.length - 1] || '';
-    return personIdentityTokens(leaf.replace(/[-_]+/g, ' '));
+    return identityTokens(leaf.replace(/[-_]+/g, ' '));
   } catch {
     return [];
   }
+}
+
+function profileUrlHostLabelTokens(profileUrl: string): string[] {
+  try {
+    const label = new URL(profileUrl).hostname.split('.')[0] || '';
+    return identityTokens(label.replace(/[-_]+/g, ' '));
+  } catch {
+    return [];
+  }
+}
+
+const surnameToken = (tokens: string[]): string => tokens.at(-1) || '';
+
+// A single shared token is a first-name collision away from another real person:
+// roster "Nancy Ruddle" and the dean page's "Nancy Brown" share `nancy`. The
+// surname is the discriminating token, so one name's surname must appear among
+// the other's tokens. Checking both directions absorbs a "Surname, Given" page
+// title and a stray trailing token the roster row carries, without letting a
+// shared given name alone through (#468 is the same rule for lead profiles).
+function namesShareSurname(rosterTokens: string[], otherTokens: string[]): boolean {
+  return (
+    otherTokens.includes(surnameToken(rosterTokens)) ||
+    rosterTokens.includes(surnameToken(otherTokens))
+  );
 }
 
 /**
@@ -2824,32 +2855,42 @@ function profileUrlLeafTokens(profileUrl: string): string[] {
  * "this person's profile" from "some other real Yale person's page", so a
  * surname shared with the roster row is required before anything is merged.
  *
- * The URL leaf is a fallback rather than the primary signal: a correct profile
- * usually carries the person's name in its slug, but a numeric or opaque slug is
- * common enough that refusing on it alone would drop good enrichment.
+ * The URL is a fallback rather than the primary signal: a correct profile usually
+ * carries the person's name in its slug or host label, but a numeric or opaque
+ * slug is common enough that refusing on it alone would drop good enrichment.
  */
 export function profileBelongsToRosterPerson(args: {
   rosterName: unknown;
   profileUrl: string;
   profileDeclaredName: unknown;
 }): boolean {
-  const rosterTokens = personIdentityTokens(args.rosterName);
+  const rosterTokens = identityTokens(args.rosterName);
   if (rosterTokens.length === 0) return false;
-  const declaredTokens = personIdentityTokens(args.profileDeclaredName);
-  if (declaredTokens.length > 0) {
-    return declaredTokens.some((token) => rosterTokens.includes(token));
-  }
+  const declaredTokens = identityTokens(args.profileDeclaredName);
+  if (declaredTokens.length > 0) return namesShareSurname(rosterTokens, declaredTokens);
+
+  const namesRosterPerson = (tokens: string[]): boolean =>
+    tokens.some((token) => rosterTokens.includes(token));
   const leafTokens = profileUrlLeafTokens(args.profileUrl);
-  if (leafTokens.some((token) => rosterTokens.includes(token))) return true;
-  // With no declared name, the leaf is the only signal, and an OPAQUE leaf is
-  // absence of evidence rather than evidence of another subject: on Development
-  // 22 of 3,804 official profile links are netid or concatenated-surname slugs
-  // (`/profile/pf93/`, `/profile/maria-rodriguezmartinez/`) that belong to
-  // exactly the person named. Refusing those would drop good enrichment for no
-  // safety gain. A SECTION leaf is different - it is positive evidence the page
-  // is not one person's profile at all, which is how the dean page was read back
-  // as four departments' lead (#2385).
-  return !leafTokens.some((token) => NON_PROFILE_SECTION_LEAF_TOKENS.has(token));
+  if (namesRosterPerson(leafTokens)) return true;
+  // A personal site is named by its host label rather than its path, so
+  // `konezny.sites.yale.edu/` names its person even though its leaf is empty.
+  if (namesRosterPerson(profileUrlHostLabelTokens(args.profileUrl))) return true;
+  if (leafTokens.some((token) => NON_PROFILE_SECTION_LEAF_TOKENS.has(token))) return false;
+  // With no declared name and no name in the URL, the page has named nobody, so
+  // the only remaining evidence is whether the URL is person-scoped at all. An
+  // OPAQUE leaf under a person-profile path is absence of evidence rather than
+  // evidence of another subject: on Development 22 of 3,804 official profile
+  // links are netid or concatenated-surname slugs (`/profile/pf93/`,
+  // `/profile/maria-rodriguezmartinez/`) that belong to exactly the person
+  // named, and refusing those would drop good enrichment for no safety gain. A
+  // section or department landing page (`/about/`, `/psychiatry/`) is different:
+  // it is not one person's page at all, which is how the dean page was read back
+  // as four departments' lead (#2385). The section-leaf list cannot enumerate
+  // Yale's section words, so the shape requirement carries the refusal and the
+  // list only adds the section pages that do sit under a person-profile path
+  // (`/faculty/leadership/`).
+  return isPersonProfileOrDirectoryUrl(args.profileUrl);
 }
 
 async function enrichEntryFromOfficialProfile(
@@ -2877,7 +2918,9 @@ async function enrichEntryFromOfficialProfile(
       // The citation is kept: it is what the roster asserted and is separately
       // verifiable. Only the enrichment is dropped, because that is what would
       // carry another person's name, title, email, bio and research topics.
-      log(`[profile] refused enrichment, cited profile names someone else`);
+      log(
+        `[profile] refused enrichment, cited profile names someone else: ${sanitizeLogValue(entry.profileUrl)}`,
+      );
       return entry;
     }
     return mergeProfileEnrichment(entry, enrichment);

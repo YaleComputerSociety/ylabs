@@ -24,7 +24,9 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 A host-level allowance is not enough: `sameOrSubdomain(host, 'yale.edu')` admits `medicine.yale.edu/about/`, which declares the dean, and #2385 attributed four departmental sites to one dean that way.
 The check is whether the fetched page belongs to the subject the row is about, not whether a page was found - on a roster both the shared roster page and the chair's profile are "found".
 `dept-faculty-roster` uses `profileBelongsToRosterPerson`: require a shared surname token with the page's declared name, and on a mismatch **keep the citation and drop only the enrichment**, because the citation is separately verifiable while the enrichment carries the wrong-person payload (name for placeholder rows, plus gap-filled title, email, bio and `researchAreas`).
-Treat an opaque URL leaf (`/profile/pf93/`) as absence of evidence rather than evidence of another subject; only a section leaf (`about`, `welcome`, `leadership`) is positive evidence the page is not one person's profile.
+A shared given name is not enough - "Nancy Ruddle" and the dean's "Nancy Brown" share `nancy` - so anchor identity on the surname token, and fold accents before tokenizing so an accent-rendering difference between roster and page does not read as a different person.
+When the page declares no name at all, require positive evidence instead of enumerating section words: the URL's own slug or host label names the person (`/people/robin-roster`, `konezny.sites.yale.edu`), or the URL has the person-scoped shape `isPersonProfileOrDirectoryUrl` accepts.
+That keeps an opaque leaf (`/profile/pf93/`) as absence of evidence rather than evidence of another subject, while refusing a department landing page (`/psychiatry/`) that no denylist of section words could enumerate.
 
 ## Infrastructure files
 
