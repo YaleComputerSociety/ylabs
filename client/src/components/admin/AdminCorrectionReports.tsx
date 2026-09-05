@@ -144,7 +144,7 @@ export default function AdminCorrectionReports() {
               href={`/research/${safeRouteSegment(selected.entitySlug)}`}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 inline-block text-sm text-blue-700 underline"
+              className="mt-1 inline-block text-sm text-brand underline"
             >
               Open page
             </a>

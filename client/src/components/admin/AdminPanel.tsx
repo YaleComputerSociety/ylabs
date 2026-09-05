@@ -47,7 +47,7 @@ const AdminPanel = () => {
               onClick={() => setActiveTab(tab)}
               className={`min-h-[44px] px-5 py-3 text-sm font-semibold border-b-2 transition-colors yr-focus-ring ${
                 activeTab === tab
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-brand text-brand'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-[var(--yr-line-strong)]'
               }`}
             >

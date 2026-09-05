@@ -327,7 +327,7 @@ const AdminFellowshipsTable = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => dispatch({ type: 'OPEN_EDIT', item: fellowship })}
-                        className="text-blue-600 hover:text-blue-800"
+                        className="text-brand hover:text-brand-navy"
                       >
                         Edit
                       </button>
@@ -421,13 +421,13 @@ const ArrayFieldEditor = ({
         {values.map((value) => (
           <span
             key={value}
-            className="inline-flex items-center bg-[var(--yr-blue-soft)] text-blue-800 text-sm px-2 py-0.5 rounded border border-blue-200"
+            className="inline-flex items-center bg-brand-soft text-brand text-sm px-2 py-0.5 rounded border border-line-brand"
           >
             {value}
             <button
               type="button"
               onClick={() => handleRemove(value)}
-              className="ml-1.5 text-blue-400 hover:text-blue-600"
+              className="ml-1.5 text-muted hover:text-brand"
             >
               &times;
             </button>
@@ -492,14 +492,14 @@ const LinksEditor = ({
           {links.map((link, i) => (
             <div
               key={i}
-              className="flex items-center gap-2 bg-[var(--yr-blue-soft)] border border-blue-200 rounded px-2 py-1 text-sm"
+              className="flex items-center gap-2 bg-brand-soft border border-line-brand rounded px-2 py-1 text-sm"
             >
-              <span className="font-medium text-blue-800 truncate">{link.label}</span>
-              <span className="text-blue-400 truncate flex-shrink min-w-0">{link.url}</span>
+              <span className="font-medium text-brand truncate">{link.label}</span>
+              <span className="text-muted truncate flex-shrink min-w-0">{link.url}</span>
               <button
                 type="button"
                 onClick={() => handleRemove(i)}
-                className="ml-auto text-blue-400 hover:text-blue-600 flex-shrink-0"
+                className="ml-auto text-muted hover:text-brand flex-shrink-0"
               >
                 &times;
               </button>
@@ -865,7 +865,7 @@ const FellowshipEditModal = ({
             <div
               className={`mt-3 rounded-lg border p-3 text-sm ${
                 statusPreview.isCurrentlyRelevant
-                  ? 'bg-blue-50 border-blue-100 text-blue-800'
+                  ? 'bg-brand-soft border-line-brand text-brand'
                   : 'bg-red-50 border-red-100 text-red-700'
               }`}
             >
