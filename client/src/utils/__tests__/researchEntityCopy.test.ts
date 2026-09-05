@@ -61,14 +61,58 @@ describe('researchEntityCopy', () => {
     ).toBe('Claudia Valeggia');
   });
 
-  it('prefers displayName and keeps natural lab titles for faculty research entities', () => {
+  it('keeps a natural lab title when the entity name corroborates the lab', () => {
+    expect(
+      researchEntityTitle({
+        displayName: 'Caccone Lab',
+        name: 'Caccone Lab',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('Caccone Lab');
+    expect(
+      researchEntityTitle({
+        displayName: 'The PECIL Lab',
+        name: 'The PECIL Laboratory',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('The PECIL Lab');
+  });
+
+  it('falls back to name when displayName grafts a lab the name does not claim', () => {
     expect(
       researchEntityTitle({
         displayName: 'Robert J. Schoelkopf Lab',
-        name: 'Robert J. Schoelkopf Faculty Research',
-        entityType: 'INDIVIDUAL_RESEARCH',
+        name: 'Robert Schoelkopf Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
       }),
-    ).toBe('Robert J. Schoelkopf Lab');
+    ).toBe('Robert Schoelkopf');
+    expect(
+      researchEntityTitle({
+        displayName: 'Yung-Chi Cheng Lab',
+        name: 'Yung-Chi Cheng Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('Yung-Chi Cheng');
+  });
+
+  it('recovers the initial the grafted displayName dropped', () => {
+    expect(
+      researchEntityTitle({
+        displayName: 'I George Miller Lab',
+        name: 'I. George Miller Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('I. George Miller');
+  });
+
+  it('leaves a grafted-looking lab displayName alone on a real lab entity', () => {
+    expect(
+      researchEntityTitle({
+        displayName: 'Steitz Lab',
+        name: 'Joan Steitz Research Group',
+        entityType: 'LAB',
+      }),
+    ).toBe('Steitz Lab');
   });
 
   it('leaves non-faculty research-home titles untouched', () => {
