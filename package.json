@@ -94,8 +94,7 @@
   "dependencies": {
     "concurrently": "^9.2.1",
     "dotenv": "^16.3.1",
-    "mongoose": "^8.24.0",
-    "openai": "^6.41.0"
+    "mongoose": "^8.24.0"
   },
   "resolutions": {
     "form-data": "4.0.6",
