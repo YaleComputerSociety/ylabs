@@ -1,6 +1,12 @@
 /**
  * Reads a lab website for the lead it declares for itself.
  *
+ * Lives under `scrapers/utils/` rather than `scrapers/sources/` on purpose: it is
+ * called by the `observations:retarget-foreign-lab-websites` repair lane over an
+ * enumerated candidate set, not dispatched by the sweep, and every module in
+ * `sources/` must be registered in `registry.ts` for dispatch or the preflight
+ * fails.
+ *
  * A lab website harvested off a person's profile is evidence of a link, not of
  * ownership, and only the site can say whose lab it is. This is the evidence step
  * behind re-homing such a link (#2385); the decision itself is pure and lives in
@@ -15,10 +21,10 @@
 
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { fetchPageWithPolicy } from './httpFetch';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { LAB_SITE_DECLARED_LEAD_PROMPT, LAB_SITE_DECLARED_LEAD_PROMPT_HASH } from '../prompts';
-import { htmlToText } from './labMicrositeDescriptionLLMExtractor';
+import { htmlToText } from '../sources/labMicrositeDescriptionLLMExtractor';
 
 export { LAB_SITE_DECLARED_LEAD_PROMPT_HASH };
 

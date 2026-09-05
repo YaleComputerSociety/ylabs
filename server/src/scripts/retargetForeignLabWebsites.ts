@@ -34,7 +34,7 @@ import {
   LAB_SITE_DECLARED_LEAD_SOURCE,
   extractLabSiteDeclaredLead,
   type LabSiteDeclaredLead,
-} from '../scrapers/sources/labSiteDeclaredLeadExtractor';
+} from '../scrapers/utils/labSiteDeclaredLeadExtractor';
 import {
   decideForeignLabWebsiteRetarget,
   personNamesDenoteSamePerson,
