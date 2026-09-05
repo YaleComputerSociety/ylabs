@@ -406,7 +406,7 @@ const AnalyticsSupportingDetail = ({
               {data.engagement.topSearchQueries.map((item, index) => (
                 <div key={index} className="flex justify-between border-b pb-2">
                   <span className="text-gray-700">{item.query || '(empty search)'}</span>
-                  <span className="font-medium text-blue-600">{item.count} searches</span>
+                  <span className="font-medium text-brand">{item.count} searches</span>
                 </div>
               ))}
             </div>
@@ -513,7 +513,7 @@ const AnalyticsSupportingDetail = ({
                       <span className="min-w-0 truncate text-gray-700">
                         {query.query || '(empty search)'}
                       </span>
-                      <span className="shrink-0 text-right text-xs font-medium text-blue-600">
+                      <span className="shrink-0 text-right text-xs font-medium text-brand">
                         {formatNumber(searchCount)} {searchCount === 1 ? 'search' : 'searches'} ·{' '}
                         {resultLabel}
                       </span>
@@ -537,11 +537,11 @@ const AnalyticsSupportingDetail = ({
             </div>
             <div className="p-4">
               <div className="mb-4 rounded-md bg-[var(--yr-blue-soft)] p-3">
-                <p className="text-sm text-blue-700">Official next-step rate</p>
-                <p className="text-2xl font-semibold text-blue-900">
+                <p className="text-sm text-brand">Official next-step rate</p>
+                <p className="text-2xl font-semibold text-brand-navy">
                   {formatPercent(funnel?.overallConversionRate)}
                 </p>
-                <p className="mt-1 text-xs text-blue-700">
+                <p className="mt-1 text-xs text-brand">
                   Students reaching an official next step, as a share of logged-in students.
                 </p>
               </div>
@@ -641,7 +641,7 @@ const AnalyticsSupportingDetail = ({
                       <td className="max-w-xs px-4 py-3 font-medium text-gray-900">
                         {query.query || '(empty search)'}
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-blue-600">
+                      <td className="px-4 py-3 text-right font-medium text-brand">
                         {formatNumber(query.totalSearches)}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -764,7 +764,7 @@ const AnalyticsSupportingDetail = ({
                 value={userSearch}
                 onChange={(event) => setUserSearch(event.target.value)}
                 placeholder="e.g. abc123"
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               />
             </label>
 
@@ -775,7 +775,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userTypeFilter}
                 onChange={(event) => setUserTypeFilter(event.target.value)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="all">All Types</option>
                 <option value="undergraduate">Undergrads</option>
@@ -793,7 +793,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userActivitySort}
                 onChange={(event) => setUserActivitySort(event.target.value as UserActivitySort)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="lastActive">Last Active</option>
                 <option value="totalEvents">Total Events</option>
@@ -810,7 +810,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userActivityLimit}
                 onChange={(event) => setUserActivityLimit(Number(event.target.value))}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value={10}>10 users</option>
                 <option value={25}>25 users</option>
@@ -1174,7 +1174,7 @@ const AnalyticsSupportingDetail = ({
                       className="flex items-start justify-between gap-3 text-sm"
                     >
                       {item.href ? (
-                        <Link to={item.href} className="min-w-0 text-blue-700 hover:underline">
+                        <Link to={item.href} className="min-w-0 text-brand hover:underline">
                           {detail}
                         </Link>
                       ) : (

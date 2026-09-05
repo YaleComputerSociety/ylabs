@@ -70,16 +70,33 @@ Do not convert a single hue out of one of these scales to a brand token.
 The scale reads as a set only because its members are siblings, so replacing one member with the brand accent breaks the progression and collides with the brand meaning elsewhere on the page.
 Change such a scale as a whole or not at all.
 
-These files hold deliberate scales rather than brand-color drift:
-`src/providers/ConfigContextProvider.tsx` (ten-hue category palette and a department-index map), `src/utils/researchPlanStages.ts` (SAVED through APPLIED), `src/utils/fellowshipCycle.ts`, `src/types/browsable.ts`, `src/pages/analytics.tsx`, `src/components/analytics/AnalyticsSupportingDetail.tsx`, `src/components/analytics/analyticsPresentation.tsx`, and `src/components/admin/AdminOperatorBoard.tsx`.
+The exemption is per construct, not per file.
+A file that contains a scale is otherwise ordinary brand color, so exempting the whole file permits real drift inside it.
 
-`ROLE_PILL_CLASSES` in `src/components/labs/LabMembersList.tsx` is one of these scales too: twelve member roles across blue, indigo, purple, teal, emerald, amber, and slate, so the blue on `pi` and `co-pi` is a category identity.
-Only that map is exempt; the rest of the file is ordinary brand color.
-`FIELD_COLORS` in `src/components/admin/AdminResearchAreas.tsx` and `CATEGORY_COLORS` in `src/components/admin/AdminDepartments.tsx` are the same shape: nine research fields across blue, green, yellow, red, purple, pink, teal, orange, and indigo.
+Every deliberate scale in the client, and nothing else, is listed here.
+Each gives its blue member a generic hue; every other `blue-` class in `src/` is brand-color drift.
 
-The filter-category chips in `src/components/fellowship/FellowshipModal.tsx` are a scale as well: five filter categories across blue, yellow, purple, green, and orange.
-Only that one chip is exempt; the rest of the file is ordinary brand color.
-So is `accessBadgeClass` in `src/components/accounts/SavedResearchPlans.tsx`, whose three access tones run emerald, blue, and neutral.
+| construct | file | scale |
+|---|---|---|
+| `colorKeyToTailwind` | `src/providers/ConfigContextProvider.tsx` | ten named category colors |
+| `departmentColorKeyToTailwind` | `src/providers/ConfigContextProvider.tsx` | nine department indexes |
+| `ROLE_PILL_CLASSES` | `src/components/labs/LabMembersList.tsx` | twelve member roles |
+| `FIELD_COLORS` | `src/components/admin/AdminResearchAreas.tsx` | nine research fields |
+| `CATEGORY_COLORS` | `src/components/admin/AdminDepartments.tsx` | nine department categories |
+| `researchPlanStageMeta` | `src/utils/researchPlanStages.ts` | SAVED through APPLIED |
+| fellowship cycle badge | `src/utils/fellowshipCycle.ts` | cycle states |
+| browsable kind badge | `src/types/browsable.ts` | entity kinds |
+| `toneClass` | `src/components/analytics/analyticsPresentation.tsx` | blue, green, amber, red |
+| `accessBadgeClass` | `src/components/accounts/SavedResearchPlans.tsx` | emerald, blue, neutral |
+| filter-category chips | `src/components/fellowship/FellowshipModal.tsx` | five filter categories |
+
+`src/pages/analytics.tsx`, `src/components/analytics/AnalyticsSupportingDetail.tsx`, and `src/components/admin/AdminOperatorBoard.tsx` were previously listed here and should not have been.
+Their blue was metric emphasis, links, badges, and focus borders, not series color.
+Charts here draw their series from the scales above rather than from a blue in those files.
+
+Every one of these scales gives its blue member a tokened background and a scale-hue text color, unlike its siblings, which pair a hue background with the matching hue text.
+Most were authored that way in one early commit and at least one appeared months later, so this is a recurring habit rather than one historical event: a pass that tokens brand backgrounds reaches scale members as collateral.
+Resolve it by changing each scale as a whole, never by tokening the blue member alone.
 
 Every one of those five scales gives its blue member a tokened background and a scale-hue text color, unlike its siblings, which pair a hue background with the matching hue text.
 Four were authored that way in one early commit and the fifth appeared three months later, so this is a recurring habit rather than one historical event: a pass that tokens brand backgrounds reaches scale members as collateral.

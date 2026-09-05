@@ -63,7 +63,7 @@ const EntitySampleLabel = ({
       href={target.href}
       target="_blank"
       rel={EXTERNAL_LINK_REL}
-      className="inline-flex items-center gap-1 font-medium text-blue-700 underline-offset-2 hover:underline yr-focus-ring"
+      className="inline-flex items-center gap-1 font-medium text-brand underline-offset-2 hover:underline yr-focus-ring"
       title={
         target.external
           ? `Open official source for ${sample.label} in a new tab`
@@ -71,7 +71,7 @@ const EntitySampleLabel = ({
       }
     >
       {sample.label}
-      <span aria-hidden="true" className="text-xs text-blue-500">
+      <span aria-hidden="true" className="text-xs text-brand">
         ↗
       </span>
     </a>
