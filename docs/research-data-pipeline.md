@@ -158,6 +158,23 @@ Measured on Development for issue #2383: 978 of 1,508 stranded keys (10,828 of 1
 Those observations are unprocessed input, not dead data.
 Do not prune a stranded lane before checking this axis; pruning it discards acquired evidence that was never offered to a materializer.
 
+`yarn --cwd server observations:catch-up-materialize` (`catchUpMaterializeStrandedKeys.ts`, pure planning in `catchUpMaterializeStrandedKeysCore.ts`) supplies the missing enumeration axis: by key, over the corpus, independent of any run.
+It takes its population from the #2401 audit rather than from a query of its own, so it cannot disagree with the audit about which keys are stranded, and its eligible set is derived from `ORPHAN_CATEGORY_REMEDY` rather than restated, so the two cannot drift.
+Only categories whose remedy is `drive_materialization` are offered a mint; `--category` refuses an ineligible one instead of ignoring it.
+
+Every key goes through the ordinary `materializeEntity('researchEntity', { entityKey })` path, so every existing guard still applies - the retired-`PROGRAM` skip, the merged-into-canonical no-op, merge-redirect resolution, and the name-identity authority refusal.
+It is not a new write path.
+Dry-run by default; `--apply` additionally requires `--confirm-catch-up-materialize` and routes through `assertScriptApplyAllowed`, and `--limit` bounds the batch because an unbounded first run over the whole stranded population is not reviewable.
+
+Read the report, not just the counts.
+A materializer guard skip and a zero-field write are reported separately on purpose: a skip is the materializer correctly refusing to mint, while zero fields written with no skip reason means the key was offered, accepted, and still produced nothing, which is the case worth investigating.
+The report also carries each key's planned `name` and `entityType`, because this command creates research entities and whether a given mint is wanted is a product judgement that "would create" alone cannot answer.
+
+Measured on Development 2026-09-05: 560 of the 1,508 stranded keys are eligible, and a dry run plans to create all 560 - 551 `FACULTY_RESEARCH_AREA`, 6 `LAB`, 2 `CENTER`, 1 `INSTITUTE`, at 18 to 28 fields each.
+No materializer guard rejects any of them, so this would add about 8.7% to a 6,440-row corpus, and `dept-ysph-*` dominates it.
+That the guards accept a row is not evidence the row should exist: the YSPH directory enumerates staff, postdocs, and students alongside faculty, and several eligible keys match no `Researcher` record at all.
+Size and review the batch before applying, and treat `PERSON_KNOWN_NO_RESEARCH_HOME` as its own batch, since there the person already exists as a `Researcher` but leads nothing, so minting creates a research home the corpus has so far withheld.
+
 ### Stranded observation keys and their category split
 
 `yarn --cwd server observations:audit-orphan-keys` (`orphanObservationKeyAudit.ts`, with the pure classifier in `orphanObservationKeyAuditCore.ts`) splits every live `researchEntity` observation key that matches no `research_entities.slug` and no `research_entity_redirects.mergedSlug`.
