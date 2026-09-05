@@ -23,7 +23,6 @@ const baseGroup: ResearchGroup = {
   slug: 'lovelace-lab',
   name: 'Lovelace Computational Lab',
   kind: 'lab',
-  description: 'We study analytical engines.',
   websiteUrl: 'https://example.edu/lovelace',
   location: 'Watson Center, Room 200',
   departments: ['Computer Science', 'Mathematics'],
