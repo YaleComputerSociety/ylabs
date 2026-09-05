@@ -118,13 +118,13 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
-              className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-blue-300 hover:shadow-sm"
+              className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-sm"
             >
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
                   <span
                     key={tag}
-                    className="rounded-full bg-[var(--yr-blue-soft)] px-2 py-1 text-xs font-medium text-blue-700"
+                    className="rounded-full bg-brand-soft px-2 py-1 text-xs font-medium text-brand"
                   >
                     {tag}
                   </span>
@@ -178,7 +178,7 @@ const AffiliatedResearchEntitiesSection = ({
           <Link
             key={entity.slug || entity.id}
             to={`/research/${safeRouteSegment(entity.slug)}`}
-            className={`${className} hover:border-blue-300 hover:shadow-sm`}
+            className={`${className} hover:border-line-strong hover:shadow-sm`}
           >
             {content}
           </Link>
@@ -207,7 +207,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
-          className="block rounded-lg border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-blue-300 hover:shadow-sm"
+          className="block rounded-lg border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-sm"
         >
           <div className="flex flex-wrap gap-2">
             {uniqueCompact(
@@ -320,7 +320,7 @@ const ResearchPlanSaveButton = ({
     size={20}
     ariaLabel={isSaved ? 'Saved to Dashboard' : 'Save research plan'}
     title={isSaved ? 'Saved to Dashboard' : 'Save research plan'}
-    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)] yr-focus-ring sm:w-auto sm:min-w-[13rem]"
+    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
     iconClassName="mt-0.5 shrink-0"
   >
     <span className="min-w-0 flex-1">
@@ -341,7 +341,7 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
   <Link
     to="/login"
     state={{ from: returnPath }}
-    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)] yr-focus-ring sm:w-auto sm:min-w-[13rem]"
+    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-line-brand hover:bg-brand-soft yr-focus-ring sm:w-auto sm:min-w-[13rem]"
   >
     <span className="min-w-0 flex-1">
       <span className="block text-sm font-semibold text-gray-900">Log in with Yale to save</span>
@@ -574,7 +574,7 @@ const DecisionSummary = ({
     Boolean(officialSource) ||
     !hasActionablePath;
   return (
-    <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
+    <section className="rounded-lg border border-line bg-panel p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
           <SectionHeading>Research summary</SectionHeading>
@@ -621,7 +621,7 @@ const DecisionSummary = ({
                 {topics.map((topic) => (
                   <span
                     key={topic}
-                    className="rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-2.5 py-1 text-xs font-medium text-blue-800"
+                    className="rounded-md border border-line-brand bg-brand-soft px-2.5 py-1 text-xs font-medium text-brand"
                   >
                     {formatTitleCaseLabel(topic)}
                   </span>
@@ -700,7 +700,7 @@ const DecisionSummary = ({
                     {piMailtoHref ? (
                       <a
                         href={piMailtoHref}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft"
                       >
                         {piName ? `Email ${piName}` : 'Email the director'}
                       </a>
@@ -709,7 +709,7 @@ const DecisionSummary = ({
                         href={profileUrl}
                         target="_blank"
                         rel={EXTERNAL_LINK_REL}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft"
                       >
                         {piName ? `Contact ${piName}` : 'Contact the director'}
                       </a>
@@ -930,7 +930,7 @@ const LabDetail = () => {
         aria-label="Loading research profile"
         className="max-w-6xl mx-auto px-4 py-16 flex justify-center"
       >
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand" />
       </div>
     );
   }
@@ -1136,7 +1136,7 @@ const LabDetail = () => {
     >
       {isEntityTransition && (
         <div
-          className="fixed inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-blue-500"
+          className="fixed inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-brand"
           role="progressbar"
           aria-label="Loading research profile"
         />
