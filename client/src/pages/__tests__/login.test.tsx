@@ -38,10 +38,10 @@ afterEach(() => {
 });
 
 describe('Login', () => {
-  it('uses the default Yale Research context for unknown retired surfaces', () => {
+  it('uses the default y/labs context for unknown retired surfaces', () => {
     renderLogin('/old-research-entry');
 
-    expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to y\/labs/i })).toBeTruthy();
     expect(screen.getByText(/open the research discovery workspace/i)).toBeTruthy();
   });
 
@@ -54,19 +54,19 @@ describe('Login', () => {
     expect(screen.getByText(/structured programs, funding cycles, and planning/i)).toBeTruthy();
   });
 
-  it('frames retired listing links as Yale Research', () => {
+  it('frames retired listing links as y/labs', () => {
     renderLogin('/listings');
 
-    expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to y\/labs/i })).toBeTruthy();
     expect(
       screen.getByText(/save research homes, keep private notes, and reach out/i),
     ).toBeTruthy();
   });
 
-  it('falls back to default Yale Research context for the retired opportunities route', () => {
+  it('falls back to default y/labs context for the retired opportunities route', () => {
     renderLogin('/opportunities/example-id');
 
-    expect(screen.getByRole('heading', { name: /continue to yale research/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to y\/labs/i })).toBeTruthy();
     expect(screen.getByText(/open the research discovery workspace/i)).toBeTruthy();
     expect(screen.queryByRole('heading', { name: /continue to opportunity details/i })).toBeNull();
     expect(
@@ -84,19 +84,17 @@ describe('Login', () => {
   it('keeps about page context on the CAS gate', () => {
     renderLogin('/about');
 
-    expect(screen.getByRole('heading', { name: /continue to about yale research/i })).toBeTruthy();
-    expect(screen.getByText(/learn how yale research is built and supported/i)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to about y\/labs/i })).toBeTruthy();
+    expect(screen.getByText(/learn how y\/labs is built and supported/i)).toBeTruthy();
   });
 
   it('replaces CAS sign in with retry when auth check fails', async () => {
     const user = userEvent.setup();
     const { checkContext } = renderLogin(undefined, {
-      authError: 'Unable to reach Yale Labs right now.',
+      authError: 'Unable to reach y/labs right now.',
     });
 
-    expect(screen.getByRole('status').textContent).toContain(
-      'Unable to reach Yale Labs right now.',
-    );
+    expect(screen.getByRole('status').textContent).toContain('Unable to reach y/labs right now.');
     expect(screen.queryByRole('link', { name: /sign in with yale cas/i })).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /retry connection/i }));

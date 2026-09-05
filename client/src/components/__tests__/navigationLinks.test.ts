@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { primaryNavLinks } from '../navigationLinks';
 
 describe('primaryNavLinks', () => {
-  it('uses Yale Research and Programs as the primary student destinations', () => {
+  it('uses Research and Programs as the primary student destinations', () => {
     expect(primaryNavLinks.map((link) => link.label)).toEqual([
-      'Yale Research',
+      'Research',
       'Programs & Fellowships',
       'Dashboard',
     ]);

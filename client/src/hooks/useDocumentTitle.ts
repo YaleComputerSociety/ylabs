@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const DEFAULT_TITLE = 'Yale Research';
+const DEFAULT_TITLE = 'y/labs';
 
 export const formatDocumentTitle = (pageTitle?: string): string => {
   const trimmed = (pageTitle || '').trim();

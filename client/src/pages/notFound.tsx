@@ -11,7 +11,7 @@ const NotFound = () => {
       <div className="yr-panel max-w-md rounded-md p-6 text-center">
         <p className="yr-kicker mb-3">404</p>
         <h1 className="mb-4 text-3xl font-semibold leading-tight text-slate-950 sm:text-4xl">
-          We couldn't find that Yale Research page
+          We couldn't find that y/labs page
         </h1>
         <p className="mb-8 text-slate-600">
           The link may be old, or the research profile may have moved. Explore Research is the best
@@ -21,7 +21,7 @@ const NotFound = () => {
           to="/research"
           className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
         >
-          Explore Yale Research
+          Explore research
         </Link>
       </div>
     </div>

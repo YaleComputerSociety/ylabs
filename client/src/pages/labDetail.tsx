@@ -607,8 +607,8 @@ const DecisionSummary = ({
           )}
           {usesProfileSynthesis && (
             <p className="mt-3 text-sm leading-relaxed text-gray-600">
-              This is profile-derived context. Yale Research has not found a separate research
-              website or posted undergraduate opening for this research home.
+              This is profile-derived context. y/labs has not found a separate research website or
+              posted undergraduate opening for this research home.
             </p>
           )}
 
@@ -762,10 +762,10 @@ const DecisionSummary = ({
                 <div className="mt-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
                   <p className="text-sm leading-relaxed text-gray-800">
                     {piName
-                      ? `Yale Research does not have a direct link for ${piName}${
+                      ? `y/labs does not have a direct link for ${piName}${
                           piAffiliation ? ` (${piAffiliation})` : ''
                         } yet.`
-                      : 'Yale Research does not have a direct link for this research home yet.'}
+                      : 'y/labs does not have a direct link for this research home yet.'}
                   </p>
                   <p className="mt-1 text-sm leading-relaxed text-gray-600">
                     {piName
@@ -951,7 +951,7 @@ const LabDetail = () => {
             to="/research"
             className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
           >
-            Explore Yale Research
+            Explore research
           </Link>
         </div>
       </div>

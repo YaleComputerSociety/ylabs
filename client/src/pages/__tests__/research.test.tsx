@@ -644,7 +644,7 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'Quantum Materials Example' });
 
-    fireEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+    fireEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe('/research');
@@ -684,7 +684,7 @@ describe('Research page', () => {
     });
     expect(screen.getByLabelText('Search Yale research')).toHaveValue('quantum materials');
 
-    fireEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+    fireEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
 
     await waitFor(() => {
       expect(screen.getByLabelText('Search Yale research')).toHaveValue('');
@@ -710,7 +710,7 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('link', { name: 'View profile →' }));
     expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+    fireEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
 
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
     await waitFor(() => {
@@ -746,7 +746,7 @@ describe('Research page', () => {
     expect(screen.getByLabelText('Search Yale research')).toHaveValue('');
     vi.mocked(window.scrollTo).mockClear();
 
-    fireEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+    fireEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
 
     await waitFor(() => {
       expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
@@ -1233,7 +1233,7 @@ describe('Research page', () => {
     });
 
     renderResearch(departments, ['/research?q=machine+learning']);
-    expect(await screen.findByText(/Searching Yale Research for machine learning/)).toBeTruthy();
+    expect(await screen.findByText(/Searching y\/labs for machine learning/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     expect(
       within(screen.getByRole('dialog', { name: 'Research filters' })).getByRole('status'),
@@ -1917,7 +1917,7 @@ describe('Research page', () => {
     expect(
       screen.getByText("25 research homes for 'protein folding'", { exact: false }),
     ).toBeTruthy();
-    expect(screen.queryByText(/Searching Yale Research for/)).toBeNull();
+    expect(screen.queryByText(/Searching y\/labs for/)).toBeNull();
     const searchButton = screen.getByRole('button', { name: 'Search' });
     expect(searchButton).toBeTruthy();
     expect((searchButton as HTMLButtonElement).disabled).toBe(false);
@@ -2173,7 +2173,7 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     view.rerender(researchTree([...departments]));
 
-    expect(screen.getByText(/Searching Yale Research for machine learning/)).toBeTruthy();
+    expect(screen.getByText(/Searching y\/labs for machine learning/)).toBeTruthy();
     expect(input.value).toBe('machine learning');
 
     searchResponse.resolve(researchSearchResponse([researchEntity]));
@@ -2212,12 +2212,12 @@ describe('Research page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText(/Searching Yale Research for machine learning/);
+    await screen.findByText(/Searching y\/labs for machine learning/);
     fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe('/research');
-      expect(screen.queryByText(/Searching Yale Research for machine learning/)).toBeNull();
+      expect(screen.queryByText(/Searching y\/labs for machine learning/)).toBeNull();
       expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
     });
 
@@ -2258,12 +2258,12 @@ describe('Research page', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Navigate to second query' }));
     });
 
-    expect(await screen.findByText(/Searching Yale Research for second query/)).toBeTruthy();
+    expect(await screen.findByText(/Searching y\/labs for second query/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe('/research');
-      expect(screen.queryByText(/Searching Yale Research for second query/)).toBeNull();
+      expect(screen.queryByText(/Searching y\/labs for second query/)).toBeNull();
       expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
     });
 
@@ -2316,7 +2316,7 @@ describe('Research page', () => {
 
     fireEvent.change(input, { target: { value: 'neuroscience' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-    expect(await screen.findByText(/Searching Yale Research for neuroscience/)).toBeTruthy();
+    expect(await screen.findByText(/Searching y\/labs for neuroscience/)).toBeTruthy();
 
     fireEvent.change(input, { target: { value: 'climate change' } });
     const submitButton = screen.getByRole('button', { name: /^Search/ }) as HTMLButtonElement;

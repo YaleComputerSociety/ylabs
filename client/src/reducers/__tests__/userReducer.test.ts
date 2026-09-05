@@ -64,20 +64,20 @@ describe('userReducer', () => {
     });
     const next = userReducer(prior, {
       type: 'FETCH_FAILURE',
-      error: 'Unable to reach Yale Labs.',
+      error: 'Unable to reach y/labs.',
     });
     expect(next.isLoading).toBe(false);
     // Prior user and authenticated flag are preserved — stale is better than empty
     expect(next.isAuthenticated).toBe(true);
     expect(next.user).toBe(sampleUser);
-    expect(next.authError).toBe('Unable to reach Yale Labs.');
+    expect(next.authError).toBe('Unable to reach y/labs.');
   });
 
   it('FETCH_FAILURE falls back to a useful default message', () => {
     const state = createInitialUserState();
     const next = userReducer(state, { type: 'FETCH_FAILURE' });
     expect(next.authError).toBe(
-      'Unable to check your Yale Labs session. Please try again in a moment.',
+      'Unable to check your y/labs session. Please try again in a moment.',
     );
   });
 

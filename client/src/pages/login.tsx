@@ -8,6 +8,7 @@ import SignInButton from '../components/SignInButton';
 import UserContext from '../contexts/UserContext';
 import { Navigate, useLocation } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import Wordmark from '../components/Wordmark';
 
 const Login = () => {
   const { isLoading, isAuthenticated, user, authError, checkContext } = useContext(UserContext);
@@ -18,7 +19,7 @@ const Login = () => {
   const destination = (() => {
     if (returnPath.startsWith('/research') || returnPath.startsWith('/listings')) {
       return {
-        heading: 'Continue to Yale Research',
+        heading: 'Continue to y/labs',
         description:
           'Use your Yale account to save research homes, keep private notes, and reach out.',
       };
@@ -38,12 +39,12 @@ const Login = () => {
     }
     if (returnPath.startsWith('/about')) {
       return {
-        heading: 'Continue to About Yale Research',
-        description: 'Use your Yale account to learn how Yale Research is built and supported.',
+        heading: 'Continue to About y/labs',
+        description: 'Use your Yale account to learn how y/labs is built and supported.',
       };
     }
     return {
-      heading: 'Continue to Yale Research',
+      heading: 'Continue to y/labs',
       description: 'Use your Yale account to open the research discovery workspace.',
     };
   })();
@@ -65,17 +66,15 @@ const Login = () => {
               alt=""
               className="h-14 w-14 drop-shadow-sm sm:h-16 sm:w-16"
             />
-            <span className="yr-wordmark text-4xl text-[var(--yr-blue)] sm:text-5xl">
-              Yale Research
-            </span>
+            <Wordmark className="text-4xl text-[var(--yr-blue)] sm:text-5xl" />
           </div>
           <p className="yr-kicker mt-8">Source-backed discovery</p>
           <h1 className="mt-3 text-3xl font-semibold leading-tight text-slate-950 sm:text-5xl">
             Find a credible path into Yale research
           </h1>
           <p className="mt-4 text-base leading-relaxed text-slate-700 sm:text-lg">
-            Search by idea, method, professor, or pathway. Yale Research maps undergraduate
-            curiosity to research homes, and surfaces signals pointing you to more information.
+            Search by idea, method, professor, or pathway. y/labs maps undergraduate curiosity to
+            research homes, and surfaces signals pointing you to more information.
           </p>
           <div className="mt-6 grid gap-2 text-left sm:grid-cols-3">
             {['Research homes', 'Signals', 'Official sources'].map((item) => (
@@ -95,7 +94,7 @@ const Login = () => {
           <p className="mt-2 text-sm leading-relaxed text-slate-600">{destination.description}</p>
           <div className="yr-muted-surface mt-5 rounded-md p-3">
             <p className="text-xs font-semibold text-slate-500">
-              Authentication is handled by Yale CAS. Yale Research does not ask for your password.
+              Authentication is handled by Yale CAS. y/labs does not ask for your password.
             </p>
           </div>
           {authError && (

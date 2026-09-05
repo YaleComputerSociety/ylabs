@@ -17,7 +17,7 @@ const LoginError = () => {
             We couldn't complete sign in
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-700 sm:text-lg">
-            Yale Research did not receive a valid CAS session. Try Yale CAS again, or return to the
+            y/labs did not receive a valid CAS session. Try Yale CAS again, or return to the
             research entry page and start from the surface you were opening.
           </p>
           <div className="mt-8 flex w-full max-w-md flex-col gap-3 sm:flex-row sm:justify-center">
@@ -26,7 +26,7 @@ const LoginError = () => {
               to="/"
               className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-5 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
-              Return to Yale Research
+              Return to y/labs
             </Link>
           </div>
         </div>

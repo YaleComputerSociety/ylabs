@@ -4,6 +4,7 @@
 import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';
 import { navFocusRingSx } from '../utils/focusRing';
+import Wordmark from './Wordmark';
 import {
   RESEARCH_HOME_PATH,
   isResearchHomeLocation,
@@ -37,9 +38,7 @@ const HomeButton = () => {
         className="mr-2"
         style={{ width: '32px', height: '32px' }}
       />
-      <span className="yr-wordmark text-xl text-[var(--yr-blue)] sm:text-[1.35rem]">
-        Yale Research
-      </span>
+      <Wordmark className="text-xl text-[var(--yr-blue)] sm:text-[1.35rem]" />
     </Button>
   );
 };
