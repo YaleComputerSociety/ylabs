@@ -384,11 +384,13 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     delete out[field];
   }
 
-  // Browse and search read the indexed `displayName` for the card title, so the
-  // index has to drop placeholder filler or an umbrella-organization / foreign-lab
-  // graft on the same terms the detail-page DTO does; otherwise the retired name
-  // keeps titling the card, and filler left in `searchableAttributes` keyword
-  // matches a record whose served title is its real `name` (#2351/#2367).
+  // This withhold is a matching guard, not a display guard: browse and search
+  // re-read the Mongo row and spread it over the hit (`researchGroupService.ts`),
+  // so the indexed `displayName` never titles a card. It still has to drop
+  // placeholder filler or an umbrella-organization / foreign-lab graft on the same
+  // terms the detail-page DTO does, because `displayName` is a
+  // `searchableAttributes` entry and filler left in it keyword matches a record
+  // whose served title is its real `name` (#2351/#2367).
   if (
     isPlaceholderEntityName(out.displayName) ||
     personScopedResearchEntityNameNamesSomethingElse({
@@ -483,10 +485,6 @@ export function buildResearchEntitySearchIndexDocument(
     out.leadProfessorNames = memberNames.leadProfessorNames;
     out.professorNames = memberNames.professorNames;
   }
-  const studentSearchTerms = buildStudentSearchTerms(out);
-  if (studentSearchTerms.length > 0) {
-    out.studentSearchTerms = studentSearchTerms;
-  }
   delete out._id;
   delete out.__v;
   delete out.embedding;
@@ -494,6 +492,16 @@ export function buildResearchEntitySearchIndexDocument(
     delete out[field];
   }
   sanitizeResearchEntityIndexDocument(out);
+
+  // Ordering constraint: topic aliases have to come off the sanitized document,
+  // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so
+  // an alias derived from copy the sanitizer removes (a chip-echo or synthetic
+  // metadata description, an endowed-chair title, a domain-incoherent research
+  // area) makes the entity match a term no surface ever serves (#2396).
+  const studentSearchTerms = buildStudentSearchTerms(out);
+  if (studentSearchTerms.length > 0) {
+    out.studentSearchTerms = studentSearchTerms;
+  }
   return out;
 }
 
