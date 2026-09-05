@@ -9,7 +9,9 @@ import {
 describe('researchHomeNavigation', () => {
   it('treats only the bare research home as the research home location', () => {
     expect(isResearchHomeLocation({ pathname: '/research', search: '' })).toBe(true);
-    expect(isResearchHomeLocation({ pathname: '/research', search: '?q=neuroscience' })).toBe(false);
+    expect(isResearchHomeLocation({ pathname: '/research', search: '?q=neuroscience' })).toBe(
+      false,
+    );
     expect(isResearchHomeLocation({ pathname: '/research/some-lab', search: '' })).toBe(false);
     expect(isResearchHomeLocation({ pathname: '/programs', search: '' })).toBe(false);
   });
