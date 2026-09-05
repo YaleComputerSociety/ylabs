@@ -275,6 +275,7 @@ export type LaunchAcquisitionGateArtifact =
       artifactPath: string;
       generatedAt?: string;
       scanned: number;
+      observationStorePopulated: boolean;
       piBlockers: number;
       actionBlockers: number;
       exactPiMatches: number;
@@ -1673,6 +1674,19 @@ export function deriveLaunchAcquisitionGate(input?: LaunchAcquisitionGateArtifac
     };
   }
 
+  // Every observation-derived verdict in the artifact is unavailable rather than
+  // negative when the report ran against a database with no observation store, so
+  // reporting `blocked` with "remaining rows need new source evidence" would blame
+  // the corpus for a missing evidence store (#2458).
+  if (!input.observationStorePopulated) {
+    return {
+      status: 'manual' as const,
+      command,
+      note: 'Launch acquisition report ran against a database with no observation store, so its source-evidence verdicts are unavailable rather than negative; rerun it against Development before drawing any conclusion.',
+      scanned: input.scanned,
+    };
+  }
+
   const deterministicCandidates = input.exactPiMatches + input.sourceBackedRouteCandidates;
   const base = {
     command,
@@ -1750,6 +1764,7 @@ export function readLaunchAcquisitionGateArtifact(
       artifactPath: safeArtifactPath,
       generatedAt,
       scanned: Number(parsed.scanned || 0),
+      observationStorePopulated: parsed.observationStorePopulated !== false,
       piBlockers: Number(parsed.piIdentity?.total || 0),
       actionBlockers: Number(parsed.actionEvidence?.total || 0),
       exactPiMatches: groupCount(piGroups, 'exactSingleUserMatch'),
