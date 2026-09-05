@@ -329,6 +329,59 @@ function exactDuplicateCanonicalScore(
   );
 }
 
+/**
+ * Person-scoped research entities whose every citation is one that many other
+ * person-scoped rows cite byte-identically.
+ *
+ * A page about one person is cited by about one person row; a directory index or
+ * a fundraising page is cited by hundreds, so a row citing only such pages has no
+ * evidence about its own subject. The signal is deliberately structural and never
+ * compares a URL slug against a display name: Yale slugs and display names
+ * disagree in a dozen legitimate ways - a concatenated compound surname
+ * (`aidin-eslampour` for "Aidin Eslam Pour"), a netid suffix (`andrew-yu-ay433`),
+ * credentials in the name ("Ann V. Arthur, MD '90"), a second surname the slug
+ * omits, a short form, or a slug that is a bare netid (`em453`) - and every
+ * name-matching variant of this criterion refused hundreds of correctly cited
+ * rows on that basis alone (#2464).
+ *
+ * This is not covered by `selectExactUrlDuplicateRiskEntityIds`, which skips any
+ * URL group larger than five precisely because a widely shared page is not a
+ * duplicate signal. The many-rows case had no owner.
+ */
+export const SHARED_CITATION_PERSON_ROW_THRESHOLD = 25;
+
+const PERSON_SCOPED_GATE_ENTITY_TYPES = new Set([
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_RESEARCH',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+export function selectSharedCitationOnlyEntityIds(
+  entities: any[],
+  threshold: number = SHARED_CITATION_PERSON_ROW_THRESHOLD,
+): Set<string> {
+  const personRows = entities.filter((entity) =>
+    PERSON_SCOPED_GATE_ENTITY_TYPES.has(String(entity?.entityType || '')),
+  );
+  const personRowsPerUrl = new Map<string, number>();
+  for (const entity of personRows) {
+    for (const url of entityDuplicateUrls(entity)) {
+      personRowsPerUrl.set(url, (personRowsPerUrl.get(url) || 0) + 1);
+    }
+  }
+
+  const sharedOnly = new Set<string>();
+  for (const entity of personRows) {
+    const urls = entityDuplicateUrls(entity);
+    if (urls.length === 0) continue;
+    if (urls.every((url) => (personRowsPerUrl.get(url) || 0) >= threshold)) {
+      const id = studentVisibilityGateEntityIdKey(entity);
+      if (id) sharedOnly.add(id);
+    }
+  }
+  return sharedOnly;
+}
+
 export function selectExactUrlDuplicateRiskEntityIds(
   entities: any[],
   leadRows: any[] = [],
@@ -1135,6 +1188,9 @@ async function planResearchEntityGateUpdates(
     duplicateReferenceEntities as any[],
     duplicateReferenceLeadRows as any[],
   );
+  const sharedCitationOnlyEntityIds = selectSharedCitationOnlyEntityIds(
+    duplicateReferenceEntities as any[],
+  );
   const concreteLeadEntityUserIds = new Set<string>();
   for (const row of leadRows as any[]) {
     const entity = entityById.get(studentVisibilityGateDocumentId(row.researchEntityId));
@@ -1165,6 +1221,7 @@ async function planResearchEntityGateUpdates(
           concreteLeadEntityUserIds,
         }) || samePiDuplicateRiskEntityIds.has(recordId),
       exactUrlDuplicateRisk: exactUrlDuplicateRiskEntityIds.has(recordId),
+      citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
     });
     return {

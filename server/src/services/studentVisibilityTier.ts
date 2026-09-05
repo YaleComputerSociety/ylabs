@@ -32,6 +32,13 @@ export interface ResearchEntityStudentVisibilityInput {
   duplicateRisk?: boolean;
   exactUrlDuplicateRisk?: boolean;
   contentPageRisk?: boolean;
+  /**
+   * Every citation on this person-scoped row is one that many other person rows
+   * cite byte-identically, so none of them is evidence about this person. Derived
+   * corpus-wide by `selectSharedCitationOnlyEntityIds`, like the duplicate-risk
+   * flags above, because it cannot be seen from one row (#2464).
+   */
+  citationsSharedAcrossPersonRows?: boolean;
   relatedEntityAccessPathCount?: number;
 }
 
@@ -593,6 +600,11 @@ export interface ResearchEntityStudentReadyCorrectness {
   // (b) The right person/lead is attached: a lead-requiring entity has a
   // resolved lead, with no identity conflict or wrong-person mis-attribution.
   rightLeadAttached: boolean;
+  // (b') At least one citation is evidence about this row's own subject. A page
+  // about one person is cited by about one person row; a directory index or a
+  // fundraising page is cited by hundreds, so a row whose every citation is
+  // shared that widely has no per-person evidence behind it at all (#2464).
+  citationIdentifiesSubject: boolean;
   // (c) Not a duplicate of an already-known entity. Suppressed shells (generic
   // directory / biography / non-owner grant / off-scope) are removed one tier
   // earlier, at `suppressed`.
@@ -623,6 +635,7 @@ export function researchEntityMeetsStudentReadyDefinition(
     correctness.descriptionCoherent &&
     correctness.entityContentMatchesCard &&
     correctness.rightLeadAttached &&
+    correctness.citationIdentifiesSubject &&
     correctness.notDuplicate &&
     correctness.hasUsableName
   );
@@ -637,6 +650,7 @@ export function computeResearchEntityStudentVisibility({
   duplicateRisk = false,
   exactUrlDuplicateRisk = false,
   contentPageRisk = false,
+  citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
@@ -717,6 +731,7 @@ export function computeResearchEntityStudentVisibility({
   if (uncorroboratedGrantOnly) reasons.push('grant_only_no_current_yale_source');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
   if (missingFacetSignal) reasons.push('missing_facet_signal');
+  if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');
 
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
@@ -734,6 +749,7 @@ export function computeResearchEntityStudentVisibility({
     entityContentMatchesCard: !labNameOrgTypeMismatch,
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
+    citationIdentifiesSubject: !citationsSharedAcrossPersonRows,
     notDuplicate: !duplicateRisk,
     hasUsableName,
   };
