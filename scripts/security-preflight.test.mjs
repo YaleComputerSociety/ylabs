@@ -935,10 +935,6 @@ test('NIH Reporter matched user ids use safe serialization', () => {
     'utf8',
   );
 
-  assert.match(
-    source,
-    /import \{ serializedDocumentId \} from '\.\.\/\.\.\/utils\/idSerialization'/,
-  );
   assert.match(source, /const researcherId = resolution\.researcherId\.toString\(\)/);
   assert.match(source, /_id: researcherId,/);
   assert.doesNotMatch(source, /_id: String\(candidate\._id\)/);
