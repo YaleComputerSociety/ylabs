@@ -3842,6 +3842,16 @@ export async function materializeEntity(
   else if (identifier.entityKey) filter.entityKey = identifier.entityKey;
   else throw new Error('materializeEntity requires entityId or entityKey');
 
+  // Load-bearing in Beta and Production, not a defensive nicety: the promotion
+  // path copies materialized collections without the evidence store, so both hold
+  // a full entity corpus against ZERO observations (measured 2026-09-05:
+  // Development 420,906 observations / 7,000 entities; Beta 0 / 6,440; Production
+  // 0 / 6,440). Every materializeEntity call there reaches this line with an empty
+  // set. Removing this return does not no-op - the unset-on-empty pass below nulls
+  // observation-backed fields (`methods` measured) while the returned counters
+  // still report fieldsWritten 0, so a corpus-wide field drop would look like a
+  // clean run. Pinned by entityMaterializerEmptyObservationGuard.integration.test.ts
+  // (#2467); do not remove without reading it.
   let obs = await Observation.find(filter).lean();
   if (obs.length === 0) {
     return {
