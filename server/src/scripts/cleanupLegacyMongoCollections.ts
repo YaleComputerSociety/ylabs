@@ -41,6 +41,18 @@ const EMPTY_LEGACY_COLLECTIONS = [
   'saved_searches',
 ];
 
+// Indexes left behind by retired schema fields. Mongoose never drops an index
+// it has stopped declaring, so removing the field alone leaves the physical
+// index maintained on every write and used by nothing.
+const RETIRED_INDEXES = [
+  {
+    collection: 'taxonomy_terms',
+    name: 'parentTermId_1_kind_1_status_1_archived_1',
+    key: { parentTermId: 1, kind: 1, status: 1, archived: 1 },
+    retiredField: 'parentTermId',
+  },
+] as const;
+
 function parseRequiredOutputPath(value: string | undefined): string {
   return resolveSafeJsonReportOutputPath(value);
 }
@@ -332,6 +344,63 @@ async function verify(db: MongoDb) {
   };
 }
 
+export function retiredIndexKeyMatches(
+  actual: Record<string, unknown> | undefined,
+  expected: Record<string, number>,
+): boolean {
+  if (!actual) return false;
+  const actualKeys = Object.keys(actual);
+  const expectedKeys = Object.keys(expected);
+  if (actualKeys.length !== expectedKeys.length) return false;
+  return expectedKeys.every(
+    (field, position) =>
+      actualKeys[position] === field && Number(actual[field]) === expected[field],
+  );
+}
+
+async function dropRetiredIndexes(db: MongoDb) {
+  const results: Array<{
+    collection: string;
+    name: string;
+    dropped: boolean;
+    reason?: string;
+  }> = [];
+
+  for (const retired of RETIRED_INDEXES) {
+    const { collection, name, key, retiredField } = retired;
+    if (!(await collectionExists(db, collection))) {
+      results.push({ collection, name, dropped: false, reason: 'collection absent' });
+      continue;
+    }
+
+    const indexes = await db.collection(collection).indexes();
+    const match = indexes.find((index) => index.name === name);
+    if (!match) {
+      results.push({ collection, name, dropped: false, reason: 'index absent' });
+      continue;
+    }
+    if (!retiredIndexKeyMatches(match.key as Record<string, unknown>, { ...key })) {
+      throw new Error(
+        `Refusing to drop ${collection}.${name}: index key ${JSON.stringify(match.key)} does not match the retired declaration`,
+      );
+    }
+
+    const populated = await db
+      .collection(collection)
+      .countDocuments({ [retiredField]: { $exists: true, $ne: null } }, { limit: 1 });
+    if (populated > 0) {
+      throw new Error(
+        `Refusing to drop ${collection}.${name}: retired field ${retiredField} is populated, so something began writing it`,
+      );
+    }
+
+    await db.collection(collection).dropIndex(name);
+    results.push({ collection, name, dropped: true });
+  }
+
+  return results;
+}
+
 async function dropLegacyCollections(db: MongoDb) {
   const before = await verify(db);
   if (!before.ok) {
@@ -352,12 +421,14 @@ async function dropLegacyCollections(db: MongoDb) {
     dropped.push({ name, dropped: await db.collection(name).drop() });
   }
 
+  const retiredIndexes = await dropRetiredIndexes(db);
+
   const after = await verify(db);
   if (!after.ok) {
     throw new Error(`Post-drop legacy cleanup verification failed: ${JSON.stringify(after)}`);
   }
 
-  return { before, dropped, after };
+  return { before, dropped, retiredIndexes, after };
 }
 
 async function main() {
