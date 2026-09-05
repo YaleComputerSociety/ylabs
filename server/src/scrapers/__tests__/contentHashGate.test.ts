@@ -4,6 +4,7 @@ import {
   computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
+  descriptionHashObservations,
   SOURCE_CONTENT_HASH_FIELD,
 } from '../contentHashGate';
 
@@ -90,5 +91,60 @@ describe('contentHashObservation', () => {
       value: hash,
       sourceUrl: 'https://example.edu/lab',
     });
+  });
+});
+
+describe('descriptionHashObservations', () => {
+  const hash = [
+    contentHashObservation(
+      { entityType: 'researchEntity', entityKey: 'smith-lab' },
+      'https://example.edu/lab',
+      'abc',
+    ),
+  ];
+  const observation = (field: string, value: unknown) => ({
+    entityType: 'researchEntity' as const,
+    entityKey: 'smith-lab',
+    sourceUrl: 'https://example.edu/lab',
+    field,
+    value,
+  });
+
+  it('records the hash when the run produced both description fields', () => {
+    const emitted = [
+      observation('fullDescription', 'The lab studies protein folding kinetics in living cells.'),
+      observation('shortDescription', 'Studies protein folding kinetics.'),
+    ];
+    expect(descriptionHashObservations(emitted, hash)).toEqual(hash);
+  });
+
+  it('withholds the hash when a full description was produced without a card', () => {
+    const emitted = [
+      observation('fullDescription', 'The lab studies protein folding kinetics in living cells.'),
+    ];
+    expect(descriptionHashObservations(emitted, hash)).toEqual([]);
+  });
+
+  it('withholds the hash when the card is present but blank', () => {
+    const emitted = [
+      observation('fullDescription', 'The lab studies protein folding kinetics in living cells.'),
+      observation('shortDescription', '   '),
+    ];
+    expect(descriptionHashObservations(emitted, hash)).toEqual([]);
+  });
+
+  it('records the hash when the run produced no description at all, so unchanged content is not re-read', () => {
+    expect(descriptionHashObservations([observation('methods', ['western blot'])], hash)).toEqual(
+      hash,
+    );
+    expect(descriptionHashObservations([], hash)).toEqual(hash);
+  });
+
+  it('passes an already-withheld hash through unchanged', () => {
+    const emitted = [
+      observation('fullDescription', 'The lab studies protein folding kinetics in living cells.'),
+      observation('shortDescription', 'Studies protein folding kinetics.'),
+    ];
+    expect(descriptionHashObservations(emitted, [])).toEqual([]);
   });
 });
