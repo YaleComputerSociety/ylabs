@@ -31,12 +31,14 @@ export interface YsmLabDelistingState {
   absentFromIndexSinceRunId?: string | null;
   micrositeDead?: boolean;
   hasRecordedClosure?: boolean;
+  studentVisibilitySuppressionReason?: unknown;
 }
 
 export type YsmLabIndexSignal = 'present' | 'absent' | 'inconclusive';
 
 export type YsmLabDelistingAction =
   | 'noop'
+  | 'hold_microsite_alive'
   | 'clear_absence'
   | 'record_first_absence'
   | 'suppress_permanently_closed';
@@ -47,6 +49,45 @@ export interface YsmLabDelistingDecision {
 }
 
 const NOOP: YsmLabDelistingDecision = { action: 'noop' };
+const HOLD_MICROSITE_ALIVE: YsmLabDelistingDecision = { action: 'hold_microsite_alive' };
+
+export const SUPPRESSION_REASON_FIELD = 'studentVisibilitySuppressionReason';
+
+/**
+ * `studentVisibilitySuppressionReason` is a comma-joined list, not a single
+ * value: `visibilityRepairQueueService` writes several blocker reasons into it and
+ * both the tier service and `hasRecordedClosureEvidence` read it by substring.
+ * Overwriting it would drop an existing reason such as
+ * `research_infrastructure_only`, so removing the closure marker later would also
+ * silently drop that older suppression.
+ */
+export function withPermanentClosureReason(existing: unknown): string {
+  const reasons =
+    typeof existing === 'string'
+      ? existing
+          .split(',')
+          .map((reason) => reason.trim())
+          .filter(Boolean)
+      : [];
+  if (!reasons.includes(PERMANENTLY_CLOSED_SUPPRESSION_REASON)) {
+    reasons.push(PERMANENTLY_CLOSED_SUPPRESSION_REASON);
+  }
+  return reasons.join(', ');
+}
+
+/**
+ * A closure marker outranks even an explicit operator override to publish, so an
+ * operator lock on the reason field has to stop this lane the way every sibling
+ * write lane stops on `manuallyLockedFields`.
+ */
+export function suppressionReasonIsWritable(
+  entity: Record<string, any> | null | undefined,
+): boolean {
+  const lockedFields = Array.isArray(entity?.manuallyLockedFields)
+    ? entity?.manuallyLockedFields
+    : [];
+  return !lockedFields.includes(SUPPRESSION_REASON_FIELD);
+}
 
 /**
  * YSM writes index slugs lowercase and hyphenated, while stored `websiteUrl`
@@ -135,12 +176,16 @@ export function decideYsmLabDelisting(params: {
     return { action: 'record_first_absence', set: { absentFromIndexSinceRunId: currentRunId } };
   }
   if (absentSinceRunId === currentRunId) return NOOP;
-  if (!entity.micrositeDead) return NOOP;
+  if (!entity.micrositeDead) return HOLD_MICROSITE_ALIVE;
   if (entity.hasRecordedClosure) return NOOP;
 
   return {
     action: 'suppress_permanently_closed',
-    set: { studentVisibilitySuppressionReason: PERMANENTLY_CLOSED_SUPPRESSION_REASON },
+    set: {
+      [SUPPRESSION_REASON_FIELD]: withPermanentClosureReason(
+        entity.studentVisibilitySuppressionReason,
+      ),
+    },
   };
 }
 
@@ -180,7 +225,12 @@ export interface YsmLabDelistingResult {
   suppressed: number;
   absenceRecorded: number;
   absenceCleared: number;
+  /** Suppressions withheld because the microsite answered as alive. */
   held: number;
+  /** Rows skipped because an operator locked the suppression reason. */
+  lockedSkipped: number;
+  /** Rows with nothing to decide, which a healthy corpus is almost entirely made of. */
+  unchanged: number;
   discoveredCount: number;
   governedCount: number;
 }
@@ -194,6 +244,8 @@ export async function reconcileYsmLabDelistingFromRun(
     absenceRecorded: 0,
     absenceCleared: 0,
     held: 0,
+    lockedSkipped: 0,
+    unchanged: 0,
     discoveredCount: 0,
     governedCount: 0,
   };
@@ -229,6 +281,7 @@ export async function reconcileYsmLabDelistingFromRun(
       slug: 1,
       websiteUrl: 1,
       absentFromIndexSinceRunId: 1,
+      manuallyLockedFields: 1,
       studentVisibilitySuppressionReason: 1,
     },
   ).lean();
@@ -250,6 +303,10 @@ export async function reconcileYsmLabDelistingFromRun(
   };
 
   for (const entity of governed as Array<Record<string, any>>) {
+    if (!suppressionReasonIsWritable(entity)) {
+      result.lockedSkipped += 1;
+      continue;
+    }
     const labSlug = labSlugFromMicrositeUrl(entity.websiteUrl);
     const signal = classifyYsmLabIndexSignal({
       indexAuthoritative: true,
@@ -285,11 +342,16 @@ export async function reconcileYsmLabDelistingFromRun(
         absentFromIndexSinceRunId: entity.absentFromIndexSinceRunId,
         micrositeDead,
         hasRecordedClosure: hasRecordedClosureEvidence(entity),
+        studentVisibilitySuppressionReason: entity.studentVisibilitySuppressionReason,
       },
     });
 
-    if (decision.action === 'noop' || !decision.set) {
+    if (decision.action === 'hold_microsite_alive') {
       result.held += 1;
+      continue;
+    }
+    if (decision.action === 'noop' || !decision.set) {
+      result.unchanged += 1;
       continue;
     }
     await ResearchEntity.updateOne({ _id: entity._id }, { $set: decision.set });

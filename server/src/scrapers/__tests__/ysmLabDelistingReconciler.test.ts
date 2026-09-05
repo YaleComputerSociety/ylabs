@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { buildYsmLabIndexHealthSnapshot, parseLabs } from '../sources/ysmAtoZScraper';
 import {
   classifyYsmLabIndexSignal,
   decideYsmLabDelisting,
@@ -8,6 +9,8 @@ import {
   normalizeLabSlug,
   passesYsmLabIndexDropGuard,
   snapshotDiscoveredLabSlugs,
+  suppressionReasonIsWritable,
+  withPermanentClosureReason,
   YSM_LAB_INDEX_DROP_GUARD_MIN_FRACTION,
 } from '../ysmLabDelistingReconciler';
 
@@ -54,6 +57,56 @@ describe('isYsmLabIndexAuthoritative / snapshotDiscoveredLabSlugs', () => {
   });
 });
 
+describe('emitted index snapshot against the entity side', () => {
+  const INDEX_HTML = `
+<html><body>
+<table>
+  <tbody>
+    <tr><td><a href="https://medicine.yale.edu/lab/Pitt/">Pitt Lab</a></td><td>https://medicine.yale.edu/lab/Pitt/</td></tr>
+    <tr><td><a href="https://medicine.yale.edu/lab/colon_ramos/">Colon-Ramos Lab</a></td><td>https://medicine.yale.edu/lab/colon_ramos/</td></tr>
+  </tbody>
+</table>
+</body></html>
+`;
+
+  function signalFor(websiteUrl: string, html = INDEX_HTML, narrowed = false) {
+    const snapshot = buildYsmLabIndexHealthSnapshot({ labs: parseLabs(html), narrowed });
+    return classifyYsmLabIndexSignal({
+      indexAuthoritative: isYsmLabIndexAuthoritative(snapshot),
+      dropGuardPassed: true,
+      discoveredLabSlugs: new Set(snapshotDiscoveredLabSlugs(snapshot)),
+      labSlug: labSlugFromMicrositeUrl(websiteUrl),
+    });
+  }
+
+  it('reads a still-indexed lab as present, so the two sides share one key space', () => {
+    expect(signalFor('https://medicine.yale.edu/lab/pitt/')).toBe('present');
+    expect(signalFor('https://medicine.yale.edu/lab/colon-ramos/')).toBe('present');
+  });
+
+  it('reads a lab missing from the index as absent', () => {
+    expect(signalFor('https://medicine.yale.edu/lab/delacruz/')).toBe('absent');
+  });
+
+  it('is inconclusive when the run narrowed the index', () => {
+    expect(signalFor('https://medicine.yale.edu/lab/delacruz/', INDEX_HTML, true)).toBe(
+      'inconclusive',
+    );
+  });
+
+  it('counts only microsite labs, so an index of external links cannot look complete enough', () => {
+    const snapshot = buildYsmLabIndexHealthSnapshot({
+      labs: parseLabs(
+        `<html><body><table><tbody><tr><td><a href="https://example.org/somewhere/">Elsewhere Lab</a></td><td>https://example.org/somewhere/</td></tr></tbody></table></body></html>`,
+      ),
+      narrowed: false,
+    });
+    expect(snapshot.discoveredLabSlugs).toEqual([]);
+    expect(snapshot.discoveredCount).toBe(0);
+    expect(passesYsmLabIndexDropGuard(snapshot.discoveredCount, 400)).toBe(false);
+  });
+});
+
 describe('passesYsmLabIndexDropGuard', () => {
   it('passes at the measured healthy ratio and fails a collapsed index', () => {
     expect(passesYsmLabIndexDropGuard(261, 400)).toBe(true);
@@ -69,6 +122,30 @@ describe('passesYsmLabIndexDropGuard', () => {
     expect(YSM_LAB_INDEX_DROP_GUARD_MIN_FRACTION).toBe(0.5);
     expect(passesYsmLabIndexDropGuard(200, 400)).toBe(true);
     expect(passesYsmLabIndexDropGuard(199, 400)).toBe(false);
+  });
+});
+
+describe('withPermanentClosureReason / suppressionReasonIsWritable', () => {
+  it('keeps existing reasons and never duplicates the marker', () => {
+    expect(withPermanentClosureReason('')).toBe('permanently_closed');
+    expect(withPermanentClosureReason(undefined)).toBe('permanently_closed');
+    expect(withPermanentClosureReason('research_infrastructure_only')).toBe(
+      'research_infrastructure_only, permanently_closed',
+    );
+    expect(withPermanentClosureReason('permanently_closed')).toBe('permanently_closed');
+    expect(withPermanentClosureReason(' thin_description ,, duplicate_risk')).toBe(
+      'thin_description, duplicate_risk, permanently_closed',
+    );
+  });
+
+  it('refuses to write a suppression reason an operator locked', () => {
+    expect(suppressionReasonIsWritable({})).toBe(true);
+    expect(suppressionReasonIsWritable({ manuallyLockedFields: ['websiteUrl'] })).toBe(true);
+    expect(
+      suppressionReasonIsWritable({
+        manuallyLockedFields: ['studentVisibilitySuppressionReason'],
+      }),
+    ).toBe(false);
   });
 });
 
@@ -168,13 +245,31 @@ describe('decideYsmLabDelisting', () => {
   });
 
   it('holds when the index says absent but the microsite is still reachable', () => {
-    expect(
-      decideYsmLabDelisting({
-        signal: 'absent',
-        currentRunId: 'run-2',
-        entity: { ...base, absentFromIndexSinceRunId: 'run-1', micrositeDead: false },
-      }).action,
-    ).toBe('noop');
+    const decision = decideYsmLabDelisting({
+      signal: 'absent',
+      currentRunId: 'run-2',
+      entity: { ...base, absentFromIndexSinceRunId: 'run-1', micrositeDead: false },
+    });
+    expect(decision.action).toBe('hold_microsite_alive');
+    expect(decision.set).toBeUndefined();
+  });
+
+  it('appends the closure marker to an existing suppression reason', () => {
+    const decision = decideYsmLabDelisting({
+      signal: 'absent',
+      currentRunId: 'run-2',
+      entity: {
+        ...base,
+        absentFromIndexSinceRunId: 'run-1',
+        micrositeDead: true,
+        studentVisibilitySuppressionReason: 'research_infrastructure_only, thin_description',
+      },
+    });
+    expect(decision.action).toBe('suppress_permanently_closed');
+    expect(decision.set).toEqual({
+      studentVisibilitySuppressionReason:
+        'research_infrastructure_only, thin_description, permanently_closed',
+    });
   });
 
   it('does not rewrite an already recorded closure', () => {

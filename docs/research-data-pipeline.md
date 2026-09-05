@@ -302,6 +302,24 @@ The absent branch already no-ops on a `departed` reason, so it needs no equivale
 
 Enabling the lane is a separate, measured change: it can only remove research homes from the directory, so it needs a recomputed `computeResearchEntityStudentVisibility` served-tier diff over every row on Development and Production, not a flag count.
 
+### YSM lab delisting detection is off by default
+
+`ysmLabDelistingReconciler` records the `permanently_closed` marker for YSM lab microsites that YSM deleted and dropped from its A-Z index.
+It runs from `materializeFromRun` and is gated by `SCRAPER_YSM_LAB_DELISTING_DETECTION`, which is `false` by default and listed in `server/.env.example` so the lane is discoverable rather than existing only inside the reconciler and its test.
+
+Suppression requires two independent positive facts: absence from an authoritative index across two distinct runs, and the microsite itself probing `404`/`410`.
+Absence alone is an inference from a missing row that a selector change produces wholesale, and a `404` alone is one URL that a transient edge error can fake, so a single failing signal freezes the lane instead of retiring a live lab.
+A `403`, `429`, `5xx`, timeout, or SSRF refusal leaves `micrositeDead` false, because collapsing those into "gone" would turn throttling on `medicine.yale.edu` into mass suppression.
+
+The only index input is the `ysmLabIndexHealth` observation `ysmAtoZScraper` emits once per run, and it is authoritative only when the run parsed the whole index: `--only`, `--limit`, and `--offset` each mark the snapshot incomplete.
+`discoveredLabSlugs` carries microsite slugs derived by the reconciler's own `labSlugFromMicrositeUrl`, not entity slugs, because it is compared against a stored `websiteUrl`; emitting the `ysm-`-prefixed entity slug put the two sides in different key spaces and made every governed row read as absent.
+Slug normalization folds the casing and separator drift between the index and stored URLs (`lab/Pitt` for indexed `pitt`, `lab/colon_ramos` for indexed `colon-ramos`), which is a correctness requirement: a raw comparison reported 52 delisted labs where 48 are, and the 4 extra were live.
+`YSM_LAB_INDEX_DROP_GUARD_MIN_FRACTION` (0.5) freezes the pass when the discovered set collapses below half the governed population.
+
+The lane honours `manuallyLockedFields`: a row that locks `studentVisibilitySuppressionReason` is skipped and counted in `lockedSkipped`, since the closure marker outranks even an explicit operator override to publish.
+The marker is appended to any existing suppression reason rather than replacing it, because that field is a comma-joined list read by substring elsewhere.
+The result names why a pass did nothing (`disabled`, `no-index-health-observation`, `index-not-authoritative`, `drop-guard-frozen`, `reconciled`) and separates `held` (suppression withheld because the microsite answered as alive) from `unchanged` (nothing to decide), so a healthy run cannot look like a run that withheld dozens of suppressions.
+
 ### Faculty-research-area profile research synthesis
 
 A `FACULTY_RESEARCH_AREA` usually has no lab site, so its only source is the professor's official Yale profile page, which states the research but interleaves it with credentials, so no contiguous verbatim span carries it and extraction can only copy the biography.
