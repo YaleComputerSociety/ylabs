@@ -7,8 +7,10 @@ import {
   withPublicDescriptionGateFields,
 } from '../researchEntityPublicDescription';
 import { buildPublicDescriptionAuditReport } from '../researchEntityPublicDescriptionAuditService';
+import { toPublicResearchEntitySummaryDto } from '../researchEntityDto';
 import { PUBLIC_RELATED_ENTITY_PROJECTION } from '../researchGroupService';
 import { savedResearchEntityProjection } from '../researchPlanService';
+import { sanitizeResearchEntityPublicDescriptionFields } from '../../utils/researchEntityDescriptionText';
 
 const HISTORICAL_AUDIT_PROJECTION =
   '_id slug name displayName kind entityType website websiteUrl sourceUrls shortDescription fullDescription profileSynthesisDescription descriptionSource';
@@ -66,12 +68,16 @@ const applyProjection = <T extends Record<string, any>>(entity: T, projection: s
 const auditOver = (entities: Array<Record<string, any>>) =>
   buildPublicDescriptionAuditReport({ entities, leadMembersByEntityId: new Map() });
 
+const servedCard = (entity: Record<string, any>) =>
+  toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(entity));
+
 describe('public description gate projection completeness', () => {
   const fixtures = [plainEntity, chipCardEntity];
 
-  it('reports researchAreas as read-but-unprojected for the projection that inflated the audit', () => {
+  it('reports every field read-but-unprojected by the projection that inflated the audit', () => {
     expect(missingPublicDescriptionGateFields(HISTORICAL_AUDIT_PROJECTION)).toEqual([
       'researchAreas',
+      'fieldProvenance',
     ]);
   });
 
@@ -79,10 +85,12 @@ describe('public description gate projection completeness', () => {
     expect(missingPublicDescriptionGateFields(HISTORICAL_SAVED_PROJECTION)).toEqual([
       'descriptionSource',
       'researchAreas',
+      'fieldProvenance',
     ]);
     expect(missingPublicDescriptionGateFields(HISTORICAL_RELATED_PROJECTION)).toEqual([
       'profileSynthesisDescription',
       'researchAreas',
+      'fieldProvenance',
     ]);
   });
 
@@ -124,6 +132,22 @@ describe('public description gate projection completeness', () => {
     expect(starved.counts.violations).toBe(1);
     expect(starved.counts.missingPublicCardDescription).toBe(1);
     expect(starved.counts).not.toEqual(wholeDocument.counts);
+  });
+
+  // The verdict-parity test above passed all through #2425, because an unprojected
+  // `fieldProvenance` flipped no gate verdict - it only degraded the copy. Parity has
+  // to be asserted on what the student reads, not only on who is allowed to serve.
+  it('serves identical card copy from every gate-complete projection and the whole document', () => {
+    for (const entity of fixtures) {
+      const wholeDocument = servedCard(entity);
+      for (const projection of [
+        withPublicDescriptionGateFields('_id slug'),
+        savedResearchEntityProjection,
+        PUBLIC_RELATED_ENTITY_PROJECTION,
+      ]) {
+        expect(servedCard(applyProjection(entity, projection))).toEqual(wholeDocument);
+      }
+    }
   });
 
   it('serves the chip-derived card on a whole document and fails closed without researchAreas', () => {

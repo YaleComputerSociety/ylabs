@@ -29,6 +29,20 @@ import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 // read whole documents). Any new gate input must be added here and to
 // `publicDescriptionGateProjection` consumers, or that surface will silently
 // under-serve again.
+//
+// `fieldProvenance` was the second omission of that exact shape (#2425). It has
+// two independent readers, and an unprojected read silently defeats both:
+//   - the gate chain, via `shortDescriptionIsSelfDerivedFromFullDescription`
+//     (`researchEntityDescriptionQuality.ts`), which without provenance sees no
+//     source on either description, reports the short as independently sourced,
+//     and so evaluates the #1721/#1773 restatement guard on a short that should
+//     have been excluded from it;
+//   - served card copy, via `dropDomainIncoherentUnsourcedResearchAreas`, which
+//     without provenance treats every `researchAreas` chip as unsourced,
+//     fail-closes the whole array, and loses the derived "Studies <chips>" short.
+// On the Dev corpus measured for #2425 the copy path was the one that bit (181
+// rows corrected) while no gate verdict happened to flip, but the gate reader
+// above means a flip is possible and that zero is a corpus fact, not a bound.
 export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] = Object.freeze([
   'name',
   'displayName',
@@ -39,6 +53,7 @@ export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] =
   'profileSynthesisDescription',
   'descriptionSource',
   'researchAreas',
+  'fieldProvenance',
   'sourceUrls',
   'website',
   'websiteUrl',
