@@ -53,6 +53,7 @@ import {
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import {
+  isOffsiteInstitutionPersonProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
 } from '../../utils/researchHomeWebsiteUrl';
@@ -2667,6 +2668,7 @@ function profileEnrichmentFromHtml(
     const isProfileSite = profileHost && candidateHost === profileHost;
     const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
     if (isProfileSite && isDirectoryPath) return;
+    if (isOffsiteInstitutionPersonProfileUrl(absolute)) return;
 
     if (isGenericLabDirectoryUrl(absolute)) return;
     labUrl = absolute;
@@ -2928,6 +2930,18 @@ async function enrichEntryFromOfficialProfile(
     log(`[profile] fetch failed: ${sanitizeLogValue(err)}`);
     return entry;
   }
+}
+
+/**
+ * Every roster lane mints `labUrl` from a page link, and only the official-profile
+ * lane checks its shape, so the refusal has to sit on the boundary both observation
+ * builders share rather than in each extractor. The extractor-level check stays
+ * where it exists because there it lets a later, genuine website link on the same
+ * page win instead of being blocked by the first off-site one.
+ */
+function withoutOffsiteInstitutionWebsite(entry: FacultyEntry): FacultyEntry {
+  if (!entry.labUrl || !isOffsiteInstitutionPersonProfileUrl(entry.labUrl)) return entry;
+  return { ...entry, labUrl: undefined };
 }
 
 const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
@@ -3195,12 +3209,14 @@ export class DepartmentRosterScraper implements IScraper {
 
       for (const rawEntry of entries) {
         if (totalFaculty >= limit) break;
-        const entry = await enrichEntryFromOfficialProfile(
-          rawEntry,
-          this.name,
-          ctx.options.useCache,
-          this.htmlFetcher,
-          ctx.log,
+        const entry = withoutOffsiteInstitutionWebsite(
+          await enrichEntryFromOfficialProfile(
+            rawEntry,
+            this.name,
+            ctx.options.useCache,
+            this.htmlFetcher,
+            ctx.log,
+          ),
         );
         const { observations: userObs, entityKey } = entryToUserObservations(
           entry,
