@@ -550,7 +550,7 @@ const Analytics = () => {
                 <select
                   value={analyticsRange}
                   onChange={(event) => setAnalyticsRange(event.target.value as AnalyticsRange)}
-                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                  className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
                 >
                   {analyticsRanges.map((range) => (
                     <option key={range.value} value={range.value}>
@@ -640,7 +640,7 @@ const Analytics = () => {
                 See the full student action counts and zero- or low-result queries in{' '}
                 <a
                   href="#high-impact-diagnostics"
-                  className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                  className="font-medium text-brand underline-offset-2 hover:underline"
                 >
                   High-Impact Diagnostics
                 </a>
@@ -659,7 +659,7 @@ const Analytics = () => {
                 Current admin authority comes from active admin grants, not profile user type.
               </p>
             </div>
-            <span className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">
+            <span className="rounded-md border border-line-brand bg-brand-soft px-3 py-2 text-sm font-semibold text-brand">
               {formatNumber(adminAccess.activeCount)} active admin
               {adminAccess.activeCount === 1 ? '' : 's'}
             </span>
@@ -680,7 +680,7 @@ const Analytics = () => {
                 Grant admin NetID
               </span>
               <input
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
                 value={adminGrantNetid}
                 onChange={(event) => setAdminGrantNetid(event.target.value)}
                 placeholder="fixture-admin"
@@ -691,7 +691,7 @@ const Analytics = () => {
                 Admin grant note
               </span>
               <input
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
                 value={adminGrantNote}
                 onChange={(event) => setAdminGrantNote(event.target.value)}
                 placeholder="Required reason for this grant"
@@ -963,7 +963,7 @@ const Analytics = () => {
                 value={auditActorFilter}
                 onChange={(event) => setAuditActorFilter(event.target.value)}
                 placeholder="e.g. abc1234"
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               />
             </label>
             <label className="block">
@@ -973,7 +973,7 @@ const Analytics = () => {
               <select
                 value={auditActionFilter}
                 onChange={(event) => setAuditActionFilter(event.target.value)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="all">All actions</option>
                 {Object.entries(AUDIT_ACTION_LABELS).map(([action, label]) => (
@@ -990,7 +990,7 @@ const Analytics = () => {
               <select
                 value={auditTargetTypeFilter}
                 onChange={(event) => setAuditTargetTypeFilter(event.target.value)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-brand yr-focus-ring"
               >
                 <option value="all">All targets</option>
                 <option value="adminGrant">Admin grant</option>
@@ -1065,7 +1065,7 @@ const Analytics = () => {
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-600">
                           {event.summary?.status && (
-                            <span className="mr-2 rounded-md bg-blue-50 px-2 py-0.5 font-semibold text-blue-700">
+                            <span className="mr-2 rounded-md bg-brand-soft px-2 py-0.5 font-semibold text-brand">
                               {event.summary.status}
                             </span>
                           )}
@@ -1126,19 +1126,19 @@ const Analytics = () => {
           className="mb-6 flex flex-wrap gap-2 text-sm font-semibold"
         >
           <a
-            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-blue-700"
+            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand"
             href="#visitor-statistics"
           >
             Visitors
           </a>
           <a
-            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-blue-700"
+            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand"
             href="#diagnostics"
           >
             Diagnostics
           </a>
           <a
-            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-blue-700"
+            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand"
             href="#research-coverage"
           >
             Research Coverage
