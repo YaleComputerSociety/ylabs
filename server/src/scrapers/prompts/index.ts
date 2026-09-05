@@ -49,8 +49,10 @@ export const DESCRIPTION_EXTRACTION_PROMPT = loadPrompt('micrositeDescriptionExt
 export const UNDERGRAD_EXTRACTION_PROMPT = loadPrompt('undergradExtraction.md');
 export const UNDERGRAD_EXTRACTION_LEGACY_PROMPT = loadPrompt('undergradExtractionLegacy.md');
 export const COVERAGE_SYNTHESIS_PROMPT = loadPrompt('coverageSynthesis.md');
+export const LAB_SITE_DECLARED_LEAD_PROMPT = loadPrompt('labSiteDeclaredLead.md');
 
 export const CARD_SYNTHESIS_PROMPT_HASH = hashPrompt(CARD_SYNTHESIS_PROMPT);
+export const LAB_SITE_DECLARED_LEAD_PROMPT_HASH = hashPrompt(LAB_SITE_DECLARED_LEAD_PROMPT);
 export const DESCRIPTION_EXTRACTION_PROMPT_HASH = hashPrompt(DESCRIPTION_EXTRACTION_PROMPT);
 // Either undergrad variant changing must re-extract, so hash both together.
 export const UNDERGRAD_EXTRACTION_PROMPT_HASH = hashPrompt(

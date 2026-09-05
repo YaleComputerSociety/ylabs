@@ -45,6 +45,7 @@
     "observations:repair-orphaned-references": "tsx src/scripts/repairOrphanedObservationReferences.ts",
     "observations:purge-miskeyed-profile-descriptions": "tsx src/scripts/purgeMiskeyedProfileDescriptions.ts",
     "observations:retire-affiliated-org-name-grafts": "tsx src/scripts/retireAffiliatedOrgNameGrafts.ts",
+    "observations:retarget-foreign-lab-websites": "tsx src/scripts/retargetForeignLabWebsites.ts",
     "observations:prune-dead": "tsx src/scripts/pruneDeadObservations.ts",
     "observations:audit-orphan-keys": "tsx src/scripts/orphanObservationKeyAudit.ts",
     "observations:normalize-fingerprints": "tsx src/scripts/normalizeObservationFingerprints.ts",
