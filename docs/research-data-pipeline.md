@@ -145,6 +145,39 @@ Selection filters to the `profile_area_shell_with_concrete_home` dedupe category
 Every merge records a durable `ResearchEntityRedirect` (`researchEntityMergeRedirectService.ts`) keyed on the shell slug/id and pointing at the live canonical, so a later re-scrape resolves the old shell to its canonical instead of re-minting a duplicate; resolution follows redirect and `canonicalGroupId` chains and never depends on the shell row still existing.
 The `archived-cleanup` stage enforces a fail-closed redirect invariant (issue #2039): in `--merge-residue-only` mode it refuses to delete any residue that is not provably inert and defers it with a reason instead, and the reason codes are enumerated in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
+### Materialization is run-scoped, so an interrupted run strands its observations
+
+`materializeFromRun` is the only entry point that enumerates observations, and it is scoped to a single `scrapeRunId`.
+The CLI calls it after `orchestrator.run` returns, so a scraper that throws (run left `failure`) or a process killed mid-run (run left `running`) never reaches the call at all.
+Nothing else re-enumerates observations by key: `research-entity:rematerialize` selects by `research_entities.slug` and reports `found: false` for a key with no entity row, and the synthesis lanes enumerate existing entities.
+There is no corpus-wide materialize pass.
+
+The consequence is a stable failure mode rather than a transient one.
+Observations from an interrupted run stay live and unsuperseded forever, no entity is ever minted for their `entityKey`, and no later sweep revisits them, because supersession keys on `observationFingerprint` within a source lane rather than on whether the lane was ever materialized.
+Measured on Development for issue #2383: 978 of 1,508 stranded keys (10,828 of 14,592 live observations) were emitted only by runs that never reached `success`, including 521 of the 527 keys carrying a complete faculty observation set with no identifiable target.
+Those observations are unprocessed input, not dead data.
+Do not prune a stranded lane before checking this axis; pruning it discards acquired evidence that was never offered to a materializer.
+
+### Stranded observation keys and their category split
+
+`yarn --cwd server observations:audit-orphan-keys` (`orphanObservationKeyAudit.ts`, with the pure classifier in `orphanObservationKeyAuditCore.ts`) splits every live `researchEntity` observation key that matches no `research_entities.slug` and no `research_entity_redirects.mergedSlug`.
+It is read-only and writes nothing but its `--output` report.
+
+Join against `mergedSlug`.
+That is the field the schema and `researchEntityMergeRedirectService` use; there is no `fromSlug`.
+Ignoring the redirect table inflates the Development population from 1,508 keys / 14,592 observations to 1,931 / 20,172, because 423 keys (5,580 observations) are correctly re-keyed by a redirect and are not stranded at all.
+
+The classifier reports two independent axes, and conflating them produces the wrong remedy.
+`category` says what the lane is; `materializationReach` says whether materialization ever ran over it.
+Categories are decided by shape - recorded `entityId`, observed `entityType`, person identity, source enablement - never by the absence of a flag a materializer would have set, since such a bucket reads as empty whether or not the condition exists.
+
+Person identity is matched on both the exact person-slug tail and a first-and-last-name key that drops middle names and initials.
+Without the second form, `dept-ysph-megan-l-ranney` and `ysm-faculty-megan-ranney` read as two different people and merge residue is misreported as a lane with no target.
+
+Restoring a redirect is not the safe default remedy.
+A redirect converts a dormant lane into an active writer into the canonical entity, which is precisely the #2378 graft channel: `dept-mbb-i-george-miller` would graft the name "I George Miller Lab" onto a live record.
+Only `ENTITY_ID_RESOLVES_LIVE` is a safe redirect backfill, because those observations already materialize into that entity; every other cross-scheme match needs a per-key decision on whether the stranded values agree with the canonical.
+
 ### Ingest-time observation-store guards
 
 `observationStore.appendObservations` (`server/src/scrapers/observationStore.ts`) is the single ingest choke point, and it applies several guards before any observation is stored:
