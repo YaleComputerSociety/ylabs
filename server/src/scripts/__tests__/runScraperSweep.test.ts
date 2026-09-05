@@ -303,10 +303,29 @@ describe('runScraperSweep', () => {
     ).toMatch(/missing run.id/);
   });
 
+  it('declares only post-run stage commands that exist as server npm scripts', () => {
+    const packageJsonPath = path.join(__dirname, '..', '..', '..', 'package.json');
+    const declaredScripts = new Set(
+      Object.keys(
+        (
+          JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+            scripts?: Record<string, string>;
+          }
+        ).scripts ?? {},
+      ),
+    );
+    const stageCommands = [
+      ...DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS,
+      ...FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS,
+    ].map((definition) => ({ name: definition.name, command: definition.command }));
+
+    expect(stageCommands.length).toBeGreaterThan(0);
+    expect(stageCommands.filter((stage) => !declaredScripts.has(stage.command))).toEqual([]);
+  });
+
   it('builds the complete Development post-run quality pipeline', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep');
     expect(stages.map((stage) => stage.name)).toEqual([
-      'faculty-projection',
       'visibility-gate',
       'search-rebuild',
       'coverage-audit',
@@ -332,9 +351,6 @@ describe('runScraperSweep', () => {
     );
     expect(stages.find((stage) => stage.name === 'archived-cleanup')?.args).not.toContain(
       '--apply',
-    );
-    expect(stages.find((stage) => stage.name === 'faculty-projection')?.args).toEqual(
-      expect.arrayContaining(['--apply', '--confirm-faculty-projection', '--concurrency', '12']),
     );
     expect(stages.find((stage) => stage.name === 'data-quality')?.args).toEqual(
       expect.arrayContaining(['--strict', '--include-samples', '--progress']),
@@ -382,7 +398,6 @@ describe('runScraperSweep', () => {
     });
     const names = stages.map((stage) => stage.name);
     expect(names).toEqual([
-      'faculty-projection',
       'eponymous-fra-merge',
       'visibility-gate',
       'search-rebuild',
@@ -426,7 +441,6 @@ describe('runScraperSweep', () => {
     });
     const names = stages.map((stage) => stage.name);
     expect(names).toEqual([
-      'faculty-projection',
       'researcher-dedupe',
       'eponymous-fra-merge',
       'visibility-gate',
@@ -454,7 +468,7 @@ describe('runScraperSweep', () => {
     const names = stages.map((stage) => stage.name);
     expect(names).toContain('researcher-dedupe');
     expect(names).not.toContain('eponymous-fra-merge');
-    expect(names.indexOf('researcher-dedupe')).toBe(1);
+    expect(names.indexOf('researcher-dedupe')).toBeLessThan(names.indexOf('visibility-gate'));
   });
 
   const sinceIso = '2026-08-26T00:00:00.000Z';
@@ -825,9 +839,7 @@ describe('runScraperSweep', () => {
       mergeUrlIdentityDuplicates: true,
       maxUrlIdentityMerges: 300,
     }).map((stage) => stage.name);
-    expect(names.indexOf('url-identity-dedupe')).toBeGreaterThan(
-      names.indexOf('faculty-projection'),
-    );
+    expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('visibility-gate'));
     expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('search-rebuild'));
     const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       mergeUrlIdentityDuplicates: true,

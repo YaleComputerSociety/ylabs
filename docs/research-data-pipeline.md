@@ -91,18 +91,17 @@ The between-phases prune is best-effort: a prune failure is logged to `errors.lo
 
 The two exhaustive Development modes (`development-full`, `development-incremental`) run a fixed chain of post-run stages after every source has fetched and materialized:
 
-1. `faculty-projection` (`research-entity:project-faculty`, `--concurrency 12`)
-2. `researcher-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`)
-3. `eponymous-fra-merge` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`)
-4. `url-identity-dedupe` (opt-in, only when `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set)
-5. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-6. `search-rebuild` (`meili:rebuild-research-entities --clear`)
-7. `coverage-audit`
-8. `data-quality` (`beta:data-quality --strict`)
-9. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-10. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-11. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-12. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+1. `researcher-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`)
+2. `eponymous-fra-merge` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_AUTO_MERGE_FRA=0`)
+3. `url-identity-dedupe` (opt-in, only when `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set)
+4. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+5. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+6. `coverage-audit`
+7. `data-quality` (`beta:data-quality --strict`)
+8. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+9. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+10. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+11. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 The `researcher-dedupe`, `eponymous-fra-merge`, and merge-residue deletion stages run by default on the two exhaustive Development modes so the Dev pipeline auto-dedupes every run. Each can be disabled independently by setting its environment flag to a falsey value: `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_AUTO_MERGE_FRA`, and `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`. The `url-identity-dedupe` stage is opt-in and stays off unless `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` is set to a truthy value, so a routine sweep never silently merges by shared profile URL. Every `SCRAPER_SWEEP_*` stage flag in either engine parses through the one shared helper pair in `server/src/scripts/sweepStageFlags.ts`, so the accepted truthy values (`1`, `true`, `yes`, `y`, `on`, `enable`, `enabled`) and falsey values (`0`, `false`, `no`, `n`, `off`, `disable`, `disabled`) are identical for every flag. These post-run stages never run on Beta or Prod sweeps, so those paths are unaffected.
 
@@ -131,12 +130,13 @@ No `Fellowship`/`/programs` Meilisearch rebuild stage is wired because there is 
 The beta modes (`beta-plan`, `beta-fetch`) still run `RESEARCH_SWEEP_SOURCES` only; a beta fellowship sweep is a possible follow-up.
 The two engines can therefore be scheduled, gated, and reasoned about on independent cadences.
 
-### Faculty new-model projection
+### Faculty Researcher spine creation
 
-`research-entity:project-faculty` (`server/src/services/facultyResearcherProjection.ts`) is a recurring sweep stage that keeps a canonical `Researcher` spine for every active faculty member, independent of whether any scraped membership has resolved them yet.
-It reads active faculty `User` rows (`userType` in {`professor`, `faculty`}, not archived, not `dedupedIntoUserId`), skips organizational mailboxes, and resolves-or-creates the canonical `Researcher` id for each identity via `resolveOrCreateResearcherIdForIdentity`.
-It is dry-run by default; apply requires `--apply --confirm-faculty-projection`.
-Concurrency is bounded (default 10, max 32); the sweep runs it at 12.
+There is no standalone faculty-projection sweep stage, and adding one back would contradict the current identity policy.
+A `Researcher` spine is created only where a research signal already attaches to the person: `canonicalMembershipMaterializer` resolves-or-creates the `Account` and the thin `Researcher` together while materializing a canonical membership, and the ORCID branch of the same path creates an accountless `Researcher` for an identity that carries a valid ORCID.
+The `user`-observation path in `entityMaterializer` never mints a person: a bare directory identity that reaches no existing researcher by netid, name, or email is refused with `skipped('directory-identity-without-research-signal')` (issue #2129), so it enriches an existing `Researcher` but never creates one.
+The retired `research-entity:project-faculty` stage did the opposite, minting a spine for every active faculty row regardless of research signal, and it read the `User` model that issue #2014 retired.
+Its removal is therefore intentional rather than a lost capability; see [`research-model.md`](research-model.md) for the identity-join and netid-stamping rules.
 
 ### Eponymous FRA-to-lab merge and durable redirects
 

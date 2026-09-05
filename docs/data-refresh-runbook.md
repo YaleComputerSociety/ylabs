@@ -391,7 +391,6 @@ yarn scrape:development:write run \
 
 The post-run artifacts in the printed sweep directory are:
 
-- `development-faculty-projection.json`
 - `development-visibility-gate.json`
 - `development-search-rebuild.json`
 - `development-coverage.json`
