@@ -381,7 +381,8 @@ function demoteUndergradSignalProseGroups(field: string, groups: RankedGroup[]):
     (group) =>
       !group.demoted &&
       !isUndergradSignalProseGroup(group) &&
-      normalizedProse(group.value).length >= richestSignalLength + MATERIAL_PROSE_ENRICHMENT_CHARS &&
+      normalizedProse(group.value).length >=
+        richestSignalLength + MATERIAL_PROSE_ENRICHMENT_CHARS &&
       isAdoptableResearchProseGroup(group),
   );
   if (!richerAdoptableExists) return;

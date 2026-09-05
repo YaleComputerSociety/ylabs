@@ -1034,7 +1034,12 @@ describe('undergrad-access lane demotion for fullDescription', () => {
   const MICROSITE_RESEARCH =
     'The center develops and applies high-throughput sequencing technology for human genetics, spanning whole-genome and exome sequencing, single-cell transcriptomics, and long-read assembly. Its staff collaborate with investigators on experimental design, library preparation, and downstream statistical analysis, and it maintains shared instrumentation for the wider Yale research community.';
 
-  const obs = (value: string, sourceName: string, confidence: number, observedAt = D('2026-02-01')) => ({
+  const obs = (
+    value: string,
+    sourceName: string,
+    confidence: number,
+    observedAt = D('2026-02-01'),
+  ) => ({
     field: 'fullDescription',
     value,
     sourceName,
@@ -1144,8 +1149,14 @@ describe('undergrad-access lane demotion for fullDescription', () => {
     const resolved = resolveField(
       'shortDescription',
       [
-        { ...obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')), field: 'shortDescription' },
-        { ...obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')), field: 'shortDescription' },
+        {
+          ...obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
+          field: 'shortDescription',
+        },
+        {
+          ...obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
+          field: 'shortDescription',
+        },
       ],
       { now: D('2026-02-25') },
     );
