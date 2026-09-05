@@ -2694,60 +2694,6 @@ describe('Research page', () => {
     expect(container.textContent).not.toContain('People and Contacts0');
   });
 
-  it('renders semantic research search results as profile-opening homes without duplicate match copy', async () => {
-    mockSearchResponses((url, body) => {
-      if (body.q === 'digital humanities') {
-        return url === '/research/search'
-          ? researchSearchResponse([
-              {
-                ...researchEntity,
-                _id: 'entity-2',
-                id: 'entity-2',
-                slug: 'digital-humanities-lab',
-                name: 'Yale Digital Humanities Lab',
-                displayName: 'Yale Digital Humanities Lab',
-                fullDescription: 'Computational text analysis and archive-centered research.',
-                departments: ['English'],
-                researchAreas: ['digital humanities'],
-                sourceUrls: ['https://example.yale.edu'],
-                searchMatch: {
-                  mode: 'hybrid',
-                  concepts: ['digital humanities'],
-                  methods: ['computational text analysis'],
-                  reason: 'Matches computational text analysis, digital humanities.',
-                },
-              },
-            ])
-          : unexpectedSearchEndpoint(url);
-      }
-
-      return url === '/research/search' ? researchSearchResponse() : unexpectedSearchEndpoint(url);
-    });
-
-    renderResearch();
-
-    fireEvent.change(screen.getByLabelText('Search Yale research'), {
-      target: { value: 'digital humanities' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-
-    expect(
-      await screen.findByRole('heading', { name: 'Yale Digital Humanities Lab' }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByText(
-        'Why this matches: Matches computational text analysis, digital humanities.',
-      ),
-    ).toBeNull();
-    expect(
-      screen.queryByText('Matches computational text analysis, digital humanities.'),
-    ).toBeNull();
-    expect(screen.getByRole('link', { name: 'Yale Digital Humanities Lab' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'View profile →' }).getAttribute('href')).toBe(
-      '/research/digital-humanities-lab',
-    );
-  });
-
   it('renders research metadata without a separate pathway fallback request', async () => {
     mockSearchResponses((url, body) => {
       if (body.q === 'protein folding') {

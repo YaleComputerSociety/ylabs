@@ -1393,7 +1393,6 @@ export async function searchResearchGroupsViaMeili(
       ...entity,
       _id: id,
       planningContext: planningContextResult.contexts.get(entityId),
-      ...(hit.searchMatch ? { searchMatch: hit.searchMatch } : {}),
     };
   });
 

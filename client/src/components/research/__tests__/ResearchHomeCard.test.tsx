@@ -49,7 +49,6 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
   contextState: 'complete',
   contextLabel: 'Research description',
   contextLine: 'Neuroscience · School of Medicine',
-  matchReason: 'Matched systems neuroscience.',
   entityCount: 1,
   pathwayCount: 0,
   peopleCount: 0,
@@ -102,8 +101,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).toContain('Systems Neuroscience');
     expect(container.textContent).not.toContain('Evidence limited');
     expect(screen.queryByText('Research homes')).toBeNull();
-    expect(container.textContent).toContain('Why it might fit');
-    expect(container.textContent).toContain('Matched systems neuroscience.');
+    expect(container.textContent).not.toContain('Why it might fit');
     expect(container.textContent).not.toContain('Why this matches');
     expect(container.textContent).not.toContain('1 contact');
     expect(container.textContent).not.toContain('1 next step');

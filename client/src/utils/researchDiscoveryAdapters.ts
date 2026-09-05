@@ -10,7 +10,7 @@ import { researchEntityTitle } from './researchEntityCopy';
 import { safeHttpUrl } from './url';
 
 export interface EvidenceSourceRowData {
-  claim: string;
+  claim?: string;
   sourceType?: string;
   url?: string;
   excerpt?: string;
@@ -81,7 +81,6 @@ export interface ResearchCluster {
   contextState?: ResearchHomeContextState;
   contextLabel?: string;
   contextLine?: string;
-  matchReason: string;
   entityCount: number;
   pathwayCount: number;
   peopleCount: number;
@@ -522,10 +521,7 @@ const buildProfileDiscoveryClusters = (
       sourceUrls: entity.sourceUrls,
       school: resolveEntitySchool(entity),
     });
-    const matchReason = entity.searchMatch?.reason || 'Yale research profile source.';
-    const methodLabels = meaningfulMetadata(entity.searchMatch?.methods || []);
     const researchAreaLabels = meaningfulMetadata(entity.researchAreas || []);
-    const conceptTags = meaningfulMetadata(entity.searchMatch?.concepts || []);
     const pathways = pathwaysForEntities(options.pathways || [], [entity]);
 
     return {
@@ -535,25 +531,21 @@ const buildProfileDiscoveryClusters = (
       contextState: contextSummary.state,
       contextLabel: contextSummary.label,
       contextLine: buildResearchHomeContextLine(entity),
-      matchReason,
       entityCount: 1,
       pathwayCount: pathways.length,
       peopleCount: hasPersonContextForDiscovery(entity) ? 1 : 0,
-      labels: methodLabels.length > 0 ? methodLabels : researchAreaLabels,
+      labels: researchAreaLabels,
       metadataTags: uniq([
         ...(entity.studentVisibilityTier === 'limited_but_safe' ? ['Limited profile'] : []),
         ...getUniqueDepartmentLabels(entity.departments).slice(0, 2),
-        ...conceptTags,
       ]).slice(0, 5),
       wayInBadges: buildWayInBadges(entity, pathways),
       entities: [entity],
       pathways,
       evidence: [
         {
-          claim: matchReason,
           sourceType: entity.sourceUrls?.length ? 'Yale research source' : 'Research search match',
           url: entity.sourceUrls?.[0],
-          confidence: entity.searchMatch?.mode || 'indexed source',
         },
       ],
     };
