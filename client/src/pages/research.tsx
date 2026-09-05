@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useStat
 import { isCancel } from 'axios';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
+import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
@@ -1018,6 +1019,8 @@ const Research = () => {
   const runSearchRef = useRef(runSearch);
   const runDefaultResearchHomeSearchRef = useRef(runDefaultResearchHomeSearch);
   const runSearchResultsPageRef = useRef(runSearchResultsPage);
+  const returnToCleanResearchHomeRef = useRef<() => void>(() => {});
+  const consumedHomeResetKeyRef = useRef<string | null>(null);
   runSearchRef.current = runSearch;
   runDefaultResearchHomeSearchRef.current = runDefaultResearchHomeSearch;
   runSearchResultsPageRef.current = runSearchResultsPage;
@@ -1738,6 +1741,28 @@ const Research = () => {
     scrollResearchViewportToTop();
     resetSearch();
   };
+  const returnToCleanResearchHome = () => {
+    scrollResearchViewportToTop();
+    const hasResetableSearchState =
+      query.trim().length > 0 ||
+      submittedQuery.length > 0 ||
+      departmentSearch !== null ||
+      hasStructuredFilters(studentSearchFilters());
+    if (!hasResetableSearchState) return;
+    resetSearch();
+  };
+  returnToCleanResearchHomeRef.current = returnToCleanResearchHome;
+
+  // The URL-sync effect cannot carry this on its own: an unsubmitted draft query
+  // lives only in page state, and the page snapshot restores it whenever the
+  // target search params match, so the brand logo states the reset intent
+  // explicitly on every click.
+  useEffect(() => {
+    if (!isResearchHomeResetState(location.state)) return;
+    if (consumedHomeResetKeyRef.current === location.key) return;
+    consumedHomeResetKeyRef.current = location.key;
+    returnToCleanResearchHomeRef.current();
+  }, [location.key, location.state]);
 
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">

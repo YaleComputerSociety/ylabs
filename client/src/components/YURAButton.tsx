@@ -1,17 +1,24 @@
 /**
- * Logo button for unauthenticated users that reloads the page on click.
+ * Logo button for unauthenticated visitors, targeting the public research home.
  */
 import Button from '@mui/material/Button';
+import { Link, useLocation } from 'react-router-dom';
 import { navFocusRingSx } from '../utils/focusRing';
+import {
+  RESEARCH_HOME_PATH,
+  isResearchHomeLocation,
+  researchHomeResetState,
+} from './researchHomeNavigation';
 
 const YURAButton = () => {
-  const handleReload = () => {
-    window.location.reload();
-  };
+  const location = useLocation();
 
   return (
     <Button
-      onClick={handleReload}
+      component={Link}
+      to={RESEARCH_HOME_PATH}
+      state={researchHomeResetState()}
+      replace={isResearchHomeLocation(location)}
       disableRipple={true}
       sx={{ textTransform: 'none', minHeight: '44px', ...navFocusRingSx }}
     >
