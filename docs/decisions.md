@@ -9,14 +9,14 @@ Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifac
 `searchMatch` was read in four places and written in none.
 The server copied it off the Meilisearch hit in `researchGroupService`, allowlisted it onto the served DTO, and the client typed it, normalized it, and used it for the card's match reason, method labels, concept tags, and confidence value.
 No model, no index builder, and no search path ever set it, so `hit.searchMatch` was always `undefined` and a served search response carried it on zero rows.
-Under the inert-versus-degraded distinction, this owner was inert: there was nothing to tighten, so the only two remedies were to add a producer or to remove the consumer.
+The field was inert rather than degraded: it never carried a wrong value, only no value, so there was nothing to tighten and the only two remedies were to add a producer or to remove the consumer.
 
 Decision: remove the consumer.
 A per-result "why did this match" affordance that resolves to the same constant for every result is not an explanation, and the honest state is to say nothing rather than to print `Yale research profile source.` under a "Why it might fit" heading.
 Producing it from Meilisearch's matched attributes remains possible later; it is a new feature with its own product decision, not a repair of this field.
 
 Two things this retirement is not.
-It is not a change to served student-facing copy: `ResearchHomeCard` renders the match reason only in its `default` variant, and both call sites on `/research` pass `variant="compact"`, so the placeholder was unreachable in the running app.
+It is not a change to served student-facing copy: `ResearchHomeCard` rendered the match reason only in its `default` variant, and both call sites on `/research` pass `variant="compact"`, so the placeholder was unreachable in the running app.
 It is also not proof that the field was harmless: it kept a live path from the Meilisearch hit into the served DTO, and the DTO test that exercised it hand-constructed the object, so it verified the shape while the wiring was never connected.
 Tests that build their own input for a field with no producer cannot detect that the producer is missing; the replacement test asserts that a `searchMatch` on the input is absent from the DTO.
 

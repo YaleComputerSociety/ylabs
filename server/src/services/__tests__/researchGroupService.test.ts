@@ -471,6 +471,51 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('never serves a searchMatch carried on a Meili hit (#2431)', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({});
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+          searchMatch: {
+            mode: 'hybrid',
+            concepts: ['Catalysis'],
+            methods: ['Spectroscopy'],
+            reason: 'Matched on catalysis, spectroscopy.',
+          },
+        },
+      ],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
+
+    expect(result.researchEntities).toHaveLength(1);
+    expect(result.researchEntities[0]).not.toHaveProperty('searchMatch');
+    expect(JSON.stringify(result)).not.toContain('Matched on catalysis, spectroscopy.');
+  });
+
   it('requests hybrid search when the live index reports a configured embedder', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
