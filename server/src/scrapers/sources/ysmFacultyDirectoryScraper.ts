@@ -365,7 +365,7 @@ export interface ProfileLabWebsiteClassification {
  */
 export function classifyProfileLabWebsite(
   profile: Pick<YsmFacultyProfile, 'name' | 'labUrl' | 'labName' | 'labDescription'>,
-  knownPersonSurnames?: ReadonlySet<string>,
+  knownPersonSurnames: ReadonlySet<string>,
 ): ProfileLabWebsiteClassification {
   if (!profile.labUrl) return { isOwnResearchHome: false, verdict: 'NO_LINK' };
   const verdict = classifyHarvestedResearchHomeName({
@@ -404,7 +404,7 @@ export function classifyProfileLabWebsite(
 export function facultyToResearchEntityObservations(
   profile: YsmFacultyProfile,
   fallbackUserKey: string,
-  knownPersonSurnames?: ReadonlySet<string>,
+  knownPersonSurnames: ReadonlySet<string>,
 ): ObservationInput[] {
   const linkedSite = classifyProfileLabWebsite(profile, knownPersonSurnames);
   if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return [];

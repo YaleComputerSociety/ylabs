@@ -7,6 +7,7 @@ import {
   facultyToResearchEntityObservations,
   type RawYsmFaculty,
 } from '../sources/ysmFacultyDirectoryScraper';
+import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
@@ -228,7 +229,11 @@ describe('facultyToResearchEntityObservations', () => {
       }),
       RIVERS,
     )!;
-    const obs = facultyToResearchEntityObservations(profile, 'netid:jordan.rivers');
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'netid:jordan.rivers',
+      NO_SURNAME_ROSTER,
+    );
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('LAB');
     expect(byField.kind).toBe('lab');
@@ -244,7 +249,11 @@ describe('facultyToResearchEntityObservations', () => {
       profileHtml({ fullName: 'Jordan Rivers', meshKeywords: ['Heart Failure'] }),
       RIVERS,
     )!;
-    const obs = facultyToResearchEntityObservations(profile, 'ysm:jordan-rivers');
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+    );
     expect(obs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('ysm:jordan-rivers');
   });
 
@@ -253,7 +262,7 @@ describe('facultyToResearchEntityObservations', () => {
       profileHtml({ fullName: 'Avery Sloan', meshKeywords: ['Climate Policy'] }),
       SLOAN,
     )!;
-    const obs = facultyToResearchEntityObservations(profile, 'ysm:avery-sloan');
+    const obs = facultyToResearchEntityObservations(profile, 'ysm:avery-sloan', NO_SURNAME_ROSTER);
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
     expect(byField.kind).toBe('individual');
@@ -266,7 +275,7 @@ describe('facultyToResearchEntityObservations', () => {
       profileHtml({ fullName: 'Avery Sloan', includeResearchSection: false }),
       SLOAN,
     )!;
-    const obs = facultyToResearchEntityObservations(profile, 'ysm:avery-sloan');
+    const obs = facultyToResearchEntityObservations(profile, 'ysm:avery-sloan', NO_SURNAME_ROSTER);
     expect(obs).toEqual([]);
   });
 
@@ -279,7 +288,7 @@ describe('facultyToResearchEntityObservations', () => {
       }),
       SLOAN,
     )!;
-    const obs = facultyToResearchEntityObservations(profile, 'ysm:avery-sloan');
+    const obs = facultyToResearchEntityObservations(profile, 'ysm:avery-sloan', NO_SURNAME_ROSTER);
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
     expect(byField.kind).toBe('individual');
@@ -294,7 +303,11 @@ describe('facultyToResearchEntityObservations', () => {
       profileHtml({ fullName: 'Jordan Rivers', meshKeywords: ['Heart Failure'] }),
       RIVERS,
     )!;
-    const obs = facultyToResearchEntityObservations(profile, 'ysm:jordan-rivers');
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+    );
     const sourceUrls = obs.flatMap((o) =>
       o.field === 'sourceUrls' && Array.isArray(o.value) ? (o.value as string[]) : [],
     );
@@ -381,7 +394,11 @@ describe('facultyToResearchEntityObservations affiliated-organization guard (#22
       }),
       faculty,
     )!;
-    const obs = facultyToResearchEntityObservations(profile, `ysm:${faculty.slug}`);
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      `ysm:${faculty.slug}`,
+      NO_SURNAME_ROSTER,
+    );
     return Object.fromEntries(obs.map((o) => [o.field, o.value]));
   }
 
@@ -447,7 +464,7 @@ describe('facultyToResearchEntityObservations foreign-lab and affiliation eviden
   function entityFields(
     faculty: RawYsmFaculty,
     labWebsite: { name: string; url: string; description?: string },
-    roster?: ReadonlySet<string>,
+    roster: ReadonlySet<string> = NO_SURNAME_ROSTER,
   ) {
     const profile = extractProfile(
       profileHtml({

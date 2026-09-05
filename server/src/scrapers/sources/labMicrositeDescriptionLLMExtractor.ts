@@ -57,7 +57,7 @@ import {
   isPersonProfileOrDirectoryUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import {
-  claimsAnotherPersonsLab,
+  claimsAnotherPersonsLabByUrlPath,
   entityKeyPersonTokens,
   isPersonScopedResearchEntity,
   isPlaceholderEntityName,
@@ -783,7 +783,10 @@ function classifyExtractedPageAttribution(
   if (!isPersonScopedResearchEntity(context)) return 'THIS_ENTITY';
   if (!labName) return 'THIS_ENTITY';
   if (isUmbrellaOrganizationName(labName)) return 'AFFILIATED_ORGANIZATION';
-  return claimsAnotherPersonsLab({
+  // Path-only: no surname roster is threaded to this extractor yet. It is an INGEST
+  // path, so it is exactly where #2369 should hand one in; until then the weaker check
+  // is named rather than selected by omitting an argument (#2368).
+  return claimsAnotherPersonsLabByUrlPath({
     harvestedName: labName,
     websiteUrl: context.sourceUrl,
     identityTokens: entityKeyPersonTokens(context.entityKey),

@@ -15,7 +15,7 @@ import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomain
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
   isPlaceholderEntityName,
-  personScopedResearchEntityNameNamesSomethingElse,
+  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
 } from './researchHomeNameIdentityAuthority';
 
 const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
@@ -1419,7 +1419,7 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     typeof next.displayName === 'string' &&
     next.displayName &&
     (isPlaceholderEntityName(next.displayName) ||
-      personScopedResearchEntityNameNamesSomethingElse({
+      personScopedResearchEntityNameNamesSomethingElseByUrlPath({
         candidateName: next.displayName,
         entityType: next.entityType,
         kind: next.kind,

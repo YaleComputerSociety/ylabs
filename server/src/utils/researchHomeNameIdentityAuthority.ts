@@ -417,24 +417,52 @@ export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>):
  * cannot see: a trainee's PI's lab sits on its own eponymous host with a bare or
  * generic path (`girgentilab.org`, `scherzerlaboratory.org`), so the host carries
  * the only echo of the surname and the host is deliberately not corroboration
- * (#2361). A topical name is not a surname, so "Belief Lab" and "The UPLiFT Lab"
- * stay this person's own however their host reads.
+ * (#2361).
+ *
+ * The roster arm is only as precise as the roster is free of ordinary words: 735 of
+ * 4209 Yale surnames are also dictionary words, so a topical name IS refusable when
+ * its eponym-position token happens to be someone's surname. Measured on Dev at beta
+ * `2a8b6739`, that costs nothing - all 16 roster-only refusals were genuine grafts,
+ * and "Belief Lab" / "The UPLiFT Lab" / "CMB Lab" are untouched because those tokens
+ * are absent from THIS roster. That is a property of the corpus, not of the rule, so
+ * do not restate it as "a topical name is not a surname" (#2368).
  */
+/**
+ * An explicitly empty surname roster, for a call site that cannot reach one - a
+ * synchronous per-request or pure decision path. Passing this is a declaration that
+ * the eponym check runs path-only here, greppable and reviewable, as opposed to an
+ * inline `new Set()` that reads like an oversight or an omitted optional argument
+ * that reads like nothing at all (#2368). Every use is a candidate for #2369, which
+ * closes the gap by threading a real roster into the write chokepoints.
+ */
+export const NO_SURNAME_ROSTER: ReadonlySet<string> = new Set();
+
+export function claimsAnotherPersonsLabByUrlPath(args: {
+  harvestedName: unknown;
+  websiteUrl: unknown;
+  identityTokens: string[];
+}): boolean {
+  if (args.identityTokens.length === 0) return false;
+  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  if (pathCorroborated.length === 0) return false;
+  return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
+}
+
 export function claimsAnotherPersonsLab(args: {
   harvestedName: unknown;
   websiteUrl: unknown;
   identityTokens: string[];
-  knownPersonSurnames?: ReadonlySet<string>;
+  knownPersonSurnames: ReadonlySet<string>;
 }): boolean {
   if (args.identityTokens.length === 0) return false;
   const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  // The path named a person, so it has already answered the question either way;
+  // the roster must not overturn "this is the eponym holder's own lab".
   if (pathCorroborated.length > 0) {
     return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
   }
-  const knownSurnames = args.knownPersonSurnames;
-  if (!knownSurnames || knownSurnames.size === 0) return false;
   const rosterCorroborated = eponymousLabNameSurnameCandidates(args.harvestedName).filter(
-    (candidate) => knownSurnames.has(candidate),
+    (candidate) => args.knownPersonSurnames.has(candidate),
   );
   if (rosterCorroborated.length === 0) return false;
   return !rosterCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
@@ -460,14 +488,15 @@ export type HarvestedNameIdentityVerdict =
  * `describesAffiliatedOrganization` for why a passing mention does not count.
  *
  * `knownPersonSurnames` is the roster the eponym check corroborates against; see
- * `claimsAnotherPersonsLab`. Omitting it keeps the older path-only behavior.
+ * `claimsAnotherPersonsLab`. Required, so a caller with no roster has to reach for
+ * `claimsAnotherPersonsLabByUrlPath` and own that choice (#2368).
  */
 export function classifyHarvestedResearchHomeName(args: {
   harvestedName: unknown;
   personName: unknown;
   websiteUrl?: unknown;
   harvestedDescription?: unknown;
-  knownPersonSurnames?: ReadonlySet<string>;
+  knownPersonSurnames: ReadonlySet<string>;
 }): HarvestedNameIdentityVerdict {
   const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
@@ -531,35 +560,67 @@ export function isPersonScopedResearchEntity(entity: {
  * only clears an organization name when it stands in the eponym position, which
  * is the same narrow shape that makes the foreign-lab rule safe to act on.
  *
- * `knownPersonSurnames` is the same eponym corroboration roster the harvest-time
- * classifier takes, forwarded so a caller that HAS the roster reaches the same
- * verdict here as it would there; a caller without one keeps the path-only
- * behavior (#2361).
+ * Two named entry points rather than one optional-roster parameter, for the same
+ * reason as `claimsAnotherPersonsLab`: four of this predicate's five callers cannot
+ * afford a corpus-wide roster (the DTO path is synchronous and per-request), and an
+ * optional argument let them select the weaker judgement by omitting it, silently
+ * making this backstop weaker than the harvest-time classifier it backs up (#2368).
+ * `...ByUrlPath` is the weaker one and says so in its name.
  */
-export function personScopedResearchEntityNameNamesSomethingElse(args: {
+export interface PersonScopedNameIdentityArgs {
   candidateName: unknown;
   entityType?: unknown;
   kind?: unknown;
   slug?: unknown;
   personName?: unknown;
   websiteUrl?: unknown;
-  knownPersonSurnames?: ReadonlySet<string>;
-}): boolean {
-  if (!isPersonScopedResearchEntity(args)) return false;
+}
+
+/**
+ * The shared front half: the shape gate, the link-wrapper strip, identity-token
+ * resolution, and the umbrella-organization arm. Returns the settled verdict, or
+ * the tokens the caller's chosen foreign-lab check needs.
+ */
+function personScopedNameIdentityPrelude(
+  args: PersonScopedNameIdentityArgs,
+): { settled: boolean } | { settled?: undefined; name: string; identityTokens: string[] } {
+  if (!isPersonScopedResearchEntity(args)) return { settled: false };
   const name = stripResearchHomeNameLinkWrapper(args.candidateName);
-  if (name.length < 2) return false;
+  if (name.length < 2) return { settled: false };
   const personTokens = personIdentityTokens(args.personName);
   const identityTokens = personTokens.length ? personTokens : entityKeyPersonTokens(args.slug);
-  if (nameCarriesIdentityToken(name, personTokens)) return false;
+  if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
   if (isUmbrellaOrganizationName(name)) {
-    return !eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
-      eponymMatchesIdentity(eponym, identityTokens),
-    );
+    return {
+      settled: !eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
+        eponymMatchesIdentity(eponym, identityTokens),
+      ),
+    };
   }
-  return claimsAnotherPersonsLab({
-    harvestedName: name,
+  return { name, identityTokens };
+}
+
+export function personScopedResearchEntityNameNamesSomethingElseByUrlPath(
+  args: PersonScopedNameIdentityArgs,
+): boolean {
+  const prelude = personScopedNameIdentityPrelude(args);
+  if (prelude.settled !== undefined) return prelude.settled;
+  return claimsAnotherPersonsLabByUrlPath({
+    harvestedName: prelude.name,
     websiteUrl: args.websiteUrl,
-    identityTokens,
+    identityTokens: prelude.identityTokens,
+  });
+}
+
+export function personScopedResearchEntityNameNamesSomethingElse(
+  args: PersonScopedNameIdentityArgs & { knownPersonSurnames: ReadonlySet<string> },
+): boolean {
+  const prelude = personScopedNameIdentityPrelude(args);
+  if (prelude.settled !== undefined) return prelude.settled;
+  return claimsAnotherPersonsLab({
+    harvestedName: prelude.name,
+    websiteUrl: args.websiteUrl,
+    identityTokens: prelude.identityTokens,
     knownPersonSurnames: args.knownPersonSurnames,
   });
 }

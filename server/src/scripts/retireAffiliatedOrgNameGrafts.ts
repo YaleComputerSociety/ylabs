@@ -21,6 +21,12 @@ import {
   personSurnamesFromDisplayNames,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isPersonCmsProfileUrl } from '../utils/researchHomeWebsiteUrl';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  applyStudentVisibilityGatePlans,
+  planStudentVisibilityGate,
+} from '../services/studentVisibilityGateService';
+import { syncEntities } from '../services/meiliSyncService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 
@@ -132,7 +138,7 @@ function graftVerdict(
   sourceUrl: string,
   linkedWebsiteUrl: string,
   entity: EntityContext,
-  knownPersonSurnames?: ReadonlySet<string>,
+  knownPersonSurnames: ReadonlySet<string>,
 ): string | null {
   const identityTokens = entityIdentityTokens(entity);
   if (sourceName === PROFILE_LINK_SOURCE) {
@@ -183,7 +189,7 @@ function documentNameStillNamesSomethingElse(
   storedName: string,
   graftedName: string,
   websiteUrl: string,
-  knownPersonSurnames?: ReadonlySet<string>,
+  knownPersonSurnames: ReadonlySet<string>,
 ): boolean {
   if (!storedName) return false;
   if (storedName === graftedName) return true;
@@ -476,12 +482,48 @@ async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
   return corrected;
 }
 
+/**
+ * Re-gate every record this run renamed, then resync those documents to Meilisearch.
+ *
+ * A correction here is not gate-neutral: `planStudentVisibilityGate` feeds `entity.name`
+ * through `normalizedDedupeName`, so changing a name can add or drop a duplicate-risk
+ * suppression. Without this the stored `studentVisibilityTier` goes stale in either
+ * direction - a row can keep a suppression the rename resolved, or keep `student_ready`
+ * against a verdict the rename invalidated. A repair that only rewrites documents and
+ * never re-derives what the gate concluded from them is how a record ends up stored
+ * `student_ready` while its detail page disagrees.
+ */
+async function regateCorrectedEntities(entityIds: string[]): Promise<number> {
+  const ids = entityIds.filter(Boolean);
+  if (ids.length === 0) return 0;
+  const plans = await planStudentVisibilityGate({
+    collection: 'research',
+    mode: 'apply',
+    recordIds: ids,
+  });
+  await applyStudentVisibilityGatePlans(plans);
+  const objectIds = ids
+    .filter((id) => mongoose.isValidObjectId(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  if (objectIds.length > 0) {
+    const docs = await ResearchEntity.find({ _id: { $in: objectIds } }).lean();
+    try {
+      await syncEntities('researchEntity', docs as unknown[]);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] Meili resync after re-gate failed:`, sanitizeLogValue(error));
+    }
+  }
+  return plans.length;
+}
+
 export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
   rolledBack: number;
   documentFieldsCorrected: number;
+  regated: number;
 }> {
   let rolledBack = 0;
   let documentFieldsCorrected = 0;
+  const correctedEntityIds = new Set<string>();
   for (const row of rows) {
     const ids = row.observationIds.map((id) => new mongoose.Types.ObjectId(id));
     const result = await Observation.updateMany(
@@ -494,9 +536,12 @@ export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
       },
     );
     rolledBack += result.modifiedCount || 0;
-    documentFieldsCorrected += await clearGraftFromDocument(row);
+    const corrected = await clearGraftFromDocument(row);
+    documentFieldsCorrected += corrected;
+    if (corrected > 0 && row.entityId) correctedEntityIds.add(row.entityId);
   }
-  return { rolledBack, documentFieldsCorrected };
+  const regated = await regateCorrectedEntities(Array.from(correctedEntityIds));
+  return { rolledBack, documentFieldsCorrected, regated };
 }
 
 async function main() {
@@ -524,7 +569,7 @@ async function main() {
 
   const applied = args.apply
     ? await applyRows(rows)
-    : { rolledBack: 0, documentFieldsCorrected: 0 };
+    : { rolledBack: 0, documentFieldsCorrected: 0, regated: 0 };
 
   const byVerdict: Record<string, number> = {};
   const bySource: Record<string, number> = {};
@@ -542,6 +587,7 @@ async function main() {
     plannedObservations,
     rolledBackObservations: applied.rolledBack,
     documentFieldsCorrected: applied.documentFieldsCorrected,
+    regated: applied.regated,
     documentsStillServingGraft: rows.filter((row) => row.documentStillServesGraft).length,
     byVerdict,
     bySource,

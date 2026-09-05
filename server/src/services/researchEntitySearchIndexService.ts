@@ -14,7 +14,7 @@ import { isSyntheticResearchHomeMetadataDescription } from '../utils/researchEnt
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isPlaceholderEntityName,
-  personScopedResearchEntityNameNamesSomethingElse,
+  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
@@ -393,7 +393,7 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   // whose served title is its real `name` (#2351/#2367).
   if (
     isPlaceholderEntityName(out.displayName) ||
-    personScopedResearchEntityNameNamesSomethingElse({
+    personScopedResearchEntityNameNamesSomethingElseByUrlPath({
       candidateName: out.displayName,
       entityType: out.entityType,
       kind: out.kind,
