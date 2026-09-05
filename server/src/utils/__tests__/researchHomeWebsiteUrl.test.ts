@@ -283,6 +283,29 @@ describe('isOffsiteInstitutionPersonProfileUrl', () => {
     ).toBe(false);
   });
 
+  it('rejects a person named under a nested institutional directory (#2512)', () => {
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://www.business.example-university.edu/faculty/directory/sample_economist.aspx',
+      ),
+    ).toBe(true);
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://psych.example-university.edu/people/faculty/sample-psychologist',
+      ),
+    ).toBe(true);
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://example-university.edu/directory/faculty/sample-economist/',
+      ),
+    ).toBe(true);
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://example-institute.eu/people/members/sample-researcher',
+      ),
+    ).toBe(true);
+  });
+
   it('requires a person to be named after the directory segment, so a lab roster root is kept', () => {
     expect(isOffsiteInstitutionPersonProfileUrl('https://samplelab.example.test/people/')).toBe(
       false,

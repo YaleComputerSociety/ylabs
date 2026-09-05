@@ -226,6 +226,11 @@ const YALE_HOST = /(?:^|\.)yale\.edu$/i;
 const PERSON_DIRECTORY_SEGMENT =
   /^(?:profile|profiles|people|person|persons|faculty|faculty-directory|directory|bio|bios)$/i;
 
+const hasCollectiveRosterToken = (segment: string): boolean =>
+  segment
+    .split('-')
+    .some((token) => ROSTER_COLLECTIVE_LEAF_TOKEN.test(token.replace(/\.[a-z0-9]+$/, '')));
+
 /**
  * Another institution's person-profile or faculty-directory page: the right person
  * at the wrong employer. A Yale profile page routinely links the person's faculty
@@ -239,25 +244,29 @@ const PERSON_DIRECTORY_SEGMENT =
  * genuine personal or lab site on a non-Yale host is unaffected: it is not shaped
  * like a faculty directory.
  *
- * Requires a person to be NAMED after the directory segment. A bare
+ * Requires a person to be NAMED after a directory segment. A bare
  * `somelab.com/people/` is that lab's own roster root, not an institutional
  * profile, and rejecting it would strand a lab whose only stored website is that
- * subpage - `isSharedPeopleRosterUrl` is the predicate for those.
+ * subpage - `isSharedPeopleRosterUrl` is the predicate for those. Institutional
+ * directories nest their roster levels (`/faculty/directory/<person>`,
+ * `/people/faculty/<person>`, `/people/members/<person>`), so every collective
+ * noun below the directory segment is skipped as more directory chrome; taking
+ * the segment straight after the directory as the person reads `directory` or
+ * `faculty` as a name and lets the whole hierarchy through.
  */
 export function isOffsiteInstitutionPersonProfileUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   if (YALE_HOST.test(url.hostname)) return false;
-  const segments = url.pathname.split('/').filter(Boolean);
-  const directoryAt = segments.findIndex((segment) =>
-    PERSON_DIRECTORY_SEGMENT.test(segment.toLowerCase()),
-  );
+  const segments = url.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => segment.toLowerCase());
+  const directoryAt = segments.findIndex((segment) => PERSON_DIRECTORY_SEGMENT.test(segment));
   if (directoryAt === -1) return false;
-  const leaf = segments[directoryAt + 1]?.toLowerCase();
-  if (!leaf) return false;
-  return !leaf
-    .split('-')
-    .some((token) => ROSTER_COLLECTIVE_LEAF_TOKEN.test(token.replace(/\.[a-z0-9]+$/, '')));
+  let personAt = directoryAt + 1;
+  while (personAt < segments.length && hasCollectiveRosterToken(segments[personAt])) personAt += 1;
+  return personAt < segments.length;
 }
 
 export interface ResearchEntityHostOwnerIdentity {
