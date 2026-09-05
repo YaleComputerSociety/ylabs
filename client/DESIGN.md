@@ -73,6 +73,11 @@ Change such a scale as a whole or not at all.
 The exemption is per construct, not per file.
 A file that contains a scale is otherwise ordinary brand color, so exempting the whole file permits real drift inside it.
 
+`src/__tests__/brandColorGuard.test.ts` enforces this table and runs in CI.
+It fails on a generic blue in any file with no scale, and on a listed scale changing size, so new drift inside an exempt file is caught rather than covered by the exemption.
+When a scale legitimately changes, update the guard and this table together.
+The guard checks vocabulary only: it cannot tell whether a color is legible, whether it differs enough from the state it replaces, or whether the property does anything on that element.
+
 Every deliberate scale in the client, and nothing else, is listed here.
 Each gives its blue member a generic hue; every other `blue-` class in `src/` is brand-color drift.
 
