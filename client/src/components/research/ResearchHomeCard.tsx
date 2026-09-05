@@ -23,17 +23,6 @@ interface ResearchHomeCardProps {
 const countLabel = (count: number, singular: string, plural: string): string =>
   `${count} ${count === 1 ? singular : plural}`;
 
-const contextLabelClass = (state?: string): string => {
-  switch (state) {
-    case 'complete':
-      return 'yr-pill-green';
-    case 'sparse':
-      return 'yr-pill-gold';
-    default:
-      return '';
-  }
-};
-
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
 
@@ -268,10 +257,8 @@ const ResearchHomeCard = ({
               +{desktopMoreCount} more
             </span>
           )}
-          {!isCompact && home.contextLabel && (
-            <span
-              className={`yr-pill min-h-0 rounded px-2 py-0.5 ${contextLabelClass(home.contextState)}`}
-            >
+          {home.contextState === 'sparse' && home.contextLabel && (
+            <span className="yr-pill yr-pill-gold min-h-0 rounded px-2 py-0.5">
               {home.contextLabel}
             </span>
           )}
@@ -397,7 +384,7 @@ const ResearchHomeCard = ({
             className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
               isCompact
                 ? 'border border-[var(--yr-blue)] bg-[var(--yr-blue)] text-white hover:bg-brand-navy'
-                : 'border border-blue-200 bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]'
+                : 'border border-[var(--yr-line)] bg-[var(--yr-panel)] text-[var(--yr-blue)] hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]'
             }`}
             onClick={(event) => event.stopPropagation()}
           >
@@ -409,7 +396,7 @@ const ResearchHomeCard = ({
           <button
             type="button"
             onClick={() => onSelect(home.label)}
-            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition active:scale-[0.98] hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]"
+            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition active:scale-[0.98] hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
           >
             Search this area
           </button>

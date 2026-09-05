@@ -68,7 +68,10 @@ const boundedDescription = (entity: ResearchEntity): string => {
   const raw = (entity.shortDescription || entity.fullDescription || '').trim();
   const cleaned = sanitizeResearchEntityCopy(raw, entity).trim();
   if (cleaned.length <= MAX_COMPARE_DESCRIPTION_LENGTH) return cleaned;
-  return `${cleaned.slice(0, MAX_COMPARE_DESCRIPTION_LENGTH).trimEnd()}…`;
+  const bounded = cleaned.slice(0, MAX_COMPARE_DESCRIPTION_LENGTH);
+  const lastWordBoundary = bounded.lastIndexOf(' ');
+  const wordSafe = lastWordBoundary > 0 ? bounded.slice(0, lastWordBoundary) : bounded;
+  return `${wordSafe.replace(/[\s,;:.-]+$/, '')}…`;
 };
 
 const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: string }> => {
@@ -292,7 +295,7 @@ const ResearchHomeComparison = ({
                 href={link.href}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="text-xs text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="yr-link yr-focus-ring rounded-sm text-xs"
               >
                 {link.label}
               </a>
@@ -364,7 +367,7 @@ const ResearchHomeComparison = ({
             type="button"
             onClick={onClose}
             aria-label="Close comparison"
-            className="ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="yr-focus-ring ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-gray-600"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -402,7 +405,7 @@ const ResearchHomeComparison = ({
                   >
                     <Link
                       to={`/research/${safeRouteSegment(column.base.slug)}`}
-                      className="text-sm font-semibold text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      className="yr-link yr-focus-ring rounded-sm text-sm font-semibold"
                     >
                       {columnHeaderTitle(column)}
                     </Link>
@@ -412,7 +415,7 @@ const ResearchHomeComparison = ({
                           type="checkbox"
                           checked={includedNoteIds.has(column.base._id)}
                           onChange={() => toggleIncludedNote(column.base._id)}
-                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="yr-focus-ring h-4 w-4 rounded border-[var(--yr-line-strong)] text-[var(--yr-blue)]"
                         />
                         Include my private note
                       </label>
