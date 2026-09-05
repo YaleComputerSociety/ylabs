@@ -3636,6 +3636,11 @@ export async function projectFromLog(
           set.profileSynthesisDescription,
           entityDoc?.profileSynthesisDescription,
         ),
+        // Read straight off the stored doc: no observation ever resolves a
+        // suppression reason, so there is no `set` value to prefer. This field is
+        // what makes the recorded-closure arm of the derivation reachable at all
+        // (#1923); omit it and that arm silently never fires from materialize.
+        studentVisibilitySuppressionReason: entityDoc?.studentVisibilitySuppressionReason,
       });
       if (yaleStatusSignal) {
         if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;

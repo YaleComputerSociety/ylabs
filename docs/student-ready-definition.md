@@ -38,6 +38,23 @@ Absence is deliberately not a blocker, since `name` is `required` on the schema 
 - Wrong-type / shell: `generic_directory_shell`, `profile_biography_shell`, `content_page_risk`, `non_research_entity`, `non_research_program`, `research_infrastructure_only`, `non_owner_grant_shell`, `lab_name_org_type_mismatch`. Removed at `suppressed` (a stronger form of the duplicate / suppressed-shell blocker).
 - Inactive / out of scope: `inactive_at_yale`, `archive_review`, `not_undergraduate_relevant`.
 
+### Recording a departure Yale's own pages do not show
+
+A faculty member who relocated to another institution is the one departure class no Yale-derived signal can catch.
+Yale's roster and profile pages go stale rather than disappearing, so link health stays HEALTHY/200, the roster keeps listing the person, and every detector built from Yale sources reports the row as fine.
+`deriveResearchEntityYaleStatus` therefore has no relocation branch, and the authoritative evidence (an ORCID employment end date) is not ingested.
+
+The supported way to record one is the `permanently_closed` marker in `studentVisibilitySuppressionReason` (#2284), which suppresses and outranks even an operator override to publish.
+As of #1923 that marker is also a `departed` Yale-status signal: `deriveResearchEntityYaleStatus` re-derives it on every pass, so `activeAtYaleCache: false` survives re-materialization instead of being reset, and the two mechanisms can no longer disagree about whether the person is present.
+
+Do not record a departure by setting `activeAtYaleCache: false` alone.
+`hasEvidencelessInactiveYaleStatus` resets an inactive cache that no live evidence re-derives, and `yaleStatusReasonCache: 'departed'` - the flag that would exempt it - is written only by `facultyRosterDepartureReconciler`, which has written 0 rows corpus-wide.
+That is how the one relocation repair ever attempted was lost: `holmes-ah724` came back to `activeAtYaleCache: true` and is now held out of the directory only by the unrelated grant-only rule from #2281, one added `yale.edu` url away from returning to `operator_review`.
+An operator lock on `activeAtYaleCache`/`yaleStatusCache` also holds (4 rows use it), but it records no reason, so prefer the marker.
+
+The marker stays fail-open by design.
+Absence of closure evidence is not evidence of closure - roughly 4,500 live rows carry no evidence either way - so only a positively recorded marker suppresses.
+
 A lead-requiring entity with no lead, an unusable name, an identity risk, or an off-entity/off-scope failure is never published even under an explicit operator override: an override may pass softer gates, but not these correctness floors.
 The same floors also hold the record out of `limited_but_safe`, which the launch-trust report treats as publishable in `public-safe` mode.
 
