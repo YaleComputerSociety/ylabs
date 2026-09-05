@@ -708,12 +708,48 @@ const TRAILING_NAVIGATION_CHROME_PATTERNS: readonly RegExp[] = [
   /[,;]?\s*please contact\b[^!?]*?,?\s*and include in the subject heading\b[^!?]*\.?\s*$/i,
 ];
 
+const navigationChromeTerminalPunctuationTailPattern = /[.!?]["'’)\]]?$/;
+const navigationChromeSentenceEndPattern = /[.!?]["'’)\]]?(?=\s)/g;
+
+function lastCompleteSentenceEnd(value: string): number {
+  let end = -1;
+  for (const match of value.matchAll(navigationChromeSentenceEndPattern)) {
+    end = (match.index ?? 0) + match[0].length;
+  }
+  return end;
+}
+
+/**
+ * Every pattern above consumes the clause together with the comma that joined it
+ * and the period that ended the sentence, so the surviving prose is left with no
+ * terminal punctuation. `isTruncatedCardCopy` reads an unterminated value as a
+ * fragment and `shortDescriptionQuality` then flags `incomplete-sentence`, so
+ * stripping chrome manufactured the very `missing_public_card_description` the
+ * card gate exists to prevent, holding the entity out of every public surface
+ * (#2394) - the same defect `clampShortDescriptionToWholeSentences` carries a
+ * fix for under #2184.
+ *
+ * A remainder holding no earlier sentence end is itself one whole sentence, so
+ * its period is restored. When an earlier sentence end does exist the remainder
+ * is a lead-in to the clause that was just removed ("... For more information
+ * and collaborative opportunities"), so it is dropped back to that real boundary
+ * rather than terminated: punctuating it would fabricate a plausible-looking
+ * sentence out of a fragment. `repairMidSentenceTruncation` cannot be relied on
+ * to do this, because it runs earlier in the pipeline than this strip.
+ */
 function stripTrailingNavigationChromeClause(value: string): string {
   let next = value;
   for (const pattern of TRAILING_NAVIGATION_CHROME_PATTERNS) {
     next = next.replace(pattern, '');
   }
-  return next === value ? value : next.trim();
+  if (next === value) return value;
+  const stripped = next.trim();
+  if (!stripped) return stripped;
+  if (navigationChromeTerminalPunctuationTailPattern.test(stripped)) return stripped;
+  const sentenceEnd = lastCompleteSentenceEnd(stripped);
+  if (sentenceEnd < 0) return `${stripped}.`;
+  const trimmed = stripped.slice(0, sentenceEnd).trim();
+  return countWords(trimmed) >= 6 ? trimmed : `${stripped}.`;
 }
 
 const THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS: Readonly<Record<string, string>> = {

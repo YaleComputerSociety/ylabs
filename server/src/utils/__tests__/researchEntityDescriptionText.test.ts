@@ -20,6 +20,7 @@ import {
   sanitizeResearchHomeSelfReferenceText,
   sanitizeServedResearchEntityCopyFields,
 } from '../researchEntityDescriptionText';
+import { shortDescriptionQuality } from '../researchEntityDescriptionQuality';
 
 const PROGRAM_DIRECTOR_BIO =
   'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication and Director of the Yale Program on Climate Change Communication. He is an internationally recognized expert on public climate change beliefs. In 2020, he was named the second-most influential climate scientist in the world by Reuters. I only consider doctoral student applicants that already have a strong background in climate change or environmental communication. I advise masters students focused on climate perceptions and communication.';
@@ -686,27 +687,27 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     }
   });
 
-  it('strips trailing website-navigation chrome from a lab fullDescription instead of blanking it (#1667)', () => {
+  it('strips trailing website-navigation chrome from a lab fullDescription instead of blanking it (#1667), keeping the sentence terminated (#2394)', () => {
     const cases: Array<[string, string]> = [
       [
         'Studies molecular signaling pathways in cancer biology and drug resistance, please click on the links above.',
-        'Studies molecular signaling pathways in cancer biology and drug resistance',
+        'Studies molecular signaling pathways in cancer biology and drug resistance.',
       ],
       [
         'Studies inflammatory bowel disease and mucosal immunology, please check the Research section.',
-        'Studies inflammatory bowel disease and mucosal immunology',
+        'Studies inflammatory bowel disease and mucosal immunology.',
       ],
       [
         'Studies transplant immunology and organ rejection, please visit the Positions section for more information, or contact Dr. Ke Xu, MD, PhD.',
-        'Studies transplant immunology and organ rejection',
+        'Studies transplant immunology and organ rejection.',
       ],
       [
         'Studies polymer physics and mechanics, please contact Michael Crowley, and include in the subject heading, your area of interest.',
-        'Studies polymer physics and mechanics',
+        'Studies polymer physics and mechanics.',
       ],
       [
         'Studies robotic grasping and prosthetics, more information can be found on the Research and Publications pages.',
-        'Studies robotic grasping and prosthetics',
+        'Studies robotic grasping and prosthetics.',
       ],
     ];
     for (const [fullDescription, expected] of cases) {
@@ -717,6 +718,60 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
       });
       expect(sanitized.fullDescription).toBe(expected);
     }
+  });
+
+  it('does not let navigation-chrome stripping fail the card gate as an incomplete sentence (#2394)', () => {
+    const body =
+      'The group records hippocampal place cells in freely moving rats to test how replay supports memory consolidation, combining tetrode arrays with optogenetic silencing across learning stages.';
+    const withChrome =
+      'Studies the neural basis of spatial decision making in rodents, please click on the links above.';
+
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription: withChrome,
+    });
+
+    expect(sanitized.fullDescription).toBe(
+      'Studies the neural basis of spatial decision making in rodents.',
+    );
+    expect(
+      shortDescriptionQuality(sanitized.fullDescription, body, ['Spatial memory'], {}).flags,
+    ).not.toContain('incomplete-sentence');
+    expect(
+      shortDescriptionQuality(sanitized.fullDescription, body, ['Spatial memory'], {}).isUseful,
+    ).toBe(true);
+
+    const unterminated = 'Studies the neural basis of spatial decision making in rodents';
+    expect(shortDescriptionQuality(unterminated, body, ['Spatial memory'], {}).flags).toContain(
+      'incomplete-sentence',
+    );
+  });
+
+  it('drops a lead-in to the stripped chrome back to the last real sentence instead of punctuating the fragment (#2394)', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'The group brings together investigators from diagnostic radiology, surgery, and psychiatry to study developmental electrophysiology. For more information and collaborative opportunities, please contact Michael Crowley, and include in the subject heading, Developmental Electrophysiology Laboratory.',
+    });
+
+    expect(sanitized.fullDescription).toBe(
+      'The group brings together investigators from diagnostic radiology, surgery, and psychiatry to study developmental electrophysiology.',
+    );
+    expect(sanitized.fullDescription).not.toContain('For more information');
+  });
+
+  it('leaves a value the chrome patterns do not match exactly as it was (#2394)', () => {
+    const untouched = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription: 'Studies cortical circuits in awake mice using two-photon imaging',
+    };
+
+    expect(sanitizeResearchEntityPublicDescriptionFields(untouched).fullDescription).toBe(
+      'Studies cortical circuits in awake mice using two-photon imaging',
+    );
   });
 
   it('repairs a subject-less "Research {verb}..." fullDescription on an individual-research entity (#999)', () => {
