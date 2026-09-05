@@ -150,6 +150,10 @@ import {
   type FacultyRosterDepartureOutcome,
 } from './facultyRosterDepartureReconciler';
 import {
+  reconcileYsmLabDelistingFromRun,
+  type YsmLabDelistingOutcome,
+} from './ysmLabDelistingReconciler';
+import {
   isPersonOrGrantShellSlug,
   personProfileNameTokensFromUrl,
   personProfileSourceMatchesEntity,
@@ -4483,7 +4487,7 @@ export async function materializeFromRun(
     {
       $match: {
         scrapeRunId: runObjectId,
-        entityType: { $nin: ['paper', 'departmentRosterHealth'] },
+        entityType: { $nin: ['paper', 'departmentRosterHealth', 'ysmLabIndexHealth'] },
       },
     },
     {
@@ -4551,6 +4555,20 @@ export async function materializeFromRun(
   ];
   if (!expectedQuietOutcomes.includes(departureResult.outcome)) {
     console.warn(`[faculty-departure] no reconciliation this run: ${departureResult.outcome}`);
+  }
+  const ysmLabDelistingResult = await reconcileYsmLabDelistingFromRun(scrapeRunId, options);
+  const expectedQuietDelistingOutcomes: YsmLabDelistingOutcome[] = [
+    'reconciled',
+    'disabled',
+    'dry-run',
+    // A run of any other source emits no A-Z index snapshot, which is the normal
+    // case rather than a dormancy signal worth warning about on every pass.
+    'no-index-health-observation',
+  ];
+  if (!expectedQuietDelistingOutcomes.includes(ysmLabDelistingResult.outcome)) {
+    console.warn(
+      `[ysm-lab-delisting] no reconciliation this run: ${ysmLabDelistingResult.outcome}`,
+    );
   }
   if (!options.dryRun) {
     await ScrapeRun.updateOne(

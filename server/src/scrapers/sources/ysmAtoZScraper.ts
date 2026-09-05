@@ -25,6 +25,10 @@ import {
 } from '../../utils/researchHomeDescriptionSelection';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  YSM_LAB_INDEX_HEALTH_ENTITY_KEY,
+  YSM_LAB_INDEX_HEALTH_FIELD,
+} from '../ysmLabDelistingReconciler';
 import { flattenHtmlToText } from '../utils/htmlText';
 import { canonicalPersonName } from '../utils/personNameCasing';
 import {
@@ -724,6 +728,34 @@ export class YsmAtoZScraper implements IScraper {
       }
       await ctx.emit(observations);
       totalObs += observations.length;
+    }
+
+    // The index is authoritative for delisting only when this run saw ALL of it.
+    // Any narrowing flag makes every unvisited lab look absent, which is the
+    // mass-suppression shape the drop guard exists to stop - so report the
+    // narrowing rather than letting the reconciler infer completeness.
+    const indexNarrowed = only.length > 0 || Boolean(limitOption && limitOption > 0) || offset > 0;
+    const indexComplete = labs.length > 0 && !indexNarrowed;
+    await ctx.emit([
+      {
+        entityType: 'ysmLabIndexHealth',
+        entityKey: YSM_LAB_INDEX_HEALTH_ENTITY_KEY,
+        field: YSM_LAB_INDEX_HEALTH_FIELD,
+        value: {
+          status: labs.length === 0 ? 'empty' : 'ok',
+          complete: indexComplete,
+          discoveredCount: labs.length,
+          discoveredLabSlugs: labs.map((lab) => lab.slug),
+        },
+        sourceUrl: PAGE_URL,
+        observedAt: new Date(),
+      },
+    ]);
+    totalObs += 1;
+    if (!indexComplete) {
+      ctx.log(
+        `A-Z index snapshot marked incomplete (parsed=${labs.length}, narrowed=${indexNarrowed}); delisting detection will not act on this run`,
+      );
     }
 
     ctx.log(`Emitted ${totalObs} observations across ${work.length} labs`);
