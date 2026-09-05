@@ -155,7 +155,6 @@ export interface ScraperSweepRunRow {
 
 export interface DevelopmentPostRunStage {
   name:
-    | 'faculty-projection'
     | 'researcher-dedupe'
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
@@ -772,13 +771,6 @@ export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelt
 }
 
 export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = [
-  {
-    name: 'faculty-projection',
-    command: 'research-entity:project-faculty',
-    artifactName: 'development-faculty-projection.json',
-    buildArgs: () => ['--apply', '--confirm-faculty-projection', '--concurrency', '12'],
-    isEnabled: () => true,
-  },
   {
     name: 'researcher-dedupe',
     command: 'researchers:dedupe-accountless-shells',

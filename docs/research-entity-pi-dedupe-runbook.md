@@ -109,8 +109,8 @@ SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi \
 ## Automatic eponymous FRA to lab merge in the sweep
 
 The high-confidence eponymous subset of same-PI dedupe (a `faculty-research-area-*` shell that shadows the SAME PI's own concrete lab, guarded against CENTER/INSTITUTE canonicals) can run automatically inside the scraper sweep instead of the manual review workflow above.
-It is exposed as the `research-entity:merge-eponymous-fra` stage, wired into the `development-full` post-run pipeline after `faculty-projection` (materialization) and before `search-rebuild`, so the student-visibility gate and the search index evaluate the merged canonical.
-The sibling accountless-researcher-shell dedupe stage (`researchers:dedupe-accountless-shells`) runs by default between `faculty-projection` and this FRA merge so same-name researchers are unified before entities are merged; disable it with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`.
+It is exposed as the `research-entity:merge-eponymous-fra` stage, wired into the `development-full` post-run pipeline before `visibility-gate` and `search-rebuild`, so the student-visibility gate and the search index evaluate the merged canonical.
+The sibling accountless-researcher-shell dedupe stage (`researchers:dedupe-accountless-shells`) runs by default immediately before this FRA merge so same-name researchers are unified before entities are merged; disable it with `SCRAPER_SWEEP_DEDUPE_RESEARCHERS=0`.
 That stage ranks same-name researchers by identity strength (account-linked, then `identifiers.netid`-backed, then name-only) and folds each researcher into the single strongest same-name researcher that outranks it, so a netid-backed accountless researcher is itself a canonical merge target for name-only shells while still folding into an account-linked canonical.
 A fold is refused when the two sides carry different ORCIDs or different netids (`ORCID_CONFLICT`, `NETID_CONFLICT`), when two equally strong candidates share the name (`AMBIGUOUS_MULTIPLE_CANONICAL`), or when nothing outranks the researcher (`NO_CANONICAL`).
 
