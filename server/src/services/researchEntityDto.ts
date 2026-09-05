@@ -19,7 +19,7 @@ import {
 } from '../utils/researchHomeCardSummary';
 import { isMultiTenantAcademicHostRootUrl } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
-import { personScopedResearchEntityNameNamesSomethingElse } from '../utils/researchHomeNameIdentityAuthority';
+import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -197,7 +197,7 @@ function servedShortDescriptionFallback(served: Record<string, any>, entityType:
 function servedPersonScopedDisplayName(group: Record<string, any>, value: unknown): string {
   const displayName = publicResearchEntityName(value);
   if (!displayName) return '';
-  return personScopedResearchEntityNameNamesSomethingElse({
+  return personScopedResearchEntityNameNamesSomethingElseByUrlPath({
     candidateName: displayName,
     entityType: group.entityType,
     kind: group.kind,

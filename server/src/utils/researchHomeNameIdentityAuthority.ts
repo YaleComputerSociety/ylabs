@@ -9,6 +9,7 @@
  * an umbrella organization and grafted the same organization onto several
  * different people (issue #2234).
  */
+import { normalizeName } from '../scrapers/utils/scraperHelpers';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -149,6 +150,45 @@ export function isUmbrellaOrganizationName(value: unknown): boolean {
   if (WORKING_GROUP_RE.test(name)) return true;
   if (RESEARCH_HOME_LAB_HEAD_RE.test(name)) return false;
   return UMBRELLA_ORGANIZATION_HEAD_RE.test(name);
+}
+
+// A blurb is prose, so an organizational word inside it can merely MENTION an
+// organization ("Research in the Department of Psychiatry on adolescent sleep")
+// instead of declaring what the slot links. Requiring the head noun to be the
+// phrase the blurb ENDS on separates the two, so describing where a lab sits
+// never costs the lab its own name, type, and website (#2361).
+const TRAILING_UMBRELLA_ORGANIZATION_RE = new RegExp(
+  `\\b${UMBRELLA_ORGANIZATION_HEAD_SOURCE}[\\s.,;:!?)]*$`,
+  'i',
+);
+
+// Trailing position alone is not enough: an ordinary mention can also fall at the
+// end ("Clinical research at Northgate Children's Hospital"), and a locative
+// lead-in is what marks the organization as WHERE the lab sits rather than WHAT the
+// slot links. Requiring no clause break between the two keeps the organization the
+// object of that preposition. Where the two shapes genuinely overlap ("A
+// collaborative of investigators at Northgate School of Medicine") this declines to
+// refuse, because the mention shape is the one that costs a real lab its name, type,
+// and website (#2361).
+const ORGANIZATION_MENTIONED_AS_LOCATION_RE = new RegExp(
+  '\\b(?:at|in|within|inside|across|throughout|near|by|with|under|through|part\\s+of|' +
+    'affiliated\\s+with|based\\s+(?:at|in)|housed\\s+(?:at|in|within)|hosted\\s+(?:at|by))\\b' +
+    `[^,;:]*\\b${UMBRELLA_ORGANIZATION_HEAD_SOURCE}[\\s.,;:!?)]*$`,
+  'i',
+);
+
+/**
+ * Whether a free-text blurb beside a linked site NAMES an umbrella organization
+ * as the thing it links, rather than mentioning one in passing. This is the
+ * description-shaped counterpart of `isUmbrellaOrganizationName`, which reads a
+ * name and would over-refuse on prose.
+ */
+export function describesAffiliatedOrganization(value: unknown): boolean {
+  const description = textValue(value);
+  if (!description) return false;
+  if (RESEARCH_HOME_LAB_HEAD_RE.test(description)) return false;
+  if (ORGANIZATION_MENTIONED_AS_LOCATION_RE.test(description)) return false;
+  return TRAILING_UMBRELLA_ORGANIZATION_RE.test(description);
 }
 
 /**
@@ -341,33 +381,134 @@ export function entityKeyPersonTokens(entityKey: unknown): string[] {
   );
 }
 
+// A slug can glue the research-home head noun straight onto the surname with no
+// separator (`ysm-leveylab`), which leaves `entityKeyPersonTokens` nothing to split
+// on and hides the surname from the eponym check.
+const GLUED_RESEARCH_HOME_HEAD_RE = /(?:labs?|laborator(?:y|ies)|groups?)$/;
+
+function identityTokenSpellings(token: string): string[] {
+  const withoutResearchHomeHead = token.replace(GLUED_RESEARCH_HOME_HEAD_RE, '');
+  return withoutResearchHomeHead !== token && withoutResearchHomeHead.length >= 2
+    ? [token, withoutResearchHomeHead]
+    : [token];
+}
+
 /**
  * Whether an eponym names one of the identity's own tokens. A compressed
  * initial-plus-surname form ("XLiu" for Xiaofeng Liu) is the same person, so a
  * suffix match counts; otherwise the surnames must be equal.
+ *
+ * A token that glues the research-home head noun onto the surname is the same
+ * person too: an identity resolved from the slug `ysm-leveylab` IS Levey. Without
+ * that spelling the roster arm reads "Levey Lab" as somebody else's lab and the
+ * repair renames a record whose name was right (#2368).
  */
 export function eponymMatchesIdentity(eponym: string, identityTokens: string[]): boolean {
-  return identityTokens.some(
-    (token) =>
-      token === eponym ||
-      (token.length >= 3 && eponym.endsWith(token)) ||
-      (eponym.length >= 3 && token.endsWith(eponym)),
-  );
+  return identityTokens
+    .flatMap(identityTokenSpellings)
+    .some(
+      (token) =>
+        token === eponym ||
+        (token.length >= 3 && eponym.endsWith(token)) ||
+        (eponym.length >= 3 && token.endsWith(eponym)),
+    );
 }
 
 /**
- * Whether a harvested lab name claims a person other than the one this entity
- * belongs to, corroborated by the linked site's URL path.
+ * The surname each display name ends on, as the eponym corroboration vocabulary.
+ *
+ * `normalizeName` runs first because it is the repo's owner for peeling a
+ * credential clause off a display name, and a roster built on a divergent rule
+ * records the credential AS the surname: "Avery Sloan, MS" would contribute 'ms'
+ * and never 'sloan', so an eponym-shaped topical name ("MS Lab") gets refused
+ * while a genuinely foreign "Sloan Lab" stays adoptable.
+ *
+ * Two-letter tokens count, on the same threshold `personIdentityTokens` uses:
+ * "Wu" and "Xu" are surnames the eponym rule already accepts, so dropping them
+ * would both leave "Wu Lab" unrefusable and record the GIVEN name of "Sheng Wu"
+ * as a surname. Single-letter initials and comma-less credential tails are what
+ * the token filter is for.
  */
-export function claimsAnotherPersonsLab(args: {
+export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>): Set<string> {
+  const surnames = new Set<string>();
+  for (const displayName of displayNames) {
+    const words = nameWords(normalizeName(textValue(displayName))).filter(
+      (word) => word.length >= 2 && !PERSON_NAME_STOP_WORDS.has(word) && !/\d/.test(word),
+    );
+    const surname = words[words.length - 1];
+    if (surname) surnames.add(surname);
+  }
+  return surnames;
+}
+
+/**
+ * An explicitly empty surname roster, for a call site that cannot reach one - a
+ * synchronous per-request or pure decision path. Passing this is a declaration that
+ * the eponym check runs path-only here, greppable and reviewable, as opposed to an
+ * inline `new Set()` that reads like an oversight or an omitted optional argument
+ * that reads like nothing at all (#2368). Every use is a candidate for #2369, which
+ * closes the gap by threading a real roster into the write chokepoints.
+ */
+export const NO_SURNAME_ROSTER: ReadonlySet<string> = new Set();
+
+/**
+ * The path-only half of `claimsAnotherPersonsLab`, for a caller with no roster to
+ * corroborate against. The weaker of the two and says so in its name.
+ */
+export function claimsAnotherPersonsLabByUrlPath(args: {
   harvestedName: unknown;
   websiteUrl: unknown;
   identityTokens: string[];
 }): boolean {
   if (args.identityTokens.length === 0) return false;
-  const eponyms = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
-  if (eponyms.length === 0) return false;
-  return !eponyms.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
+  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  if (pathCorroborated.length === 0) return false;
+  return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
+}
+
+/**
+ * Whether a harvested lab name claims a person other than the one this entity
+ * belongs to.
+ *
+ * Two independent corroborations, because a foreign lab is only refusable once
+ * something outside the name confirms the eponym is a person at all. The linked
+ * site's URL path is one ("The Liu Lab" at `/lab/jun-liu/`). A roster of known
+ * surnames is the other, and it is what covers the common shape the path rule
+ * cannot see: a trainee's PI's lab sits on its own eponymous host with a bare or
+ * generic path (`girgentilab.org`, `scherzerlaboratory.org`), so the host carries
+ * the only echo of the surname and the host is deliberately not corroboration
+ * (#2361).
+ *
+ * The roster arm is only as precise as the roster is free of ordinary words, so a
+ * topical name IS refusable when its eponym-position token happens to be someone's
+ * surname. How often that bites depends on WHICH roster a caller supplies, and no
+ * single measurement covers them all: 735 of 4209 surnames in the Researcher
+ * collection are also dictionary words, and measured on Dev at beta `2a8b6739` all
+ * 16 roster-only refusals from THAT roster were genuine grafts, with "Belief Lab" /
+ * "The UPLiFT Lab" / "CMB Lab" untouched because those tokens are absent from it.
+ * The YSM harvest passes a wider roster (the whole A-Z directory, staff and trainees
+ * included) and therefore accepts a wider collision envelope, unmeasured. Both are
+ * properties of a corpus, not of the rule, so do not restate either as "a topical
+ * name is not a surname" (#2368).
+ */
+export function claimsAnotherPersonsLab(args: {
+  harvestedName: unknown;
+  websiteUrl: unknown;
+  identityTokens: string[];
+  knownPersonSurnames: ReadonlySet<string>;
+}): boolean {
+  if (args.identityTokens.length === 0) return false;
+  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  // The path named a person, so it has already answered the question either way;
+  // the roster must not overturn "this is the eponym holder's own lab".
+  if (pathCorroborated.length > 0) {
+    return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
+  }
+  const rosterCorroborated = eponymousLabNameSurnameCandidates(args.harvestedName).filter(
+    (candidate) => args.knownPersonSurnames.has(candidate),
+  );
+  if (rosterCorroborated.length === 0) return false;
+  return !rosterCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
 }
 
 export type HarvestedNameIdentityVerdict =
@@ -382,21 +523,37 @@ export type HarvestedNameIdentityVerdict =
  * `OWN_IDENTITY` is returned when the name carries the person's own name, or
  * reads as a research home rather than an umbrella organization; those are the
  * only cases where the harvested name may become the entity's identity.
+ *
+ * `harvestedDescription` is the blurb the profile's own lab slot carries beside
+ * the link. A slot whose blurb NAMES what it links as a center, collaborative, or
+ * consortium is declaring an affiliation even when its name reads as a lab, and
+ * that blurb is the only evidence distinguishing the two (#2361). See
+ * `describesAffiliatedOrganization` for why a passing mention does not count.
+ *
+ * `knownPersonSurnames` is the roster the eponym check corroborates against; see
+ * `claimsAnotherPersonsLab`. Required, so a caller with no roster has to reach for
+ * `claimsAnotherPersonsLabByUrlPath` and own that choice (#2368).
  */
 export function classifyHarvestedResearchHomeName(args: {
   harvestedName: unknown;
   personName: unknown;
   websiteUrl?: unknown;
+  harvestedDescription?: unknown;
+  knownPersonSurnames: ReadonlySet<string>;
 }): HarvestedNameIdentityVerdict {
   const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
+  if (describesAffiliatedOrganization(args.harvestedDescription)) {
+    return 'AFFILIATED_ORGANIZATION';
+  }
   const foreign = claimsAnotherPersonsLab({
     harvestedName: name,
     websiteUrl: args.websiteUrl,
     identityTokens: personIdentityTokens(args.personName),
+    knownPersonSurnames: args.knownPersonSurnames,
   });
   return foreign ? 'ANOTHER_PERSONS_LAB' : 'OWN_IDENTITY';
 }
@@ -445,29 +602,68 @@ export function isPersonScopedResearchEntity(entity: {
  * `cancer-research-lab` and for "Yale Cancer Center"). A slug token therefore
  * only clears an organization name when it stands in the eponym position, which
  * is the same narrow shape that makes the foreign-lab rule safe to act on.
+ *
+ * Two named entry points rather than one optional-roster parameter, for the same
+ * reason as `claimsAnotherPersonsLab`: four of this predicate's five callers cannot
+ * afford a corpus-wide roster (the DTO path is synchronous and per-request), and an
+ * optional argument let them select the weaker judgement by omitting it, silently
+ * making this backstop weaker than the harvest-time classifier it backs up (#2368).
+ * `...ByUrlPath` is the weaker one and says so in its name.
  */
-export function personScopedResearchEntityNameNamesSomethingElse(args: {
+export interface PersonScopedNameIdentityArgs {
   candidateName: unknown;
   entityType?: unknown;
   kind?: unknown;
   slug?: unknown;
   personName?: unknown;
   websiteUrl?: unknown;
-}): boolean {
-  if (!isPersonScopedResearchEntity(args)) return false;
+}
+
+/**
+ * The shared front half: the shape gate, the link-wrapper strip, identity-token
+ * resolution, and the umbrella-organization arm. Returns the settled verdict, or
+ * the tokens the caller's chosen foreign-lab check needs.
+ */
+function personScopedNameIdentityPrelude(
+  args: PersonScopedNameIdentityArgs,
+): { settled: boolean } | { settled?: undefined; name: string; identityTokens: string[] } {
+  if (!isPersonScopedResearchEntity(args)) return { settled: false };
   const name = stripResearchHomeNameLinkWrapper(args.candidateName);
-  if (name.length < 2) return false;
+  if (name.length < 2) return { settled: false };
   const personTokens = personIdentityTokens(args.personName);
   const identityTokens = personTokens.length ? personTokens : entityKeyPersonTokens(args.slug);
-  if (nameCarriesIdentityToken(name, personTokens)) return false;
+  if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
   if (isUmbrellaOrganizationName(name)) {
-    return !eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
-      eponymMatchesIdentity(eponym, identityTokens),
-    );
+    return {
+      settled: !eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
+        eponymMatchesIdentity(eponym, identityTokens),
+      ),
+    };
   }
-  return claimsAnotherPersonsLab({
-    harvestedName: name,
+  return { name, identityTokens };
+}
+
+export function personScopedResearchEntityNameNamesSomethingElseByUrlPath(
+  args: PersonScopedNameIdentityArgs,
+): boolean {
+  const prelude = personScopedNameIdentityPrelude(args);
+  if (prelude.settled !== undefined) return prelude.settled;
+  return claimsAnotherPersonsLabByUrlPath({
+    harvestedName: prelude.name,
     websiteUrl: args.websiteUrl,
-    identityTokens,
+    identityTokens: prelude.identityTokens,
+  });
+}
+
+export function personScopedResearchEntityNameNamesSomethingElse(
+  args: PersonScopedNameIdentityArgs & { knownPersonSurnames: ReadonlySet<string> },
+): boolean {
+  const prelude = personScopedNameIdentityPrelude(args);
+  if (prelude.settled !== undefined) return prelude.settled;
+  return claimsAnotherPersonsLab({
+    harvestedName: prelude.name,
+    websiteUrl: args.websiteUrl,
+    identityTokens: prelude.identityTokens,
+    knownPersonSurnames: args.knownPersonSurnames,
   });
 }

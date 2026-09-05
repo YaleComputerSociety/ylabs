@@ -3,6 +3,8 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { applyRows, loadOrgNameGrafts } from '../retireAffiliatedOrgNameGrafts';
 
 const ENTITY_KEY = 'dept-econ-rafferty-duchamp';
@@ -180,6 +182,138 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     expect(
       (await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{ name?: string }>())?.name,
     ).toBe(AFFILIATION_GRAFT);
+  });
+
+  it('heals a normalized foreign-lab name the surname roster is the only witness for', async () => {
+    const labSlug = 'ysm-faculty-alexa-sliby';
+    const ownName = 'Alexa Sliby Faculty Research';
+    const labSite = 'https://www.girgentilab.example.org/home';
+    await Researcher.create([{ displayName: 'Matthew Girgenti' }, { displayName: 'Alexa Sliby' }]);
+    await ResearchEntity.create({
+      slug: labSlug,
+      name: 'Girgenti Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    const graftSource = {
+      entityType: 'researchEntity' as const,
+      entityKey: labSlug,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: 'https://medicine.example.edu/profile/alexa-sliby/',
+      confidence: 0.8,
+      observedAt: new Date('2026-08-25T00:00:00Z'),
+      superseded: false,
+    };
+    await Observation.create({
+      ...graftSource,
+      field: 'name',
+      value: 'Girgenti Lab - Yale School of Medicine',
+      superseded: true,
+      rollback: { rolledBackAt: new Date('2026-09-01T01:11:00Z'), reason: 'earlier run' },
+    });
+    await Observation.create({ ...graftSource, field: 'websiteUrl', value: labSite });
+    await Observation.create({
+      ...graftSource,
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://medicine.example.edu/people',
+      field: 'name',
+      value: ownName,
+      confidence: 0.7,
+    });
+
+    const rows = await loadOrgNameGrafts();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe('ANOTHER_PERSONS_LAB');
+    expect(rows[0].documentGraftedFields).toEqual([{ field: 'name', storedName: 'Girgenti Lab' }]);
+    expect(rows[0].replacementNameAfterRollback).toBe(ownName);
+
+    const applied = await applyRows(rows);
+    expect(applied.documentFieldsCorrected).toBe(1);
+    // This source emits `entityKey` and never `entityId`, so a row that took its id
+    // off the observation left the re-gate with nothing to do and the renamed record
+    // kept the tier the old name earned (#2368).
+    expect(applied.regated).toBe(1);
+    expect(applied.regateSkippedReason).toBeUndefined();
+    const repaired = await ResearchEntity.findOne({ slug: labSlug }).lean<{
+      name?: string;
+      studentVisibilityTier?: string;
+    }>();
+    expect(repaired?.name).toBe(ownName);
+    expect(repaired?.studentVisibilityTier).not.toBe('student_ready');
+  });
+
+  it('leaves a lab named after its own lead alone when the slug names the research', async () => {
+    const labSlug = 'yale-sleep-neurobiology-lab';
+    const lead = await Researcher.create({ displayName: 'Matthew Girgenti' });
+    const lab = await ResearchEntity.create({
+      slug: labSlug,
+      name: 'Girgenti Lab',
+      displayName: 'Girgenti Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: lab._id },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: labSlug,
+      field: 'name',
+      value: 'Girgenti Lab',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://girgentilab.example.org/',
+      confidence: 0.95,
+      observedAt: new Date('2026-08-25T00:00:00Z'),
+      superseded: false,
+    });
+
+    expect(await loadOrgNameGrafts()).toHaveLength(0);
+  });
+
+  it('leaves an endowed organization named after its own lead alone', async () => {
+    const slug = 'ysm-faculty-metal-geochemistry';
+    const lead = await Researcher.create({ displayName: 'Matthew Girgenti' });
+    const record = await ResearchEntity.create({
+      slug,
+      name: 'Girgenti Center',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: record._id },
+      role: 'DIRECTOR',
+      state: 'CURRENT',
+      confidence: 0.9,
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: slug,
+      field: 'name',
+      value: 'Girgenti Center',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://girgenticenter.example.org/',
+      confidence: 0.95,
+      observedAt: new Date('2026-08-25T00:00:00Z'),
+      superseded: false,
+    });
+
+    expect(await loadOrgNameGrafts()).toHaveLength(0);
   });
 
   it('leaves a manually locked field alone', async () => {

@@ -51,7 +51,7 @@ import {
 } from '../utils/researchEntityNameNormalization';
 import {
   isPlaceholderEntityName,
-  personScopedResearchEntityNameNamesSomethingElse,
+  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   resolveAllFields,
@@ -3272,7 +3272,7 @@ function enforceResearchEntityNameAuthority(input: {
     textValue(set.website ?? entityDoc?.website);
   const namesNothingUsable = (candidateName: unknown, websiteUrl: unknown): boolean =>
     isPlaceholderEntityName(candidateName) ||
-    personScopedResearchEntityNameNamesSomethingElse({
+    personScopedResearchEntityNameNamesSomethingElseByUrlPath({
       ...recordIdentity,
       candidateName,
       websiteUrl,

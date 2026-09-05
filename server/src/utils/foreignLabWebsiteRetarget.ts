@@ -18,6 +18,7 @@
  */
 
 import {
+  NO_SURNAME_ROSTER,
   classifyHarvestedResearchHomeName,
   isUmbrellaOrganizationName,
   personIdentityTokens,
@@ -196,6 +197,7 @@ export function adoptableRetargetedName(args: {
     harvestedName: siteName,
     personName: leadName,
     websiteUrl: args.websiteUrl,
+    knownPersonSurnames: NO_SURNAME_ROSTER,
   });
   return verdict === 'OWN_IDENTITY' ? siteName : undefined;
 }

@@ -12,11 +12,22 @@ import {
   claimsAnotherPersonsLab,
   classifyHarvestedResearchHomeName,
   entityKeyPersonTokens,
+  eponymMatchesIdentity,
+  eponymousOrganizationNameSurnameCandidates,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
+  personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
+  personSurnamesFromDisplayNames,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isPersonCmsProfileUrl } from '../utils/researchHomeWebsiteUrl';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  applyStudentVisibilityGatePlans,
+  evaluateStudentVisibilityGateLeadResolution,
+  planStudentVisibilityGate,
+} from '../services/studentVisibilityGateService';
+import { syncEntities } from '../services/meiliSyncService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 
@@ -94,6 +105,7 @@ export interface GraftedDocumentField {
 }
 
 interface EntityContext {
+  id: string;
   slug: string;
   name: string;
   displayName: string;
@@ -102,6 +114,19 @@ interface EntityContext {
   studentVisibilityTier: string;
   personName: string;
   manuallyLockedFields: string[];
+}
+
+/**
+ * The record's own person identity, resolved the way
+ * `personScopedResearchEntityNameNamesSomethingElse` resolves it: the lead's name
+ * when a lead is known, and only otherwise the slug's tokens. A slug names the
+ * research rather than the person (`yale-sleep-neurobiology-lab`), so judging an
+ * eponym against slug tokens alone reads a lab correctly named after its own PI
+ * as somebody else's (#2361).
+ */
+function entityIdentityTokens(entity: EntityContext): string[] {
+  const personTokens = personIdentityTokens(entity.personName);
+  return personTokens.length > 0 ? personTokens : entityKeyPersonTokens(entity.slug);
 }
 
 /**
@@ -115,13 +140,16 @@ function graftVerdict(
   sourceUrl: string,
   linkedWebsiteUrl: string,
   entity: EntityContext,
+  knownPersonSurnames: ReadonlySet<string>,
 ): string | null {
+  const identityTokens = entityIdentityTokens(entity);
   if (sourceName === PROFILE_LINK_SOURCE) {
     const personName = entity.personName || entityKeyPersonTokens(entity.slug).join(' ');
     const verdict = classifyHarvestedResearchHomeName({
       harvestedName: graftedName,
       personName,
       websiteUrl: linkedWebsiteUrl || sourceUrl,
+      knownPersonSurnames,
     });
     return verdict === 'AFFILIATED_ORGANIZATION' || verdict === 'ANOTHER_PERSONS_LAB'
       ? verdict
@@ -130,11 +158,17 @@ function graftVerdict(
   if (sourceName !== MICROSITE_SOURCE) return null;
   if (isPersonCmsProfileUrl(sourceUrl)) return 'PERSON_CMS_PROFILE_SOURCE';
   if (!isPersonScopedResearchEntity(entity)) return null;
-  if (isUmbrellaOrganizationName(graftedName)) return 'AFFILIATED_ORGANIZATION';
+  if (isUmbrellaOrganizationName(graftedName)) {
+    const namesThisRecordsOwnLead = eponymousOrganizationNameSurnameCandidates(graftedName).some(
+      (eponym) => eponymMatchesIdentity(eponym, identityTokens),
+    );
+    return namesThisRecordsOwnLead ? null : 'AFFILIATED_ORGANIZATION';
+  }
   const foreign = claimsAnotherPersonsLab({
     harvestedName: graftedName,
     websiteUrl: linkedWebsiteUrl || sourceUrl,
-    identityTokens: entityKeyPersonTokens(entity.slug),
+    identityTokens,
+    knownPersonSurnames,
   });
   return foreign ? 'ANOTHER_PERSONS_LAB' : null;
 }
@@ -146,12 +180,18 @@ function graftVerdict(
  * predicate does not speak for (an organization-shaped record grafted from a
  * profile lab-website link), so this is never narrower than comparing the stored
  * value to the observation string.
+ *
+ * The surname roster reaches this predicate too, so a stored graft normalized on
+ * the way in ("Girgenti Lab - Yale School of Medicine" stored as "Girgenti Lab")
+ * is still recognized on a generic site path, which is what lets the repair
+ * rewrite the document rather than retire the observation and walk away (#2361).
  */
 function documentNameStillNamesSomethingElse(
   entity: EntityContext,
   storedName: string,
   graftedName: string,
   websiteUrl: string,
+  knownPersonSurnames: ReadonlySet<string>,
 ): boolean {
   if (!storedName) return false;
   if (storedName === graftedName) return true;
@@ -162,6 +202,7 @@ function documentNameStillNamesSomethingElse(
     slug: entity.slug,
     personName: entity.personName,
     websiteUrl,
+    knownPersonSurnames,
   });
 }
 
@@ -209,6 +250,17 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     if (!linkedWebsites.has(key)) linkedWebsites.set(key, String(obs.value || ''));
   }
 
+  // Every known researcher's surname, so an eponymous stored name claiming a
+  // person other than this entity's own lead is refusable even when the linked
+  // site's path never spells that surname out (#2361).
+  const knownPersonSurnames = personSurnamesFromDisplayNames(
+    (
+      await Researcher.find({ archived: { $ne: true } })
+        .select('displayName')
+        .lean()
+    ).map((person) => (person as { displayName?: unknown }).displayName),
+  );
+
   const slugById = new Map<string, string>();
   for (const entity of await ResearchEntity.find({}).select('_id slug').lean()) {
     const id = serializedDocumentId((entity as { _id: unknown })._id);
@@ -246,6 +298,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
       : null;
     const record = entity as Record<string, unknown>;
     const context: EntityContext = {
+      id: serializedDocumentId(record._id) || '',
       slug: String(record.slug || ''),
       name: String(record.name || ''),
       displayName: String(record.displayName || ''),
@@ -274,7 +327,14 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     const sourceUrl = String(obs.sourceUrl || '');
     const sourceName = String(obs.sourceName);
     const linkedWebsiteUrl = linkedWebsites.get(`${entityKey || entityId}|${sourceName}`) || '';
-    const verdict = graftVerdict(sourceName, graftedName, sourceUrl, linkedWebsiteUrl, entity);
+    const verdict = graftVerdict(
+      sourceName,
+      graftedName,
+      sourceUrl,
+      linkedWebsiteUrl,
+      entity,
+      knownPersonSurnames,
+    );
     if (!verdict) continue;
     // A manually locked field has nothing the repair may do, so it never counts as
     // still served; otherwise the row would be re-reported on every future run
@@ -287,6 +347,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
           candidateField === 'displayName' ? entity.displayName : entity.name,
           graftedName,
           linkedWebsiteUrl || sourceUrl,
+          knownPersonSurnames,
         ),
     );
     const documentServesThisGraft = graftedDocumentFields.length > 0;
@@ -297,7 +358,11 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     if (!grouped.has(groupKey)) {
       grouped.set(groupKey, {
         entitySlug: entity.slug,
-        entityId,
+        // The RESOLVED document id, never the observation's. A `ysm-faculty-directory`
+        // research-entity observation is emitted with `entityKey` only, so taking the
+        // id off the observation left it undefined for the repair's primary source and
+        // silently skipped the re-gate for exactly those rows (#2368).
+        entityId: entity.id || undefined,
         servedName: entity.name,
         entityType: entity.entityType,
         studentVisibilityTier: entity.studentVisibilityTier,
@@ -368,6 +433,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
             String(candidate.value || ''),
             '',
             linkedWebsiteUrl,
+            knownPersonSurnames,
           ),
       );
       return {
@@ -423,12 +489,66 @@ async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
   return corrected;
 }
 
+/**
+ * Re-gate every record this run renamed, then resync those documents to Meilisearch.
+ *
+ * A correction here is not gate-neutral: `planStudentVisibilityGate` feeds `entity.name`
+ * through `normalizedDedupeName`, so changing a name can add or drop a duplicate-risk
+ * suppression. Without this the stored `studentVisibilityTier` goes stale in either
+ * direction - a row can keep a suppression the rename resolved, or keep `student_ready`
+ * against a verdict the rename invalidated. A repair that only rewrites documents and
+ * never re-derives what the gate concluded from them is how a record ends up stored
+ * `student_ready` while its detail page disagrees.
+ *
+ * The gate's own lead-resolution guard is evaluated first, because
+ * `applyStudentVisibilityGatePlans` is the raw writer and only `runStudentVisibilityGate`
+ * normally enforces it - writing gate plans without it is how a mid-migration empty
+ * Researcher collection mass-suppresses the whole corrected set. When it trips, the
+ * gate write is skipped and reported rather than thrown: the document corrections are
+ * already durable at this point, so aborting would cost the operator the report of
+ * what this run did. The Meili resync still runs, since the names changed either way.
+ */
+async function regateCorrectedEntities(
+  entityIds: string[],
+): Promise<{ regated: number; regateSkippedReason?: string }> {
+  const ids = entityIds.filter(Boolean);
+  if (ids.length === 0) return { regated: 0 };
+  const plans = await planStudentVisibilityGate({
+    collection: 'research',
+    mode: 'apply',
+    recordIds: ids,
+  });
+  const leadResolution = evaluateStudentVisibilityGateLeadResolution(plans);
+  if (leadResolution.safe) {
+    await applyStudentVisibilityGatePlans(plans);
+  } else {
+    console.error(`[${SCRIPT_NAME}] Skipping re-gate: ${leadResolution.blocker}`);
+  }
+  const objectIds = ids
+    .filter((id) => mongoose.isValidObjectId(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  if (objectIds.length > 0) {
+    const docs = await ResearchEntity.find({ _id: { $in: objectIds } }).lean();
+    try {
+      await syncEntities('researchEntity', docs as unknown[]);
+    } catch (error) {
+      console.error(`[${SCRIPT_NAME}] Meili resync after re-gate failed:`, sanitizeLogValue(error));
+    }
+  }
+  return leadResolution.safe
+    ? { regated: plans.length }
+    : { regated: 0, regateSkippedReason: leadResolution.blocker };
+}
+
 export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
   rolledBack: number;
   documentFieldsCorrected: number;
+  regated: number;
+  regateSkippedReason?: string;
 }> {
   let rolledBack = 0;
   let documentFieldsCorrected = 0;
+  const correctedEntityIds = new Set<string>();
   for (const row of rows) {
     const ids = row.observationIds.map((id) => new mongoose.Types.ObjectId(id));
     const result = await Observation.updateMany(
@@ -441,9 +561,12 @@ export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
       },
     );
     rolledBack += result.modifiedCount || 0;
-    documentFieldsCorrected += await clearGraftFromDocument(row);
+    const corrected = await clearGraftFromDocument(row);
+    documentFieldsCorrected += corrected;
+    if (corrected > 0 && row.entityId) correctedEntityIds.add(row.entityId);
   }
-  return { rolledBack, documentFieldsCorrected };
+  const regate = await regateCorrectedEntities(Array.from(correctedEntityIds));
+  return { rolledBack, documentFieldsCorrected, ...regate };
 }
 
 async function main() {
@@ -471,7 +594,7 @@ async function main() {
 
   const applied = args.apply
     ? await applyRows(rows)
-    : { rolledBack: 0, documentFieldsCorrected: 0 };
+    : { rolledBack: 0, documentFieldsCorrected: 0, regated: 0 };
 
   const byVerdict: Record<string, number> = {};
   const bySource: Record<string, number> = {};
@@ -489,6 +612,8 @@ async function main() {
     plannedObservations,
     rolledBackObservations: applied.rolledBack,
     documentFieldsCorrected: applied.documentFieldsCorrected,
+    regated: applied.regated,
+    regateSkippedReason: applied.regateSkippedReason,
     documentsStillServingGraft: rows.filter((row) => row.documentStillServesGraft).length,
     byVerdict,
     bySource,
