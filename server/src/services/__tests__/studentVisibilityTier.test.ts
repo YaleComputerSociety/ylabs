@@ -18,6 +18,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     descriptionCoherent: true,
     entityContentMatchesCard: true,
     rightLeadAttached: true,
+    citationIdentifiesSubject: true,
     notDuplicate: true,
     hasUsableName: true,
   };
@@ -30,6 +31,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     ['incoherent/boilerplate description', 'descriptionCoherent'],
     ['content about a different entity', 'entityContentMatchesCard'],
     ['wrong or missing lead', 'rightLeadAttached'],
+    ['no citation about this subject', 'citationIdentifiesSubject'],
     ['duplicate/suppressed shell', 'notDuplicate'],
     ['placeholder name', 'hasUsableName'],
   ] as const)('is blocked when %s (%s is false)', (_label, field) => {
