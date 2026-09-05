@@ -7,7 +7,10 @@ import {
   probeSourceLink,
 } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { yaleStatusCacheIsWritable } from '../utils/researchEntityYaleStatus';
+import {
+  hasRecordedClosureEvidence,
+  yaleStatusCacheIsWritable,
+} from '../utils/researchEntityYaleStatus';
 import { getOrgUnitCanonicalizer } from './orgUnitCanonicalization';
 
 export const DEPARTMENT_ROSTER_HEALTH_FIELD = 'departmentRosterHealth';
@@ -25,6 +28,13 @@ export interface DepartmentRosterHealthSnapshot {
 export interface EntityDepartureState {
   yaleStatusReasonCache?: string | null;
   absentFromRosterSinceRunId?: string | null;
+  /**
+   * The entity carries a human-recorded `permanently_closed` marker. Since #2414
+   * a recorded closure derives the same `reason: 'departed'` this reconciler
+   * writes from roster absence, so without this flag a roster-present run would
+   * read the human marker as its own past output and clear it.
+   */
+  hasRecordedClosure?: boolean;
 }
 
 export type RunPresenceSignal = 'present' | 'absent' | 'inconclusive';
@@ -133,7 +143,12 @@ export function decideFacultyRosterDeparture(params: {
       lastSeenInCompleteRosterAt: observedAt,
       absentFromRosterSinceRunId: '',
     };
-    if (reason === 'departed') {
+    // A recorded closure outranks roster presence: a relocated professor is by
+    // definition still listed on a stale Yale roster, which is the population the
+    // marker exists for, so clearing on presence would let this lane overwrite a
+    // human judgement with an automated one. The last-seen bookkeeping is still
+    // a fact worth recording.
+    if (reason === 'departed' && !entity.hasRecordedClosure) {
       set.yaleStatusCache = 'active';
       set.activeAtYaleCache = true;
       set.yaleStatusReasonCache = '';
@@ -303,7 +318,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     archived: { $ne: true },
   })
     .select(
-      'slug departments yaleStatusReasonCache absentFromRosterSinceRunId manuallyLockedFields websiteUrl website sourceUrls',
+      'slug departments yaleStatusReasonCache absentFromRosterSinceRunId manuallyLockedFields studentVisibilitySuppressionReason websiteUrl website sourceUrls',
     )
     .lean()) as any[];
 
@@ -329,6 +344,7 @@ export async function reconcileFacultyRosterDeparturesFromRun(
       entity: {
         yaleStatusReasonCache: entity.yaleStatusReasonCache,
         absentFromRosterSinceRunId: entity.absentFromRosterSinceRunId,
+        hasRecordedClosure: hasRecordedClosureEvidence(entity),
       },
     });
     if (decision.action === 'noop') continue;

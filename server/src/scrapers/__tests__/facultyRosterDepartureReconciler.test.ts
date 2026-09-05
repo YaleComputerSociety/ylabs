@@ -130,6 +130,20 @@ describe('decideFacultyRosterDeparture presence', () => {
     expect(decision.set.yaleStatusReasonCache).toBe('');
     expect(decision.set.absentFromRosterSinceRunId).toBe('');
   });
+
+  it('never un-departs a human-recorded closure, whose cohort is still on the roster', () => {
+    const decision = decide('present', {
+      yaleStatusReasonCache: 'departed',
+      absentFromRosterSinceRunId: runA,
+      hasRecordedClosure: true,
+    });
+    expect(decision.action).toBe('refresh_present');
+    expect(decision.set.yaleStatusCache).toBeUndefined();
+    expect(decision.set.activeAtYaleCache).toBeUndefined();
+    expect(decision.set.yaleStatusReasonCache).toBeUndefined();
+    expect(decision.set.lastSeenInCompleteRosterAt).toEqual(observedAt);
+    expect(decision.set.absentFromRosterSinceRunId).toBe('');
+  });
 });
 
 describe('decideFacultyRosterDeparture K=2 durability', () => {

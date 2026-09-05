@@ -169,6 +169,27 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     });
   });
 
+  it('leaves a recorded closure departed when the stale roster still lists it', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({
+      slug: 'lab-closed',
+      yaleStatusCache: 'departed',
+      activeAtYaleCache: false,
+      yaleStatusReasonCache: 'departed',
+      studentVisibilitySuppressionReason: 'permanently_closed',
+      absentFromRosterSinceRunId: priorRun,
+    });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-closed'], discoveredCount: 1 });
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.cleared).toBe(0);
+    const closed = await readEntity('lab-closed');
+    expect(closed?.yaleStatusReasonCache).toBe('departed');
+    expect(closed?.activeAtYaleCache).toBe(false);
+    expect(closed?.lastSeenInCompleteRosterAt).toBeInstanceOf(Date);
+  });
+
   it('keeps the raw roster name when the OrgUnit catalog is unseeded, so both sides stay raw', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });

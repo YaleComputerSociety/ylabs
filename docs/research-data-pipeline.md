@@ -248,6 +248,11 @@ The pass returns a `FacultyRosterDepartureOutcome` naming why it did nothing (`d
 A department name that resolves to nothing is now an explicitly reported condition rather than a zero governed count, which is what made this dormancy invisible: a lookup miss and "this department genuinely has no entities" were the same observation.
 `passesRosterDropGuard` still passes a zero governed count, which is correct once the join resolves: a genuine zero means the `governed` query returns no entity for that department, so the suppression loop cannot act on it.
 
+A human-recorded `permanently_closed` marker outranks roster presence.
+Since #2414 a recorded closure derives the same `yaleStatusReasonCache: 'departed'` this reconciler writes from roster absence, so the presence branch would otherwise read a human marker as its own past output and clear it, and the relocation cohort the marker exists for is by definition the cohort still listed on a stale Yale roster.
+`decideFacultyRosterDeparture` therefore takes `hasRecordedClosure` (from `hasRecordedClosureEvidence`) and downgrades `clear_departed` to `refresh_present`, still recording the last-seen fact.
+The absent branch already no-ops on a `departed` reason, so it needs no equivalent check.
+
 Enabling the lane is a separate, measured change: it can only remove research homes from the directory, so it needs a recomputed `computeResearchEntityStudentVisibility` served-tier diff over every row on Development and Production, not a flag count.
 
 ### Faculty-research-area profile research synthesis
