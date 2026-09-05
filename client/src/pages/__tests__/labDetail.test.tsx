@@ -1566,7 +1566,8 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: /Example Member Research/ }).getAttribute('href')).toBe(
       '/research/faculty-research-area-example-member',
     );
-    expect(screen.getByText('Individual')).toBeTruthy();
+    expect(screen.getByText('Faculty Research')).toBeTruthy();
+    expect(screen.queryByText('Individual')).toBeNull();
   });
 
   it('renders umbrella affiliations for related faculty research areas', async () => {

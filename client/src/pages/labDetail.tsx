@@ -50,6 +50,7 @@ import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigator
 import { formatTitleCaseLabel } from '../utils/displayText';
 import {
   decisionHeadingLabel,
+  entityKindLabel,
   isFacultyResearchEntity,
   relationshipTypeLabel,
   researchEntityTitle,
@@ -83,9 +84,6 @@ const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">{children}</h2>
 );
 
-const formatEntityKindTag = (kind?: string | null): string | undefined =>
-  kind ? formatTitleCaseLabel(kind.replace(/[_-]+/g, ' ').toLowerCase()) : undefined;
-
 const RelatedResearchEntitiesSection = ({
   relationships,
   relatedResearchEntities,
@@ -111,7 +109,7 @@ const RelatedResearchEntitiesSection = ({
           const tags = uniqueCompact(
             [
               relationship?.label || relationshipTypeLabel(relationship?.relationshipType),
-              formatEntityKindTag(entity.kind),
+              entityKindLabel(entity),
               ...compactDepartmentLabels(entity.departments),
             ],
             3,
@@ -159,7 +157,7 @@ const AffiliatedResearchEntitiesSection = ({
           <>
             <div className="flex flex-wrap gap-2">
               {uniqueCompact(
-                [formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)],
+                [entityKindLabel(entity), ...compactDepartmentLabels(entity.departments)],
                 3,
               ).map((tag) => (
                 <span
@@ -213,7 +211,7 @@ const SimilarResearchEntitiesSection = ({
         >
           <div className="flex flex-wrap gap-2">
             {uniqueCompact(
-              [formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)],
+              [entityKindLabel(entity), ...compactDepartmentLabels(entity.departments)],
               3,
             ).map((tag) => (
               <span

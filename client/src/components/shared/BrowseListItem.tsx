@@ -9,8 +9,6 @@ import {
   getItemTags,
   getItemSubtitle,
   getItemSubtitleColor,
-  getResearchGroupDisplayName,
-  getResearchGroupKindLabel,
   getFellowshipJourneySummary,
   getDaysUntilDeadline,
   TAG_CAP,
@@ -19,7 +17,6 @@ import {
 import StatusBadge from './StatusBadge';
 import FavoriteButton from './FavoriteButton';
 import UrgentBadge from './UrgentBadge';
-import ConfigContext from '../../contexts/ConfigContext';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
@@ -42,21 +39,15 @@ const BrowseListItem = React.memo(
     onAdminEdit,
     isCompact,
   }: BrowseListItemProps) => {
-    const { getColorForResearchArea } = useContext(ConfigContext);
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
     const open = isItemOpen(item);
-    const tags = useMemo(
-      () => getItemTags(item, getColorForResearchArea),
-      [item, getColorForResearchArea],
-    );
+    const tags = useMemo(() => getItemTags(item), [item]);
     const trackView = useViewTracking(item.type, getItemId(item));
 
     const daysUntil = getDaysUntilDeadline(item);
     const urgentBadge =
       item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
-
-    const isResearchGroup = item.type === 'researchGroup';
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
@@ -65,7 +56,7 @@ const BrowseListItem = React.memo(
     const fellowshipJourneySummary =
       item.type === 'fellowship' ? getFellowshipJourneySummary(item.data) : null;
 
-    const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
+    const isAudited = isAdmin && item.data.audited;
 
     const handleClick = () => {
       trackView();
@@ -82,33 +73,19 @@ const BrowseListItem = React.memo(
             {urgentBadge && daysUntil !== null && (
               <UrgentBadge daysUntil={daysUntil} variant="inline" />
             )}
-            {isResearchGroup ? (
-              <>
-                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                  <span className="text-xs font-semibold text-blue-700 truncate">
-                    {getResearchGroupKindLabel(item.data.kind)}
-                  </span>
-                </div>
-                <h3 className="text-sm font-semibold text-gray-900 truncate">
-                  {getResearchGroupDisplayName(item.data)}
-                </h3>
-                <p className="text-xs text-gray-500 truncate">{subtitle}</p>
-              </>
-            ) : (
-              <>
-                <h3 className="text-sm font-semibold text-gray-900">
-                  <button
-                    type="button"
-                    onClick={handleClick}
-                    className="yr-focus-ring block max-w-full truncate text-left hover:text-blue-700 focus-visible:rounded-sm"
-                    aria-label={`View details for ${item.data.title}`}
-                  >
-                    {item.data.title}
-                  </button>
-                </h3>
-                <p className={`text-xs ${subtitleColor} truncate`}>{subtitle}</p>
-              </>
-            )}
+            <>
+              <h3 className="text-sm font-semibold text-gray-900">
+                <button
+                  type="button"
+                  onClick={handleClick}
+                  className="yr-focus-ring block max-w-full truncate text-left hover:text-blue-700 focus-visible:rounded-sm"
+                  aria-label={`View details for ${item.data.title}`}
+                >
+                  {item.data.title}
+                </button>
+              </h3>
+              <p className={`text-xs ${subtitleColor} truncate`}>{subtitle}</p>
+            </>
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1.5">
                 {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
@@ -129,12 +106,10 @@ const BrowseListItem = React.memo(
           {!isCompact && (
             <div className="col-span-6 hidden md:block">
               <p className={`text-sm text-gray-600 ${DESCRIPTION_CLAMP_CLASS}`}>
-                {item.type === 'researchGroup'
-                  ? item.data.shortDescription
-                  : item.data.bestNextStep ||
-                    fellowshipJourneySummary ||
-                    item.data.summary ||
-                    item.data.description}
+                {item.data.bestNextStep ||
+                  fellowshipJourneySummary ||
+                  item.data.summary ||
+                  item.data.description}
               </p>
             </div>
           )}
@@ -147,7 +122,7 @@ const BrowseListItem = React.memo(
                 >
                   {fellowshipCycleStatus.label}
                 </span>
-              ) : isResearchGroup ? null : (
+              ) : (
                 <StatusBadge isOpen={open} />
               )}
             </div>
@@ -179,7 +154,7 @@ const BrowseListItem = React.memo(
                   </svg>
                 </button>
               )}
-              {onToggleFavorite && item.type !== 'researchGroup' && (
+              {onToggleFavorite && (
                 <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
               )}
             </div>
