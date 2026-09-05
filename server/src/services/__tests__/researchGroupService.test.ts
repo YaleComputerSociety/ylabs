@@ -3652,113 +3652,137 @@ describe('listSimilarResearchEntities', () => {
     name: 'Viewed Lab',
   };
 
-  it('excludes the viewed entity and caller-supplied structural relations', async () => {
+  // The index decides only WHICH entities are similar and in what order, so a hit
+  // carries an id, a slug and a ranking score. Everything a card renders comes from
+  // the Mongo document these helpers stand in for (#2395).
+  const similarHit = (id: string, slug: string, rankingScore: number) => ({
+    id,
+    slug,
+    _rankingScore: rankingScore,
+  });
+
+  const mongoEntity = (
+    id: string,
+    slug: string,
+    name: string,
+    overrides: Record<string, any> = {},
+  ) => ({
+    _id: id,
+    slug,
+    name,
+    kind: 'lab',
+    entityType: 'LAB',
+    departments: ['Physics'],
+    studentVisibilityTier: 'student_ready',
+    ...validPublicDescriptions,
+    ...overrides,
+  });
+
+  const hydrateFromMongo = (entities: Record<string, any>[]): void => {
+    mocks.researchEntityFind.mockReturnValue(queryResult(entities));
+  };
+
+  it('re-hydrates the card from Mongo and never renders the index document copy', async () => {
     mocks.searchSimilarDocuments.mockResolvedValue({
       hits: [
         {
-          id: '67d8928150621bcef434a1d5',
-          slug: 'viewed-lab',
-          name: 'Viewed Lab',
-          kind: 'lab',
-          departments: ['Physics'],
-          studentVisibilityTier: 'student_ready',
-          _rankingScore: 0.99,
-          ...validPublicDescriptions,
-        },
-        {
-          id: '67d8928150621bcef434a201',
-          slug: 'structural-neighbor',
-          name: 'Structural Neighbor',
-          kind: 'lab',
-          departments: ['Physics'],
-          studentVisibilityTier: 'student_ready',
-          _rankingScore: 0.8,
-          ...validPublicDescriptions,
-        },
-        {
-          id: '67d8928150621bcef434a202',
-          slug: 'topical-neighbor',
-          name: 'Topical Neighbor',
-          kind: 'lab',
-          departments: ['Physics'],
-          studentVisibilityTier: 'student_ready',
-          _rankingScore: 0.7,
-          ...validPublicDescriptions,
+          ...similarHit('67d8928150621bcef434a230', 'hydrated-neighbor', 0.8),
+          // Divergent index-sanitized copy: the index sanitizer is not the serve path.
+          name: 'Stale Index Name',
+          shortDescription: 'Studies stale index chips.',
+          fullDescription: 'Stale index full description.',
         },
       ],
     });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a230', 'hydrated-neighbor', 'Authoritative Mongo Name'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('Authoritative Mongo Name');
+    expect(JSON.stringify(result)).not.toContain('Stale Index Name');
+    expect(JSON.stringify(result)).not.toContain('stale index chips');
+  });
+
+  it('drops a card whose stored tier is stale against the live serve gate', async () => {
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        similarHit('67d8928150621bcef434a240', 'gate-failing-neighbor', 0.9),
+        similarHit('67d8928150621bcef434a241', 'servable-neighbor', 0.8),
+      ],
+    });
+    // Both are stored `student_ready`, but the first has no usable public
+    // description, so the live gate the detail resolver runs rejects it.
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a240', 'gate-failing-neighbor', 'Gate Failing Neighbor', {
+        shortDescription: '',
+        fullDescription: '',
+        profileSynthesisDescription: '',
+        researchAreas: [],
+      }),
+      mongoEntity('67d8928150621bcef434a241', 'servable-neighbor', 'Servable Neighbor'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual(['servable-neighbor']);
+  });
+
+  it('queries Mongo for the servable candidates and excludes the viewed entity up front', async () => {
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        similarHit('67d8928150621bcef434a1d5', 'viewed-lab', 0.99),
+        similarHit('67d8928150621bcef434a201', 'structural-neighbor', 0.8),
+        similarHit('67d8928150621bcef434a202', 'topical-neighbor', 0.7),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a202', 'topical-neighbor', 'Topical Neighbor'),
+    ]);
 
     const result = await listSimilarResearchEntities(viewedEntity, {
       excludeEntityKeys: ['structural-neighbor', '67d8928150621bcef434a201'],
     });
 
-    const slugs = result.map((entity) => entity.slug);
-    expect(slugs).toEqual(['topical-neighbor']);
-    expect(slugs).not.toContain('viewed-lab');
-    expect(slugs).not.toContain('structural-neighbor');
+    expect(result.map((entity) => entity.slug)).toEqual(['topical-neighbor']);
+    const [mongoFilter] = mocks.researchEntityFind.mock.calls.at(-1) as [Record<string, any>];
+    expect(mongoFilter._id.$in).toEqual(['67d8928150621bcef434a202']);
+    expect(mongoFilter.archived).toEqual({ $ne: true });
+    expect(mongoFilter.studentVisibilityTier).toEqual({ $in: ['student_ready'] });
   });
 
-  it('drops entities below the public visibility tier and weak-similarity noise', async () => {
+  it('lets Mongo, not the index document, decide the visibility tier', async () => {
     mocks.searchSimilarDocuments.mockResolvedValue({
       hits: [
-        {
-          id: '67d8928150621bcef434a210',
-          slug: 'private-neighbor',
-          name: 'Private Neighbor',
-          kind: 'lab',
-          departments: ['Physics'],
-          studentVisibilityTier: 'operator_review',
-          _rankingScore: 0.9,
-          ...validPublicDescriptions,
-        },
-        {
-          id: '67d8928150621bcef434a211',
-          slug: 'noise-neighbor',
-          name: 'Noise Neighbor',
-          kind: 'lab',
-          departments: ['Physics'],
-          studentVisibilityTier: 'student_ready',
-          _rankingScore: 0.05,
-          ...validPublicDescriptions,
-        },
-        {
-          id: '67d8928150621bcef434a212',
-          slug: 'real-neighbor',
-          name: 'Real Neighbor',
-          kind: 'lab',
-          departments: ['Physics'],
-          studentVisibilityTier: 'student_ready',
-          _rankingScore: 0.6,
-          ...validPublicDescriptions,
-        },
+        similarHit('67d8928150621bcef434a210', 'private-neighbor', 0.9),
+        similarHit('67d8928150621bcef434a211', 'noise-neighbor', 0.05),
+        similarHit('67d8928150621bcef434a212', 'real-neighbor', 0.6),
       ],
     });
+    // The tier-filtered Mongo read returns neither the non-public neighbor nor the
+    // weak-similarity one, which never reached the query.
+    hydrateFromMongo([mongoEntity('67d8928150621bcef434a212', 'real-neighbor', 'Real Neighbor')]);
 
     const result = await listSimilarResearchEntities(viewedEntity);
 
     expect(result.map((entity) => entity.slug)).toEqual(['real-neighbor']);
+    const [mongoFilter] = mocks.researchEntityFind.mock.calls.at(-1) as [Record<string, any>];
+    expect(mongoFilter._id.$in).not.toContain('67d8928150621bcef434a211');
   });
 
   it('projects a bounded allowlist card and never leaks operator or contact fields', async () => {
     mocks.searchSimilarDocuments.mockResolvedValue({
-      hits: [
-        {
-          id: '67d8928150621bcef434a220',
-          slug: 'bounded-neighbor',
-          name: 'Bounded Neighbor',
-          kind: 'lab',
-          entityType: 'LAB',
-          departments: ['Physics'],
-          studentVisibilityTier: 'student_ready',
-          _rankingScore: 0.7,
-          privateNotes: 'operator only',
-          sourceUrls: ['https://example.edu/private'],
-          shortDescription:
-            "Studies molecular dynamics reachable at hidden@example.edu across the group's program.",
-          fullDescription: validPublicDescriptions.fullDescription,
-        },
-      ],
+      hits: [similarHit('67d8928150621bcef434a220', 'bounded-neighbor', 0.7)],
     });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a220', 'bounded-neighbor', 'Bounded Neighbor', {
+        privateNotes: 'operator only',
+        contactEmail: 'hidden@example.edu',
+        sourceUrls: ['https://example.edu/private'],
+      }),
+    ]);
 
     const result = await listSimilarResearchEntities(viewedEntity);
 
@@ -3773,23 +3797,51 @@ describe('listSimilarResearchEntities', () => {
   });
 
   it('caps results at the bounded maximum', async () => {
+    const ids = Array.from(
+      { length: 20 },
+      (_, index) => `67d8928150621bcef434b${String(index).padStart(3, '0')}`,
+    );
     mocks.searchSimilarDocuments.mockResolvedValue({
-      hits: Array.from({ length: 20 }, (_, index) => ({
-        id: `67d8928150621bcef434b${String(index).padStart(3, '0')}`,
-        slug: `neighbor-${index}`,
-        name: `Neighbor ${index}`,
-        kind: 'lab',
-        departments: ['Physics'],
-        studentVisibilityTier: 'student_ready',
-        _rankingScore: 0.9,
-        ...validPublicDescriptions,
-      })),
+      hits: ids.map((id, index) => similarHit(id, `neighbor-${index}`, 0.9)),
+    });
+    hydrateFromMongo(
+      ids.map((id, index) => mongoEntity(id, `neighbor-${index}`, `Neighbor ${index}`)),
+    );
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result).toHaveLength(6);
+  });
+
+  it('preserves the index similarity ordering across the Mongo re-hydration', async () => {
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        similarHit('67d8928150621bcef434a250', 'closest', 0.95),
+        similarHit('67d8928150621bcef434a251', 'middle', 0.75),
+        similarHit('67d8928150621bcef434a252', 'furthest', 0.55),
+      ],
+    });
+    // Mongo returns them in an unrelated order; the served order must follow the index.
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a252', 'furthest', 'Furthest'),
+      mongoEntity('67d8928150621bcef434a250', 'closest', 'Closest'),
+      mongoEntity('67d8928150621bcef434a251', 'middle', 'Middle'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual(['closest', 'middle', 'furthest']);
+  });
+
+  it('returns an empty list when no hit survives the similarity threshold', async () => {
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [similarHit('67d8928150621bcef434a260', 'noise-only', 0.05)],
     });
 
     const result = await listSimilarResearchEntities(viewedEntity);
 
-    expect(result.length).toBeLessThanOrEqual(6);
-    expect(result.length).toBe(6);
+    expect(result).toEqual([]);
+    expect(mocks.researchEntityFind).not.toHaveBeenCalled();
   });
 
   it('returns an empty list when the semantic embedder is not configured', async () => {

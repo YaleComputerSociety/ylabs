@@ -2281,8 +2281,16 @@ export async function listSimilarResearchEntities(
     return [];
   }
 
-  const seenCanonicalKeys = new Set<string>();
-  const similarResearchEntities: PublicResearchEntitySummaryDto[] = [];
+  const isExcludedKey = (...values: unknown[]): boolean =>
+    values.some((value) => {
+      const key = String(value ?? '')
+        .trim()
+        .toLowerCase();
+      return Boolean(key) && exclusionKeys.has(key);
+    });
+
+  const orderedCandidateIds: string[] = [];
+  const seenCandidateIds = new Set<string>();
   for (const hit of hits) {
     if (!hit || typeof hit !== 'object') continue;
     if (
@@ -2291,25 +2299,42 @@ export async function listSimilarResearchEntities(
     ) {
       continue;
     }
-    if (hit.archived === true) continue;
-    if (!publicStudentVisibilityTiers.includes(hit.studentVisibilityTier)) continue;
-    const hitId = String(hit.id ?? '')
-      .trim()
-      .toLowerCase();
-    const hitSlug = String(hit.slug ?? '')
-      .trim()
-      .toLowerCase();
-    if ((hitId && exclusionKeys.has(hitId)) || (hitSlug && exclusionKeys.has(hitSlug))) continue;
-    const dto = toPublicResearchEntitySummaryDto(
-      sanitizeResearchEntityPublicDescriptionFields(hit),
-    );
-    const canonicalKey = (dto.slug || dto.id || '').toLowerCase();
-    if (!canonicalKey || seenCanonicalKeys.has(canonicalKey)) continue;
-    seenCanonicalKeys.add(canonicalKey);
-    similarResearchEntities.push(dto);
-    if (similarResearchEntities.length >= limit) break;
+    if (isExcludedKey(hit.id, hit.slug)) continue;
+    const candidateId = normalizeResearchGroupObjectId(hit.id ?? hit._id);
+    if (!candidateId || seenCandidateIds.has(candidateId)) continue;
+    seenCandidateIds.add(candidateId);
+    orderedCandidateIds.push(candidateId);
   }
-  return similarResearchEntities;
+  if (orderedCandidateIds.length === 0) return [];
+
+  // The index document is a materialized snapshot carrying its own sanitizer
+  // (`sanitizeResearchEntityIndexDocument`), so it decides only WHICH entities are
+  // similar and in what order. Servability and card copy are re-derived from Mongo
+  // through the same live gate the detail resolver runs, because a stored
+  // `student_ready` tier can go stale and the index sanitizer diverges from the
+  // serve path in both directions (#2395). Reading the hit directly rendered copy
+  // no other surface would show, for a row that may no longer serve.
+  const candidateEntities = (await ResearchEntity.find({
+    _id: { $in: orderedCandidateIds },
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select(PUBLIC_RELATED_ENTITY_PROJECTION)
+    .lean()) as any[];
+
+  const summariesByInternalId = new Map(
+    withServablePublicResearchEntities(candidateEntities, {}, false)
+      .filter((candidate) => !isExcludedKey(researchGroupDocumentId(candidate._id), candidate.slug))
+      .map((candidate) => [
+        researchGroupDocumentId(candidate._id),
+        toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(candidate)),
+      ]),
+  );
+
+  return dedupePublicResearchEntitiesInOrder(orderedCandidateIds, summariesByInternalId).slice(
+    0,
+    limit,
+  );
 }
 
 function normalizedMemberName(member: { user?: any }): string {
