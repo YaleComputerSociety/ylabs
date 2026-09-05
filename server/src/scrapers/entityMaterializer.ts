@@ -140,7 +140,10 @@ import {
 } from '../scripts/backfillResearcherOfficialProfileLinksCore';
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
 import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
-import { reconcileFacultyRosterDeparturesFromRun } from './facultyRosterDepartureReconciler';
+import {
+  reconcileFacultyRosterDeparturesFromRun,
+  type FacultyRosterDepartureOutcome,
+} from './facultyRosterDepartureReconciler';
 import {
   isPersonOrGrantShellSlug,
   personProfileNameTokensFromUrl,
@@ -4459,7 +4462,17 @@ export async function materializeFromRun(
     addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
   }
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
-  await reconcileFacultyRosterDeparturesFromRun(scrapeRunId, options);
+  const departureResult = await reconcileFacultyRosterDeparturesFromRun(scrapeRunId, options);
+  // An operator who switched the lane on needs to see why it did nothing;
+  // silence made three separate dormancy causes invisible at once (#2410).
+  const expectedQuietOutcomes: FacultyRosterDepartureOutcome[] = [
+    'reconciled',
+    'disabled',
+    'dry-run',
+  ];
+  if (!expectedQuietOutcomes.includes(departureResult.outcome)) {
+    console.warn(`[faculty-departure] no reconciliation this run: ${departureResult.outcome}`);
+  }
   if (!options.dryRun) {
     await ScrapeRun.updateOne(
       { _id: scrapeRunId },

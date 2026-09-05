@@ -8,6 +8,7 @@ import {
 } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { yaleStatusCacheIsWritable } from '../utils/researchEntityYaleStatus';
+import { getOrgUnitCanonicalizer } from './orgUnitCanonicalization';
 
 export const DEPARTMENT_ROSTER_HEALTH_FIELD = 'departmentRosterHealth';
 export const FACULTY_DEPARTURE_ENTITY_TYPES = ['FACULTY_RESEARCH_AREA', 'LAB'];
@@ -52,6 +53,17 @@ export function snapshotDiscoveredEntityKeys(snapshot: DepartmentRosterHealthSna
     : [];
 }
 
+/**
+ * `governedCount <= 0` passes rather than freezes, and that is safe only because
+ * the caller resolves the department to the canonical name `departments[]`
+ * actually stores. A genuine zero means the subsequent `governed` query returns
+ * no entity for that department, so the suppression loop cannot act on it and
+ * there is nothing for a guard to protect. It was *not* safe while the caller
+ * joined on the raw roster-config spelling: a lookup miss produced a zero
+ * denominator that read as healthy, so the guard was structurally incapable of
+ * firing for 14 departments (#2410). The fix belongs in the join, not here -
+ * hardening this branch would add an inert guard rather than remove one.
+ */
 export function passesRosterDropGuard(
   discoveredCount: number,
   governedCount: number,
@@ -59,6 +71,33 @@ export function passesRosterDropGuard(
 ): boolean {
   if (governedCount <= 0) return true;
   return discoveredCount >= minFraction * governedCount;
+}
+
+/**
+ * The canonical department name a roster-health snapshot governs, or null when
+ * no `OrgUnit` names it.
+ *
+ * The snapshot records the raw `DEFAULT_DEPT_CONFIGS` `deptName`, while
+ * `research_entities.departments[]` stores the canonical `OrgUnit` name, so the
+ * two are joinable only through the catalog. Resolving here means the join is
+ * keyed on org-unit identity rather than on two spellings happening to agree,
+ * and a config whose spelling drifts from the catalog surfaces as an explicit
+ * unresolved department instead of a silent zero governed count.
+ *
+ * A snapshot whose `deptName` is a school rather than a department (the
+ * `divinity`, `nursing`, and `law` configs) also resolves to null, which is
+ * correct: no entity carries a school in `departments[]`, so the department
+ * governs nothing.
+ */
+export async function resolveGovernedDepartmentName(deptName: string): Promise<string | null> {
+  if (!deptName.trim()) return null;
+  try {
+    const canonicalizer = await getOrgUnitCanonicalizer();
+    const resolved = canonicalizer.canonicalizeDepartments([deptName]).values[0];
+    return resolved || null;
+  } catch {
+    return null;
+  }
 }
 
 export function classifyEntityRunSignal(params: {
@@ -152,17 +191,52 @@ export async function probeEntityLinkDeath(
   return { probed: candidates.length, dead: !anyAlive };
 }
 
+/**
+ * Why a reconciliation pass did nothing. Without this a caller cannot tell an
+ * uneventful run from a lane that never executed, which is how three independent
+ * dormancy causes went unnoticed at once (#2410): the feature flag is unset in
+ * every checked-in config, `departmentRosterHealth` observations were absent from
+ * Beta and Production entirely, and the department join matched nothing.
+ */
+export type FacultyRosterDepartureOutcome =
+  | 'disabled'
+  | 'dry-run'
+  | 'invalid-run-id'
+  | 'no-roster-health-observations'
+  | 'no-authoritative-departments'
+  | 'reconciled';
+
+export interface FacultyRosterDepartureResult {
+  outcome: FacultyRosterDepartureOutcome;
+  suppressed: number;
+  cleared: number;
+  held: number;
+  frozenDepartments: number;
+  /** Departments whose governed population was reconciled this run. */
+  governedDepartments: string[];
+  /** Snapshot department names no `OrgUnit` names, so they govern nothing. */
+  unresolvedDepartments: string[];
+}
+
 export async function reconcileFacultyRosterDeparturesFromRun(
   scrapeRunId: string,
   options: { dryRun?: boolean } = {},
-): Promise<{ suppressed: number; cleared: number; held: number; frozenDepartments: number }> {
-  const empty = { suppressed: 0, cleared: 0, held: 0, frozenDepartments: 0 };
-  if (options.dryRun || !facultyRosterDepartureDetectionEnabled()) return empty;
+): Promise<FacultyRosterDepartureResult> {
+  const base = {
+    suppressed: 0,
+    cleared: 0,
+    held: 0,
+    frozenDepartments: 0,
+    governedDepartments: [] as string[],
+    unresolvedDepartments: [] as string[],
+  };
+  if (options.dryRun) return { ...base, outcome: 'dry-run' };
+  if (!facultyRosterDepartureDetectionEnabled()) return { ...base, outcome: 'disabled' };
   let runObjectId: mongoose.Types.ObjectId;
   try {
     runObjectId = new mongoose.Types.ObjectId(scrapeRunId);
   } catch {
-    return empty;
+    return { ...base, outcome: 'invalid-run-id' };
   }
 
   const snapshots = (await Observation.find({
@@ -172,19 +246,29 @@ export async function reconcileFacultyRosterDeparturesFromRun(
   })
     .select('value observedAt')
     .lean()) as any[];
-  if (snapshots.length === 0) return empty;
+  if (snapshots.length === 0) return { ...base, outcome: 'no-roster-health-observations' };
 
   const scrapedDeptNames = new Set<string>();
   const healthyDiscoveredByDept = new Map<string, Set<string>>();
+  const unresolvedDepartments: string[] = [];
   let frozenDepartments = 0;
   let observedAt = new Date();
 
   for (const snapshotObservation of snapshots) {
     const snapshot = (snapshotObservation.value || {}) as DepartmentRosterHealthSnapshot;
-    const deptName = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
-    if (!deptName) continue;
-    scrapedDeptNames.add(deptName);
+    const rawDeptName = typeof snapshot.deptName === 'string' ? snapshot.deptName : '';
+    if (!rawDeptName) continue;
     if (snapshotObservation.observedAt instanceof Date) observedAt = snapshotObservation.observedAt;
+
+    const deptName = await resolveGovernedDepartmentName(rawDeptName);
+    if (!deptName) {
+      unresolvedDepartments.push(rawDeptName);
+      console.warn(
+        `[faculty-departure] unresolved department ${sanitizeLogValue(rawDeptName)}: no OrgUnit names it, so it governs no entity and this run cannot reconcile it`,
+      );
+      continue;
+    }
+    scrapedDeptNames.add(deptName);
     if (!isEntityAuthoritativeSnapshot(snapshot)) continue;
 
     const governedCount = await ResearchEntity.countDocuments({
@@ -203,8 +287,14 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     healthyDiscoveredByDept.set(deptName, new Set(discovered));
   }
 
+  const reported = {
+    ...base,
+    frozenDepartments,
+    unresolvedDepartments,
+    governedDepartments: Array.from(healthyDiscoveredByDept.keys()),
+  };
   if (healthyDiscoveredByDept.size === 0 && frozenDepartments === 0) {
-    return { ...empty, frozenDepartments };
+    return { ...reported, outcome: 'no-authoritative-departments' };
   }
 
   const governed = (await ResearchEntity.find({
@@ -255,5 +345,5 @@ export async function reconcileFacultyRosterDeparturesFromRun(
     if (decision.action === 'suppress_departed') suppressed += 1;
     if (decision.action === 'clear_departed') cleared += 1;
   }
-  return { suppressed, cleared, held, frozenDepartments };
+  return { ...reported, outcome: 'reconciled', suppressed, cleared, held };
 }
