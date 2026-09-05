@@ -951,10 +951,11 @@ const MULTI_PI_ORG_KINDS = new Set(['center', 'institute', 'program']);
 // Yale person-profile page and the entity is a named multi-PI org materialized
 // from a single-PI/grant shell (issue #1595): the org's description or
 // research areas must never resolve to one PI's own bio/study content just
-// because no broader source exists yet. Rejecting drops the field from
-// `resolved` for this pass, so the entity keeps whatever value it already had
-// (or stays unset if it never had one) rather than regressing to a
-// misleadingly narrow scope.
+// because no broader source exists yet. Rejecting falls through to the
+// best-ranked candidate the guard does not object to, and drops the field only
+// when every candidate is person-profile-sourced - so the entity keeps whatever
+// value it already had (or stays unset if it never had one) rather than
+// regressing to a misleadingly narrow scope.
 const SINGLE_PI_SHELL_GATED_FIELDS = ['fullDescription', 'researchAreas'] as const;
 
 /**
@@ -4066,16 +4067,38 @@ export async function materializeEntity(
       for (const shellGatedField of SINGLE_PI_SHELL_GATED_FIELDS) {
         const candidate = resolved[shellGatedField];
         if (
-          candidate &&
-          resolvedFieldSourcedOnlyFromPersonProfilePages(
+          !candidate ||
+          !resolvedFieldSourcedOnlyFromPersonProfilePages(
             shellGatedField,
             candidate,
             materializationObs,
           )
         ) {
-          delete resolved[shellGatedField];
-          if (shellGatedField === 'fullDescription') fullDescriptionShellGated = true;
+          continue;
         }
+        // Fall through to the best candidate this guard does not object to,
+        // rather than removing the field. Dropping it made whether the entity
+        // keeps any description at all depend on which candidate happened to
+        // rank first, so a reweighting or a re-scrape that reordered the groups
+        // silently blanked a served description - the same "demoted, never
+        // dropped" failure the ranked walk below already exists to prevent.
+        const replacement = resolveFieldRanked(shellGatedField, resolverObs, {
+          manuallyLockedFields,
+          manualValues,
+        }).find(
+          (ranked) =>
+            !resolvedFieldSourcedOnlyFromPersonProfilePages(
+              shellGatedField,
+              ranked,
+              materializationObs,
+            ),
+        );
+        if (replacement) resolved[shellGatedField] = replacement;
+        else delete resolved[shellGatedField];
+        // Set either way: the body no longer comes from the seed PI's profile,
+        // so a shortDescription that may still be that PI's own sentence has to
+        // be re-derived against the corrected full (#1595).
+        if (shellGatedField === 'fullDescription') fullDescriptionShellGated = true;
       }
     }
   }

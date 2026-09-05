@@ -178,6 +178,83 @@ describe('materializeEntity guards named multi-PI orgs from a single-PI/grant sh
     expect(persisted?.shortDescription).not.toBe(STALE_PI_SHORT);
   });
 
+  it('falls through to a non-profile-sourced candidate instead of dropping the description', async () => {
+    // The regression this guard used to cause: it deleted the resolved field
+    // whenever the TOP-ranked candidate was profile-sourced, so whether the org
+    // kept any description depended on which candidate happened to rank first.
+    // A reweighting or a re-scrape that reordered the groups blanked a served
+    // description, even though a perfectly good org-scoped candidate was ranked
+    // directly behind it (#2407).
+    await ResearchEntity.create({
+      slug: 'faculty-research-area-morgan-ellery',
+      name: 'Riverbend Research Center',
+      kind: 'center',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    // Ranked first: fresher, so it wins on recency decay.
+    await seedObservation({
+      field: 'fullDescription',
+      value: PI_STUDY_ABSTRACT,
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://medicine.yale.edu/profile/morgan-ellery/',
+      observedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+    // Ranked behind it, and not profile-sourced: the value the guard should keep.
+    await seedObservation({
+      field: 'fullDescription',
+      value: ORG_CENTER_MISSION,
+      sourceName: 'lab-microsite-undergrad-llm',
+      sourceUrl: 'https://riverbend.yale.edu/',
+      observedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    await materializeEntity('researchEntity', {
+      entityKey: 'faculty-research-area-morgan-ellery',
+    });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'faculty-research-area-morgan-ellery',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.fullDescription).toBe(ORG_CENTER_MISSION);
+  });
+
+  it('still drops the description when every candidate is profile-sourced', async () => {
+    await ResearchEntity.create({
+      slug: 'faculty-research-area-morgan-ellery',
+      name: 'Riverbend Research Center',
+      kind: 'center',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    await seedObservation({
+      field: 'fullDescription',
+      value: PI_STUDY_ABSTRACT,
+      sourceName: 'lab-microsite-description-llm',
+      sourceUrl: 'https://medicine.yale.edu/profile/morgan-ellery/',
+      observedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+    await seedObservation({
+      field: 'fullDescription',
+      value: `${PI_STUDY_ABSTRACT} A second cohort is enrolling now.`,
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: 'https://medicine.yale.edu/people/morgan-ellery/',
+      observedAt: new Date('2026-03-01T00:00:00Z'),
+    });
+
+    await materializeEntity('researchEntity', {
+      entityKey: 'faculty-research-area-morgan-ellery',
+    });
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'faculty-research-area-morgan-ellery',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.fullDescription ?? '').toBe('');
+    expect(persisted?.confidenceByField?.fullDescription).toBeUndefined();
+  });
+
   it('materializes the description normally once a genuine org-page observation contributes', async () => {
     await ResearchEntity.create({
       slug: 'faculty-research-area-morgan-ellery',

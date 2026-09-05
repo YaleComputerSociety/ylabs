@@ -21,6 +21,7 @@ import {
 } from '../utils/researchHomeDescriptionSelection';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
+import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 
 export interface ResolverObservation {
   field: string;
@@ -84,6 +85,24 @@ const PROSE_EXTENSION_BONUS = 1.25;
 // Demotion is conditional on a genuinely useful non-bio alternative existing, so
 // a sole bio is still served rather than blanked in favour of a worse value.
 const PERSON_BIO_DEMOTION_FIELDS = new Set(['fullDescription']);
+
+// The undergrad-access lane reads the lab's own page, so it is not
+// directory-synthesized in the sense above, but its declared job is access
+// evidence - undergrad count, openness, an evidence quote, a join URL - at a
+// deliberately low 0.5 weight. It emits a `fullDescription` only incidentally,
+// so when it wins that field the lab's research description is being chosen by
+// an access-signal extractor: measured on Development, it won `fullDescription`
+// on 45 served rows whose own microsite description lane had a value a median
+// 556 chars richer that passed every description-quality bar (#2266).
+//
+// Demotion is conditional on that richer alternative existing and clearing the
+// same bar the bio demotion promotes against, because the failure mode here is
+// adopting length rather than quality: 52 of the thin served rows have their
+// richest available value be a career biography, and those must keep losing. A
+// lab whose only description comes from this lane still serves it.
+const UNDERGRAD_SIGNAL_DESCRIPTION_SOURCES = new Set(['lab-microsite-undergrad-llm']);
+const UNDERGRAD_SIGNAL_DEMOTION_FIELDS = new Set(['fullDescription']);
+const MATERIAL_PROSE_ENRICHMENT_CHARS = 200;
 
 // Scoped to the lanes written specifically to replace a served biography, rather
 // than to the field alone. `isHighConfidencePersonBio` also fires on genuine
@@ -305,6 +324,71 @@ function demotePersonBioProseGroups(field: string, groups: RankedGroup[]): void 
   for (const group of demotable) group.demoted = true;
 }
 
+function isUndergradSignalProseGroup(group: { sources: Set<string> }): boolean {
+  if (group.sources.size === 0) return false;
+  for (const source of group.sources) {
+    if (!UNDERGRAD_SIGNAL_DESCRIPTION_SOURCES.has(source)) return false;
+  }
+  return true;
+}
+
+/**
+ * The bar an alternative must clear before it may displace the access-signal
+ * lane: the research-home candidate score and the shared description-quality
+ * bar, plus an explicit career-biography rejection.
+ *
+ * The biography check is not redundant with the research-home score. That score
+ * penalizes a person-centric *lead*, while a biography selected by career facts
+ * ("received her Ph.D. from ...", "joined the Yale faculty in ...") can open on
+ * the research home and still score 0. Keeping both means the demotion cannot
+ * trade a thin summary for a resume, which is the regression this cohort
+ * invites: the richest available value is a career biography on 52 of the thin
+ * served rows.
+ *
+ * Markup is rejected separately because it defeats the quality bar rather than
+ * failing it. A "Selected Publications" widget scraped as escaped HTML
+ * (`<span data-id="165184">Djebra Y</span>, ...`) reaches
+ * `fullDescriptionQuality` as an 842-char value with zero flags, because the
+ * citation-author-list detector matches `Name X, Name Y,` and the interposed
+ * `</span>` breaks that run. So the richest value on
+ * `faculty-research-area-chao-ma` is a bibliography that reports itself useful.
+ */
+function isAdoptableResearchProseGroup(group: RankedGroup): boolean {
+  return (
+    isServableResearchHomeProseGroup(group) &&
+    !isCareerBiographyDescription(group.value as string) &&
+    !containsHtmlTagMarkup(group.value)
+  );
+}
+
+/**
+ * Runs after the bio demotion rather than before it, so it cannot change which
+ * groups that pass considers promotable, and it skips groups that pass already
+ * demoted - a displaced biography must never be what licenses this demotion.
+ */
+function demoteUndergradSignalProseGroups(field: string, groups: RankedGroup[]): void {
+  if (!UNDERGRAD_SIGNAL_DEMOTION_FIELDS.has(field)) return;
+  // No separate curated exemption: `isUndergradSignalProseGroup` requires every
+  // contributing source to be the access lane, so a value a human also recorded
+  // is not a candidate for demotion in the first place.
+  const signalGroups = groups.filter(isUndergradSignalProseGroup);
+  if (signalGroups.length === 0 || signalGroups.length === groups.length) return;
+  const richestSignalLength = signalGroups.reduce(
+    (longest, group) => Math.max(longest, normalizedProse(group.value).length),
+    0,
+  );
+  const richerAdoptableExists = groups.some(
+    (group) =>
+      !group.demoted &&
+      !isUndergradSignalProseGroup(group) &&
+      normalizedProse(group.value).length >=
+        richestSignalLength + MATERIAL_PROSE_ENRICHMENT_CHARS &&
+      isAdoptableResearchProseGroup(group),
+  );
+  if (!richerAdoptableExists) return;
+  for (const group of signalGroups) group.demoted = true;
+}
+
 function nameHasResearchHomeHeadNoun(value: unknown): boolean {
   return typeof value === 'string' && RESEARCH_HOME_HEAD_NOUN_RE.test(value);
 }
@@ -425,6 +509,7 @@ function rankFieldGroups(
     preferExtractedProseGroups(field, Array.from(groups.values())),
   );
   demotePersonBioProseGroups(field, rankable);
+  demoteUndergradSignalProseGroups(field, rankable);
   return rankable.sort(
     (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
   );
