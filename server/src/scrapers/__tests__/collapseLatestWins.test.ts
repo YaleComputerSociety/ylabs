@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collapseLatestWins } from '../observationStore';
+import { collapseLatestWins, isMateriallyThinnerProseRefresh } from '../observationStore';
 
 interface TestObs {
   field: string;
@@ -107,5 +107,89 @@ describe('collapseLatestWins', () => {
     expect(collapsedFullLog.map((r) => [r.field, r.sourceName, r.value]).sort()).toEqual(
       collapsedActiveOnly.map((r) => [r.field, r.sourceName, r.value]).sort(),
     );
+  });
+});
+
+describe('materially thinner same-source prose refresh (#2423)', () => {
+  // Shapes from the Development rows this was measured on (`dept-eeb-eric-sargis`,
+  // `dept-econ-francesco-agostinelli`): the same extractor re-read the same page
+  // and returned far less of it.
+  const RICH =
+    'The laboratory studies how chromatin architecture constrains transcriptional responses in differentiating cells, combining single-molecule imaging with targeted degradation of architectural proteins. Current projects map enhancer-promoter contacts during lineage commitment, test whether condensate formation is required for coordinated gene activation, and develop optogenetic tools to perturb these contacts on physiological timescales.';
+  const THIN =
+    'The laboratory studies chromatin architecture and transcription in differentiating cells.';
+
+  it('keeps the richer earlier capture when the same source later returned much less', () => {
+    const log = [
+      obs('fullDescription', 'lab-microsite-description-llm', 1, RICH),
+      obs('fullDescription', 'lab-microsite-description-llm', 9, THIN),
+    ];
+    const result = collapseLatestWins(log, 'researchEntity');
+    expect(result).toHaveLength(1);
+    expect(result[0].value).toBe(RICH);
+  });
+
+  it('still lets a same-length refresh win on recency, so the corpus cannot freeze', () => {
+    const REWRITTEN = `${RICH.slice(0, RICH.length - 40)} and extend them to primary tissue.`;
+    const log = [
+      obs('fullDescription', 'lab-microsite-description-llm', 1, RICH),
+      obs('fullDescription', 'lab-microsite-description-llm', 9, REWRITTEN),
+    ];
+    const result = collapseLatestWins(log, 'researchEntity');
+    expect(result[0].value).toBe(REWRITTEN);
+  });
+
+  it('lets a richer refresh win, since only a thinner one is held off', () => {
+    const RICHER = `${RICH} A fourth project develops computational models of contact dynamics across cell cycles and perturbation regimes.`;
+    const log = [
+      obs('fullDescription', 'lab-microsite-description-llm', 1, RICH),
+      obs('fullDescription', 'lab-microsite-description-llm', 9, RICHER),
+    ];
+    const result = collapseLatestWins(log, 'researchEntity');
+    expect(result[0].value).toBe(RICHER);
+  });
+
+  it('does not reach across sources', () => {
+    const log = [
+      obs('fullDescription', 'lab-microsite-description-llm', 1, RICH),
+      obs('fullDescription', 'yale-research-official', 9, THIN),
+    ];
+    const result = collapseLatestWins(log, 'researchEntity');
+    expect(result).toHaveLength(2);
+  });
+
+  describe('isMateriallyThinnerProseRefresh', () => {
+    const compare = (existingValue: string, incomingValue: string) =>
+      isMateriallyThinnerProseRefresh({ field: 'fullDescription', existingValue, incomingValue });
+
+    it('fires when the incoming value is materially thinner', () => {
+      expect(compare(RICH, THIN)).toBe(true);
+    });
+
+    it('does not fire within the material-thinness margin', () => {
+      expect(compare(RICH, RICH.slice(0, RICH.length - 100))).toBe(false);
+    });
+
+    it('does not retain a career biography just because it is longer', () => {
+      const RICH_BIO =
+        'Avery Lin received her Ph.D. in molecular biophysics from Stanford University and completed postdoctoral training at the Whitehead Institute before joining the Yale faculty in 2014. She was appointed to an endowed chair in 2021 and is the recipient of several early-career awards for her work on chromatin architecture and transcriptional control.';
+      expect(compare(RICH_BIO, THIN)).toBe(false);
+    });
+
+    it('does not retain an escaped-HTML citation dump just because it is longer', () => {
+      const CITATION_DUMP =
+        '<span data-id="165184">Djebra Y</span>, <span data-id="165327">Liu X</span>, <span data-id="165133">Marin T</span>, <span data-id="168637">Dhaynaut M</span>, <span data-id="165201">Petibon Y</span>. Joint reconstruction and motion estimation in respiratory-gated positron emission tomography using a matrix-free approach.';
+      expect(compare(CITATION_DUMP, THIN)).toBe(false);
+    });
+
+    it('leaves fields outside the quality-guarded set alone', () => {
+      expect(
+        isMateriallyThinnerProseRefresh({
+          field: 'name',
+          existingValue: RICH,
+          incomingValue: THIN,
+        }),
+      ).toBe(false);
+    });
   });
 });

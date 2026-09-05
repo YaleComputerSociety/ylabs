@@ -19,6 +19,8 @@ import {
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { offTopicResearchHomeDemotionScore } from '../utils/researchHomeDescriptionSelection';
+import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
+import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import type { ObservationInput } from './types';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
@@ -118,6 +120,63 @@ export function isRegressiveProseRefresh(input: {
 export function prosePreferenceScore(value: unknown): number {
   if (typeof value !== 'string' || !value.trim()) return Number.NEGATIVE_INFINITY;
   return offTopicResearchHomeDemotionScore(value);
+}
+
+const MATERIALLY_THINNER_PROSE_CHARS = 200;
+
+const normalizedProseLength = (value: unknown): number =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().length : 0;
+
+/**
+ * DELIBERATELY KEEPS AN OLDER VALUE. Not a bug; do not "restore" newest-wins.
+ *
+ * `isWeakerProseRefresh` above only drops a refresh that is off-topic, and its
+ * contract is that ties pass so the corpus cannot freeze on its first capture.
+ * That leaves one case uncovered: the same extractor re-reads the same page and
+ * returns far LESS of it. Both values are on-topic, so they tie, newest wins, and
+ * the body text is gone - `collapseLatestWins` keeps one row per
+ * (source, field), so the richer value never reaches the resolver at all and no
+ * downstream ranking can recover it.
+ *
+ * Measured on Development: 22 served rows had a same-source value a median 444
+ * chars richer than the one being served, all from
+ * `lab-microsite-description-llm` (#2423).
+ *
+ * Owner decision, 2026-09-05: prefer the richer value, accepting that a lab which
+ * genuinely shortened its page will keep serving the longer earlier copy. This
+ * NARROWS the "ties pass" contract rather than removing it - a refresh within
+ * 200 chars of the incumbent still wins on recency, so an ordinary re-scrape and
+ * a genuine rewrite both behave as before, and only a materially thinner capture
+ * is held off.
+ *
+ * The retained value must itself be servable, because "richer but worse" is the
+ * real failure mode. `scoreResearchHomeDescriptionCandidate` cannot be used here
+ * for the reason given on `prosePreferenceScore` above - the observation does not
+ * carry the product kind, so its person-centric term would charge legitimate
+ * person-voiced faculty research prose -100 - so this uses the kind-free
+ * `offTopicResearchHomeDemotionScore` plus the biography and markup rejections.
+ */
+export function isMateriallyThinnerProseRefresh(input: {
+  field: string;
+  incomingValue: unknown;
+  existingValue: unknown;
+  incomingContext?: ProseQualityContext;
+  existingContext?: ProseQualityContext;
+}): boolean {
+  if (!QUALITY_GUARDED_PROSE_FIELDS.has(input.field)) return false;
+  if (typeof input.existingValue !== 'string' || !input.existingValue.trim()) return false;
+  if (typeof input.incomingValue !== 'string' || !input.incomingValue.trim()) return false;
+  if (
+    normalizedProseLength(input.incomingValue) + MATERIALLY_THINNER_PROSE_CHARS >
+    normalizedProseLength(input.existingValue)
+  ) {
+    return false;
+  }
+  if (!proseValueIsUseful(input.field, input.existingValue, input.existingContext)) return false;
+  if (offTopicResearchHomeDemotionScore(input.existingValue) !== 0) return false;
+  if (isCareerBiographyDescription(input.existingValue)) return false;
+  if (containsHtmlTagMarkup(input.existingValue)) return false;
+  return true;
 }
 
 /**
@@ -569,14 +628,16 @@ export function collapseLatestWins<
       // plus the resolver decide, so a pure newest-wins here would reinstate the
       // exact regression the write path now blocks. Keep the incumbent when the
       // newer row is a strictly worse statement of the home's research (#2232).
+      const refreshComparison = {
+        field: candidate.field,
+        incomingValue: candidate.value,
+        existingValue: incumbent.value,
+        incomingContext: { entityType },
+        existingContext: { entityType },
+      };
       if (
-        isWeakerProseRefresh({
-          field: candidate.field,
-          incomingValue: candidate.value,
-          existingValue: incumbent.value,
-          incomingContext: { entityType },
-          existingContext: { entityType },
-        })
+        isWeakerProseRefresh(refreshComparison) ||
+        isMateriallyThinnerProseRefresh(refreshComparison)
       ) {
         continue;
       }
