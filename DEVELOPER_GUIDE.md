@@ -160,8 +160,9 @@ The `center-director-llm` scraper reads each home's official site and leadership
 New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
 
 Non-lead current-team context comes only from the disabled-by-default `official-research-home-roster` source and its reviewed entity/page/section allowlist.
-Run a bounded dry run with `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1`, materialize only after reviewing the source output, and then run `yarn --cwd server research-homes:audit-rosters --strict`.
-Broad enablement requires a clean structural audit plus an attributable sampled review using `--sampled-precision-reviewed-by=<reviewer>`.
+Run a bounded dry run with `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1` and materialize only after reviewing the source output.
+The `research-homes:audit-rosters` structural and sampled-precision audit that broad enablement was supposed to require does not exist yet, so keep the source narrowly scoped and review each entity by hand until it does.
+See [#2412](https://github.com/YaleComputerSociety/ylabs/issues/2412).
 The public detail API returns at most 24 fresh verified roster members, grouped by coarse role, along with a `roster` disclosure whose status is `current`, `partial`, `withheld`, `no-verified-data`, or `optional-source-failure`.
 Failed, empty, stale, or ambiguous refreshes do not imply an empty team and do not archive the last verified roster.
 

@@ -382,9 +382,9 @@ Audit focus:
 - Confirm every accepted section is explicitly configured as current and that former or alumni sections remain excluded.
 - Confirm each materialized member has a unique official profile identity, an honest mapped role, an observation date, and an unexpired freshness window.
 - Confirm duplicate profile identities, same-profile different-name collisions, ambiguous roles, unsafe links, and direct contact text are withheld.
-- Run `yarn --cwd server research-homes:audit-rosters --strict --output /tmp/ylabs-roster-audit.json` after Beta materialization.
-- Review the bounded sample manually, then rerun with `--sampled-precision-reviewed-by=<reviewer>` so the approval is attributable in the report.
-- The audit checks every entity in `OFFICIAL_ROSTER_CONFIGS` and fails closed when an allowlisted entity is missing or its latest snapshot is failed, empty, withheld, stale, expired, or mismatched.
+- The `research-homes:audit-rosters` lane described here was never built: there is no script, no `package.json` entry, and no `--sampled-precision-reviewed-by` flag.
+Only `OFFICIAL_ROSTER_CONFIGS` in `officialResearchHomeRosterScraper.ts` is real.
+Until [#2412](https://github.com/YaleComputerSociety/ylabs/issues/2412) lands, check the two bullets above by hand per entity rather than expecting a report; #2357 is the defect class this audit was meant to catch.
 - Every membership key declared by the latest snapshot must have a fresh verified current row materialized for the same entity, official source URL, and snapshot observation time.
 - Do not enable the source broadly unless `broadEnablementReady` is true.
 - `--strict` exits non-zero until both the structural checks pass and `--sampled-precision-reviewed-by=<reviewer>` records the manual sample review; `--sample-limit=<0-100>` controls the bounded sample in the JSON report.

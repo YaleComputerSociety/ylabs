@@ -287,7 +287,8 @@ Names alone never resolve a `Researcher` or merge membership rows.
 A complete non-empty snapshot archives source-owned rows that disappeared while preserving their observation and membership history; empty, stale, withheld, and failed snapshots never trigger cleanup.
 Public detail suppresses expired or conflicting rows, limits roster presentation to 24 members, excludes direct contact data, and discloses that missing roster evidence does not mean an empty team.
 After an optional-source failure, public detail may retain only the exact still-fresh rows from the most recent successful current or partial snapshot, using that snapshot's source and observation metadata for disclosure.
-The source is seeded disabled and owned by Yale Research data operations on a weekly cadence until `research-homes:audit-rosters` reports clean structure and a sampled precision review is recorded.
+The source is seeded disabled and owned by Yale Research data operations on a weekly cadence.
+It was meant to stay disabled until `research-homes:audit-rosters` reported clean structure and a sampled precision review was recorded, but that audit was never built ([#2412](https://github.com/YaleComputerSociety/ylabs/issues/2412)), so the gate is currently a manual per-entity review rather than a report.
 
 ## Read-Only Control Plane
 

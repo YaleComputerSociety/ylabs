@@ -61,7 +61,6 @@ Order to flip on a target environment: backfill the canonical aliases first, the
 Run from `server/`.
 Data-writing CLIs are dry-run by default and require an explicit confirm flag plus a Development database guard to apply.
 
-- `yarn data:backfill-canonical-aliases` (dry-run; `--apply --confirm-canonical-alias-backfill` on Development): seed the alias ledger from existing redirects and dedupe tombstones.
 - `yarn research-entity:coverage-synthesis` (dry-run; `--apply --confirm-coverage-synthesis` on Development): grounded gpt-5-mini description synthesis for description-blocked entities; requires a hand-created `coverage-synthesis-llm` source row (see the go-live sequence below).
 - `yarn fuzzy:labeled-set`: report the labeled positives and negatives and their counts.
 - `yarn fuzzy:residual-report`: run the fuzzy matcher over a scope and report pair-completeness and precision and recall against the labeled set.
@@ -70,7 +69,8 @@ Data-writing CLIs are dry-run by default and require an explicit confirm flag pl
 ## Dev-first go-live sequence
 
 1. Create the `coverage-synthesis-llm` source row in the Development database by hand; `scrape:seed-sources` does not carry this source, and the coverage CLI errors clearly if the row is absent.
-2. Backfill the canonical aliases: run `yarn data:backfill-canonical-aliases` dry-run, review, then `--apply --confirm-canonical-alias-backfill`.
+2. No alias backfill step is needed.
+The alias ledger seeds itself: `entityMaterializer` calls `recordCanonicalAlias` as it projects entities, so the re-projection in step 5 populates it.
 3. Set `C4_RESOLVE_AT_MINT_USERS` and `C4_RESOLVE_AT_MINT_ENTITIES` in the Development environment.
 4. Set `C4_LOSSLESS_INGEST` in the Development environment.
 5. Run a full re-projection (`yarn research-entity:rematerialize` over the corpus, or the exhaustive Development sweep).
