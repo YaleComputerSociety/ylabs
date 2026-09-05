@@ -11,6 +11,7 @@ A research entity is `student_ready` if, and only if, what we show is CORRECT an
 - (a) It has a real, coherent, non-boilerplate description that actually describes THIS entity.
 - (b) The right, currently-active person or lead is attached.
 - (c) It is not a duplicate or a suppressed shell, and it is in scope and active.
+- (d) Its `name` identifies something rather than being placeholder filler.
 
 If all of these hold, the entity is `student_ready`, full stop.
 Missing enrichment does not change that.

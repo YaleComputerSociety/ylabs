@@ -638,9 +638,10 @@ export interface ResearchEntityStudentReadyCorrectness {
 /**
  * THE definition of `student_ready`, in one place: an entity is `student_ready`
  * IFF what we show is CORRECT and COHERENT - a real coherent non-boilerplate
- * description about THIS entity, the right active lead/identity, and not a
- * duplicate/shell. Enrichment (next step, action evidence, facet signal,
- * source-backing, alternate access path, source-url projection) never gates -
+ * description about THIS entity, the right active lead/identity, a name that
+ * identifies something, and not a duplicate/shell. Enrichment (next step,
+ * action evidence, facet signal, source-backing, alternate access path,
+ * source-url projection) never gates -
  * the student can always reach out to the professor. See
  * docs/student-ready-definition.md. Change the gate here, not in scattered
  * conditionals.
