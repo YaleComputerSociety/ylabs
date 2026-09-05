@@ -190,6 +190,12 @@ Applied on Development only, in three batches (10 as a probe, then 507 `NO_TARGE
 | `operator_review` | 1,575 | 2,135 |
 | `suppressed` | 1,172 | 1,172 |
 
+**Only 226 of the 560 carry any description prose; 334 minted with both `fullDescription` and `shortDescription` empty.**
+Those 334 were blank at mint rather than blanked afterwards - the key never had a `fullDescription` observation at all, so there was nothing to write (all 226 keys that did have one wrote it).
+They are not empty rows: each carries 18 to 28 fields including `name`, `school`, `departments`, `researchAreas`, `sourceUrls`, and `inferredPiUserKey`.
+But a recovery of this shape should be reported as "identity and affiliation recovered, prose absent for 60%", not as prose recovery.
+Do not size this cohort from a sample: an eight-row slice of the recovered set showed prose on all eight, which is the opposite of the population rate.
+
 All 560 minted at `operator_review`, so the recovery published nothing to students.
 That is verified at the serve layer rather than from the stored tier: `publicStudentVisibilityTiers` is `['student_ready']` and a non-admin research search is forced onto it, so a recovered row is unreachable by a student query even though it is present in the Meilisearch index (the index carries `studentVisibilityTier` as a field and the query filters on it, rather than the index being tier-filtered).
 
