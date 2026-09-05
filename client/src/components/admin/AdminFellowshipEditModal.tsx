@@ -50,13 +50,13 @@ const TagInput = ({
         {values.map((v) => (
           <span
             key={v}
-            className="inline-flex items-center bg-[var(--yr-blue-soft)] text-blue-800 text-xs px-1.5 py-0.5 rounded border border-blue-200"
+            className="inline-flex items-center bg-brand-soft text-brand text-xs px-1.5 py-0.5 rounded border border-line-brand"
           >
             {v}
             <button
               type="button"
               onClick={() => onChange(values.filter((x) => x !== v))}
-              className="ml-1 text-blue-400 hover:text-blue-600"
+              className="ml-1 text-muted hover:text-brand"
             >
               &times;
             </button>
@@ -330,7 +330,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
               <div
                 className={`mb-3 rounded border p-2 text-xs ${
                   statusPreview.isCurrentlyRelevant
-                    ? 'bg-blue-50 border-blue-100 text-blue-800'
+                    ? 'bg-brand-soft border-line-brand text-brand'
                     : 'bg-red-50 border-red-100 text-red-700'
                 }`}
               >

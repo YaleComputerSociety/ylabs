@@ -50,7 +50,7 @@ const RichText = ({ text }: { text: string }) => {
           href={linkHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
+          className="text-brand hover:underline"
         >
           {match[1]}
         </a>,
@@ -255,7 +255,7 @@ const FellowshipModal = ({
     fellowship.contactPhone ||
     fellowship.contactOffice;
   const iconActionClass =
-    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 yr-focus-ring';
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-brand yr-focus-ring';
   const filterChipClass =
     'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 yr-focus-ring';
   const applicationActionLabel = applicationStatus.isApplicationWindowOpen
@@ -490,11 +490,11 @@ const FellowshipModal = ({
                   </h3>
                   <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
                     <div>
-                      <span className="text-xs text-blue-600">Current Status</span>
-                      <p className="text-sm font-semibold text-blue-900">
+                      <span className="text-xs text-brand">Current Status</span>
+                      <p className="text-sm font-semibold text-brand-navy">
                         {applicationStatus.label}
                       </p>
-                      <p className="text-xs text-blue-700">{applicationStatus.detail}</p>
+                      <p className="text-xs text-brand">{applicationStatus.detail}</p>
                     </div>
                     {cycleStatus.category === 'nextCycle' && (
                       <div className="rounded-md bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
@@ -504,22 +504,22 @@ const FellowshipModal = ({
                       </div>
                     )}
                     <div>
-                      <span className="text-xs text-blue-600">Application Opens</span>
-                      <p className="text-sm font-medium text-blue-900">
+                      <span className="text-xs text-brand">Application Opens</span>
+                      <p className="text-sm font-medium text-brand-navy">
                         {formatFellowshipDate(fellowship.applicationOpenDate)}
                       </p>
                     </div>
                     <div>
-                      <span className="text-xs text-blue-600">
+                      <span className="text-xs text-brand">
                         {fellowship.deadlineProjectedNextCycle
                           ? 'Estimated Next Deadline'
                           : 'Deadline'}
                       </span>
-                      <p className="text-sm font-medium text-blue-900">
+                      <p className="text-sm font-medium text-brand-navy">
                         {formatFellowshipDate(fellowship.deadline)}
                       </p>
                       {fellowship.deadlineProjectedNextCycle && (
-                        <p className="text-xs text-blue-700">
+                        <p className="text-xs text-brand">
                           Projected from the last cycle - unconfirmed, verify at source.
                         </p>
                       )}
@@ -549,7 +549,7 @@ const FellowshipModal = ({
                               payload: { contactMethod: 'email' },
                             })
                           }
-                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline yr-focus-ring"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -616,7 +616,7 @@ const FellowshipModal = ({
                               });
                             }
                           }}
-                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-blue-600 hover:text-blue-800 hover:underline yr-focus-ring"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -737,7 +737,7 @@ const FellowshipModal = ({
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                       What To Do Next
                     </h3>
-                    <p className="rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/70 p-4 text-sm leading-relaxed text-blue-950">
+                    <p className="rounded-lg border border-line-brand bg-brand-soft/70 p-4 text-sm leading-relaxed text-brand-navy">
                       {fellowship.bestNextStep}
                     </p>
                   </section>
@@ -766,10 +766,10 @@ const FellowshipModal = ({
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                       Application Process
                     </h3>
-                    <div className="space-y-3 rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/50 p-4">
+                    <div className="space-y-3 rounded-lg border border-line-brand bg-brand-soft/50 p-4">
                       {applicationMaterials.length > 0 && (
                         <div>
-                          <p className="mb-2 text-xs font-semibold text-blue-900">
+                          <p className="mb-2 text-xs font-semibold text-brand-navy">
                             Materials listed by the official source
                           </p>
                           <ul className="grid gap-2 sm:grid-cols-2">
@@ -778,7 +778,7 @@ const FellowshipModal = ({
                                 key={material}
                                 className="flex items-start gap-2 text-sm text-slate-700"
                               >
-                                <span aria-hidden="true" className="mt-0.5 text-blue-600">
+                                <span aria-hidden="true" className="mt-0.5 text-brand">
                                   ✓
                                 </span>
                                 <span>{material}</span>
@@ -905,7 +905,7 @@ const FellowshipModal = ({
                 {applicationHref && (
                   <div className="pt-4 border-t border-[var(--yr-line)]">
                     {!applicationStatus.isApplicationWindowOpen && (
-                      <p className="mb-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
+                      <p className="mb-3 rounded-lg border border-line-brand bg-brand-soft p-3 text-sm text-brand">
                         {applicationStatus.kind === 'notOpenYet'
                           ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate)}.`
                           : 'This application window is not currently open. Use the source to verify the next cycle.'}
@@ -953,7 +953,7 @@ const FellowshipModal = ({
                         href={sourceHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
+                        className="text-brand hover:underline"
                       >
                         {sourceLabel || 'Official source'}
                       </a>

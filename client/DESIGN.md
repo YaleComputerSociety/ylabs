@@ -77,9 +77,13 @@ These files hold deliberate scales rather than brand-color drift:
 Only that map is exempt; the rest of the file is ordinary brand color.
 `FIELD_COLORS` in `src/components/admin/AdminResearchAreas.tsx` and `CATEGORY_COLORS` in `src/components/admin/AdminDepartments.tsx` are the same shape: nine research fields across blue, green, yellow, red, purple, pink, teal, orange, and indigo.
 
-All three of those maps give their blue member a tokened background and a scale-hue text color, unlike every sibling, which pairs a hue background with the matching hue text.
-All three were authored that way in the same commit rather than left behind by a later sweep, so there is no earlier state to restore.
-Resolve it by changing each scale as a whole, not by tokening the blue member.
+The filter-category chips in `src/components/fellowship/FellowshipModal.tsx` are a scale as well: five filter categories across blue, yellow, purple, green, and orange.
+Only that one chip is exempt; the rest of the file is ordinary brand color.
+So is `accessBadgeClass` in `src/components/accounts/SavedResearchPlans.tsx`, whose three access tones run emerald, blue, and neutral.
+
+Every one of those five scales gives its blue member a tokened background and a scale-hue text color, unlike its siblings, which pair a hue background with the matching hue text.
+Four were authored that way in one early commit and the fifth appeared three months later, so this is a recurring habit rather than one historical event: a pass that tokens brand backgrounds reaches scale members as collateral.
+Resolve it by changing each scale as a whole, never by tokening the blue member alone.
 
 ## 3. Typography Rules
 

@@ -45,9 +45,7 @@ const PlanningOverview = ({
   <section className="mb-6 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
-          Your workspace
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-brand">Your workspace</p>
         <h1 className="mt-1 text-2xl font-semibold text-gray-950">Dashboard</h1>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">
           {pluralize(savedResearchCount, 'research plan', 'research plans')} ·{' '}
@@ -85,8 +83,8 @@ const PlanningOverview = ({
         Find more research homes
       </Link>
     </div>
-    <div className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] p-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Next up</p>
+    <div className="mt-4 rounded-md border border-line-brand bg-brand-soft p-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-brand">Next up</p>
       <p className="mt-1 text-sm font-semibold text-gray-950">
         {nextUpLabel(savedResearchCount, savedFellowshipCount, nextDeadlineLabel)}
       </p>

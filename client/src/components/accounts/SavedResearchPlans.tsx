@@ -342,13 +342,11 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                         />
                       )}
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-blue-700">
-                          {kindLabel(entity.kind)}
-                        </p>
+                        <p className="text-xs font-semibold text-brand">{kindLabel(entity.kind)}</p>
                         <h3 className="truncate text-sm font-semibold text-gray-900">
                           <Link
                             to={`/research/${safeRouteSegment(entity.slug)}`}
-                            className="hover:text-blue-700 focus-visible:rounded-sm yr-focus-ring"
+                            className="hover:text-brand focus-visible:rounded-sm yr-focus-ring"
                           >
                             {entityDisplayName(entity)}
                           </Link>
@@ -389,7 +387,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                       </button>
                       <Link
                         to={`/research/${safeRouteSegment(entity.slug)}`}
-                        className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-xs font-semibold text-[var(--yr-blue)] hover:bg-[var(--yr-panel)] yr-focus-ring"
+                        className="inline-flex min-h-[44px] items-center rounded-md border border-line-brand bg-brand-soft px-3 py-2 text-xs font-semibold text-brand hover:bg-panel yr-focus-ring"
                       >
                         Open
                       </Link>
