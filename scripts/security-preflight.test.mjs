@@ -3149,6 +3149,183 @@ test('shared SSRF guard bounds public URL shape before outbound fetches', () => 
   assert.match(source, /throw new SsrfBlockedError\('URL port is not allowed'\)/);
 });
 
+// The SSRF policies above each pin one named scraper, which is how ten scrapers
+// came to use the guard with nothing requiring them to keep it. Enumerated
+// coverage cannot cover a file that does not exist yet, so a new scraper starts
+// unpinned by default. This walks the directory instead: every scraper that makes
+// an outbound request must route through the guard, or be an explicitly listed
+// fixed-endpoint API where there is no attacker-influenced URL to forge.
+//
+// This is a floor, not a proof. It shows a scraper reaches the guard; only the
+// per-scraper policies above show the guarded URL is the one that reaches axios.
+// Keep both.
+const SCRAPER_SOURCE_DIRECTORY = '../server/src/scrapers/sources';
+
+// Hosts baked into the source as constants. Adding an entry must stay a
+// deliberate review decision, so the host is asserted too: an allowlisted
+// scraper that grows a dynamic fetch fails here rather than silently opting out.
+const FIXED_ENDPOINT_SCRAPER_HOSTS = new Map([
+  ['doeOstiGrantScraper', 'https://www.osti.gov'],
+  ['federalAwardScraper', 'https://api.usaspending.gov'],
+  ['nehGrantScraper', 'https://apps.neh.gov'],
+  ['nihReporterScraper', 'https://api.reporter.nih.gov'],
+  ['nsfAwardScraper', 'https://api.nsf.gov'],
+  ['yaleDirectoryScraper', 'https://api.yalies.io'],
+]);
+
+const scraperSourceFiles = () =>
+  fs
+    .readdirSync(new URL(SCRAPER_SOURCE_DIRECTORY, import.meta.url))
+    .filter((name) => name.endsWith('.ts') && !name.includes('.test.'))
+    .map((name) => ({
+      name: name.replace(/\.ts$/, ''),
+      source: fs.readFileSync(
+        new URL(`${SCRAPER_SOURCE_DIRECTORY}/${name}`, import.meta.url),
+        'utf8',
+      ),
+    }));
+
+test('every scraper that makes outbound requests is bound by the SSRF guard', () => {
+  const scrapers = scraperSourceFiles();
+
+  // A matcher that silently finds nothing would pass this policy while checking
+  // nothing, so anchor it: the directory must be non-empty and most of it must
+  // make requests. Scraping the public web is what these files are for.
+  assert.ok(scrapers.length >= 25, `expected the scraper directory, found ${scrapers.length}`);
+
+  const requesting = scrapers.filter(({ source }) => /\baxios[.(]|\bfetch\(/.test(source));
+  assert.ok(
+    requesting.length >= 25,
+    `expected most scrapers to make requests, matched ${requesting.length}`,
+  );
+
+  const unguarded = [];
+  for (const { name, source } of requesting) {
+    const usesGuardDirectly = /assertPublicHttpUrl|ssrfSafeAgents/.test(source);
+    const delegatesToGuardedPolicy =
+      /fetchPageWithPolicy|from '\.\.\/utils\/httpFetch'|from '\.\.\/renderedFetch'/.test(source);
+    if (usesGuardDirectly || delegatesToGuardedPolicy) continue;
+
+    const fixedHost = FIXED_ENDPOINT_SCRAPER_HOSTS.get(name);
+    if (!fixedHost) {
+      unguarded.push(name);
+      continue;
+    }
+    assert.ok(
+      source.includes(fixedHost),
+      `${name} is allowlisted as a fixed-endpoint API but no longer pins ${fixedHost}; it must use the SSRF guard or update the allowlist`,
+    );
+  }
+
+  assert.deepEqual(
+    unguarded,
+    [],
+    `these scrapers make outbound requests without reaching the SSRF guard: ${unguarded.join(', ')}. Route the URL through assertPublicHttpUrl/ssrfSafeAgents or fetchPageWithPolicy, or add it to FIXED_ENDPOINT_SCRAPER_HOSTS if its endpoint is a source constant.`,
+  );
+});
+
+test('every scraper source module is registered for dispatch', () => {
+  const registry = fs.readFileSync(
+    new URL('../server/src/scrapers/registry.ts', import.meta.url),
+    'utf8',
+  );
+  const scrapers = scraperSourceFiles();
+  assert.ok(scrapers.length >= 25, `expected the scraper directory, found ${scrapers.length}`);
+
+  // An unregistered scraper does not throw; the sweep just never dispatches it, so
+  // its whole source silently stops being collected with no failing signal
+  // anywhere. That has bitten before, which is why it is pinned structurally.
+  const unregistered = scrapers
+    .map(({ name }) => name)
+    .filter((name) => !registry.includes(`./sources/${name}'`));
+
+  assert.deepEqual(
+    unregistered,
+    [],
+    `these scraper modules are not imported by registry.ts, so the orchestrator can never dispatch them and their source is silently never scraped: ${unregistered.join(', ')}`,
+  );
+});
+
+// Public read paths that use a state-changing verb. POST /search is a
+// Meilisearch query with a request body, not a mutation, so it is deliberately
+// anonymous: logged-out browsing is the product. Every other entry would be a
+// write reachable without a session.
+const ANONYMOUS_STATE_CHANGING_ROUTES = new Set(['researchGroups.ts POST /search']);
+
+test('no state-changing route is reachable without authentication', () => {
+  const routesDirectory = '../server/src/routes';
+  const routeFiles = fs
+    .readdirSync(new URL(routesDirectory, import.meta.url))
+    .filter((name) => name.endsWith('.ts') && name !== 'index.ts');
+  const mountIndex = fs.readFileSync(
+    new URL(`${routesDirectory}/index.ts`, import.meta.url),
+    'utf8',
+  );
+
+  assert.ok(routeFiles.length >= 8, `expected the routes directory, found ${routeFiles.length}`);
+
+  // Balanced-paren extraction, not a regex over the whole call. A lazy
+  // `[\s\S]*?` up to `\n);` runs past the end of a one-line route into the next
+  // one, so a route with no guard inherits the following route's isAuthenticated
+  // and reads as protected. That false pass is the whole risk this policy exists
+  // to remove, so the parse has to be exact.
+  const routeHandlerCalls = (source) => {
+    const calls = [];
+    const pattern = /router\.(get|post|put|patch|delete)\(/g;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+      let depth = 0;
+      let index = match.index + match[0].length - 1;
+      for (; index < source.length; index += 1) {
+        if (source[index] === '(') depth += 1;
+        else if (source[index] === ')') {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      const body = source.slice(match.index, index + 1);
+      calls.push({ verb: match[1], path: body.match(/['"]([^'"]*)['"]/)?.[1] ?? '?', body });
+    }
+    return calls;
+  };
+
+  const anonymous = [];
+  let stateChangingRoutes = 0;
+
+  for (const file of routeFiles) {
+    const source = fs.readFileSync(new URL(`${routesDirectory}/${file}`, import.meta.url), 'utf8');
+
+    assert.ok(
+      mountIndex.includes(file.replace(/\.ts$/, '')),
+      `${file} is not mounted in routes/index.ts; an unmounted router is either dead code or a route served outside the reviewed mount table`,
+    );
+
+    // Guards apply router-wide via router.use as well as per route, so both count.
+    const routerWideAuth = /router\.use\([^;]*?(isAuthenticated|isAdmin|requireActiveAdmin)/s.test(
+      source,
+    );
+
+    for (const { verb, path, body } of routeHandlerCalls(source)) {
+      if (verb === 'get') continue;
+      stateChangingRoutes += 1;
+      const authenticated =
+        routerWideAuth || /isAuthenticated|isAdmin|requireActiveAdmin/.test(body);
+      const label = `${file} ${verb.toUpperCase()} ${path}`;
+      if (!authenticated && !ANONYMOUS_STATE_CHANGING_ROUTES.has(label)) anonymous.push(label);
+    }
+  }
+
+  assert.ok(
+    stateChangingRoutes >= 15,
+    `expected to find the state-changing routes, matched ${stateChangingRoutes}`,
+  );
+  assert.deepEqual(
+    anonymous,
+    [],
+    `these state-changing routes are reachable without a session: ${anonymous.join(', ')}. Add isAuthenticated, or add the route to ANONYMOUS_STATE_CHANGING_ROUTES if it is a read that merely uses a request body.`,
+  );
+});
+
 test('gate refresh scheduler bounds operator-controlled spawn cadence', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/gateRefreshScheduler.ts', import.meta.url),
