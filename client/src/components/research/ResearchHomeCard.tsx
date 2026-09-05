@@ -267,13 +267,6 @@ const ResearchHomeCard = ({
         <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-gray-600`}>
           {description}
         </p>
-
-        {!isCompact && home.matchReason && (
-          <p className="text-sm leading-relaxed text-gray-700">
-            <span className="font-semibold text-gray-950">Why it might fit:</span>{' '}
-            {home.matchReason}
-          </p>
-        )}
       </div>
 
       {!isCompact && (

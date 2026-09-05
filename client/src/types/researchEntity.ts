@@ -6,16 +6,8 @@ import type {
 } from './researchGroup';
 import {
   normalizeResearchMetadataLabels,
-  normalizeResearchStringArray,
   publicResearchDescriptionText,
 } from '../utils/researchTextNormalization';
-
-export interface ResearchEntitySearchMatch {
-  mode: 'semantic' | 'hybrid' | 'expanded-keyword' | 'keyword';
-  concepts: string[];
-  methods: string[];
-  reason: string;
-}
 
 export type ResearchEntityDescriptionState =
   | 'source_backed'
@@ -51,7 +43,6 @@ export interface ResearchEntity extends ResearchEntityBacking {
   leadIdentityStatus?: 'verified' | 'under_review';
   /** Public member key for the unique lead matched by entity-owned official profile evidence. */
   leadProfessorPublicKey?: string;
-  searchMatch?: ResearchEntitySearchMatch;
   waysIn?: PathwaySearchHit[];
   qualitySummary?: ResearchEntityQualitySummary;
   studentVisibilityTier?: StudentVisibilityTier;
@@ -94,19 +85,6 @@ type MaybeResearchEntityDetailPayload = Partial<
   group?: ResearchEntity | null;
 };
 
-const normalizeSearchMatch = (
-  value: ResearchEntitySearchMatch | undefined,
-): ResearchEntitySearchMatch | undefined => {
-  if (!value || typeof value.reason !== 'string') return undefined;
-
-  return {
-    mode: value.mode,
-    concepts: normalizeResearchStringArray(value.concepts),
-    methods: normalizeResearchStringArray(value.methods),
-    reason: value.reason.trim(),
-  };
-};
-
 const normalizeStudentDecisionExplanation = (
   value: ResearchEntity['studentDecisionExplanation'],
 ): ResearchEntity['studentDecisionExplanation'] => {
@@ -134,7 +112,6 @@ const normalizeResearchEntity = (entity: ResearchEntity): ResearchEntity => ({
   shortDescription: publicResearchDescriptionText(entity.shortDescription),
   fullDescription: publicResearchDescriptionText(entity.fullDescription),
   researchAreas: normalizeResearchMetadataLabels(entity.researchAreas),
-  searchMatch: normalizeSearchMatch(entity.searchMatch),
   studentDecisionExplanation: normalizeStudentDecisionExplanation(
     entity.studentDecisionExplanation,
   ),

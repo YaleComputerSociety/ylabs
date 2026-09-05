@@ -259,6 +259,24 @@ describe('researchEntityDto', () => {
     expect(dto).not.toHaveProperty('acceptanceConfidence');
   });
 
+  it('never serves a searchMatch, which no index builder produces (#2431)', () => {
+    const dto = toPublicResearchEntityDto({
+      _id: { toString: () => 'entity-search-match' },
+      slug: 'search-match-lab',
+      name: 'Search Match Lab',
+      kind: 'lab',
+      fullDescription: 'Investigates vascular biology in human disease.',
+      searchMatch: {
+        mode: 'hybrid',
+        reason: 'Matched on research areas.',
+        concepts: ['Vascular biology'],
+        methods: ['Imaging'],
+      },
+    } as Parameters<typeof toPublicResearchEntityDto>[0]);
+
+    expect(dto).not.toHaveProperty('searchMatch');
+  });
+
   it('keeps explicit entityType values from materialized records', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-2',
@@ -426,7 +444,6 @@ describe('researchEntityDto', () => {
         reasons: ['Call 203-555-1212 before outreach.'],
       },
       waysIn: [{ label: 'Email hidden@example.edu to ask about openings.' }],
-      searchMatch: { snippet: 'Contact hidden@example.edu or 203-555-1212.' },
     });
 
     expect(dto.name).toBe('Recursive Redaction Lab [email redacted]');
@@ -439,7 +456,6 @@ describe('researchEntityDto', () => {
       reasons: ['Call [phone redacted] before outreach.'],
     });
     expect(dto.waysIn).toEqual([{ label: 'Email [email redacted] to ask about openings.' }]);
-    expect(dto.searchMatch).toEqual({ snippet: 'Contact [email redacted] or [phone redacted].' });
     expect(JSON.stringify(dto)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(dto)).not.toContain('203-555-1212');
   });
