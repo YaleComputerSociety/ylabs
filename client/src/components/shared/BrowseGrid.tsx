@@ -65,10 +65,7 @@ const BrowseGrid = ({
         <p>{emptyMessage}</p>
         {emptyAction && <div className="mt-3">{emptyAction}</div>}
         {quickFilter && onClearQuickFilter && (
-          <button
-            onClick={onClearQuickFilter}
-            className="mt-3 text-blue-600 hover:underline text-sm"
-          >
+          <button onClick={onClearQuickFilter} className="mt-3 text-brand hover:underline text-sm">
             Clear filter
           </button>
         )}

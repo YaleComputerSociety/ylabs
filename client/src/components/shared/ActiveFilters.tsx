@@ -61,7 +61,7 @@ const ActiveFilters = ({
   }, [onHeightChange, hasChips, activeQuickFilter, chips.length]);
 
   return (
-    <div ref={barRef} className="border-b border-[var(--yr-line)] bg-[var(--yr-panel)]">
+    <div ref={barRef} className="border-b border-line bg-panel">
       <div className="mx-auto max-w-[1300px] px-6">
         <div className="flex items-center justify-between py-2 gap-3">
           <div className="flex items-center gap-2 flex-wrap">
@@ -80,8 +80,8 @@ const ActiveFilters = ({
                     transition-all duration-200 border cursor-pointer
                     ${
                       isActive
-                        ? 'border-blue-200 bg-[var(--yr-blue-soft)] text-blue-700'
-                        : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-gray-500 hover:border-[var(--yr-line-strong)] hover:text-gray-700'
+                        ? 'border-line-brand bg-brand-soft text-brand'
+                        : 'border-line bg-panel text-gray-500 hover:border-line-strong hover:text-gray-700'
                     }
                   `}
                   >
@@ -110,7 +110,7 @@ const ActiveFilters = ({
           {totalCount !== undefined && (
             <div className="flex items-center gap-2 flex-shrink-0">
               {isLoading && (
-                <div className="w-3 h-3 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+                <div className="w-3 h-3 border-2 border-line-brand border-t-brand rounded-full animate-spin" />
               )}
               <span
                 className="text-xs text-gray-600 whitespace-nowrap"
@@ -125,7 +125,7 @@ const ActiveFilters = ({
         </div>
 
         {hasChips && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--yr-line)] pb-2 pt-1.5">
+          <div className="flex flex-wrap items-center gap-2 border-t border-line pb-2 pt-1.5">
             {chips.map((chip) => (
               <span
                 key={chip.key}
