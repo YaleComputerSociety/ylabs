@@ -67,6 +67,7 @@ import {
   computeVersionedContentHash,
   contentHashObservation,
   contentUnchanged,
+  descriptionHashObservations,
   loadStoredContentHash,
 } from '../contentHashGate';
 
@@ -1351,7 +1352,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         }
 
         const withCard = await this.withSynthesizedCard(observations);
-        await ctx.emit([...withCard, ...hashObservations]);
+        await ctx.emit([...withCard, ...descriptionHashObservations(withCard, hashObservations)]);
         observationCount += withCard.length;
         entitiesObserved += 1;
       } catch (error) {
