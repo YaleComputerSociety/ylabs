@@ -38,7 +38,7 @@ They come from the Render dashboard for the target service.
 
 | Variable                   | Shape                                              | Why                                                                                                               |
 | -------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `MONGODBURL`               | `mongodb+srv://<user>:<pass>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.         |
+| `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.         |
 | `MEILISEARCH_HOST`         | `https://<host>`                                   | The instance to rebuild. Must not be empty or the rebuild targets localhost.                                      |
 | `MEILISEARCH_API_KEY`      | the master or admin key                            | Write access. Without it the rebuild fails **after** clearing.                                                    |
 | `MEILISEARCH_INDEX_PREFIX` | e.g. `beta_`                                       | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index. |

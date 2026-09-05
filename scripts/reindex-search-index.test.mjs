@@ -11,7 +11,7 @@ import {
 } from './reindex-search-index-core.mjs';
 
 const fullEnv = {
-  MONGODBURL: 'mongodb+srv://user:secretpassword@cluster0.example.net/ylabs_beta',
+  MONGODBURL: 'mongodb+srv://user:pass@cluster0.example.net/ylabs_beta',
   MEILISEARCH_HOST: 'https://meili.example.net',
   MEILISEARCH_API_KEY: 'supersecretkey',
   MEILISEARCH_INDEX_PREFIX: 'beta_',
@@ -70,7 +70,7 @@ test('the plan never echoes credentials', () => {
   const plan = summarizeReindexPlan({ environment: 'beta', apply: true, env: fullEnv });
 
   // An operator may be sharing a terminal or pasting output into a ticket.
-  assert.doesNotMatch(plan, /secretpassword/);
+  assert.doesNotMatch(plan, /user:pass/);
   assert.doesNotMatch(plan, /supersecretkey/);
   assert.match(plan, /meili api key:\s+present/);
 

@@ -17,7 +17,7 @@ export const REINDEX_ENVIRONMENTS = Object.freeze(['beta', 'production']);
 export const REQUIRED_REINDEX_ENV_VARS = Object.freeze([
   {
     name: 'MONGODBURL',
-    example: 'mongodb+srv://<user>:<pass>@<cluster>/<database>?retryWrites=true&w=majority',
+    example: 'mongodb+srv://<user>:<password>@<cluster>/<database>',
     why: 'The database the index is rebuilt FROM. reindex:meili cross-checks it against SCRAPER_ENV and refuses a mismatch.',
   },
   {
