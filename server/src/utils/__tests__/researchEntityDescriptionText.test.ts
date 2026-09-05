@@ -735,8 +735,9 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.fullDescription).toBe(
       'Studies the neural basis of spatial decision making in rodents.',
     );
-    expect(shortDescriptionQuality(sanitized.fullDescription, body, ['Spatial memory'], {}).flags).
-      not.toContain('incomplete-sentence');
+    expect(
+      shortDescriptionQuality(sanitized.fullDescription, body, ['Spatial memory'], {}).flags,
+    ).not.toContain('incomplete-sentence');
     expect(
       shortDescriptionQuality(sanitized.fullDescription, body, ['Spatial memory'], {}).isUseful,
     ).toBe(true);
