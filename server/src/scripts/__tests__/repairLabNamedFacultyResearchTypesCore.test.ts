@@ -79,9 +79,35 @@ describe('planLabTypeCorrections', () => {
     expect(slugs).not.toContain('dept-eeb-martina-dal-bello');
     expect(slugs).not.toContain('dept-eeb-adalgisa-caccone');
     expect(slugs).not.toContain('dept-nursing-shelli-feder');
-    // And the row named after a centre it does not own is a name defect, not a type one.
+    // And the two name defects must never appear here either: one row is named
+    // after a centre it co-founded but does not own, and the other's own cited
+    // source never calls it a lab, so both need the name repaired, not the type.
     expect(slugs).not.toContain('dept-law-natasha-sarin');
-    expect(slugs).toHaveLength(8);
+    expect(slugs).not.toContain('yse-faculty-nyeema-harris');
+    expect(slugs).toHaveLength(10);
+  });
+
+  it('backfills a website only when the row has none, so a real site is never overwritten', () => {
+    const withSite = {
+      slug: 'x',
+      expectedName: 'X Lab',
+      evidence: 'https://e.test/',
+      websiteUrl: 'https://lab.test/',
+    };
+    const planned = planLabTypeCorrections([entity({ slug: 'x', name: 'X Lab' })], [withSite])[0];
+    expect(planned.update?.websiteUrl).toBe('https://lab.test/');
+
+    const alreadySet = planLabTypeCorrections(
+      [entity({ slug: 'x', name: 'X Lab', websiteUrl: 'https://existing.test/' })],
+      [withSite],
+    )[0];
+    expect(alreadySet.update).not.toHaveProperty('websiteUrl');
+  });
+
+  it('plans no website write for a correction that supplies none', () => {
+    expect(planLabTypeCorrections([entity()], [correction])[0].update).not.toHaveProperty(
+      'websiteUrl',
+    );
   });
 });
 
