@@ -155,7 +155,7 @@ const ResearchHomeCard = ({
 
   return (
     <article
-      className={`yr-card-interactive yr-fade-in rounded-md ${
+      className={`yr-card-interactive yr-fade-in flex h-full flex-col rounded-md ${
         isCompact ? 'p-3 sm:p-4' : 'p-4'
       } ${isCardClickable ? 'cursor-pointer' : ''}`}
       onClick={activateCardFromClick}
@@ -378,7 +378,7 @@ const ResearchHomeCard = ({
       )}
 
       {primaryLinkedEntity ? (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-auto flex flex-wrap gap-2 pt-4">
           <Link
             to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
             className={`yr-focus-ring inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
@@ -392,7 +392,7 @@ const ResearchHomeCard = ({
           </Link>
         </div>
       ) : !primaryLinkedEntity && onSelect ? (
-        <div className="mt-4">
+        <div className="mt-auto pt-4">
           <button
             type="button"
             onClick={() => onSelect(home.label)}

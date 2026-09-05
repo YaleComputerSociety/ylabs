@@ -384,7 +384,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       maxLength={MAX_PROGRAM_NOTE_LENGTH}
                       placeholder="Add a private note about this program..."
                       rows={2}
-                      className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm yr-focus-ring focus:border-[var(--yr-blue)]"
+                      className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                     />
                     <p
                       className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-gray-500'}`}

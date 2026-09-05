@@ -432,7 +432,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                         maxLength={MAX_PLAN_NOTES_LENGTH}
                         placeholder="Add a private note about this research home..."
                         rows={2}
-                        className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm yr-focus-ring focus:border-[var(--yr-blue)]"
+                        className="w-full rounded-md border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
                       <p
                         className={`mt-1 text-xs ${

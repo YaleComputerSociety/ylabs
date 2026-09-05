@@ -331,7 +331,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-slate-900"
             >
               <option value="">All schools</option>
               {schoolOptions.map((option) => (
@@ -351,7 +351,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-slate-900"
             >
               <option value="">All departments</option>
               {departmentOptions.map((option) => (

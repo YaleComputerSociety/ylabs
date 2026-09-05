@@ -49,7 +49,7 @@ const ResearchPlanStageControl = ({
         aria-label={controlLabel}
         value={stage}
         onChange={(event) => onChange(event.target.value as ResearchPlanStage)}
-        className={`min-h-[44px] rounded-md border px-3 text-xs font-semibold transition-colors yr-focus-ring ${researchPlanStageMeta[stage].badgeClassName}`}
+        className={`min-h-[44px] rounded-md border px-3 text-base font-semibold transition-colors yr-focus-ring ${researchPlanStageMeta[stage].badgeClassName}`}
       >
         {researchPlanStages.map((option) => (
           <option key={option} value={option}>
