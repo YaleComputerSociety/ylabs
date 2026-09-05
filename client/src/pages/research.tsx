@@ -1019,7 +1019,7 @@ const Research = () => {
   const runSearchRef = useRef(runSearch);
   const runDefaultResearchHomeSearchRef = useRef(runDefaultResearchHomeSearch);
   const runSearchResultsPageRef = useRef(runSearchResultsPage);
-  const resetResearchHomeIfDirtyRef = useRef<() => void>(() => {});
+  const returnToCleanResearchHomeRef = useRef<() => void>(() => {});
   const consumedHomeResetKeyRef = useRef<string | null>(null);
   runSearchRef.current = runSearch;
   runDefaultResearchHomeSearchRef.current = runDefaultResearchHomeSearch;
@@ -1741,26 +1741,27 @@ const Research = () => {
     scrollResearchViewportToTop();
     resetSearch();
   };
-  const resetResearchHomeIfDirty = () => {
+  const returnToCleanResearchHome = () => {
+    scrollResearchViewportToTop();
     const hasResetableSearchState =
       query.trim().length > 0 ||
       submittedQuery.length > 0 ||
       departmentSearch !== null ||
       hasStructuredFilters(studentSearchFilters());
     if (!hasResetableSearchState) return;
-    browseAllResearchHomes();
+    resetSearch();
   };
-  resetResearchHomeIfDirtyRef.current = resetResearchHomeIfDirty;
+  returnToCleanResearchHomeRef.current = returnToCleanResearchHome;
 
-  // Returning to the bare research home from the bare research home does not
-  // change the URL, so the URL-sync effect has nothing to reconcile and an
-  // unsubmitted draft query would survive. The brand logo carries an explicit
-  // reset intent for that case.
+  // The URL-sync effect cannot carry this on its own: an unsubmitted draft query
+  // lives only in page state, and the page snapshot restores it whenever the
+  // target search params match, so the brand logo states the reset intent
+  // explicitly on every click.
   useEffect(() => {
     if (!isResearchHomeResetState(location.state)) return;
     if (consumedHomeResetKeyRef.current === location.key) return;
     consumedHomeResetKeyRef.current = location.key;
-    resetResearchHomeIfDirtyRef.current();
+    returnToCleanResearchHomeRef.current();
   }, [location.key, location.state]);
 
   return (

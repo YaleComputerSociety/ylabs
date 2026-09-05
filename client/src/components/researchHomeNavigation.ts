@@ -1,7 +1,10 @@
 /**
  * Navigation contract shared by the brand logo controls and the research page:
- * the logo always targets a clean research home, and asks the page to drop its
- * in-page search state when the URL alone cannot express the reset.
+ * the logo always targets a clean research home and always carries an explicit
+ * reset intent, because the research page restores in-page state (an
+ * unsubmitted draft query, browse position) from a snapshot keyed only by the
+ * target search params, so a bare `/research` URL alone never guarantees a
+ * clean home no matter which route the click came from.
  */
 export const RESEARCH_HOME_PATH = '/research';
 
@@ -17,8 +20,4 @@ export const isResearchHomeResetState = (state: unknown): boolean =>
 export const isResearchHomeLocation = (location: { pathname: string; search: string }) =>
   location.pathname === RESEARCH_HOME_PATH && location.search === '';
 
-export const researchHomeResetState = (location: {
-  pathname: string;
-  search: string;
-}): ResearchHomeResetState | undefined =>
-  isResearchHomeLocation(location) ? { resetResearchHome: true } : undefined;
+export const researchHomeResetState = (): ResearchHomeResetState => ({ resetResearchHome: true });

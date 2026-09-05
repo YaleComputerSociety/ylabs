@@ -238,7 +238,7 @@ const ResearchHistoryButtons = () => {
   );
 };
 
-const renderResearchWithDetailRoute = () =>
+const renderResearchWithDetailRoute = ({ withBrandLogo = false } = {}) =>
   render(
     <StrictMode>
       <MemoryRouter initialEntries={['/research']}>
@@ -259,6 +259,7 @@ const renderResearchWithDetailRoute = () =>
               departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
             }}
           >
+            {withBrandLogo && <HomeButton />}
             <Routes>
               <Route path="/research" element={<Research />} />
               <Route
@@ -687,6 +688,68 @@ describe('Research page', () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText('Search Yale research')).toHaveValue('');
+    });
+    expect(screen.getByTestId('location').textContent).toBe('/research');
+  });
+
+  it('clears a draft query restored from the page snapshot when the logo is clicked from an entity page', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity])
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearchWithDetailRoute({ withBrandLogo: true });
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'quantum materials' },
+    });
+    expect(screen.getByLabelText('Search Yale research')).toHaveValue('quantum materials');
+
+    fireEvent.click(screen.getByRole('link', { name: 'View profile →' }));
+    expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search Yale research')).toHaveValue('');
+    });
+  });
+
+  it('scrolls back to the top when the brand logo is clicked on an already clean research home', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <HomeButton />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    expect(screen.getByLabelText('Search Yale research')).toHaveValue('');
+    vi.mocked(window.scrollTo).mockClear();
+
+    fireEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+
+    await waitFor(() => {
+      expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
     });
     expect(screen.getByTestId('location').textContent).toBe('/research');
   });

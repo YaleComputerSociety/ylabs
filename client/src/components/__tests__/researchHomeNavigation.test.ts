@@ -14,14 +14,9 @@ describe('researchHomeNavigation', () => {
     expect(isResearchHomeLocation({ pathname: '/programs', search: '' })).toBe(false);
   });
 
-  it('asks for an in-page reset only when the URL cannot express it', () => {
-    expect(researchHomeResetState({ pathname: '/research', search: '' })).toEqual({
-      resetResearchHome: true,
-    });
-    expect(
-      researchHomeResetState({ pathname: '/research', search: '?school=Yale%20College' }),
-    ).toBeUndefined();
-    expect(researchHomeResetState({ pathname: '/about', search: '' })).toBeUndefined();
+  it('always asks for an in-page reset, because the URL cannot express page state', () => {
+    expect(researchHomeResetState()).toEqual({ resetResearchHome: true });
+    expect(isResearchHomeResetState(researchHomeResetState())).toBe(true);
   });
 
   it('recognizes the reset intent and rejects unrelated navigation state', () => {

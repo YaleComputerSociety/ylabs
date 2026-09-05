@@ -18,7 +18,7 @@ const HomeButton = () => {
     <Button
       component={Link}
       to={RESEARCH_HOME_PATH}
-      state={researchHomeResetState(location)}
+      state={researchHomeResetState()}
       replace={alreadyAtResearchHome}
       disableRipple={true}
       sx={{

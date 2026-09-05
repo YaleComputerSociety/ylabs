@@ -17,7 +17,7 @@ const YURAButton = () => {
     <Button
       component={Link}
       to={RESEARCH_HOME_PATH}
-      state={researchHomeResetState(location)}
+      state={researchHomeResetState()}
       replace={isResearchHomeLocation(location)}
       disableRipple={true}
       sx={{ textTransform: 'none', minHeight: '44px', ...navFocusRingSx }}

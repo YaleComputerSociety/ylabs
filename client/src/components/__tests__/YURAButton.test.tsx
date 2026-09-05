@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import YURAButton from '../YURAButton';
+import { isResearchHomeResetState } from '../researchHomeNavigation';
 
 afterEach(() => {
   cleanup();
@@ -11,7 +12,12 @@ afterEach(() => {
 
 const LocationProbe = () => {
   const location = useLocation();
-  return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
+  return (
+    <>
+      <span data-testid="location">{`${location.pathname}${location.search}`}</span>
+      <span data-testid="reset-intent">{String(isResearchHomeResetState(location.state))}</span>
+    </>
+  );
 };
 
 describe('YURAButton', () => {
@@ -38,5 +44,19 @@ describe('YURAButton', () => {
     await userEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
 
     expect(screen.getByTestId('location').textContent).toBe('/research');
+  });
+
+  it('carries a reset intent from an entity page for logged-out visitors', async () => {
+    render(
+      <MemoryRouter initialEntries={['/research/ai-safety-lab']}>
+        <YURAButton />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+
+    expect(screen.getByTestId('location').textContent).toBe('/research');
+    expect(screen.getByTestId('reset-intent').textContent).toBe('true');
   });
 });

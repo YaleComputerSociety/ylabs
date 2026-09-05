@@ -56,11 +56,20 @@ describe('HomeButton', () => {
     expect(screen.getByTestId('reset-intent').textContent).toBe('true');
   });
 
-  it('omits the reset intent when the URL itself carries the search to clear', async () => {
+  it('carries a reset intent from search results, where page state can outlive the URL', async () => {
     renderAt('/research?q=neuroscience');
 
     await userEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
 
-    expect(screen.getByTestId('reset-intent').textContent).toBe('false');
+    expect(screen.getByTestId('reset-intent').textContent).toBe('true');
+  });
+
+  it('carries a reset intent from an entity page, where the snapshot can restore a draft', async () => {
+    renderAt('/research/ai-safety-lab');
+
+    await userEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+
+    expect(screen.getByTestId('pathname').textContent).toBe('/research');
+    expect(screen.getByTestId('reset-intent').textContent).toBe('true');
   });
 });
