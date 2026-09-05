@@ -11,7 +11,9 @@ vi.mock('../../services/sourceLinkHealth', async () => {
 });
 
 import { Observation } from '../../models/observation';
+import { OrgUnit } from '../../models/orgUnit';
 import { ResearchEntity } from '../../models/researchEntity';
+import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
   reconcileFacultyRosterDeparturesFromRun,
@@ -42,7 +44,8 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     probeSourceLink.mockReset();
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities']) {
+    resetOrgUnitCanonicalizerCache();
+    for (const name of ['observations', 'research_entities', 'org_units']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -155,6 +158,145 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
-    expect(result).toEqual({ suppressed: 0, cleared: 0, held: 0, frozenDepartments: 0 });
+    expect(result).toEqual({
+      outcome: 'disabled',
+      suppressed: 0,
+      cleared: 0,
+      held: 0,
+      frozenDepartments: 0,
+      governedDepartments: [],
+      unresolvedDepartments: [],
+    });
+  });
+
+  it('leaves a recorded closure departed when the stale roster still lists it', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({
+      slug: 'lab-closed',
+      yaleStatusCache: 'departed',
+      activeAtYaleCache: false,
+      yaleStatusReasonCache: 'departed',
+      studentVisibilitySuppressionReason: 'permanently_closed',
+      absentFromRosterSinceRunId: priorRun,
+    });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-closed'], discoveredCount: 1 });
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.cleared).toBe(0);
+    const closed = await readEntity('lab-closed');
+    expect(closed?.yaleStatusReasonCache).toBe('departed');
+    expect(closed?.activeAtYaleCache).toBe(false);
+    expect(closed?.lastSeenInCompleteRosterAt).toBeInstanceOf(Date);
+  });
+
+  it('keeps the raw roster name when the OrgUnit catalog is unseeded, so both sides stay raw', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    probeSourceLink.mockResolvedValue(DEAD);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    // With no department rows the canonicalizer suspends fail-closed, so
+    // `departments[]` and the snapshot name are both raw and still join.
+    expect(result.governedDepartments).toEqual(['Physics']);
+    expect(result.unresolvedDepartments).toEqual([]);
+    expect(result.suppressed).toBe(1);
+  });
+
+  it('reports why it did nothing when the run produced no roster-health snapshot', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.outcome).toBe('no-roster-health-observations');
+    expect(await readEntity('lab-gone')).toMatchObject({ archived: false });
+  });
+
+  it('governs the entities whose canonical department differs from the roster config spelling', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await OrgUnit.create({
+      name: 'English Language and Literature',
+      slug: 'english-language-and-literature',
+      kind: 'DEPARTMENT',
+      aliases: ['English'],
+      status: 'ACTIVE',
+    });
+    resetOrgUnitCanonicalizerCache();
+    await seedEntity({ slug: 'lab-present', departments: ['English Language and Literature'] });
+    await seedEntity({
+      slug: 'lab-gone',
+      departments: ['English Language and Literature'],
+      absentFromRosterSinceRunId: priorRun,
+    });
+    // The snapshot records the raw roster-config spelling, which no entity carries.
+    await seedDeptHealth(
+      run,
+      { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 },
+      'English',
+    );
+    probeSourceLink.mockResolvedValue(DEAD);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.governedDepartments).toEqual(['English Language and Literature']);
+    expect(result.unresolvedDepartments).toEqual([]);
+    expect(result.suppressed).toBe(1);
+    expect(await readEntity('lab-gone')).toMatchObject({ yaleStatusReasonCache: 'departed' });
+  });
+
+  it('reports a roster department no OrgUnit names instead of silently governing nothing', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await OrgUnit.create({
+      name: 'Physics',
+      slug: 'physics',
+      kind: 'DEPARTMENT',
+      status: 'ACTIVE',
+    });
+    resetOrgUnitCanonicalizerCache();
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedDeptHealth(
+      run,
+      { discoveredEntityKeys: [], discoveredCount: 0 },
+      'Ministry of Magic',
+    );
+    probeSourceLink.mockResolvedValue(DEAD);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.unresolvedDepartments).toEqual(['Ministry of Magic']);
+    expect(result.governedDepartments).toEqual([]);
+    expect(result.outcome).toBe('no-authoritative-departments');
+    expect(result.suppressed).toBe(0);
+    expect(await readEntity('lab-gone')).toMatchObject({ archived: false });
+  });
+
+  it('does not suppress through a school-named roster config, which governs no department', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await OrgUnit.create({
+      name: 'Divinity School',
+      slug: 'divinity-school',
+      kind: 'SCHOOL',
+      aliases: ['Divinity'],
+      status: 'ACTIVE',
+    });
+    await OrgUnit.create({
+      name: 'Physics',
+      slug: 'physics',
+      kind: 'DEPARTMENT',
+      status: 'ACTIVE',
+    });
+    resetOrgUnitCanonicalizerCache();
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedDeptHealth(run, { discoveredEntityKeys: [], discoveredCount: 0 }, 'Divinity');
+    probeSourceLink.mockResolvedValue(DEAD);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.unresolvedDepartments).toEqual(['Divinity']);
+    expect(result.suppressed).toBe(0);
   });
 });

@@ -229,6 +229,32 @@ It honors `manuallyLockedFields`, never overwrites an existing school or `school
 It fails closed on every other outcome (locked, an existing school facet, ambiguous or missing lead, no department, or a department that does not canonicalize to an `OrgUnit` with a parent school), so a wrong school is never guessed.
 This closes the "grant-derived shells have no school" gap on the same engine pass that closes the description gap, and stays correct on re-runs.
 
+### Faculty roster departure detection is off, and has never run
+
+`facultyRosterDepartureReconciler` is the only writer of `yaleStatusReasonCache: 'departed'` from roster absence.
+It has never executed a decision in any environment, and three independent gates each stop it, in the order the code hits them (#2410).
+
+1. `SCRAPER_FACULTY_DEPARTURE_DETECTION` gates the whole pass and is `false` by default.
+It is now listed in `server/.env.example` so the lane is discoverable; before that it appeared nowhere outside the reconciler and its own test.
+2. `departmentRosterHealth` observations are the reconciler's only input, and there were **0** in Beta and Production and **1** in Development when this was measured on 2026-09-05.
+`departmentRosterScraper` emits one per configured department per run, so the input appears only after a roster sweep.
+3. The department join. The health snapshot records the raw `DEFAULT_DEPT_CONFIGS` `deptName` while `research_entities.departments[]` stores the canonical `OrgUnit` name, so the reconciler now resolves the snapshot name through the catalog (`resolveGovernedDepartmentName`) instead of comparing two spellings.
+Before that, 14 of 110 configs matched 0 entities each while their canonical spelling matched 316 governed entities.
+
+Evidence that it never ran: `absentFromRosterSinceRunId` is written on the first absent run and `lastSeenInCompleteRosterAt` on every present run, both before any suppression, and both are 0 rows in Development, Beta, and Production.
+Do not read `yaleStatusReasonCache: 'departed'` being 0 rows as "no departures were detected"; nothing was evaluated.
+
+The pass returns a `FacultyRosterDepartureOutcome` naming why it did nothing (`disabled`, `no-roster-health-observations`, `no-authoritative-departments`, `reconciled`, and similar) plus the departments it governed and the snapshot names no `OrgUnit` names.
+A department name that resolves to nothing is now an explicitly reported condition rather than a zero governed count, which is what made this dormancy invisible: a lookup miss and "this department genuinely has no entities" were the same observation.
+`passesRosterDropGuard` still passes a zero governed count, which is correct once the join resolves: a genuine zero means the `governed` query returns no entity for that department, so the suppression loop cannot act on it.
+
+A human-recorded `permanently_closed` marker outranks roster presence.
+Since #2414 a recorded closure derives the same `yaleStatusReasonCache: 'departed'` this reconciler writes from roster absence, so the presence branch would otherwise read a human marker as its own past output and clear it, and the relocation cohort the marker exists for is by definition the cohort still listed on a stale Yale roster.
+`decideFacultyRosterDeparture` therefore takes `hasRecordedClosure` (from `hasRecordedClosureEvidence`) and downgrades `clear_departed` to `refresh_present`, still recording the last-seen fact.
+The absent branch already no-ops on a `departed` reason, so it needs no equivalent check.
+
+Enabling the lane is a separate, measured change: it can only remove research homes from the directory, so it needs a recomputed `computeResearchEntityStudentVisibility` served-tier diff over every row on Development and Production, not a flag count.
+
 ### Faculty-research-area profile research synthesis
 
 A `FACULTY_RESEARCH_AREA` usually has no lab site, so its only source is the professor's official Yale profile page, which states the research but interleaves it with credentials, so no contiguous verbatim span carries it and extraction can only copy the biography.
