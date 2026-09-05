@@ -14,6 +14,7 @@ import {
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
   isRecordSpecificApplicationPortalUrl,
+  isOffsiteInstitutionPersonProfileUrl,
   isSameHostShallowChromeUrl,
   isSharedPeopleRosterUrl,
   isSiteNavigationOrFooterChromeUrl,
@@ -228,6 +229,70 @@ describe('isFileShareOrDocumentUrl', () => {
     expect(isFileShareOrDocumentUrl('https://lab.example.edu/publications/')).toBe(false);
     expect(isFileShareOrDocumentUrl('mailto:someone@example.org')).toBe(false);
     expect(isFileShareOrDocumentUrl(undefined)).toBe(false);
+  });
+});
+
+describe('isOffsiteInstitutionPersonProfileUrl', () => {
+  it("rejects another institution's faculty profile for the same person (#2512)", () => {
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://econ.example-university.edu/profile/sample-economist',
+      ),
+    ).toBe(true);
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://www.business.example-college.edu/academics-research/faculty/sample_economist/',
+      ),
+    ).toBe(true);
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://www.example-institute.eu/people/sample-economist',
+      ),
+    ).toBe(true);
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://business.example-university.edu/faculty/home.php?username=sample',
+      ),
+    ).toBe(true);
+    expect(
+      isOffsiteInstitutionPersonProfileUrl(
+        'https://example-university.ca/social-sciences/economics/people/sample-w-economist/',
+      ),
+    ).toBe(true);
+  });
+
+  it('never rejects a Yale-hosted page, whatever its shape', () => {
+    expect(
+      isOffsiteInstitutionPersonProfileUrl('https://ling.yale.edu/profile/sample-person'),
+    ).toBe(false);
+    expect(isOffsiteInstitutionPersonProfileUrl('https://medicine.yale.edu/lab/sample/')).toBe(
+      false,
+    );
+    expect(isOffsiteInstitutionPersonProfileUrl('https://samplelab.yale.edu/group-members/')).toBe(
+      false,
+    );
+  });
+
+  it('keeps a genuine personal or lab site on a non-Yale host', () => {
+    expect(isOffsiteInstitutionPersonProfileUrl('https://sample-researcher.example.test/')).toBe(
+      false,
+    );
+    expect(isOffsiteInstitutionPersonProfileUrl('http://sample-researcher.github.io/')).toBe(false);
+    expect(
+      isOffsiteInstitutionPersonProfileUrl('https://sample.wordpress.test/care-research-team/'),
+    ).toBe(false);
+  });
+
+  it('requires a person to be named after the directory segment, so a lab roster root is kept', () => {
+    expect(isOffsiteInstitutionPersonProfileUrl('https://samplelab.example.test/people/')).toBe(
+      false,
+    );
+    expect(isOffsiteInstitutionPersonProfileUrl('https://samplelab.example.test/faculty/')).toBe(
+      false,
+    );
+    expect(
+      isOffsiteInstitutionPersonProfileUrl('https://samplelab.example.test/people/faculty/'),
+    ).toBe(false);
   });
 });
 

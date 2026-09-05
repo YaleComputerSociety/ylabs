@@ -53,6 +53,7 @@ import {
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import {
+  isOffsiteInstitutionPersonProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
 } from '../../utils/researchHomeWebsiteUrl';
@@ -2667,6 +2668,7 @@ function profileEnrichmentFromHtml(
     const isProfileSite = profileHost && candidateHost === profileHost;
     const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
     if (isProfileSite && isDirectoryPath) return;
+    if (isOffsiteInstitutionPersonProfileUrl(absolute)) return;
 
     if (isGenericLabDirectoryUrl(absolute)) return;
     labUrl = absolute;

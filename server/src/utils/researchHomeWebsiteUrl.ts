@@ -221,6 +221,45 @@ export function isSharedPeopleRosterUrl(value: unknown): boolean {
   );
 }
 
+const YALE_HOST = /(?:^|\.)yale\.edu$/i;
+
+const PERSON_DIRECTORY_SEGMENT =
+  /^(?:profile|profiles|people|person|persons|faculty|faculty-directory|directory|bio|bios)$/i;
+
+/**
+ * Another institution's person-profile or faculty-directory page: the right person
+ * at the wrong employer. A Yale profile page routinely links the person's faculty
+ * page at a previous institution, and adopting it as this entity's research home
+ * scopes every harvested description and research area to an affiliation the entity
+ * does not have. It also rots independently of Yale with nothing here able to
+ * notice.
+ *
+ * Rejected on host plus path shape because an identity comparison cannot see it -
+ * the person's name matches on both sides, so the #2437 identity guard passes. A
+ * genuine personal or lab site on a non-Yale host is unaffected: it is not shaped
+ * like a faculty directory.
+ *
+ * Requires a person to be NAMED after the directory segment. A bare
+ * `somelab.com/people/` is that lab's own roster root, not an institutional
+ * profile, and rejecting it would strand a lab whose only stored website is that
+ * subpage - `isSharedPeopleRosterUrl` is the predicate for those.
+ */
+export function isOffsiteInstitutionPersonProfileUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (YALE_HOST.test(url.hostname)) return false;
+  const segments = url.pathname.split('/').filter(Boolean);
+  const directoryAt = segments.findIndex((segment) =>
+    PERSON_DIRECTORY_SEGMENT.test(segment.toLowerCase()),
+  );
+  if (directoryAt === -1) return false;
+  const leaf = segments[directoryAt + 1]?.toLowerCase();
+  if (!leaf) return false;
+  return !leaf
+    .split('-')
+    .some((token) => ROSTER_COLLECTIVE_LEAF_TOKEN.test(token.replace(/\.[a-z0-9]+$/, '')));
+}
+
 export interface ResearchEntityHostOwnerIdentity {
   name?: unknown;
   displayName?: unknown;
