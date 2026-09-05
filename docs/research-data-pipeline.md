@@ -295,8 +295,8 @@ The pass returns a `FacultyRosterDepartureOutcome` naming why it did nothing (`d
 A department name that resolves to nothing is now an explicitly reported condition rather than a zero governed count, which is what made this dormancy invisible: a lookup miss and "this department genuinely has no entities" were the same observation.
 `passesRosterDropGuard` still passes a zero governed count, which is correct once the join resolves: a genuine zero means the `governed` query returns no entity for that department, so the suppression loop cannot act on it.
 
-A human-recorded `permanently_closed` marker outranks roster presence.
-Since #2414 a recorded closure derives the same `yaleStatusReasonCache: 'departed'` this reconciler writes from roster absence, so the presence branch would otherwise read a human marker as its own past output and clear it, and the relocation cohort the marker exists for is by definition the cohort still listed on a stale Yale roster.
+A recorded `permanently_closed` marker outranks roster presence, whether an operator recorded it or the YSM lab delisting lane below did.
+Since #2414 a recorded closure derives the same `yaleStatusReasonCache: 'departed'` this reconciler writes from roster absence, so the presence branch would otherwise read a marker it did not write as its own past output and clear it, and the relocation cohort the marker exists for is by definition the cohort still listed on a stale Yale roster.
 `decideFacultyRosterDeparture` therefore takes `hasRecordedClosure` (from `hasRecordedClosureEvidence`) and downgrades `clear_departed` to `refresh_present`, still recording the last-seen fact.
 The absent branch already no-ops on a `departed` reason, so it needs no equivalent check.
 
@@ -307,7 +307,7 @@ Enabling the lane is a separate, measured change: it can only remove research ho
 `ysmLabDelistingReconciler` records the `permanently_closed` marker for YSM lab microsites that YSM deleted and dropped from its A-Z index.
 It runs from `materializeFromRun` and is gated by `SCRAPER_YSM_LAB_DELISTING_DETECTION`, which is `false` by default and listed in `server/.env.example` so the lane is discoverable rather than existing only inside the reconciler and its test.
 
-Suppression requires two independent positive facts: absence from an authoritative index across two distinct runs, and the microsite itself probing `404`/`410`.
+Suppression requires two independent positive facts: absence from an authoritative index across two distinct runs, recorded on the entity as `absentFromIndexSinceRunId` and cleared the moment the index lists the lab again, and the microsite itself probing `404`/`410`.
 Absence alone is an inference from a missing row that a selector change produces wholesale, and a `404` alone is one URL that a transient edge error can fake, so a single failing signal freezes the lane instead of retiring a live lab.
 A `403`, `429`, `5xx`, timeout, or SSRF refusal leaves `micrositeDead` false, because collapsing those into "gone" would turn throttling on `medicine.yale.edu` into mass suppression.
 
@@ -318,7 +318,7 @@ Slug normalization folds the casing and separator drift between the index and st
 
 The lane honours `manuallyLockedFields`: a row that locks `studentVisibilitySuppressionReason` is skipped and counted in `lockedSkipped`, since the closure marker outranks even an explicit operator override to publish.
 The marker is appended to any existing suppression reason rather than replacing it, because that field is a comma-joined list read by substring elsewhere.
-The result names why a pass did nothing (`disabled`, `no-index-health-observation`, `index-not-authoritative`, `drop-guard-frozen`, `reconciled`) and separates `held` (suppression withheld because the microsite answered as alive) from `unchanged` (nothing to decide), so a healthy run cannot look like a run that withheld dozens of suppressions.
+The result names why a pass did nothing (`disabled`, `dry-run`, `invalid-run-id`, `no-index-health-observation`, `index-not-authoritative`, `drop-guard-frozen`, `reconciled`) and separates `held` (suppression withheld because the microsite answered as alive) from `unchanged` (nothing to decide), so a healthy run cannot look like a run that withheld dozens of suppressions.
 
 ### Faculty-research-area profile research synthesis
 
