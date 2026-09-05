@@ -18,6 +18,11 @@ import {
   type ResearchGroupKind,
 } from '../models/researchAccessTypes';
 import { ScrapeRun } from '../models/scrapeRun';
+import {
+  invalidatedScrapeRunIds,
+  isScrapeRunInvalidated,
+  partitionObservationsByInvalidatedRun,
+} from './invalidatedScrapeRuns';
 import { Fellowship } from '../models/fellowship';
 import {
   buildResearchAreasCardSummary,
@@ -3852,7 +3857,29 @@ export async function materializeEntity(
   // still report fieldsWritten 0, so a corpus-wide field drop would look like a
   // clean run. Pinned by entityMaterializerEmptyObservationGuard.integration.test.ts
   // (#2467); do not remove without reading it.
-  let obs = await Observation.find(filter).lean();
+  const readObservations = await Observation.find(filter).lean();
+
+  // An operator quarantines a bad run's evidence with `invalidated: true`. Honour it
+  // here, at the one point every write path reads evidence, so `materializeFromRun`,
+  // `observations:catch-up-materialize` and any future caller inherit the fence
+  // instead of each needing its own. Before #2469 nothing on the write path read the
+  // flag, so a quarantined run's observations were indistinguishable from good ones.
+  const { kept: withheldFiltered, withheld } = partitionObservationsByInvalidatedRun(
+    readObservations,
+    await invalidatedScrapeRunIds(),
+  );
+  if (withheld.length > 0) {
+    // Reported distinctly from "no evidence": both write nothing and both would
+    // otherwise return identical counters, which is the ambiguity that made the
+    // empty-observation guard below invisible (#2467).
+    console.warn(
+      `materializeEntity: withheld ${withheld.length} observation(s) for ${entityType} ${sanitizeLogValue(
+        identifier.entityKey || identifier.entityId,
+      )} from invalidated scrape run(s) (#2469)`,
+    );
+  }
+
+  let obs = withheldFiltered;
   if (obs.length === 0) {
     return {
       entityType,
@@ -3861,6 +3888,7 @@ export async function materializeEntity(
       conflicts: 0,
       created: false,
       resolved: {},
+      ...(withheld.length > 0 ? { skipped: 'invalidated-run-evidence' } : {}),
     };
   }
 
@@ -4423,6 +4451,24 @@ export async function materializeFromRun(
 }> {
   const runObjectId = toMaterializerObjectId(scrapeRunId);
   if (!runObjectId) {
+    return {
+      materialized: 0,
+      created: 0,
+      updated: 0,
+      conflicts: 0,
+      skipped: 0,
+      errors: 0,
+      postMaterializationMetrics: emptyPostMaterializationMetrics(),
+    };
+  }
+
+  // Refuse the whole run up front rather than relying on the per-entity fence, so an
+  // operator who quarantined this run sees one explicit refusal instead of a page of
+  // per-key warnings, and so the run is never enumerated at all (#2469).
+  if (await isScrapeRunInvalidated(runObjectId)) {
+    console.warn(
+      `materializeFromRun: refusing invalidated scrape run ${sanitizeLogValue(scrapeRunId)}; its observations stay quarantined (#2469)`,
+    );
     return {
       materialized: 0,
       created: 0,
