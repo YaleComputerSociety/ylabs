@@ -63,6 +63,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence.',
   },
+  'lab-site-declared-lead-llm': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
+  },
   'research-area-source-extractor': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',

@@ -15,7 +15,12 @@ const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i
 const WORKING_GROUP_RE = /\bworking\s+group\b/i;
 
 const UMBRELLA_ORGANIZATION_HEAD_SOURCE =
-  '(?:cent(?:er|re)s?|institutes?|programs?|programmes?|collaboratives?|clinics?|consorti(?:um|a)|units?|initiatives?|networks?|councils?|committees?|offices?|divisions?|departments?|sections?|schools?|colleges?|foundations?|societ(?:y|ies)|registr(?:y|ies)|alliances?|coalitions?|partnerships?|task\\s+forces?|hospitals?|cores?|facilit(?:y|ies)|observator(?:y|ies)|museums?|librar(?:y|ies)|health\\s+systems?)';
+  // "Collaboratory" is spelled out alongside "collaborative" because it is a
+  // distinct word rather than an inflection of it, and Yale uses it for centres
+  // ("The Education Collaboratory at Yale"). The lab-head regex does not match
+  // inside it: `\blaborator(y)\b` needs a word boundary that "Collaboratory" has no
+  // room for, so adding it here does not shadow a real laboratory.
+  '(?:cent(?:er|re)s?|institutes?|programs?|programmes?|collaboratives?|collaborator(?:y|ies)|clinics?|consorti(?:um|a)|units?|initiatives?|networks?|councils?|committees?|offices?|divisions?|departments?|sections?|schools?|colleges?|foundations?|societ(?:y|ies)|registr(?:y|ies)|alliances?|coalitions?|partnerships?|task\\s+forces?|hospitals?|cores?|facilit(?:y|ies)|observator(?:y|ies)|museums?|librar(?:y|ies)|health\\s+systems?)';
 
 const UMBRELLA_ORGANIZATION_HEAD_RE = new RegExp(`\\b${UMBRELLA_ORGANIZATION_HEAD_SOURCE}\\b`, 'i');
 

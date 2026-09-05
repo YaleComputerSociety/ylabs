@@ -430,6 +430,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'lab-site-declared-lead-llm',
+    displayName: 'Lab site declared lead (LLM)',
+    description:
+      "LLM extraction over a lab site's own pages for the lead it declares for itself, so a lab website harvested off somebody else's profile is re-homed to the researcher who runs it rather than dropped.",
+    baseUrl: '',
+    defaultWeight: 0.9,
+    cadence: 'monthly',
+  },
+  {
     name: 'research-area-source-extractor',
     displayName: 'Research-area source extractor',
     description:
