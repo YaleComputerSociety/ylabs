@@ -417,7 +417,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           </p>
           <Link
             to="/programs"
-            className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
+            className="mt-4 inline-flex min-h-[44px] items-center rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
           >
             Programs & Fellowships
           </Link>
