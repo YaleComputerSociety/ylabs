@@ -11,6 +11,7 @@ A research entity is `student_ready` if, and only if, what we show is CORRECT an
 - (a) It has a real, coherent, non-boilerplate description that actually describes THIS entity.
 - (b) The right, currently-active person or lead is attached.
 - (c) It is not a duplicate or a suppressed shell, and it is in scope and active.
+- (d) Its `name` identifies something rather than being placeholder filler.
 
 If all of these hold, the entity is `student_ready`, full stop.
 Missing enrichment does not change that.
@@ -31,10 +32,14 @@ They are the set `STUDENT_READY_HARD_BLOCKER_REASONS`, and each maps to one fiel
 
 - Description: `missing_description`, `missing_card_description`, `thin_description`, `blank_public_description`. A card that renders no real prose, or prose about something else. Maps to `descriptionCoherent` (and `entityContentMatchesCard` for off-entity content, e.g. a "<Person> Lab" name typed as an org whose body describes a center).
 - Identity / lead: `missing_lead`, `duplicate_name_risk`, `duplicate_risk`, `exact_url_duplicate_risk`, `pi_identity_conflict`, `profile_identity_risk`. Maps to `rightLeadAttached` and `notDuplicate`.
+- Name: `unusable_name`. A `name` that is filler rather than an identity ("n/a", "none", "unknown", "TBD"). Maps to `hasUsableName`.
+Checked on `name` alone, because `displayName` is only ever a branded alias of it: filler stored on the alias is withheld at serve time by `sanitizeServedResearchEntityCopyFields`, so every surface falls back to `name` rather than titling the card with the filler.
+Absence is deliberately not a blocker, since `name` is `required` on the schema and no record stores an empty one.
 - Wrong-type / shell: `generic_directory_shell`, `profile_biography_shell`, `content_page_risk`, `non_research_entity`, `non_research_program`, `research_infrastructure_only`, `non_owner_grant_shell`, `lab_name_org_type_mismatch`. Removed at `suppressed` (a stronger form of the duplicate / suppressed-shell blocker).
 - Inactive / out of scope: `inactive_at_yale`, `archive_review`, `not_undergraduate_relevant`.
 
-A lead-requiring entity with no lead, an identity risk, or an off-entity/off-scope failure is never published even under an explicit operator override: an override may pass softer gates, but not these correctness floors.
+A lead-requiring entity with no lead, an unusable name, an identity risk, or an off-entity/off-scope failure is never published even under an explicit operator override: an override may pass softer gates, but not these correctness floors.
+The same floors also hold the record out of `limited_but_safe`, which the launch-trust report treats as publishable in `public-safe` mode.
 
 ## Soft signals (these NEVER gate `student_ready`)
 

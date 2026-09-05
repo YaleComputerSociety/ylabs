@@ -75,6 +75,20 @@ describe('usefulLabName', () => {
     expect(usefulLabName('Alan Edwards, M.D., Yale University')).toBe('');
   });
 
+  // The placeholder vocabulary now lives in one shared predicate, so this source
+  // rejects the values it never used to (#2367).
+  it('rejects placeholder filler offered in place of a name', () => {
+    for (const value of ['n/a', 'N / A', 'none', 'unknown', 'null', 'TBD', 'untitled', '???']) {
+      expect(usefulLabName(value)).toBe('');
+    }
+  });
+
+  it('rejects a bare research-home label with no branding', () => {
+    for (const value of ['the lab', 'Lab', 'laboratory', 'Research']) {
+      expect(usefulLabName(value)).toBe('');
+    }
+  });
+
   it('keeps a genuine branded research-home name', () => {
     expect(usefulLabName('The Yale GRAB Lab')).toBe('The Yale GRAB Lab');
     expect(usefulLabName('David Spiegel Lab')).toBe('David Spiegel Lab');

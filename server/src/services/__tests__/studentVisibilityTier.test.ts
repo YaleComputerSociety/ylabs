@@ -19,6 +19,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     entityContentMatchesCard: true,
     rightLeadAttached: true,
     notDuplicate: true,
+    hasUsableName: true,
   };
 
   it('is student_ready when every correctness field holds', () => {
@@ -30,6 +31,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     ['content about a different entity', 'entityContentMatchesCard'],
     ['wrong or missing lead', 'rightLeadAttached'],
     ['duplicate/suppressed shell', 'notDuplicate'],
+    ['placeholder name', 'hasUsableName'],
   ] as const)('is blocked when %s (%s is false)', (_label, field) => {
     expect(researchEntityMeetsStudentReadyDefinition({ ...correct, [field]: false })).toBe(false);
   });
@@ -206,6 +208,95 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toEqual(
       expect.arrayContaining(['exact_url_duplicate_risk', 'duplicate_risk']),
     );
+  });
+
+  // A record stored with name "n/a" reached student_ready because nothing in the
+  // gate treated an unusable name as a correctness failure. It was masked only by
+  // a displayName graft, so withholding the graft would have served "n/a" (#2367).
+  it('holds a placeholder-named record out of student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'placeholder-named',
+        name: 'n/a',
+        slug: 'ysm-faculty-fixture-placeholder',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-placeholder/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  // `limited_but_safe` is launch-eligible in the launch-trust `public-safe` mode,
+  // so labelling a nameless record that way would report it as safe to publish
+  // instead of holding it (#2367).
+  it('does not label a placeholder-named record limited_but_safe', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'placeholder-named-limited',
+        name: 'n/a',
+        slug: 'ysm-faculty-fixture-placeholder-limited',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-placeholder-limited/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  // Every sibling identity floor re-clamps after the override, and an unusable
+  // name is a hard blocker: there is nothing to title the card with, so an
+  // operator override must not be able to publish it (#2367).
+  it('holds a placeholder-named record even under an operator override to publish', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'placeholder-named-overridden',
+        name: 'n/a',
+        slug: 'ysm-faculty-fixture-placeholder-override',
+        shortDescription: 'Studies neonatal care quality improvement across community hospitals.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-placeholder-override/'],
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('unusable_name');
+  });
+
+  it('keeps a real name that merely contains a placeholder word student_ready-eligible', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'placeholder-word-real-name',
+        name: 'Unknown Pathogens Laboratory',
+        slug: 'ysm-faculty-fixture-unknown-pathogens',
+        shortDescription: 'Studies emerging pathogens that evade routine clinical identification.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering emerging pathogens that evade routine clinical identification.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-unknown-pathogens/'],
+      },
+      leadMembers: [{ userId: 'yz55', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
   });
 
   it('does not require a PI lead for source-backed program-like research guidance', () => {

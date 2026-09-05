@@ -11,6 +11,7 @@ import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
+import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
@@ -580,6 +581,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'thin_description',
   'blank_public_description',
   'missing_lead',
+  'unusable_name',
   'duplicate_name_risk',
   'duplicate_risk',
   'exact_url_duplicate_risk',
@@ -625,14 +627,21 @@ export interface ResearchEntityStudentReadyCorrectness {
   // directory / biography / non-owner grant / off-scope) are removed one tier
   // earlier, at `suppressed`.
   notDuplicate: boolean;
+  // (d) The record's `name` identifies something rather than being placeholder
+  // filler ("n/a", "unknown"), which leaves nothing to title the card with and
+  // cannot be rescued by `displayName`, only ever a branded alias of `name`.
+  // Absence is a different failure and is deliberately not claimed here; see
+  // `computeResearchEntityStudentVisibility`.
+  hasUsableName: boolean;
 }
 
 /**
  * THE definition of `student_ready`, in one place: an entity is `student_ready`
  * IFF what we show is CORRECT and COHERENT - a real coherent non-boilerplate
- * description about THIS entity, the right active lead/identity, and not a
- * duplicate/shell. Enrichment (next step, action evidence, facet signal,
- * source-backing, alternate access path, source-url projection) never gates -
+ * description about THIS entity, the right active lead/identity, a name that
+ * identifies something, and not a duplicate/shell. Enrichment (next step,
+ * action evidence, facet signal, source-backing, alternate access path,
+ * source-url projection) never gates -
  * the student can always reach out to the professor. See
  * docs/student-ready-definition.md. Change the gate here, not in scattered
  * conditionals.
@@ -644,7 +653,8 @@ export function researchEntityMeetsStudentReadyDefinition(
     correctness.descriptionCoherent &&
     correctness.entityContentMatchesCard &&
     correctness.rightLeadAttached &&
-    correctness.notDuplicate
+    correctness.notDuplicate &&
+    correctness.hasUsableName
   );
 }
 
@@ -701,8 +711,15 @@ export function computeResearchEntityStudentVisibility({
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
   const outsideResearchScope = !researchScope.researchHomeEligible;
+  // Keyed on `name` alone: `displayName` is only ever a branded alias of `name`,
+  // so a placeholder `name` leaves nothing to title the card with once a graft on
+  // the alias is withheld at serve time (#2367). Absence is deliberately NOT
+  // checked here: `name` is `required` on the schema and 0 records store an empty
+  // one, so a blank-name arm could never fire.
+  const hasUsableName = !isPlaceholderEntityName(entity.name);
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
+  if (!hasUsableName) reasons.push('unusable_name');
   if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (
     textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
@@ -748,6 +765,7 @@ export function computeResearchEntityStudentVisibility({
     rightLeadAttached:
       (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
     notDuplicate: !duplicateRisk,
+    hasUsableName,
   };
 
   let computedTier: StudentVisibilityTier = 'operator_review';
@@ -774,7 +792,8 @@ export function computeResearchEntityStudentVisibility({
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
-    !duplicateRisk
+    !duplicateRisk &&
+    hasUsableName
   ) {
     computedTier = 'limited_but_safe';
   }
@@ -815,6 +834,18 @@ export function computeResearchEntityStudentVisibility({
       tier: 'operator_review',
       computedTier: result.computedTier,
       reasons: Array.from(new Set([...result.reasons, 'missing_lead'])),
+    };
+  }
+  // A record whose `name` is filler rather than an identity can never be
+  // published to students, even by an explicit operator override: there is
+  // nothing to title the card with, so publishing it would serve a card headed
+  // "n/a". The way to publish such a row is to give it a real name, not to
+  // override past the missing one.
+  if (!hasUsableName && (result.tier === 'student_ready' || result.tier === 'limited_but_safe')) {
+    return {
+      tier: 'operator_review',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, 'unusable_name'])),
     };
   }
   // A contested-identity entity mixes different people's identities, so it can

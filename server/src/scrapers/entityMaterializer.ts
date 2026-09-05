@@ -44,7 +44,10 @@ import {
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
-import { personScopedResearchEntityNameNamesSomethingElse } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  isPlaceholderEntityName,
+  personScopedResearchEntityNameNamesSomethingElse,
+} from '../utils/researchHomeNameIdentityAuthority';
 import {
   resolveAllFields,
   resolveFieldRanked,
@@ -3196,11 +3199,18 @@ export interface ProjectFromLogResult {
   fieldsWritten: number;
 }
 
-const PERSON_SCOPED_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
+const RESEARCH_ENTITY_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
 
 /**
- * Refuses a name that names something other than this person-scoped record: an
- * umbrella organization it merely belongs to, or a different person's lab.
+ * Refuses a name that identifies nothing (placeholder filler like "n/a"), or that
+ * names something other than this person-scoped record: an umbrella organization
+ * it merely belongs to, or a different person's lab.
+ *
+ * Filler is refused here as well as at ingest because ingest only ever guards a
+ * value on its way in. An already-stored "n/a" is re-projected from its own
+ * already-active observation on every pass, and refusing the emitting source's
+ * fresh copy at ingest stops that stale row from ever being superseded, so
+ * without this arm the record could only be repaired by hand (#2367).
  *
  * It lives here rather than in a scraper because a per-source guard only ever
  * covers the source it was written for. #2234 put this check inside the lab
@@ -3218,7 +3228,7 @@ const PERSON_SCOPED_IDENTITY_NAME_FIELDS = ['name', 'displayName'] as const;
  * `name` only ever moves to a ranked candidate that passes, so refusing a graft
  * can never leave a record nameless.
  */
-function enforcePersonScopedNameIdentityAuthority(input: {
+function enforceResearchEntityNameAuthority(input: {
   entityType: ObservedEntityType;
   set: Record<string, unknown>;
   unset: Record<string, ''>;
@@ -3251,7 +3261,8 @@ function enforcePersonScopedNameIdentityAuthority(input: {
   const recordWebsiteUrl =
     textValue(set.websiteUrl ?? entityDoc?.websiteUrl) ||
     textValue(set.website ?? entityDoc?.website);
-  const namesSomethingElse = (candidateName: unknown, websiteUrl: unknown): boolean =>
+  const namesNothingUsable = (candidateName: unknown, websiteUrl: unknown): boolean =>
+    isPlaceholderEntityName(candidateName) ||
     personScopedResearchEntityNameNamesSomethingElse({
       ...recordIdentity,
       candidateName,
@@ -3259,12 +3270,12 @@ function enforcePersonScopedNameIdentityAuthority(input: {
     });
 
   let fieldsWritten = 0;
-  for (const field of PERSON_SCOPED_IDENTITY_NAME_FIELDS) {
+  for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
     if (input.manuallyLockedFields.includes(field)) continue;
     const servedValue = set[field] ?? entityDoc?.[field];
     if (
       !textValue(servedValue) ||
-      !namesSomethingElse(servedValue, servedProvenanceSourceUrl(field))
+      !namesNothingUsable(servedValue, servedProvenanceSourceUrl(field))
     ) {
       continue;
     }
@@ -3296,7 +3307,7 @@ function enforcePersonScopedNameIdentityAuthority(input: {
         ({ materialized, candidateSourceUrl }) =>
           textValue(materialized) &&
           textValue(materialized) !== textValue(servedValue) &&
-          !namesSomethingElse(materialized, candidateSourceUrl),
+          !namesNothingUsable(materialized, candidateSourceUrl),
       );
 
     if (replacement) {
@@ -3402,7 +3413,7 @@ export async function projectFromLog(
     fieldsWritten++;
   }
   if (isResearchEntityObservationType(entityType)) {
-    fieldsWritten += enforcePersonScopedNameIdentityAuthority({
+    fieldsWritten += enforceResearchEntityNameAuthority({
       entityType,
       set,
       unset,

@@ -184,6 +184,6 @@ It should help a student discuss options with an advisor, not create mass-email 
 
 ## Student-Ready Visibility
 
-An entity is shown to students (`student_ready`) if, and only if, what we show is CORRECT and COHERENT: a real, coherent, non-boilerplate description that describes THIS entity, the right lead attached, and not a duplicate or suppressed shell.
+An entity is shown to students (`student_ready`) if, and only if, what we show is CORRECT and COHERENT.
 Because reaching out is the universal next step and is never gated, enrichment signals (source-backing, next step, action evidence, facet signals) make a card more specific but NEVER hide it.
-The canonical definition and the hard-vs-soft split live in [student-ready-definition.md](student-ready-definition.md).
+The correctness conditions, the hard-vs-soft split, and the canonical definition live in [student-ready-definition.md](student-ready-definition.md).

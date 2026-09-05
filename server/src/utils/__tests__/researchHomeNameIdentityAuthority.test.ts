@@ -8,6 +8,7 @@ import {
   entityKeyPersonTokens,
   eponymousLabNameSurname,
   isNonIdentifyingLinkLabelName,
+  isPlaceholderEntityName,
   isPersonScopedResearchEntity,
   isUmbrellaOrganizationName,
   personScopedResearchEntityNameNamesSomethingElse,
@@ -366,5 +367,55 @@ describe('personScopedResearchEntityNameNamesSomethingElse', () => {
         candidateName: 'Herzog Research Program',
       }),
     ).toBe(false);
+  });
+});
+
+describe('isPlaceholderEntityName', () => {
+  // The whole point of a separate predicate: `nameWords` splits on
+  // non-alphanumerics, so these reduce to ['n','a'] and the link-label check can
+  // never reject them however many placeholder tokens that word set gains (#2367).
+  it('rejects a punctuated placeholder that word-splitting cannot catch', () => {
+    for (const value of ['n/a', 'N/A', 'N / A', 'n.a.', '- -', '???']) {
+      expect(isPlaceholderEntityName(value)).toBe(true);
+      expect(isNonIdentifyingLinkLabelName(value)).toBe(false);
+    }
+  });
+
+  it('rejects single-word filler a source emitted in place of a name', () => {
+    for (const value of [
+      'none',
+      'None',
+      'null',
+      'unknown',
+      'Unnamed',
+      'untitled',
+      'TBD',
+      'to be determined',
+      'not applicable',
+      'placeholder',
+    ]) {
+      expect(isPlaceholderEntityName(value)).toBe(true);
+    }
+  });
+
+  it('keeps a real name that merely contains a placeholder word', () => {
+    for (const value of [
+      'Unknown Pathogens Laboratory',
+      'None So Blind Reading Group',
+      'Null Hypothesis Lab',
+      'Test Tube Research Group',
+      'Loyal Lab',
+    ]) {
+      expect(isPlaceholderEntityName(value)).toBe(false);
+    }
+  });
+
+  // Absence is a different failure from filler, and `name` is `required` on the
+  // schema with 0 records storing an empty one, so this predicate deliberately
+  // does not claim it.
+  it('treats an absent or blank name as not-a-placeholder', () => {
+    for (const value of [undefined, null, '', '   ']) {
+      expect(isPlaceholderEntityName(value)).toBe(false);
+    }
   });
 });

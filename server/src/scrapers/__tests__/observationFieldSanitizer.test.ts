@@ -202,6 +202,25 @@ describe('sanitizeObservationField', () => {
       }
     });
 
+    // `ysm-faculty-jaspreet-loyal` reached student_ready storing name "n/a": the
+    // per-source guard in the microsite extractor rejected it, but nothing did at
+    // the all-source ingest choke point (#2367).
+    it('rejects a placeholder offered as a research-entity name', () => {
+      for (const placeholder of ['n/a', 'N/A', 'none', 'unknown', 'TBD', 'untitled']) {
+        expect(sanitizeObservationField('researchEntity', 'name', placeholder)).toEqual({
+          value: undefined,
+          rejected: true,
+          reason: 'entity-name-furniture',
+        });
+      }
+    });
+
+    it('keeps a real name that merely contains a placeholder word', () => {
+      expect(
+        sanitizeObservationField('researchEntity', 'name', 'Unknown Pathogens Laboratory'),
+      ).toEqual({ value: 'Unknown Pathogens Laboratory', rejected: false });
+    });
+
     it('keeps the name a link label wraps instead of adopting the wrapper', () => {
       expect(sanitizeObservationField('researchEntity', 'name', 'Link to Boggon Lab')).toEqual({
         value: 'Boggon Lab',
