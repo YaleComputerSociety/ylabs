@@ -579,9 +579,9 @@ const DecisionSummary = ({
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
-          {description && (
+          <SectionHeading>Research summary</SectionHeading>
+          {description ? (
             <>
-              <SectionHeading>Research summary</SectionHeading>
               <h2 className="text-lg font-semibold text-gray-950">
                 {usesFacultyResearchWording
                   ? 'What this faculty research area covers'
@@ -592,6 +592,19 @@ const DecisionSummary = ({
                 className="mt-2 max-w-[68ch] text-base leading-relaxed text-gray-800"
                 paragraphClassName="mt-4 first:mt-0"
               />
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-gray-950">
+                No published research summary yet
+              </h2>
+              <p className="mt-2 max-w-[68ch] text-base leading-relaxed text-gray-700">
+                This section normally explains what the research home works on, in its own words.
+                Yale Research has not found a description it can publish for this one
+                {showGetInvolvedBlock
+                  ? ', so use the sources and contacts listed here to check the work directly before deciding fit.'
+                  : '. Check the linked sources further down this page before deciding fit.'}
+              </p>
             </>
           )}
           {usesProfileSynthesis && (

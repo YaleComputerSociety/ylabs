@@ -140,7 +140,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           href={websiteHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="yr-link inline-flex min-h-[44px] w-fit items-center gap-1.5 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="yr-link yr-focus-ring inline-flex min-h-[44px] w-fit items-center gap-1.5 rounded-sm text-sm font-semibold"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

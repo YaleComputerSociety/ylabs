@@ -1788,7 +1788,7 @@ const Research = () => {
                 <Link
                   to="/login"
                   state={{ from: `${location.pathname}${location.search}` }}
-                  className="font-semibold underline underline-offset-2 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  className="yr-focus-ring rounded-sm font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   Log in with Yale CAS
                 </Link>{' '}
@@ -1839,11 +1839,11 @@ const Research = () => {
                   }}
                   aria-describedby="research-search-context research-search-help"
                   placeholder={searchPlaceholder}
-                  className="min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
+                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-[var(--yr-blue)] sm:min-h-14"
                 />
                 <button
                   type="submit"
-                  className="min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
+                  className="yr-focus-ring min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
                   disabled={searchDisabled}
                 >
                   {searchLoading ? 'Searching...' : 'Search'}
@@ -1889,7 +1889,7 @@ const Research = () => {
                           type="checkbox"
                           checked={showWeakestProfilesFirst}
                           onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
-                          className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                          className="yr-focus-ring h-4 w-4 rounded border-[var(--yr-line-strong)] text-[var(--yr-blue)]"
                         />
                         <span>Show weakest profiles first</span>
                       </label>
@@ -1926,7 +1926,7 @@ const Research = () => {
                           type="button"
                           aria-pressed={isActive}
                           onClick={() => toggleQualityFilter(option.value)}
-                          className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                          className={`yr-focus-ring min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
                               ? 'border-blue-700 bg-[var(--yr-panel)] text-blue-900'
                               : 'border-[var(--yr-border-warm)] bg-transparent text-slate-700 hover:bg-[var(--yr-panel)]'
@@ -1951,7 +1951,7 @@ const Research = () => {
                           type="button"
                           aria-pressed={isActive}
                           onClick={() => toggleTrustTierFilter(option.value)}
-                          className={`min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+                          className={`yr-focus-ring min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
                               ? 'border-slate-900 bg-slate-900 text-white'
                               : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-slate-700 hover:bg-[var(--yr-panel-muted)]'

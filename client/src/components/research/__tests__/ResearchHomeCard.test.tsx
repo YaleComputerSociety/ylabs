@@ -154,13 +154,16 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('this lab');
   });
 
-  it('puts department and topic badges before summary and evidence badges', () => {
+  it('puts department and topic badges before the coverage warning and the summary', () => {
     const { container } = render(
       <MemoryRouter>
         <ResearchHomeCard
+          variant="compact"
           home={researchHome({
             labels: ['social cognition'],
             metadataTags: ['computational modeling'],
+            contextState: 'sparse',
+            contextLabel: 'Summary limited',
           })}
         />
       </MemoryRouter>,
@@ -169,8 +172,8 @@ describe('ResearchHomeCard', () => {
     const text = container.textContent || '';
     expect(text.indexOf('Computational Modeling')).toBeGreaterThanOrEqual(0);
     expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
-    expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Research description'));
-    expect(text.indexOf('Research description')).toBeLessThan(
+    expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Summary limited'));
+    expect(text.indexOf('Summary limited')).toBeLessThan(
       text.indexOf('Studies systems neuroscience'),
     );
   });
@@ -404,10 +407,11 @@ describe('ResearchHomeCard', () => {
     );
   });
 
-  it('shows sparse research context as a coverage state', () => {
+  it('shows sparse research context as a coverage state on the compact browse card', () => {
     const { container } = render(
       <MemoryRouter>
         <ResearchHomeCard
+          variant="compact"
           home={researchHome({
             description:
               'Review evidence and official source links for research homes connected to Computer Science.',
@@ -425,6 +429,21 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('Source-backed profile context');
     expect(container.textContent).toContain('Review evidence and official source links');
     expect(container.textContent).toContain('Computer Science');
+  });
+
+  it('badges no coverage state when the summary is the research home own description', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({ contextState: 'complete', contextLabel: 'Research description' })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Studies systems neuroscience');
+    expect(container.textContent).not.toContain('Research description');
+    expect(container.textContent).not.toContain('Summary limited');
   });
 
   it('searches a browse-only area with a student-facing CTA', () => {

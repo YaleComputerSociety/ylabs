@@ -2073,7 +2073,8 @@ describe('LabDetail page', () => {
     expect(text).not.toContain('PI research interests');
     expect(text).not.toContain('Fixture Care Pathway Design');
     expect(text).not.toContain('A Yale research profile with limited public description.');
-    expect(screen.queryByText('Research summary')).toBeNull();
+    expect(screen.getByText('Research summary')).toBeTruthy();
+    expect(screen.getByText('No published research summary yet')).toBeTruthy();
     await waitFor(() => expect(captureClientError).toHaveBeenCalledWith(expect.any(Error)));
     expect(text).not.toContain('Research connected to Fixture Care Pathway Design');
     expect(text).not.toContain('Research connected to Behavioral Studies.');
@@ -2233,7 +2234,8 @@ describe('LabDetail page', () => {
     const text = container.textContent || '';
     expect(screen.getAllByText('Public Policy')).toHaveLength(1);
     expect(text).not.toContain('A Yale research profile with limited public description.');
-    expect(screen.queryByText('Research summary')).toBeNull();
+    expect(screen.getByText('Research summary')).toBeTruthy();
+    expect(screen.getByText('No published research summary yet')).toBeTruthy();
     await waitFor(() => expect(captureClientError).toHaveBeenCalledWith(expect.any(Error)));
     expect(text).not.toContain('Research connected to Public Policy.');
   });
