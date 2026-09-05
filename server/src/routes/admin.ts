@@ -59,12 +59,6 @@ const ADMIN_FELLOWSHIP_SORT_FIELDS = new Set([
   'favorites',
   'createdAt',
 ]);
-const ACCESS_REVIEW_RECORD_TYPES = new Set([
-  'entryPathway',
-  'accessSignal',
-  'contactRoute',
-  'postedOpportunity',
-]);
 
 const adminPayloadId = (value: unknown): string => {
   if (typeof value === 'string') return value.trim();

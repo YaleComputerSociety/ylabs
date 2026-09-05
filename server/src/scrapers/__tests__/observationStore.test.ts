@@ -721,7 +721,7 @@ describe('appendObservations', () => {
       .mockResolvedValue([
         { _id: 'new-1', observationFingerprint: 'fp:researchEntity:name' },
       ] as any);
-    const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
       modifiedCount: 0,
     } as any);
 
