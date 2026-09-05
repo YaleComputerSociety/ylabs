@@ -56,6 +56,7 @@ import {
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
 } from '../../utils/researchHomeWebsiteUrl';
+import { personIdentityTokens } from '../../utils/researchHomeNameIdentityAuthority';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
 import {
   clampDescriptionLength,
@@ -2777,6 +2778,80 @@ function mergeProfileEnrichment(
   };
 }
 
+// Leaf words that mark a page as a section or landing page rather than one
+// person's profile. `welcome` earns its place from live data: two Development
+// records cite a lab landing page (`wanglab.yale.edu/welcome`) as an official
+// profile link.
+const NON_PROFILE_SECTION_LEAF_TOKENS = new Set([
+  'about',
+  'leadership',
+  'welcome',
+  'index',
+  'home',
+  'contact',
+  'directory',
+  'staff',
+  'team',
+  'people',
+  'faculty',
+  'members',
+  'news',
+  'events',
+  'overview',
+]);
+
+function profileUrlLeafTokens(profileUrl: string): string[] {
+  try {
+    const segments = new URL(profileUrl).pathname
+      .replace(/\/+$/, '')
+      .split('/')
+      .filter(Boolean);
+    const leaf = segments[segments.length - 1] || '';
+    return personIdentityTokens(leaf.replace(/[-_]+/g, ' '));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Whether a fetched page is the profile of the roster row's own person.
+ *
+ * `isOfficialYaleUrl` only checks the host, so any `*.yale.edu` page the roster
+ * markup happens to link reaches this lane - including a section page like
+ * `medicine.yale.edu/about/`, whose declared person is the dean rather than the
+ * faculty member (#2385 attributed four departmental sites to one dean this
+ * way). The page's own declared name is the only evidence that distinguishes
+ * "this person's profile" from "some other real Yale person's page", so a
+ * surname shared with the roster row is required before anything is merged.
+ *
+ * The URL leaf is a fallback rather than the primary signal: a correct profile
+ * usually carries the person's name in its slug, but a numeric or opaque slug is
+ * common enough that refusing on it alone would drop good enrichment.
+ */
+export function profileBelongsToRosterPerson(args: {
+  rosterName: unknown;
+  profileUrl: string;
+  profileDeclaredName: unknown;
+}): boolean {
+  const rosterTokens = personIdentityTokens(args.rosterName);
+  if (rosterTokens.length === 0) return false;
+  const declaredTokens = personIdentityTokens(args.profileDeclaredName);
+  if (declaredTokens.length > 0) {
+    return declaredTokens.some((token) => rosterTokens.includes(token));
+  }
+  const leafTokens = profileUrlLeafTokens(args.profileUrl);
+  if (leafTokens.some((token) => rosterTokens.includes(token))) return true;
+  // With no declared name, the leaf is the only signal, and an OPAQUE leaf is
+  // absence of evidence rather than evidence of another subject: on Development
+  // 22 of 3,804 official profile links are netid or concatenated-surname slugs
+  // (`/profile/pf93/`, `/profile/maria-rodriguezmartinez/`) that belong to
+  // exactly the person named. Refusing those would drop good enrichment for no
+  // safety gain. A SECTION leaf is different - it is positive evidence the page
+  // is not one person's profile at all, which is how the dean page was read back
+  // as four departments' lead (#2385).
+  return !leafTokens.some((token) => NON_PROFILE_SECTION_LEAF_TOKENS.has(token));
+}
+
 async function enrichEntryFromOfficialProfile(
   entry: FacultyEntry,
   sourceName: string,
@@ -2785,10 +2860,26 @@ async function enrichEntryFromOfficialProfile(
   log: ScraperContext['log'],
 ): Promise<FacultyEntry> {
   if (!entry.profileUrl || !isOfficialYaleUrl(entry.profileUrl)) return entry;
+  // A shared roster page is never one person's profile, so reading one back
+  // would attribute the whole department's prose to whichever row linked it.
+  if (isSharedPeopleRosterUrl(entry.profileUrl)) return entry;
 
   try {
     const html = await htmlFetcher(entry.profileUrl, useCache, sourceName);
     const enrichment = profileEnrichmentFromHtml(html, entry.profileUrl);
+    if (
+      !profileBelongsToRosterPerson({
+        rosterName: entry.name,
+        profileUrl: entry.profileUrl,
+        profileDeclaredName: enrichment.name,
+      })
+    ) {
+      // The citation is kept: it is what the roster asserted and is separately
+      // verifiable. Only the enrichment is dropped, because that is what would
+      // carry another person's name, title, email, bio and research topics.
+      log(`[profile] refused enrichment, cited profile names someone else`);
+      return entry;
+    }
     return mergeProfileEnrichment(entry, enrichment);
   } catch (err: any) {
     log(`[profile] fetch failed: ${sanitizeLogValue(err)}`);

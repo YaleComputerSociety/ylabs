@@ -26,6 +26,7 @@ import {
   viewsTableRowExtractor,
   directoryListingCardExtractor,
   nodePersonCardExtractor,
+  profileBelongsToRosterPerson,
   fieldCollectionPersonExtractor,
   facultyThumbnailExtractor,
   profileGridItemExtractor,
@@ -1932,6 +1933,68 @@ describe('DepartmentRosterScraper.run', () => {
     expect(emitted.find((o) => o.field === 'primaryDepartment')?.value).toBe('Physics');
   });
 
+  // #2437: `isOfficialYaleUrl` only checks the HOST, so any *.yale.edu page the
+  // roster markup links reaches the enrichment fetch. medicine.yale.edu/about/
+  // declares the DEAN; #2385 attributed four departmental sites to one dean that
+  // way. `title` is the observable enrichment field here: when the guard refuses,
+  // nothing from the page is merged, but the citation the roster asserted is kept.
+  it('refuses a foreign page\'s enrichment and still keeps the citation', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Roster', profileUrl: 'https://medicine.yale.edu/about/' },
+    ]);
+    const htmlFetcher = vi.fn(
+      async () =>
+        '<html><head><meta property="og:title" content="Nancy Brown" /></head>' +
+        '<body><main><h1>Nancy Brown</h1><p class="professional-title">Dean of the School of Medicine</p></main></body></html>',
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'deanery',
+        deptName: 'Internal Medicine',
+        schoolName: 'Yale School of Medicine',
+        url: 'https://medicine.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        emitPersonalResearchEntities: false,
+        officialProfileOnly: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'lname')?.value).toBe('Roster');
+    expect(emitted.find((o) => o.field === 'title')).toBeUndefined();
+    expect(emitted.find((o) => o.field === 'profileUrls')?.value).toEqual({
+      departmental: 'https://medicine.yale.edu/about/',
+    });
+  });
+
+  it('never fetches a shared roster page as an individual profile', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Roster', profileUrl: 'https://medicine.yale.edu/people/faculty' },
+    ]);
+    const htmlFetcher = vi.fn(async (_url: string) => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'roster-loop',
+        deptName: 'Pediatrics',
+        schoolName: 'Yale School of Medicine',
+        url: 'https://medicine.example.invalid/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        emitPersonalResearchEntities: false,
+        officialProfileOnly: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx } = makeContext();
+    await scraper.run(ctx);
+
+    const fetched = htmlFetcher.mock.calls.map(([requestedUrl]) => requestedUrl);
+    expect(fetched).not.toContain('https://medicine.yale.edu/people/faculty');
+  });
+
   it('suppresses department claims for an affiliates-only institute roster', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
@@ -3700,5 +3763,120 @@ describe('DepartmentRosterScraper.run', () => {
     expect(psychExt).toHaveBeenCalledTimes(1);
 
     getSpy.mockRestore();
+  });
+});
+
+describe('profileBelongsToRosterPerson (#2437)', () => {
+  it('accepts a profile whose declared name shares a surname with the roster row', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Robin Roster',
+        profileUrl: 'https://medicine.yale.edu/profile/robin-roster/',
+        profileDeclaredName: 'Robin Roster, MD',
+      }),
+    ).toBe(true);
+  });
+
+  // The dean case from #2385: a real Yale person on a real *.yale.edu page that
+  // is not this row's profile. Host-level checks cannot tell these apart.
+  it('refuses a page that declares a different real person', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Robin Roster',
+        profileUrl: 'https://medicine.yale.edu/about/',
+        profileDeclaredName: 'Nancy Brown',
+      }),
+    ).toBe(false);
+  });
+
+  // The namePlaceholder path is the ONE case where a wrong fetch RENAMES the row
+  // rather than only gap-filling it, because mergeProfileEnrichment adopts the
+  // fetched name when the roster row is a slug placeholder. A slug placeholder
+  // still carries the person's tokens, so the guard can still judge it.
+  it('refuses a foreign page for a slug-placeholder roster row', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'robin-roster',
+        profileUrl: 'https://medicine.yale.edu/about/',
+        profileDeclaredName: 'Nancy Brown',
+      }),
+    ).toBe(false);
+  });
+
+  it('accepts a slug-placeholder row whose own profile declares the same person', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'robin-roster',
+        profileUrl: 'https://architecture.yale.edu/faculty/123-robin-roster',
+        profileDeclaredName: 'Robin Roster',
+      }),
+    ).toBe(true);
+  });
+
+  // Falls back to the URL leaf only when the page declares no usable name, so an
+  // opaque-slug profile is not refused merely for being opaque.
+  it('falls back to the URL leaf when the page declares no name', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Robin Roster',
+        profileUrl: 'https://ling.yale.edu/people/robin-roster',
+        profileDeclaredName: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: 'Robin Roster',
+        profileUrl: 'https://medicine.yale.edu/about/',
+        profileDeclaredName: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  // An OPAQUE leaf is absence of evidence, not evidence of another subject. On
+  // Development 22 of 3,804 official profile links are netid or concatenated
+  // surname slugs belonging to exactly the person named, so refusing them would
+  // drop good enrichment for no safety gain.
+  it('allows an opaque netid or concatenated-surname slug', () => {
+    for (const opaque of [
+      'https://medicine.yale.edu/profile/pf93/',
+      'https://medicine.yale.edu/profile/SED7/',
+      'https://medicine.yale.edu/profile/maria-rodriguezmartinez/',
+    ]) {
+      expect(
+        profileBelongsToRosterPerson({
+          rosterName: 'Peter Fonagy',
+          profileUrl: opaque,
+          profileDeclaredName: undefined,
+        }),
+      ).toBe(true);
+    }
+  });
+
+  // A SECTION leaf is positive evidence the page is not one person's profile.
+  it('refuses a section or landing-page leaf when no name is declared', () => {
+    for (const section of [
+      'https://medicine.yale.edu/about/',
+      'https://medicine.yale.edu/about/leadership/',
+      'https://wanglab.yale.edu/welcome',
+      'https://konezny.sites.yale.edu/welcome',
+    ]) {
+      expect(
+        profileBelongsToRosterPerson({
+          rosterName: 'Robin Roster',
+          profileUrl: section,
+          profileDeclaredName: undefined,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('refuses when the roster row carries no usable identity tokens', () => {
+    expect(
+      profileBelongsToRosterPerson({
+        rosterName: '',
+        profileUrl: 'https://medicine.yale.edu/profile/robin-roster/',
+        profileDeclaredName: 'Robin Roster',
+      }),
+    ).toBe(false);
   });
 });

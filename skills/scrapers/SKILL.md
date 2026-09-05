@@ -20,6 +20,11 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 - Repair existing orphaned Observation references only with `observations:repair-orphaned-references`. The command is Development-only, writes private mode-0600 artifacts, requires a fresh target-bound classifier plus reviewed decisions, rechecks every owner and replacement before applying, and never manufactures evidence or silently clears provenance. Deterministic source-equivalent relinks and current-materializer rebuilds are preferred. Preserve archived records by recording evidence loss, and archive ambiguous active canonical artifacts only after an explicit reviewed decision.
 - Do not expose scraped contact data indiscriminately. Contact is fail-closed and derived at read time from official links: prefer official/public URLs; never surface scraped emails in public payloads.
 - Any outbound fetch to a host derived from user input or stored data MUST go through `utils/ssrfGuard.ts`.
+- A lane that fetches a URL **discovered on a page** must establish that the fetched page is about the same subject before merging anything from it.
+A host-level allowance is not enough: `sameOrSubdomain(host, 'yale.edu')` admits `medicine.yale.edu/about/`, which declares the dean, and #2385 attributed four departmental sites to one dean that way.
+The check is whether the fetched page belongs to the subject the row is about, not whether a page was found - on a roster both the shared roster page and the chair's profile are "found".
+`dept-faculty-roster` uses `profileBelongsToRosterPerson`: require a shared surname token with the page's declared name, and on a mismatch **keep the citation and drop only the enrichment**, because the citation is separately verifiable while the enrichment carries the wrong-person payload (name for placeholder rows, plus gap-filled title, email, bio and `researchAreas`).
+Treat an opaque URL leaf (`/profile/pf93/`) as absence of evidence rather than evidence of another subject; only a section leaf (`about`, `welcome`, `leadership`) is positive evidence the page is not one person's profile.
 
 ## Infrastructure files
 
