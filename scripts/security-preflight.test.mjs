@@ -4576,78 +4576,37 @@ test('public faculty profiles omit direct contact and office-location fields', (
   assert.doesNotMatch(profileServiceSource, /building_desk: user\.buildingDesk/);
 });
 
-test('public profile scholarly links omit internal user and entity ids', () => {
+test('the retired scholarly-link serializer stays absent from the profile service', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/profileService.ts', import.meta.url),
     'utf8',
   );
-  const serializer = source.match(/export const scholarlyLinkToPublicLink = \([\s\S]*?\n\};/);
-  assert.ok(serializer, 'public scholarly-link serializer should exist');
-  assert.match(source, /const publicScholarlyLinkId = /);
-  assert.match(source, /const publicScholarlyExternalIds = /);
-  assert.match(
-    source,
-    /const publicScholarlyLinkText = \(value: unknown\): string \| undefined => \{/,
-  );
-  assert.match(
-    source,
-    /redactDirectContactInfo\(String\(value \|\| ''\)\.trim\(\)\)\.slice\(0, 500\)/,
-  );
-  assert.match(
-    source,
-    /const publicScholarlyLinkYear = \(value: unknown\): number \| undefined => \{/,
-  );
-  assert.match(source, /year < 1800 \|\| year > 2200/);
-  assert.match(
-    source,
-    /const publicScholarlyLinkConfidence = \(value: unknown\): number \| undefined => \{/,
-  );
-  assert.match(source, /confidence < 0 \|\| confidence > 1/);
-  assert.match(source, /const PUBLIC_SCHOLARLY_DESTINATION_KINDS = new Set/);
-  assert.match(source, /const PUBLIC_OPEN_ACCESS_STATUSES = new Set/);
-  assert.match(source, /const publicScholarlyDestinationKind = \(value: unknown\): string => \{/);
-  assert.match(source, /PUBLIC_SCHOLARLY_DESTINATION_KINDS\.has\(kind\) \? kind : 'OTHER'/);
-  assert.match(
-    source,
-    /const publicOpenAccessStatus = \(link: Record<string, any>\): string \| undefined => \{/,
-  );
-  assert.match(source, /PUBLIC_OPEN_ACCESS_STATUSES\.has\(status\) \? status : undefined/);
-  assert.match(source, /publicEntity\._id = publicId/);
-  assert.match(
-    serializer[0],
-    /destinationKind: publicScholarlyDestinationKind\(link\.destinationKind\)/,
-  );
-  assert.match(
-    serializer[0],
-    /publicScholarlyLinkText\(link\.freeFullTextLabel\) \|\| 'Free full text'/,
-  );
-  assert.match(serializer[0], /openAccessStatus: publicOpenAccessStatus\(link\)/);
-  assert.match(serializer[0], /year: publicScholarlyLinkYear\(link\.year\)/);
-  assert.match(serializer[0], /venue: publicScholarlyLinkText\(link\.venue\)/);
-  assert.match(serializer[0], /confidence,\s*observedAt/);
-  assert.match(
-    serializer[0],
-    /relationshipBasis: publicScholarlyLinkText\(options\.relationshipBasis\)/,
-  );
-  assert.match(serializer[0], /evidenceLabel: publicScholarlyLinkText\(options\.evidenceLabel\)/);
-  assert.doesNotMatch(source, /userId: userId \? String\(userId\) : undefined/);
-  assert.doesNotMatch(serializer[0], /userId:/);
-  assert.doesNotMatch(serializer[0], /researchEntityId:/);
-  assert.doesNotMatch(serializer[0], /String\(link\._id \|\| link\.id/);
-  assert.doesNotMatch(serializer[0], /externalIds: link\.externalIds \|\| \{\}/);
-  assert.doesNotMatch(serializer[0], /destinationKind: link\.destinationKind \|\| 'OTHER'/);
-  assert.doesNotMatch(
-    serializer[0],
-    /openAccessStatus: normalizeOpenAccessStatus\(link\) \|\| undefined/,
-  );
-  assert.doesNotMatch(
-    serializer[0],
-    /freeFullTextLabel:\s*freeFullTextUrl\s*\?\s*link\.freeFullTextLabel/,
-  );
-  assert.doesNotMatch(serializer[0], /year: link\.year/);
-  assert.doesNotMatch(serializer[0], /venue: link\.venue/);
-  assert.doesNotMatch(serializer[0], /relationshipBasis: options\.relationshipBasis/);
-  assert.doesNotMatch(serializer[0], /evidenceLabel: options\.evidenceLabel/);
+
+  // The scholarly-link mirror was retired in #2451 and its serve path in #2457.
+  // These stay negative assertions rather than being deleted: reintroducing any
+  // of them means reintroducing a serializer for untrusted external records, and
+  // that must come back with its redaction and id-omission pins, not without them.
+  for (const retired of [
+    'scholarlyLinkToPublicLink',
+    'isPublicResearchPaperLink',
+    'isDatasetLikeScholarlyLink',
+    'publicScholarlyLinkId',
+    'publicScholarlyExternalIds',
+    'publicScholarlyLinkText',
+    'publicScholarlyLinkYear',
+    'publicScholarlyLinkConfidence',
+    'publicScholarlyDestinationKind',
+    'publicOpenAccessStatus',
+    'cleanPublicSourceLabel',
+    'PUBLIC_SCHOLARLY_DESTINATION_KINDS',
+    'PUBLIC_OPEN_ACCESS_STATUSES',
+  ]) {
+    assert.doesNotMatch(
+      source,
+      new RegExp(`\\b${retired}\\b`),
+      `${retired} was retired with the scholarly-link mirror; restore its redaction pins if it returns`,
+    );
+  }
 });
 
 test('public URL normalization rejects local and private-network browser targets', () => {
@@ -5395,27 +5354,6 @@ test('public program and fellowship payloads omit direct email and phone fields'
   assert.doesNotMatch(fellowshipControllerSource, /sortBy = 'updatedAt'/);
   assert.match(programControllerSource, /const OPERATOR_PROGRAM_SORT_FIELDS = new Set/);
   assert.match(fellowshipServiceSource, /const OPERATOR_FELLOWSHIP_SORT_FIELDS = new Set/);
-});
-
-test('public scholarly link source labels are direct-contact redacted', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/profileService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /const cleanPublicSourceLabel = \(value: unknown\): string \| undefined => \{/,
-  );
-  assert.match(source, /redactDirectContactInfo\(value\)/);
-  assert.match(
-    source,
-    /displaySource:\s*cleanPublicSourceLabel\(link\.displaySource \|\| options\.sourceName \|\| link\.destinationKind\)/,
-  );
-  assert.match(
-    source,
-    /discoveredVia: normalizeDiscoveredVia\(\s*cleanPublicSourceLabel\(link\.discoveredVia \|\| options\.sourceName\),?\s*\)/,
-  );
 });
 
 test('research entity search index documents omit direct contact fields', () => {
