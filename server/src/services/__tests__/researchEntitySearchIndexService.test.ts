@@ -220,9 +220,13 @@ describe('researchEntitySearchIndexService', () => {
         'ai',
         'artificial intelligence',
         'machine learning',
-        'computer vision',
       ]),
     });
+    // The sanitizer drops `Computer Vision` here as a domain-incoherent unsourced
+    // area, leaving the served row with no research areas at all, so the aliases
+    // must come off the surviving description and not off the dropped chip (#2396).
+    expect(doc).not.toHaveProperty('researchAreas');
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(expect.arrayContaining(['computer vision']));
     expect(buildStudentSearchTerms({ name: 'Ailong Airway Lab' })).toEqual([]);
   });
 
@@ -327,6 +331,50 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(doc?.studentSearchTerms ?? []).not.toEqual(
       expect.arrayContaining(['climate change', 'cardiology']),
+    );
+  });
+
+  it('does not derive topic aliases from a description the sanitizer blanks (#2396)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-synthetic-metadata-description',
+      name: 'Comparative Literature Program',
+      departments: ['Comparative Literature'],
+      fullDescription: 'Research home focused on neuroscience and psychology.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription).toBe('');
+    expect(doc?.studentSearchTerms ?? []).toEqual([]);
+  });
+
+  it('does not derive topic aliases from an endowed-chair title the sanitizer strips (#2396)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-endowed-chair',
+      name: 'Doe Faculty Research',
+      fullDescription: 'Jane Doe is the Alton Sterling Professor of Psychology at Yale.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription ?? '').not.toContain('Professor of Psychology');
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['psychology', 'psychiatry', 'cognitive science']),
+    );
+  });
+
+  it('still derives topic aliases from copy that survives sanitization (#2396)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-surviving-copy',
+      name: 'Cortical Circuits Lab',
+      departments: ['Neuroscience'],
+      researchAreas: ['Neuroscience'],
+      fullDescription:
+        'The lab records from cortical circuits in behaving mice to map how neural populations encode decisions.',
+      archived: false,
+    });
+
+    expect(doc?.fullDescription).toContain('cortical circuits');
+    expect(doc?.studentSearchTerms).toEqual(
+      expect.arrayContaining(['neuroscience', 'neurology', 'neural', 'brain']),
     );
   });
 
