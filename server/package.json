@@ -48,6 +48,7 @@
     "observations:retarget-foreign-lab-websites": "tsx src/scripts/retargetForeignLabWebsites.ts",
     "observations:prune-dead": "tsx src/scripts/pruneDeadObservations.ts",
     "observations:audit-orphan-keys": "tsx src/scripts/orphanObservationKeyAudit.ts",
+    "observations:retire-dead-program-lanes": "tsx src/scripts/retireDeadProgramObservationLanes.ts",
     "observations:catch-up-materialize": "tsx src/scripts/catchUpMaterializeStrandedKeys.ts",
     "observations:stranded-key-decisions": "tsx src/scripts/strandedKeyRedirectDecisionReport.ts",
     "observations:normalize-fingerprints": "tsx src/scripts/normalizeObservationFingerprints.ts",
