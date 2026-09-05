@@ -36,12 +36,12 @@ It rebuilds the model index but does not reconcile retired indexes, and it does 
 Set all four in the shell that runs the command.
 They come from the Render dashboard for the target service.
 
-| Variable                   | Shape                                              | Why                                                                                                               |
-| -------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Variable                   | Shape                                                  | Why                                                                                                               |
+| -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
 | `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.         |
-| `MEILISEARCH_HOST`         | `https://<host>`                                   | The instance to rebuild. Must not be empty or the rebuild targets localhost.                                      |
-| `MEILISEARCH_API_KEY`      | the master or admin key                            | Write access. Without it the rebuild fails **after** clearing.                                                    |
-| `MEILISEARCH_INDEX_PREFIX` | e.g. `beta_`                                       | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index. |
+| `MEILISEARCH_HOST`         | `https://<host>`                                       | The instance to rebuild. Must not be empty or the rebuild targets localhost.                                      |
+| `MEILISEARCH_API_KEY`      | the master or admin key                                | Write access. Without it the rebuild fails **after** clearing.                                                    |
+| `MEILISEARCH_INDEX_PREFIX` | e.g. `beta_`                                           | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index. |
 
 The wrapper reports **every** missing variable at once with its expected shape, rather than one failed run per gap.
 It never echoes `MONGODBURL` or `MEILISEARCH_API_KEY` back to the terminal, since you may be sharing a screen; it reports the host, the database name, and whether the key is present.
@@ -115,6 +115,26 @@ It also refuses to run when the database reports **zero** non-archived entities,
 
 The rebuild is idempotent and re-runnable.
 Running it twice is safe.
+
+## A reindex reflects the promoted corpus; it never refreshes it
+
+Beta and Production hold the materialized corpus but **zero observations** — the promotion path copies materialized collections, not the evidence store.
+Development has the observations; the other two have none.
+
+This does not affect the reindex.
+`reindexMeiliForEnvironment.ts`, `rebuildResearchEntitySearchIndex.ts`, and `researchEntitySearchIndexService.ts` do not reference the `Observation` model at all.
+They read `research_entities`, which is fully populated in Beta and Production, so a reindex there reads exactly the data it should.
+
+It does affect anything you might be tempted to run _alongside_ it.
+Materialization cannot do useful work in Beta or Production, because `materializeEntity` early-returns when the observation set is empty (`server/src/scrapers/entityMaterializer.ts:3846`).
+
+So if a procedure ever tells you to "re-materialize, then reindex" against Beta or Production, **the re-materialize half is a silent no-op** and the reindex is the only step that does anything.
+The practical consequence for an operator: after such a sequence, an index whose content looks unchanged is the **expected** result, not a failed reindex.
+Judge the reindex by the document count it reports and by the verification queries above, never by whether entity copy changed.
+
+To actually change what the index contains, the corpus has to change first — materialize on Development, promote, then reindex.
+
+See #2458 for the full inventory of code paths that read an empty `observations` collection in Beta and Production, two of which produce a wrong decision rather than declining.
 
 ## Open questions
 
