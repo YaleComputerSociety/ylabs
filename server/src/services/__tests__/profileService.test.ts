@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const userModelMock = vi.hoisted(() => ({
-  findOne: vi.fn(),
-  findOneAndUpdate: vi.fn(),
-}));
-
 import {
   cleanPublicProfileBio,
   dedupeProfileResearchEntities,

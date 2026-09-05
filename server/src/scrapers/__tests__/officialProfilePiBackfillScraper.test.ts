@@ -20,7 +20,6 @@ import {
   preferredOfficialProfileUrl,
   PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD,
   resolveExistingUserForIdentity,
-  selectVisibleProfileBioTargets,
   shouldQueueEntityForPiBackfill,
   sourceUrlResearchHomeUrlsForEntity,
   websiteDuplicateLookupUrls,
