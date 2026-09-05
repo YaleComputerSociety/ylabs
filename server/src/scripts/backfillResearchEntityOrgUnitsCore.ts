@@ -65,9 +65,22 @@ export async function planOrgUnitBackfillRow(
   const beforeSchools = asStringArray(entity.schools);
   const afterSchools = asStringArray(set.schools);
   const beforeOrgAffiliationLabels = asStringArray(entity.orgAffiliationLabels);
-  const afterOrgAffiliationLabels = hasDepartments
-    ? asStringArray(set.orgAffiliationLabels)
-    : beforeOrgAffiliationLabels;
+  // `orgAffiliationLabels` is derived from the raw strings in `departments`, and
+  // this same job rewrites `departments` to canonical names - so a second run
+  // derives nothing and would write that emptiness over the labels the first run
+  // created. A derivation whose input is a field the same job rewrites is not
+  // idempotent, so an empty derivation is treated as "no information" rather than
+  // "no labels" (#2503).
+  //
+  // The asymmetry this accepts: the backfill can add labels but never remove one
+  // that a source has stopped publishing. That is the right trade for search text
+  // rather than a facet, and removal belongs to whatever re-resolves the
+  // observations rather than to a re-canonicalization pass.
+  const derivedOrgAffiliationLabels = hasDepartments ? asStringArray(set.orgAffiliationLabels) : [];
+  const afterOrgAffiliationLabels =
+    derivedOrgAffiliationLabels.length > 0
+      ? derivedOrgAffiliationLabels
+      : beforeOrgAffiliationLabels;
 
   const update: Record<string, unknown> = {};
   if (hasSchool && set.school !== entity.school) update.school = set.school;
