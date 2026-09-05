@@ -117,7 +117,7 @@ export default function ResearchTeamSection({
                 href={sourceUrl}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="font-semibold text-blue-700 underline-offset-4 hover:underline yr-focus-ring"
+                className="font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
               >
                 Official roster source
               </a>

@@ -47,6 +47,8 @@ Rules:
 - Do not use Tailwind's generic `blue-500`, `blue-600`, or `blue-700` palette.
 - Those render a Material blue that is not the Yale brand color and is the source of the color drift this system exists to prevent.
 - Links and active navigation use `brand`; inactive navigation uses `ink`.
+- `brand-navy` is a hover only for something already colored `brand`.
+When the resting color is a gray or near-black, hover to `brand`, not to `brand-navy`: `brand-navy` sits 1.07:1 from `text-gray-900`, so that hover is invisible.
 - Gold is a sparing accent for secondary emphasis, never a second primary.
 - A brand-tinted border uses `line-brand` (`--yr-blue-border`), the same tint `.yr-pill-blue` draws.
 

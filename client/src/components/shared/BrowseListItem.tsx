@@ -78,7 +78,7 @@ const BrowseListItem = React.memo(
                 <button
                   type="button"
                   onClick={handleClick}
-                  className="yr-focus-ring block max-w-full truncate text-left hover:text-brand-navy focus-visible:rounded-sm"
+                  className="yr-focus-ring block max-w-full truncate text-left hover:text-brand focus-visible:rounded-sm"
                   aria-label={`View details for ${item.data.title}`}
                 >
                   {item.data.title}
@@ -133,7 +133,7 @@ const BrowseListItem = React.memo(
                     e.stopPropagation();
                     onAdminEdit();
                   }}
-                  className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-brand-navy hover:bg-[var(--yr-panel-muted)] transition-colors"
+                  className="yr-focus-ring inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-brand hover:bg-[var(--yr-panel-muted)] transition-colors"
                   title="Edit listing (Admin)"
                   aria-label="Admin edit"
                 >

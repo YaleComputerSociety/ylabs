@@ -82,7 +82,7 @@ const ExternalLinkIcon = () => (
     strokeLinecap="round"
     strokeLinejoin="round"
     aria-hidden="true"
-    className="flex-shrink-0 text-gray-400 transition-colors group-hover:text-blue-600"
+    className="flex-shrink-0 text-gray-400 transition-colors group-hover:text-brand"
   >
     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
     <polyline points="15 3 21 3 21 9" />
@@ -122,7 +122,7 @@ const LabMemberCard = ({
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
   const baseClassName = `group flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
-  const linkClassName = `${baseClassName} hover:border-blue-300 hover:bg-[var(--yr-blue-soft)] yr-focus-ring`;
+  const linkClassName = `${baseClassName} hover:border-line-brand hover:bg-brand-soft yr-focus-ring`;
   const identityBody = (
     <>
       <div className="flex-shrink-0">
@@ -136,7 +136,7 @@ const LabMemberCard = ({
           />
         ) : (
           <div
-            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-blue-200 font-semibold text-blue-700`}
+            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-brand-soft to-line-brand font-semibold text-brand`}
           >
             {initials || fullName.charAt(0).toUpperCase() || '?'}
           </div>
@@ -144,7 +144,7 @@ const LabMemberCard = ({
       </div>
       <div className="min-w-0 flex-1">
         <p
-          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-gray-900 ${isInteractive ? 'group-hover:text-blue-700' : ''}`}
+          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-gray-900 ${isInteractive ? 'group-hover:text-brand' : ''}`}
         >
           {fullName}
         </p>

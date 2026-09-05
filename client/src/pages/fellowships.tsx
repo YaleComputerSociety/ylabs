@@ -92,7 +92,7 @@ const QuickFilterEmptyState = ({
           <button
             type="button"
             onClick={onViewNextCycle}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 text-sm font-semibold text-[var(--yr-blue)] transition hover:bg-[var(--yr-panel)] yr-focus-ring"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
           >
             View Next Cycle
           </button>
@@ -695,7 +695,7 @@ const Fellowships = () => {
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
               <Link
                 to="/dashboard?tab=programs"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-4 text-sm font-semibold text-[var(--yr-blue)] transition hover:bg-[var(--yr-panel)] yr-focus-ring"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition hover:bg-panel yr-focus-ring"
               >
                 Saved programs
               </Link>
@@ -826,11 +826,11 @@ const Fellowships = () => {
             ) : (
               <>
                 {showNoLiveWindowsNotice && (
-                  <div className="mb-6 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-5 py-4">
-                    <h2 className="text-base font-semibold text-blue-950">
+                  <div className="mb-6 rounded-md border border-line-brand bg-brand-soft px-5 py-4">
+                    <h2 className="text-base font-semibold text-brand-navy">
                       No programs are currently accepting applications
                     </h2>
-                    <p className="mt-1 max-w-3xl text-sm leading-6 text-blue-900">
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-brand-navy">
                       Every tracked program and fellowship has closed its most recent application
                       window. Use the recurring records below to plan for the next cycle: review
                       eligibility, line up a mentor, and prepare materials now so you are ready when

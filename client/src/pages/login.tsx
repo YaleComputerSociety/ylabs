@@ -100,13 +100,13 @@ const Login = () => {
           {authError && (
             <div
               role="status"
-              className="mt-5 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm leading-relaxed text-blue-900"
+              className="mt-5 rounded-md border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy"
             >
               <p>{authError}</p>
               <button
                 type="button"
                 onClick={checkContext}
-                className="mt-3 rounded-md border border-blue-600 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                className="mt-3 rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft"
               >
                 Retry connection
               </button>
