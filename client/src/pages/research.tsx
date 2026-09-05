@@ -1889,7 +1889,7 @@ const Research = () => {
                           type="checkbox"
                           checked={showWeakestProfilesFirst}
                           onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
-                          className="yr-focus-ring h-4 w-4 rounded border-[var(--yr-line-strong)] text-[var(--yr-blue)]"
+                          className="yr-focus-ring h-4 w-4 rounded border-[var(--yr-line-strong)] accent-brand"
                         />
                         <span>Show weakest profiles first</span>
                       </label>

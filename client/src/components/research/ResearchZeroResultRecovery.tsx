@@ -16,7 +16,7 @@ const chipClassName =
   'yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700';
 
 const actionClassName =
-  'yr-focus-ring yr-pill yr-pill-blue inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)]';
+  'yr-focus-ring yr-pill yr-pill-blue inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:border-brand hover:bg-panel';
 
 const ResearchZeroResultRecovery = ({
   isDepartmentSearch,
