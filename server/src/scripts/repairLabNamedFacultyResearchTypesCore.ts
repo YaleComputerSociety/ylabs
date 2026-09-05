@@ -2,19 +2,31 @@
  * Rows named after a lab that own that lab, mistyped `FACULTY_RESEARCH_AREA`.
  *
  * Each row was judged individually rather than matched by a predicate, because
- * the population splits three ways and only this outcome is a type correction
- * (#2446). The other two outcomes are deliberately absent: three rows have a
- * separate `LAB` row for the same lab, where a type flip would mint the duplicate
- * it is meant to repair, and one row is named after a centre it does not own.
+ * the population splits four ways and only this outcome is a type correction
+ * (#2446). The others are deliberately absent: three rows have a separate `LAB`
+ * row for the same lab, where a type flip would mint the duplicate it is meant to
+ * repair, and two rows are name defects rather than type ones - one named after a
+ * centre it co-founded but does not own, one whose own cited source never calls it
+ * a lab at all.
+ *
+ * The original census matched `lab` and `laboratory` and so missed
+ * `A. Douglas Stone Research Group`, which is the same outcome under a different
+ * word. Match the whole family when re-running this: `lab`, `laboratory`, and
+ * `research group`.
  *
  * `evidence` is the lab's own site, distinct from the person's profile page and
  * from any shared department roster index, and verified not to be cited by any
  * other `LAB` row.
+ *
+ * `websiteUrl` is set only where the row has none. A lab site named on a source
+ * the row already cites, but absent from the row, is a scraper miss (#2493)
+ * rather than a reason to doubt the name.
  */
 export interface LabTypeCorrection {
   slug: string;
   expectedName: string;
   evidence: string;
+  websiteUrl?: string;
 }
 
 export const LAB_TYPE_CORRECTIONS: readonly LabTypeCorrection[] = [
@@ -58,6 +70,20 @@ export const LAB_TYPE_CORRECTIONS: readonly LabTypeCorrection[] = [
     expectedName: 'Hemant Tagare Lab',
     evidence: 'http://noodle.med.yale.edu/hdtag/profile.html',
   },
+  // The YSE directory page this row already cites names "The Dove Lab" in bold
+  // and links the lab site, which is Yale-hosted and led by Dove. The row's
+  // missing websiteUrl is that scraper miss, not thin evidence.
+  {
+    slug: 'yse-faculty-michael-dove',
+    expectedName: 'The Dove Lab',
+    evidence: 'https://dovelab.research.yale.edu/',
+    websiteUrl: 'https://dovelab.research.yale.edu/',
+  },
+  {
+    slug: 'dept-physics-a-douglas-stone',
+    expectedName: 'A. Douglas Stone Research Group',
+    evidence: 'http://www.eng.yale.edu/stonegroup/',
+  },
 ] as const;
 
 export interface LabTypeCorrectionEntity {
@@ -66,6 +92,7 @@ export interface LabTypeCorrectionEntity {
   entityType?: unknown;
   kind?: unknown;
   archived?: unknown;
+  websiteUrl?: unknown;
   manuallyLockedFields?: unknown;
   studentVisibilityTier?: unknown;
 }
@@ -132,6 +159,7 @@ export function planLabTypeCorrections(
     const locked = asStringArray(entity.manuallyLockedFields);
     if (locked.includes(LAB_TYPE_CORRECTION_LOCK_FIELD)) return { ...base, outcome: 'locked' };
 
+    const backfillWebsite = Boolean(correction.websiteUrl) && !text(entity.websiteUrl).trim();
     return {
       ...base,
       outcome: 'plan',
@@ -140,6 +168,7 @@ export function planLabTypeCorrections(
       update: {
         entityType: 'LAB',
         kind: 'lab',
+        ...(backfillWebsite ? { websiteUrl: correction.websiteUrl } : {}),
         manuallyLockedFields: [...locked, LAB_TYPE_CORRECTION_LOCK_FIELD],
       },
     };
