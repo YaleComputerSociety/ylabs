@@ -175,6 +175,30 @@ No materializer guard rejects any of them, so this would add about 8.7% to a 6,4
 That the guards accept a row is not evidence the row should exist: the YSPH directory enumerates staff, postdocs, and students alongside faculty, and several eligible keys match no `Researcher` record at all.
 Size and review the batch before applying, and treat `PERSON_KNOWN_NO_RESEARCH_HOME` as its own batch, since there the person already exists as a `Researcher` but leads nothing, so minting creates a research home the corpus has so far withheld.
 
+#### The Development recovery, 2026-09-05 (#2404)
+
+Applied on Development only, in three batches (10 as a probe, then 507 `NO_TARGET_AT_ALL`, then 33 `PERSON_KNOWN_NO_RESEARCH_HOME` on its own).
+
+| | before | after |
+|---|---|---|
+| `research_entities` | 6,440 | 7,000 |
+| stranded keys | 1,508 | 948 |
+| live observations stranded | 14,592 | 8,114 |
+| keys never offered to a materializer | 978 | 424 |
+| keys with remedy `drive_materialization` | 560 | **0** |
+| `student_ready` | 3,102 | **3,102** |
+| `operator_review` | 1,575 | 2,135 |
+| `suppressed` | 1,172 | 1,172 |
+
+All 560 minted at `operator_review`, so the recovery published nothing to students.
+That is verified at the serve layer rather than from the stored tier: `publicStudentVisibilityTiers` is `['student_ready']` and a non-admin research search is forced onto it, so a recovered row is unreachable by a student query even though it is present in the Meilisearch index (the index carries `studentVisibilityTier` as a field and the query filters on it, rather than the index being tier-filtered).
+
+**The command is self-limiting rather than idempotent in the usual sense, and that is the safer property.** A re-run does not re-process a recovered key: once the key has an entity row the audit no longer classifies it as stranded, so it leaves the eligible set. Running the same command twice with `--limit 10` recovered keys 1-10 and then keys 11-20, with the stranded population dropping by exactly 10 each time. So the operation is naturally resumable and cannot double-materialize, but repeated runs keep consuming the population - bound it with `--limit` and read `eligibleKeys` rather than assuming a re-run is a no-op.
+
+Two expected side effects worth not mistaking for drift: `NO_MINT_INTENT_ENRICHMENT_ONLY` moved 240 to 239 and `NAME_MATCHES_LIVE_ENTITY` 12 to 13, because the newly minted entities enter the identity index and one previously unmatched key now name-matches a live entity.
+
+Production was deliberately not touched; it is a separate authorized operation.
+
 ### Stranded observation keys and their category split
 
 `yarn --cwd server observations:audit-orphan-keys` (`orphanObservationKeyAudit.ts`, with the pure classifier in `orphanObservationKeyAuditCore.ts`) splits every live `researchEntity` observation key that matches no `research_entities.slug` and no `research_entity_redirects.mergedSlug`.
