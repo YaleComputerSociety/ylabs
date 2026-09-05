@@ -265,7 +265,7 @@ const ResearchFilterDisclosure = ({
                   onChange={(event) =>
                     toggleCurrentAvailability(option.value, event.target.checked)
                   }
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 yr-focus-ring"
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] accent-brand yr-focus-ring"
                 />
                 <span>
                   {option.label ?? option.value}
@@ -289,7 +289,7 @@ const ResearchFilterDisclosure = ({
                   type="checkbox"
                   checked={selectedCompensation.includes(option.value)}
                   onChange={(event) => toggleCompensation(option.value, event.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 yr-focus-ring"
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] accent-brand yr-focus-ring"
                 />
                 <span>
                   {option.label ?? option.value}
@@ -313,7 +313,7 @@ const ResearchFilterDisclosure = ({
                   onChange={(event) =>
                     toggleEligibleStudentLevels(option.value, event.target.checked)
                   }
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 yr-focus-ring"
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] accent-brand yr-focus-ring"
                 />
                 <span>
                   {option.label ?? option.value}

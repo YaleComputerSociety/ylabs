@@ -56,7 +56,7 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
           onClick={() => setMode('intersection')}
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
             mode === 'intersection'
-              ? 'bg-[var(--yr-panel)] shadow-sm text-blue-600'
+              ? 'bg-panel shadow-sm text-brand'
               : 'text-gray-400 hover:text-gray-600'
           }`}
           title="All (AND) - Match all of the selected items"

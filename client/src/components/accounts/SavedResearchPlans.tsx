@@ -338,7 +338,7 @@ const SavedResearchPlans = ({ onCountChange, onOpenCountChange }: SavedResearchP
                           disabled={atCompareLimit && !selectedForCompare.includes(entity._id)}
                           onChange={() => toggleCompareSelection(entity._id)}
                           aria-label={`Select ${entityDisplayName(entity)} to compare`}
-                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-line-strong accent-brand yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       )}
                       <div className="min-w-0">

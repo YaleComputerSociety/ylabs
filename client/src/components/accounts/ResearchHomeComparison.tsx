@@ -415,7 +415,7 @@ const ResearchHomeComparison = ({
                           type="checkbox"
                           checked={includedNoteIds.has(column.base._id)}
                           onChange={() => toggleIncludedNote(column.base._id)}
-                          className="yr-focus-ring h-4 w-4 rounded border-[var(--yr-line-strong)] text-[var(--yr-blue)]"
+                          className="yr-focus-ring h-4 w-4 rounded border-[var(--yr-line-strong)] accent-brand"
                         />
                         Include my private note
                       </label>

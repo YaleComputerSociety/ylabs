@@ -49,6 +49,11 @@ Rules:
 - Links and active navigation use `brand`; inactive navigation uses `ink`.
 - `brand-navy` is a hover only for something already colored `brand`.
 When the resting color is a gray or near-black, hover to `brand`, not to `brand-navy`: `brand-navy` sits 1.07:1 from `text-gray-900`, so that hover is invisible.
+- Choose a hover or active color by its distance from that element's own resting color, not by whether it is in the palette.
+The same mapping can be right on one element and invisible on another: `line-strong` reads as a hover against a neutral border and sits 1.02:1 from a `line-brand` one.
+- A native checkbox or radio takes its checked fill from `accent-*`, not from `text-*`.
+This project has no Tailwind forms plugin, so `text-brand` on an `input[type=checkbox]` sets a `color` the control never paints.
+Use `accent-brand`.
 - Gold is a sparing accent for secondary emphasis, never a second primary.
 - A brand-tinted border uses `line-brand` (`--yr-blue-border`), the same tint `.yr-pill-blue` draws.
 
@@ -70,8 +75,11 @@ These files hold deliberate scales rather than brand-color drift:
 
 `ROLE_PILL_CLASSES` in `src/components/labs/LabMembersList.tsx` is one of these scales too: twelve member roles across blue, indigo, purple, teal, emerald, amber, and slate, so the blue on `pi` and `co-pi` is a category identity.
 Only that map is exempt; the rest of the file is ordinary brand color.
-The `pi` and `co-pi` entries currently pair a tokened background with a scale-hue text color, which is internally inconsistent with their siblings.
-Resolve that by changing the scale as a whole, not by tokening those two entries.
+`FIELD_COLORS` in `src/components/admin/AdminResearchAreas.tsx` and `CATEGORY_COLORS` in `src/components/admin/AdminDepartments.tsx` are the same shape: nine research fields across blue, green, yellow, red, purple, pink, teal, orange, and indigo.
+
+All three of those maps give their blue member a tokened background and a scale-hue text color, unlike every sibling, which pairs a hue background with the matching hue text.
+All three were authored that way in the same commit rather than left behind by a later sweep, so there is no earlier state to restore.
+Resolve it by changing each scale as a whole, not by tokening the blue member.
 
 ## 3. Typography Rules
 
