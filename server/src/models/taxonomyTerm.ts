@@ -21,7 +21,6 @@ export interface TaxonomyTermRecord {
   label: string;
   normalizedLabel: string;
   aliases: string[];
-  parentTermId?: mongoose.Types.ObjectId;
   reviewStatus: TaxonomyTermReviewStatus;
   status: TaxonomyTermStatus;
   archived: boolean;
@@ -93,20 +92,6 @@ export const taxonomyTermSchema = new mongoose.Schema<TaxonomyTermRecord>(
         message: `aliases must contain at most ${MAX_TAXONOMY_ALIASES} unique labels.`,
       },
     },
-    parentTermId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'TaxonomyTerm',
-      required: false,
-      validate: {
-        validator: function (
-          this: { _id: mongoose.Types.ObjectId },
-          value?: mongoose.Types.ObjectId,
-        ) {
-          return value === undefined || !value.equals(this._id);
-        },
-        message: 'parentTermId cannot reference the same TaxonomyTerm.',
-      },
-    },
     reviewStatus: {
       type: String,
       enum: [...taxonomyTermReviewStatuses],
@@ -128,7 +113,6 @@ export const taxonomyTermSchema = new mongoose.Schema<TaxonomyTermRecord>(
 );
 
 taxonomyTermSchema.index({ kind: 1, normalizedLabel: 1 }, { unique: true });
-taxonomyTermSchema.index({ parentTermId: 1, kind: 1, status: 1, archived: 1 });
 
 export const TaxonomyTerm =
   mongoose.models.TaxonomyTerm ||

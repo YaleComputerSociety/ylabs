@@ -455,10 +455,6 @@ describe('canonical identity and reference models', () => {
     const orgUnit = validOrgUnit();
     orgUnit.parentOrgUnitId = orgUnit._id;
     expect(orgUnit.validateSync()?.errors.parentOrgUnitId).toBeTruthy();
-
-    const taxonomyTerm = validTaxonomyTerm();
-    taxonomyTerm.parentTermId = taxonomyTerm._id;
-    expect(taxonomyTerm.validateSync()?.errors.parentTermId).toBeTruthy();
   });
 
   it('reuses the existing ResearchEntityRelationship model and physical collection', () => {
