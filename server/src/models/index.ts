@@ -7,12 +7,7 @@ export { EntityCorrectionReport } from './entityCorrectionReport';
 export { Fellowship } from './fellowship';
 export { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from './analytics';
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';
-export {
-  Department,
-  DepartmentCategory,
-  DepartmentCodeSystem,
-  categoryColorKeys,
-} from './department';
+export { Department, DepartmentCategory, categoryColorKeys } from './department';
 export { ResearchEntity } from './researchEntity';
 export { ResearchEntityRedirect } from './researchEntityRedirect';
 export { ResearchEntityRelationship } from './researchEntityRelationship';

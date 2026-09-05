@@ -82,8 +82,6 @@ export type StudentVisibilityTier =
   | 'operator_review'
   | 'suppressed';
 
-export type FellowshipStage = 'not_applied' | 'applied';
-
 export type FellowshipFilterOptions = {
   programCategory: string[];
   programKind: string[];

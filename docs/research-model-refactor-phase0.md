@@ -184,7 +184,6 @@ Review all three before preserving an inventory as migration evidence.
 The inventory is a census.
 Deeper collision and identity analysis already lives in dedicated scripts and should be run alongside it:
 
-- `yarn --cwd server users:dedupe-by-identity` for same-person user shells.
 - `yarn --cwd server model-refactor:identity-collisions` for bounded shared-identity and same-name-only evidence.
 - `yarn --cwd server research-entity:duplicate-name-review` for duplicate entity identities.
 - `yarn --cwd server research-entity:coverage-audit` for entity evidence coverage.
@@ -263,12 +262,6 @@ They retain aggregate collision, repair, category, reference-impact, and coverag
 
 ```bash
 umask 077
-
-SCRAPER_ENV=development yarn --cwd server users:dedupe-by-identity \
-  --summary-only \
-  --environment=development \
-  --limit=10000 \
-  --output /tmp/ylabs-development-user-identity-summary.json
 
 SCRAPER_ENV=development yarn --cwd server research-entity:duplicate-name-review \
   --summary-only \
@@ -370,46 +363,11 @@ Latency is diagnostic only unless the environments use comparable network and co
 
 ### Admin access-review projection
 
-The admin access-review list reads an environment-local projection instead of joining every access record before pagination.
-The projection stores only the parent `ResearchEntity` reference, bounded normalized word suffixes that preserve case-insensitive substring search, queue sort keys, aggregate record and unreviewed counts, official-application presence, and reconciliation fields.
-It never stores evidence excerpts, contact destinations, review notes, or other detail payloads.
-The list verifies projection readiness, filters and paginates the projection, and only then hydrates the selected parent rows.
-The existing detail route remains separate from the list projection and protected by the shared admin authentication and private `no-store` middleware.
-
-Canonical `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` service writes increment a per-entity generation in the same transaction and refresh only that generation afterward.
-A concurrent or failed refresh leaves the queue stale and unavailable until reconciliation.
-Run reconciliation after deployment, after any bulk migration that bypasses canonical services, and at least once every six hours while scraper or moderation writes are active.
-
-Reconciliation is dry-run-first.
-Its planning reads use one snapshot transaction so counts, current projections, and parent entities describe the same database state.
-Apply accepts only the exact plan fingerprint from a reviewed mode-`0600` artifact for the same environment and database.
-Production is not an allowed target.
-Run Development first, then Beta, then ProductionCopy from a clean current Beta worktree with the matching database URL injected locally.
-Do not run these commands on Render.
-
-```bash
-umask 077
-export MONGODBURL
-
-yarn --cwd server model-refactor:access-review-projection \
-  --environment=development \
-  --output=/tmp/ylabs-access-review-development-plan.json
-
-yarn --cwd server model-refactor:access-review-projection \
-  --environment=development \
-  --apply \
-  --apply-from=/tmp/ylabs-access-review-development-plan.json \
-  --confirm-admin-access-review-projection=development \
-  --output=/tmp/ylabs-access-review-development-apply.json
-
-unset MONGODBURL
-```
-
-Repeat with `--environment=beta` and a fresh Beta artifact while `MONGODBURL` points to Beta.
-Repeat with `--environment=production-copy` and a fresh ProductionCopy artifact only after its restore and rollback evidence have been accepted.
-Never reuse a reviewed artifact across environments or after drift.
-If apply reports drift or verification failure, leave the queue unavailable, stop writers, generate a fresh dry-run, and inspect the canonical records before retrying.
-Keep all artifacts private and never post their counts, identifiers, fingerprints, paths, hashes, or storage references to GitHub.
+This subsystem has been retired, and the reconciliation procedure it documented no longer applies.
+`researchEntityWriteTransaction` replaced `mutateAndRefreshAdminAccessReviewProjection`, there is no `model-refactor:access-review-projection` command, and no projection model remains in `server/src/models`.
+The `admin_access_review_projections` and `admin_access_review_projection_state` collections hold zero rows in Development and are absent from Production.
+There is no six-hourly reconciliation to run and no projection readiness to verify.
+The subsection is kept as a Phase 0 record; `researchModelInventoryCore` still carries both collections in its census.
 
 The query-cost audit measures deployed MongoDB indexes and redacted `executionStats` for every representative query shape in the [Phase 0 hot-path audit](./research-model-refactor-phase0-hot-paths.md).
 It covers Research browse and detail, opportunity detail, account planning, and admin access review.
