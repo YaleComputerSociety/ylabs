@@ -320,7 +320,7 @@ const ResearchPlanSaveButton = ({
     size={20}
     ariaLabel={isSaved ? 'Saved to Dashboard' : 'Save research plan'}
     title={isSaved ? 'Saved to Dashboard' : 'Save research plan'}
-    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:w-auto sm:min-w-[13rem]"
+    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)] yr-focus-ring sm:w-auto sm:min-w-[13rem]"
     iconClassName="mt-0.5 shrink-0"
   >
     <span className="min-w-0 flex-1">
@@ -341,7 +341,7 @@ const GuestSaveCta = ({ returnPath }: { returnPath: string }) => (
   <Link
     to="/login"
     state={{ from: returnPath }}
-    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:w-auto sm:min-w-[13rem]"
+    className="flex w-full items-start gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-[var(--yr-blue-soft)] yr-focus-ring sm:w-auto sm:min-w-[13rem]"
   >
     <span className="min-w-0 flex-1">
       <span className="block text-sm font-semibold text-gray-900">Log in with Yale to save</span>
@@ -837,7 +837,7 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
                     href={sourceUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-gray-800 hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-gray-800 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                   >
                     Open source
                   </a>
@@ -949,7 +949,7 @@ const LabDetail = () => {
           </p>
           <Link
             to="/research"
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
           >
             Explore Yale Research
           </Link>

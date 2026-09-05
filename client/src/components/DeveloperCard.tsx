@@ -14,7 +14,7 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
   }
 
   const iconLinkClass =
-    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md transition hover:bg-[var(--yr-panel-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2';
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md transition hover:bg-[var(--yr-panel-muted)] yr-focus-ring';
   const websiteHref = safeHttpUrl(developer.website);
   const linkedinHref = safeHttpUrl(developer.linkedin);
   const githubHref = safeHttpUrl(developer.github);

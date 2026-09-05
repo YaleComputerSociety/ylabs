@@ -69,6 +69,16 @@ Prefer these over ad hoc styling.
 - Chips and badges: soft tints (`brand-soft`, `gold-soft`, `success-soft`) with the matching strong text color.
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
 - Keyboard focus: `.yr-focus-ring` (defined in `src/index.css`) is the canonical focus indicator for interactive controls - a `:focus-visible`-only, brand-tinted outset outline. Use it instead of ad hoc `focus-visible:ring-2 focus-visible:ring-blue-*` clusters.
+- Never pair `.yr-focus-ring` with a `focus:outline-none` or `focus-visible:outline-none` utility.
+`.yr-focus-ring` lives in `@layer components`, Tailwind utilities come after it, and the two selectors have equal specificity, so the utility wins on source order and silently removes the focus ring.
+`.yr-focus-ring` already suppresses the resting outline itself.
+- Peer-driven focus: a visually hidden `peer` input whose focus must show on a styled proxy element uses `.yr-focus-ring-peer` on the proxy.
+The proxy never receives focus, so `.yr-focus-ring` cannot fire on it.
+- Clipped focus: a control whose ancestor clips overflow uses `.yr-focus-ring-inset`, which draws the same outline just inside the border box via a negative `outline-offset`.
+`.yr-focus-ring` is invisible there - an `overflow: hidden` parent clips an outset outline away completely, while `getComputedStyle` still reports the outline as applied.
+Verify a focus ring by comparing rendered pixels, not by reading computed style.
+- `focus:ring-inset` has no effect alongside either class.
+It shapes a ring box-shadow, and the canonical indicators are outlines.
 
 ## 5. Layout Principles
 

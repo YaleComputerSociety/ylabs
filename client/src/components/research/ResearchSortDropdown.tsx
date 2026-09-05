@@ -86,7 +86,7 @@ const ResearchSortDropdown = ({
               }
             }, 100);
           }}
-          className="flex min-h-[44px] min-w-[150px] items-center justify-between whitespace-nowrap px-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+          className="flex min-h-[44px] min-w-[150px] items-center justify-between whitespace-nowrap px-3 text-slate-700 yr-focus-ring-inset"
         >
           <span className="mr-1 text-slate-500">Sort:</span>
           <span className="truncate">{currentLabel}</span>
@@ -107,7 +107,7 @@ const ResearchSortDropdown = ({
             <button
               type="button"
               onClick={onToggleSortDirection}
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-slate-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center text-slate-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-slate-700 yr-focus-ring-inset"
               aria-label={
                 sortOrder === 'asc'
                   ? 'Sorted ascending, switch to descending'

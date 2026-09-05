@@ -602,7 +602,7 @@ const AnalyticsSupportingDetail = ({
             type="button"
             onClick={exportSearchQueriesCsv}
             disabled={searchQueryRows.length === 0}
-            className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
+            className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
           >
             Export CSV
           </button>
@@ -738,7 +738,7 @@ const AnalyticsSupportingDetail = ({
               type="button"
               onClick={exportUserActivityCsv}
               disabled={userActivity.users.length === 0}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               Export CSV
             </button>
@@ -764,7 +764,7 @@ const AnalyticsSupportingDetail = ({
                 value={userSearch}
                 onChange={(event) => setUserSearch(event.target.value)}
                 placeholder="e.g. abc123"
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
               />
             </label>
 
@@ -775,7 +775,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userTypeFilter}
                 onChange={(event) => setUserTypeFilter(event.target.value)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
               >
                 <option value="all">All Types</option>
                 <option value="undergraduate">Undergrads</option>
@@ -793,7 +793,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userActivitySort}
                 onChange={(event) => setUserActivitySort(event.target.value as UserActivitySort)}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
               >
                 <option value="lastActive">Last Active</option>
                 <option value="totalEvents">Total Events</option>
@@ -810,7 +810,7 @@ const AnalyticsSupportingDetail = ({
               <select
                 value={userActivityLimit}
                 onChange={(event) => setUserActivityLimit(Number(event.target.value))}
-                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 yr-focus-ring"
               >
                 <option value={10}>10 users</option>
                 <option value={25}>25 users</option>
@@ -834,7 +834,7 @@ const AnalyticsSupportingDetail = ({
                       setUserActivityOffset((offset) => Math.max(0, offset - userActivityLimit))
                     }
                     disabled={isUserActivityLoading || !userActivityHasPrev}
-                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Previous
                   </button>
@@ -842,7 +842,7 @@ const AnalyticsSupportingDetail = ({
                     type="button"
                     onClick={() => setUserActivityOffset((offset) => offset + userActivityLimit)}
                     disabled={isUserActivityLoading || !userActivityHasNext}
-                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Next
                   </button>
@@ -851,7 +851,7 @@ const AnalyticsSupportingDetail = ({
                     onClick={() =>
                       setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc')
                     }
-                    className="inline-flex min-h-[44px] items-center self-start rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:self-auto"
+                    className="inline-flex min-h-[44px] items-center self-start rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring sm:self-auto"
                   >
                     Order: {userActivityOrder === 'asc' ? 'Ascending' : 'Descending'}
                   </button>
@@ -878,7 +878,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('totalEvents')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Events{sortLabel('totalEvents')}
                         </button>
@@ -887,7 +887,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('logins')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Logins{sortLabel('logins')}
                         </button>
@@ -896,7 +896,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('searches')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Site searches{sortLabel('searches')}
                         </button>
@@ -905,7 +905,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('researchViews')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Research Views{sortLabel('researchViews')}
                         </button>
@@ -914,7 +914,7 @@ const AnalyticsSupportingDetail = ({
                         <button
                           type="button"
                           onClick={() => updateUserActivitySort('lastActive')}
-                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
                         >
                           Last Active{sortLabel('lastActive')}
                         </button>
@@ -993,7 +993,7 @@ const AnalyticsSupportingDetail = ({
                   <button
                     type="button"
                     onClick={() => setSelectedNetid(null)}
-                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-xs text-gray-600 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-xs text-gray-600 hover:bg-[var(--yr-panel)] yr-focus-ring"
                   >
                     Clear
                   </button>

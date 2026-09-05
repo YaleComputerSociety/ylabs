@@ -69,7 +69,7 @@ const TagInput = ({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="flex-1 border border-[var(--yr-line-strong)] rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="flex-1 border border-[var(--yr-line-strong)] rounded px-2 py-1 text-xs yr-focus-ring"
         />
         <button
           type="button"
@@ -224,7 +224,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <input
                   value={title}
                   onChange={(e) => dispatch({ type: 'SET_TITLE', payload: e.target.value })}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
               </div>
 
@@ -234,7 +234,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   value={summary}
                   onChange={(e) => dispatch({ type: 'SET_SUMMARY', payload: e.target.value })}
                   rows={3}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
               </div>
 
@@ -246,7 +246,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   value={description}
                   onChange={(e) => dispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
                   rows={6}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
               </div>
 
@@ -260,7 +260,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                     dispatch({ type: 'SET_APPLICATION_INFORMATION', payload: e.target.value })
                   }
                   rows={3}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
               </div>
 
@@ -272,7 +272,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   value={eligibility}
                   onChange={(e) => dispatch({ type: 'SET_ELIGIBILITY', payload: e.target.value })}
                   rows={2}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
                 {statusPreview.needsEligibilityReview && (
                   <p className="mt-1 text-xs text-amber-700">
@@ -296,7 +296,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                       payload: e.target.value === 'yes',
                     })
                   }
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 >
                   <option value="yes">Yes</option>
                   <option value="no">No</option>
@@ -313,7 +313,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   onChange={(e) =>
                     dispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: e.target.value })
                   }
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
               </div>
 
@@ -323,7 +323,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   type="datetime-local"
                   value={deadline}
                   onChange={(e) => dispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
               </div>
 
@@ -352,7 +352,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   onChange={(e) =>
                     dispatch({ type: 'SET_APPLICATION_LINK', payload: e.target.value })
                   }
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                   placeholder="https://..."
                 />
               </div>
@@ -364,7 +364,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <input
                   value={awardAmount}
                   onChange={(e) => dispatch({ type: 'SET_AWARD_AMOUNT', payload: e.target.value })}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                   placeholder="e.g. $5,000"
                 />
               </div>
@@ -376,7 +376,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                 <input
                   value={contactName}
                   onChange={(e) => dispatch({ type: 'SET_CONTACT_NAME', payload: e.target.value })}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
               </div>
 
@@ -388,7 +388,7 @@ const AdminFellowshipEditModal = ({ fellowship, onClose, onSave }: Props) => {
                   type="email"
                   value={contactEmail}
                   onChange={(e) => dispatch({ type: 'SET_CONTACT_EMAIL', payload: e.target.value })}
-                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full border border-[var(--yr-line-strong)] rounded px-2 py-1.5 text-sm yr-focus-ring"
                 />
               </div>
 

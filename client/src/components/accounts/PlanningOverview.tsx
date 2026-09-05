@@ -66,7 +66,7 @@ const PlanningOverview = ({
               watchedDeadlineApproachingCount,
               watchedDeadlineNotStartedCount,
             )}
-            className="mt-1 block text-sm font-semibold text-amber-800 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+            className="mt-1 block text-sm font-semibold text-amber-800 underline-offset-2 hover:underline yr-focus-ring"
           >
             {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
             {notStartedEmphasis(watchedDeadlineNotStartedCount) && (

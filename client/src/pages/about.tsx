@@ -17,7 +17,7 @@ const About = () => {
             href={'https://yalecomputersociety.org/'}
             target="_blank"
             rel="noopener noreferrer"
-            className="yr-link rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="yr-link rounded yr-focus-ring"
           >
             Yale Computer Society
           </a>{' '}
@@ -37,7 +37,7 @@ const About = () => {
             }
             target="_blank"
             rel="noopener noreferrer"
-            className="yr-link rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            className="yr-link rounded yr-focus-ring"
           >
             feedback form
           </a>{' '}
@@ -48,7 +48,7 @@ const About = () => {
           href="https://yalecomputersociety.org/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
         >
           <img
             src="/assets/icons/ycs-icon.png"
@@ -62,7 +62,7 @@ const About = () => {
           href="https://github.com/YaleComputerSociety/ylabs"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
         >
           <img
             src="/assets/icons/github-icon.png"
@@ -76,7 +76,7 @@ const About = () => {
           href="https://www.hudsonrivertrading.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
         >
           <img
             src="/assets/logos/HudsonRiverTrading.png"
@@ -90,7 +90,7 @@ const About = () => {
           href="https://www.minimax.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md yr-focus-ring"
         >
           <img
             src="/assets/logos/MiniMax.png"

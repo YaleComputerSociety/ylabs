@@ -1807,7 +1807,7 @@ const Research = () => {
                     watchedDeadlineApproachingCount,
                     watchedDeadlineNotStartedCount,
                   )}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
                 >
                   {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
                 </Link>

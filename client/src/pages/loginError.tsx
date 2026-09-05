@@ -24,7 +24,7 @@ const LoginError = () => {
             <SignInButton label="Try Yale CAS again" />
             <Link
               to="/"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-5 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-5 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Return to Yale Research
             </Link>

@@ -73,7 +73,7 @@ const Dashboard = () => {
   };
 
   const tabClass = (active: boolean): string =>
-    `inline-flex min-h-[44px] items-center px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
+    `inline-flex min-h-[44px] items-center px-4 py-2 text-sm font-medium transition-colors yr-focus-ring ${
       active
         ? 'bg-[var(--yr-blue)] text-white'
         : 'bg-[var(--yr-panel)] text-slate-600 hover:bg-[var(--yr-panel-muted)]'

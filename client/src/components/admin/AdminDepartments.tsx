@@ -199,7 +199,7 @@ const AdminDepartments = () => {
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { abbr: e.target.value } })
               }
               placeholder="e.g. CPSC"
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring uppercase"
             />
           </div>
           <div className="flex-1 min-w-[200px]">
@@ -210,7 +210,7 @@ const AdminDepartments = () => {
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })
               }
               placeholder="e.g. Computer Science"
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAdd();
               }}
@@ -223,7 +223,7 @@ const AdminDepartments = () => {
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { category: e.target.value } })
               }
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
             >
               {DEPARTMENT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -246,7 +246,7 @@ const AdminDepartments = () => {
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
           placeholder="Filter departments..."
-          className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
         <div className="text-xs text-gray-400 mt-1">{filtered.length} departments</div>
       </div>
@@ -287,7 +287,7 @@ const AdminDepartments = () => {
                           onChange={(e) =>
                             dispatch({ type: 'SET_EDIT_DRAFT', payload: { abbr: e.target.value } })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-20 uppercase focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-20 uppercase yr-focus-ring"
                           autoFocus
                         />
                       ) : (
@@ -301,7 +301,7 @@ const AdminDepartments = () => {
                           onChange={(e) =>
                             dispatch({ type: 'SET_EDIT_DRAFT', payload: { name: e.target.value } })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full yr-focus-ring"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') handleUpdate(dept._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
@@ -322,7 +322,7 @@ const AdminDepartments = () => {
                               payload: { category: e.target.value },
                             })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm yr-focus-ring"
                         >
                           {DEPARTMENT_CATEGORIES.map((c) => (
                             <option key={c} value={c}>
