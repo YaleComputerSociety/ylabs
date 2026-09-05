@@ -2,7 +2,6 @@
  * Shared types and helpers for browsable research homes and fellowships.
  */
 import { Fellowship } from './types';
-import { ResearchGroup, ResearchGroupKind } from './researchGroup';
 import {
   DepartmentNameRecord,
   getDepartmentAbbreviation,
@@ -54,44 +53,24 @@ export function getOrderedDeptAbbrs(
   return { abbrs, truncated: 0 };
 }
 
-export type BrowsableItem =
-  | { type: 'fellowship'; data: Fellowship }
-  | { type: 'researchGroup'; data: ResearchGroup };
+/**
+ * Browse rows are fellowships only. A `researchGroup` variant existed here with
+ * its own kind-label map, subtitle, tag, and display-name resolvers, but no
+ * product surface ever constructed one: `BrowseGrid` is reached only from
+ * `fellowships.tsx` and `ProgramWatch` passes `fellowshipToBrowsable`. Those
+ * resolvers were a fourth entity-kind label map (missing `core_facility`) and a
+ * display-name resolver with no graft guard, so they were removed rather than
+ * converged - unreachable code is the code that gets copied when a surface is
+ * revived (#2397). Research browse rows go through `researchDiscoveryAdapters`
+ * and `researchEntityCopy`.
+ */
+export type BrowsableItem = { type: 'fellowship'; data: Fellowship };
 
 export function getItemId(item: BrowsableItem): string {
-  if (item.type === 'researchGroup') {
-    return item.data.id || item.data._id || item.data.slug;
-  }
   return item.data.id;
 }
 
-export function getResearchGroupKindLabel(kind: ResearchGroupKind): string {
-  const labels: Record<ResearchGroupKind, string> = {
-    lab: 'Lab',
-    center: 'Center',
-    institute: 'Institute',
-    program: 'Program',
-    initiative: 'Initiative',
-    group: 'Group',
-    individual: 'Faculty Research',
-    solo: 'Faculty Research',
-  };
-  return labels[kind] || 'Research';
-}
-
-export function getResearchGroupDisplayName(group: ResearchGroup): string {
-  if (group.kind !== 'individual' && group.kind !== 'solo') {
-    return group.name;
-  }
-  return (
-    group.displayName || group.name.replace(/\s+—\s+Research$/i, '').replace(/\s+Research$/i, '')
-  );
-}
-
 export function isItemOpen(item: BrowsableItem): boolean {
-  if (item.type === 'researchGroup') {
-    return false;
-  }
   return getFellowshipApplicationStatus(item.data).isApplicationWindowOpen;
 }
 
@@ -114,14 +93,7 @@ function dedupeTags(tags: TagInfo[]): TagInfo[] {
   return kept;
 }
 
-export function getItemTags(
-  item: BrowsableItem,
-  getColor: (area: string) => { bg: string; text: string },
-): TagInfo[] {
-  if (item.type === 'researchGroup') {
-    const areas = item.data.researchAreas || [];
-    return areas.map((a) => ({ label: a, ...getColor(a) }));
-  }
+export function getItemTags(item: BrowsableItem): TagInfo[] {
   const categoryLabel = item.data.studentFacingCategory;
   const categoryNorm = categoryLabel ? normalizeTagLabel(categoryLabel) : '';
   const entryModeChipLabel = item.data.entryMode ? entryModeLabel(item.data.entryMode) : '';
@@ -170,19 +142,10 @@ export function getItemTags(
 }
 
 export function getItemSubtitle(item: BrowsableItem): string {
-  if (item.type === 'researchGroup') {
-    const kind = getResearchGroupKindLabel(item.data.kind);
-    const dept =
-      item.data.departments && item.data.departments.length > 0
-        ? getDepartmentAbbreviation(item.data.departments[0])
-        : null;
-    return dept ? `${kind} · ${dept}` : kind;
-  }
   return getFellowshipDeadlineSubtitle(item.data);
 }
 
 export function getItemSubtitleColor(item: BrowsableItem): string {
-  if (item.type === 'researchGroup') return 'text-gray-500';
   const status = getFellowshipCycleStatus(item.data);
   if (status.category === 'nextCycle') return 'text-sky-700 font-medium';
   const { deadline } = item.data;
@@ -206,7 +169,7 @@ export function getFellowshipJourneySummary(fellowship: Fellowship): string | nu
 }
 
 export function getDaysUntilDeadline(item: BrowsableItem): number | null {
-  if (item.type !== 'fellowship' || !item.data.deadline) return null;
+  if (!item.data.deadline) return null;
   const d = new Date(item.data.deadline);
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
