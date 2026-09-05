@@ -9,7 +9,6 @@ const sampleGroup: ResearchGroup = {
   slug: 'synthetic-computation-lab',
   name: 'Synthetic Computation Lab',
   kind: 'lab',
-  description: 'We study synthetic systems.',
   websiteUrl: 'https://synthetic-computation.example.test',
   location: 'Fixture Hall, Room 200',
   departments: ['Computer Science'],

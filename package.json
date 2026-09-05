@@ -88,7 +88,7 @@
     "lint:fix": "eslint --fix \"client/src/**/*.ts\" \"client/src/**/*.tsx\" \"server/src/**/*.ts\"",
     "format": "prettier --write \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
     "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
-    "verify:fast": "yarn format:check && npx tsc --noEmit -p server/tsconfig.json",
+    "verify:fast": "yarn format:check && npx tsc --noEmit -p server/tsconfig.json && npx tsc --noEmit -p client/tsconfig.json",
     "verify": "yarn verify:fast && yarn --cwd server test && yarn model-refactor:inventory:test-operator-tools && yarn test:data-profiles && yarn --cwd client test:ci && yarn security:preflight"
   },
   "dependencies": {

@@ -52,6 +52,12 @@ jobs:
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
 
+      # A step inside test-and-build rather than a separate job: test-and-build
+      # is the only required check on the ruleset, so a new job would be
+      # advisory and could not block a merge.
+      - name: Run client typecheck
+        run: npx tsc --noEmit -p client/tsconfig.json
+
       - name: Run server tests
         run: yarn --cwd server test
 
