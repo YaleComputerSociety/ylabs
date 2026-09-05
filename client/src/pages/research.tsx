@@ -1783,7 +1783,7 @@ const Research = () => {
             </p>
 
             {!isAuthenticated && (
-              <div className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-3 py-2 text-sm leading-relaxed text-blue-900">
+              <div className="mt-4 rounded-md border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy">
                 You&apos;re browsing as a guest.{' '}
                 <Link
                   to="/login"
@@ -1928,7 +1928,7 @@ const Research = () => {
                           onClick={() => toggleQualityFilter(option.value)}
                           className={`yr-focus-ring min-h-10 rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors ${
                             isActive
-                              ? 'border-blue-700 bg-[var(--yr-panel)] text-blue-900'
+                              ? 'border-brand bg-panel text-brand'
                               : 'border-[var(--yr-border-warm)] bg-transparent text-slate-700 hover:bg-[var(--yr-panel)]'
                           }`}
                         >
