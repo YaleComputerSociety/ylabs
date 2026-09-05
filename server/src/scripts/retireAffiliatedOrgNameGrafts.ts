@@ -24,6 +24,7 @@ import { isPersonCmsProfileUrl } from '../utils/researchHomeWebsiteUrl';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   applyStudentVisibilityGatePlans,
+  evaluateStudentVisibilityGateLeadResolution,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
 import { syncEntities } from '../services/meiliSyncService';
@@ -104,6 +105,7 @@ export interface GraftedDocumentField {
 }
 
 interface EntityContext {
+  id: string;
   slug: string;
   name: string;
   displayName: string;
@@ -296,6 +298,7 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
       : null;
     const record = entity as Record<string, unknown>;
     const context: EntityContext = {
+      id: serializedDocumentId(record._id) || '',
       slug: String(record.slug || ''),
       name: String(record.name || ''),
       displayName: String(record.displayName || ''),
@@ -355,7 +358,11 @@ export async function loadOrgNameGrafts(): Promise<OrgNameGraftRow[]> {
     if (!grouped.has(groupKey)) {
       grouped.set(groupKey, {
         entitySlug: entity.slug,
-        entityId,
+        // The RESOLVED document id, never the observation's. A `ysm-faculty-directory`
+        // research-entity observation is emitted with `entityKey` only, so taking the
+        // id off the observation left it undefined for the repair's primary source and
+        // silently skipped the re-gate for exactly those rows (#2368).
+        entityId: entity.id || undefined,
         servedName: entity.name,
         entityType: entity.entityType,
         studentVisibilityTier: entity.studentVisibilityTier,
@@ -492,16 +499,31 @@ async function clearGraftFromDocument(row: OrgNameGraftRow): Promise<number> {
  * against a verdict the rename invalidated. A repair that only rewrites documents and
  * never re-derives what the gate concluded from them is how a record ends up stored
  * `student_ready` while its detail page disagrees.
+ *
+ * The gate's own lead-resolution guard is evaluated first, because
+ * `applyStudentVisibilityGatePlans` is the raw writer and only `runStudentVisibilityGate`
+ * normally enforces it - writing gate plans without it is how a mid-migration empty
+ * Researcher collection mass-suppresses the whole corrected set. When it trips, the
+ * gate write is skipped and reported rather than thrown: the document corrections are
+ * already durable at this point, so aborting would cost the operator the report of
+ * what this run did. The Meili resync still runs, since the names changed either way.
  */
-async function regateCorrectedEntities(entityIds: string[]): Promise<number> {
+async function regateCorrectedEntities(
+  entityIds: string[],
+): Promise<{ regated: number; regateSkippedReason?: string }> {
   const ids = entityIds.filter(Boolean);
-  if (ids.length === 0) return 0;
+  if (ids.length === 0) return { regated: 0 };
   const plans = await planStudentVisibilityGate({
     collection: 'research',
     mode: 'apply',
     recordIds: ids,
   });
-  await applyStudentVisibilityGatePlans(plans);
+  const leadResolution = evaluateStudentVisibilityGateLeadResolution(plans);
+  if (leadResolution.safe) {
+    await applyStudentVisibilityGatePlans(plans);
+  } else {
+    console.error(`[${SCRIPT_NAME}] Skipping re-gate: ${leadResolution.blocker}`);
+  }
   const objectIds = ids
     .filter((id) => mongoose.isValidObjectId(id))
     .map((id) => new mongoose.Types.ObjectId(id));
@@ -513,13 +535,16 @@ async function regateCorrectedEntities(entityIds: string[]): Promise<number> {
       console.error(`[${SCRIPT_NAME}] Meili resync after re-gate failed:`, sanitizeLogValue(error));
     }
   }
-  return plans.length;
+  return leadResolution.safe
+    ? { regated: plans.length }
+    : { regated: 0, regateSkippedReason: leadResolution.blocker };
 }
 
 export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
   rolledBack: number;
   documentFieldsCorrected: number;
   regated: number;
+  regateSkippedReason?: string;
 }> {
   let rolledBack = 0;
   let documentFieldsCorrected = 0;
@@ -540,8 +565,8 @@ export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
     documentFieldsCorrected += corrected;
     if (corrected > 0 && row.entityId) correctedEntityIds.add(row.entityId);
   }
-  const regated = await regateCorrectedEntities(Array.from(correctedEntityIds));
-  return { rolledBack, documentFieldsCorrected, regated };
+  const regate = await regateCorrectedEntities(Array.from(correctedEntityIds));
+  return { rolledBack, documentFieldsCorrected, ...regate };
 }
 
 async function main() {
@@ -588,6 +613,7 @@ async function main() {
     rolledBackObservations: applied.rolledBack,
     documentFieldsCorrected: applied.documentFieldsCorrected,
     regated: applied.regated,
+    regateSkippedReason: applied.regateSkippedReason,
     documentsStillServingGraft: rows.filter((row) => row.documentStillServesGraft).length,
     byVerdict,
     bySource,

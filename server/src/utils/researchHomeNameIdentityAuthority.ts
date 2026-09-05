@@ -162,6 +162,21 @@ const TRAILING_UMBRELLA_ORGANIZATION_RE = new RegExp(
   'i',
 );
 
+// Trailing position alone is not enough: an ordinary mention can also fall at the
+// end ("Clinical research at Northgate Children's Hospital"), and a locative
+// lead-in is what marks the organization as WHERE the lab sits rather than WHAT the
+// slot links. Requiring no clause break between the two keeps the organization the
+// object of that preposition. Where the two shapes genuinely overlap ("A
+// collaborative of investigators at Northgate School of Medicine") this declines to
+// refuse, because the mention shape is the one that costs a real lab its name, type,
+// and website (#2361).
+const ORGANIZATION_MENTIONED_AS_LOCATION_RE = new RegExp(
+  '\\b(?:at|in|within|inside|across|throughout|near|by|with|under|through|part\\s+of|' +
+    'affiliated\\s+with|based\\s+(?:at|in)|housed\\s+(?:at|in|within)|hosted\\s+(?:at|by))\\b' +
+    `[^,;:]*\\b${UMBRELLA_ORGANIZATION_HEAD_SOURCE}[\\s.,;:!?)]*$`,
+  'i',
+);
+
 /**
  * Whether a free-text blurb beside a linked site NAMES an umbrella organization
  * as the thing it links, rather than mentioning one in passing. This is the
@@ -172,6 +187,7 @@ export function describesAffiliatedOrganization(value: unknown): boolean {
   const description = textValue(value);
   if (!description) return false;
   if (RESEARCH_HOME_LAB_HEAD_RE.test(description)) return false;
+  if (ORGANIZATION_MENTIONED_AS_LOCATION_RE.test(description)) return false;
   return TRAILING_UMBRELLA_ORGANIZATION_RE.test(description);
 }
 
@@ -365,18 +381,37 @@ export function entityKeyPersonTokens(entityKey: unknown): string[] {
   );
 }
 
+// A slug can glue the research-home head noun straight onto the surname with no
+// separator (`ysm-leveylab`), which leaves `entityKeyPersonTokens` nothing to split
+// on and hides the surname from the eponym check.
+const GLUED_RESEARCH_HOME_HEAD_RE = /(?:labs?|laborator(?:y|ies)|groups?)$/;
+
+function identityTokenSpellings(token: string): string[] {
+  const withoutResearchHomeHead = token.replace(GLUED_RESEARCH_HOME_HEAD_RE, '');
+  return withoutResearchHomeHead !== token && withoutResearchHomeHead.length >= 2
+    ? [token, withoutResearchHomeHead]
+    : [token];
+}
+
 /**
  * Whether an eponym names one of the identity's own tokens. A compressed
  * initial-plus-surname form ("XLiu" for Xiaofeng Liu) is the same person, so a
  * suffix match counts; otherwise the surnames must be equal.
+ *
+ * A token that glues the research-home head noun onto the surname is the same
+ * person too: an identity resolved from the slug `ysm-leveylab` IS Levey. Without
+ * that spelling the roster arm reads "Levey Lab" as somebody else's lab and the
+ * repair renames a record whose name was right (#2368).
  */
 export function eponymMatchesIdentity(eponym: string, identityTokens: string[]): boolean {
-  return identityTokens.some(
-    (token) =>
-      token === eponym ||
-      (token.length >= 3 && eponym.endsWith(token)) ||
-      (eponym.length >= 3 && token.endsWith(eponym)),
-  );
+  return identityTokens
+    .flatMap(identityTokenSpellings)
+    .some(
+      (token) =>
+        token === eponym ||
+        (token.length >= 3 && eponym.endsWith(token)) ||
+        (eponym.length >= 3 && token.endsWith(eponym)),
+    );
 }
 
 /**
@@ -407,6 +442,31 @@ export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>):
 }
 
 /**
+ * An explicitly empty surname roster, for a call site that cannot reach one - a
+ * synchronous per-request or pure decision path. Passing this is a declaration that
+ * the eponym check runs path-only here, greppable and reviewable, as opposed to an
+ * inline `new Set()` that reads like an oversight or an omitted optional argument
+ * that reads like nothing at all (#2368). Every use is a candidate for #2369, which
+ * closes the gap by threading a real roster into the write chokepoints.
+ */
+export const NO_SURNAME_ROSTER: ReadonlySet<string> = new Set();
+
+/**
+ * The path-only half of `claimsAnotherPersonsLab`, for a caller with no roster to
+ * corroborate against. The weaker of the two and says so in its name.
+ */
+export function claimsAnotherPersonsLabByUrlPath(args: {
+  harvestedName: unknown;
+  websiteUrl: unknown;
+  identityTokens: string[];
+}): boolean {
+  if (args.identityTokens.length === 0) return false;
+  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  if (pathCorroborated.length === 0) return false;
+  return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
+}
+
+/**
  * Whether a harvested lab name claims a person other than the one this entity
  * belongs to.
  *
@@ -419,35 +479,18 @@ export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>):
  * the only echo of the surname and the host is deliberately not corroboration
  * (#2361).
  *
- * The roster arm is only as precise as the roster is free of ordinary words: 735 of
- * 4209 Yale surnames are also dictionary words, so a topical name IS refusable when
- * its eponym-position token happens to be someone's surname. Measured on Dev at beta
- * `2a8b6739`, that costs nothing - all 16 roster-only refusals were genuine grafts,
- * and "Belief Lab" / "The UPLiFT Lab" / "CMB Lab" are untouched because those tokens
- * are absent from THIS roster. That is a property of the corpus, not of the rule, so
- * do not restate it as "a topical name is not a surname" (#2368).
+ * The roster arm is only as precise as the roster is free of ordinary words, so a
+ * topical name IS refusable when its eponym-position token happens to be someone's
+ * surname. How often that bites depends on WHICH roster a caller supplies, and no
+ * single measurement covers them all: 735 of 4209 surnames in the Researcher
+ * collection are also dictionary words, and measured on Dev at beta `2a8b6739` all
+ * 16 roster-only refusals from THAT roster were genuine grafts, with "Belief Lab" /
+ * "The UPLiFT Lab" / "CMB Lab" untouched because those tokens are absent from it.
+ * The YSM harvest passes a wider roster (the whole A-Z directory, staff and trainees
+ * included) and therefore accepts a wider collision envelope, unmeasured. Both are
+ * properties of a corpus, not of the rule, so do not restate either as "a topical
+ * name is not a surname" (#2368).
  */
-/**
- * An explicitly empty surname roster, for a call site that cannot reach one - a
- * synchronous per-request or pure decision path. Passing this is a declaration that
- * the eponym check runs path-only here, greppable and reviewable, as opposed to an
- * inline `new Set()` that reads like an oversight or an omitted optional argument
- * that reads like nothing at all (#2368). Every use is a candidate for #2369, which
- * closes the gap by threading a real roster into the write chokepoints.
- */
-export const NO_SURNAME_ROSTER: ReadonlySet<string> = new Set();
-
-export function claimsAnotherPersonsLabByUrlPath(args: {
-  harvestedName: unknown;
-  websiteUrl: unknown;
-  identityTokens: string[];
-}): boolean {
-  if (args.identityTokens.length === 0) return false;
-  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
-  if (pathCorroborated.length === 0) return false;
-  return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
-}
-
 export function claimsAnotherPersonsLab(args: {
   harvestedName: unknown;
   websiteUrl: unknown;

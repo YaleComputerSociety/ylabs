@@ -230,10 +230,19 @@ describe('retireAffiliatedOrgNameGrafts finishes the repair on the document (#23
     expect(rows[0].documentGraftedFields).toEqual([{ field: 'name', storedName: 'Girgenti Lab' }]);
     expect(rows[0].replacementNameAfterRollback).toBe(ownName);
 
-    expect((await applyRows(rows)).documentFieldsCorrected).toBe(1);
-    expect((await ResearchEntity.findOne({ slug: labSlug }).lean<{ name?: string }>())?.name).toBe(
-      ownName,
-    );
+    const applied = await applyRows(rows);
+    expect(applied.documentFieldsCorrected).toBe(1);
+    // This source emits `entityKey` and never `entityId`, so a row that took its id
+    // off the observation left the re-gate with nothing to do and the renamed record
+    // kept the tier the old name earned (#2368).
+    expect(applied.regated).toBe(1);
+    expect(applied.regateSkippedReason).toBeUndefined();
+    const repaired = await ResearchEntity.findOne({ slug: labSlug }).lean<{
+      name?: string;
+      studentVisibilityTier?: string;
+    }>();
+    expect(repaired?.name).toBe(ownName);
+    expect(repaired?.studentVisibilityTier).not.toBe('student_ready');
   });
 
   it('leaves a lab named after its own lead alone when the slug names the research', async () => {

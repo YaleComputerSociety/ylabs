@@ -514,6 +514,15 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     // Built from the whole roster rather than the limited slice: whose lab a
     // harvested name claims does not depend on how many profiles this run walks,
     // and a `--limit` run must reach the same verdict as a full one (#2361).
+    //
+    // That whole roster is the A-Z directory, so this vocabulary is every surname of
+    // ~14k faculty, staff, and trainees - wider than the Researcher-collection roster
+    // the collision envelope in `claimsAnotherPersonsLab` was measured against, and
+    // unmeasured itself. It accepts more collisions in exchange: a single-token
+    // topical name whose eponym-position word is also some staff member's surname is
+    // classified ANOTHER_PERSONS_LAB and loses its name, type, and lab website. It
+    // cannot be narrowed to research roles here - a role needs the person's own
+    // profile, and this run only fetches the limited slice (#2368/#2369).
     const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
 
     let totalObs = 0;

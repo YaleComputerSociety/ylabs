@@ -704,6 +704,29 @@ describe('describesAffiliatedOrganization', () => {
       expect(describesAffiliatedOrganization(blurb)).toBe(false);
     }
   });
+
+  // A mention can fall at the end of the blurb too, so trailing position alone reads
+  // "where this lab sits" as "what this slot links" and costs a genuine lab its name,
+  // type, and website. A locative lead-in is what tells the two apart (#2368).
+  it('does not flag a trailing organization a locative lead-in introduces', () => {
+    for (const blurb of [
+      'Clinical research at Northgate Children’s Hospital',
+      'Translational immunology within the Northgate Cancer Center',
+      'Sleep and circadian studies based in the Psychiatry Department',
+      'A cardiometabolic cohort run by the Northgate Pediatric Sleep Consortium',
+    ]) {
+      expect(describesAffiliatedOrganization(blurb)).toBe(false);
+    }
+  });
+
+  it('still flags a declaration whose preposition sits in an earlier clause', () => {
+    for (const blurb of [
+      'Sleep research in adolescents, the Northgate Pediatric Sleep Consortium',
+      'Applied Learning AI, hosted at Northgate, Robotics AI Surgery Collaborative',
+    ]) {
+      expect(describesAffiliatedOrganization(blurb)).toBe(true);
+    }
+  });
 });
 
 describe('personScopedResearchEntityNameNamesSomethingElse forwards the surname roster', () => {
@@ -771,11 +794,11 @@ describe('roster corroboration does not authenticate an institutional lead (#236
   });
 });
 
-// The roster arm's precision depends on the CALLER supplying a resolved lead name.
-// Half the live refusals ran on the slug-token fallback instead, which is a silent
-// downgrade: a slug like `ysm-leveylab` yields no token matching an eponym the lead
-// name would have matched. Pinned so the dependency is visible in the code.
-describe('roster corroboration depends on a resolved lead name (#2361)', () => {
+// Half the live refusals ran on the slug-token fallback rather than a resolved lead
+// name, and a slug glues the head noun onto the surname (`ysm-leveylab`), so the
+// eponym check has to read the surname out of the compound or it renames a record
+// whose name was right (#2368).
+describe('roster corroboration reads a surname out of a slug compound (#2361)', () => {
   const roster = new Set(['levey', 'scherzer']);
   const eponymHolderOwnLab = {
     harvestedName: 'Levey Lab',
@@ -789,9 +812,32 @@ describe('roster corroboration depends on a resolved lead name (#2361)', () => {
     ).toBe(false);
   });
 
-  it('refuses it on slug tokens alone, which is the degraded path', () => {
+  it('spares it on slug tokens alone too', () => {
     expect(claimsAnotherPersonsLab({ ...eponymHolderOwnLab, identityTokens: ['leveylab'] })).toBe(
-      true,
+      false,
     );
+  });
+
+  it('spares the stored name of a lead-less record whose slug is the compound', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        candidateName: 'Levey Lab',
+        entityType: 'LAB',
+        slug: 'ysm-leveylab',
+        websiteUrl: 'https://medicine.example.edu/lab/leveylab/',
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(false);
+  });
+
+  it('still refuses a foreign eponym the slug compound does not name', () => {
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Scherzer Lab',
+        websiteUrl: 'https://www.scherzerlaboratory.org/index.html',
+        identityTokens: ['leveylab'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
   });
 });
