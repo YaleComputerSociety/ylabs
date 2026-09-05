@@ -7,6 +7,10 @@ import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { deriveAccessArtifactsForResearchGroup } from '../scrapers/accessMaterializer';
 import {
+  OBSERVATION_STORE_EMPTY_REASON,
+  observationStoreIsPopulated,
+} from '../scrapers/observationStoreAvailability';
+import {
   assertOperatorEnvironmentMatchesDatabase,
   databaseNameFromMongoUrl,
 } from './operatorDatabaseEnvironment';
@@ -158,7 +162,25 @@ interface ReconcilePlanResult {
   stillValid: StaleSignalPlan[];
 }
 
+/**
+ * This lane decides a signal is stale because re-derivation no longer produces
+ * it, and re-derivation reads observations. Without an observation store every
+ * signal looks stale, so the lane would retire the whole cohort on evidence it
+ * cannot see. Refusing is the only safe answer: an empty read must never become a
+ * deletion decision (#2458). Neither `--apply` nor the confirm flag helps here,
+ * because both are environment-blind - the same invocation is correct on
+ * Development and destructive against a database that holds no observations.
+ */
+export async function assertObservationStoreAvailableForReconcile(): Promise<void> {
+  if (await observationStoreIsPopulated()) return;
+  throw new Error(
+    `${SCRIPT_NAME} cannot run here: ${OBSERVATION_STORE_EMPTY_REASON}, so every NOT_CURRENTLY_AVAILABLE signal would look no longer derivable and be retired. Run it against a database that holds the observations the signals were derived from.`,
+  );
+}
+
 async function buildReconcilePlan(limit: number): Promise<ReconcilePlanResult> {
+  await assertObservationStoreAvailableForReconcile();
+
   const liveSignals = await Signal.find({
     type: 'NOT_CURRENTLY_AVAILABLE',
     archived: { $ne: true },

@@ -1164,6 +1164,30 @@ describe('adminOperatorBoardService', () => {
     });
   });
 
+  it('reports an artifact built without an observation store as manual, not blocked', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-operator-board-'));
+    const artifactPath = path.join(dir, 'launch-acquisition.json');
+    fs.writeFileSync(
+      artifactPath,
+      JSON.stringify({
+        mode: 'read-only',
+        generatedAt: new Date().toISOString(),
+        scanned: 75,
+        observationStorePopulated: false,
+        piIdentity: { total: 65, groups: {} },
+        actionEvidence: { total: 10, groups: {} },
+      }),
+    );
+
+    const artifact = readLaunchAcquisitionGateArtifact(artifactPath);
+    const gate = deriveLaunchAcquisitionGate(artifact);
+
+    expect(gate.status).toBe('manual');
+    expect(gate.note).toMatch(/no observation store/);
+    // The blocked note blamed the corpus for a missing evidence store.
+    expect(gate.note).not.toMatch(/need new source evidence/);
+  });
+
   it('loads a saved Lane A promotion dry-run artifact without marking production ready', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-operator-board-'));
     const artifactPath = path.join(dir, 'lane-a-dry-run.json');
