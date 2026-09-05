@@ -66,6 +66,11 @@ Change such a scale as a whole or not at all.
 These files hold deliberate scales rather than brand-color drift:
 `src/providers/ConfigContextProvider.tsx` (ten-hue category palette and a department-index map), `src/utils/researchPlanStages.ts` (SAVED through APPLIED), `src/utils/fellowshipCycle.ts`, `src/types/browsable.ts`, `src/pages/analytics.tsx`, `src/components/analytics/AnalyticsSupportingDetail.tsx`, `src/components/analytics/analyticsPresentation.tsx`, and `src/components/admin/AdminOperatorBoard.tsx`.
 
+`ROLE_PILL_CLASSES` in `src/components/labs/LabMembersList.tsx` is one of these scales too: twelve member roles across blue, indigo, purple, teal, emerald, amber, and slate, so the blue on `pi` and `co-pi` is a category identity.
+Only that map is exempt; the rest of the file is ordinary brand color.
+The `pi` and `co-pi` entries currently pair a tokened background with a scale-hue text color, which is internally inconsistent with their siblings.
+Resolve that by changing the scale as a whole, not by tokening those two entries.
+
 ## 3. Typography Rules
 
 Two families, defined as `--yr-font-serif` and `--yr-font-body` and aliased to Tailwind `font-serif` and `font-sans`.
