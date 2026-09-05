@@ -118,6 +118,7 @@
     "research-homes:backfill-research-areas": "tsx src/scripts/backfillResearchAreas.ts",
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
     "research-entity:repair-lab-named-faculty-research-types": "tsx src/scripts/repairLabNamedFacultyResearchTypes.ts",
+    "research-entity:repair-truncated-org-unit-values": "tsx src/scripts/repairTruncatedOrgUnitValues.ts",
     "research-homes:backfill-org-units": "tsx src/scripts/backfillResearchEntityOrgUnits.ts",
     "org-units:seed-catalog-gaps": "tsx src/scripts/seedOrgUnitCatalogGaps.ts",
     "org-units:department-facet-audit": "tsx src/scripts/auditDepartmentFacetCatalog.ts",
