@@ -1,5 +1,5 @@
 /**
- * Admin-only routes for managing listings, fellowships, users, and profiles.
+ * Admin-only routes for managing fellowships, users, and profiles.
  */
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';

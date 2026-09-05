@@ -2024,21 +2024,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"openai@npm:^6.41.0":
-  version: 6.41.0
-  resolution: "openai@npm:6.41.0"
-  peerDependencies:
-    ws: ^8.18.0
-    zod: ^3.25 || ^4.0
-  peerDependenciesMeta:
-    ws:
-      optional: true
-    zod:
-      optional: true
-  checksum: 10c0/1836ad4141b94695074f258e2c202593d53e97c54001be9eb0c1bfec8a44f19b0f2c3663192aa738e297802862b6758284bd146eac5969c080283080864f5294
-  languageName: node
-  linkType: hard
-
 "optionator@npm:^0.9.3":
   version: 0.9.4
   resolution: "optionator@npm:0.9.4"
@@ -2203,7 +2188,6 @@ __metadata:
     eslint-plugin-react-hooks: "npm:^5.1.0"
     globals: "npm:^15.14.0"
     mongoose: "npm:^8.24.0"
-    openai: "npm:^6.41.0"
     playwright: "npm:^1.60.0"
     prettier: "npm:3.8.3"
     typescript: "npm:^5.3.0"

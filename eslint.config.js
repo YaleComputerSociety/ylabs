@@ -15,7 +15,6 @@ export default [
       '**/*.config.cjs',
       '**/*.config.mjs',
       '**/*.config.ts',
-      'client/src/utils/researchAreas.ts',
     ],
   },
   js.configs.recommended,

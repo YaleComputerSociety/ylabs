@@ -5,10 +5,7 @@ import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import {
-  isLikelyPublicProfileImageUrl,
-  isSharedProfileImageAcrossDifferentNames,
-} from '../scripts/profileImageQualityAuditCore';
+import { isLikelyPublicProfileImageUrl } from '../scripts/profileImageQualityAuditCore';
 
 const normalizeNameToken = (value: unknown): string =>
   String(value || '')

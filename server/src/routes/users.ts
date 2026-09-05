@@ -1,5 +1,5 @@
 /**
- * User routes for favorites, fellowships, listings, and profile updates.
+ * User routes for favorites, fellowships, and profile updates.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { isAuthenticated, validateObjectId, validateResearchEntityId } from '../middleware/index';
