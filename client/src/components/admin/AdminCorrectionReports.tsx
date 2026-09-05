@@ -144,7 +144,7 @@ export default function AdminCorrectionReports() {
               href={`/research/${safeRouteSegment(selected.entitySlug)}`}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 inline-block text-sm text-brand underline"
+              className="mt-1 inline-block text-sm text-brand underline yr-focus-ring"
             >
               Open page
             </a>
@@ -167,20 +167,24 @@ export default function AdminCorrectionReports() {
               className="mt-1 w-full rounded-md border border-gray-400 p-3"
             />
             <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <button type="button" onClick={() => setSelected(null)} className="min-h-11 px-4">
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="min-h-11 px-4 yr-focus-ring"
+              >
                 Close
               </button>
               <button
                 type="button"
                 onClick={() => review('dismissed')}
-                className="min-h-11 rounded-md border border-gray-600 px-4 font-semibold text-gray-700"
+                className="min-h-11 rounded-md border border-gray-600 px-4 font-semibold text-gray-700 yr-focus-ring"
               >
                 Dismiss
               </button>
               <button
                 type="button"
                 onClick={() => review('accepted')}
-                className="min-h-11 rounded-md bg-green-700 px-4 font-semibold text-white"
+                className="min-h-11 rounded-md bg-green-700 px-4 font-semibold text-white yr-focus-ring"
               >
                 Accept
               </button>

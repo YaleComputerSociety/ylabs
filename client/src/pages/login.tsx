@@ -106,7 +106,7 @@ const Login = () => {
               <button
                 type="button"
                 onClick={checkContext}
-                className="mt-3 rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft"
+                className="mt-3 rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
               >
                 Retry connection
               </button>

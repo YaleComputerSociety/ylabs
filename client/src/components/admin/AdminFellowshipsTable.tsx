@@ -327,19 +327,19 @@ const AdminFellowshipsTable = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => dispatch({ type: 'OPEN_EDIT', item: fellowship })}
-                        className="text-brand hover:text-brand-navy"
+                        className="text-brand hover:text-brand-navy yr-focus-ring"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleArchive(fellowship)}
-                        className="text-yellow-700 hover:text-yellow-800"
+                        className="text-yellow-700 hover:text-yellow-800 yr-focus-ring"
                       >
                         {fellowship.archived ? 'Unarchive' : 'Archive'}
                       </button>
                       <button
                         onClick={() => handleDelete(fellowship)}
-                        className="text-red-600 hover:text-red-800"
+                        className="text-red-600 hover:text-red-800 yr-focus-ring"
                       >
                         Delete
                       </button>
@@ -361,7 +361,7 @@ const AdminFellowshipsTable = () => {
             <button
               onClick={() => dispatch({ type: 'SET_PAGE', payload: Math.max(1, page - 1) })}
               disabled={page === 1}
-              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)]"
+              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Previous
             </button>
@@ -370,7 +370,7 @@ const AdminFellowshipsTable = () => {
                 dispatch({ type: 'SET_PAGE', payload: Math.min(totalPages, page + 1) })
               }
               disabled={page === totalPages}
-              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)]"
+              className="min-h-[44px] px-3 py-1 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Next
             </button>
@@ -427,7 +427,7 @@ const ArrayFieldEditor = ({
             <button
               type="button"
               onClick={() => handleRemove(value)}
-              className="ml-1.5 text-muted hover:text-brand"
+              className="ml-1.5 text-muted hover:text-brand yr-focus-ring"
             >
               &times;
             </button>
@@ -451,7 +451,7 @@ const ArrayFieldEditor = ({
         <button
           type="button"
           onClick={handleAdd}
-          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy"
+          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy yr-focus-ring"
         >
           Add
         </button>
@@ -499,7 +499,7 @@ const LinksEditor = ({
               <button
                 type="button"
                 onClick={() => handleRemove(i)}
-                className="ml-auto text-muted hover:text-brand flex-shrink-0"
+                className="ml-auto text-muted hover:text-brand flex-shrink-0 yr-focus-ring"
               >
                 &times;
               </button>
@@ -531,7 +531,7 @@ const LinksEditor = ({
         <button
           type="button"
           onClick={handleAdd}
-          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy"
+          className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-navy yr-focus-ring"
         >
           Add
         </button>
@@ -945,13 +945,13 @@ const FellowshipEditModal = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-[var(--yr-line-strong)] rounded-lg hover:bg-[var(--yr-panel-muted)]"
+              className="px-4 py-2 border border-[var(--yr-line-strong)] rounded-lg hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-navy"
+              className="px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-navy yr-focus-ring"
             >
               Save Changes
             </button>

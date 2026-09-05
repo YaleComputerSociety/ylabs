@@ -139,6 +139,14 @@ The proxy never receives focus, so `.yr-focus-ring` cannot fire on it.
 - Clipped focus: a control whose ancestor clips overflow uses `.yr-focus-ring-inset`, which draws the same outline just inside the border box via a negative `outline-offset`.
 `.yr-focus-ring` is invisible there - an `overflow: hidden` parent clips an outset outline away completely, while `getComputedStyle` still reports the outline as applied.
 Verify a focus ring by comparing rendered pixels, not by reading computed style.
+- The clipped-focus rule is about the clipping box *hugging* the control, not about having a scrolling ancestor at all.
+A scroll container clips at its padding box, so a control with more intervening ancestor padding than the ring's 4px extent still paints all four edges and keeps the outset token.
+Choose inset only when the control sits flush against the clipping edge.
+- Inset is the wrong choice on a saturated fill even when the ancestor does clip.
+The ring color is `color-mix(in srgb, var(--yr-blue) 72%, white)`, which lands near 2:1 when drawn inside `bg-brand` - painted but invisible, the very defect the token exists to prevent.
+An unpadded text or glyph button is the other exclusion: a negative offset strikes the outline through its own glyphs.
+- MUI controls cannot take the CSS classes, so they use `navFocusRingSx` from `src/utils/focusRing.ts`, with `menuItemFocusRingSx` for popover menu items whose scroll container would clip an outset ring.
+Both share one outline constant with `.yr-focus-ring`; do not hand-roll a `&:focus-visible` block with its own color.
 - `focus:ring-inset` has no effect alongside either class.
 It shapes a ring box-shadow, and the canonical indicators are outlines.
 

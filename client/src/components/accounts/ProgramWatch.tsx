@@ -273,7 +273,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           <button
             type="button"
             onClick={addAllDeadlinesToCalendar}
-            className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-gray-700 hover:border-[var(--yr-line-strong)] hover:text-gray-900"
+            className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-gray-700 hover:border-[var(--yr-line-strong)] hover:text-gray-900 yr-focus-ring"
           >
             Add all deadlines to calendar
           </button>
@@ -314,7 +314,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                           : `Add note for ${program.title}`
                       }
                       title={isEditing ? 'Hide note' : 'Add note'}
-                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
+                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors yr-focus-ring ${
                         note
                           ? 'border-yellow-300 bg-yellow-50 text-yellow-600'
                           : 'border-[var(--yr-line)] text-gray-400 hover:border-[var(--yr-line-strong)] hover:text-gray-600'
@@ -341,7 +341,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                         onClick={() => addProgramDeadlineToCalendar(program)}
                         aria-label={`Add ${program.title} deadline to calendar`}
                         title="Add deadline to calendar"
-                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-[var(--yr-line)] p-2 text-gray-400 transition-colors hover:border-[var(--yr-line-strong)] hover:text-gray-600"
+                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-[var(--yr-line)] p-2 text-gray-400 transition-colors hover:border-[var(--yr-line-strong)] hover:text-gray-600 yr-focus-ring"
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"

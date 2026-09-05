@@ -40,7 +40,7 @@ const HttpStatusNotifier = () => {
         <span>{message}</span>
         <button
           type="button"
-          className="ml-3 font-semibold underline"
+          className="ml-3 font-semibold underline yr-focus-ring"
           onClick={() => setMessage('')}
         >
           Dismiss

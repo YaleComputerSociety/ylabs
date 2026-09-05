@@ -746,7 +746,7 @@ const AnalyticsSupportingDetail = ({
             <button
               type="button"
               onClick={fetchUserActivity}
-              className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-slate-300"
               disabled={isUserActivityLoading}
             >
               {isUserActivityLoading ? 'Refreshing...' : 'Refresh Users'}
@@ -1175,7 +1175,10 @@ const AnalyticsSupportingDetail = ({
                       className="flex items-start justify-between gap-3 text-sm"
                     >
                       {item.href ? (
-                        <Link to={item.href} className="min-w-0 text-brand hover:underline">
+                        <Link
+                          to={item.href}
+                          className="min-w-0 text-brand hover:underline yr-focus-ring"
+                        >
                           {detail}
                         </Link>
                       ) : (

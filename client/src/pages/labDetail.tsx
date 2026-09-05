@@ -118,7 +118,7 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
-              className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-sm"
+              className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-sm yr-focus-ring"
             >
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
@@ -172,7 +172,7 @@ const AffiliatedResearchEntitiesSection = ({
           </>
         );
         const className =
-          'block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition';
+          'block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition yr-focus-ring';
         const canOpenDetail = Boolean(entity.slug);
         return canOpenDetail ? (
           <Link
@@ -207,7 +207,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
-          className="block rounded-lg border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-sm"
+          className="block rounded-lg border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-line-strong hover:shadow-sm yr-focus-ring"
         >
           <div className="flex flex-wrap gap-2">
             {uniqueCompact(
@@ -700,7 +700,7 @@ const DecisionSummary = ({
                     {piMailtoHref ? (
                       <a
                         href={piMailtoHref}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft"
+                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
                       >
                         {piName ? `Email ${piName}` : 'Email the director'}
                       </a>
@@ -709,7 +709,7 @@ const DecisionSummary = ({
                         href={profileUrl}
                         target="_blank"
                         rel={EXTERNAL_LINK_REL}
-                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft"
+                        className="inline-flex min-h-11 items-center justify-center rounded-md border border-line px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand-soft yr-focus-ring"
                       >
                         {piName ? `Contact ${piName}` : 'Contact the director'}
                       </a>

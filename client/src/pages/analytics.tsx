@@ -641,7 +641,7 @@ const Analytics = () => {
                 See the full student action counts and zero- or low-result queries in{' '}
                 <a
                   href="#high-impact-diagnostics"
-                  className="font-medium text-brand underline-offset-2 hover:underline"
+                  className="font-medium text-brand underline-offset-2 hover:underline yr-focus-ring"
                 >
                   High-Impact Diagnostics
                 </a>
@@ -701,7 +701,7 @@ const Analytics = () => {
             </label>
             <button
               ref={grantReviewButtonRef}
-              className="inline-flex min-h-[44px] items-center justify-center self-end rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex min-h-[44px] items-center justify-center self-end rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-slate-300"
               type="submit"
               disabled={adminAccessActionNetid !== null}
             >
@@ -732,7 +732,7 @@ const Analytics = () => {
                   <button
                     key={user.netid}
                     type="button"
-                    className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 yr-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={adminAccessActionNetid !== null}
                     onClick={() => {
                       setAdminGrantNetid(user.netid);
@@ -811,7 +811,7 @@ const Analytics = () => {
                               <button
                                 type="button"
                                 disabled
-                                className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-500"
+                                className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-500 yr-focus-ring-inset"
                               >
                                 Current session
                               </button>
@@ -819,7 +819,7 @@ const Analytics = () => {
                               <button
                                 type="button"
                                 aria-label={`Revoke ${grant.netid}`}
-                                className="rounded-md border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="rounded-md border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 yr-focus-ring-inset disabled:cursor-not-allowed disabled:opacity-60"
                                 disabled={adminAccessActionNetid !== null}
                                 onClick={() => {
                                   void handleRevokeAdminAccess(grant.netid);
@@ -913,14 +913,14 @@ const Analytics = () => {
                   <button
                     ref={grantDialogCancelRef}
                     type="button"
-                    className="rounded-md border px-4 py-2 text-sm font-semibold"
+                    className="rounded-md border px-4 py-2 text-sm font-semibold yr-focus-ring"
                     onClick={closeGrantDialog}
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    className="rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    className="rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white yr-focus-ring disabled:opacity-50"
                     disabled={
                       adminAccessActionNetid !== null ||
                       adminGrantConfirmation.trim().toLowerCase() !== pendingAdminGrantNetid
@@ -947,7 +947,7 @@ const Analytics = () => {
             <button
               type="button"
               onClick={fetchAuditEvents}
-              className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:cursor-not-allowed disabled:bg-slate-300 md:self-auto"
+              className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring disabled:cursor-not-allowed disabled:bg-slate-300 md:self-auto"
               disabled={isAuditLoading}
             >
               {isAuditLoading ? 'Refreshing...' : 'Refresh Log'}
@@ -1101,7 +1101,7 @@ const Analytics = () => {
                 type="button"
                 onClick={() => setAuditPage((page) => Math.max(1, page - 1))}
                 disabled={isAuditLoading || auditEvents.page <= 1}
-                className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Previous
               </button>
@@ -1109,7 +1109,7 @@ const Analytics = () => {
                 type="button"
                 onClick={() => setAuditPage((page) => Math.min(auditEvents.totalPages, page + 1))}
                 disabled={isAuditLoading || auditEvents.page >= auditEvents.totalPages}
-                className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
               </button>
@@ -1127,19 +1127,19 @@ const Analytics = () => {
           className="mb-6 flex flex-wrap gap-2 text-sm font-semibold"
         >
           <a
-            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand"
+            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand yr-focus-ring"
             href="#visitor-statistics"
           >
             Visitors
           </a>
           <a
-            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand"
+            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand yr-focus-ring"
             href="#diagnostics"
           >
             Diagnostics
           </a>
           <a
-            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand"
+            className="rounded-md border border-[var(--yr-line)] px-3 py-2 text-brand yr-focus-ring"
             href="#research-coverage"
           >
             Research Coverage

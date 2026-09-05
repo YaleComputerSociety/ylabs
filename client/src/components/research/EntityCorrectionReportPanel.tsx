@@ -182,14 +182,14 @@ export default function EntityCorrectionReportPanel({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="min-h-11 px-4 text-sm font-semibold text-gray-700"
+                className="min-h-11 px-4 text-sm font-semibold text-gray-700 yr-focus-ring"
               >
                 Close
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                className="min-h-11 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 yr-focus-ring"
               >
                 {submitting ? 'Submitting...' : 'Submit report'}
               </button>
