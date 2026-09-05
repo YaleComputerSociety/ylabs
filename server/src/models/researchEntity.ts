@@ -102,6 +102,14 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [String],
       default: [],
     },
+    // Org strings a source listed beside the appointment that are not canonical
+    // departments: centers, hospital systems, graduate programs, societies. Search
+    // text only, never a facet, so the department facet stays an org-chart
+    // assertion while these stay findable (#2194).
+    orgAffiliationLabels: {
+      type: [String],
+      default: [],
+    },
     researchAreas: {
       type: [String],
       default: [],

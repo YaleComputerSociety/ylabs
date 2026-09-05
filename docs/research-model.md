@@ -65,7 +65,7 @@ See [Legacy `User` Retirement](#legacy-user-retirement).
 The lab, center, institute, or faculty project: the discovery center.
 [`server/src/models/researchEntity.ts`](../server/src/models/researchEntity.ts) is a clean schema (not the retired `researchGroupSchema`).
 Its roster is **not** embedded: membership lives in canonical `RoleAssignment` rows joined to `Researcher` (see below).
-Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `INITIATIVE`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
+Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `INITIATIVE`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, search-only `orgAffiliationLabels[]`, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
 It does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact fields, or a paper cache.
 Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are the sole canonical prose pair.
 The legacy `kind` field (migration residue from the retired `ResearchGroup` model) is no longer an independent taxonomy: the materializer deterministically derives it from the canonical `entityType` via `mapEntityTypeToResearchGroupKind` (#2144), and `research-entity:resync-kind` backfills historically drifted rows.
@@ -129,8 +129,11 @@ Residual rows that still carried the retired type were archived rather than hard
 
 Departments and school: `OrgUnit` ([`server/src/models/orgUnit.ts`](../server/src/models/orgUnit.ts)) stays only as an ingest-time canonical lookup and seed (`name`, `slug`, `aliases[]`, `kind`, and `parentOrgUnitId` hierarchy), never a stored reference on `ResearchEntity`.
 `ResearchEntity` stores the resulting canonicalized `school` and `departments[]` strings.
-Ingest maps a scraped department string to the canonical value by deterministic normalized-name plus alias match, and fails closed to the raw string plus review when there is no match.
-Aliases grow from the review queue.
+Ingest maps a scraped department string to the canonical value by deterministic normalized-name plus alias match.
+`departments[]` is a browse facet, so it fails closed against the catalog: a value with no `DEPARTMENT`/`DIVISION` match is not published as a department, and moves to the search-only `orgAffiliationLabels[]` instead (#2194).
+That field is the honest home for the centers, hospital systems, graduate program tracks, and societies a source lists beside an appointment; it is indexed for search but never facetable or filterable, and it is not a substitute for a first-class `ResearchEntityRelationship` when the affiliation is to a real research entity.
+The scalar `school` still fails open to the raw string plus review, because the corpus's one non-canonical school value is the only facet those entities have.
+Aliases grow from the review queue, and `org-units:department-facet-audit` ranks the remaining uncataloged labels by served-row count so the debt is measurable rather than silent.
 
 Research areas: `ResearchEntity` stores canonicalized `researchAreas[]` strings, never `topicIds`/`methodIds` references.
 `TaxonomyTerm` (`taxonomy_terms`, [`server/src/models/taxonomyTerm.ts`](../server/src/models/taxonomyTerm.ts)) is kept only as an ingest-time governed research-area canonicalization registry, with `kind` (`TOPIC` | `METHOD`) and `reviewStatus` (`UNREVIEWED` | `APPROVED` | `DISPUTED`).

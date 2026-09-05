@@ -37,6 +37,10 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'methods',
     'studentSearchTerms',
     'departments',
+    // Searchable but deliberately absent from `filterableAttributes`: a center,
+    // hospital, or program a source listed beside an appointment should stay
+    // findable by name without becoming a department facet value (#2194).
+    'orgAffiliationLabels',
     'shortDescription',
     'fullDescription',
     'school',
