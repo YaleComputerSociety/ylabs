@@ -80,7 +80,7 @@ const PlanningOverview = ({
       </div>
       <Link
         to="/research"
-        className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft"
+        className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
       >
         Find more research homes
       </Link>

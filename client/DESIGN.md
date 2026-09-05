@@ -65,7 +65,9 @@ Always render it through `src/components/Wordmark.tsx` rather than as literal te
 Reusable component classes are defined in `src/index.css` (the `.yr-*` classes) and shared React primitives live in `src/components/shared/`.
 Prefer these over ad hoc styling.
 
-- Primary button: `bg-brand text-white hover:bg-brand-navy`, with `focus-visible:ring-2 focus-visible:ring-brand-soft`.
+- Primary button: `bg-brand text-white hover:bg-brand-navy`, with `.yr-focus-ring` for keyboard focus.
+Do not use a `ring-brand-soft` ring for focus.
+A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, where `brand-soft` measures 1.13:1 against the canvas and reads as no focus indicator at all.
 - Secondary button: `brand` text on `brand-soft` or panel fill with a `line` border.
 - Cards and panels: `panel` surface, `line` border, `shadow-yr` elevation, rounded corners.
 - Chips and badges: soft tints (`brand-soft`, `gold-soft`, `success-soft`) with the matching strong text color.
