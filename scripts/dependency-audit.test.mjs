@@ -8,6 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  AUDIT_VERDICTS,
   MAX_AUDIT_TIMEOUT_MS,
   REGISTRY_UNAVAILABLE_EXIT_CODE,
   auditTimeoutForAttempt,
@@ -16,6 +17,8 @@ import {
   runDependencyAudits,
   spawnAudit,
 } from './dependency-audit-core.mjs';
+
+const readVerdict = async (file) => JSON.parse(await readFile(file, 'utf8'));
 
 const scriptsDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptsDirectory, '..');
@@ -460,4 +463,63 @@ exit 1`);
   assert.equal(await readFile(fakeYarn.callFile, 'utf8'), '2');
   assert.match(result.output, /Dependency audit FAILED in \., server/);
   assert.match(result.output, /complete set of findings/);
+});
+
+test('the verdict artifact distinguishes clean, advisories-found, and unreachable', async () => {
+  const verdictFile = path.join(await mkdtemp(path.join(tmpdir(), 'ylabs-verdict-')), 'v.json');
+
+  const cleanYarn = await createFakeYarn('');
+  await runAuditCli(['.', '--', '--severity', 'moderate'], {
+    ...withFakeYarn(cleanYarn),
+    DEPENDENCY_AUDIT_VERDICT_FILE: verdictFile,
+  });
+  assert.equal((await readVerdict(verdictFile)).verdict, AUDIT_VERDICTS.CLEAN);
+
+  const advisoryYarn = await createFakeYarn(`echo '${ADVISORY_OUTPUT.split('\n')[1]}' >&2
+exit 1`);
+  await runAuditCli(['.', '--', '--severity', 'moderate'], {
+    ...withFakeYarn(advisoryYarn),
+    DEPENDENCY_AUDIT_VERDICT_FILE: verdictFile,
+  });
+  const advisory = await readVerdict(verdictFile);
+  assert.equal(advisory.verdict, AUDIT_VERDICTS.ADVISORIES_FOUND);
+  assert.deepEqual(advisory.directories, ['.']);
+
+  const outageYarn =
+    await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
+exit 1`);
+  await runAuditCli(['.', '--', '--severity', 'moderate'], {
+    ...withFakeYarn(outageYarn),
+    DEPENDENCY_AUDIT_VERDICT_FILE: verdictFile,
+  });
+  assert.equal((await readVerdict(verdictFile)).verdict, AUDIT_VERDICTS.REGISTRY_UNREACHABLE);
+});
+
+test('the override verdict is distinct from a clean verdict, so a pass cannot be forged', async () => {
+  const verdictFile = path.join(await mkdtemp(path.join(tmpdir(), 'ylabs-verdict-')), 'v.json');
+  const outageYarn =
+    await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
+exit 1`);
+
+  const result = await runAuditCli(['.', '--', '--severity', 'moderate'], {
+    ...withFakeYarn(outageYarn),
+    DEPENDENCY_AUDIT_VERDICT_FILE: verdictFile,
+    DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: '1',
+  });
+
+  // The override lets the run exit 0, but the artifact must NOT say "clean" - a
+  // consumer has to be able to tell a genuine pass from a deliberately overridden
+  // outage, or the override becomes an invisible soft pass.
+  assert.equal(result.code, 0);
+  const verdict = await readVerdict(verdictFile);
+  assert.equal(verdict.verdict, AUDIT_VERDICTS.REGISTRY_UNREACHABLE_OVERRIDDEN);
+  assert.notEqual(verdict.verdict, AUDIT_VERDICTS.CLEAN);
+});
+
+test('no verdict file is written when the env var is unset', async () => {
+  // Absent DEPENDENCY_AUDIT_VERDICT_FILE, the run must behave exactly as before -
+  // the signal is opt-in and never a required side effect.
+  const cleanYarn = await createFakeYarn('');
+  const result = await runAuditCli(['.', '--', '--severity', 'moderate'], withFakeYarn(cleanYarn));
+  assert.equal(result.code, 0, result.output);
 });

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import {
+  AUDIT_VERDICTS,
   DEFAULT_AUDIT_TIMEOUT_MS,
   DEFAULT_RETRY_DELAY_MS,
   MAX_AUDIT_ATTEMPTS,
   REGISTRY_UNAVAILABLE_EXIT_CODE,
   runDependencyAudits,
+  writeAuditVerdict,
 } from './dependency-audit-core.mjs';
 
 const argv = process.argv.slice(2);
@@ -35,6 +37,9 @@ const result = await runDependencyAudits({
 });
 
 if (result.code !== 0) {
+  writeAuditVerdict(AUDIT_VERDICTS.ADVISORIES_FOUND, {
+    directories: result.failedDirectories,
+  });
   console.error(
     `Dependency audit FAILED in ${result.failedDirectories.join(', ')}: the registry answered and reported advisories at or above the requested severity.`,
   );
@@ -45,6 +50,7 @@ if (result.code !== 0) {
 }
 
 if (result.registryUnavailableDirectories.length === 0) {
+  writeAuditVerdict(AUDIT_VERDICTS.CLEAN);
   process.exit(0);
 }
 
@@ -66,6 +72,9 @@ console.error('  status.npmjs.org reports "All Systems Operational" through thes
 console.error('');
 
 if (process.env.DEPENDENCY_AUDIT_ALLOW_UNREACHABLE === '1') {
+  writeAuditVerdict(AUDIT_VERDICTS.REGISTRY_UNREACHABLE_OVERRIDDEN, {
+    directories: result.registryUnavailableDirectories,
+  });
   console.error(
     '  DEPENDENCY_AUDIT_ALLOW_UNREACHABLE=1 is set: proceeding WITHOUT an advisory verdict.',
   );
@@ -74,6 +83,9 @@ if (process.env.DEPENDENCY_AUDIT_ALLOW_UNREACHABLE === '1') {
   process.exit(0);
 }
 
+writeAuditVerdict(AUDIT_VERDICTS.REGISTRY_UNREACHABLE, {
+  directories: result.registryUnavailableDirectories,
+});
 console.error('  Failing closed. An outage window is a plausible time to publish a bad package,');
 console.error('  and beta promotes to production, so "could not check" must not read as "clean".');
 console.error('  To override deliberately for one run, set DEPENDENCY_AUDIT_ALLOW_UNREACHABLE=1.');

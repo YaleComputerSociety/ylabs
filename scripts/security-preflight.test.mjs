@@ -671,6 +671,34 @@ test('all-environment dependency audit covers every workspace recursively', () =
   assert.match(ciWorkflow, /run:\s*yarn security:audit:all-environments/);
 });
 
+test('the advisory verdict is published as an artifact, never as a merge-gating check', () => {
+  // The verdict distinguishes exit 1 (advisories found) from exit 75 (registry
+  // unreachable) for a merge consumer, but it must stay informational: a
+  // non-required check a consumer misread as passing would rebuild the
+  // exit-0-when-unreachable soft pass #2364 removed (ylabs#2381). An artifact
+  // cannot gate a merge by construction, and it needs no write-capable token,
+  // which the read-only-permissions policy above forbids anyway.
+  assert.match(ciWorkflow, /DEPENDENCY_AUDIT_VERDICT_FILE:/);
+  assert.match(ciWorkflow, /name:\s*Publish advisory verdict/);
+  assert.match(ciWorkflow, /uses:\s*actions\/upload-artifact@[0-9a-f]{40}/);
+  assert.match(ciWorkflow, /if:\s*always\(\)/);
+  // The emitter must never make writing the artifact load-bearing on the exit code.
+  const runner = fs.readFileSync(
+    new URL('../scripts/run-dependency-audit.mjs', import.meta.url),
+    'utf8',
+  );
+  const core = fs.readFileSync(
+    new URL('../scripts/dependency-audit-core.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(runner, /writeAuditVerdict\(AUDIT_VERDICTS\.CLEAN\)/);
+  assert.match(runner, /writeAuditVerdict\(AUDIT_VERDICTS\.ADVISORIES_FOUND/);
+  assert.match(runner, /writeAuditVerdict\(AUDIT_VERDICTS\.REGISTRY_UNREACHABLE\b/);
+  assert.match(runner, /writeAuditVerdict\(AUDIT_VERDICTS\.REGISTRY_UNREACHABLE_OVERRIDDEN/);
+  // A failed artifact write must be swallowed, not allowed to change the verdict.
+  assert.match(core, /could not write audit verdict artifact/);
+});
+
 test('an unreachable advisory registry fails closed and stays bounded', () => {
   const runner = fs.readFileSync(
     new URL('../scripts/run-dependency-audit.mjs', import.meta.url),

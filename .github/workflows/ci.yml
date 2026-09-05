@@ -68,7 +68,25 @@ jobs:
         run: yarn security:preflight
 
       - name: Check moderate all-environment dependency advisories
+        env:
+          DEPENDENCY_AUDIT_VERDICT_FILE: ${{ runner.temp }}/advisory-verdict.json
         run: yarn security:audit:all-environments
+
+      # Publishes the advisory verdict (clean / advisories_found /
+      # registry_unreachable) as an artifact a merge consumer can read, so exit 1
+      # and exit 75 are distinguishable after the fact - both otherwise collapse to
+      # one `failure` on this check. `if: always()` because the unreachable and
+      # advisories-found cases are exactly the ones where the step above exits
+      # non-zero. This is informational only: the required check failing is what
+      # blocks a merge, never this artifact (ylabs#2381).
+      - name: Publish advisory verdict
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: advisory-verdict
+          path: ${{ runner.temp }}/advisory-verdict.json
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Build server and client
         run: yarn build

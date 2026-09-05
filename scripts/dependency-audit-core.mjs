@@ -1,4 +1,35 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+
+// A merge consumer cannot tell exit 1 (advisories found) from exit 75 (registry
+// unreachable) because both surface as one `failure` conclusion on the required
+// check. This publishes the distinction as a plain-JSON artifact a consumer can
+// read (ylabs#2381 finding c). It is deliberately NOT a check run or commit
+// status: those need write-capable token permissions that a security policy
+// forbids, and more importantly a non-required check that a consumer misreads as
+// passing would rebuild the soft pass this whole effort removed. An artifact
+// cannot gate a merge by construction, so it stays informational - the required
+// check failing is what blocks.
+export const AUDIT_VERDICTS = Object.freeze({
+  CLEAN: 'clean',
+  ADVISORIES_FOUND: 'advisories_found',
+  REGISTRY_UNREACHABLE: 'registry_unreachable',
+  REGISTRY_UNREACHABLE_OVERRIDDEN: 'registry_unreachable_overridden',
+});
+
+export function writeAuditVerdict(verdict, details = {}) {
+  const path = process.env.DEPENDENCY_AUDIT_VERDICT_FILE;
+  if (!path) return;
+  const payload = { verdict, ...details, writtenAt: new Date().toISOString() };
+  try {
+    fs.writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`);
+  } catch (error) {
+    // The verdict artifact is diagnostic, never load-bearing. Failing to write it
+    // must not change the audit's exit code, or the side channel would become the
+    // gate it is designed not to be.
+    console.error(`  (could not write audit verdict artifact: ${error.message})`);
+  }
+}
 
 export const MAX_AUDIT_ATTEMPTS = 3;
 export const DEFAULT_RETRY_DELAY_MS = 5_000;
