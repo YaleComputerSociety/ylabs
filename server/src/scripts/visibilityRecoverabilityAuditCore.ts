@@ -8,24 +8,28 @@
  * not distinguish "the lane is weak" from "there is nothing to repair with". Those
  * warrant opposite investments, which is what this audit separates.
  *
- * Three buckets, in strict precedence:
+ * Four buckets, in strict precedence:
  *
- *   REGATE       the gate has never run on this record, so nothing is known about it
- *                yet. Kept SEPARATE from `materialize` rather than folded in: a
- *                dry-run over Development's 559 never-gated rows promoted 6 and held
- *                553, so counting them as recoverable would have overstated the
- *                promotable population by roughly 50%. Cheap to resolve, but resolving
- *                it mostly yields a real blocker rather than a promotion.
- *   MATERIALIZE  a live observation already carries a value for the blocked field,
- *                and the document does not. Nothing needs fetching - the value is
- *                stored and unmaterialized, which is what the repair queue is for.
+ *   REGATE       the gate has never recorded a verdict for this record, so nothing is
+ *                known about it yet. Kept SEPARATE from `materialize` rather than
+ *                folded in: a dry-run over Development's 559 never-gated rows promoted
+ *                6 and held 553, so counting them as recoverable would have overstated
+ *                the promotable population by roughly 50%. Cheap to resolve, but
+ *                resolving it mostly yields a real blocker rather than a promotion.
+ *   MATERIALIZE  a live observation already carries a value for the blocked field, and
+ *                the document does not. Nothing needs fetching - the value is stored
+ *                and unmaterialized, which is what the repair queue is for. A field the
+ *                document ALREADY carries is deliberately excluded: re-writing the same
+ *                value clears no blocker, so counting it would overstate exactly the
+ *                repair-queue-addressable population this instrument exists to measure.
  *   ACQUIRE      no observation carries it, but the record cites a source URL that
  *                could still be crawled and extracted. Needs an acquisition lane
  *                and, for description blockers, paid LLM extraction.
- *   CEILING      no observation and no citable source, or the blocker is a decision
- *                rather than a gap (duplicate, closed, non-research, operator
- *                override). Promoting these is not an engineering task, so counting
- *                them as "withheld" overstates the recoverable population.
+ *   CEILING      no observation and no citable source, the blocker is a decision rather
+ *                than a gap (duplicate, closed, non-research, operator override), or the
+ *                gate held the record for a reason this audit does not model. Promoting
+ *                these is not an engineering task, so counting them as "withheld"
+ *                overstates the recoverable population.
  *
  * Read-only by construction: it opens no write path and takes no apply flag.
  */
@@ -70,6 +74,12 @@ export interface RecoverabilityInputRecord {
   recordId: string;
   slug: string;
   blockers: string[];
+  /**
+   * Whether the gate has recorded a verdict for this record. Carried separately from
+   * `blockers` because "no modelled blocker" and "never gated" are different facts:
+   * a gated record can be held entirely by reasons this audit does not model.
+   */
+  gated: boolean;
   /** Fields the DOCUMENT currently carries a usable value for. */
   populatedFields: Set<string>;
   /** Fields a live, non-rolled-back observation carries a value for. */
@@ -101,8 +111,8 @@ export function classifyRecoverability(record: RecoverabilityInputRecord): Recov
     return {
       recordId: record.recordId,
       slug: record.slug,
-      bucket: 'regate',
-      decidingBlocker: 'never_gated',
+      bucket: record.gated ? 'ceiling' : 'regate',
+      decidingBlocker: record.gated ? 'held_without_modelled_blocker' : 'never_gated',
       residualBlockers: [],
     };
   }
@@ -145,7 +155,9 @@ export function classifyBlocker(
   // an audit that flatters itself on blockers it does not model is the failure mode
   // this instrument exists to avoid.
   if (!fields || fields.length === 0) return 'ceiling';
-  if (fields.some((field) => record.observedFields.has(field))) return 'materialize';
+  const unmaterialized = (field: string): boolean =>
+    record.observedFields.has(field) && !record.populatedFields.has(field);
+  if (fields.some(unmaterialized)) return 'materialize';
   if (record.citableSourceUrls.length > 0) return 'acquire';
   return 'ceiling';
 }
@@ -156,13 +168,17 @@ export interface RecoverabilityReport {
   byBlocker: Array<{
     blocker: string;
     rows: number;
-    regate: number;
     materialize: number;
     acquire: number;
     ceiling: number;
   }>;
-  /** Rows whose every blocker is a decision - the honest promotion ceiling. */
-  ceilingRows: number;
+  /**
+   * Rows carrying at least one blocker whose every blocker is a decision - the subset
+   * of the ceiling no acquisition or materialization lane could ever move. Strictly
+   * narrower than `byBucket.ceiling`, which also holds rows blocked by a real gap that
+   * simply has no evidence and no source left.
+   */
+  decisionOnlyRows: number;
 }
 
 export function buildRecoverabilityReport(
@@ -177,21 +193,26 @@ export function buildRecoverabilityReport(
   };
   for (const verdict of verdicts) byBucket[verdict.bucket] += 1;
 
+  // `regate` is deliberately absent: that verdict is only reached by a record carrying
+  // no blockers, so it can never be attributed to a blocker row.
   const perBlocker = new Map<
     string,
-    { rows: number; regate: number; materialize: number; acquire: number; ceiling: number }
+    { rows: number; materialize: number; acquire: number; ceiling: number }
   >();
+  let decisionOnlyRows = 0;
   for (const verdict of verdicts) {
-    for (const blocker of blockersByRecord.get(verdict.recordId) || []) {
+    const blockers = blockersByRecord.get(verdict.recordId) || [];
+    if (blockers.length > 0 && blockers.every((blocker) => DECISION_BLOCKERS.has(blocker)))
+      decisionOnlyRows += 1;
+    for (const blocker of blockers) {
       const entry = perBlocker.get(blocker) || {
         rows: 0,
-        regate: 0,
         materialize: 0,
         acquire: 0,
         ceiling: 0,
       };
       entry.rows += 1;
-      entry[verdict.bucket] += 1;
+      if (verdict.bucket !== 'regate') entry[verdict.bucket] += 1;
       perBlocker.set(blocker, entry);
     }
   }
@@ -202,6 +223,6 @@ export function buildRecoverabilityReport(
     byBlocker: [...perBlocker.entries()]
       .map(([blocker, counts]) => ({ blocker, ...counts }))
       .sort((left, right) => right.rows - left.rows),
-    ceilingRows: byBucket.ceiling,
+    decisionOnlyRows,
   };
 }

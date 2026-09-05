@@ -10,6 +10,7 @@ const record = (over: Partial<Parameters<typeof classifyRecoverability>[0]> = {}
   recordId: 'r1',
   slug: 'dept-example-jordan-rivers',
   blockers: [] as string[],
+  gated: false,
   populatedFields: new Set<string>(),
   observedFields: new Set<string>(),
   citableSourceUrls: [] as string[],
@@ -22,6 +23,29 @@ describe('classifyBlocker', () => {
       classifyBlocker('missing_card_description', {
         observedFields: new Set(['shortDescription']),
         populatedFields: new Set(),
+        citableSourceUrls: [],
+      }),
+    ).toBe('materialize');
+  });
+
+  // A `thin_description` row HAS a description; materializing the observation the text
+  // came from re-writes the same thin prose and clears nothing, so counting it as
+  // repair-queue-addressable overstates exactly the population this audit measures.
+  it('does not call a field the document already carries materializable', () => {
+    expect(
+      classifyBlocker('thin_description', {
+        observedFields: new Set(['fullDescription']),
+        populatedFields: new Set(['fullDescription']),
+        citableSourceUrls: ['https://medicine.example.edu/lab/rivers/'],
+      }),
+    ).toBe('acquire');
+  });
+
+  it('still materializes when one blocked field is stored and another is already populated', () => {
+    expect(
+      classifyBlocker('missing_card_description', {
+        observedFields: new Set(['shortDescription', 'fullDescription']),
+        populatedFields: new Set(['fullDescription']),
         citableSourceUrls: [],
       }),
     ).toBe('materialize');
@@ -106,9 +130,18 @@ describe('classifyRecoverability', () => {
   // never-gated rows promoted 6 and held 553, so folding these in overstated the
   // recoverable population by roughly 50%.
   it('puts a never-gated row in its own bucket rather than calling it materializable', () => {
-    const verdict = classifyRecoverability(record({ blockers: [] }));
+    const verdict = classifyRecoverability(record({ blockers: [], gated: false }));
     expect(verdict.bucket).toBe('regate');
     expect(verdict.decidingBlocker).toBe('never_gated');
+  });
+
+  // A gated row can be held entirely by reasons outside the modelled blocker taxonomy
+  // (a non-blocking correctness reason plus a soft signal). Calling that "gate never
+  // ran" claims a cheap re-gate would move it, when the gate already ran and held it.
+  it('does not call a gated row with no modelled blocker never-gated', () => {
+    const verdict = classifyRecoverability(record({ blockers: [], gated: true }));
+    expect(verdict.bucket).toBe('ceiling');
+    expect(verdict.decidingBlocker).toBe('held_without_modelled_blocker');
   });
 });
 
@@ -138,12 +171,34 @@ describe('buildRecoverabilityReport', () => {
 
     expect(report.withheld).toBe(3);
     expect(report.byBucket).toEqual({ regate: 1, materialize: 1, acquire: 0, ceiling: 1 });
-    expect(report.ceilingRows).toBe(1);
+    // 'a' is ceiling but carries a real description gap alongside its duplicate risk, so
+    // it is NOT part of the decision-only floor even though it is part of the ceiling.
+    expect(report.decisionOnlyRows).toBe(0);
 
     const thin = report.byBlocker.find((row) => row.blocker === 'thin_description');
     expect(thin).toMatchObject({ rows: 2, materialize: 1, ceiling: 1 });
+    expect(thin).not.toHaveProperty('regate');
     // 'c' carries no blocker, so it contributes to no blocker row while still
     // counting once in byBucket - the two totals are not meant to reconcile.
     expect(report.byBlocker.some((row) => row.blocker === 'never_gated')).toBe(false);
+  });
+
+  it('counts a row whose every blocker is a decision as decision-only', () => {
+    const verdicts = [
+      classifyRecoverability(
+        record({ recordId: 'a', blockers: ['duplicate_risk', 'permanently_closed'] }),
+      ),
+      classifyRecoverability(record({ recordId: 'b', blockers: ['thin_description'] })),
+    ];
+    const report = buildRecoverabilityReport(
+      verdicts,
+      new Map([
+        ['a', ['duplicate_risk', 'permanently_closed']],
+        ['b', ['thin_description']],
+      ]),
+    );
+
+    expect(report.byBucket.ceiling).toBe(2);
+    expect(report.decisionOnlyRows).toBe(1);
   });
 });
