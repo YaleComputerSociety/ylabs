@@ -49,6 +49,7 @@
     "observations:prune-dead": "tsx src/scripts/pruneDeadObservations.ts",
     "observations:audit-orphan-keys": "tsx src/scripts/orphanObservationKeyAudit.ts",
     "observations:catch-up-materialize": "tsx src/scripts/catchUpMaterializeStrandedKeys.ts",
+    "observations:stranded-key-decisions": "tsx src/scripts/strandedKeyRedirectDecisionReport.ts",
     "observations:normalize-fingerprints": "tsx src/scripts/normalizeObservationFingerprints.ts",
     "meili:rebuild-research-entities": "tsx src/scripts/rebuildResearchEntitySearchIndex.ts",
     "meili:prune-archived-research-entities": "tsx src/scripts/pruneArchivedResearchEntitiesFromIndex.ts",
