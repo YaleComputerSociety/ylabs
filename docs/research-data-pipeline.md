@@ -2,7 +2,7 @@
 
 Status: active operator reference
 
-Last updated: 2026-08-26
+Last updated: 2026-09-05
 
 Yale Research data moves through an evidence-first pipeline. Use this document for the stable shape of the pipeline, [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for source-level audit expectations, and [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) for Beta and production promotion steps.
 
@@ -397,6 +397,12 @@ Only deterministic source-backed patches are applied automatically.
 Repair code must block archived research entities before PI member or access-signal upserts; archived duplicates should be repaired through the guarded member/artifact cleanup scripts instead.
 Same-PI duplicate research homes are consolidated through the guarded dry-run, review, and apply workflow in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 PI identity conflicts, same-name risks, suppression decisions, and unsupported action-evidence gaps remain queued as exceptions instead of being guessed into student-visible data.
+
+Repair-queue yield alone cannot say whether a withheld row has anything to repair with, so read it against `yarn --cwd server visibility:recoverability`.
+It is read-only against Mongo and writes only its report, taking no apply flag at all.
+It scans the `operator_review` and `suppressed` tiers and sorts every scanned record into one of four buckets: `regate` (never gated), `materialize` (a live observation carries the blocked value and the document does not), `acquire` (nothing observed, but a citable source URL remains to crawl), and `ceiling` (a decision blocker, an unmodelled hold, or no evidence and no source).
+It accepts `--tier=<withheld tier>` (repeatable, rejects public and unknown tiers), `--limit=<n>`, `--examples=<n>`, and `--output=<path>` for a JSON artifact.
+`server/src/scripts/visibilityRecoverabilityAuditCore.ts` is the source of truth for what each bucket means and why a record takes its WORST blocker rather than its best; do not restate those rules here.
 
 Formalization-only programs are deliberately capped. Fellowship funding, research travel grants, senior thesis funding, and secure-mentor-before-apply funding rows can be useful after a student has a research home, but they are not entry pathways by themselves. The visibility gate marks these records with `formalization_only`, keeps them out of `student_ready`, and routes them to exception review rather than source-description auto-repair unless evidence shows mentor matching, project placement, an internship, an RA program, or another real entry route.
 
