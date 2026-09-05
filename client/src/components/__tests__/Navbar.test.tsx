@@ -81,7 +81,7 @@ describe('Navbar', () => {
 
     const primaryNav = screen.getByRole('navigation', { name: 'Primary navigation' });
     expect(primaryNav.closest('.MuiToolbar-root')).toBeTruthy();
-    expect(within(primaryNav).getByRole('link', { name: 'Yale Research' })).toBeTruthy();
+    expect(within(primaryNav).getByRole('link', { name: 'Research' })).toBeTruthy();
     expect(within(primaryNav).getByRole('link', { name: 'Programs & Fellowships' })).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Find Pathways' })).toBeNull();
     expect(screen.queryByPlaceholderText('Search programs and fellowships...')).toBeNull();
@@ -138,9 +138,9 @@ describe('Navbar', () => {
     renderGuestNavbar();
 
     const primaryNav = screen.getByRole('navigation', { name: 'Primary navigation' });
-    expect(
-      within(primaryNav).getByRole('link', { name: 'Yale Research' }).getAttribute('href'),
-    ).toBe('/research');
+    expect(within(primaryNav).getByRole('link', { name: 'Research' }).getAttribute('href')).toBe(
+      '/research',
+    );
     expect(within(primaryNav).getByRole('link', { name: 'About' }).getAttribute('href')).toBe(
       '/about',
     );
@@ -157,6 +157,6 @@ describe('Navbar', () => {
 
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close menu' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Yale Research' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Research' })).toBeTruthy();
   });
 });

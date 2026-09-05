@@ -57,6 +57,8 @@ Two families, defined as `--yr-font-serif` and `--yr-font-body` and aliased to T
 - Body, controls, labels, and data: `Inter` sans stack (`font-sans`).
 - Body text color is `ink`; secondary and helper text is `muted`.
 - Keep line length comfortable for reading; prefer measured column widths over full-bleed paragraphs.
+- The `y/labs` wordmark is the one exception to the heading rule: it is set in the `Inter` sans stack at weight 700 with `-0.03em` tracking, matching the `y/cs` mark it derives from.
+Always render it through `src/components/Wordmark.tsx` rather than as literal text, so the slash keeps its taller scale.
 
 ## 4. Component Stylings
 

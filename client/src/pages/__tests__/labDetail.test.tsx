@@ -2112,7 +2112,7 @@ describe('LabDetail page', () => {
       'It appears to center on High-Dimensional Statistics and Probability Theory.',
     );
     expect(text).toContain(
-      'Yale Research has not found a separate research website or posted undergraduate opening',
+      'y/labs has not found a separate research website or posted undergraduate opening',
     );
     expect(text).not.toContain('What this lab studies');
     expect(text).not.toContain('Research connected to High-Dimensional Statistics');
@@ -2121,7 +2121,7 @@ describe('LabDetail page', () => {
       'It appears to center on High-Dimensional Statistics and Probability Theory.',
     );
     const disclaimer = screen.getByText(
-      /Yale Research has not found a separate research website or posted undergraduate opening/,
+      /y\/labs has not found a separate research website or posted undergraduate opening/,
     );
     expect(summary.tagName).toBe('P');
     expect(disclaimer.tagName).toBe('P');
@@ -2516,9 +2516,9 @@ describe('LabDetail display name unification', () => {
     );
 
     expect(
-      await screen.findByRole('heading', { name: /we couldn't find that yale research page/i }),
+      await screen.findByRole('heading', { name: /we couldn't find that y\/labs page/i }),
     ).toBeTruthy();
-    const exploreLink = screen.getByRole('link', { name: /explore yale research/i });
+    const exploreLink = screen.getByRole('link', { name: /explore research/i });
     expect(exploreLink.getAttribute('href')).toBe('/research');
     await waitFor(() => expect(document.title).toContain('Page not found'));
   });
@@ -2549,7 +2549,7 @@ describe('LabDetail display name unification', () => {
     expect(
       await screen.findByText(/Something went wrong loading this research profile/),
     ).toBeTruthy();
-    const exploreLink = screen.getByRole('link', { name: /explore yale research/i });
+    const exploreLink = screen.getByRole('link', { name: /explore research/i });
     expect(exploreLink.getAttribute('href')).toBe('/research');
   });
 });

@@ -39,7 +39,7 @@ const safeSmokeBaseUrl = (raw, name) => {
   const isLocal = LOCAL_SMOKE_HOSTS.has(hostname);
   const isDeployed = DEPLOYED_SMOKE_HOSTS.has(hostname);
   if (!isLocal && !isDeployed) {
-    throw new Error(`${name} must point to localhost or a Yale Research deployment`);
+    throw new Error(`${name} must point to localhost or a y/labs deployment`);
   }
   if (isDeployed && parsed.protocol !== 'https:') {
     throw new Error(`${name} deployed origins must use HTTPS`);
@@ -131,7 +131,7 @@ const submitSearch = async (query) => {
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page
     .waitForFunction(
-      () => !document.body.innerText.includes('Searching Yale Research for'),
+      () => !document.body.innerText.includes('Searching y/labs for'),
       undefined,
       { timeout: 20000 },
     )

@@ -8,15 +8,17 @@ afterEach(() => {
 });
 
 describe('About', () => {
-  it('uses current Yale Research naming for project history and links', () => {
+  it('uses current y/labs naming for project history and links', () => {
     render(<About />);
 
-    expect(screen.getByText(/Yale Research is a/)).toBeTruthy();
-    expect(screen.getByText(/product that gives students/)).toBeTruthy();
+    expect(screen.getByText(/y\/labs is a/)).toBeTruthy();
+    expect(
+      screen.getByText(/project that puts research at Yale in one searchable place/),
+    ).toBeTruthy();
     expect(screen.queryByText(/collaboration between/i)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Yale Research alumni' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'y/labs alumni' })).toBeTruthy();
     expect(screen.getByText('Founder')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Yale Research GitHub' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'y/labs GitHub' })).toBeTruthy();
     expect(screen.queryByText(/RDB/)).toBeNull();
   });
 
@@ -33,9 +35,7 @@ describe('About', () => {
   it('keeps the feedback prompt current and below the main page heading', () => {
     render(<About />);
 
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'Help improve Yale Research' }),
-    ).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Help improve y/labs' })).toBeTruthy();
     expect(screen.queryByRole('heading', { level: 1, name: /first release/i })).toBeNull();
   });
 });

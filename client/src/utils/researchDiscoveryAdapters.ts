@@ -592,7 +592,7 @@ export function buildIdentityConfidenceRecords(
       {
         claim: input.sourceContext
           ? `Identity appears in ${input.sourceContext}.`
-          : 'Identity is derived from available Yale Research metadata.',
+          : 'Identity is derived from available y/labs metadata.',
         sourceType: input.netid ? 'Yale profile metadata' : 'Research metadata',
         confidence: input.netid ? 'high' : 'unresolved',
       },

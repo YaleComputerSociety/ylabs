@@ -71,7 +71,7 @@ export default function Navbar() {
 
   const guestNavLinks = [
     {
-      label: 'Yale Research',
+      label: 'Research',
       to: '/research',
       active: (pathname: string) => pathname === '/research' || pathname.startsWith('/research/'),
     },

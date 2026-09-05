@@ -33,7 +33,7 @@ const safeAuditBaseUrl = (raw, name) => {
   const isLocal = LOCAL_AUDIT_HOSTS.has(hostname);
   const isDeployed = DEPLOYED_AUDIT_HOSTS.has(hostname);
   if (!isLocal && !isDeployed) {
-    throw new Error(`${name} must point to localhost or a Yale Research deployment`);
+    throw new Error(`${name} must point to localhost or a y/labs deployment`);
   }
   if (isDeployed && parsed.protocol !== 'https:') {
     throw new Error(`${name} deployed origins must use HTTPS`);

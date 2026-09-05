@@ -28,9 +28,7 @@ describe('YURAButton', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('link', { name: /Yale Research/i }).getAttribute('href')).toBe(
-      '/research',
-    );
+    expect(screen.getByRole('link', { name: /y\/labs/i }).getAttribute('href')).toBe('/research');
   });
 
   it('clears the query for logged-out visitors instead of reloading it', async () => {
@@ -41,7 +39,7 @@ describe('YURAButton', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+    await userEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
 
     expect(screen.getByTestId('location').textContent).toBe('/research');
   });
@@ -54,7 +52,7 @@ describe('YURAButton', () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+    await userEvent.click(screen.getByRole('link', { name: /y\/labs/i }));
 
     expect(screen.getByTestId('location').textContent).toBe('/research');
     expect(screen.getByTestId('reset-intent').textContent).toBe('true');
