@@ -59,8 +59,25 @@ export const isFacultyResearchEntity = (entity?: ResearchEntityCopyInput | null)
       entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
 
+const LAB_STRUCTURE_MARKER = /\b(?:lab|labs|laboratory|laboratories)\b/i;
+
+/**
+ * A `displayName` claiming a lab on an entity whose `name` does not is a graft
+ * from a different research home, not a better name, so the whole string is
+ * untrusted rather than trimmed - keeping part of it would keep its other
+ * corruptions too (a stripped initial, a colleague's surname).
+ */
+const displayNameGraftsLabStructure = (entity?: ResearchEntityCopyInput | null): boolean =>
+  isFacultyResearchEntity(entity) &&
+  Boolean(entity?.displayName) &&
+  Boolean(entity?.name) &&
+  LAB_STRUCTURE_MARKER.test(String(entity?.displayName)) &&
+  !LAB_STRUCTURE_MARKER.test(String(entity?.name));
+
 export const researchEntityDisplayName = (entity?: ResearchEntityCopyInput | null): string =>
-  String(entity?.displayName || entity?.name || '');
+  displayNameGraftsLabStructure(entity)
+    ? String(entity?.name || entity?.displayName || '')
+    : String(entity?.displayName || entity?.name || '');
 
 const FACULTY_RESEARCH_TITLE_SUFFIX = /\s*(?:[-–—]\s*)?(?:Faculty\s+)?Research$/i;
 
