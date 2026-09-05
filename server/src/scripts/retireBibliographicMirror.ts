@@ -7,7 +7,6 @@ import { initializeConnections } from '../db/connections';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  OFFICIAL_PROFILE_DISCOVERED_VIA,
   RETIRED_COLLECTIONS,
   RETIRED_RESEARCH_ENTITY_FIELDS,
   RETIRED_USER_FIELDS,
@@ -75,13 +74,7 @@ export function assertRetireBibliographicMirrorApplyAllowed(
   }
 }
 
-export interface RetireBibliographicMirrorCounts {
-  papers: number;
-  paperAuthors: number;
-  officialProfileScholarlyLinks: number;
-  nonOfficialScholarlyLinks: number;
-  scholarlyAttributions: number;
-}
+export type RetireBibliographicMirrorCounts = Record<(typeof RETIRED_COLLECTIONS)[number], number>;
 
 interface CollectionDropReport {
   name: string;
@@ -99,8 +92,6 @@ export interface RetireBibliographicMirrorResult {
   before: RetireBibliographicMirrorCounts;
   after: RetireBibliographicMirrorCounts;
   droppedCollections: CollectionDropReport[];
-  deletedNonOfficialScholarlyLinks: number;
-  deletedScholarlyAttributions: number;
   unsetUserFields: UnsetFieldsReport;
   unsetResearchEntityFields: UnsetFieldsReport;
 }
@@ -120,31 +111,11 @@ async function countCollection(
 }
 
 async function snapshotCounts(db: MongoDb): Promise<RetireBibliographicMirrorCounts> {
-  const [
-    papers,
-    paperAuthors,
-    officialProfileScholarlyLinks,
-    nonOfficialScholarlyLinks,
-    scholarlyAttributions,
-  ] = await Promise.all([
-    countCollection(db, 'papers'),
-    countCollection(db, 'paper_authors'),
-    countCollection(db, 'research_scholarly_links', {
-      discoveredVia: OFFICIAL_PROFILE_DISCOVERED_VIA,
-    }),
-    countCollection(db, 'research_scholarly_links', {
-      discoveredVia: { $ne: OFFICIAL_PROFILE_DISCOVERED_VIA },
-    }),
-    countCollection(db, 'research_scholarly_attributions'),
-  ]);
+  const counts = await Promise.all(
+    RETIRED_COLLECTIONS.map(async (name) => [name, await countCollection(db, name)] as const),
+  );
 
-  return {
-    papers,
-    paperAuthors,
-    officialProfileScholarlyLinks,
-    nonOfficialScholarlyLinks,
-    scholarlyAttributions,
-  };
+  return Object.fromEntries(counts) as RetireBibliographicMirrorCounts;
 }
 
 async function unsetFields(
@@ -173,8 +144,6 @@ export async function retireBibliographicMirror(options: {
     existed: false,
     droppedCount: 0,
   }));
-  let deletedNonOfficialScholarlyLinks = 0;
-  let deletedScholarlyAttributions = 0;
   let unsetUserFields: UnsetFieldsReport = { matched: 0, modified: 0 };
   let unsetResearchEntityFields: UnsetFieldsReport = { matched: 0, modified: 0 };
 
@@ -185,24 +154,6 @@ export async function retireBibliographicMirror(options: {
       const droppedCount = existed ? await db.collection(name).countDocuments() : 0;
       if (existed) await db.collection(name).drop();
       droppedCollections.push({ name, existed, droppedCount });
-    }
-
-    const retiredLinks = await db
-      .collection('research_scholarly_links')
-      .find({ discoveredVia: { $ne: OFFICIAL_PROFILE_DISCOVERED_VIA } }, { projection: { _id: 1 } })
-      .toArray();
-    const retiredLinkIds = retiredLinks.map((link) => link._id);
-
-    if (retiredLinkIds.length > 0) {
-      const attributionDeletion = await db
-        .collection('research_scholarly_attributions')
-        .deleteMany({ scholarlyLinkId: { $in: retiredLinkIds } });
-      deletedScholarlyAttributions = attributionDeletion.deletedCount || 0;
-
-      const linkDeletion = await db
-        .collection('research_scholarly_links')
-        .deleteMany({ _id: { $in: retiredLinkIds } });
-      deletedNonOfficialScholarlyLinks = linkDeletion.deletedCount || 0;
     }
 
     unsetUserFields = await unsetFields(db, 'users', RETIRED_USER_FIELDS);
@@ -216,11 +167,7 @@ export async function retireBibliographicMirror(options: {
   const after = await snapshotCounts(db);
 
   if (options.apply) {
-    assertRetireBibliographicMirrorInvariants({
-      officialProfileLinksBefore: before.officialProfileScholarlyLinks,
-      officialProfileLinksAfter: after.officialProfileScholarlyLinks,
-      nonOfficialLinksAfter: after.nonOfficialScholarlyLinks,
-    });
+    assertRetireBibliographicMirrorInvariants({ remainingByCollection: after });
   }
 
   return {
@@ -228,8 +175,6 @@ export async function retireBibliographicMirror(options: {
     before,
     after,
     droppedCollections,
-    deletedNonOfficialScholarlyLinks,
-    deletedScholarlyAttributions,
     unsetUserFields,
     unsetResearchEntityFields,
   };

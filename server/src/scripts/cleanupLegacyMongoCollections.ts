@@ -27,13 +27,12 @@ const EMPTY_LEGACY_COLLECTIONS = [
   'research_group_stats',
   'paper_group_links',
   // Retired models whose collections outlived them. `papers`/`paper_authors`
-  // are owned by retire:bibliographic-mirror and `student_applications` is the
-  // applications migration target above, so neither is listed here.
+  // and the two `research_scholarly_*` collections are owned by
+  // retire:bibliographic-mirror, and `student_applications` is the applications
+  // migration target above, so none of those are listed here.
   'faculty_members',
   'listings',
   'listingclaimrequests',
-  'research_scholarly_links',
-  'research_scholarly_attributions',
   'student_engagement_events',
   'student_outreaches',
   'student_profiles',
