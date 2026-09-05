@@ -24,6 +24,11 @@ Do not manufacture a `Signal` for every lab or expose model complexity that does
 Iterate on canonical product surfaces such as `/research`, or use a non-URL feature flag.
 Do not create student-facing versioned routes like `/v1`, `/research-v2`, or similar for ordinary product iteration.
 
+The brand logo is the escape hatch back to a clean start, for signed-in and logged-out visitors alike.
+Clicking it lands on `/research` with no query, no filters, an empty search box, and the default browse results, and it never re-runs the search the student was just looking at.
+A submitted search lives in the URL, so navigating to a bare `/research` is enough to clear it; an unsubmitted draft lives only in page state, so the logo carries an explicit reset intent for that case (`client/src/components/researchHomeNavigation.ts`).
+Never implement this reset as `window.location.reload()`: a reload replays the current URL, which is exactly the query the student asked to leave.
+
 Entity pages should answer:
 
 - what the research structure is;

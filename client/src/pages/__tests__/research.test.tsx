@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Research, { __resetResearchPageSnapshotForTests } from '../research';
+import HomeButton from '../../components/HomeButton';
 import axios from '../../utils/axios';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
@@ -601,6 +602,93 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'Quantum Materials Example' });
     expect(screen.getByTestId('location').textContent).toBe('/research?q=quantum+materials');
+  });
+
+  it('returns the brand logo to a clean research home instead of rerunning the search', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse(
+        body.q === 'quantum materials'
+          ? [
+              {
+                ...researchEntity,
+                _id: 'quantum-materials-1',
+                slug: 'quantum-materials-example',
+                name: 'Quantum Materials Example',
+                displayName: 'Quantum Materials Example',
+                researchAreas: ['Quantum materials'],
+              },
+            ]
+          : [researchEntity],
+      );
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=quantum+materials']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <HomeButton />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'Quantum Materials Example' });
+
+    fireEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research');
+      expect(screen.getByLabelText('Search Yale research')).toHaveValue('');
+    });
+    expect(screen.queryByRole('heading', { name: 'Quantum Materials Example' })).toBeNull();
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+  });
+
+  it('clears an unsubmitted draft query when the brand logo is clicked on the research home', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <HomeButton />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'quantum materials' },
+    });
+    expect(screen.getByLabelText('Search Yale research')).toHaveValue('quantum materials');
+
+    fireEvent.click(screen.getByRole('link', { name: /Yale Research/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search Yale research')).toHaveValue('');
+    });
+    expect(screen.getByTestId('location').textContent).toBe('/research');
   });
 
   it('keeps school and department filters compact, URL-backed, and individually clearable', async () => {

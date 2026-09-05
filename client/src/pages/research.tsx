@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useStat
 import { isCancel } from 'axios';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
+import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
@@ -1018,6 +1019,8 @@ const Research = () => {
   const runSearchRef = useRef(runSearch);
   const runDefaultResearchHomeSearchRef = useRef(runDefaultResearchHomeSearch);
   const runSearchResultsPageRef = useRef(runSearchResultsPage);
+  const resetResearchHomeIfDirtyRef = useRef<() => void>(() => {});
+  const consumedHomeResetKeyRef = useRef<string | null>(null);
   runSearchRef.current = runSearch;
   runDefaultResearchHomeSearchRef.current = runDefaultResearchHomeSearch;
   runSearchResultsPageRef.current = runSearchResultsPage;
@@ -1738,6 +1741,27 @@ const Research = () => {
     scrollResearchViewportToTop();
     resetSearch();
   };
+  const resetResearchHomeIfDirty = () => {
+    const hasResetableSearchState =
+      query.trim().length > 0 ||
+      submittedQuery.length > 0 ||
+      departmentSearch !== null ||
+      hasStructuredFilters(studentSearchFilters());
+    if (!hasResetableSearchState) return;
+    browseAllResearchHomes();
+  };
+  resetResearchHomeIfDirtyRef.current = resetResearchHomeIfDirty;
+
+  // Returning to the bare research home from the bare research home does not
+  // change the URL, so the URL-sync effect has nothing to reconcile and an
+  // unsubmitted draft query would survive. The brand logo carries an explicit
+  // reset intent for that case.
+  useEffect(() => {
+    if (!isResearchHomeResetState(location.state)) return;
+    if (consumedHomeResetKeyRef.current === location.key) return;
+    consumedHomeResetKeyRef.current = location.key;
+    resetResearchHomeIfDirtyRef.current();
+  }, [location.key, location.state]);
 
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">

@@ -1,25 +1,25 @@
 /**
- * Logo home button that navigates to the primary research discovery page.
+ * Logo home button that navigates to a clean research discovery home.
  */
 import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';
 import { navFocusRingSx } from '../utils/focusRing';
+import {
+  RESEARCH_HOME_PATH,
+  isResearchHomeLocation,
+  researchHomeResetState,
+} from './researchHomeNavigation';
 
 const HomeButton = () => {
   const location = useLocation();
-
-  const handleClick = (event: React.MouseEvent) => {
-    if (location.pathname === '/research') {
-      event.preventDefault();
-      window.location.reload();
-    }
-  };
+  const alreadyAtResearchHome = isResearchHomeLocation(location);
 
   return (
     <Button
       component={Link}
-      to="/research"
-      onClick={handleClick}
+      to={RESEARCH_HOME_PATH}
+      state={researchHomeResetState(location)}
+      replace={alreadyAtResearchHome}
       disableRipple={true}
       sx={{
         '&:hover': { backgroundColor: 'transparent' },
