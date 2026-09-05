@@ -27,7 +27,21 @@ const ENTITY_IDS = {
   archivedRow: id('00000000000000000000000a'),
 };
 
-function seedEntities() {
+type SeedEntity = {
+  kind: string;
+  entityType: string;
+  archived: boolean;
+  _id: mongoose.Types.ObjectId;
+  slug: string;
+  name: string;
+  studentVisibilityTier: string;
+  studentVisibilityReasons: string[];
+  studentVisibilityComputedAt?: Date;
+  sourceUrls?: string[];
+  fullDescription?: string;
+};
+
+function seedEntities(): SeedEntity[] {
   const base = {
     kind: 'faculty-research-area',
     entityType: 'FACULTY_RESEARCH_AREA',
