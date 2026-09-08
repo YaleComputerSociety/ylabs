@@ -151,6 +151,7 @@ import {
 } from './facultyRosterDepartureReconciler';
 import {
   isPersonOrGrantShellSlug,
+  personPageNameTokensFromUrl,
   personProfileNameTokensFromUrl,
   personProfileSourceMatchesEntity,
   type ResearchEntityIdentity,
@@ -869,6 +870,39 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
     sourceUrls: kept as string[],
   };
   return kept.filter((url) => personProfileSourceMatchesEntity(url, entityForMatch));
+}
+
+/**
+ * The stored citations a freshly projected lead profile URL retires: the same
+ * host's older non-canonical path for the same person, which the department has
+ * since moved onto its canonical `/profile/<slug>` page. `supersedesOfficialProfileUrl`
+ * owns that direction and the same-host rule, so a second roster page cannot
+ * displace a citation here.
+ *
+ * Dropping is what makes the projection idempotent. It only ever appended, so once
+ * a department moved a page the entity kept citing the dead path forever and served
+ * it beside the live one; a repair pass over stored rows would then be undone by
+ * the next materialization (#2522).
+ *
+ * The person check is not redundant with the supersession rule. That rule reasons
+ * about host and path shape only, so on an entity citing several colleagues on one
+ * departmental host - a center's affiliated-people citations - a projected lead
+ * `/profile/<lead>` would otherwise retire every colleague's `/people/<slug>`
+ * citation too.
+ */
+export function withoutSupersededProfileSourceUrls(
+  sourceUrls: readonly unknown[],
+  leadProfileUrl: string,
+): string[] {
+  const leadTokens = personPageNameTokensFromUrl(leadProfileUrl);
+  return sourceUrls
+    .filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
+    .filter((url) => {
+      if (!supersedesOfficialProfileUrl(url, leadProfileUrl)) return true;
+      if (!leadTokens) return true;
+      const urlTokens = personPageNameTokensFromUrl(url);
+      return !urlTokens || urlTokens.join('-') !== leadTokens.join('-');
+    });
 }
 
 const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
@@ -3597,17 +3631,15 @@ export async function projectFromLog(
           : Array.isArray(entityDoc?.sourceUrls)
             ? (entityDoc?.sourceUrls as unknown[])
             : [];
+        const retained = withoutSupersededProfileSourceUrls(currentSourceUrls, leadProfileUrl);
         const leadDestination = normalizeOfficialProfileDestination(leadProfileUrl);
-        const alreadyPresent = currentSourceUrls.some(
-          (url) =>
-            normalizeOfficialProfileDestination(typeof url === 'string' ? url : '') ===
-            leadDestination,
+        const alreadyPresent = retained.some(
+          (url) => normalizeOfficialProfileDestination(url) === leadDestination,
         );
-        if (!alreadyPresent) {
-          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
-            ...currentSourceUrls,
-            leadProfileUrl,
-          ]);
+        if (!alreadyPresent || retained.length !== currentSourceUrls.length) {
+          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization(
+            alreadyPresent ? retained : [...retained, leadProfileUrl],
+          );
           fieldsWritten++;
         }
       }

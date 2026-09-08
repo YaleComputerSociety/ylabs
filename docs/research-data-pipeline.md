@@ -424,6 +424,26 @@ It is dry-run-first; apply requires `--apply --confirm-profile-link-verification
 Its observed replacement candidates are pooled per department host from active `user` `profileUrls` observations under `materializationReadScopeFilter()`, for the same reason the netid-matched lane uses that filter: a superseded or rollback-retired observation is no longer evidence that the site publishes that page.
 [research-model.md](research-model.md) owns which probe verdicts settle a link and what a proved-dead link does at serve time.
 
+Both of those lanes write only `Researcher.profileLinks`, and that is not the field the detail page renders.
+`ResearchEntity.sourceUrls` carries the entity's own citations and the Sources section reads it, so a repaired researcher link left the entity still citing the dead directory path: for one lab the served payload simultaneously carried a correct `/profile/<slug>` on the member and a 404 `/people/<slug>/` in `sourceUrls` and on an access `Signal` (#2522).
+`yarn --cwd server sources:repair-superseded-entity-source-urls` repairs that field, dry-run first; apply requires `--apply --confirm-entity-source-url-repair` plus an explicit `--limit` on top of the shared script apply guard, and `--host` / `--slug` scope a run.
+It reuses the probe semantics of the researcher lane rather than restating them, so only a `404`/`410` licenses a replacement and only a `HEALTHY`/`REDIRECTED` candidate is adopted; a 403 or 5xx settles nothing, because a bot-blocked probe would otherwise retire a working citation.
+
+Two constraints decide which citations it may touch, and neither is sufficient alone.
+`personPageNameTokensFromUrl` must recognize the stored URL as a person page, which keeps out a lab page and a directory row that merely end in a person-shaped slug (`/lab/<slug>/`, `/directory/faculty/<slug>`).
+`profileSlugNamesPerson` must then tie that slug to a name the entity can actually claim - a current PI/director lead, else the entity's own name - so an entity that can name nobody repairs nothing.
+Without the second constraint a same-host, same-slug match re-pointed one entity's lab citation at an unrelated person's profile, which is the #468 same-slug failure in a new field.
+
+An apostrophe in a surname is elided rather than split, because Yale's own slugs elide it (`O'Example` is published at `/profile/robin-oexample`).
+Splitting on it produced `o` + `example`, whose surname token matched no slug, so every apostrophe surname silently failed `profileSlugNamesPerson` and was unrepairable by any of these lanes.
+
+Only two signal citations are ever re-pointed: the `IDENTIFIED_FACULTY_LEAD` and `ORGANIZATIONAL_HOME` ways-in derivations.
+Their excerpts are synthesized boilerplate that quotes nothing, so the citation is a pointer to the page whose existence is the claim, and re-pointing it at the same person's page at its current path preserves the claim exactly.
+Every other signal quotes the page it cites, so re-pointing one would assert we read a page we never fetched; those are left alone even when their citation is dead.
+
+The materializer closes the loop so a repair is not undone on the next pass.
+The #613 lead-profile projection only ever appended, so `withoutSupersededProfileSourceUrls` now also retires the same person's superseded sibling citation on that host, gated on both `supersedesOfficialProfileUrl` and person-token equality - the supersession rule reasons about host and path shape only, so on a center citing several colleagues on one departmental host a projected lead profile would otherwise retire every colleague's citation too.
+
 Action-evidence repair must prefer official/profile-quality entity source URLs over grant, identifier, or ORCID provenance when creating low-confidence exploratory outreach artifacts. Grant-member provenance can identify a funding relationship, but it should not be the public next-step URL once an official Yale profile or research-home source has been materialized.
 
 When no official profile bio exists, trusted personal or lab homepages may support reviewed user-bio backfill only when the page contains person-specific narrative evidence. Keep this as a guarded review lane unless a deterministic extractor can prove identity and narrative quality. Do not synthesize a stored profile bio from WTI-style roster pages, contact pages, generic lab slogans, title-only pages, person-named shells, or pages where the only evidence is a broad research-home summary.

@@ -18,6 +18,7 @@ import {
   officialLeadProfileSourceUrl,
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
+  withoutSupersededProfileSourceUrls,
   selectOfficialProfileObservationUserMatch,
   shouldIgnoreObservationForEntityMaterialization,
   uniqueKeyValueForIdentifier,
@@ -338,6 +339,45 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(
       sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news'),
     ).toEqual([]);
+  });
+
+  it('retires the same person’s superseded citation when the lead profile page is projected (#2522)', () => {
+    expect(
+      withoutSupersededProfileSourceUrls(
+        [
+          'https://example-lab.example.com/',
+          'https://example-dept.yale.edu/people/robin-oexample/',
+        ],
+        'https://example-dept.yale.edu/profile/robin-oexample',
+      ),
+    ).toEqual(['https://example-lab.example.com/']);
+  });
+
+  it('keeps a colleague’s citation on the same departmental host (#2522)', () => {
+    expect(
+      withoutSupersededProfileSourceUrls(
+        [
+          'https://example-dept.yale.edu/people/alex-different',
+          'https://example-dept.yale.edu/people/robin-oexample',
+        ],
+        'https://example-dept.yale.edu/profile/robin-oexample',
+      ),
+    ).toEqual(['https://example-dept.yale.edu/people/alex-different']);
+  });
+
+  it('never retires a citation on another host, nor moves back off the canonical page (#2522)', () => {
+    expect(
+      withoutSupersededProfileSourceUrls(
+        ['https://other-dept.yale.edu/people/robin-oexample'],
+        'https://example-dept.yale.edu/profile/robin-oexample',
+      ),
+    ).toEqual(['https://other-dept.yale.edu/people/robin-oexample']);
+    expect(
+      withoutSupersededProfileSourceUrls(
+        ['https://example-dept.yale.edu/profile/robin-oexample'],
+        'https://example-dept.yale.edu/people/robin-oexample',
+      ),
+    ).toEqual(['https://example-dept.yale.edu/profile/robin-oexample']);
   });
 
   it('coerces a bare-string sourceUrls observation into an array instead of passing it through as a scalar (#observation-array-integrity)', () => {

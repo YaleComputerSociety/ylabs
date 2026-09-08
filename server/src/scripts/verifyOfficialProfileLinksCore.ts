@@ -91,9 +91,18 @@ export function officialProfileLinkHost(url: unknown): string | undefined {
   }
 }
 
+/**
+ * An apostrophe inside a surname is elided, not treated as a token boundary,
+ * because Yale's own slugs elide it: `O'Hern` is published at
+ * `/profile/corey-ohern`. Splitting on it yields `o` + `hern`, whose surname token
+ * matches no slug, so every apostrophe surname failed `profileSlugNamesPerson` and
+ * could never be repaired (#2522).
+ */
+const foldNameApostrophes = (value: string): string => value.replace(/['’ʼ]/g, '');
+
 const personNameTokens = (displayName: unknown): string[] =>
   typeof displayName === 'string'
-    ? displayName
+    ? foldNameApostrophes(displayName)
         .toLowerCase()
         .split(/[^a-z]+/i)
         .filter(Boolean)
@@ -200,7 +209,7 @@ export function profileSlugNamesPerson(candidateUrl: unknown, displayName: unkno
  * The person-page slug a department would mint from a display name.
  */
 export function personNameSlug(displayName: unknown): string {
-  return String(displayName ?? '')
+  return foldNameApostrophes(String(displayName ?? ''))
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
