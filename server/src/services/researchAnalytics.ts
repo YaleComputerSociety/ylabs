@@ -93,7 +93,6 @@ export const RESEARCH_FILTER_OPERATIONS = [
 export const RESEARCH_FILTER_KINDS = [
   'school',
   'department',
-  'documented_way_in',
   'admin_quality',
   'admin_trust',
   'research_area',

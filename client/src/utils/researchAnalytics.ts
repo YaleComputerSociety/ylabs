@@ -55,7 +55,6 @@ export type ResearchJourneyPayload =
       filter:
         | 'school'
         | 'department'
-        | 'documented_way_in'
         | 'admin_quality'
         | 'admin_trust'
         | 'research_area'

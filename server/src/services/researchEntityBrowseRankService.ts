@@ -15,7 +15,6 @@ import { accessSignalTypes as ACCESS_SIGNAL_TYPES } from '../models/researchAcce
 import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
 import {
   hasUndergradHostingEvidenceFromSignals,
-  hasDocumentedWayInFromSignals,
   type AccessSignalConfidenceInput,
 } from './accessAcceptanceLevel';
 import {
@@ -236,7 +235,6 @@ export async function recomputeBrowseRankForEntities(
     });
     scoresByEntityId.set(id, score);
     const undergradHostingEvidence = hasUndergradHostingEvidenceFromSignals(entitySignals);
-    const documentedWayIn = hasDocumentedWayInFromSignals(entitySignals);
     const currentAvailability = currentUndergradAvailabilityFromSignals(
       currentAvailabilitySignals.get(id) || [],
       now,
@@ -253,7 +251,6 @@ export async function recomputeBrowseRankForEntities(
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
-    const documentedWayInUnchanged = (entity.hasDocumentedWayIn ?? false) === documentedWayIn;
     const availabilityUnchanged =
       (entity.undergraduateCurrentAvailability ?? 'UNKNOWN') === currentAvailability;
     const compensationUnchanged =
@@ -267,7 +264,6 @@ export async function recomputeBrowseRankForEntities(
     if (
       scoreUnchanged &&
       hostingUnchanged &&
-      documentedWayInUnchanged &&
       availabilityUnchanged &&
       compensationUnchanged &&
       eligibleStudentLevelsUnchanged
@@ -282,7 +278,6 @@ export async function recomputeBrowseRankForEntities(
         $set: {
           browseRankScore: score,
           hasUndergradHostingEvidence: undergradHostingEvidence,
-          hasDocumentedWayIn: documentedWayIn,
           undergraduateCurrentAvailability: currentAvailability,
           undergraduateCompensationModel: compensationModel,
           undergraduateEligibleStudentLevels: eligibleStudentLevels,
