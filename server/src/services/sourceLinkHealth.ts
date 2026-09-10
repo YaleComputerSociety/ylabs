@@ -154,6 +154,55 @@ export interface DatedSourceLinkHealth extends SourceLinkHealth {
   checkedAt?: Date | string | null;
 }
 
+/**
+ * The key a stored verdict is looked up by. Scheme, `www.`, host case, and a
+ * trailing slash are cosmetic; path and query are not. Mirrors
+ * `sourceLinkCandidateKey` in the backfill lane so a verdict written under one
+ * spelling is found under the other, which is the whole reason a shared key
+ * exists rather than a per-caller comparison.
+ */
+export function sourceLinkHealthKey(url: unknown): string | null {
+  if (typeof url !== 'string' || !url.trim()) return null;
+  try {
+    const parsed = new URL(url.trim());
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+    return `${host}${path}${parsed.search}`;
+  } catch {
+    return null;
+  }
+}
+
+/** The stored verdict for one URL, or undefined when the URL was never probed. */
+export function findSourceLinkHealth(
+  storedHealth: unknown,
+  url: unknown,
+): DatedSourceLinkHealth | undefined {
+  const key = sourceLinkHealthKey(url);
+  if (!key || !Array.isArray(storedHealth)) return undefined;
+  const match = storedHealth.find(
+    (entry) => sourceLinkHealthKey((entry as { url?: unknown })?.url) === key,
+  ) as Record<string, unknown> | undefined;
+  if (!match || typeof match.healthStatus !== 'string') return undefined;
+  return {
+    healthStatus: match.healthStatus as SourceLinkHealthStatus,
+    ...(typeof match.httpStatusCode === 'number' ? { httpStatusCode: match.httpStatusCode } : {}),
+    ...(match.checkedAt
+      ? { checkedAt: match.checkedAt as DatedSourceLinkHealth['checkedAt'] }
+      : {}),
+  };
+}
+
+/**
+ * Whether the corpus positively knows this URL is gone. Absence of a verdict is
+ * not evidence of death, so an unprobed URL is never treated as dead - this
+ * gates a way-in, and failing closed on silence would demote every entity whose
+ * links have not been probed yet.
+ */
+export function isKnownDeadSourceUrl(storedHealth: unknown, url: unknown): boolean {
+  return isLikelyUnavailableSourceLink(findSourceLinkHealth(storedHealth, url));
+}
+
 export function sourceLinkHealthAgeDays(
   health: DatedSourceLinkHealth | undefined,
   now: Date = new Date(),

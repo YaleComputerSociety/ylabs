@@ -8,6 +8,7 @@ import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
+import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
@@ -623,11 +624,23 @@ function isGrantOrOrcidOnlyUrl(value: string): boolean {
   }
 }
 
-/** First official, non-grant http(s) URL describing the research home. */
+/**
+ * First official, non-grant http(s) URL describing the research home, skipping
+ * any the corpus already knows is gone.
+ *
+ * The link-health check is not cosmetic: this URL is what the visibility gate
+ * reads as proof the entity has a way in, while the detail page hides a link
+ * whose stored verdict says it is dead. Without it the two halves disagree, and
+ * an entity is published on the strength of a link the same product then
+ * refuses to render (#2531). An unprobed URL still counts - absence of a verdict
+ * is not evidence of death, and failing closed on silence would demote every
+ * entity whose links have not been probed yet.
+ */
 export function officialNonGrantSourceUrl(entity: {
   websiteUrl?: unknown;
   website?: unknown;
   sourceUrls?: unknown;
+  sourceLinkHealth?: unknown;
 }): string {
   const urls = [
     entity.websiteUrl,
@@ -636,7 +649,11 @@ export function officialNonGrantSourceUrl(entity: {
   ]
     .map(firstString)
     .filter((url) => /^https?:\/\//i.test(url));
-  return urls.find((url) => !isGrantOrOrcidOnlyUrl(url)) || '';
+  return (
+    urls.find(
+      (url) => !isGrantOrOrcidOnlyUrl(url) && !isKnownDeadSourceUrl(entity.sourceLinkHealth, url),
+    ) || ''
+  );
 }
 
 export interface IdentifiedLeadWaysInInput {
@@ -713,6 +730,7 @@ async function deriveIdentifiedLeadWaysInForEntity(
     websiteUrl: 1,
     website: 1,
     sourceUrls: 1,
+    sourceLinkHealth: 1,
     studentVisibilityReasons: 1,
   }).lean();
   if (!entity) return empty;

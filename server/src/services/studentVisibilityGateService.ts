@@ -184,7 +184,7 @@ const reviewExceptionReasons = new Set(['formalization_only']);
 // suppression markers inert: `research_infrastructure_only` (pre-existing) and
 // `permanently_closed` (#2284). Neither could ever suppress through the gate.
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason';
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
