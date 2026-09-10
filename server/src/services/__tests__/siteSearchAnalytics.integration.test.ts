@@ -194,6 +194,67 @@ describe('recorded searches over a real store', () => {
     expect(rows.map((row) => row.searchQuery)).toEqual(['biology', 'bio']);
   });
 
+  it('counts a research re-sort of the same query and filters as the one search it repeats', async () => {
+    const searched = search({
+      surface: 'research_entity',
+      searchQuery: 'econ',
+      filters: { school: ['Yale College'] },
+      resultCount: 12,
+    });
+    await recordSiteSearch(searched);
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await recordSiteSearch({ ...searched });
+    await recordSiteSearch({ ...searched });
+
+    const rows = await recordedSearches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      searchQuery: 'econ',
+      metadata: expect.objectContaining({ filters: { school: ['Yale College'] } }),
+    });
+  });
+
+  it('keeps two different research queries as two searches', async () => {
+    await recordSiteSearch(
+      search({ surface: 'research_entity', searchQuery: 'econ', resultCount: 12 }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await recordSiteSearch(
+      search({ surface: 'research_entity', searchQuery: 'goldwater', resultCount: 1 }),
+    );
+
+    const rows = await recordedSearches();
+    expect(rows.map((row) => row.searchQuery)).toEqual(['econ', 'goldwater']);
+  });
+
+  it('drops a snapshot that answered late even after an unrelated search intervened', async () => {
+    const staleArrivedAt = new Date(Date.now() - 9000);
+
+    await recordSiteSearch(
+      search({
+        searchQuery: 'mechanical engineering',
+        resultCount: 32,
+        requestArrivedAt: new Date(Date.now() - 6000),
+      }),
+    );
+    await recordSiteSearch(
+      search({
+        searchQuery: 'goldwater',
+        resultCount: 1,
+        requestArrivedAt: new Date(Date.now() - 3000),
+      }),
+    );
+    await recordSiteSearch(
+      search({ searchQuery: 'mechanica', resultCount: 0, requestArrivedAt: staleArrivedAt }),
+    );
+
+    const rows = await recordedSearches();
+    expect(rows.map((row) => row.searchQuery)).toEqual(['mechanical engineering', 'goldwater']);
+    expect(rows.some((row) => row.metadata?.resultCount === 0)).toBe(false);
+  });
+
   it('folds a query typed across a filter toggle into one row with the filters it ran with', async () => {
     await recordSiteSearch(search({ searchQuery: 'econ', resultCount: 40 }));
     await recordSiteSearch(

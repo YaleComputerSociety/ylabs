@@ -24,9 +24,9 @@ export interface LogEventParams {
   // Two requests issued in order can finish out of order, so the order events
   // are logged in is not the order the student acted in.
   occurredAt?: Date;
-  // Whether this event's surface can mint a search from a keystroke pause, so
-  // the typing states leading up to a query fold into it.
-  foldTypingSnapshots?: boolean;
+  // Whether an edit of the previous query continues it rather than asking
+  // something new. An identical repeat collapses either way.
+  foldQueryEdits?: boolean;
 }
 
 const MAX_ANALYTICS_METADATA_DEPTH = 5;
@@ -884,9 +884,58 @@ const searchEpisodeSurface = (metadata: unknown): string =>
 type SearchEpisodeOutcome = 'folded' | 'stale' | 'separate';
 
 /**
- * Rewrites the student's previous search in place when this one continues the
- * same typing episode, so the report keeps the query they settled on rather
- * than one row per keystroke pause.
+ * How many of the student's recent searches the lookup reads to find the row a
+ * search belongs to.
+ *
+ * The newest row is not always that row: a search issued while an earlier one
+ * was still in flight lands after it, and an unrelated search in between pushes
+ * the episode further down the list. Five covers the overlapping requests one
+ * student can have outstanding inside the window while keeping the read a small
+ * bounded slice of one index range.
+ */
+const SEARCH_EPISODE_CANDIDATE_LIMIT = 5;
+
+/**
+ * Whether this search is the same question the recorded row already asked.
+ *
+ * An identical query with an identical filter set is one search on any surface:
+ * re-running a result set, which a sort change does, is not asking again. An
+ * edit of the query is only the same question where the surface mints keystroke
+ * snapshots; where every search comes from a deliberate action, an edit is a
+ * second question and keeps its own row, which is what stops a hand-edited
+ * follow-up from erasing the zero-result search before it.
+ *
+ * The filter set has to match for an episode with no query text, which is the
+ * filter-only search the signature was added to keep apart. A student who
+ * toggles a filter mid-word is still typing one query, so on a snapshot surface
+ * that folds and the row takes the filters the search actually ran with.
+ */
+const continuesSearchEpisode = (
+  previous: { searchQuery?: string | null; metadata?: unknown },
+  eventPayload: Record<string, unknown>,
+  foldQueryEdits: boolean,
+): boolean => {
+  if (searchEpisodeSurface(previous.metadata) !== searchEpisodeSurface(eventPayload.metadata)) {
+    return false;
+  }
+
+  const previousQuery = previous.searchQuery ?? '';
+  const searchQuery = String(eventPayload.searchQuery ?? '');
+  const isSameQuery =
+    normalizeSearchEpisodeQuery(previousQuery) === normalizeSearchEpisodeQuery(searchQuery);
+  const isSameFilterSet =
+    searchEpisodeFilterSignature(previous.metadata) ===
+    searchEpisodeFilterSignature(eventPayload.metadata);
+
+  if (isSameQuery && isSameFilterSet) return true;
+  if (normalizeSearchEpisodeQuery(searchQuery) === '') return false;
+  return foldQueryEdits && isSameSearchEpisodeQuery(previousQuery, searchQuery);
+};
+
+/**
+ * Rewrites the student's previous search in place when this one continues it, so
+ * the report keeps the query they settled on rather than one row per keystroke
+ * pause or per re-sort of the same result set.
  *
  * The compare-and-set on the row's last-snapshot time means two concurrent
  * searches cannot both claim the same row: the winner moves that field, so the
@@ -898,18 +947,14 @@ type SearchEpisodeOutcome = 'folded' | 'stale' | 'separate';
  * orphan that click and count the search as a failure. The window is measured
  * from `searchEpisodeUpdatedAt` instead, so a long typing episode keeps folding;
  * a row written before that field existed still windows on its timestamp.
- *
- * The filter set has to match only for an episode with no query text, which is
- * the filter-only search the signature was added to keep apart. A student who
- * toggles a filter mid-word is still typing one query, so a non-empty edit folds
- * across the change and the row takes the filters the search actually ran with.
  */
 const supersedeSearchEpisode = async (
   eventPayload: Record<string, unknown>,
+  foldQueryEdits: boolean,
 ): Promise<SearchEpisodeOutcome> => {
   const timestamp = eventPayload.timestamp as Date;
   const windowStart = new Date(timestamp.getTime() - SEARCH_EPISODE_WINDOW_MS);
-  const previous = await AnalyticsEvent.findOne({
+  const candidates = await AnalyticsEvent.find({
     eventType: AnalyticsEventType.SEARCH,
     netid: eventPayload.netid,
     dedupeKey: { $exists: false },
@@ -920,24 +965,14 @@ const supersedeSearchEpisode = async (
     ],
   })
     .sort({ searchEpisodeUpdatedAt: -1, timestamp: -1 })
+    .limit(SEARCH_EPISODE_CANDIDATE_LIMIT)
     .select({ searchQuery: 1, metadata: 1, timestamp: 1, searchEpisodeUpdatedAt: 1 })
     .lean();
 
+  const previous = candidates.find((candidate) =>
+    continuesSearchEpisode(candidate, eventPayload, foldQueryEdits),
+  );
   if (!previous) return 'separate';
-  if (searchEpisodeSurface(previous.metadata) !== searchEpisodeSurface(eventPayload.metadata)) {
-    return 'separate';
-  }
-  const searchQuery = String(eventPayload.searchQuery ?? '');
-  if (!isSameSearchEpisodeQuery(previous.searchQuery ?? '', searchQuery)) {
-    return 'separate';
-  }
-  if (
-    normalizeSearchEpisodeQuery(searchQuery) === '' &&
-    searchEpisodeFilterSignature(previous.metadata) !==
-      searchEpisodeFilterSignature(eventPayload.metadata)
-  ) {
-    return 'separate';
-  }
 
   const previousSnapshotAt = previous.searchEpisodeUpdatedAt ?? previous.timestamp;
   if (previousSnapshotAt instanceof Date && previousSnapshotAt.getTime() > timestamp.getTime()) {
@@ -992,10 +1027,8 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
       if (result.upsertedCount === 0) return;
     } else if (eventType === AnalyticsEventType.SEARCH) {
       eventPayload.searchEpisodeUpdatedAt = eventPayload.timestamp;
-      if (params.foldTypingSnapshots === true) {
-        const outcome = await supersedeSearchEpisode(eventPayload);
-        if (outcome !== 'separate') return;
-      }
+      const outcome = await supersedeSearchEpisode(eventPayload, params.foldQueryEdits === true);
+      if (outcome !== 'separate') return;
       await AnalyticsEvent.create(eventPayload);
     } else {
       await AnalyticsEvent.create(eventPayload);

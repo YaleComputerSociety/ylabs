@@ -14,24 +14,27 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 export type SiteSearchSurface = 'program' | 'research_entity';
 
 /**
- * Whether a surface can mint a search from a keystroke pause rather than from a
- * deliberate action.
+ * Whether an edit of the query continues the search before it on this surface.
  *
- * The programs surface searches from a 500ms debounce with no submit
- * affordance, so a student who pauses mid-word records the partial string and
- * those snapshots have to be folded into the query they settled on. Every
+ * This is not whether the surface collapses repeats at all: an identical query
+ * with an identical filter set is one search everywhere, because re-running a
+ * result set - which a sort change does - is not asking again.
+ *
+ * What differs is an edit. The programs surface searches from a 500ms debounce
+ * with no submit affordance, so a student who pauses mid-word records the
+ * partial string and that snapshot belongs to the query they settled on. Every
  * research search comes from a submit, a filter click, a sort change, a deep
- * link, or a result chip, so nothing there is a snapshot: folding would only
- * merge two searches the student deliberately performed and erase the first,
- * including the zero-result row the report exists to surface.
+ * link, or a result chip, so an edited query there is a second question the
+ * student deliberately asked: folding it would erase the first, including the
+ * zero-result row the report exists to surface.
  */
-const SITE_SEARCH_SURFACE_FOLDS_TYPING_SNAPSHOTS: Record<SiteSearchSurface, boolean> = {
+const SITE_SEARCH_SURFACE_FOLDS_QUERY_EDITS: Record<SiteSearchSurface, boolean> = {
   program: true,
   research_entity: false,
 };
 
-export const foldsTypingSnapshots = (surface: SiteSearchSurface): boolean =>
-  SITE_SEARCH_SURFACE_FOLDS_TYPING_SNAPSHOTS[surface] === true;
+export const foldsQueryEdits = (surface: SiteSearchSurface): boolean =>
+  SITE_SEARCH_SURFACE_FOLDS_QUERY_EDITS[surface] === true;
 
 export interface SiteSearchFilters {
   [key: string]: string[] | undefined;
@@ -107,7 +110,7 @@ export const recordSiteSearch = async (record: SiteSearchRecord): Promise<boolea
       userType: record.userType ?? 'unknown',
       searchQuery: record.searchQuery,
       occurredAt: record.requestArrivedAt,
-      foldTypingSnapshots: foldsTypingSnapshots(record.surface),
+      foldQueryEdits: foldsQueryEdits(record.surface),
       metadata: {
         ...record.metadata,
         entityType: record.surface,

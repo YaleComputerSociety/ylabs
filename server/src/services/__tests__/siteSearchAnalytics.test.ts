@@ -96,7 +96,7 @@ describe('recordSiteSearch', () => {
       userType: 'undergraduate',
       searchQuery: 'quantum materials',
       occurredAt: undefined,
-      foldTypingSnapshots: false,
+      foldQueryEdits: false,
       metadata: {
         entityType: 'research_entity',
         resultCount: 12,
@@ -138,15 +138,13 @@ describe('recordSiteSearch', () => {
     );
   });
 
-  it('folds typing snapshots only on the surface that searches from a debounce', async () => {
+  it('folds query edits only on the surface that searches from a debounce', async () => {
     await recordSiteSearch(record({ surface: 'program' }));
-    expect(mocks.logEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ foldTypingSnapshots: true }),
-    );
+    expect(mocks.logEvent).toHaveBeenCalledWith(expect.objectContaining({ foldQueryEdits: true }));
 
     await recordSiteSearch(record({ surface: 'research_entity' }));
     expect(mocks.logEvent).toHaveBeenLastCalledWith(
-      expect.objectContaining({ foldTypingSnapshots: false }),
+      expect.objectContaining({ foldQueryEdits: false }),
     );
   });
 

@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient, ObjectId } from 'mongodb';
 
+// Several tests here run their own in-memory MongoDB, which outruns the default
+// per-test timeout when other suites start one at the same time.
+vi.setConfig({ testTimeout: 60_000 });
+
 const mocks = vi.hoisted(() => ({
   analyticsAggregate: vi.fn(),
   analyticsCreate: vi.fn(),
@@ -966,10 +970,18 @@ describe('getUserAnalyticsDrilldown', () => {
   });
 });
 
+const stubEpisodeCandidates = (candidates: unknown[]): void => {
+  const chain: Record<string, unknown> = {
+    sort: () => chain,
+    limit: () => chain,
+    select: () => chain,
+    lean: async () => candidates,
+  };
+  mocks.analyticsFind.mockReturnValue(chain);
+};
+
 const stubPreviousSearchEvent = (previous: unknown): void => {
-  mocks.analyticsFindOne.mockReturnValue({
-    sort: () => ({ select: () => ({ lean: async () => previous }) }),
-  });
+  stubEpisodeCandidates(previous ? [previous] : []);
 };
 
 describe('logEvent', () => {
@@ -1197,7 +1209,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: '',
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'program', filters: { globalRegions: ['Africa'] }, resultCount: 67 },
     });
 
@@ -1219,7 +1231,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: '',
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'program', filters: { globalRegions: ['Asia'] }, resultCount: 70 },
     });
 
@@ -1251,7 +1263,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'economics',
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 9 },
     });
 
@@ -1280,7 +1292,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'mechanical engineering',
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 32 },
     });
 
@@ -1304,7 +1316,7 @@ describe('search typing episodes', () => {
     );
   });
 
-  it('never folds a search from a surface that mints no typing snapshots', async () => {
+  it('never folds an edited query on a surface that mints no typing snapshots', async () => {
     stubPreviousSearchEvent({
       _id: '507f1f77bcf86cd799439011',
       searchQuery: 'quantum materials physics',
@@ -1321,11 +1333,69 @@ describe('search typing episodes', () => {
       metadata: { entityType: 'research_entity', filters: {}, resultCount: 5 },
     });
 
-    expect(mocks.analyticsFindOne).not.toHaveBeenCalled();
     expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
     expect(mocks.analyticsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ searchQuery: 'quantum materials' }),
     );
+  });
+
+  it('collapses an identical repeat of a search even where an edit would not fold', async () => {
+    stubPreviousSearchEvent({
+      _id: '507f1f77bcf86cd799439011',
+      searchQuery: 'econ',
+      metadata: { entityType: 'research_entity', filters: { school: ['Yale College'] } },
+      timestamp: new Date(Date.now() - 2000),
+      searchEpisodeUpdatedAt: new Date(Date.now() - 2000),
+    });
+    mocks.analyticsUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'econ',
+      metadata: {
+        entityType: 'research_entity',
+        filters: { school: ['Yale College'] },
+        resultCount: 12,
+      },
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledOnce();
+  });
+
+  it('claims the episode row even when an unrelated search was recorded after it', async () => {
+    const requestArrivedAt = new Date(Date.now() - 8000);
+    stubEpisodeCandidates([
+      {
+        _id: '507f1f77bcf86cd799439022',
+        searchQuery: 'goldwater',
+        metadata: { entityType: 'program', filters: {}, resultCount: 1 },
+        timestamp: new Date(Date.now() - 3000),
+        searchEpisodeUpdatedAt: new Date(Date.now() - 3000),
+      },
+      {
+        _id: '507f1f77bcf86cd799439011',
+        searchQuery: 'mechanical engineering',
+        metadata: { entityType: 'program', filters: {}, resultCount: 32 },
+        timestamp: new Date(Date.now() - 6000),
+        searchEpisodeUpdatedAt: new Date(Date.now() - 6000),
+      },
+    ]);
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'mechanica',
+      occurredAt: requestArrivedAt,
+      foldQueryEdits: true,
+      metadata: { entityType: 'program', filters: {}, resultCount: 0 },
+    });
+
+    expect(mocks.analyticsUpdateOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
   });
 
   it('drops a snapshot that arrived after the episode already moved past it', async () => {
@@ -1344,7 +1414,7 @@ describe('search typing episodes', () => {
       userType: 'undergraduate',
       searchQuery: 'mechanica',
       occurredAt: requestArrivedAt,
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 0 },
     });
 
@@ -1361,7 +1431,7 @@ describe('search typing episodes', () => {
       userType: 'undergraduate',
       searchQuery: 'goldwater',
       occurredAt: requestArrivedAt,
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 1 },
     });
 
@@ -1383,7 +1453,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'goldwater',
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 1 },
     });
 
@@ -1408,7 +1478,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'economics',
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: {
         entityType: 'program',
         filters: { yearOfStudy: ['Senior'] },
@@ -1441,7 +1511,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'econ',
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'research_entity', filters: {}, resultCount: 5 },
     });
 
@@ -1479,7 +1549,7 @@ describe('search typing episodes', () => {
       netid: 'student123',
       userType: 'undergraduate',
       searchQuery: 'econ',
-      foldTypingSnapshots: true,
+      foldQueryEdits: true,
       metadata: { entityType: 'program', filters: {}, resultCount: 12 },
     });
 
@@ -1498,7 +1568,7 @@ describe('search typing episodes', () => {
       metadata: { source: 'search' },
     });
 
-    expect(mocks.analyticsFindOne).not.toHaveBeenCalled();
+    expect(mocks.analyticsFind).not.toHaveBeenCalled();
     expect(mocks.analyticsCreate).toHaveBeenCalledOnce();
   });
 });

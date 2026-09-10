@@ -30,16 +30,20 @@ The research surface issues one when a search returns nothing, to find out wheth
 Clicking that suggestion is a real search and is recorded like any other.
 Each recorded event is timestamped when its request arrived, not when its response finished, because two searches issued in order can come back out of order.
 
-Folding typing snapshots is a property of the surface, declared in `siteSearchAnalytics.ts` and handed to `logEvent` per event.
-Only the programs surface searches from a keystroke debounce, so only its snapshots are folded.
-Every research search comes from a submit, a filter click, a sort change, a deep link, or a result chip, and the search box's own typing issues no request, so no research row is ever a snapshot: folding there would merge two searches the student deliberately performed and erase the first, including the zero-result row the report exists to surface.
+An identical repeat of a search - the same normalized query, the same filter set, the same surface, inside the window - collapses into the row it repeats, on every surface.
+Re-running a result set is not asking a second question, which is what a sort change does: it re-sends the same query and filters so the student's results can be reordered.
 
-Where folding applies, `logEvent` rewrites the student's previous search in place when it is recent, from the same surface, and its query is an edit of the new one.
+Whether an EDIT of the query folds is the part that varies by surface, declared in `siteSearchAnalytics.ts` and handed to `logEvent` per event.
+Only the programs surface searches from a keystroke debounce, so only there is an edited query the same question.
+Every research search comes from a submit, a filter click, a sort change, a deep link, or a result chip, and the search box's own typing issues no request, so an edited research query is a second question the student deliberately asked: folding it would erase the first, including the zero-result row the report exists to surface.
+
+Where an edit does fold, `logEvent` rewrites the student's previous search in place when it is recent, from the same surface, and its query is an edit of the new one.
 Edit means subsequence containment in either direction, which covers prefix growth, mid-string insertion, and a backspace: `mechengineering` through `mechanical engineering` is one query being typed, and no pair in that sequence is a prefix of another.
 Containment alone is too loose for a short query, which spells out inside almost any longer phrase (`ai` sits inside `machine learning`), so the two also have to open with the same characters.
 The rewritten row keeps the timestamp of the episode's first snapshot, because search attribution counts only the actions recorded after a search, and moving the row forward would orphan a click that already followed the earlier snapshot.
 The window is measured from a separate `searchEpisodeUpdatedAt`, the time of the episode's latest snapshot, so a slowly typed query keeps folding instead of leaving a partial row behind; that field is also the compare-and-set the fold writes under, so when two requests race for the same row the loser records its own search rather than being dropped.
 A snapshot that arrives after the episode has already moved past its arrival time is dropped rather than recorded, so a partial query whose response came back late cannot overwrite the query the student settled on or leave a row of its own.
+The lookup reads the student's five most recent candidate rows rather than only the newest one, because an unrelated search recorded in between would otherwise hide the episode row and let that late snapshot land as a search of its own.
 Two unrelated lookups stay two searches.
 The filter set has to match only for an episode with no query text, which is the filter-only search the comparison was added for: reissuing one filter-only result set inside the window is one search, while two different filter sets stay two rows.
 A student who toggles a filter mid-word is still typing one query, so a non-empty edit folds across the change and the row reports the filters the search actually ran with.
