@@ -29,6 +29,8 @@ A shared given name is not enough - "Nancy Ruddle" and the dean's "Nancy Brown" 
 When the page declares no name at all, positive evidence carries the decision rather than a denylist of section words: the URL's own slug or host label names the person (`/people/robin-roster`, `konezny.sites.yale.edu`), or the URL has the person-scoped shape `isPersonProfileOrDirectoryUrl` accepts.
 That keeps an opaque leaf (`/profile/pf93/`) as absence of evidence rather than evidence of another subject, while refusing a department landing page (`/psychiatry/`) that no denylist could enumerate.
 `NON_PROFILE_SECTION_LEAF_TOKENS` survives only for the section leaves that do sit under a person-profile path (`/faculty/leadership/`), which the shape check alone would accept; do not grow it into the primary defence.
+Another institution's person-profile or faculty-directory page is refused as the entity's research website (`isOffsiteInstitutionPersonProfileUrl`, #2512), because a Yale profile routinely links the same person's faculty page at a previous employer and no identity check can see it: the name matches on both sides, so the #2437 guard passes.
+The refusal is host plus path shape, so a genuine personal or lab site on a non-Yale host is unaffected, and it is applied on the entry boundary both observation builders share rather than per row extractor, because every `dept-faculty-roster` lane mints `labUrl` from a page link and only the official-profile lane checks its shape.
 
 ## Infrastructure files
 

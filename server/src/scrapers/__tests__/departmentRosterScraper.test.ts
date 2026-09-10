@@ -3367,6 +3367,115 @@ describe('DepartmentRosterScraper.run', () => {
     ]);
   });
 
+  it("never adopts another institution's faculty profile linked from a Yale profile (#2512)", async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="https://economics.yale.edu/people/sample-economist" />
+      </head><body>
+        <main>
+          <h1>Sample Economist</h1>
+          <div class="person-title">Professor of Economics</div>
+          <a href="mailto:sample.economist@yale.edu">sample.economist@yale.edu</a>
+          <div class="node__website-link">
+            <a href="https://econ.example-university.edu/profile/sample-economist">Personal website</a>
+          </div>
+        </main>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://economics.yale.edu/people/sample-economist') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://economics.yale.edu/people',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Sample Economist',
+            profileUrl: 'https://economics.yale.edu/people/sample-economist',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'website')).toBeUndefined();
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toBeUndefined();
+    expect(
+      emitted.find((o) => o.entityType === 'user' && o.field === 'profileUrls')?.value,
+    ).toEqual({ departmental: 'https://economics.yale.edu/people/sample-economist' });
+  });
+
+  it("never adopts another institution's nested faculty-directory profile from a roster row (#2512)", async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://economics.yale.edu/people',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Sample Economist',
+            profileUrl: 'https://economics.yale.edu/people/sample-economist',
+            labUrl:
+              'https://www.business.example-university.edu/faculty/directory/sample_economist.aspx',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'website')).toBeUndefined();
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toBeUndefined();
+  });
+
+  it('still adopts a genuine off-Yale lab site supplied by a roster row', async () => {
+    const htmlFetcher = vi.fn(async () => '<html><body>listing</body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://economics.yale.edu/people',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Sample Economist',
+            profileUrl: 'https://economics.yale.edu/people/sample-economist',
+            labUrl: 'https://sample-economist-lab.example.test/',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'website')?.value).toBe(
+      'https://sample-economist-lab.example.test/',
+    );
+    expect(
+      emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl')?.value,
+    ).toBe('https://sample-economist-lab.example.test/');
+  });
+
   it('registers the first Math/Physics/Statistics/Astronomy roster batch', () => {
     expect(DEFAULT_DEPT_CONFIGS.map((config) => config.deptKey)).toEqual(
       expect.arrayContaining(['math', 'physics', 'statistics', 'astronomy']),

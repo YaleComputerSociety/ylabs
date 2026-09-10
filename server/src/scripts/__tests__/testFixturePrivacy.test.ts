@@ -110,6 +110,7 @@ const SYNTHETIC_YALE_TOKENS = new Set([
   'rowan',
   'sage',
   'sam',
+  'sample',
   'sawyer',
   'second',
   'shannon',
