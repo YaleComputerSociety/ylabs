@@ -960,7 +960,6 @@ describe('searchResearchGroupsViaMeili', () => {
           'undergraduateCurrentAvailability',
           'undergraduateCompensationModel',
           'undergraduateEligibleStudentLevels',
-          'hasDocumentedWayIn',
         ],
       }),
     );
@@ -1039,50 +1038,6 @@ describe('searchResearchGroupsViaMeili', () => {
       OPEN: 3,
       ROLLING: 5,
     });
-  });
-
-  it('facets on the documented-way-in projection and recomputes it disjunctively when active (#1519)', async () => {
-    mocks.search.mockResolvedValueOnce({
-      hits: [],
-      estimatedTotalHits: 4,
-      facetDistribution: {
-        hasDocumentedWayIn: { true: 4 },
-      },
-    });
-    mocks.search.mockResolvedValueOnce({
-      hits: [],
-      estimatedTotalHits: 10,
-      facetDistribution: {
-        hasDocumentedWayIn: { true: 4, false: 6 },
-      },
-    });
-
-    const result = await searchResearchGroupsViaMeili('', { hasDocumentedWayIn: true }, 1, 24);
-
-    expect(mocks.search).toHaveBeenCalledTimes(2);
-    expect(mocks.search.mock.calls[0][1].filter).toMatch(/hasDocumentedWayIn = true/);
-    expect(mocks.search.mock.calls[0][1].facets).toContain('hasDocumentedWayIn');
-    const disjunctiveCall = mocks.search.mock.calls[1];
-    expect(disjunctiveCall[1]).toEqual(
-      expect.objectContaining({ facets: ['hasDocumentedWayIn'], limit: 0 }),
-    );
-    expect(disjunctiveCall[1].filter).not.toMatch(/hasDocumentedWayIn/);
-    expect(result.facetDistribution?.hasDocumentedWayIn).toEqual({ true: 4, false: 6 });
-  });
-
-  it('does not recompute the documented-way-in facet when the filter is inactive (#1519)', async () => {
-    mocks.search.mockResolvedValueOnce({
-      hits: [],
-      estimatedTotalHits: 10,
-      facetDistribution: {
-        hasDocumentedWayIn: { true: 4, false: 6 },
-      },
-    });
-
-    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
-
-    expect(mocks.search).toHaveBeenCalledTimes(1);
-    expect(result.facetDistribution?.hasDocumentedWayIn).toEqual({ true: 4, false: 6 });
   });
 
   it('computes the compensation facet disjunctively and filters on the browse-filterable field (#1540)', async () => {
@@ -1713,7 +1668,6 @@ describe('searchResearchGroupsViaMeili', () => {
         'undergraduateCurrentAvailability',
         'undergraduateCompensationModel',
         'undergraduateEligibleStudentLevels',
-        'hasDocumentedWayIn',
       ],
     });
     expect(result.estimatedTotalHits).toBe(313);

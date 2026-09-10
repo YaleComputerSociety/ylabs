@@ -61,7 +61,6 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'departments',
     'researchAreas',
     'hasUndergradHostingEvidence',
-    'hasDocumentedWayIn',
     'undergraduateCurrentAvailability',
     'undergraduateCompensationModel',
     'undergraduateEligibleStudentLevels',
